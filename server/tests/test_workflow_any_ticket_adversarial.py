@@ -583,7 +583,12 @@ class TestAssumptionChecks:
 
     def test_next_agent_matches_current_stage_agent(self, client: TestClient):
         """
-        Assumption: next_agent should match the current stage's agent_id.
+        Assumption: the reported agent matches the current stage's agent_id.
+
+        This used to read the stored `next_agent` pin and hold only by
+        coincidence — the seed writes happened to store `stage.agent_id`.
+        `current_stage_agent` derives it, so the assumption is now the
+        contract rather than an observation.
         """
         res = client.post(
             "/api/tickets",
@@ -601,10 +606,10 @@ class TestAssumptionChecks:
             s for s in milestone["stages"] if s["key"] == milestone["workflow_stage_key"]
         )
 
-        # next_agent should match stage's agent_id (if stage has one)
+        # the derived agent should match the stage's agent_id (if it has one)
         if "agent_id" in current_stage and current_stage["agent_id"]:
-            assert milestone.get("next_agent") == current_stage["agent_id"], (
-                "next_agent should match current stage's agent_id"
+            assert milestone.get("current_stage_agent") == current_stage["agent_id"], (
+                "current_stage_agent should match current stage's agent_id"
             )
 
     def test_all_ticket_types_have_consistent_workflow_fields(self, client: TestClient):
@@ -633,7 +638,12 @@ class TestAssumptionChecks:
         tickets["task"] = next(t for t in all_tickets if t["work_item_type"] == "task")
 
         # All should have identical workflow field sets
-        expected_fields = {"workflow_stage_key", "workflow_stage_status", "stages", "next_agent"}
+        expected_fields = {
+            "workflow_stage_key",
+            "workflow_stage_status",
+            "stages",
+            "current_stage_agent",
+        }
 
         for ticket_type, ticket in tickets.items():
             for field in expected_fields:

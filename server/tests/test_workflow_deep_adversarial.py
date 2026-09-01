@@ -261,7 +261,7 @@ class TestSerializationEdgeCases:
             "workflow_stage_key",
             "workflow_stage_status",
             "stages",
-            "next_agent",
+            "current_stage_agent",
         }
 
         missing = required_fields - set(milestone.keys())
@@ -271,8 +271,8 @@ class TestSerializationEdgeCases:
         assert isinstance(milestone["workflow_stage_key"], str)
         assert isinstance(milestone["workflow_stage_status"], str)
         assert isinstance(milestone["stages"], list)
-        # next_agent can be string or null
-        assert milestone["next_agent"] is None or isinstance(milestone["next_agent"], str)
+        # derived, so always a string — "" means "no agent resolves for this stage"
+        assert isinstance(milestone["current_stage_agent"], str)
 
     def test_capability_detail_serialization_consistency(self, client: TestClient):
         """
@@ -314,7 +314,7 @@ class TestSerializationEdgeCases:
             "workflow_stage_key",
             "workflow_stage_status",
             "stages",
-            "next_agent",
+            "current_stage_agent",
         }
 
         for field in workflow_fields:
