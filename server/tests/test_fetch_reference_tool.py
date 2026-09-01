@@ -1181,6 +1181,34 @@ def test_markup_that_makes_extraction_raise_is_extraction_failed(session, resolv
     _assert_self_classifying(payload)
 
 
+def test_a_title_we_could_not_read_does_not_throw_away_the_body(session, resolver):
+    """626. A page whose metadata parse raises is still cached, and once.
+
+    Sharing one handler between `extract` and `extract_metadata` discarded a
+    body already in hand, so the page was never cached and every call re-fetched
+    it — request amplification a hostile page can aim, since the metadata parse
+    runs on markup the remote controls. The request count is the instrument: a
+    cached page is fetched once however many times it is asked for.
+    """
+    url = "https://docs.example/guide"
+    requests, transport = _transport(_ok_html)
+
+    with patch.object(
+        reference_cache.trafilatura,
+        "extract_metadata",
+        side_effect=RecursionError("maximum recursion depth exceeded"),
+    ):
+        first = reference_cache.fetch_reference(session, url, transport=transport)
+        second = reference_cache.fetch_reference(session, url, transport=transport)
+
+    assert first["error"] == "", first
+    assert first["markdown"] != "", "the extracted body was thrown away with the title"
+    assert first["title"] == "", first
+    _assert_self_classifying(first)
+    assert second["cache"] == ReferenceCacheOutcome.HIT, second
+    assert len(requests) == 1, f"the page was re-fetched {len(requests)} times instead of cached"
+
+
 def test_nested_markup_that_extracts_to_nothing_is_extraction_failed(session, resolver):
     """The same classification without any injected failure — a guard, not a
     discriminator: it passes today and must keep passing. It is here because it
@@ -1285,6 +1313,83 @@ def test_a_write_that_fails_partway_leaves_no_half_written_row(
     session.commit()
     assert CALLER_URL in _durable_urls(isolated_db), "the caller could no longer commit its work"
     assert _durable_row(isolated_db, url) == before, "a write that failed was committed anyway"
+
+
+def _seed_committed(engine, url, **fields):
+    """Put a committed row in the database without touching the caller's Session.
+
+    `_add_row` commits on the Session it is given, which would emit the very
+    `BEGIN` the tests below exist to do without.
+    """
+    with Session(engine) as other:
+        _add_row(other, url, **fields)
+
+
+def _fresh_caller_transport(site, isolated_db):
+    """`(transport, url)` for one write site, with a caller that has only read."""
+    url = "https://docs.example/guide"
+    if site == "hit":
+        _seed_committed(isolated_db, url)
+        _, transport = _transport(_refuse)
+    elif site == "revalidated":
+        _seed_committed(isolated_db, url, age_seconds=_stale_age(), etag='"v1"')
+        _, transport = _transport(lambda _r: httpx.Response(304, headers={"ETag": '"v2"'}))
+    else:
+        _, transport = _transport(_ok_html)
+    return transport, url
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_the_service_write_unwinds_from_a_caller_that_has_only_read(site, isolated_db, resolver):
+    """616 AC3 in the caller shape `get_session()` actually hands every request.
+
+    Every other test in this section arrives with a flushed row of the caller's
+    own. On pysqlite that flush is what emits the `BEGIN` a SAVEPOINT has to be
+    nested inside; without it `SAVEPOINT` *is* the outermost transaction and
+    `RELEASE` commits it. So the service commits the caller's Session again — by
+    a new route — and every one of those tests passes anyway. That is why this
+    one adds no pending work of its own: the caller only reads, exactly as
+    `db/session.py`'s `Session(engine)` hands it over.
+
+    `session.in_transaction()` cannot discriminate here, though it looks like it
+    should: it is already True at the write site, autobegun by the service's own
+    `_find_row` SELECT. A caller rollback that fails to discard the service's
+    write does discriminate, so that is the instrument.
+    """
+    transport, url = _fresh_caller_transport(site, isolated_db)
+    before = _durable_row(isolated_db, url)
+
+    with Session(isolated_db) as caller:
+        assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
+        payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        _assert_self_classifying(payload)
+        assert payload["error"] == "", payload
+        assert _get_row(caller, url) is not None, "the service's write never landed at all"
+        caller.rollback()
+
+    assert _durable_row(isolated_db, url) == before, (
+        "the service's write survived the caller's rollback — it committed the caller's Session"
+    )
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_a_read_only_caller_that_commits_still_gets_the_cache_write(site, isolated_db, resolver):
+    """The other direction, so the test above cannot be passed by writing nothing.
+
+    Same caller shape; the caller commits instead of rolling back, and the
+    service's write must then be durable.
+    """
+    transport, url = _fresh_caller_transport(site, isolated_db)
+    before = _durable_row(isolated_db, url)
+
+    with Session(isolated_db) as caller:
+        payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        _assert_self_classifying(payload)
+        caller.commit()
+
+    after = _durable_row(isolated_db, url)
+    assert after is not None, "the caller committed and the cache row is not there"
+    assert after != before, "the caller committed and nothing of the service's write landed"
 
 
 def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, resolver):

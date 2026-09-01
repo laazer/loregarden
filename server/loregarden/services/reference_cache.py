@@ -44,6 +44,9 @@ The module binds no engine and holds no module-level state — the caller's
 import ipaddress
 import logging
 import socket
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -59,6 +62,7 @@ from loregarden.models.domain.enums import (
 )
 from loregarden.models.domain.tables import ReferencePage
 from pydantic import BaseModel
+from sqlalchemy import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -231,8 +235,11 @@ def _extract_markdown(body: str, content_type: str, url: str) -> tuple[str, str]
     raises on it is caught here and reported as "nothing extracted". Letting it
     reach the AC3 boundary instead would label a hostile remote document an
     `internal_error`, telling the caller to stop retrying the URL and come fix
-    us. Both trafilatura calls are inside the handler: they parse the same
-    document, and either one raising means the same thing.
+    us. The two trafilatura calls get *separate* handlers, because they do not
+    mean the same thing: `extract` raising means there is no text, but
+    `extract_metadata` raising only means there is no title. Sharing one handler
+    threw away a body we had already extracted, so the page was never cached and
+    every call re-fetched it — an amplifier a hostile page could aim (626).
     """
     if "html" not in content_type:
         return body, ""
@@ -248,12 +255,21 @@ def _extract_markdown(body: str, content_type: str, url: str) -> tuple[str, str]
             include_comments=False,
             favor_recall=wrapped,
         )
-        metadata = trafilatura.extract_metadata(document) if markdown else None
     except Exception as exc:  # noqa: BLE001 - the page's markup, not our bug; reported below
         logger.warning("reference extraction failed for %s: %s: %s", url, type(exc).__name__, exc)
         return "", ""
     if not markdown:
         return "", ""
+    try:
+        metadata = trafilatura.extract_metadata(document)
+    except Exception as exc:  # noqa: BLE001 - a missing title is not a failed extraction
+        logger.warning(
+            "reference metadata failed for %s: %s: %s — keeping the extracted body",
+            url,
+            type(exc).__name__,
+            exc,
+        )
+        metadata = None
     title = (metadata.title if metadata is not None else None) or ""
     return markdown, title
 
@@ -495,6 +511,46 @@ def _row_payload(
 # ---------------------------------------------------------------------------
 
 
+def _driver_transaction_open(connection: Connection) -> bool:
+    """Whether the *DBAPI* connection — not SQLAlchemy — has a transaction open.
+
+    The attribute is pysqlite's, and so is the problem: it is the driver
+    SQLAlchemy runs in a mode where neither a SELECT nor a SAVEPOINT emits a
+    `BEGIN`. `db/session.py` binds SQLite everywhere, and a driver without the
+    attribute would fail loudly on this line rather than quietly commit the
+    caller's Session — the right way round for a probe this one depends on.
+    """
+    driver: sqlite3.Connection = connection.connection.driver_connection
+    return driver.in_transaction
+
+
+@contextmanager
+def _cache_write(session: Session) -> Iterator[None]:
+    """Run the cache's own writes so that only they unwind.
+
+    `session.begin_nested()` on its own is not enough, and the tests could not
+    see it. pysqlite emits no `BEGIN` for a SELECT or for `SAVEPOINT` itself, so
+    with a caller that has only read — the state `get_session()` hands every
+    request — the SAVEPOINT *is* the outermost transaction and `RELEASE` commits
+    it. That is tickets 608/610's "the module commits the caller's Session"
+    defect through a new mechanism.
+
+    `session.in_transaction()` cannot tell the two callers apart: it is already
+    True by this point, autobegun by the cache's own `_find_row` SELECT. The
+    driver connection can, so we ask it, and start the outer transaction the
+    savepoint needs when nobody else has.
+
+    We open that transaction and never end it: committing or rolling back a
+    Session we were handed is exactly what this module must not do. The caller
+    owns both ends, as it already did for a write of its own.
+    """
+    connection = session.connection()
+    if not _driver_transaction_open(connection):
+        connection.exec_driver_sql("BEGIN")
+    with session.begin_nested():
+        yield
+
+
 def _find_row(session: Session, url: str) -> ReferencePage | None:
     return session.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
 
@@ -505,7 +561,7 @@ def _is_fresh(row: ReferencePage) -> bool:
 
 
 def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> dict:
-    with session.begin_nested():
+    with _cache_write(session):
         row.hit_count += 1
         session.add(row)
         session.flush()
@@ -526,7 +582,7 @@ def _store(
     """Insert or update the cached copy. None means the write did not land."""
     target = row if row is not None else ReferencePage(url=url)
     try:
-        with session.begin_nested():
+        with _cache_write(session):
             target.title = title
             target.content_markdown = markdown
             target.content_chars = len(markdown)
@@ -562,7 +618,7 @@ def _revalidated(
             url,
             _describe(ReferenceFetchError.FETCH_ERROR, f"{url} answered 304 with nothing cached"),
         )
-    with session.begin_nested():
+    with _cache_write(session):
         if result.etag:
             row.etag = result.etag
         if result.last_modified:
