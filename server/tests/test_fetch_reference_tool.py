@@ -169,7 +169,19 @@ def _get_row(session, url):
 
 
 def _assert_kind(payload, kind: ReferenceFetchError) -> None:
+    """`error` names this failure kind — and *only* this one.
+
+    The contract is "contains", so a reason may add detail. Without the second
+    half, an implementation that concatenates every kind into one string
+    satisfies every `_assert_kind` in this file while classifying nothing.
+    """
     assert kind.value in payload["error"], payload
+    others = [
+        other.value
+        for other in ReferenceFetchError
+        if other is not kind and other.value in payload["error"]
+    ]
+    assert others == [], f"error names other kinds too: {others} — {payload}"
 
 
 def _assert_self_classifying(payload) -> None:
@@ -178,6 +190,10 @@ def _assert_self_classifying(payload) -> None:
     assert "cache" in payload, payload
     if payload["error"] == "":
         assert payload["markdown"] != "", "a success payload may never carry empty markdown"
+    elif payload["markdown"] != "":
+        # The one deliberate both-non-empty case. Any other failure that hands
+        # back a body is indistinguishable from a served-stale copy.
+        assert payload["cache"] == ReferenceCacheOutcome.STALE_ERROR, payload
 
 
 # --------------------------------------------------------------------------
@@ -289,6 +305,32 @@ def test_redirect_to_link_local_is_blocked_and_never_fetched(session, resolver):
     assert _get_row(session, "https://docs.example/a") is None
 
 
+def test_redirect_to_a_privately_resolving_host_is_blocked_and_never_fetched(session, resolver):
+    """The bypass the literal test above cannot catch.
+
+    `169.254.169.254` in a `Location` is caught by the string/`ipaddress` tier
+    alone, so a hop re-check that only re-runs *that* tier passes the test
+    above while still fetching anything with a hostname. The hop must go
+    through the whole validator, resolver included: `evil.example` looks like
+    an ordinary public name and resolves to 10.0.0.5.
+    """
+
+    def route(request):
+        if request.url.host == "docs.example":
+            return httpx.Response(302, headers={"Location": "https://evil.example/x"})
+        return _ok_html(request)
+
+    requests, transport = _transport(route)
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/a", transport=transport
+    )
+
+    assert len(requests) == 1, "the hop was fetched — the hop re-check does not resolve names"
+    _assert_kind(payload, ReferenceFetchError.BLOCKED)
+    _assert_self_classifying(payload)
+    assert _get_row(session, "https://docs.example/a") is None
+
+
 def test_relative_location_is_resolved_against_the_hop(session, resolver):
     def route(request):
         if request.url.path == "/a":
@@ -330,7 +372,10 @@ def test_redirect_loop_is_capped(session, resolver):
         )
 
     _assert_kind(payload, ReferenceFetchError.TOO_MANY_REDIRECTS)
-    assert len(requests) <= 3, "the cap did not bound the loop"
+    # Two-sided on purpose. An upper bound alone is satisfied by an
+    # implementation that reports the cap without ever making a request, which
+    # is the same payload for the opposite reason.
+    assert 2 <= len(requests) <= 3, f"the cap did not bound the loop: {len(requests)} requests"
 
 
 def test_a_redirect_without_a_content_type_is_not_unsupported(session, resolver):
@@ -549,6 +594,53 @@ def test_failure_kinds_are_reported_and_never_cached(session, resolver, kind):
     assert _get_row(session, "https://docs.example/guide") is None
 
 
+def test_content_type_is_judged_before_the_body_is_read(session, resolver):
+    """The gate sits before the body, so an unsupported type is never streamed.
+
+    Made observable by making the body also over the byte cap: an
+    implementation that reads first and classifies afterwards reports
+    `too_large`, which is a true statement about a body it should never have
+    pulled.
+    """
+    _, transport = _transport(
+        lambda _r: httpx.Response(
+            200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.7" + b"x" * 5000
+        )
+    )
+    with patch.object(settings, "reference_fetch_max_bytes", 200):
+        payload = reference_cache.fetch_reference(
+            session, "https://docs.example/guide", transport=transport
+        )
+
+    _assert_kind(payload, ReferenceFetchError.UNSUPPORTED_CONTENT_TYPE)
+    assert _get_row(session, "https://docs.example/guide") is None
+
+
+def test_a_success_payload_identifies_the_row_it_came_from(session, resolver):
+    """`url` and `fetched_at` are in `SUCCESS_KEYS`, which only proves the keys
+    exist. A caller dedupes on `url` and ages the copy by `fetched_at`, so both
+    have to carry the real values — the normalized URL, and the row's own
+    timestamp — rather than a constant."""
+    _, transport = _transport(_ok_html)
+    fresh = reference_cache.fetch_reference(
+        session, "https://Docs.Example/guide#anchor", transport=transport
+    )
+    row = _get_row(session, "https://docs.example/guide")
+
+    assert fresh["url"] == "https://docs.example/guide"
+    assert fresh["fetched_at"] is not None
+    assert row is not None
+
+    _, transport2 = _transport(_refuse)
+    hit = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport2
+    )
+    session.expire_all()
+    assert hit["cache"] == ReferenceCacheOutcome.HIT
+    assert hit["url"] == "https://docs.example/guide"
+    assert hit["fetched_at"] == _get_row(session, "https://docs.example/guide").fetched_at
+
+
 def test_an_http_error_status_is_reported_and_not_cached(session, resolver):
     _, transport = _transport(lambda _r: httpx.Response(404, headers=HTML_HEADERS, content=b"no"))
     payload = reference_cache.fetch_reference(
@@ -726,9 +818,18 @@ def test_normalization_makes_two_spellings_one_cache_row(session, resolver):
 
 
 def test_fragment_shim_keeps_a_heading_that_bare_extraction_drops():
-    """DevDocs pages start at `<h1>` with no `<body>`. Extracted raw, trafilatura
-    silently drops the heading; the shim plus `favor_recall` keeps it. This is
-    the observable difference the shim exists for."""
+    """DevDocs pages start at `<h1>` with no `<body>`. Extracted raw,
+    trafilatura silently drops the heading; the shim must keep it. That is the
+    observable difference the shim exists for, and it is all this test pins.
+
+    The *mechanism* is left to the implementer on purpose. Measured on
+    trafilatura 2.2.0: wrapping the fragment in `<html><body>` and passing
+    `favor_recall=True` does **not** keep the heading — that recipe, recorded
+    by test-design, was not verified and does not work. Wrapping in an
+    `<article>` element does, and so would prepending the extracted metadata
+    title. Either satisfies this assertion; the version-sensitive part is the
+    recipe, not the property.
+    """
     fragment = (
         "<h1>Array.prototype.map</h1>"
         "<p>The map() method creates a new array populated with the results of "
