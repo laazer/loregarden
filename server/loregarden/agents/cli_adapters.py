@@ -893,11 +893,10 @@ def build_triage_invocation(
     `stream_json` asks the CLI for NDJSON events instead of a block of text, so
     a caller reading stdout incrementally can show the agent's reasoning while
     it works. It changes what stdout looks like, not what the turn returns —
-    `extract_triage_reply` reads either. Only claude and cursor can express it;
-    for any other adapter the flag is silently a no-op, which is why callers
-    treat streaming as a bonus rather than something to depend on. (opencode
-    ignores it by streaming NDJSON either way — its text mode is decorated for a
-    terminal, not for a parser.)
+    `extract_triage_reply` reads either. Claude and Cursor use this flag for
+    partial output; Codex and opencode already emit NDJSON regardless (Codex at
+    completed-message granularity). Other adapters may treat it as a no-op, so
+    callers still treat streaming as a bonus rather than something to depend on.
 
     ``run_id`` / ``granted_tools`` matter for LM Studio only: that runner has no
     native MCP, so the subprocess needs the control-plane endpoint + tool grant.

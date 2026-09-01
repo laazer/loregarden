@@ -156,9 +156,9 @@ def run_cli_agent_turn(
 
     `thinking_sink` makes the turn visible while it runs: the CLI is asked for
     NDJSON and stdout is read as it arrives rather than in one block at the end.
-    Only claude and cursor can produce those events — for any other adapter the
-    turn runs exactly as before and the sink simply sees nothing, which is why
-    it is safe to pass one unconditionally.
+    Claude and Cursor produce token deltas; Codex produces completed message
+    items as the turn progresses. Other adapters may leave the sink empty,
+    which is why it is safe to pass one unconditionally.
     """
     repo_root = workspace_root or resolve_workspace_root(workspace)
     if not repo_root.is_dir():
