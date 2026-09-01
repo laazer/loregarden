@@ -53,11 +53,14 @@ from loregarden.services.parallel_stage import (
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
 )
+from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
+from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
 from loregarden.services.studio_routing import is_parallel_stage
+from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 #: Marks an agent run that a harness outside this process executed. Mirrors
 #: ``TERMINAL_HANDOFF_COMMAND_PREFIX``: there is no argv to record, so the
@@ -170,6 +173,55 @@ def _checked_out_run_view(
     )
 
 
+def _resumable_stage_run(session: Session, ticket: Ticket, stage_key: str) -> AgentRun | None:
+    """The run a single-agent stage is still holding, or None if it holds none.
+
+    The single-agent counterpart of ``latest_member_run``, with two conditions
+    the member lookup gets for free from its member identity.
+
+    **Only an externally-harnessed run may be adopted.** Checking a run out
+    stamps ``external_harness`` on it (``_checked_out_run_view``), and that stamp
+    is not cosmetic: it flips ``run_has_renewer`` to False, so
+    ``settle_expired_agent_runs`` stops judging the run, and it is what the
+    unscoped restart sweep exempts. Writing it onto a run this control plane
+    supervises would hand the harness a run the built-in driver is still
+    working, and remove the only two things that would ever settle it. A run
+    left RUNNING by an in-process driver is that driver's to finish or the boot
+    sweep's to reap — never this path's to adopt.
+
+    **Liveness is the codebase's existing question**, ``agent_run_lease_expired``:
+    a recorded pid that is gone settles it outright. For an external run with no
+    pid the answer is always "alive", which is the fail-closed policy that
+    predicate exists to apply — a harness reports at stage boundaries only, so
+    silence is not evidence.
+
+    **RUNNING only.** ``AWAITING_PERMISSION`` is deliberately absent rather than
+    an unreachable arm: a permission pause writes ``StageStatus.AWAITING`` at the
+    same moment it writes that run status (``permission_bridge``), so the
+    caller's ``StageStatus.RUNNING`` gate never reaches this query for a paused
+    run. It could not match one anyway — the permission bridge belongs to the
+    in-process CLI adapter, and a run with no subprocess here never enters it.
+
+    **Exactly one, or none.** A single-agent stage has one run; two in flight is
+    residue, and there is no fact in the rows that says which one the harness
+    means — a newest-wins pick with equal timestamps is arbitrary, and the loser
+    would be left RUNNING with nothing that ever settles an external run. So
+    ambiguity is not resolved here: the caller reaps and starts fresh, which is
+    what this path did before resume existed.
+    """
+    candidates = session.exec(
+        select(AgentRun).where(
+            AgentRun.ticket_id == ticket.id,
+            AgentRun.stage_key == stage_key,
+            AgentRun.status == RunStatus.RUNNING,
+            AgentRun.agent_id != TRIAGE_AGENT_ID,
+            col(AgentRun.external_harness).is_not(None),
+        )
+    ).all()
+    live = [run for run in candidates if not agent_run_lease_expired(session, run)]
+    return live[0] if len(live) == 1 else None
+
+
 def _begin_parallel_stage(
     session: Session,
     orch_run: OrchestrationRun,
@@ -195,7 +247,12 @@ def _begin_parallel_stage(
         # A fresh attempt supersedes whoever last held this stage. When resuming
         # we must not reap: the members still in flight are the ones being
         # re-served, and this reaper claims external runs when ticket-scoped.
-        fail_interrupted_runs(session, ticket_id=ticket.id, stage_key=stage_key)
+        fail_interrupted_runs(
+            session,
+            ticket_id=ticket.id,
+            stage_key=stage_key,
+            message=SUPERSEDED_RUN_MESSAGE,
+        )
 
     runs: list[AgentRun] = []
     for spec in stage_def.parallel_agents:
@@ -295,9 +352,44 @@ def begin_external_stage(
             message=_FINISHED_MESSAGE if _workflow_finished(session, ticket) else _BLOCKED_MESSAGE,
         )
 
-    stage_def = OrchestrationService(session).stage_definition(ticket, target_key)
+    orch = OrchestrationService(session)
+    stage_def = orch.stage_definition(ticket, target_key)
     if stage_def is not None and is_parallel_stage(stage_def):
         return _begin_parallel_stage(session, orch_run, ticket, stage_def, target_key)
+
+    # The same re-checkout rule the parallel path applies, for a stage that can
+    # only have one run: a stage still RUNNING is being re-served, and reaping
+    # its run would kill the work the harness is asking about and hand back a
+    # second run for a single-agent stage.
+    resumed = (
+        _resumable_stage_run(session, ticket, target_key)
+        if orch.stage_status(ticket, target_key) == StageStatus.RUNNING
+        else None
+    )
+    if resumed is not None:
+        orch_run.current_stage_key = target_key
+        session.add(orch_run)
+        session.commit()
+        return ExternalStageView(
+            stage_key=target_key,
+            stage_name=_stage_name(session, ticket, target_key),
+            runs=[_checked_out_run_view(session, orch_run, resumed, ticket)],
+        )
+
+    # Nothing to re-serve, so this is a fresh attempt and it supersedes whoever
+    # last held the stage — including a run left in flight under a stage still
+    # reading RUNNING, which is exactly the state that has no other path to
+    # settlement. The reap inside `start_run_async` would claim the same runs —
+    # it is ticket and stage scoped, which deliberately claims external runs —
+    # but blame them on a server reload that never happened. Claiming them here
+    # first says what actually took them; nothing else ever settles an external
+    # run.
+    fail_interrupted_runs(
+        session,
+        ticket_id=ticket.id,
+        stage_key=target_key,
+        message=SUPERSEDED_RUN_MESSAGE,
+    )
 
     run_svc = RunService(session)
     run = run_svc.start_stage_execution(ticket, stage_key=target_key)

@@ -17,11 +17,13 @@ No test here sleeps against the real bound. The window is passed in, and the
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 import pytest
 from loregarden.models.domain import (
     AgentRun,
+    ExternalHarness,
     QueuedRun,
     QueuePosition,
     RunStatus,
@@ -36,7 +38,9 @@ from loregarden.services.drain import (
     is_draining,
     wait_for_quiescence,
 )
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.run_service import fail_interrupted_runs
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 
@@ -197,6 +201,150 @@ def test_queued_runs_are_not_waited_for(db_session, ticket):
     db_session.commit()
 
     assert in_flight_runs(db_session) == []
+
+
+# ---- only runs this process can judge hold the window -------------------
+
+
+#: A pid the tests declare dead. `pid_alive` is patched wherever this is used, so
+#: the number never reaches the OS — asking the real kernel about an arbitrary pid
+#: is a race with pid reuse, not a test.
+_DEAD_PID = 4_242_424
+
+
+def _external_run(db_session, ticket: Ticket, code: str = "run_harness") -> AgentRun:
+    """A stage checked out to a harness in somebody else's terminal."""
+    run = _running_run(db_session, ticket, code)
+    run.external_harness = ExternalHarness.CLAUDE_CODE
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+def test_a_run_this_process_cannot_judge_is_not_waited_for(db_session, ticket):
+    """No pid here and no lease renewer: nothing about this run is ours to wait on.
+
+    `run_has_renewer` is False for an external-harness run, so its RUNNING row is
+    not evidence of anything this process is doing — and it is routinely far
+    longer-lived than the window: 97 of 128 completed external runs outran the
+    20s bound, the longest by three hours. Counting it makes every shutdown
+    spend the full timeout and then log a warning about work that was never here.
+    """
+    _external_run(db_session, ticket)
+
+    assert in_flight_runs(db_session) == []
+
+
+def test_an_external_run_alone_does_not_hold_the_window_open(db_session, ticket):
+    """The behavioural half: an idle process stays an idle process."""
+    _external_run(db_session, ticket)
+
+    report = wait_for_quiescence(timeout_seconds=5)
+
+    assert report.clean is True
+    assert report.started_with == 0
+    assert report.waited_seconds == 0.0
+
+
+def test_an_in_process_run_still_holds_the_window(db_session, ticket):
+    """The bad case must not change. Only the unjudgeable run is dropped.
+
+    A supervised run is still waited for, still counted, and still left to the
+    interruption path when the window closes — with an external run sitting
+    beside it to show the filter is about judgeability, not about draining less.
+    """
+    _running_run(db_session, ticket, "run_supervised")
+    _external_run(db_session, ticket)
+
+    report = wait_for_quiescence(timeout_seconds=0)
+
+    assert report.started_with == 1
+    assert report.remaining == 1
+    assert report.clean is False
+
+
+def test_a_handoff_run_with_a_live_pid_still_counts(db_session, ticket):
+    """A pid in this process is evidence the filter asks for.
+
+    A terminal handoff stamps the shell pid it was pasted into. It is supervised
+    either way — a handoff goes through the ordinary dispatch path, so its
+    `external_harness` is null and `run_has_renewer` is already True — so this
+    pins the pid half only for a run the renewer half would keep anyway. The
+    external-plus-pid case below is the one that separates the two rules.
+    """
+    run = _running_run(db_session, ticket, "run_handoff")
+    run.handoff_pid = os.getpid()
+    db_session.add(run)
+    db_session.commit()
+
+    assert [r.id for r in in_flight_runs(db_session)] == [run.id]
+
+
+def test_an_external_run_with_a_live_pid_here_still_counts(db_session, ticket):
+    """The rule is "no pid here AND no renewer", not "external runs do not count".
+
+    Written as a blanket `external_harness is not None` exclusion, the filter
+    drops a run whose process this machine can see — the one piece of evidence
+    that settles the question outright, and the reason `pid_alive` exists. The
+    two conditions are separate (`stage_retry_budget` spells the same predicate
+    `run_has_renewer(run) or run.handoff_pid is not None`), and a filter that
+    collapses them reads as correct against every other test in this file.
+    """
+    run = _external_run(db_session, ticket, "run_external_with_pid")
+    run.handoff_pid = os.getpid()
+    db_session.add(run)
+    db_session.commit()
+
+    assert [r.id for r in in_flight_runs(db_session)] == [run.id]
+
+
+def test_what_the_drain_leaves_behind_is_what_the_boot_sweep_will_settle(db_session, ticket):
+    """AC5 without asserting the log's copy.
+
+    The timeout warns that the runs still in flight "will be settled by the
+    interruption path". Pinning that sentence would pin prose; the claim behind
+    it is checkable — but the unscoped boot reaper exempts external-harness
+    runs, so a plain "every counted run is claimed by the sweep" is not the
+    guarantee the code can keep, and the earlier version of this test passed
+    only because it never built the corner where the two disagree.
+
+    The guarantee that is true, and the one asserted here: every counted run is
+    either claimed by the boot sweep, or has a live pid on this host — a harness
+    genuinely working, deliberately left alone, settled through the lease by
+    `settle_expired_agent_runs` once that pid goes away. Nothing is counted with
+    no path to settlement.
+
+    All four corners, since only one of them leaked: in-process (counted,
+    claimed), external with no pid (not counted), external with a live pid
+    (counted, exempt, alive), external with a dead pid — which used to be
+    counted, spending the whole window on a process that was gone and then
+    promising a sweep that exempts it.
+    """
+    supervised = OrchestrationService(db_session).start_run(ticket)
+    pidless = _external_run(db_session, ticket, "run_external_pidless")
+    dead = _external_run(db_session, ticket, "run_external_dead_pid")
+    dead.handoff_pid = _DEAD_PID
+    live = _external_run(db_session, ticket, "run_external_live_pid")
+    live.handoff_pid = os.getpid()
+    for run in (pidless, dead, live):
+        run.stage_key = supervised.stage_key
+        db_session.add(run)
+    db_session.commit()
+
+    with patch("loregarden.services.drain.pid_alive", side_effect=lambda pid: pid == os.getpid()):
+        waited_for = {r.id for r in in_flight_runs(db_session)}
+    settled = {r.id for r in fail_interrupted_runs(db_session)}
+
+    assert supervised.id in waited_for
+    assert pidless.id not in waited_for
+    assert dead.id not in waited_for, (
+        "a provably dead process held the window open, and no sweep will claim it"
+    )
+    assert waited_for - settled == {live.id}, (
+        "the drain counted a run the interruption path exempts and no live process "
+        "backs, so the timeout log promises a settlement that never comes"
+    )
 
 
 # ---- the flag must not outlive the app that set it ----------------------
