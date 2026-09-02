@@ -31,6 +31,7 @@ from loregarden.services.run_interruption import (
     STRANDED_STAGE_MESSAGE,
 )
 from loregarden.services.run_lease import (
+    AGENT_RUN_LEASE,
     SUPERVISED,
     agent_run_lease_expired,
     lease_renewal,
@@ -377,13 +378,30 @@ def settle_expired_agent_runs(
     for run in candidates:
         if not agent_run_lease_expired(session, run):
             continue
+        stamp = run.last_seen_at or run.started_at or run.created_at
         logger.warning(
             "Settling agent run %s (ticket %s): lease expired, last seen %s",
             run.run_code,
             run.ticket_id,
-            run.last_seen_at or run.started_at or run.created_at,
+            stamp,
         )
-        OrchestrationService(session).complete_run(run, status=RunStatus.FAILED, stderr=message)
+        # 625 AC3. The run row is where this gets diagnosed months later, and a
+        # bare verdict there cost three wrong diagnoses: the message said which
+        # sweep had spoken but not what it judged, so the only way to check it
+        # was to reconstruct elapsed time from two timestamps and guess at the
+        # lease. Recording the inputs makes the row self-contained — and would
+        # have shown immediately whether the run really looked unrenewed.
+        OrchestrationService(session).complete_run(
+            run,
+            status=RunStatus.FAILED,
+            stderr=(
+                f"{message}\n"
+                f"  last renewed: {stamp}\n"
+                f"  lease: {AGENT_RUN_LEASE}\n"
+                f"  external_harness: {run.external_harness.value if run.external_harness else 'none'}\n"
+                f"  handoff_pid: {run.handoff_pid if run.handoff_pid is not None else 'none'}"
+            ),
+        )
         settled.append(run)
     return settled
 
