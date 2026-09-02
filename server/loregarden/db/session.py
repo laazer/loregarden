@@ -1,4 +1,6 @@
-from collections.abc import Generator
+import sqlite3
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from loregarden.config import settings
@@ -15,7 +17,7 @@ from loregarden.services.path_resolve import (
     resolve_sqlite_path,
     sqlite_url_for_path,
 )
-from sqlalchemy import event
+from sqlalchemy import Connection, event
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -87,3 +89,59 @@ def init_db() -> None:
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session
+
+
+def driver_transaction_open(connection: Connection) -> bool:
+    """Whether the *DBAPI* connection — not SQLAlchemy — has a transaction open.
+
+    The attribute is pysqlite's, and so is the problem: it is the driver
+    SQLAlchemy runs in a mode where neither a SELECT nor a SAVEPOINT emits a
+    `BEGIN`. This module binds SQLite for the whole process, so the assumption
+    holds here by construction — and a driver without the attribute would fail
+    loudly on this line rather than quietly commit the caller's Session, which
+    is the right way round for a probe that `service_write` depends on.
+    """
+    driver: sqlite3.Connection = connection.connection.driver_connection
+    return driver.in_transaction
+
+
+@contextmanager
+def service_write(session: Session) -> Iterator[Session]:
+    """Yield the Session a service's own write should go through.
+
+    For a service handed someone else's Session that wants its write to unwind
+    independently. Two caller shapes reach such a service, and they need
+    opposite things — so this decides, rather than each service deciding again.
+
+    *A caller that has only read* — the state `get_session()` below hands every
+    request — holds no transaction of its own. Writing through its Session
+    means opening one, and a service may not end a transaction on a Session it
+    was handed (608/610), so the lock would outlive the call. SQLite locks the
+    whole *database file*, not a row, so anything slow the service does next —
+    a network fetch, most of all — runs with the control plane unwritable for
+    its duration, which is a lever a remote server should not have (638). We
+    therefore take our own connection: the lock is acquired and released inside
+    this block, the write is durable when it exits, and the caller's Session is
+    left exactly as it was found.
+
+    *A caller that is mid-write* already holds that lock because it chose to. A
+    second connection would deadlock against it, so we nest inside the caller's
+    transaction and let the caller own both ends — 616's contract, unchanged.
+    The write becomes durable when that caller commits, and its rollback
+    discards ours with its own.
+
+    `session.in_transaction()` cannot tell the two apart: it is normally True
+    by this point, autobegun by whatever the service read first, while pysqlite
+    has emitted no `BEGIN`. The driver connection can, and that is what
+    `driver_transaction_open` asks.
+
+    **The yielded Session is not always the one passed in.** Resolve rows
+    *through the yielded Session* — re-query rather than reusing an instance
+    attached to the outer one, whose identity map the writer does not share.
+    """
+    if driver_transaction_open(session.connection()):
+        with session.begin_nested():
+            yield session
+        return
+    with Session(session.get_bind()) as writer, writer.begin():
+        yield writer

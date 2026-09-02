@@ -44,15 +44,13 @@ The module binds no engine and holds no module-level state — the caller's
 import ipaddress
 import logging
 import socket
-import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 import trafilatura
 from loregarden.config import settings
+from loregarden.db.session import service_write
 from loregarden.models.domain.enums import (
     ReferenceCacheOutcome,
     ReferenceFetchError,
@@ -62,7 +60,6 @@ from loregarden.models.domain.enums import (
 )
 from loregarden.models.domain.tables import ReferencePage
 from pydantic import BaseModel
-from sqlalchemy import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -511,56 +508,6 @@ def _row_payload(
 # ---------------------------------------------------------------------------
 
 
-def _driver_transaction_open(connection: Connection) -> bool:
-    """Whether the *DBAPI* connection — not SQLAlchemy — has a transaction open.
-
-    The attribute is pysqlite's, and so is the problem: it is the driver
-    SQLAlchemy runs in a mode where neither a SELECT nor a SAVEPOINT emits a
-    `BEGIN`. `db/session.py` binds SQLite everywhere, and a driver without the
-    attribute would fail loudly on this line rather than quietly commit the
-    caller's Session — the right way round for a probe this one depends on.
-    """
-    driver: sqlite3.Connection = connection.connection.driver_connection
-    return driver.in_transaction
-
-
-@contextmanager
-def _cache_write(session: Session) -> Iterator[Session]:
-    """Yield the Session the cache's own write should go through.
-
-    Two callers reach this module, and they need opposite things.
-
-    A caller that has only read — the state `db/session.py`'s `get_session()`
-    hands every request — holds no transaction of its own. Writing through its
-    Session means opening one, and this module may not end a transaction on a
-    Session it was handed (608/610), so the write lock would outlive the call.
-    SQLite locks the whole *database file*, so the next fetch on that Session
-    then does its network I/O with the control plane unwritable for as long as
-    the remote takes to answer. We therefore take our own connection: the lock
-    is acquired and released inside this block, and the caller's Session is
-    left exactly as we found it.
-
-    A caller that is mid-write already holds that lock because it chose to. A
-    second connection would deadlock against it, so we nest inside the caller's
-    transaction and let the caller own both ends — 616's contract, unchanged.
-
-    `session.in_transaction()` cannot tell the two apart: it is already True by
-    this point, autobegun by the cache's own `_find_row` SELECT. pysqlite emits
-    no `BEGIN` for a SELECT, so the driver connection can, and that is what
-    `_driver_transaction_open` asks.
-
-    The yielded Session is not always the one passed in, so a caller of this
-    context manager must resolve its rows *through the yielded Session* rather
-    than reuse an instance attached to the outer one.
-    """
-    if _driver_transaction_open(session.connection()):
-        with session.begin_nested():
-            yield session
-        return
-    with Session(session.get_bind()) as writer, writer.begin():
-        yield writer
-
-
 def _find_row(session: Session, url: str) -> ReferencePage | None:
     return session.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
 
@@ -585,7 +532,7 @@ def _is_fresh(row: ReferencePage) -> bool:
 
 
 def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> dict:
-    with _cache_write(session) as writer:
+    with service_write(session) as writer:
         counted = _find_row(writer, row.url)
         if counted is None:
             # The row we are serving was deleted between our read and our write.
@@ -611,7 +558,7 @@ def _store(
 ) -> ReferencePage | None:
     """Insert or update the cached copy. None means the write did not land."""
     try:
-        with _cache_write(session) as writer:
+        with service_write(session) as writer:
             target = _find_row(writer, url) or ReferencePage(url=url)
             target.title = title
             target.content_markdown = markdown
@@ -648,7 +595,7 @@ def _revalidated(
             url,
             _describe(ReferenceFetchError.FETCH_ERROR, f"{url} answered 304 with nothing cached"),
         )
-    with _cache_write(session) as writer:
+    with service_write(session) as writer:
         aged = _find_row(writer, url)
         if aged is None:
             # Deleted under us. The stored body we already hold still stands.
