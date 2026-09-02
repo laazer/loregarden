@@ -339,9 +339,9 @@ def test_a_second_fetch_on_one_session_does_not_lock_the_database(site, entry_po
     with Session(isolated_db) as caller:
         assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
         first = _call(entry_point, caller, first_url, transport=first_transport)
-        assert first["error"] == "", first
+        assert first.error == "", first
         second = _call(entry_point, caller, second_url, transport=second_transport)
-        assert second["error"] == "", second
+        assert second.error == "", second
 
         assert observations, "the second fetch never reached the network — nothing was measured"
         assert observations == [None] * len(observations), (
@@ -377,7 +377,7 @@ def test_the_very_first_fetch_holds_no_lock_across_its_own_read(entry_point, iso
     with Session(isolated_db) as caller:
         payload = _call(entry_point, caller, url, transport=transport)
 
-    assert payload["error"] == "", payload
+    assert payload.error == "", payload
     assert observations == [None], f"the first fetch's own read was locked: {observations}"
 
 
@@ -400,12 +400,13 @@ def test_a_redirect_hop_does_not_lock_the_database_either(isolated_db):
     observations, transport = _probing_transport(probe, route, suffix="hop")
 
     with Session(isolated_db) as caller:
-        assert _call("fetch_reference", caller, first_url, transport=first_transport)["error"] == ""
+        primed = _call("fetch_reference", caller, first_url, transport=first_transport)
+        assert primed.error == ""
         payload = reference_cache.fetch_reference(
             caller, _url(SECOND_HOST, "redirected"), transport=transport
         )
 
-    assert payload["error"] == "", payload
+    assert payload.error == "", payload
     assert len(observations) == 2, f"the redirect loop did not run both hops: {observations}"
     assert observations == [None, None], f"a hop was fetched under a write lock: {observations}"
 
@@ -438,7 +439,7 @@ def test_a_read_only_caller_is_not_left_in_a_transaction(site, entry_point, isol
 
     with Session(isolated_db) as caller:
         payload = _call(entry_point, caller, url, transport=transport)
-        assert payload["error"] == "", payload
+        assert payload.error == "", payload
 
         assert not _driver_transaction_open(caller), (
             f"a {site} write left an open transaction on the caller's connection"
@@ -470,7 +471,7 @@ def test_a_blocked_url_leaves_no_transaction_behind(entry_point, isolated_db):
             "http://169.254.169.254/latest/meta-data",
             transport=httpx.MockTransport(_refuse),
         )
-        assert payload["error"] != "", payload
+        assert payload.error != "", payload
         assert not _driver_transaction_open(caller), "a blocked URL left a transaction open"
         assert _write_from_another_connection(probe, "blocked") is None, (
             "a blocked URL left the database locked"
@@ -492,7 +493,7 @@ def test_a_hit_that_serves_a_cached_page_still_records_its_hit(isolated_db):
         payload = reference_cache.fetch_reference(
             caller, url, transport=httpx.MockTransport(_refuse)
         )
-        assert payload["cache"] == ReferenceCacheOutcome.HIT, payload
+        assert payload.cache == ReferenceCacheOutcome.HIT, payload
         caller.commit()
 
     with Session(isolated_db) as other:
@@ -530,7 +531,7 @@ def test_a_caller_with_pending_work_keeps_both_ends_of_its_transaction(
         outer = caller.get_transaction()
 
         payload = _call(entry_point, caller, url, transport=transport)
-        assert payload["error"] == "", payload
+        assert payload.error == "", payload
 
         assert CALLER_URL not in _durable_urls(isolated_db), (
             "the caller's work was committed for it"
@@ -587,7 +588,7 @@ def test_the_service_keeps_its_rows_out_of_a_read_only_callers_unit_of_work(
     with Session(isolated_db) as caller, patch.object(Session, "flush", new=flush):
         payload = _call(entry_point, caller, url, transport=transport)
 
-    assert payload["error"] == "", payload
+    assert payload.error == "", payload
     assert flushed_for_caller == [], (
         f"the service asked the caller's Session to flush its own rows: {flushed_for_caller}"
     )

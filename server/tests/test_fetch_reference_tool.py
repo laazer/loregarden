@@ -46,6 +46,7 @@ Contract this file pins, beyond the ticket description:
 """
 
 import ast
+import json
 import socket
 from contextlib import nullcontext
 from datetime import timedelta
@@ -186,25 +187,28 @@ def _assert_kind(payload, kind: ReferenceFetchError) -> None:
     half, an implementation that concatenates every kind into one string
     satisfies every `_assert_kind` in this file while classifying nothing.
     """
-    assert kind.value in payload["error"], payload
+    assert kind.value in payload.error, payload
     others = [
         other.value
         for other in ReferenceFetchError
-        if other is not kind and other.value in payload["error"]
+        if other is not kind and other.value in payload.error
     ]
     assert others == [], f"error names other kinds too: {others} — {payload}"
 
 
 def _assert_self_classifying(payload) -> None:
-    """Every payload, success or failure, carries both discriminators."""
-    assert "error" in payload, payload
-    assert "cache" in payload, payload
-    if payload["error"] == "":
-        assert payload["markdown"] != "", "a success payload may never carry empty markdown"
-    elif payload["markdown"] != "":
+    """Every payload, success or failure, carries both discriminators.
+
+    Their *presence* stopped being an assertion at 607 and became the model's
+    job — which is the point of having one. What is left to check is that the
+    two stay meaningful together, which no type can express.
+    """
+    if payload.error == "":
+        assert payload.markdown != "", "a success payload may never carry empty markdown"
+    elif payload.markdown != "":
         # The one deliberate both-non-empty case. Any other failure that hands
         # back a body is indistinguishable from a served-stale copy.
-        assert payload["cache"] == ReferenceCacheOutcome.STALE_ERROR, payload
+        assert payload.cache == ReferenceCacheOutcome.STALE_ERROR, payload
 
 
 # --------------------------------------------------------------------------
@@ -357,7 +361,7 @@ def test_relative_location_is_resolved_against_the_hop(session, resolver):
         "https://docs.example/a",
         "https://docs.example/b",
     ]
-    assert payload["error"] == ""
+    assert payload.error == ""
 
 
 def test_missing_location_on_a_redirect_is_an_error_not_a_crash(session, resolver):
@@ -365,7 +369,7 @@ def test_missing_location_on_a_redirect_is_an_error_not_a_crash(session, resolve
     payload = reference_cache.fetch_reference(
         session, "https://docs.example/a", transport=transport
     )
-    assert payload["error"] != ""
+    assert payload.error != ""
     _assert_self_classifying(payload)
 
 
@@ -402,7 +406,7 @@ def test_a_redirect_without_a_content_type_is_not_unsupported(session, resolver)
     payload = reference_cache.fetch_reference(
         session, "https://docs.example/a", transport=transport
     )
-    assert payload["error"] == ""
+    assert payload.error == ""
 
 
 def test_ssrf_is_checked_before_any_request_is_made(session, no_resolve):
@@ -439,15 +443,15 @@ def test_miss_fetches_extracts_and_caches(session, resolver):
     )
 
     assert len(requests) == 1
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert payload["error"] == ""
-    assert "map()" in payload["markdown"]
-    assert payload["title"] == "Array.prototype.map"
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert payload.error == ""
+    assert "map()" in payload.markdown
+    assert payload.title == "Array.prototype.map"
 
     row = _get_row(session, "https://docs.example/guide")
     assert row is not None
-    assert row.content_markdown == payload["markdown"]
-    assert row.content_chars == len(payload["markdown"])
+    assert row.content_markdown == payload.markdown
+    assert row.content_chars == len(payload.markdown)
 
 
 def test_fresh_row_is_a_hit_and_skips_the_network(session, resolver):
@@ -458,9 +462,9 @@ def test_fresh_row_is_a_hit_and_skips_the_network(session, resolver):
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert payload["cache"] == ReferenceCacheOutcome.HIT
-    assert payload["markdown"] == "# cached\n\nstored body text."
-    assert payload["error"] == ""
+    assert payload.cache == ReferenceCacheOutcome.HIT
+    assert payload.markdown == "# cached\n\nstored body text."
+    assert payload.error == ""
     session.expire_all()
     assert _get_row(session, "https://docs.example/guide").hit_count == 1
 
@@ -484,9 +488,9 @@ def test_stale_row_revalidates_with_conditional_headers(session, resolver):
     assert len(requests) == 1
     assert requests[0].headers.get("if-none-match") == '"v1"'
     assert requests[0].headers.get("if-modified-since") == "Wed, 21 Oct 2026 07:28:00 GMT"
-    assert payload["cache"] == ReferenceCacheOutcome.REVALIDATED
-    assert payload["error"] == ""
-    assert payload["markdown"] == before_body
+    assert payload.cache == ReferenceCacheOutcome.REVALIDATED
+    assert payload.error == ""
+    assert payload.markdown == before_body
 
     session.expire_all()
     fresh = _get_row(session, "https://docs.example/guide")
@@ -502,8 +506,8 @@ def test_stale_row_with_a_200_is_re_extracted_and_updated(session, resolver):
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert "map()" in payload["markdown"]
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert "map()" in payload.markdown
     session.expire_all()
     assert "map()" in _get_row(session, "https://docs.example/guide").content_markdown
 
@@ -519,9 +523,9 @@ def test_stale_row_survives_a_transport_failure(session, resolver):
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert payload["cache"] == ReferenceCacheOutcome.STALE_ERROR
-    assert payload["markdown"] == "# cached\n\nstored body text."
-    assert payload["error"] != ""
+    assert payload.cache == ReferenceCacheOutcome.STALE_ERROR
+    assert payload.markdown == "# cached\n\nstored body text."
+    assert payload.error != ""
 
 
 def test_refresh_forces_a_fetch_past_a_fresh_row(session, resolver):
@@ -533,7 +537,7 @@ def test_refresh_forces_a_fetch_past_a_fresh_row(session, resolver):
     )
 
     assert len(requests) == 1
-    assert "map()" in payload["markdown"]
+    assert "map()" in payload.markdown
 
 
 def test_max_chars_truncates_the_payload_and_never_the_row(session, resolver):
@@ -548,10 +552,10 @@ def test_max_chars_truncates_the_payload_and_never_the_row(session, resolver):
         session, "https://docs.example/guide", max_chars=40, transport=transport2
     )
 
-    assert len(capped["markdown"]) <= 40
-    assert capped["truncated"] is True
-    assert capped["total_chars"] == full["total_chars"]
-    assert full["truncated"] is False
+    assert len(capped.markdown) <= 40
+    assert capped.truncated is True
+    assert capped.total_chars == full.total_chars
+    assert full.truncated is False
     session.expire_all()
     assert _get_row(session, "https://docs.example/guide").content_markdown == stored
 
@@ -601,7 +605,7 @@ def test_failure_kinds_are_reported_and_never_cached(session, resolver, kind):
 
     _assert_kind(payload, kind)
     _assert_self_classifying(payload)
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
+    assert payload.cache == ReferenceCacheOutcome.MISS
     assert _get_row(session, "https://docs.example/guide") is None
 
 
@@ -638,8 +642,8 @@ def test_a_success_payload_identifies_the_row_it_came_from(session, resolver):
     )
     row = _get_row(session, "https://docs.example/guide")
 
-    assert fresh["url"] == "https://docs.example/guide"
-    assert fresh["fetched_at"] is not None
+    assert fresh.url == "https://docs.example/guide"
+    assert fresh.fetched_at is not None
     assert row is not None
 
     _, transport2 = _transport(_refuse)
@@ -647,9 +651,9 @@ def test_a_success_payload_identifies_the_row_it_came_from(session, resolver):
         session, "https://docs.example/guide", transport=transport2
     )
     session.expire_all()
-    assert hit["cache"] == ReferenceCacheOutcome.HIT
-    assert hit["url"] == "https://docs.example/guide"
-    assert hit["fetched_at"] == _get_row(session, "https://docs.example/guide").fetched_at
+    assert hit.cache == ReferenceCacheOutcome.HIT
+    assert hit.url == "https://docs.example/guide"
+    assert hit.fetched_at == _get_row(session, "https://docs.example/guide").fetched_at
 
 
 def test_an_http_error_status_is_reported_and_not_cached(session, resolver):
@@ -658,7 +662,7 @@ def test_an_http_error_status_is_reported_and_not_cached(session, resolver):
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert "404" in payload["error"]
+    assert "404" in payload.error
     _assert_self_classifying(payload)
     assert _get_row(session, "https://docs.example/guide") is None
 
@@ -671,7 +675,7 @@ def test_a_timeout_is_an_error_payload(session, resolver):
     payload = reference_cache.fetch_reference(
         session, "https://docs.example/guide", transport=transport
     )
-    assert payload["error"] != ""
+    assert payload.error != ""
     _assert_self_classifying(payload)
 
 
@@ -692,11 +696,46 @@ SUCCESS_KEYS = {
 
 
 def test_every_success_payload_carries_the_documented_keys(session, resolver):
+    """Asserted on the *serialized* envelope since 607, not on the object.
+
+    `set(model)` iterates a Pydantic model's fields, so checking the object
+    would only restate its class definition. The dict a caller actually
+    receives is the thing the documented keys are a promise about.
+    """
     _, transport = _transport(_ok_html)
     payload = reference_cache.fetch_reference(
         session, "https://docs.example/guide", transport=transport
     )
-    assert SUCCESS_KEYS <= set(payload)
+    assert SUCCESS_KEYS <= set(payload.model_dump(mode="json"))
+
+
+def test_a_success_payload_survives_json_dumps(session, resolver):
+    """607's reason for existing, on the outcome that actually broke.
+
+    A *failure* payload has `fetched_at=None` and serialized fine before this
+    ticket, so a test that reached for the convenient one would have passed
+    against the unfixed module. Only a success carries a real datetime, which
+    is what `json.dumps` refused — the exact call 174's MCP tool has to make.
+    """
+    _, transport = _transport(_ok_html)
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport
+    )
+
+    assert payload.fetched_at is not None, "not the outcome under test — no datetime present"
+    with pytest.raises(TypeError, match="datetime"):
+        # The defect itself, still reachable: the field really is a datetime, so
+        # `mode="json"` below is doing the work rather than the test passing on a
+        # value that was already a string.
+        json.dumps(payload.model_dump())
+
+    restored = json.loads(json.dumps(payload.model_dump(mode="json")))
+
+    assert restored["cache"] == ReferenceCacheOutcome.HIT.value or restored["cache"] == "miss"
+    assert isinstance(restored["fetched_at"], str), (  # py-org: allow-isinstance
+        "fetched_at did not survive as a JSON scalar"
+    )
+    assert restored["markdown"] == payload.markdown
 
 
 def test_stale_error_is_the_only_payload_with_both_a_body_and_an_error(session, resolver):
@@ -716,10 +755,10 @@ def test_stale_error_is_the_only_payload_with_both_a_body_and_an_error(session, 
         session, "https://docs.example/fresh", transport=transport2
     )
 
-    assert stale["markdown"] != "" and stale["error"] != ""
-    assert stale["cache"] == ReferenceCacheOutcome.STALE_ERROR
-    assert hard["markdown"] == "" and hard["error"] != ""
-    assert hard["cache"] != ReferenceCacheOutcome.STALE_ERROR
+    assert stale.markdown != "" and stale.error != ""
+    assert stale.cache == ReferenceCacheOutcome.STALE_ERROR
+    assert hard.markdown == "" and hard.error != ""
+    assert hard.cache != ReferenceCacheOutcome.STALE_ERROR
 
 
 def test_no_public_entry_point_raises(session, resolver):
@@ -787,11 +826,11 @@ def test_the_payload_for_a_bad_url_names_the_type_and_keeps_url_a_string(bad_url
     """
     payload = reference_cache.fetch_reference(session, bad_url)
 
-    assert isinstance(payload["url"], str), (  # py-org: allow-isinstance
+    assert isinstance(payload.url, str), (  # py-org: allow-isinstance
         f"url came back as {type(payload['url']).__name__}, not a string"
     )
-    assert type(bad_url).__name__ in payload["url"], payload
-    assert type(bad_url).__name__ in payload["error"], payload
+    assert type(bad_url).__name__ in payload.url, payload
+    assert type(bad_url).__name__ in payload.error, payload
 
 
 @pytest.mark.parametrize("bad_types", [None, 42], ids=["none", "int"])
@@ -857,9 +896,9 @@ def test_a_charset_the_remote_invented_is_ignored_not_raised(session, resolver):
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert payload["error"] == "", payload
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert "map() method" in payload["markdown"]
+    assert payload.error == "", payload
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert "map() method" in payload.markdown
     _assert_self_classifying(payload)
 
 
@@ -878,8 +917,8 @@ def test_a_charset_naming_a_non_text_codec_is_ignored_not_raised(session, resolv
         session, "https://docs.example/guide", transport=transport
     )
 
-    assert payload["error"] == "", payload
-    assert "map() method" in payload["markdown"]
+    assert payload.error == "", payload
+    assert "map() method" in payload.markdown
 
 
 def test_a_non_httpx_exception_mid_body_becomes_an_internal_error_payload(session, resolver):
@@ -897,8 +936,8 @@ def test_a_non_httpx_exception_mid_body_becomes_an_internal_error_payload(sessio
     )
 
     _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert payload["markdown"] == ""
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert payload.markdown == ""
     assert _get_row(session, "https://docs.example/guide") is None
     _assert_self_classifying(payload)
 
@@ -924,8 +963,8 @@ def test_a_non_httpx_exception_mid_body_still_serves_a_stale_copy(session, resol
         session, "https://docs.example/stale", transport=transport
     )
 
-    assert payload["cache"] == ReferenceCacheOutcome.STALE_ERROR
-    assert payload["markdown"] == "# cached\n\nstored body text."
+    assert payload.cache == ReferenceCacheOutcome.STALE_ERROR
+    assert payload.markdown == "# cached\n\nstored body text."
     _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
     _assert_self_classifying(payload)
 
@@ -950,8 +989,8 @@ def test_a_failing_write_becomes_an_internal_error_payload(session, resolver):
         payload = reference_cache.fetch_reference(session, url, transport=transport)
 
     _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert payload["markdown"] == ""
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert payload.markdown == ""
     _assert_self_classifying(payload)
 
 
@@ -972,7 +1011,7 @@ def test_an_internal_error_is_distinguishable_from_a_remote_failure(session, res
     internal = reference_cache.fetch_reference(session, "https://docs.example/a", transport=ours)
     remote = reference_cache.fetch_reference(session, "https://docs.example/b", transport=theirs)
 
-    assert internal["error"] != remote["error"]
+    assert internal.error != remote.error
     _assert_kind(internal, ReferenceFetchError.INTERNAL_ERROR)
     _assert_kind(remote, ReferenceFetchError.FETCH_ERROR)
 
@@ -996,8 +1035,8 @@ def test_fetch_cached_text_stores_the_raw_body_without_extraction(session, resol
         transport=transport,
     )
 
-    assert payload["error"] == ""
-    assert payload["markdown"] == body.decode()
+    assert payload.error == ""
+    assert payload.markdown == body.decode()
     row = _get_row(session, "https://docs.example/docs.json")
     assert row.kind == ReferencePageKind.CATALOG
     assert row.content_markdown == body.decode()
@@ -1027,8 +1066,8 @@ def test_fetch_cached_text_serves_a_fresh_row_without_the_network(session, resol
         accept_types=("application/json",),
         transport=transport,
     )
-    assert payload["cache"] == ReferenceCacheOutcome.HIT
-    assert payload["markdown"] == '{"entries": []}'
+    assert payload.cache == ReferenceCacheOutcome.HIT
+    assert payload.markdown == '{"entries": []}'
 
 
 # --------------------------------------------------------------------------
@@ -1056,7 +1095,7 @@ def test_normalization_makes_two_spellings_one_cache_row(session, resolver):
         session, "https://Docs.Example/guide#anchor", transport=transport
     )
 
-    assert second["cache"] == ReferenceCacheOutcome.HIT
+    assert second.cache == ReferenceCacheOutcome.HIT
     assert len(requests) == 1
     assert len(session.exec(select(ReferencePage)).all()) == 1
 
@@ -1257,8 +1296,8 @@ def test_markup_that_makes_extraction_raise_is_extraction_failed(session, resolv
         )
 
     _assert_kind(payload, ReferenceFetchError.EXTRACTION_FAILED)
-    assert payload["cache"] == ReferenceCacheOutcome.MISS
-    assert payload["markdown"] == ""
+    assert payload.cache == ReferenceCacheOutcome.MISS
+    assert payload.markdown == ""
     assert _get_row(session, "https://docs.example/guide") is None, "an unreadable page was cached"
     _assert_self_classifying(payload)
 
@@ -1283,11 +1322,11 @@ def test_a_title_we_could_not_read_does_not_throw_away_the_body(session, resolve
         first = reference_cache.fetch_reference(session, url, transport=transport)
         second = reference_cache.fetch_reference(session, url, transport=transport)
 
-    assert first["error"] == "", first
-    assert first["markdown"] != "", "the extracted body was thrown away with the title"
-    assert first["title"] == "", first
+    assert first.error == "", first
+    assert first.markdown != "", "the extracted body was thrown away with the title"
+    assert first.title == "", first
     _assert_self_classifying(first)
-    assert second["cache"] == ReferenceCacheOutcome.HIT, second
+    assert second.cache == ReferenceCacheOutcome.HIT, second
     assert len(requests) == 1, f"the page was re-fetched {len(requests)} times instead of cached"
 
 
@@ -1463,7 +1502,7 @@ def test_a_read_only_callers_rollback_cannot_destroy_the_cache_write(site, isola
             "the service ended the caller's transaction — it wrote through the caller's Session"
         )
         _assert_self_classifying(payload)
-        assert payload["error"] == "", payload
+        assert payload.error == "", payload
         assert _get_row(caller, url) is not None, "the service's write never landed at all"
         caller.rollback()
 
@@ -1508,7 +1547,7 @@ def test_a_get_session_shaped_caller_keeps_its_page_after_close(site, isolated_d
         assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
         payload = reference_cache.fetch_reference(caller, url, transport=transport)
         _assert_self_classifying(payload)
-        assert payload["error"] == "", payload
+        assert payload.error == "", payload
     # __exit__ closed it. No commit was made, and none should have been needed.
 
     after = _durable_row(isolated_db, url)
@@ -1577,8 +1616,8 @@ def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, r
         payload = reference_cache.fetch_reference(session, url, transport=transport)
 
     _assert_self_classifying(payload)
-    assert ReferenceFetchError.INTERNAL_ERROR.value not in payload["error"], payload
-    assert payload["markdown"] == winner_markdown, "the loser did not re-read the kept row"
+    assert ReferenceFetchError.INTERNAL_ERROR.value not in payload.error, payload
+    assert payload.markdown == winner_markdown, "the loser did not re-read the kept row"
     assert session.get_transaction() is outer, "the caller's transaction was ended"
     assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
 
