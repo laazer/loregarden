@@ -36,7 +36,9 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
       kind: "string",
       label: "URL",
       default: "",
-      help: "An https page, or an http one on localhost. Anything else is refused.",
+      help:
+        "An https page, or an http one on localhost. Many sites — Google among " +
+        "them — refuse to be embedded at all; the pane offers to open those outside.",
     },
   ],
   parseSettings: (raw) => ({ url: typeof raw.url === "string" ? raw.url : "" }),

@@ -1,0 +1,50 @@
+/*
+ * The bar above an embedded page.
+ *
+ * It is always there, not only on failure: whether a frame was refused is not
+ * knowable from inside the app — the origin boundary hides a page that loaded
+ * exactly as it hides one that did not — so a bar that appeared "on error"
+ * would be guessing. This one states the URL and offers the way out, which is
+ * the right answer in every case.
+ *
+ * No fixed heights: `containerPrimitives.smallSize` scans this directory, and a
+ * pane is whatever size the grid made it.
+ */
+
+.web-embed-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
+  padding: 4px 6px 4px 8px;
+  border-bottom: 1px solid var(--bd2);
+  background: var(--bg2);
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.web-embed-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+.web-embed-open {
+  flex: none;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--txm);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.web-embed-open:hover {
+  color: var(--txh);
+  border-color: var(--bd);
+}
