@@ -37,6 +37,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import { baxterChatSessionsKey } from "./useBaxterChatSession";
 import { TICKET_STATE_LABELS } from "../lib/ticketStates";
 import { useQueueLanes } from "./useQueueLanes";
 import type { ChoiceSource } from "../components/views/primitives/types";
@@ -102,6 +103,14 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
   // opening this form costs nothing when a lane is already on screen.
   const lanesQuery = useQueueLanes(source === "lane");
 
+  const sessions = useQuery({
+    // The same key the chat page's archive reads, so choosing a thread here
+    // costs nothing when the archive is already loaded.
+    queryKey: baxterChatSessionsKey(workspaceSlug),
+    queryFn: () => api.baxterChatSessions(workspaceSlug),
+    enabled: source === "chat_session" && workspaceSlug !== "",
+  });
+
   const tickets = useQuery({
     // Scoped to the workspace the chrome is showing, which is the one the view
     // belongs to. An unscoped list would offer tickets from workspaces this
@@ -154,6 +163,18 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
       mode: "select",
       isLoading: lanesQuery.isLoading,
       isUnavailable: lanesQuery.isError || lanesQuery.lanes.length === 0,
+    },
+    chat_session: {
+      options: (sessions.data ?? []).map((session) => ({
+        value: session.id,
+        // A thread with no title yet is named by when it started, because "" in
+        // a dropdown of five conversations is indistinguishable from the rest.
+        label: session.title === "" ? `Untitled · ${session.updated_at}` : session.title,
+      })),
+      mode: "select",
+      isLoading: workspaceSlug !== "" && sessions.isLoading,
+      isUnavailable:
+        workspaceSlug === "" || sessions.isError || (sessions.data ?? []).length === 0,
     },
     ticket: {
       options: (tickets.data ?? []).map(ticketChoice),

@@ -53,10 +53,38 @@ function baxterChatSessionKey(slug: string, sessionId: string) {
  * mint an empty row in the archive every time, and an archive full of blank
  * conversations is worse than none.
  */
+/**
+ * The Home conversation, on the session id the app-wide store holds.
+ *
+ * The store is a single id, which is right for the pages: Home and the chat
+ * page are two views of *the* conversation, and opening a thread in one should
+ * open it in the other. It is wrong for anything that wants a conversation of
+ * its own — two chat panes in a view would share one thread, and each would
+ * switch the other's. Those callers use `useBaxterChatSessionAt` and hold the
+ * id themselves.
+ */
 export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBinding {
-  const qc = useQueryClient();
   const sessionId = useUiStore((s) => s.baxterChatSessionId);
   const setSessionId = useUiStore((s) => s.setBaxterChatSessionId);
+  return useBaxterChatSessionAt(workspaceSlug, sessionId, setSessionId);
+}
+
+/**
+ * The same conversation, with the caller deciding which one it is.
+ *
+ * Split out rather than adding an optional argument, because the store read is
+ * a *hook* — an optional parameter would still call it, and a container
+ * primitive may not touch `state/` at all: a zustand read outside a provider
+ * returns a value instead of throwing, so the coupling would be invisible.
+ * Everything below this line was already written in terms of `sessionId` and
+ * `setSessionId`; only where they come from has changed.
+ */
+export function useBaxterChatSessionAt(
+  workspaceSlug: string,
+  sessionId: string,
+  setSessionId: (id: string) => void,
+): BaxterChatSessionBinding {
+  const qc = useQueryClient();
 
   const enabled = Boolean(workspaceSlug && sessionId);
   const queryKey = useMemo(

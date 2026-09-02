@@ -50,7 +50,7 @@ function EmptyContainerPrompt({
         This pane has no contents yet. Pick what it should hold — you can change it later.
       </p>
       <button type="button" className="btn-primary btn-compact" onClick={() => setPicking(true)}>
-        Choose a primitive
+        Choose a widget
       </button>
       {/* The prompt stays put behind the dialog rather than being replaced by
           the list (557). The list is now long enough that an empty pane could
@@ -58,7 +58,7 @@ function EmptyContainerPrompt({
           for. */}
       {picking ? (
         <PrimitivePickerModal
-          legend="Choose a primitive"
+          legend="Choose a widget"
           onClose={() => setPicking(false)}
           onPick={(primitiveId) => {
             setPicking(false);

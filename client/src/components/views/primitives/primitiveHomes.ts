@@ -51,6 +51,7 @@ export const PRIMITIVE_HOME_IDS = [
   "chat_branch_history",
   "chat_commit",
   "web_embed",
+  "chat_session",
 ] as const;
 
 export type HomedPrimitiveId = (typeof PRIMITIVE_HOME_IDS)[number];
@@ -77,6 +78,10 @@ export const PRIMITIVE_HOMES: Record<HomedPrimitiveId, PrimitiveHome | null> = {
 
   chat_branch_history: { path: "/branch-triage", surface: "Branch Triage" },
   chat_commit: { path: "/branch-triage", surface: "Branch Triage" },
+
+  // The conversation the chat page is showing. Home holds one too, but the
+  // chat page is where a thread is chosen, which is what the pane needs.
+  chat_session: { path: "/chat", surface: "Chat" },
 
   // Points at an arbitrary URL. No page in this app is the page about that URL,
   // so there is nowhere to offer it from — which is a decision, recorded.
