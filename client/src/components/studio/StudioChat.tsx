@@ -327,6 +327,7 @@ export function StudioChatComposer({
   showShortcut,
   iconOnlySend,
   commands,
+  dense = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -355,6 +356,16 @@ export function StudioChatComposer({
    * whose entries would do nothing.
    */
   commands?: ComposerCommandsBinding;
+  /**
+   * Shrink the box for a container that has little height to give.
+   *
+   * Orthogonal to `variant`, which decides *shape* — how the send control
+   * reads, how many rows the box opens on. This decides size, and the two are
+   * independent: a pane wants the dock's round send and one row, at two thirds
+   * the height. A caller that needed both would otherwise have to reach into
+   * `.lg-chat-composer` from its own stylesheet, which is how this started.
+   */
+  dense?: boolean;
 }) {
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
   const canSend = value.trim().length > 0 && !isSending && !disabled;
@@ -381,8 +392,11 @@ export function StudioChatComposer({
       className={[
         "lg-chat-composer-wrap",
         `lg-chat-composer-wrap--${variant}`,
+        dense ? "lg-chat-composer-wrap--dense" : "",
         "ticket-studio-composer-wrap",
-      ].join(" ")}
+      ]
+        .filter((name) => name !== "")
+        .join(" ")}
     >
       {commands ? <ComposerNotes commands={commands} /> : null}
       <div className="lg-chat-composer">

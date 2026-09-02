@@ -29,23 +29,11 @@
 }
 
 /*
- * A short pane is mostly composer without this.
- *
- * Measured in a browser, which is the only place it is visible: at a pane 179px
- * tall the thread had 45px and the composer 110px — one message and a text box.
- * The composer's dock styling is sized for a page footer, where 110px is right;
- * in a pane it has to yield. Relative units, so the box still grows with the
- * type scale rather than being pinned to a number.
+ * The pane's own spacing at `compact`. The composer's size is the composer's:
+ * it takes `dense` and owns the numbers, rather than this file reaching into
+ * `.lg-chat-composer` from outside — which is what the first version did.
  */
 [data-pane-tier="compact"] .chat-session-pane {
   gap: 4px;
   padding: 4px;
-}
-
-[data-pane-tier="compact"] .chat-session-pane .lg-chat-composer {
-  padding: 4px 6px;
-}
-
-[data-pane-tier="compact"] .chat-session-pane .lg-chat-composer-input {
-  min-height: 2.1em;
 }
