@@ -94,6 +94,32 @@ _ENCODING_PROBE = b" "
 _FRAGMENT_PROBE_BYTES = 2048
 
 
+class ReferencePayload(BaseModel):
+    """What both public entry points return, success or failure.
+
+    Public, unlike `_HopResult` below, because it is the surface: an MCP tool
+    or any other caller reaches `model_dump(mode="json")` on this rather than
+    reinventing a serializer. That is not a style preference — `fetched_at` is
+    a `datetime`, so the bare dict this replaced could not be `json.dumps`-ed
+    at all, and every consumer would have had to discover that for itself and
+    work around it (607).
+
+    `error` is on successes and `cache` is on failures for the same reason each
+    outcome is one shape rather than two: a served-stale copy has to be
+    distinguishable from a fresh one, and a caller should not have to know
+    which outcome it got before it knows which fields exist.
+    """
+
+    url: str
+    title: str
+    markdown: str
+    cache: ReferenceCacheOutcome
+    fetched_at: datetime | None
+    total_chars: int
+    truncated: bool
+    error: str
+
+
 class _HopResult(BaseModel):
     """One HTTP exchange, as the redirect loop and the cache layer see it.
 
@@ -456,24 +482,24 @@ def _payload(
     fetched_at: datetime | None,
     error: str,
     max_chars: int,
-) -> dict:
+) -> ReferencePayload:
     """The one payload shape. `max_chars <= 0` means no cap, and truncation
     never touches what is stored."""
     total = len(markdown)
     truncated = 0 < max_chars < total
-    return {
-        "url": url,
-        "title": title,
-        "markdown": markdown[:max_chars] if truncated else markdown,
-        "cache": cache,
-        "fetched_at": fetched_at,
-        "total_chars": total,
-        "truncated": truncated,
-        "error": error,
-    }
+    return ReferencePayload(
+        url=url,
+        title=title,
+        markdown=markdown[:max_chars] if truncated else markdown,
+        cache=cache,
+        fetched_at=fetched_at,
+        total_chars=total,
+        truncated=truncated,
+        error=error,
+    )
 
 
-def _failure_payload(url: str, error: str) -> dict:
+def _failure_payload(url: str, error: str) -> ReferencePayload:
     """A failure with nothing cached to serve: `MISS`, and no body at all.
 
     `cache` is on failure payloads for the same reason `error` is on successes
@@ -492,7 +518,7 @@ def _failure_payload(url: str, error: str) -> dict:
 
 def _row_payload(
     row: ReferencePage, cache: ReferenceCacheOutcome, error: str, max_chars: int
-) -> dict:
+) -> ReferencePayload:
     return _payload(
         url=row.url,
         title=row.title,
@@ -532,7 +558,7 @@ def _is_fresh(row: ReferencePage) -> bool:
     return age < settings.reference_cache_ttl_seconds
 
 
-def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> dict:
+def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> ReferencePayload:
     with service_write(session) as writer:
         counted = _find_row(writer, row.url)
         if counted is None:
@@ -580,7 +606,9 @@ def _store(
     return _caller_view(session, url)
 
 
-def _serve_stale_or_fail(url: str, row: ReferencePage | None, error: str, max_chars: int) -> dict:
+def _serve_stale_or_fail(
+    url: str, row: ReferencePage | None, error: str, max_chars: int
+) -> ReferencePayload:
     """A stale copy beats nothing — but only if it is labelled as one."""
     if row is not None and row.content_markdown:
         return _row_payload(row, ReferenceCacheOutcome.STALE_ERROR, error, max_chars)
@@ -589,7 +617,7 @@ def _serve_stale_or_fail(url: str, row: ReferencePage | None, error: str, max_ch
 
 def _revalidated(
     session: Session, url: str, row: ReferencePage | None, result: _HopResult, max_chars: int
-) -> dict:
+) -> ReferencePayload:
     """A 304 means the stored body stands; only its age resets."""
     if row is None:
         return _failure_payload(
@@ -622,7 +650,7 @@ def _resolve_result(
     kind: ReferencePageKind,
     extract: bool,
     max_chars: int,
-) -> dict:
+) -> ReferencePayload:
     """Turn one hop result into a payload, storing it when it is worth storing."""
     if result.error_kind is not None:
         return _serve_stale_or_fail(url, row, result.error, max_chars)
@@ -653,7 +681,7 @@ def _fetch_through_cache(
     refresh: bool,
     max_chars: int,
     transport: httpx.BaseTransport | None,
-) -> dict:
+) -> ReferencePayload:
     """The boundary both public entry points sit on. Never raises.
 
     "Never raises" is a property of *this function*, not a claim about the
@@ -718,7 +746,7 @@ def _fetch_through_cache_uncaught(
     refresh: bool,
     max_chars: int,
     transport: httpx.BaseTransport | None,
-) -> dict:
+) -> ReferencePayload:
     """The cache path itself. May raise; `_fetch_through_cache` is its boundary."""
     normalized = normalize_reference_url(url)
     reason = validate_reference_url(normalized)
@@ -747,7 +775,7 @@ def fetch_reference(
     refresh: bool = False,
     max_chars: int = 0,
     transport: httpx.BaseTransport | None = None,
-) -> dict:
+) -> ReferencePayload:
     """Fetch a reference page through the cache, extracting it to markdown.
 
     Never raises: every failure comes back as a self-classifying payload.
@@ -797,7 +825,7 @@ def fetch_cached_text(
     refresh: bool = False,
     max_chars: int = 0,
     transport: httpx.BaseTransport | None = None,
-) -> dict:
+) -> ReferencePayload:
     """Fetch a raw text document through the same cache, without extraction.
 
     DevDocs catalog and index JSON ride here, so that all HTTP for both tools
