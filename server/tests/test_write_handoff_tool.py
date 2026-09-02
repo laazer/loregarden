@@ -332,3 +332,124 @@ def test_the_gate_reads_the_same_boundary_the_database_holds(isolated_db, tmp_pa
         )
 
     assert result["status"] == "PASS", result.get("message")
+
+
+# --------------------------------------------------------------------------
+# 134 — a gate that could not judge must not read as a gate that approved.
+#
+# `_validate_via_workspace_gate` collapsed four outcomes into one permissive
+# `stored_unvalidated`: no gate module, a timeout, unparseable output, and a
+# non-zero exit. Only the first is structural — a workspace with no gate has no
+# catalog to violate. The other three are a gate that was supposed to judge this
+# handoff and did not, and storing anyway makes "nobody checked" and "checked
+# and fine" the same result.
+# --------------------------------------------------------------------------
+
+#: Exits 0 and prints prose where its JSON result belongs.
+_UNPARSEABLE_GATE = "def run(inputs):\n    print('not json at all')\n    return None\n"
+
+#: Raises, so the validator subprocess exits non-zero.
+_CRASHING_GATE = "def run(inputs):\n    raise RuntimeError('gate exploded')\n"
+
+#: Outlasts VALIDATION_TIMEOUT_SECONDS, which the test shortens.
+_HANGING_GATE = (
+    "import time\n\ndef run(inputs):\n    time.sleep(30)\n    return {'status': 'PASS'}\n"
+)
+
+
+def _repo_with_gate_source(tmp_path: Path, source: str) -> Path:
+    repo = make_repo(tmp_path, name="repo")
+    gates = repo / "ci" / "scripts" / "gates"
+    gates.mkdir(parents=True)
+    (gates / "__init__.py").write_text("", encoding="utf-8")
+    (gates / "handoff_validation_check.py").write_text(source, encoding="utf-8")
+    (repo / "project_board" / "checkpoints").mkdir(parents=True)
+    return repo
+
+
+def _write(session, ticket):
+    return write_handoff(
+        session,
+        ticket_id=ticket.external_id,
+        workspace_slug="wsx",
+        from_agent="test_designer",
+        to_agent="test_breaker",
+        checklist=_good_checklist(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_skip"),
+    [
+        (_UNPARSEABLE_GATE, "unparseable"),
+        (_CRASHING_GATE, "errored"),
+    ],
+    ids=["unparseable", "crash"],
+)
+def test_a_gate_that_cannot_judge_fails_closed(source, expected_skip, isolated_db, tmp_path):
+    """AC1/AC2. The handoff must not be stored on an operational gate failure."""
+    repo = _repo_with_gate_source(tmp_path, source)
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        result = _write(session, ticket)
+
+    assert result["status"] == "GATE_ERROR", result
+    assert result["skip"] == expected_skip, result
+    assert result["rolled_back"] is True, result
+    with Session(isolated_db) as session:
+        assert latest_handoff_doc(session, ticket_pk) is None, (
+            "an unjudged handoff was stored; 'nobody checked' now reads as 'checked and fine'"
+        )
+
+
+def test_a_gate_that_times_out_fails_closed(isolated_db, tmp_path, monkeypatch):
+    """AC1, on its own path — a timeout is caught before any output exists to parse."""
+    monkeypatch.setattr(
+        "loregarden.services.handoff_writer.VALIDATION_TIMEOUT_SECONDS", 1, raising=True
+    )
+    repo = _repo_with_gate_source(tmp_path, _HANGING_GATE)
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        result = _write(session, ticket)
+
+    assert result["status"] == "GATE_ERROR", result
+    assert result["skip"] == "timed_out", result
+    with Session(isolated_db) as session:
+        assert latest_handoff_doc(session, ticket_pk) is None
+
+
+def test_a_workspace_with_no_gate_still_stores_and_says_so(isolated_db, tmp_path):
+    """AC3. The structural case stays permissive, and now names itself.
+
+    This is the discriminator: a fix that simply failed closed on every
+    `ran: False` would pass both tests above and break every workspace that has
+    no gate module — which is most of them.
+    """
+    repo = tmp_path / "repo"
+    _make_repo(repo, with_gate=False)
+
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        result = _write(session, ticket)
+
+    assert result["status"] == "stored_unvalidated", result
+    assert result["skip"] == "absent", result
+    with Session(isolated_db) as session:
+        assert latest_handoff_doc(session, ticket_pk) is not None, (
+            "a workspace with no gate could no longer record a handoff"
+        )
+
+
+def test_a_working_gate_still_passes(isolated_db, tmp_path):
+    """The other control: none of this touches a gate that actually judges."""
+    repo = tmp_path / "repo"
+    _make_repo(repo, with_gate=True)
+
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        result = _write(session, ticket)
+
+    assert result["status"] == "PASS", result
