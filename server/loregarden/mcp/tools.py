@@ -22,6 +22,7 @@ from loregarden.mcp.external_harness_tools import (
     normalize_external_harness_args,
 )
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
+from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
     normalize_update_ticket_args,
@@ -32,6 +33,13 @@ from loregarden.mcp.ticket_ops_tools import (
     execute_ticket_ops_tool,
     normalize_ticket_ops_args,
 )
+from loregarden.mcp.tool_args import TABLE_NORMALIZERS as _TABLE_NORMALIZERS
+from loregarden.mcp.tool_args import coerce_mapping as _coerce_mapping
+from loregarden.mcp.tool_args import coerce_optional_bool as _coerce_optional_bool
+from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
+from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
+from loregarden.mcp.tool_args import coerce_string as _coerce_string
+from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tool_schemas import boolean_prop as _boolean_prop
@@ -59,94 +67,6 @@ from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
-
-
-def _coerce_mapping(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, dict):
-        return dict(raw)
-    if isinstance(raw, str):
-        stripped = raw.strip()
-        if not stripped:
-            return {}
-        try:
-            parsed = json.loads(stripped)
-        except json.JSONDecodeError:
-            return {}
-        if isinstance(parsed, dict):
-            return parsed
-    return {}
-
-
-def _coerce_string(value: Any, *, field: str) -> str:
-    if value is None:
-        raise ValueError(f"{field} is required")
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            raise ValueError(f"{field} is required")
-        return text
-    return str(value).strip()
-
-
-def _coerce_optional_string(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    return str(value).strip()
-
-
-def _coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        raise ValueError(f"{field} must be an integer")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not value.is_integer():
-            raise ValueError(f"{field} must be an integer")
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            return int(text)
-        except ValueError as exc:
-            raise ValueError(f"{field} must be an integer: {exc}") from exc
-    raise ValueError(f"{field} must be an integer")
-
-
-def _coerce_string_list(value: Any, *, field: str) -> list[str]:
-    """Accept a list, a JSON-encoded list, or newline/bullet text as a list of strings.
-
-    An empty result is preserved rather than treated as absent — clearing a list is
-    a legitimate edit, and the caller decides whether the field was sent at all.
-    """
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return []
-        if text.startswith("["):
-            try:
-                value = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{field} is not valid JSON") from exc
-        else:
-            value = [line.lstrip("-*").strip() for line in text.splitlines()]
-    if not isinstance(value, list):
-        raise ValueError(f"{field} must be a list of strings")
-    return [str(item).strip() for item in value if str(item).strip()]
-
-
-def _coerce_optional_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
 
 _MEMORY_TOOL_NAMES = frozenset(
     {
@@ -378,6 +298,10 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     args = _coerce_mapping(arguments)
     _apply_aliases(name, args)
 
+    table = _TABLE_NORMALIZERS.get(name)
+    if table is not None:
+        return table(args)
+
     if name == "loregarden_get_ticket":
         return _normalize_get_ticket(args)
 
@@ -426,13 +350,6 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "run_id": _coerce_string(args.get("run_id"), field="run_id"),
             "message": _coerce_string(args.get("message"), field="message"),
             "stage_key": _coerce_optional_string(args.get("stage_key")),
-        }
-
-    if name == "loregarden_search_prior_work":
-        return {
-            "query": _coerce_string(args.get("query"), field="query"),
-            "workspace_slug": _coerce_optional_string(args.get("workspace_slug")) or "",
-            "ticket_id": _coerce_optional_string(args.get("ticket_id")) or "",
         }
 
     if name == "loregarden_attach_evidence":
@@ -1095,6 +1012,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 

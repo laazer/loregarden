@@ -56,6 +56,8 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 from loregarden.config import settings
+from loregarden.mcp import reference_tool
+from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain.enums import (
     ReferenceCacheOutcome,
     ReferenceFetchError,
@@ -1658,3 +1660,63 @@ def test_conftest_engine_bindings_do_not_mention_this_module():
     )
     names = [element.value for element in bindings.elts]
     assert not [name for name in names if "reference_cache" in name]
+
+
+# --------------------------------------------------------------------------
+# 174 — the MCP surface, end to end through `execute_tool`
+#
+# The tests above call `fetch_reference` directly. These go through the
+# dispatcher a real agent reaches, because that is where the payload stops
+# being a model and becomes a string someone has to parse — the step 607
+# existed for.
+# --------------------------------------------------------------------------
+
+
+def test_the_mcp_tool_returns_parseable_json_for_a_blocked_url(session):
+    """A refused URL is a result, not a transport error.
+
+    `execute_tool` returns a string. If the handler let the payload reach
+    `json.dumps` as a model it would raise here, and the agent would see a
+    protocol-level failure instead of an answer it can act on.
+    """
+    raw = execute_tool(session, "loregarden_fetch_reference", {"url": "http://127.0.0.1:1/x"})
+    payload = json.loads(raw)
+
+    assert ReferenceFetchError.BLOCKED.value in payload["error"], payload
+    assert payload["url"] == "http://127.0.0.1:1/x"
+    assert payload["markdown"] == ""
+    assert payload["cache"] == ReferenceCacheOutcome.MISS.value
+
+
+def test_the_mcp_tool_returns_the_whole_payload_on_success(session, resolver):
+    """The success path — the one carrying a datetime.
+
+    A failure payload has `fetched_at=None` and would have serialized before
+    607 too, so it cannot show that this works. Same asymmetry that shaped
+    607's own test.
+
+    The patch target is `reference_tool.fetch_reference`, not the service
+    module's. The handler binds the name at import, so patching
+    `reference_cache.fetch_reference` would leave the handler calling the
+    original and the test would pass while proving nothing about the code it
+    claims to exercise.
+    """
+    _, transport = _transport(_ok_html)
+    real = reference_tool.fetch_reference
+
+    def with_transport(session, url, **kwargs):
+        return real(session, url, transport=transport, **kwargs)
+
+    with patch.object(reference_tool, "fetch_reference", with_transport):
+        raw = execute_tool(
+            session, "loregarden_fetch_reference", {"url": "https://docs.example/guide"}
+        )
+
+    payload = json.loads(raw)
+    assert payload["error"] == "", payload
+    assert "map()" in payload["markdown"]
+    assert payload["cache"] == ReferenceCacheOutcome.MISS.value
+    assert isinstance(payload["fetched_at"], str), (  # py-org: allow-isinstance
+        "fetched_at reached the agent as something other than a JSON scalar"
+    )
+    assert set(payload) == SUCCESS_KEYS

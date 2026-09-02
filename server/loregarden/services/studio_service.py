@@ -240,6 +240,13 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         example='tools/call loregarden_search_memory {"query": "permission bridge", "workspace_slug": "loregarden"}',
         stage_agent=True,
     ),
+    StudioMcpToolGuide(
+        name="loregarden_fetch_reference",
+        description="Fetch a documentation page through loregarden's cache, extracted to markdown.",
+        when_to_use="Instead of WebFetch for framework or library docs — the raw HTML is fetched and extracted once per URL, and repeat reads are served from the cache.",
+        example='tools/call loregarden_fetch_reference {"url": "https://docs.pydantic.dev/latest/concepts/models/"}',
+        stage_agent=True,
+    ),
 ]
 
 
