@@ -25,7 +25,7 @@
 
 import { useMemo, useState } from 'react';
 import { IconCloseButton } from './IconCloseButton';
-import { AddToTabMenu } from './AddToTabMenu';
+import { AddToTabItems } from './AddToTabMenu';
 import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
 import { QueueAddToLaneModal, type QueueAddRequest } from './QueueAddToLaneModal';
@@ -185,6 +185,45 @@ function TicketStateChips({
 }
 
 /** The same two jumps for either half of a lane: the ticket, or its live child. */
+/**
+ * The one menu a lane header carries.
+ *
+ * One `⋯` per thing. This used to be the running ticket's actions only, and
+ * "add this lane to a tab" arrived as a second trigger beside it — two menus on
+ * one header, with no way to tell which held what. The lane is the thing the
+ * header is about, so the lane's menu is where both live, and it is rendered
+ * whether or not anything is running: an idle lane is still a lane you may want
+ * to watch in a tab.
+ */
+/**
+ * The two "go to" actions a ticket holding or waiting on a slot offers.
+ *
+ * Shared because a lane header and a queued entry both offer them, and they are
+ * one decision: if "go to running child" changes, it changes in both places.
+ */
+function TicketMenuItems({
+  ticketId,
+  runningChild,
+}: {
+  ticketId: string;
+  runningChild?: RunningChildTicket;
+}) {
+  return (
+    <>
+      <OverflowMenuItem onSelect={() => navigateToTicket(ticketId)}>Go to ticket</OverflowMenuItem>
+      {runningChild ? (
+        <OverflowMenuItem
+          title={`${runningChild.code || runningChild.id} · ${runningChild.title}`}
+          onSelect={() => navigateToTicket(runningChild.id)}
+        >
+          Go to running child
+        </OverflowMenuItem>
+      ) : null}
+    </>
+  );
+}
+
+/** A queued entry's own menu — the ticket's actions, and nothing about lanes. */
 function LaneTicketMenu({
   label,
   ticketId,
@@ -196,15 +235,29 @@ function LaneTicketMenu({
 }) {
   return (
     <OverflowMenu label={`${label} actions`}>
-      <OverflowMenuItem onSelect={() => navigateToTicket(ticketId)}>Go to ticket</OverflowMenuItem>
-      {runningChild ? (
-        <OverflowMenuItem
-          title={`${runningChild.code || runningChild.id} · ${runningChild.title}`}
-          onSelect={() => navigateToTicket(runningChild.id)}
-        >
-          Go to running child
-        </OverflowMenuItem>
+      <TicketMenuItems ticketId={ticketId} runningChild={runningChild} />
+    </OverflowMenu>
+  );
+}
+
+function LaneMenu({
+  slotNumber,
+  running,
+}: {
+  slotNumber: number;
+  /** The ticket holding the slot, when one does. */
+  running?: { label: string; ticketId: string; runningChild?: RunningChildTicket };
+}) {
+  return (
+    <OverflowMenu label={`Lane ${slotNumber} actions`}>
+      {running ? (
+        <TicketMenuItems ticketId={running.ticketId} runningChild={running.runningChild} />
       ) : null}
+      <AddToTabItems
+        primitiveId="queue_lane"
+        values={new Map([['slot', String(slotNumber)]])}
+        title={`Lane ${slotNumber}`}
+      />
     </OverflowMenu>
   );
 }
@@ -511,31 +564,25 @@ export function ParallelQueueVisualization() {
               >
                 {lane.running ? runStatusLabel(lane.running.status) : 'available'}
               </span>
-              {/* The lane pane draws exactly this lane. Offering it here is the
-                  whole of `primitiveHomes`: the page that already has the slot
-                  number on screen is the page that should not make anyone type
-                  it. */}
-              <AddToTabMenu
-                primitiveId="queue_lane"
-                values={new Map([['slot', String(lane.slot_number)]])}
-                title={`Lane ${lane.slot_number}`}
-                label={`Add lane ${lane.slot_number} to a tab`}
+              <LaneMenu
+                slotNumber={lane.slot_number}
+                running={
+                  lane.running
+                    ? {
+                        label:
+                          lane.running.running_descendant?.code ||
+                          lane.running.ticket_code ||
+                          lane.running.ticket_title ||
+                          lane.running.ticket_id,
+                        ticketId: lane.running.ticket_id,
+                        runningChild: runningChildFromLabels(
+                          lane.running.running_descendant,
+                          runningChildByParent.get(lane.running.ticket_id),
+                        ),
+                      }
+                    : undefined
+                }
               />
-              {lane.running ? (
-                <LaneTicketMenu
-                  label={
-                    lane.running.running_descendant?.code ||
-                    lane.running.ticket_code ||
-                    lane.running.ticket_title ||
-                    lane.running.ticket_id
-                  }
-                  ticketId={lane.running.ticket_id}
-                  runningChild={runningChildFromLabels(
-                    lane.running.running_descendant,
-                    runningChildByParent.get(lane.running.ticket_id),
-                  )}
-                />
-              ) : null}
             </div>
 
             <div className="queue-slot-body">

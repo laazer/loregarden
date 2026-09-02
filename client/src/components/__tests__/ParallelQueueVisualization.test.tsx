@@ -427,31 +427,54 @@ describe('a running card’s overflow menu', () => {
   };
 
   test('goes to the running ticket', async () => {
-    await openLaneMenu('LG-101 actions');
+    await openLaneMenu('Lane 1 actions');
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
 
     expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-1');
   });
 
   test('goes to the running child when one exists', async () => {
-    await openLaneMenu('LG-101 actions', [runningChildOfRunner]);
+    await openLaneMenu('Lane 1 actions', [runningChildOfRunner]);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to running child' }));
 
     expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-3');
   });
 
   test('offers no running child when the ticket has none', async () => {
-    await openLaneMenu('LG-101 actions');
+    await openLaneMenu('Lane 1 actions');
 
     expect(screen.queryByRole('menuitem', { name: 'Go to running child' })).not.toBeInTheDocument();
   });
 
-  test('an idle lane has no menu at all', async () => {
+  test('an idle lane still has one, holding what applies to a lane', async () => {
+    // This used to assert an idle lane had *no* menu, which was right while the
+    // menu was the running ticket's: no ticket, nothing to act on. The header's
+    // menu is the lane's now — an idle lane is still a lane you may want to
+    // watch in a tab — so the rule became "one menu, holding what applies".
     render(<ParallelQueueVisualization />);
     await act(async () => {});
 
-    // Slot 2 is empty — there is no ticket to act on.
-    expect(within(screen.getByTestId('slot-2')).queryByRole('button', { name: /actions/ })).toBeNull();
+    const head = screen.getByTestId('slot-2').querySelector('.queue-slot-head') as HTMLElement;
+    const triggers = within(head).queryAllByRole('button', { name: /actions/ });
+    expect(triggers).toHaveLength(1);
+
+    fireEvent.click(triggers[0]);
+    expect(screen.queryByRole('menuitem', { name: 'Go to ticket' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'New tab' })).toBeInTheDocument();
+  });
+
+  test('a running lane header carries one menu, not two', async () => {
+    // The defect this replaces: "add to a tab" arrived as a second trigger
+    // beside the ticket's, so one header had two `⋯` and no way to tell which
+    // held what.
+    render(<ParallelQueueVisualization />);
+    await act(async () => {});
+
+    // Scoped to the *header*, not the slot: each queued entry below it has a
+    // menu of its own, which is correct — one menu per thing, and an entry is
+    // its own thing.
+    const head = screen.getByTestId('slot-1').querySelector('.queue-slot-head') as HTMLElement;
+    expect(within(head).queryAllByRole('button', { name: /actions|to a tab/ })).toHaveLength(1);
   });
 });
 
