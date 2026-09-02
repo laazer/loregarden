@@ -1397,6 +1397,53 @@ def test_a_read_only_callers_rollback_cannot_destroy_the_cache_write(site, isola
 
 
 @pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_a_get_session_shaped_caller_keeps_its_page_after_close(site, isolated_db, resolver):
+    """636. The lifecycle `get_session()` actually performs: close, never commit.
+
+    `db/session.py`'s dependency is `with Session(engine) as session: yield
+    session`, and `Session.__exit__` closes, which rolls back. It never commits.
+    So for the shape every FastAPI request arrives in, "the caller will commit"
+    was never true — and while the cache wrote through the caller's connection,
+    every fetched page was discarded at request end. The cache was inert rather
+    than broken, and would have re-fetched every URL on every request: the
+    request-amplification shape 626 exists for.
+
+    The two neighbouring tests are not this one. One rolls back explicitly and
+    one commits explicitly; both are callers that made a decision. This caller
+    makes none — it simply falls out of a `with` block, which is the only thing
+    the dependency ever does, and is the lifecycle no test covered.
+
+    Fails if the write is discarded at close: the row is read back through a
+    Session that never saw the fetch.
+
+    The assertion is that the durable row *changed*, not that one exists. Two of
+    these three sites seed a committed row before the fetch — `hit` and
+    `revalidated` need something to hit — so "a row is there afterwards" is true
+    whether or not our write landed, and pins nothing for them. What each site
+    actually writes does differ from what it started with: an insert where there
+    was nothing, an incremented `hit_count`, a reset `fetched_at` and a new
+    ETag. Comparing the whole row before and against after catches all three
+    with one assertion, and caught this test being vacuous for two of them.
+    """
+    transport, url = _fresh_caller_transport(site, isolated_db)
+    before = _durable_row(isolated_db, url)
+
+    with Session(isolated_db) as caller:
+        assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
+        payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        _assert_self_classifying(payload)
+        assert payload["error"] == "", payload
+    # __exit__ closed it. No commit was made, and none should have been needed.
+
+    after = _durable_row(isolated_db, url)
+    assert after is not None, "nothing was cached at all"
+    assert after != before, (
+        "the write was discarded when the caller's Session closed — the cache is inert "
+        f"for the one caller shape get_session() produces (row unchanged: {before})"
+    )
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
 def test_a_read_only_caller_that_commits_still_gets_the_cache_write(site, isolated_db, resolver):
     """The other direction, so the test above cannot be passed by writing nothing.
 
