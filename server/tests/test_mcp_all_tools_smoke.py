@@ -155,6 +155,11 @@ def _args_for(
     ws = "loregarden"
     table: dict[str, dict] = {
         "loregarden_get_ticket": {"ticket_id": ticket_id},
+        # A loopback literal, so this stays a zero-network test. The SSRF guard
+        # rejects it on the literal tier — no DNS lookup, no socket — and the
+        # tool answers with a structured error payload rather than raising, so
+        # the response is a normal result and not an isError.
+        "loregarden_fetch_reference": {"url": "http://127.0.0.1:1/blocked-by-ssrf-guard"},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_supersede_ticket": {
@@ -328,6 +333,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_set_ticket_workflow",
         "loregarden_requeue_ticket",
         "loregarden_supersede_ticket",
+        "loregarden_fetch_reference",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)

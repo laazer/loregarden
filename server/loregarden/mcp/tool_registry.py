@@ -24,6 +24,7 @@ from loregarden.mcp.external_harness_tools import (
     finish_external_stage_tool,
 )
 from loregarden.mcp.organization_tool import check_organization
+from loregarden.mcp.reference_tool import fetch_reference_tool
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.services.prior_work import search_prior_work
 
@@ -50,4 +51,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.DOCTOR.value: doctor,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
+    McpTool.FETCH_REFERENCE.value: fetch_reference_tool,
 }

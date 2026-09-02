@@ -92,6 +92,29 @@ your output and continue read-only work where possible. Do not invent workflow s
 via checkpoint protocol or block the ticket with a clear message.
 <!-- /loregarden:transport -->
 
+## Reference docs (fetch-through cache)
+
+`loregarden_fetch_reference` fetches a documentation page, extracts it to markdown, and stores
+it. **Use it instead of WebFetch for framework and library docs.** The difference is what the
+run pays for: WebFetch re-fetches and re-extracts the same page every time anyone asks, so a
+page consulted by three stages is paid for three times. This tool pays that cost once per URL
+and serves every later read from the cache — including reads by a later stage, a later run, or
+a different agent.
+
+```
+tools/call loregarden_fetch_reference {"url": "https://docs.pydantic.dev/latest/concepts/models/"}
+```
+
+- **It never raises.** Every failure comes back as a payload that classifies itself: check
+  `error` for the reason and `cache` to tell a fresh copy from a served-stale one. A stale copy
+  is labelled rather than silently passed off as current.
+- **`refresh: true` only with a reason** to believe the page changed. It discards the saving,
+  which is the whole point of the tool.
+- **`max_chars` for a very long page.** Truncation affects only what you are handed, never what
+  is stored, so a later call can ask for more without re-fetching.
+- Only public http(s) addresses are reachable. Private, loopback and link-local addresses are
+  refused on every redirect hop, so this is not a way to reach an internal service.
+
 ## Which tool for which situation
 
 | Situation | Tool |
@@ -102,6 +125,7 @@ via checkpoint protocol or block the ticket with a clear message.
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
+| Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
 | Inspect memory backend config | `loregarden_memory_status` |

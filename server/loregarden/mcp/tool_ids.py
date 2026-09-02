@@ -49,6 +49,7 @@ class McpTool(StrEnum):
     CREATE_MEMORY_RELATION = "loregarden_create_memory_relation"
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
+    FETCH_REFERENCE = "loregarden_fetch_reference"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -73,6 +74,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # blocked with no way to comply.
     McpTool.ATTACH_EVIDENCE,
     McpTool.REQUEST_APPROVAL,
+    # Stage work reads library documentation. Offering the cache means the raw
+    # HTML is paid for once per URL rather than once per run, and a stage that
+    # is not offered it reaches for WebFetch instead.
+    McpTool.FETCH_REFERENCE,
 )
 
 MEMORY_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
@@ -133,7 +138,21 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     }
 )
 
-AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = READ_ONLY_MCP_TOOLS | CONTROL_PLANE_WRITE_MCP_TOOLS
+#: Tools that reach the network. Auto-approved, but kept out of the two sets
+#: above rather than folded into them: `CONTROL_PLANE_WRITE_MCP_TOOLS` promises
+#: its members "cannot touch the repo, the filesystem outside the vault, or
+#: workflow state", and a tool that makes an outbound request is a different
+#: claim. The reason to auto-approve is the same one WebFetch is auto-approved
+#: for in `agents/executors/tool_auto_approve.py`: the persisted allowlist keys
+#: on the exact `tool_input`, so a per-URL prompt is a prompt on every distinct
+#: URL — an approval nobody can meaningfully grant in advance, spending the
+#: run's timeout budget to no benefit. Egress itself is bounded elsewhere: the
+#: SSRF guard rejects non-global addresses on every hop, and the body is capped.
+NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.FETCH_REFERENCE})
+
+AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
+    READ_ONLY_MCP_TOOLS | CONTROL_PLANE_WRITE_MCP_TOOLS | NETWORK_EGRESS_MCP_TOOLS
+)
 
 #: Tools whose safety depends on *which* action was asked for, not just the tool
 #: name. `check_organization` reads a workspace for one action and rewrites that
