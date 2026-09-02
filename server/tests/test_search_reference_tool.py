@@ -13,11 +13,19 @@ and no resolver patch is needed: zero DNS, zero network.
 
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import httpx
 import pytest
 from loregarden.config import settings
-from loregarden.models.domain.enums import DevDocsError, ReferenceCacheOutcome, ReferencePageKind
+from loregarden.mcp import devdocs_tool
+from loregarden.mcp.tools import execute_tool
+from loregarden.models.domain.enums import (
+    DevDocsError,
+    ReferenceCacheOutcome,
+    ReferenceFetchError,
+    ReferencePageKind,
+)
 from loregarden.models.domain.tables import ReferencePage
 from loregarden.services import devdocs
 from loregarden.services.devdocs import (
@@ -357,3 +365,77 @@ def test_a_stale_index_revalidates_with_304_instead_of_refetching_the_body(sessi
     assert payload.index_cache == ReferenceCacheOutcome.REVALIDATED.value
     assert index_url not in bodies_served, "the index body was re-downloaded"
     assert payload.results, "the stored index still answered the search"
+
+
+# --------------------------------------------------------------------------
+# 177 — the MCP surface, and the suite-wide network refusal
+# --------------------------------------------------------------------------
+
+
+def test_a_fetch_with_no_transport_is_refused_by_the_suite(session):
+    """The autouse fixture, asserted rather than assumed.
+
+    A conftest fixture nothing tests is one that can stop working silently —
+    and this one failing open means tests start making real requests and still
+    pass, just slowly. So: no transport, and the refusal must arrive.
+    """
+    payload = search_reference(session, "Array", docset="javascript")
+
+    assert payload.error_kind == DevDocsError.CATALOG_UNAVAILABLE
+    assert "refuses real network" in payload.error
+
+
+def test_the_refusal_is_a_transport_error_not_an_internal_one(session):
+    """Where the refusal is raised decides how it is classified.
+
+    `httpx.Client(...)` is constructed outside the cache's narrow
+    `except httpx.TimeoutException/HTTPError` handlers. A fixture that raised
+    from the constructor would escape them and land on the module's outermost
+    boundary as INTERNAL_ERROR — the suite's own refusal reported as a bug in
+    the cache, on every test that forgot a transport.
+    """
+    payload = search_reference(session, "Array", docset="javascript")
+
+    assert ReferenceFetchError.INTERNAL_ERROR.value not in payload.error, payload.error
+    assert ReferenceFetchError.FETCH_ERROR.value in payload.error, payload.error
+
+
+def test_the_mcp_tool_returns_parseable_json(session):
+    _, transport = _transport()
+    with patch.object(devdocs_tool, "search_reference", _with(transport)):
+        raw = execute_tool(
+            session,
+            "loregarden_search_reference",
+            {"query": "Array", "docset": "javascript"},
+        )
+
+    payload = json.loads(raw)
+    assert payload["error_kind"] is None, payload
+    assert payload["docset"] == "javascript"
+    assert payload["results"], payload
+    assert set(payload["results"][0]) == {"name", "type", "docset", "url"}
+    assert payload["total_matches"] >= len(payload["results"])
+
+
+def test_the_mcp_tool_reports_a_refused_docset_as_a_payload(session):
+    """No transport, so the suite's refusal answers — still JSON, still no raise."""
+    raw = execute_tool(session, "loregarden_search_reference", {"query": "Array"})
+
+    payload = json.loads(raw)
+    assert payload["error_kind"] == DevDocsError.CATALOG_UNAVAILABLE.value
+    assert payload["results"] == []
+
+
+def _with(transport):
+    """Bind a transport into the handler's own reference to `search_reference`.
+
+    Patched on `devdocs_tool`, not on `devdocs`: the handler binds the name at
+    import, so patching the service module would leave it calling the original.
+    """
+
+    def call(session, query, *, docset="", limit=devdocs.DEFAULT_LIMIT):
+        return devdocs.search_reference(
+            session, query, docset=docset, limit=limit, transport=transport
+        )
+
+    return call

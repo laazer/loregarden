@@ -6,6 +6,7 @@ from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
+from loregarden.services import reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -210,3 +211,62 @@ def isolated_memory_store(tmp_path_factory, monkeypatch):
         settings, "memory_sqlite_url", f"sqlite:///{root / 'memory.db'}", raising=False
     )
     monkeypatch.setattr(settings, "icloud_root", "", raising=False)
+
+
+class _RefusingHttpx:
+    """The `httpx` module as `reference_cache` sees it during tests.
+
+    Everything falls through to the real module except `Client`, which is bound
+    to a transport that refuses. Proxying rather than listing the attributes is
+    deliberate: the service reaches for `httpx.Response`, `httpx.HTTPError`,
+    `httpx.TimeoutException` and `httpx.BaseTransport`, and a hand-written
+    namespace would have to be kept in step with every one of them — the next
+    attribute it reached for would fail as an `AttributeError` inside a module
+    whose whole promise is that it never raises.
+    """
+
+    def __init__(self, real, client):
+        self._real = real
+        self.Client = client
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.fixture(autouse=True)
+def reference_network_refused(monkeypatch):
+    """No test reaches the real network through the reference cache.
+
+    Both `fetch_reference` and `search_reference` fetch on a caller's behalf, so
+    a test that forgets its transport would quietly make a real request — slow,
+    flaky, and dependent on someone else's uptime. Worse, it would *pass*: the
+    cache converts a transport failure into a payload, so the only visible
+    symptom is a test that occasionally takes ten seconds.
+
+    The refusal happens at **send** time, not construction. `httpx.Client(...)`
+    is built outside the cache's `except httpx.TimeoutException/HTTPError`
+    handlers, so a constructor that raised would escape them and land on the
+    module's outermost boundary as an `INTERNAL_ERROR` — a real refusal
+    reported as a bug in the cache. Refusing inside the request puts it where
+    the narrow handlers already are, and it comes back as the transport error
+    it actually is.
+
+    A test that passes its own `transport=` is untouched, which is how the
+    focused suites still exercise real behaviour. `TestClient`'s httpx is
+    untouched too: only the name `reference_cache` resolves is replaced.
+    """
+    real = reference_cache.httpx
+
+    def refuse(request):
+        raise real.ConnectError(
+            "the test suite refuses real network through reference_cache; "
+            "pass transport= to exercise a fetch"
+        )
+
+    class _RefusingClient(real.Client):
+        def __init__(self, **kwargs):
+            if kwargs.get("transport") is None:
+                kwargs["transport"] = real.MockTransport(refuse)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(reference_cache, "httpx", _RefusingHttpx(real, _RefusingClient))

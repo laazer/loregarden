@@ -160,6 +160,10 @@ def _args_for(
         # tool answers with a structured error payload rather than raising, so
         # the response is a normal result and not an isError.
         "loregarden_fetch_reference": {"url": "http://127.0.0.1:1/blocked-by-ssrf-guard"},
+        # No docset, so this needs the catalog — which the autouse
+        # `reference_network_refused` fixture refuses. That is the point: a
+        # structured `catalog_unavailable` payload, zero network, no isError.
+        "loregarden_search_reference": {"query": "smoke"},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_supersede_ticket": {
@@ -334,6 +338,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_requeue_ticket",
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
+        "loregarden_search_reference",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)

@@ -16,6 +16,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
 from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
@@ -1013,6 +1014,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 
