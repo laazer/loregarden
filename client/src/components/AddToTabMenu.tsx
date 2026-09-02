@@ -22,6 +22,18 @@
  * pages have a workspace picker of their own, and a tab filed under a workspace
  * whose tab list is not on screen is a tab the operator cannot find.
  *
+ * ## Items and menu are separate, because some surfaces already have one
+ *
+ * A lane on the Queue page carries a menu of its own, and adding a second
+ * trigger beside it put two `⋯` on one header — one thing, two menus, and no
+ * way to tell which held what. `AddToTabItems` is the section on its own, for a
+ * surface that already has somewhere to put it; `AddToTabMenu` is that plus the
+ * trigger, for the five that do not.
+ *
+ * The split pays a second time: `OverflowMenu` renders its children only while
+ * it is open, so the hook that lists the operator's tabs now runs when the menu
+ * is opened rather than on every render of every page carrying the control.
+ *
  * ## What it does not do
  *
  * It does not navigate. A menu that jumped to the new tab would take an
@@ -37,7 +49,7 @@ import { OverflowMenu, OverflowMenuItem, OverflowMenuSection } from "./OverflowM
 import { getPrimitive } from "./views/primitives/registry";
 import { homeOf } from "./views/primitives/primitiveHomes";
 
-export interface AddToTabMenuProps {
+export interface AddToTabItemsProps {
   primitiveId: string;
   /** Settings the surface already knows, as `containerWithSettings` takes them. */
   values: ReadonlyMap<string, unknown>;
@@ -46,11 +58,15 @@ export interface AddToTabMenuProps {
    * primitive's type. "lg-flex-views-561" beats "Ticket" in a tab list.
    */
   title: string;
+}
+
+export interface AddToTabMenuProps extends AddToTabItemsProps {
   /** The trigger's accessible name; the surface knows what it is offering. */
   label: string;
 }
 
-export function AddToTabMenu({ primitiveId, values, title, label }: AddToTabMenuProps) {
+/** The "add to a tab" section, to sit inside a menu the surface already has. */
+export function AddToTabItems({ primitiveId, values, title }: AddToTabItemsProps) {
   // The sidebar's workspace, not the page's. Tabs are sidebar furniture and
   // belong to whatever workspace the chrome is showing; a page with a workspace
   // picker of its own — the queue, branch triage — would otherwise file a tab
@@ -76,9 +92,10 @@ export function AddToTabMenu({ primitiveId, values, title, label }: AddToTabMenu
   };
 
   return (
-    <OverflowMenu label={label} disabled={isWriting}>
+    <>
       <OverflowMenuSection title="Add to a tab" />
       <OverflowMenuItem
+        disabled={isWriting}
         onSelect={() => {
           void addToNewView({ primitiveId, values, title }).then((view) =>
             announce(view.title),
@@ -91,6 +108,7 @@ export function AddToTabMenu({ primitiveId, values, title, label }: AddToTabMenu
       {views.map((view) => (
         <OverflowMenuItem
           key={view.id}
+          disabled={isWriting}
           onSelect={() => {
             void addToView(view.id, { primitiveId, values, title }).then(() =>
               announce(view.title),
@@ -100,6 +118,22 @@ export function AddToTabMenu({ primitiveId, values, title, label }: AddToTabMenu
           {view.title}
         </OverflowMenuItem>
       ))}
+    </>
+  );
+}
+
+/**
+ * The same section, with a trigger of its own.
+ *
+ * The home check is repeated here rather than left to the items: a surface with
+ * nothing to offer should render no `⋯` at all, not one that opens an empty
+ * panel. It costs a registry lookup and no hooks.
+ */
+export function AddToTabMenu({ primitiveId, values, title, label }: AddToTabMenuProps) {
+  if (getPrimitive(primitiveId) === undefined || !homeOf(primitiveId)) return null;
+  return (
+    <OverflowMenu label={label}>
+      <AddToTabItems primitiveId={primitiveId} values={values} title={title} />
     </OverflowMenu>
   );
 }

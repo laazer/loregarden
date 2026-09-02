@@ -175,3 +175,44 @@ describe("what it writes", () => {
     expect(await screen.findByText(/Queue Lane added to Lane 2/i)).toBeInTheDocument();
   });
 });
+
+describe("one menu per thing", () => {
+  it("uses the items, not a second trigger, on a surface that already has a menu", () => {
+    // The defect this guards: a lane header carried the running ticket's menu,
+    // and "add to a tab" arrived beside it as a second `⋯`. One header, two
+    // menus, no way to tell which held what.
+    //
+    // The rule is checkable from the source: a module that renders its own
+    // `OverflowMenu` must fold the section in with `AddToTabItems` rather than
+    // mount the standalone `AddToTabMenu` next to it.
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const root = path.resolve(__dirname, "..", "..");
+
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "__tests__" && entry.name !== "node_modules") walk(full);
+        } else if (entry.name.endsWith(".tsx")) {
+          files.push(full);
+        }
+      }
+    };
+    walk(root);
+
+    for (const file of files) {
+      // `AddToTabMenu` itself is the one module that legitimately does both:
+      // it *is* the trigger wrapped around the items.
+      if (file.endsWith("AddToTabMenu.tsx")) continue;
+      const source = fs.readFileSync(file, "utf8");
+      const hasOwnMenu = /<OverflowMenu[\s>]/.test(source);
+      const usesStandalone = /<AddToTabMenu[\s>]/.test(source);
+      expect({
+        file: file.slice(root.length + 1),
+        bothAMenuAndAStandaloneAddToTab: hasOwnMenu && usesStandalone,
+      }).toEqual({ file: file.slice(root.length + 1), bothAMenuAndAStandaloneAddToTab: false });
+    }
+  });
+});
