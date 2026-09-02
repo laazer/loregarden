@@ -263,10 +263,40 @@ class BuiltinOrchestrator:
             orch_run,
             ticket,
             status=status,
-            message="Cancelled by operator" if cancelled else "",
+            message=self._completion_message(status, ticket, cancelled=cancelled),
         )
         self.session.refresh(orch_run)
         return orch_run
+
+    @staticmethod
+    def _completion_message(
+        status: OrchestrationRunStatus, ticket: Ticket, *, cancelled: bool
+    ) -> str:
+        """Why this run ended, recorded while the answer is still reachable.
+
+        This path derives BLOCKED from the ticket's state and used to pass "",
+        so 29 of 74 blocked runs carry no reason at all
+        (lg-workflow-integrity-90). The reason usually existed at the time —
+        `blocking_issues` holds it — but it is cleared when the ticket resumes,
+        so a message not copied here is not recoverable later. That is the whole
+        defect: the data was available exactly once and nobody wrote it down.
+
+        A blocked run with nothing on the ticket still gets a sentence naming the
+        stage. It is thin, but it distinguishes "we looked and the ticket said
+        nothing" from "nobody recorded anything", which an empty string cannot.
+        """
+        if cancelled:
+            return "Cancelled by operator"
+        if status is not OrchestrationRunStatus.BLOCKED:
+            return ""
+        reason = (ticket.blocking_issues or "").strip()
+        if reason:
+            return reason
+        stage = ticket.workflow_stage_key or "unknown stage"
+        return (
+            f"Run ended blocked at '{stage}' with no reason recorded on the ticket. "
+            "See the ticket's Errors tab for the stage's own output."
+        )
 
     def _advance_after_stage(
         self,

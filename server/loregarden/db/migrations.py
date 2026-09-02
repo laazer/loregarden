@@ -26,6 +26,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
+from loregarden.db.migrations_blocked_run_reason import m_blocked_run_reason
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
@@ -1354,6 +1355,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0103_rework_feedback_kind", m_rework_feedback_kind),
     ("0104_lmstudio_max_iterations", m_lmstudio_max_iterations),
     ("0105_run_usage_status", m_run_usage_status),
+    ("0106_blocked_run_reason", m_blocked_run_reason),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
