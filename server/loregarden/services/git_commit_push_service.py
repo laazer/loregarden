@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -17,12 +18,28 @@ class NothingToCommitError(ValueError):
     """Raised when the workspace has no working-tree changes to commit."""
 
 
-def working_tree_paths(repo_root: Path) -> set[str]:
+logger = logging.getLogger(__name__)
+
+
+def working_tree_paths(repo_root: Path) -> set[str] | None:
     """Every path git currently reports as dirty, untracked included.
 
-    Used to bracket a stage run so its commit can be scoped to what it actually
-    touched. `-z` because paths with spaces or non-ASCII are otherwise quoted and
-    would not round-trip back into `git add`.
+    Returns None when git could not answer — NOT an empty set. The two are
+    different facts and this function used to report both as "nothing is dirty",
+    which is the shape lg-workflow-integrity-450 fixed for gates: a diagnostic
+    that cannot tell "the check passed" from "the check could not run" reports
+    success it never had.
+
+    It matters most for `_record_changed_paths`, which stores this as the record
+    of what a run touched. A failed `git status` there produced an empty delta,
+    which was written as "this run changed nothing" — indistinguishable in the
+    database from a run that genuinely changed nothing, and unrecoverable
+    afterwards. Two thirds of loregarden's own code-writing runs record nothing
+    (lg-workflow-integrity-406), and until this told the difference there was no
+    way to know how much of that was real.
+
+    `-z` because paths with spaces or non-ASCII are otherwise quoted and would
+    not round-trip back into `git add`.
     """
     proc = run_git(
         ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -31,7 +48,13 @@ def working_tree_paths(repo_root: Path) -> set[str]:
         text=True,
     )
     if proc.returncode != 0:
-        return set()
+        logger.warning(
+            "git status failed in %s (exit %s): %s",
+            repo_root,
+            proc.returncode,
+            (proc.stderr or "").strip()[:400],
+        )
+        return None
 
     records = [record for record in proc.stdout.split("\0") if record]
     paths: set[str] = set()
@@ -111,7 +134,9 @@ def commit_paths_in(repo_root: Path, message: str, paths: Iterable[str]) -> bool
     # Only stage what is still dirty; a path recorded earlier may have been
     # committed or reverted since, and `git add` on a pathspec matching nothing
     # is an error rather than a no-op.
-    live = working_tree_paths(repo_root) & set(wanted)
+    # Nothing to commit if we cannot see what is dirty — better than
+    # committing a guess.
+    live = (working_tree_paths(repo_root) or set()) & set(wanted)
     if not live:
         return False
 

@@ -91,7 +91,11 @@ def evidence_kinds_at_head(session: Session, ticket: Ticket, repo_root: Path) ->
     the proof no longer covers what's there.
     """
     head = resolve_head_sha(session, ticket)
-    if not head or working_tree_paths(repo_root):
+    # A tree we could not read is NOT a clean tree. `working_tree_paths`
+    # returns None on a git failure, and treating that as 'no dirty paths'
+    # would let evidence be accepted against a tree nobody inspected.
+    dirty = working_tree_paths(repo_root)
+    if not head or dirty is None or dirty:
         return set()
     return {
         artifact.evidence_kind

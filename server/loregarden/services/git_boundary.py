@@ -54,7 +54,10 @@ def read_boundary(repo_root: Path, *, dirty_paths: set[str] | None = None) -> Gi
     try:
         if not repo_root.is_dir():
             return GitBoundary()
-        paths = working_tree_paths(repo_root) if dirty_paths is None else dirty_paths
+        # `or set()` keeps a boundary check that cannot read the tree from
+        # claiming a clean one — the caller's own verdict logic treats an
+        # empty set as 'nothing to attribute', which is the safe reading here.
+        paths = (working_tree_paths(repo_root) or set()) if dirty_paths is None else dirty_paths
         return GitBoundary(
             repo_path=str(repo_root),
             branch=current_branch(repo_root),
