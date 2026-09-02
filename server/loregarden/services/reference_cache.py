@@ -561,6 +561,10 @@ def _cache_write(session: Session) -> Iterator[Session]:
         yield writer
 
 
+def _find_row(session: Session, url: str) -> ReferencePage | None:
+    return session.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
+
+
 def _caller_view(session: Session, url: str) -> ReferencePage | None:
     """The row as the *caller's* Session sees it once our write has committed.
 
@@ -573,10 +577,6 @@ def _caller_view(session: Session, url: str) -> ReferencePage | None:
     if row is not None:
         session.refresh(row)
     return row
-
-
-def _find_row(session: Session, url: str) -> ReferencePage | None:
-    return session.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
 
 
 def _is_fresh(row: ReferencePage) -> bool:
@@ -627,7 +627,8 @@ def _store(
         # unique index is the arbiter; the SAVEPOINT this raised out of is
         # already unwound by the `with`, so re-read and use whatever it kept.
         logger.info("reference cache insert raced for %s: %s", url, exc)
-        return _caller_view(session, url)
+    # Both paths read the row back the same way: the write landed, or the unique
+    # index kept someone else's and that is the copy the caller should get.
     return _caller_view(session, url)
 
 
