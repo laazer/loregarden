@@ -19,6 +19,23 @@ export interface AgentQuestion {
   options: AgentQuestionOption[];
 }
 
+/**
+ * What an agent did about a step it could not finish, handed over with the
+ * block rather than described in it.
+ *
+ * `tier` is a ladder the agent works down: it ran the thing itself
+ * (`agent_attempted`), it committed a script the control plane can run
+ * (`one_click`), or a person has to be present (`manual`).
+ */
+export interface PreparedAction {
+  tier: "agent_attempted" | "one_click" | "manual";
+  attempted: string;
+  prepared: string;
+  command: string;
+  script_path: string;
+  captures: string[];
+}
+
 export interface Approval {
   id: string;
   title: string;
@@ -31,7 +48,9 @@ export interface Approval {
   route_options?: { key: string; name: string }[];
   ticket_id: string;
   ticket_external_id: string;
-  kind: "workflow_gate" | "cli_permission" | "cli_question";
+  kind: "workflow_gate" | "cli_permission" | "cli_question" | "human_action";
+  /** Present on `human_action`: what the agent prepared before handing over. */
+  prepared_action?: PreparedAction | null;
   status?: string;
   run_id: string;
   tool_name: string;

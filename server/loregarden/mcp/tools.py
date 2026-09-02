@@ -16,6 +16,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
 from loregarden.mcp.external_harness_tools import (
@@ -50,6 +51,7 @@ from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.models.domain import (
     ExternalHarness,
+    HumanActionTier,
     OrchestrationRunStatus,
     WorkItemType,
 )
@@ -66,6 +68,7 @@ from loregarden.services.evidence import (
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.prepared_action import assess_handover
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
@@ -347,11 +350,12 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return _normalize_stage_scoped(name, args)
 
     if name == "loregarden_block_ticket":
-        return {
-            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
-            "message": _coerce_string(args.get("message"), field="message"),
-            "stage_key": _coerce_optional_string(args.get("stage_key")),
-        }
+        return normalize_block_ticket(
+            args,
+            coerce_string=_coerce_string,
+            coerce_optional_string=_coerce_optional_string,
+            coerce_string_list=_coerce_string_list,
+        )
 
     if name == "loregarden_attach_evidence":
         return _normalize_attach_evidence(args)
@@ -594,12 +598,48 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.BLOCK_TICKET,
-        "description": "Block the ticket and fail the orchestration run.",
+        "description": (
+            "Block the ticket and fail the orchestration run. If a person has to finish "
+            "this, do not stop at describing it: work down the tier ladder first and say "
+            "what you got to. Try it yourself (agent_attempted); if you cannot run it, "
+            "commit a script that can and name it (one_click); only claim `manual` for the "
+            "part that genuinely needs a person present. A block that hands over a "
+            "multi-step procedure with nothing prepared is reported back to you as such."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "run_id": _string_prop("Orchestration run UUID."),
                 "message": _string_prop("Blocking message for operators."),
                 "stage_key": _string_prop("Optional stage key context."),
+                "tier": _enum_string_prop(
+                    "How much of the human step you removed. 'agent_attempted': you ran "
+                    "it and the result does not answer the question. 'one_click': you "
+                    "committed a script the control plane can run on a person's say-so. "
+                    "'manual': a person must be present (device, editor, judgement).",
+                    [t.value for t in HumanActionTier],
+                ),
+                "attempted": _string_prop(
+                    "What you already ran, and why its result does not answer the "
+                    "question. 'I could not do this' is only complete paired with this."
+                ),
+                "prepared": _string_prop(
+                    "What you built to reduce the remaining work — harness, fixture, "
+                    "scene, scripted capture."
+                ),
+                "command": _string_prop(
+                    "The invocation to show the person. Shown for every tier; what "
+                    "actually runs is script_path."
+                ),
+                "script_path": _string_prop(
+                    "Repository-relative path of the committed script `command` invokes. "
+                    "Required for tier 'one_click' — the control plane runs this file, "
+                    "never the command string."
+                ),
+                "captures": {
+                    "type": "array",
+                    "description": "What running it produces, one per entry.",
+                    "items": {"type": "string"},
+                },
             },
             required=["run_id", "message"],
         ),
@@ -1359,13 +1399,27 @@ def execute_tool(
         return json.dumps({"ok": True, "stage_key": arguments["stage_key"]}, indent=2)
 
     if name == "loregarden_block_ticket":
+        action = prepared_action_from(arguments)
         svc.block_ticket(
             run,
             ticket,
             stage_key=arguments.get("stage_key", ""),
             message=arguments["message"],
+            prepared_action=action,
         )
-        return json.dumps({"ok": True, "ticket_state": ticket.state.value}, indent=2)
+        # The findings come back in the response rather than only onto the
+        # approval, so an agent that handed over a chore is told so while it can
+        # still do something about it.
+        assessment = assess_handover(message=arguments["message"], action=action)
+        return json.dumps(
+            {
+                "ok": True,
+                "ticket_state": ticket.state.value,
+                "handover_ok": assessment.ok,
+                "handover_findings": assessment.findings,
+            },
+            indent=2,
+        )
 
     if name == "loregarden_attach_artifact":
         content = {}

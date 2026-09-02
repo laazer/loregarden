@@ -1,0 +1,84 @@
+/* A human-gated block shown as an action, not a paragraph to interpret. */
+
+.prepared-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.prepared-action-tier {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ac2);
+}
+
+.prepared-action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prepared-action-row p,
+.prepared-action-row ul {
+  margin: 0;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.prepared-action-row ul {
+  padding-left: 16px;
+}
+
+.prepared-action-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--txl);
+}
+
+.prepared-action-command,
+.prepared-action-output {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--txt);
+  font-size: 11px;
+  /* Long capture commands and their output scroll inside the card rather than
+     widening the approval rail. */
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prepared-action-output {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.prepared-action-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--rdl);
+}
+
+.prepared-action-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--bd);
+}
+
+.prepared-action-findings ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--aml);
+}

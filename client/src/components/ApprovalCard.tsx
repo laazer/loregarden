@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
+import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
@@ -73,6 +74,7 @@ export function ApprovalCard({
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
   const isGate = approval.kind === "workflow_gate";
+  const isHumanAction = approval.kind === "human_action";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
@@ -87,7 +89,10 @@ export function ApprovalCard({
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
 
   const routeOptions = isGate ? approval.route_options ?? [] : [];
-  const checklist = approval.checklist ?? [];
+  // On a human action the checklist carries the handover findings, which the
+  // prepared-action panel renders under its own heading — showing them here
+  // too would label them a testing checklist, which they are not.
+  const checklist = isHumanAction ? [] : approval.checklist ?? [];
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [bodyOverflows, setBodyOverflows] = useState(false);
@@ -182,6 +187,15 @@ export function ApprovalCard({
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
         <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
+
+        {isHumanAction && approval.prepared_action && (
+          <PreparedActionPanel
+            approvalId={approval.id}
+            action={approval.prepared_action}
+            findings={approval.checklist ?? []}
+            onDone={onInspect}
+          />
+        )}
 
         {!!checklist.length && (
           <div className="approval-checklist">

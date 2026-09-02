@@ -412,6 +412,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  /**
+   * Run a one-click prepared action. The server executes the committed script
+   * the approval names — never the displayed command string — captures its
+   * output as evidence, and clears the block when it succeeds.
+   */
+  runHumanAction: (id: string) =>
+    request<{
+      ok: boolean;
+      exit_code: number;
+      output?: string;
+      error?: string;
+      ticket_state: string;
+    }>(`/api/inbox/approvals/${id}/run`, { method: "POST" }),
   triage: (ticketId: string) => request<TriageSnapshot>(`/api/tickets/${ticketId}/triage`),
   ticketAsides: (ticketId: string) =>
     request<{ exchanges: BtwExchange[] }>(`/api/tickets/${ticketId}/btw`),

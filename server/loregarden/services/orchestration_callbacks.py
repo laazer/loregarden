@@ -18,6 +18,7 @@ from loregarden.models.domain import (
     DispatchSurface,
     EventType,
     ExternalHarness,
+    HumanActionTier,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -28,6 +29,10 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.prepared_action import (
+    PreparedAction,
+    assess_handover,
+)
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
@@ -48,6 +53,26 @@ from sqlmodel import Session, col, select
 
 def _orch_code() -> str:
     return f"orch_{secrets.token_hex(3)}"
+
+
+#: Phrases a stage report uses when it is asking for a person rather than
+#: reporting a fault. Deliberately a small, literal list: this only decides
+#: whether a block also lands in the inbox as an action, and a false negative
+#: leaves today's behaviour exactly as it was.
+_HUMAN_WORK_MARKERS = (
+    "a human",
+    "an operator",
+    "human/operator",
+    "manually",
+    "by hand",
+    "needs a person",
+    "requires a person",
+)
+
+
+def _looks_like_human_work(message: str) -> bool:
+    lowered = (message or "").lower()
+    return any(marker in lowered for marker in _HUMAN_WORK_MARKERS)
 
 
 class OrchestrationCallbackService:
@@ -559,6 +584,7 @@ class OrchestrationCallbackService:
         *,
         stage_key: str = "",
         message: str,
+        prepared_action: PreparedAction | None = None,
     ) -> Ticket:
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -582,7 +608,56 @@ class OrchestrationCallbackService:
         self._finish_orchestration_run(
             orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
         )
+        self.record_human_action(
+            ticket, stage_key=key or "", message=message, prepared_action=prepared_action
+        )
         return ticket
+
+    def record_human_action(
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        message: str,
+        prepared_action: PreparedAction | None,
+    ) -> Approval | None:
+        """Put a human-gated block in the inbox as an action, not a paragraph.
+
+        Only for blocks that name human work. A block with no prepared action
+        still reaches the inbox — otherwise the ladder would be enforced by
+        making badly-described work invisible, which strands it — but it arrives
+        carrying `assess_handover`'s findings, so what it failed to prepare is
+        stated rather than left for a person to notice
+        (lg-workflow-integrity-460).
+        """
+        if prepared_action is None and not _looks_like_human_work(message):
+            return None
+
+        assessment = assess_handover(message=message, action=prepared_action)
+        action = prepared_action or PreparedAction(tier=HumanActionTier.MANUAL)
+        approval = Approval(
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            kind=ApprovalKind.HUMAN_ACTION,
+            title=f"Human action — {ticket.title}",
+            level="medium",
+            stage_key=stage_key,
+            impact=message,
+            tool_name=action.command,
+            tool_input_json=action.model_dump_json(),
+            checklist_json=json.dumps(assessment.findings),
+            status=ApprovalStatus.PENDING,
+        )
+        self.session.add(approval)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_REQUESTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"approval_id": approval.id, "stage_key": stage_key},
+        )
+        return approval
 
     def attach_artifact(
         self,
