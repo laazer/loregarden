@@ -335,6 +335,31 @@ class StageBudgetArtifactKind(StrEnum):
     RETRY_BLOCK = "stage_retry_block"
 
 
+class GateFaultAttribution(StrEnum):
+    """Whose problem a failing transition gate describes.
+
+    The orchestrator's only vocabulary for a stage that did not advance was
+    "the agent needs rework", which sent eight of nine faults on the blobert
+    milestone 14 run to the participant least able to fix them. The clearest
+    case: a worktree-scoped gate failed on a file belonging to a different
+    ticket that had never been committed, and the implementer was rerouted
+    three times to explain it could not act.
+
+    UNKNOWN is not a failure of the classifier, it is the honest answer most of
+    the time — 91% of succeeded runs record no changed paths, so the ticket's
+    own side of the comparison is frequently empty. It routes exactly as today,
+    which keeps a failure to classify costing nothing beyond the status quo.
+    """
+
+    #: The gate named at least one path this ticket's runs touched.
+    TICKET = "ticket"
+    #: The gate named paths, none of them this ticket's. Somebody else's code.
+    FOREIGN = "foreign"
+    #: Not enough information to say — no recorded paths for the ticket, or no
+    #: paths extractable from the gate output.
+    UNKNOWN = "unknown"
+
+
 class ReworkArtifactKind(StrEnum):
     """The `artifacts.kind` values the rework-feedback ledger owns.
 

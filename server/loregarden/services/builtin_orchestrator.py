@@ -13,6 +13,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
+    GateFaultAttribution,
     GateOutcome,
     OrchestrationDriver,
     OrchestrationRun,
@@ -25,8 +26,9 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
-from loregarden.services.artifact_service import looks_like_test_output
+from loregarden.services.artifact_service import looks_like_test_output, record_blocking_issue
 from loregarden.services.evidence import has_evidence, resolve_head_sha
+from loregarden.services.gate_attribution import attribute_gate_failure
 from loregarden.services.gate_observability import (
     clean_gate_detail,
     record_gate_evaluation,
@@ -657,10 +659,48 @@ class BuiltinOrchestrator:
                     return _GateDecision.PASS
                 detail = residual
 
-        # Fixers didn't (or couldn't) clear it. Route back to the stage's own
-        # agent with the gate errors in context, up to a bounded number of
-        # tries — counted durably (see count_gate_fix_attempts) so the
-        # budget can't be refreshed just by starting a new orchestration run.
+        return self._decide_unfixed_gate_failure(
+            ticket, instance, stages, orch_run, profile, from_stage, detail
+        )
+
+    def _decide_unfixed_gate_failure(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        profile: OrchestrationProfile,
+        from_stage: str,
+        detail: str,
+    ) -> _GateDecision:
+        """Who should look at a gate failure the fixers could not clear.
+
+        Three answers, in order of how much they cost: nobody on this ticket
+        (the failure is not its work), the stage's own agent (bounded retries),
+        or a human.
+        """
+        # A worktree-scoped gate reads the whole tree, so it can fail on a file
+        # another ticket left uncommitted beside this one — and rerouting for
+        # that asks an agent to fix code it never wrote. Only a confident
+        # disagreement diverts: the gate named paths, this ticket recorded
+        # paths, they do not overlap, and they are in different parts of the
+        # tree. Anything less is UNKNOWN and takes the path below unchanged,
+        # because the ticket's own side is empty far more often than not
+        # (lg-workflow-integrity-406).
+        attribution, gate_paths = attribute_gate_failure(
+            gate_output=detail,
+            ticket_paths=set(self._ticket_changed_paths(ticket)),
+        )
+        if attribution is GateFaultAttribution.FOREIGN:
+            self._escalate_foreign_gate_failure(
+                ticket, instance, stages, orch_run, from_stage, detail, gate_paths
+            )
+            return _GateDecision.BLOCKED
+
+        # Route back to the stage's own agent with the gate errors in context,
+        # up to a bounded number of tries — counted durably (see
+        # count_gate_fix_attempts) so the budget can't be refreshed just by
+        # starting a new orchestration run.
         attempts = count_gate_fix_attempts(self.session, ticket.id, from_stage)
         if (
             profile.gates.autofix_agent_fallback
@@ -786,6 +826,61 @@ class BuiltinOrchestrator:
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
+
+    def _escalate_foreign_gate_failure(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        from_stage: str,
+        detail: str,
+        gate_paths: set[str],
+    ) -> None:
+        """The gate failed on code this ticket did not write.
+
+        Blocks for a human like an exhausted gate does, but says something
+        different in the process: the paths that triggered it, and the fact that
+        none of them belong to this ticket. Rerouting instead spent a full agent
+        turn producing a document explaining the agent could not act, three times
+        over on ticket 22 of the blobert milestone 14 run.
+
+        Deliberately not an auto-fix and not a retry. Nothing this ticket's agent
+        can do changes a file it does not own, so more attempts cannot converge —
+        the only useful next actor is a person who can see the whole tree.
+        """
+        offending = ", ".join(sorted(gate_paths)) or "(none reported)"
+        self.callbacks.attach_artifact(
+            ticket,
+            kind="error",
+            title=gate_failure_artifact_title(from_stage),
+            content={
+                "message": (
+                    f"{detail}\n\n"
+                    f"Attribution: none of the paths this gate named belong to "
+                    f"{ticket.external_id}. Offending paths: {offending}. This is a fault in "
+                    "the surroundings — most often another ticket's uncommitted work in a "
+                    "shared tree — so it was not routed to this ticket's agent, which cannot "
+                    "fix a file it does not own."
+                ),
+                "run_code": "",
+                "agent_id": "",
+                "stage_key": from_stage,
+                "command": "",
+            },
+        )
+        summary = (
+            f"Transition gate after '{from_stage}' failed on paths outside this ticket: "
+            f"{offending}. Needs an operator, not rework."
+        )
+        record_blocking_issue(
+            self.session,
+            ticket,
+            run_id=None,
+            stage_key=from_stage,
+            message=summary,
+        )
+        self.callbacks.block_ticket(orch_run, ticket, stage_key=from_stage, message=summary)
 
     def _block_after_gate_failure(
         self,
