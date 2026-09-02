@@ -2,7 +2,7 @@
 name = "loregarden-server"
 version = "0.1.0"
 description = "Loregarden control plane — agent SDLC orchestration"
-requires-python = ">=3.10"
+requires-python = ">=3.11"  # StrEnum; see [tool.mypy] python_version
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -104,7 +104,7 @@ max-statements = 50
 # large; this starter gate fails on definite name/import breaks, not arg-type
 # noise. Tighten disable_error_code as modules get annotated.
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_ignores = true
@@ -112,27 +112,36 @@ check_untyped_defs = false
 allow_untyped_defs = true
 allow_incomplete_defs = true
 no_implicit_optional = false
+# Measured against the tree at 7725068, every code re-enabled, python_version
+# corrected to 3.11 (547). 425 errors became 202 on the version fix alone: more
+# than half of what looked like type debt was mypy reading this code against a
+# Python it cannot run on. Eleven codes then had zero errors and are back on;
+# `return-value` had seven, all real, all fixed here.
+#
+# What is still off, with its measured cost. Re-enable by fixing the count, not
+# by deleting the line:
+#
+#   attr-defined  72   mostly SQLModel column attributes on model classes
+#   arg-type      51
+#   union-attr    28
+#   assignment    22
+#   operator       7
+#   misc           4
+#   dict-item      4
+#   index          1
+#
+# Anything not listed here is enabled. `return-value` is the one that matters
+# most to keep: without it `def f() -> int: return "no"` type-checks clean, and
+# every "mypy clean" in a stage report meant less than its reader thought.
 disable_error_code = [
     "arg-type",
     "assignment",
     "attr-defined",
-    "call-arg",
-    "return-value",
     "union-attr",
-    "var-annotated",
     "index",
     "operator",
-    "list-item",
     "dict-item",
-    "typeddict-item",
-    "override",
     "misc",
-    "type-arg",
-    "valid-type",
-    "import-untyped",
-    "no-any-return",
-    "no-untyped-def",
-    "no-untyped-call",
 ]
 exclude = [
     "tests/",

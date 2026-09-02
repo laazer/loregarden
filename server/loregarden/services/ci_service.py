@@ -304,7 +304,7 @@ class CIService:
 
         # Get all attempts for this CI run
         stmt = select(AutoFixAttempt).where(AutoFixAttempt.ci_run_result_id == ci_result.id)
-        return self.session.exec(stmt).all()
+        return list(self.session.exec(stmt).all())
 
     async def skip_ci_check(self, ticket_id: str) -> None:
         """

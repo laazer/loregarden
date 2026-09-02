@@ -120,14 +120,14 @@ def counts_by_server(session: Session) -> dict[str, int]:
     """Calls per MCP server. Non-MCP tools are grouped under "" by the query
     and dropped here — this is the MCP gateway's view, not every tool."""
     rows = session.exec(
-        select(McpToolCall.server_name, func.count()).group_by(McpToolCall.server_name)  # type: ignore[arg-type]
+        select(McpToolCall.server_name, func.count()).group_by(McpToolCall.server_name)
     ).all()
     return {str(server): int(count) for server, count in rows if server}
 
 
 def counts_by_decision(session: Session) -> dict[str, int]:
     rows = session.exec(
-        select(McpToolCall.decision, func.count()).group_by(McpToolCall.decision)  # type: ignore[arg-type]
+        select(McpToolCall.decision, func.count()).group_by(McpToolCall.decision)
     ).all()
     return {str(decision): int(count) for decision, count in rows if decision}
 
@@ -147,21 +147,21 @@ def server_activity(
 
     totals = counts_by_server(session)
     windowed = session.exec(
-        select(McpToolCall.server_name, func.count())  # type: ignore[arg-type]
+        select(McpToolCall.server_name, func.count())
         .where(McpToolCall.created_at >= since)
         .group_by(McpToolCall.server_name)
     ).all()
     recent_counts = {str(server): int(count) for server, count in windowed if server}
 
     latest = session.exec(
-        select(McpToolCall.server_name, func.max(McpToolCall.created_at)).group_by(  # type: ignore[arg-type]
+        select(McpToolCall.server_name, func.max(McpToolCall.created_at)).group_by(
             McpToolCall.server_name
         )
     ).all()
     last_seen = {str(server): last for server, last in latest if server}
 
     agent_rows = session.exec(
-        select(McpToolCall.server_name, McpToolCall.agent_id).distinct()  # type: ignore[arg-type]
+        select(McpToolCall.server_name, McpToolCall.agent_id).distinct()
     ).all()
     agents: dict[str, set[str]] = {}
     for server, agent_id in agent_rows:
