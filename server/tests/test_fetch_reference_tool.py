@@ -1108,16 +1108,22 @@ def _write_fails(session, url):
     Session is holding the service's own row for `url`, which keeps the
     caller's unrelated work flushing normally and makes the failure a
     persistence failure rather than a read failure.
-    """
-    real_flush = session.flush
 
-    def flush(objects=None):
-        ours = [obj for obj in (*session.new, *session.dirty) if getattr(obj, "url", None) == url]
+    Patched on the class rather than on one instance, since 638: a caller that
+    has only read is written for on the service's *own* Session, so an
+    injection bound to the caller's instance reaches nothing and the write it
+    was meant to fail succeeds instead. The `url` guard is what keeps a
+    class-wide patch narrow.
+    """
+    real_flush = Session.flush
+
+    def flush(self, objects=None):
+        ours = [obj for obj in (*self.new, *self.dirty) if getattr(obj, "url", None) == url]
         if ours:
             raise OperationalError("INSERT INTO reference_pages", {}, _Boom("disk I/O error"))
-        return real_flush(objects)
+        return real_flush(self, objects)
 
-    return patch.object(session, "flush", side_effect=flush)
+    return patch.object(Session, "flush", new=flush)
 
 
 def _extraction_raises():
@@ -1340,35 +1346,53 @@ def _fresh_caller_transport(site, isolated_db):
 
 
 @pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
-def test_the_service_write_unwinds_from_a_caller_that_has_only_read(site, isolated_db, resolver):
+def test_a_read_only_callers_rollback_cannot_destroy_the_cache_write(site, isolated_db, resolver):
     """616 AC3 in the caller shape `get_session()` actually hands every request.
 
-    Every other test in this section arrives with a flushed row of the caller's
-    own. On pysqlite that flush is what emits the `BEGIN` a SAVEPOINT has to be
-    nested inside; without it `SAVEPOINT` *is* the outermost transaction and
-    `RELEASE` commits it. So the service commits the caller's Session again — by
-    a new route — and every one of those tests passes anyway. That is why this
-    one adds no pending work of its own: the caller only reads, exactly as
-    `db/session.py`'s `Session(engine)` hands it over.
+    This test asserted the opposite until 638, and the reason is worth keeping.
+    616 fixed "the service commits the caller's Session" by nesting the cache
+    write in the caller's transaction, and chose "a caller rollback discards
+    the service's write" as its instrument. That instrument pinned the
+    mechanism rather than the criterion: it is also satisfied by a service that
+    holds the caller's connection — and a write lock on the whole database
+    file — from its first write until the caller ends the transaction, which is
+    the defect 638 exists to remove.
 
-    `session.in_transaction()` cannot discriminate here, though it looks like it
-    should: it is already True at the write site, autobegun by the service's own
-    `_find_row` SELECT. A caller rollback that fails to discard the service's
-    write does discriminate, so that is the instrument.
+    So for this caller shape the contract is now the other way round. A caller
+    that has only read has no work of its own for the service to commit, which
+    makes 616's criterion vacuous here; the tests that still discriminate on it
+    are the ones below that give the caller pending work. What is left to pin
+    for a read-only caller is that the service touched its Session at all: the
+    write goes to a connection of the service's own, so it is durable when it
+    returns and a later caller rollback has nothing of ours to discard.
+
+    Durability alone does not pin that, and the second assertion is why. A
+    service that nests a SAVEPOINT in a read-only caller reaches the same
+    durable row by the route 616 rejected: with no `BEGIN` under it the
+    SAVEPOINT *is* the outermost transaction, so `RELEASE` commits the caller's
+    Session, and a test that asked only "did the row survive" passes that
+    implementation too. The caller's `SessionTransaction` separates them — both
+    a commit and a rollback end it and autobegin another, so an unchanged
+    object means the service never ended anything of the caller's.
     """
     transport, url = _fresh_caller_transport(site, isolated_db)
-    before = _durable_row(isolated_db, url)
 
     with Session(isolated_db) as caller:
         assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
+        _get_row(caller, url)  # the caller's own read, as any request makes first
+        outer = caller.get_transaction()
+        assert outer is not None, "the caller's read should have begun a transaction to protect"
         payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        assert caller.get_transaction() is outer, (
+            "the service ended the caller's transaction — it wrote through the caller's Session"
+        )
         _assert_self_classifying(payload)
         assert payload["error"] == "", payload
         assert _get_row(caller, url) is not None, "the service's write never landed at all"
         caller.rollback()
 
-    assert _durable_row(isolated_db, url) == before, (
-        "the service's write survived the caller's rollback — it committed the caller's Session"
+    assert _durable_row(isolated_db, url) is not None, (
+        "the caller's rollback discarded the service's write — it wrote through the caller"
     )
 
 
@@ -1413,9 +1437,14 @@ def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, r
     real_find_row = reference_cache._find_row
     reads: list[str] = []
 
+    # Blind for both reads that precede the write — the one that decides there
+    # is nothing cached, and the one `_store` makes inside its own write
+    # transaction — because the insert this stages is the one that lands after
+    # both. The recovery re-read afterwards is real, and is what must find the
+    # row the unique index kept.
     def find_row(session_arg, url_arg):
         reads.append(url_arg)
-        return None if len(reads) == 1 else real_find_row(session_arg, url_arg)
+        return None if len(reads) <= 2 else real_find_row(session_arg, url_arg)
 
     _pending_caller_work(session)
     outer = session.get_transaction()

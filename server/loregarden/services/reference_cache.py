@@ -525,30 +525,54 @@ def _driver_transaction_open(connection: Connection) -> bool:
 
 
 @contextmanager
-def _cache_write(session: Session) -> Iterator[None]:
-    """Run the cache's own writes so that only they unwind.
+def _cache_write(session: Session) -> Iterator[Session]:
+    """Yield the Session the cache's own write should go through.
 
-    `session.begin_nested()` on its own is not enough, and the tests could not
-    see it. pysqlite emits no `BEGIN` for a SELECT or for `SAVEPOINT` itself, so
-    with a caller that has only read — the state `get_session()` hands every
-    request — the SAVEPOINT *is* the outermost transaction and `RELEASE` commits
-    it. That is tickets 608/610's "the module commits the caller's Session"
-    defect through a new mechanism.
+    Two callers reach this module, and they need opposite things.
 
-    `session.in_transaction()` cannot tell the two callers apart: it is already
-    True by this point, autobegun by the cache's own `_find_row` SELECT. The
-    driver connection can, so we ask it, and start the outer transaction the
-    savepoint needs when nobody else has.
+    A caller that has only read — the state `db/session.py`'s `get_session()`
+    hands every request — holds no transaction of its own. Writing through its
+    Session means opening one, and this module may not end a transaction on a
+    Session it was handed (608/610), so the write lock would outlive the call.
+    SQLite locks the whole *database file*, so the next fetch on that Session
+    then does its network I/O with the control plane unwritable for as long as
+    the remote takes to answer. We therefore take our own connection: the lock
+    is acquired and released inside this block, and the caller's Session is
+    left exactly as we found it.
 
-    We open that transaction and never end it: committing or rolling back a
-    Session we were handed is exactly what this module must not do. The caller
-    owns both ends, as it already did for a write of its own.
+    A caller that is mid-write already holds that lock because it chose to. A
+    second connection would deadlock against it, so we nest inside the caller's
+    transaction and let the caller own both ends — 616's contract, unchanged.
+
+    `session.in_transaction()` cannot tell the two apart: it is already True by
+    this point, autobegun by the cache's own `_find_row` SELECT. pysqlite emits
+    no `BEGIN` for a SELECT, so the driver connection can, and that is what
+    `_driver_transaction_open` asks.
+
+    The yielded Session is not always the one passed in, so a caller of this
+    context manager must resolve its rows *through the yielded Session* rather
+    than reuse an instance attached to the outer one.
     """
-    connection = session.connection()
-    if not _driver_transaction_open(connection):
-        connection.exec_driver_sql("BEGIN")
-    with session.begin_nested():
-        yield
+    if _driver_transaction_open(session.connection()):
+        with session.begin_nested():
+            yield session
+        return
+    with Session(session.get_bind()) as writer, writer.begin():
+        yield writer
+
+
+def _caller_view(session: Session, url: str) -> ReferencePage | None:
+    """The row as the *caller's* Session sees it once our write has committed.
+
+    A write on our own connection is invisible to an instance the caller's
+    identity map already holds — `_find_row` would hand back the stale one it
+    loaded before the fetch — so the row it returns is refreshed rather than
+    trusted.
+    """
+    row = _find_row(session, url)
+    if row is not None:
+        session.refresh(row)
+    return row
 
 
 def _find_row(session: Session, url: str) -> ReferencePage | None:
@@ -561,12 +585,18 @@ def _is_fresh(row: ReferencePage) -> bool:
 
 
 def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> dict:
-    with _cache_write(session):
-        row.hit_count += 1
-        session.add(row)
-        session.flush()
-    session.refresh(row)
-    return _row_payload(row, ReferenceCacheOutcome.HIT, "", max_chars)
+    with _cache_write(session) as writer:
+        counted = _find_row(writer, row.url)
+        if counted is None:
+            # The row we are serving was deleted between our read and our write.
+            # The page in hand is still worth serving; only its tally is lost.
+            logger.warning("reference cache could not count a hit for %s", row.url)
+        else:
+            counted.hit_count += 1
+            writer.add(counted)
+            writer.flush()
+    served = _caller_view(session, row.url) or row
+    return _row_payload(served, ReferenceCacheOutcome.HIT, "", max_chars)
 
 
 def _store(
@@ -580,9 +610,9 @@ def _store(
     kind: ReferencePageKind,
 ) -> ReferencePage | None:
     """Insert or update the cached copy. None means the write did not land."""
-    target = row if row is not None else ReferencePage(url=url)
     try:
-        with _cache_write(session):
+        with _cache_write(session) as writer:
+            target = _find_row(writer, url) or ReferencePage(url=url)
             target.title = title
             target.content_markdown = markdown
             target.content_chars = len(markdown)
@@ -590,16 +620,15 @@ def _store(
             target.last_modified = result.last_modified
             target.kind = kind
             target.fetched_at = utcnow()
-            session.add(target)
-            session.flush()
+            writer.add(target)
+            writer.flush()
     except IntegrityError as exc:
         # Another caller inserted this URL between our read and our write. The
         # unique index is the arbiter; the SAVEPOINT this raised out of is
         # already unwound by the `with`, so re-read and use whatever it kept.
         logger.info("reference cache insert raced for %s: %s", url, exc)
-        return _find_row(session, url)
-    session.refresh(target)
-    return target
+        return _caller_view(session, url)
+    return _caller_view(session, url)
 
 
 def _serve_stale_or_fail(url: str, row: ReferencePage | None, error: str, max_chars: int) -> dict:
@@ -618,16 +647,21 @@ def _revalidated(
             url,
             _describe(ReferenceFetchError.FETCH_ERROR, f"{url} answered 304 with nothing cached"),
         )
-    with _cache_write(session):
-        if result.etag:
-            row.etag = result.etag
-        if result.last_modified:
-            row.last_modified = result.last_modified
-        row.fetched_at = utcnow()
-        session.add(row)
-        session.flush()
-    session.refresh(row)
-    return _row_payload(row, ReferenceCacheOutcome.REVALIDATED, "", max_chars)
+    with _cache_write(session) as writer:
+        aged = _find_row(writer, url)
+        if aged is None:
+            # Deleted under us. The stored body we already hold still stands.
+            logger.warning("reference cache could not reset the age of %s", url)
+        else:
+            if result.etag:
+                aged.etag = result.etag
+            if result.last_modified:
+                aged.last_modified = result.last_modified
+            aged.fetched_at = utcnow()
+            writer.add(aged)
+            writer.flush()
+    served = _caller_view(session, url) or row
+    return _row_payload(served, ReferenceCacheOutcome.REVALIDATED, "", max_chars)
 
 
 def _resolve_result(
