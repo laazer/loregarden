@@ -1777,3 +1777,100 @@ def test_a_symlink_cycle_is_refused_through_the_one_channel(tmp_path):
         diff.read_source_text(tmp_path / "a.py", repo=tmp_path)
 
     assert "a.py" in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------
+# 553 — two edges the scope work left fail-closed
+#
+# Neither was unsafe: both exited 1 rather than passing something unexamined.
+# But both refuse a repository the gate should be able to grade, and one of
+# them refuses *every* workspace whose trunk is not `main`.
+# --------------------------------------------------------------------------
+
+
+def _unborn_repo(tmp_path: Path, body: str) -> Path:
+    """A repository with a violation and no commits at all."""
+    repo = tmp_path / "unborn"
+    (repo / "server" / "loregarden").mkdir(parents=True)
+    _git(repo, "init", "-q", ".")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+    (repo / "server" / "loregarden" / "sample.py").write_text(body, encoding="utf-8")
+    return repo
+
+
+@pytest.mark.parametrize(
+    ("gate", "body", "expected"),
+    [
+        (PY_ORGANIZATION_GATE, PY_ORGANIZATION_VIOLATION, "isinstance"),
+        (PY_SILENT_EXCEPT_GATE, PY_SILENT_EXCEPT_VIOLATION, "Silently caught"),
+    ],
+    ids=["organization", "silent-except"],
+)
+def test_the_python_gates_grade_a_repository_with_no_commits(gate, body, expected, tmp_path):
+    """553 finding 1. `git_has_head` guarded discovery but not the diff.
+
+    Every file in a brand-new workspace is untracked, which `git_changed_paths`
+    already handled — so the gate found the file and printed `examined 1
+    file(s)`, then died on `git diff HEAD` with "cannot determine what to
+    examine". It announced it had read a file and then refused to grade it.
+
+    The TypeScript gate has always handled this, which is what made the
+    asymmetry worth filing rather than a design choice.
+    """
+    repo = _unborn_repo(tmp_path, body)
+
+    result = _run_gate(gate, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert expected in result.stdout + result.stderr, result.stdout + result.stderr
+    _assert_no_vacuous_pass(result)
+
+
+def test_a_repository_with_no_commits_and_clean_code_passes(tmp_path):
+    """The other direction, without which "always exit 1" would satisfy the test above."""
+    repo = _unborn_repo(tmp_path, "def read(payload):\n    return payload\n")
+
+    result = _run_gate(PY_ORGANIZATION_GATE, repo)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert EXAMINED_RE.search(result.stdout), result.stdout
+
+
+def test_a_workspace_whose_trunk_is_master_is_graded_not_refused(tmp_path):
+    """553 finding 2, shipped by 546 and unpinned until now.
+
+    The orchestration YAMLs pass no `--base`, so the clean-tree fallback
+    resolves the default. When that default was the literal `main`, a workspace
+    on `master` failed *every* stage transition on all three gates — over a
+    branch name, not over any code. CI proved it: GitHub Actions sets no
+    `init.defaultBranch`, so every fixture repository is born on `master`.
+
+    A clean tree is the case that matters: it is the state a committed agent
+    worktree is in, and the one that sends the gate to the branch diff.
+    """
+    repo = tmp_path / "master-trunk"
+    (repo / "server" / "loregarden").mkdir(parents=True)
+    _git(repo, "init", "-q", "--initial-branch=master", ".")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+    (repo / "server" / "loregarden" / "base.py").write_text("X = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+
+    _git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "server" / "loregarden" / "sample.py").write_text(
+        PY_ORGANIZATION_VIOLATION, encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add a violation")
+
+    result = _run_gate(PY_ORGANIZATION_GATE, repo)
+
+    assert result.returncode == 1, (
+        "a clean tree on a master-trunk workspace was not graded against its branch:\n"
+        + result.stdout
+        + result.stderr
+    )
+    assert "isinstance" in result.stdout + result.stderr, result.stdout + result.stderr
+    _assert_no_vacuous_pass(result)

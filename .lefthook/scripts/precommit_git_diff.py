@@ -362,7 +362,48 @@ def _run_git(args: List[str], repo: Path) -> str:
     return _git(["diff", *args], repo)
 
 
+def unborn_worktree(repo: Path, diff_scope: str) -> bool:
+    """Whether this scope has no ref to diff against, because nothing is committed.
+
+    `git diff HEAD` cannot resolve in a repository with no commits, so every
+    ref-based query below has to answer without one. `git_changed_paths` always
+    did; the other four did not, which is what 553 filed: discovery found the
+    untracked files, printed `examined 1 file(s)`, and the next call died with
+    "cannot determine what to examine".
+
+    Only the worktree scope is covered. `--cached` resolves fine against an
+    unborn HEAD, and a caller that named `--base` or `--since` asked for a ref
+    that has to exist — substituting emptiness there would grade against a base
+    nobody chose, which is the failure this file exists to prevent.
+
+    Every caller returns its own empty value rather than sharing one, because
+    what "empty" means differs: no diff text, no added paths, no counts. They
+    are safe to return only because an unborn repository has every path
+    untracked, and `DiffScope.touched_lines` grades an untracked file whole.
+    """
+    return diff_scope == WORKTREE and not git_has_head(repo)
+
+
 def git_diff_cached(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> str:
+    """The unified diff this scope describes, or empty where there is none to take.
+
+    The unborn-HEAD guard mirrors `git_changed_paths`, which has had it all
+    along — the asymmetry is what 553 filed. Discovery would find the new files
+    (they are untracked), print `examined 1 file(s)`, and then this call would
+    die on `git diff HEAD` with "cannot determine what to examine": a gate that
+    announces it read a file and then refuses to grade it.
+
+    Returning no diff is safe *here specifically*, and only because of what the
+    caller does with it: in a repository with no commits every path is
+    untracked, and `DiffScope.touched_lines` already grades an untracked file
+    in its entirety rather than scoping to changed lines. The empty diff
+    narrows nothing. That distinction is the whole of 546 — an empty diff that
+    *does* narrow is the vacuous pass this file exists to prevent — so if a
+    scope is ever added where an unborn HEAD does not imply untracked, it must
+    not reach this branch.
+    """
+    if unborn_worktree(repo, diff_scope):
+        return ""
     # The trailing `--` ends the revision list, so nothing derived from a ref can
     # be read as a pathspec.
     return _run_git([*_scope_args(diff_scope, base_ref), "--no-color", "-U0", "--"], repo)
@@ -401,7 +442,7 @@ def git_has_head(repo: Path) -> bool:
 
 def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
     """Repo-relative paths this diff touches, for callers given no explicit file list."""
-    if diff_scope == WORKTREE and not git_has_head(repo):
+    if unborn_worktree(repo, diff_scope):
         return sorted(set(git_untracked_paths(repo)))
     out = _run_git(
         [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=ACMR", "--"], repo
@@ -751,6 +792,8 @@ def git_gitlink_paths(repo: Path, diff_scope: str, base_ref: str) -> List[str]:
     filter drops it (it is a directory), and the run prints ``examined 0
     file(s)`` and exits 0 — a change nobody graded, reported as a clean gate.
     """
+    if unborn_worktree(repo, diff_scope):
+        return []
     out = _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], repo)
     found: List[str] = []
     for line in out.splitlines():
@@ -1006,7 +1049,12 @@ def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
     That pair is indistinguishable from a mode-only ``chmod`` by counts alone,
     so counts alone cannot decide it. "It is new, so all of it is new" can.
     """
-    out = _run_git([*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=A", "--"], repo)
+    if unborn_worktree(repo, diff_scope):
+        # Every path is untracked, which the caller already treats as whole-file.
+        return []
+    out = _run_git(
+        [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=A", "--"], repo
+    )
     return decoded_git_paths(out)
 
 
@@ -1018,7 +1066,14 @@ def git_diff_numstat(
     The counts drive "don't make it worse" checks (e.g. file-length caps) that
     should fire on net growth, not on any touch to an already-oversized file —
     otherwise a pure cleanup/shrink of a long file would itself get blocked.
+
+    Unborn HEAD is empty for the same reason `git_diff_cached` is: nothing is
+    committed, so there is no "already" to be worse than, and every file is
+    untracked and graded whole. Absent counts read as `(0, 0)` — a new file is
+    judged on its own size rather than on growth it cannot have.
     """
+    if unborn_worktree(repo, diff_scope):
+        return DiffNumstat({}, frozenset())
     out = _run_git([*_scope_args(diff_scope, base_ref), "--numstat", "--"], repo)
     counts: Dict[str, Tuple[int, int]] = {}
     undiffable: Set[str] = set()
