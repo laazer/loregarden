@@ -67,6 +67,7 @@ class Workspace(SQLModel, table=True):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    lmstudio_max_iterations: int = 0
     opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""

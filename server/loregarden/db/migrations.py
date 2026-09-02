@@ -48,6 +48,7 @@ from loregarden.db.migrations_git_boundary import (
     m_agent_run_git_boundary,
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
+from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
     m_mcp_server_rate_limit,
@@ -1350,6 +1351,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0101_lane_entry_force", m_lane_entry_force),
     ("0102_backfill_stage_retry_block", m_backfill_stage_retry_block),
     ("0103_rework_feedback_kind", m_rework_feedback_kind),
+    ("0104_lmstudio_max_iterations", m_lmstudio_max_iterations),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

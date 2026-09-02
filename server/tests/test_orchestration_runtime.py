@@ -16,6 +16,9 @@ def test_ticket_detail_includes_default_orchestration_runtime(client: TestClient
         "codex_model": "",
         "lmstudio_base_url": "",
         "lmstudio_model": "",
+        # 0 means "this workspace has not chosen", which is what lets resolution
+        # fall through to the global default (lg-workflow-integrity-163).
+        "lmstudio_max_iterations": 0,
         "opencode_model": "",
         "claude_effort": "",
         "cursor_effort": "",
