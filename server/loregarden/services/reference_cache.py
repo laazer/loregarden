@@ -789,6 +789,30 @@ def fetch_reference(
     """Fetch a reference page through the cache, extracting it to markdown.
 
     Never raises: every failure comes back as a self-classifying payload.
+
+    Transaction contract
+    --------------------
+    **This module never commits or rolls back the Session you hand it.** Which
+    transaction the cache's own write lands in depends on what you were already
+    holding, and you need not arrange either shape deliberately — the module
+    reads which one you are in.
+
+    *If you have only read* — the shape `db/session.py`'s `get_session()` hands
+    every request — the cache writes on a Session of its own and commits there.
+    The page is durably cached by the time this returns. You need not commit,
+    and closing or rolling back your Session afterwards cannot discard it. Your
+    Session is left exactly as it was found.
+
+    *If you are mid-write*, holding a transaction of your own, the cache write
+    nests inside it as a SAVEPOINT and you keep both ends. It becomes durable
+    when you commit, and your rollback discards it along with your own work —
+    which is the point: the module must not end a transaction it did not start.
+
+    Either way **neither entry point leaves a transaction open that you did not
+    already have**, so no database lock outlives this call. That is not a free
+    nicety: a lock held across a remote fetch locks the whole SQLite file and
+    hands the remote server a lever on the control plane's write availability
+    (638).
     """
     return _fetch_through_cache(
         session,
@@ -819,6 +843,19 @@ def fetch_cached_text(
     `fetch_reference`'s; the unextracted body arrives in `markdown`.
 
     Never raises.
+
+    Transaction contract
+    --------------------
+    The same as `fetch_reference`, whose docstring carries the reasoning: this
+    module never commits or rolls back the Session you hand it; a caller that
+    has only read gets a page that is durably cached when this returns, written
+    on a Session of the module's own; a caller mid-write gets the write nested
+    in its own transaction and owns both ends. Neither entry point leaves a
+    transaction open that the caller did not already have.
+
+    It matters more here than there. Both DevDocs tools fetch a catalog and
+    then an index on one Session, so this is the entry point that would have
+    held a lock across the second remote read.
     """
     return _fetch_through_cache(
         session,
