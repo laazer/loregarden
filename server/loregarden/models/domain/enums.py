@@ -360,6 +360,23 @@ class GateFaultAttribution(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ReworkStopReason(StrEnum):
+    """Why a rework loop stopped, when it did.
+
+    A bool said only "stop", so the human got the count's explanation whatever
+    the actual reason. The two are different situations and want different
+    next actions: a loop that ran out of budget may still have been converging,
+    while one that repeated itself was never going to.
+    """
+
+    #: Keep going — the loop has budget left and is still changing.
+    NONE = "none"
+    #: `MAX_REWORK_REROUTES` reroutes to this stage already happened.
+    BUDGET = "budget"
+    #: The same finding, against the same tree, twice running.
+    STUCK = "stuck"
+
+
 class ReworkArtifactKind(StrEnum):
     """The `artifacts.kind` values the rework-feedback ledger owns.
 

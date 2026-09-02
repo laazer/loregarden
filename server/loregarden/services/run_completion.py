@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     Approval,
     Artifact,
     EventType,
+    ReworkStopReason,
     RunStatus,
     StageStatus,
     Ticket,
@@ -114,16 +115,23 @@ def _reroute_or_block_for_rework(
         context=full_context,
         run_id=run.id,
     )
-    if exhausted:
+    if exhausted is not ReworkStopReason.NONE:
         count = rework_reroute_count(orch.session, ticket, target_stage)
-        ticket.blocking_issues = _blocking_issue(
-            orch.session,
-            ticket,
-            run,
-            f"Rework loop: '{target_stage}' has been rerouted {count}× without passing "
-            f"'{run.stage_key}'. Paused for a human — see the accumulated rework feedback "
-            f"before re-running.",
-        )
+        if exhausted is ReworkStopReason.STUCK:
+            reason = (
+                f"Rework loop is not converging: '{target_stage}' raised the same finding "
+                f"against the same commit twice running (round {count}). Re-running cannot "
+                f"differ from the last attempt — nothing changed in the request or the code "
+                f"it was about. Paused for a human; the repeated finding is in the rework "
+                f"feedback."
+            )
+        else:
+            reason = (
+                f"Rework loop: '{target_stage}' has been rerouted {count}× without passing "
+                f"'{run.stage_key}'. Paused for a human — see the accumulated rework feedback "
+                f"before re-running."
+            )
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, reason)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         return

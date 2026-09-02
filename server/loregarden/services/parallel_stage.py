@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     AgentRun,
     OrchestrationRun,
     ParallelAgentSpec,
+    ReworkStopReason,
     RunStatus,
     StageStatus,
     Ticket,
@@ -288,25 +289,37 @@ def _route_parallel_stage_failures(
         # re-run, so the re-run agent sees every round in full rather than the
         # short pointer ticket.blocking_issues keeps for the UI.
         target_stage = to_key or previous_stage_key(stages, stage_key) or ""
-        if record_reroute_exhausts_budget(
+        stop = record_reroute_exhausts_budget(
             session,
             ticket,
             target_stage=target_stage,
             from_stage=stage_key,
             context=agent_context or message,
-        ):
-            # Same target rerouted to the loop cap without sticking — stop the
-            # loop and pull in a human instead of bouncing again.
+        )
+        if stop is not ReworkStopReason.NONE:
+            # Either the loop cap ran out, or two rounds running asked for the
+            # same thing against the same tree. The second is worth saying
+            # differently: it means re-running cannot help, rather than that we
+            # ran out of patience.
             count = rework_reroute_count(session, ticket, target_stage)
+            if stop is ReworkStopReason.STUCK:
+                stop_message = (
+                    f"Rework loop is not converging: '{target_stage}' raised the same "
+                    f"finding against the same commit twice running (round {count}). "
+                    f"Re-running cannot differ from the last attempt. Paused for a human; "
+                    f"the repeated finding is in the rework feedback."
+                )
+            else:
+                stop_message = (
+                    f"Rework loop: '{target_stage}' has been rerouted {count}× from "
+                    f"'{stage_key}' without passing. Paused for a human — see the "
+                    f"accumulated rework feedback before re-running."
+                )
             callbacks.block_ticket(
                 orch_run,
                 ticket,
                 stage_key=stage_key,
-                message=(
-                    f"Rework loop: '{target_stage}' has been rerouted {count}× from "
-                    f"'{stage_key}' without passing. Paused for a human — see the "
-                    f"accumulated rework feedback before re-running."
-                ),
+                message=stop_message,
             )
             session.refresh(ticket)
             return False, message
