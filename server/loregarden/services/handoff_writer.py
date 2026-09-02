@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.models.domain import ClaimCertainty, Ticket, Workspace
+from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
 from loregarden.services.handoff_certainty import standing_of, unresolvable_evidence
@@ -174,10 +175,16 @@ def _validate_via_workspace_gate(
 
     Returns a dict with ``ran`` (bool). When ``ran`` is True it also carries
     ``status`` / ``violations`` / ``remediation_hints`` / ``gaps`` from the gate.
-    When False it carries ``reason`` explaining why validation was skipped.
+    When False it carries ``reason`` and a ``skip`` naming *which* failure it
+    was — the caller has to tell a workspace with no gate from a gate that was
+    supposed to judge this handoff and could not.
     """
     if not (repo_root / GATE_MODULE_RELPATH).is_file():
-        return {"ran": False, "reason": f"No handoff gate at {GATE_MODULE_RELPATH}"}
+        return {
+            "ran": False,
+            "skip": HandoffGateSkip.ABSENT,
+            "reason": f"No handoff gate at {GATE_MODULE_RELPATH}",
+        }
 
     payload = json.dumps(
         {
@@ -199,6 +206,7 @@ def _validate_via_workspace_gate(
     except subprocess.TimeoutExpired:
         return {
             "ran": False,
+            "skip": HandoffGateSkip.TIMED_OUT,
             "reason": f"Gate validation timed out after {VALIDATION_TIMEOUT_SECONDS}s",
         }
 
@@ -207,7 +215,23 @@ def _validate_via_workspace_gate(
         try:
             result = json.loads(stdout.splitlines()[-1])
         except json.JSONDecodeError:
-            return {"ran": False, "reason": f"Gate produced unparseable output: {stdout[:400]}"}
+            return {
+                "ran": False,
+                "skip": HandoffGateSkip.UNPARSEABLE,
+                "reason": f"Gate produced unparseable output: {stdout[:400]}",
+            }
+        if not isinstance(result, dict):  # py-org: allow-isinstance
+            # Valid JSON of the wrong shape — a gate that returns None prints
+            # `null`, which parses. Reading `.get` off it raised AttributeError
+            # out of this function and out of `write_handoff`, so a gate with a
+            # missing return crashed the caller instead of failing closed. The
+            # payload is a third-party gate's stdout, which is the foreign
+            # object the organization gate's waiver exists for.
+            return {
+                "ran": False,
+                "skip": HandoffGateSkip.UNPARSEABLE,
+                "reason": f"Gate returned {type(result).__name__}, not a result object",
+            }
         return {
             "ran": True,
             "status": result.get("status", "FAIL"),
@@ -220,6 +244,7 @@ def _validate_via_workspace_gate(
     stderr = (completed.stderr or "").strip()
     return {
         "ran": False,
+        "skip": HandoffGateSkip.ERRORED,
         "reason": f"Gate did not run (exit {completed.returncode}): {stderr[:400]}",
     }
 
@@ -328,13 +353,36 @@ def write_handoff(
     }
 
     if not validation["ran"]:
-        # No gate for this workspace, or the gate could not run. There is no catalog to
-        # have violated, so the handoff stands — but say plainly that nothing checked it,
-        # rather than letting "unvalidated" read as "passed" (ticket 88).
+        skip = validation["skip"]
+        if skip is not HandoffGateSkip.ABSENT:
+            # The gate was there and was supposed to judge this handoff, and did
+            # not — it timed out, crashed, or printed something unreadable. Those
+            # are operational failures, and storing anyway makes "nobody checked"
+            # indistinguishable from "checked and fine" (134). Rolled back on the
+            # same path a real FAIL takes, because the handoff is equally unproven.
+            session.rollback()
+            export_for_gate(session, workspace, ticket)
+            return {
+                **base,
+                "artifact_id": "",
+                "status": "GATE_ERROR",
+                "skip": skip.value,
+                "message": (
+                    f"Handoff not stored: the workspace gate could not judge it "
+                    f"({skip.value}). {validation['reason']}"
+                ),
+                "rolled_back": True,
+            }
+
+        # No gate module in this workspace. Structural rather than operational:
+        # there is no catalog to have violated, so the handoff stands — but say
+        # plainly that nothing checked it, rather than letting "unvalidated" read
+        # as "passed" (ticket 88).
         session.commit()
         return {
             **base,
             "status": "stored_unvalidated",
+            "skip": skip.value,
             "message": f"Handoff stored but not gate-validated: {validation['reason']}",
         }
 

@@ -673,6 +673,30 @@ class ReferenceFetchError(StrEnum):
     INTERNAL_ERROR = "internal_error"
 
 
+class HandoffGateSkip(StrEnum):
+    """Why a handoff was not judged by the workspace's gate.
+
+    The distinction is whether the absence is *structural* or *operational*.
+    A workspace with no gate module has no catalog to violate, so a handoff
+    there is legitimately unvalidated and stands. A gate that timed out,
+    crashed, or printed something unreadable is a gate that was supposed to
+    judge this handoff and did not — and storing it anyway makes "nobody
+    checked" indistinguishable from "checked and fine", which is the shape
+    every vacuous pass in this repo has.
+
+    Collapsing the four into one permissive result is what 134 filed.
+    """
+
+    #: No gate module in this workspace. Structural: stays permissive.
+    ABSENT = "absent"
+    #: The gate ran past its timeout. Operational: fails closed.
+    TIMED_OUT = "timed_out"
+    #: The gate exited 0 but printed something that is not its result.
+    UNPARSEABLE = "unparseable"
+    #: The gate exited non-zero, or printed nothing at all.
+    ERRORED = "errored"
+
+
 class DevDocsError(StrEnum):
     """Why a DevDocs search produced no results.
 
