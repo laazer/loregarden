@@ -266,7 +266,7 @@ def _commit_attempt_work(session: Session, run: AgentRun, attempt_id: str) -> No
     root = Path(worktree.worktree_path)
     if not root.is_dir():
         return
-    paths = working_tree_paths(root)
+    paths = working_tree_paths(root) or set()
     if not paths:
         return
     try:

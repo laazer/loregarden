@@ -174,7 +174,11 @@ class CliAgentExecutor:
         # Bracket the run so its commit can be scoped to what it touched. Paths
         # already dirty beforehand belong to whatever else is in the workspace
         # and must not be attributed to this ticket.
-        paths_before = working_tree_paths(repo_root)
+        # None means git could not answer. Treated as "nothing was dirty" for
+        # bracketing, which is the conservative direction: the delta below then
+        # attributes everything it finds to this run rather than silently
+        # dropping paths. `_record_changed_paths` reports the failure.
+        paths_before = working_tree_paths(repo_root) or set()
 
         parked = self._record_and_check_boundary(
             run, ticket, workspace, repo_root=repo_root, dirty_paths=paths_before
@@ -964,7 +968,19 @@ class CliAgentExecutor:
         whatever else is in the workspace, and attributing it here is exactly how
         unrelated work used to get swept into a ticket's commit.
         """
-        touched = sorted(working_tree_paths(repo_root) - before)
+        after = working_tree_paths(repo_root)
+        if after is None:
+            # Not the same as "nothing changed", and this column is the record
+            # of what a run touched — lg-workflow-integrity-452's gate
+            # attribution reads it, and an empty value there means "cannot say".
+            # Leaving it empty silently is what made that unanswerable.
+            logger.warning(
+                "could not read the working tree for run %s in %s; changed paths not recorded",
+                run.id,
+                repo_root,
+            )
+            return
+        touched = sorted(after - before)
         if not touched:
             return
         run.changed_paths_json = json.dumps(touched)
