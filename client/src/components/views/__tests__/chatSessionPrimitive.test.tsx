@@ -12,7 +12,27 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api } from "../../../api/client";
+import { PaneSizeContext } from "../paneSize";
+import { chatSessionPrimitive } from "../primitives/chatSessionPrimitive";
 import { ContainerPrimitiveHost } from "../primitives/registry";
+
+/**
+ * The widget's own component, mounted under a pane size this test controls.
+ *
+ * `ContainerPrimitiveHost` provides `PaneSizeContext` itself from its
+ * `ResizeObserver`, so a provider placed above it is overridden — the lesson
+ * from the queue lane's tier tests. Mounting the registered component directly
+ * is how a test says which tier it means.
+ */
+function ChatSessionPaneHarness() {
+  const Widget = chatSessionPrimitive.Component;
+  return (
+    <Widget
+      containerId="c1"
+      settings={{ workspace_slug: "loregarden", session_id: "s-1" }}
+    />
+  );
+}
 
 jest.mock("../../../api/client", () => require("../../../test/apiClientMock"));
 
@@ -104,6 +124,37 @@ describe("a configured pane", () => {
     await user.keyboard("{Enter}");
 
     expect(mockApi.sendBaxterChatMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("a short pane", () => {
+  it("asks the composer for its dense size", async () => {
+    // jsdom cannot measure the result — the point of `dense` is a height — but
+    // it can see the pane ask, which is the wiring that was missing: the host
+    // reported `compact` and the widget ignored it.
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PaneSizeContext.Provider value={{ width: 900, height: 179, tier: "compact" }}>
+          <ChatSessionPaneHarness />
+        </PaneSizeContext.Provider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("hello from s-1");
+    expect(container.querySelector(".lg-chat-composer-wrap--dense")).not.toBeNull();
+  });
+
+  it("leaves the composer at its page size otherwise", async () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PaneSizeContext.Provider value={{ width: 900, height: 700, tier: "regular" }}>
+          <ChatSessionPaneHarness />
+        </PaneSizeContext.Provider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("hello from s-1");
+    expect(container.querySelector(".lg-chat-composer-wrap--dense")).toBeNull();
   });
 });
 

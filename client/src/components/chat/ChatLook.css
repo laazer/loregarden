@@ -301,6 +301,63 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
+/*
+ * The composer in a container that has little height to give — a view pane at
+ * the `compact` tier asks for this.
+ *
+ * Measured rather than guessed: at a pane 179px tall the default box took 110px
+ * of it, leaving 45px of thread. These numbers bring it to about half that, and
+ * the pane then reads as a conversation with a composer rather than a composer
+ * with a hint of conversation.
+ *
+ * The floor is deliberate. 44px is the touch-target minimum and is right
+ * everywhere the composer is the page's main event; a pane 179px tall is not
+ * that, and 32px is still a comfortable pointer target. Nothing outside a pane
+ * asks for `dense`.
+ */
+.lg-chat-composer-wrap--dense {
+  gap: 4px;
+}
+
+.lg-chat-composer-wrap--dense .lg-chat-composer {
+  gap: 4px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 12px;
+  /* The page composer floats over a thread; a pane has a border of its own. */
+  box-shadow: none;
+}
+
+.lg-chat-composer-wrap--dense .lg-chat-composer-input {
+  min-height: 32px;
+  font-size: 13.5px;
+}
+
+/*
+ * The send control moves beside the box rather than under it.
+ *
+ * This is where the height actually was: shrinking the padding and the textarea
+ * took the composer from 110px to 84px and no further, because the toolbar row
+ * costs its own ~32px whatever the box does. Side by side, the same pane
+ * measures about 48px.
+ *
+ * Only safe because `dense` has one caller and it passes no `toolbar` content —
+ * a row with buttons in it would squash the input. `align-items: flex-end`
+ * keeps the send chip on the last line as the textarea grows.
+ */
+.lg-chat-composer-wrap--dense .lg-chat-composer {
+  flex-direction: row;
+  align-items: flex-end;
+}
+
+.lg-chat-composer-wrap--dense .lg-composer-commands {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lg-chat-composer-wrap--dense .lg-chat-composer-toolbar {
+  flex: none;
+}
+
 .lg-chat-composer-input {
   width: 100%;
   min-height: 44px;

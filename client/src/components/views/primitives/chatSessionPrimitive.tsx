@@ -33,6 +33,7 @@ import { useState } from "react";
 
 import { useBaxterChatSessionAt } from "../../../hooks/useBaxterChatSession";
 import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat";
+import { usePaneSize } from "../paneSize";
 import { definePrimitive } from "./definePrimitive";
 import { Unconfigured } from "./Unconfigured";
 import "./chatSession.css";
@@ -47,6 +48,10 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
   // has to be *something*, and a no-op is the honest one.
   const chat = useBaxterChatSessionAt(workspaceSlug, sessionId, () => {});
   const [draft, setDraft] = useState("");
+  // A short pane is otherwise mostly composer: the page-sized box took 110px of
+  // a 179px pane. `dense` is the composer's own compact size rather than this
+  // stylesheet reaching into its internals.
+  const { tier } = usePaneSize();
 
   // No "is it empty, is it busy" guard here: `StudioChatComposer` computes
   // exactly that as `canSend` and does not call `onSubmit` unless it holds. A
@@ -88,6 +93,7 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
         isSending={chat.isBusy}
         isStopping={chat.isStopping}
         variant="dock"
+        dense={tier === "compact"}
         error={chat.error ?? undefined}
       />
     </div>
