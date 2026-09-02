@@ -234,14 +234,17 @@ def reconcile_workflow_state(
     instance.stages_json = serialize_stage_map(stage_map, stages, notes=parse_stage_notes(instance))
     instance.updated_at = datetime.now(timezone.utc)
 
-    if current_key:
-        stage_def = next((s for s in stages if s.key == current_key), None)
-        # A classify stage's static agent_id is only a fallback for the route
-        # table; backfilling it here would be read straight back by
-        # resolve_classify_route as if it were a deliberate next_agent hint,
-        # pinning every ticket to that agent and making the routes unreachable.
-        if stage_def and stage_def.agent_id and stage_def.stage_type != "classify":
-            ticket.next_agent = stage_def.agent_id
+    # `next_agent` is deliberately NOT backfilled here. This function runs on the
+    # READ path — `GET /api/tickets/{id}` reaches it through
+    # `OrchestrationService.reconcile_ticket` — so writing routing here meant
+    # fetching a ticket changed where it would go next. Cleared the pin and read
+    # the ticket back, and the pin returned.
+    #
+    # The classify carve-out this replaces excluded classify stages only,
+    # because backfilling there was read straight back by the route resolver as
+    # a deliberate hint. That was the same defect on a narrower surface; readers
+    # now derive the agent instead (`studio_routing.resolve_display_agent`), so
+    # nothing needs the backfill at all.
 
     if persist:
         # Caller commits; we only mutate in-memory objects here.

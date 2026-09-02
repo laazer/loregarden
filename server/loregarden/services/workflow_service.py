@@ -212,7 +212,6 @@ class WorkflowService:
 
         ticket.workflow_stage_key = first_stage.key
         ticket.workflow_stage_status = StageStatus.PENDING
-        ticket.next_agent = first_stage.agent_id
         reconcile_workflow_state(
             ticket, instance, stages, owns_state=not has_children(self.session, ticket.id)
         )

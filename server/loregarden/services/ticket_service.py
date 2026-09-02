@@ -219,7 +219,6 @@ class TicketService:
             first_stage = min(stages, key=lambda s: s.order)
             ticket.workflow_stage_key = first_stage.key
             ticket.workflow_stage_status = StageStatus.PENDING
-            ticket.next_agent = first_stage.agent_id
 
         self.session.add(ticket)
         ticket_id = ticket.id

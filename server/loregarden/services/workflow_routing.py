@@ -303,12 +303,13 @@ def apply_stage_route(
         ticket.blocking_issues = ""
         ticket.next_status = "Proceed"
 
-    # Reconcile first: it derives workflow_stage_key/status/ticket.state from
-    # the stage map and, as a side effect, backfills ticket.next_agent from
-    # the current stage's static agent_id. Computing the *real* next_agent
-    # below and writing it after this call ensures that backfill never
-    # clobbers a deliberately-resolved value (classify routing, an explicit
-    # reject-hint, or a template-declared transition agent).
+    # Derives workflow_stage_key/status/ticket.state from the stage map.
+    #
+    # It used to backfill `ticket.next_agent` from the current stage's static
+    # agent_id as a side effect, so this call had to come BEFORE the resolution
+    # below or the backfill clobbered a deliberately-resolved value. That
+    # backfill is gone — it also meant a plain `GET /api/tickets/{id}` rewrote a
+    # ticket's routing — so the ordering here is no longer load-bearing.
     reconcile_workflow_state(ticket, instance, stages, persist=False)
 
     target_stage = next((stage for stage in stages if stage.key == plan.to_key), None)
