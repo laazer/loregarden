@@ -329,6 +329,20 @@ class _LoopStep:
     result: BridgeResult | None = None
 
 
+def _returned_result(step: _LoopStep) -> BridgeResult:
+    """The result a "return" step carries, which the type cannot promise.
+
+    `_LoopStep`'s docstring states the invariant and every construction site
+    honours it, but `result` is `BridgeResult | None` for the other actions —
+    so `run` would otherwise hand its caller a None the signature says cannot
+    exist. A helper rather than a branch in `run`: that method is at the
+    complexity cap, and an invariant belongs beside the type it constrains.
+    """
+    if step.result is None:
+        raise AssertionError("a 'return' loop step carried no result")
+    return step.result
+
+
 def _continue_while_awaiting(
     *,
     streamer: RunStreamSink | None,
@@ -600,7 +614,7 @@ class PermissionBridgeRunner:
                     )
 
                 if step.action == "return":
-                    return step.result
+                    return _returned_result(step)
                 if step.action == "break":
                     break
 

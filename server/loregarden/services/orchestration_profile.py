@@ -178,16 +178,20 @@ def _profile_path_for_write(workspace: Workspace) -> Path:
     """The file a write should target — the same file resolve_orchestration_profile
     would have read, or a sensible default slug if none exists yet."""
     root = orchestration_dir()
-    candidates = [
+    # Named rather than indexed so the types say what was always true: the
+    # slug-derived path may not exist, the workspace-derived one always does.
+    # As a list of `Path | None` the final fallback read as possibly-None, and
+    # this function promises a Path.
+    preferred = (
         root / f"{workspace.orchestration_profile_slug}.yaml"
         if workspace.orchestration_profile_slug
-        else None,
-        root / f"{workspace.slug}.yaml",
-    ]
-    for path in candidates:
+        else None
+    )
+    fallback = root / f"{workspace.slug}.yaml"
+    for path in (preferred, fallback):
         if path and path.is_file():
             return path
-    return candidates[0] or candidates[1]
+    return preferred or fallback
 
 
 def _write_yaml_atomic(path: Path, data: dict) -> None:

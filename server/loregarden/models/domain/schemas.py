@@ -671,7 +671,11 @@ class TicketImportPreviewPathsRequest(SQLModel):
 
 
 class TicketImportPreviewResponse(SQLModel):
-    model_config = ConfigDict(exclude_none=True)
+    # `exclude_none` was here as a ConfigDict key, which Pydantic v2 has no such
+    # setting for: it was stored and ignored, and every None field serialized
+    # anyway. Removing it changes nothing observable — omitting None from this
+    # response would be a deliberate API change, not a typo fix. Found by
+    # re-enabling `typeddict-unknown-key` (547).
 
     tickets: list[TicketImportItem]
     errors: list[str]

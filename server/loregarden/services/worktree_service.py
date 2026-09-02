@@ -579,9 +579,9 @@ class WorktreeService:
         stmt = select(Worktree).where(
             (Worktree.workspace_id == workspace_id) & (Worktree.state == WorktreeState.ACTIVE)
         )
-        return self.session.exec(stmt).all()
+        return list(self.session.exec(stmt).all())
 
     def get_worktrees_by_run(self, agent_run_id: str) -> list[Worktree]:
         """Get all worktrees for an agent run."""
         stmt = select(Worktree).where(Worktree.agent_run_id == agent_run_id)
-        return self.session.exec(stmt).all()
+        return list(self.session.exec(stmt).all())

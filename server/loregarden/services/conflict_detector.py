@@ -421,4 +421,4 @@ class ConflictDetectorService:
             .where(ConflictReport.worktree_id == worktree_id)
             .order_by(ConflictReport.created_at.desc())
         )
-        return self.session.exec(stmt).all()
+        return list(self.session.exec(stmt).all())

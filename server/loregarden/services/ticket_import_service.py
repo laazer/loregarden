@@ -31,7 +31,7 @@ def _index_spellings(external_to_id: dict[str, str], ticket: Ticket) -> None:
             external_to_id[spelling] = ticket.id
 
 
-def _import_sort_key(item: TicketImportItem) -> tuple[int, str]:
+def _import_sort_key(item: TicketImportItem) -> tuple[int, str, str]:
     order = {
         WorkItemType.MILESTONE: 0,
         WorkItemType.FEATURE: 1,
