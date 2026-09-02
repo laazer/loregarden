@@ -17,6 +17,8 @@ from unittest.mock import patch
 import pytest
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.models.domain import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.enums import MemoryBriefingOutcome
+from loregarden.services.memory_briefing_telemetry import classify
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
@@ -487,3 +489,98 @@ def test_elapsed_ms_covers_the_assembly_it_measures(tmp_path):
         result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
     assert result.elapsed_ms >= 200
+
+
+# ---------------------------------------------------------------------------
+# 545 — the vault is stat'd, not inferred from being configured.
+#
+# `store_readiness` reported VAULT=READ from `self.obsidian` being non-None,
+# contradicting its own docstring ("sampled from configuration *and the
+# filesystem*"). The graph beside it has always stat'd. The consequence is the
+# defect 183 exists to remove, one level down: `classify` returns EMPTY the
+# moment anything reads, so a vault pointed at a path that does not exist made
+# the operator read "the vault was there and had nothing to say" when the truth
+# was "the vault path is wrong".
+# ---------------------------------------------------------------------------
+
+
+def _missing_vault(tmp_path) -> AgentMemoryService:
+    """Configured, and pointing at a directory nobody created."""
+    return AgentMemoryService(obsidian=ObsidianMemoryStore(tmp_path / "nope" / "vault"))
+
+
+def test_a_vault_path_that_does_not_exist_is_not_read(tmp_path):
+    """The defect itself. Before this, both kinds reported READ."""
+    memory = _missing_vault(tmp_path)
+
+    states = memory.store_readiness(workspace_slug="lg")
+
+    assert states[MemoryStoreKind.VAULT] == MemoryStoreState.UNCONFIGURED
+    assert states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.UNCONFIGURED
+
+
+def test_a_vault_directory_that_exists_is_read(tmp_path):
+    """The positive control. Without it, "always UNCONFIGURED" passes the above.
+
+    Note it is the vault *root* that decides. The subdirectories are created on
+    first write, so a vault that exists and has never been written to is
+    genuinely readable and genuinely empty — which is EMPTY, correctly, and is
+    not the case this ticket is about.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    memory = AgentMemoryService(obsidian=ObsidianMemoryStore(vault))
+
+    states = memory.store_readiness(workspace_slug="lg")
+
+    assert states[MemoryStoreKind.VAULT] == MemoryStoreState.READ
+    assert states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.READ
+
+
+def test_a_missing_vault_classifies_as_no_store_rather_than_empty(tmp_path):
+    """The operator-visible consequence, which is the whole point of the fix.
+
+    `classify` returns NO_STORE only when *nothing* read. A phantom VAULT=READ
+    was the single READ in the set, so every such briefing came back EMPTY —
+    the one outcome that asserts a store was consulted.
+    """
+    memory = _missing_vault(tmp_path)
+    states = memory.store_readiness(workspace_slug="lg")
+
+    outcome = classify(InheritedWisdom(text="", store_states=states), skipped=False)
+
+    assert outcome == MemoryBriefingOutcome.NO_STORE
+
+
+def test_sampling_readiness_does_not_create_the_vault_it_asks_about(tmp_path):
+    """The ticket's named way to fail this fix while passing every test above.
+
+    Readiness is sampled *before* the lookups precisely because constructing a
+    store creates what readiness is asking about. A stat routed through a helper
+    that mkdirs — several in this module do — would reintroduce that bug at the
+    vault instead of the graph, and would still report UNCONFIGURED on the first
+    call, so only the filesystem can tell.
+    """
+    vault = tmp_path / "nope" / "vault"
+    memory = AgentMemoryService(obsidian=ObsidianMemoryStore(vault))
+
+    memory.store_readiness(workspace_slug="lg")
+
+    assert not vault.exists(), "sampling readiness created the vault it was asked about"
+    assert not vault.parent.exists(), "sampling readiness created the vault's parent"
+
+
+def test_the_graph_store_had_no_symmetric_gap(tmp_path):
+    """AC4, recorded rather than assumed: the graph already stat'd its file.
+
+    The ticket asks whether the same gap exists on the graph side. It does not —
+    `store_readiness` has always tested `graph_path.is_file()` — and this pins
+    that the two sides now agree, so a later refactor cannot quietly make the
+    graph infer from configuration the way the vault did.
+    """
+    memory = AgentMemoryService(obsidian=None, graph_sqlite_base=tmp_path / "nope" / "memory.db")
+
+    states = memory.store_readiness(workspace_slug="lg")
+
+    assert states[MemoryStoreKind.GRAPH] == MemoryStoreState.UNCONFIGURED
+    assert not (tmp_path / "nope").exists(), "sampling readiness created the graph's directory"
