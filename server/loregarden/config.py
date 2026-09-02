@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     codex_model: str = ""
     lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
     lmstudio_model: str = ""
+    #: How many fresh-context iterations one LM Studio stage may take. Small
+    #: local models drown in an ever-growing conversation long before a stage is
+    #: done, so each iteration restarts from a prompt rebuilt out of the
+    #: database rather than replaying the last one's messages. Bounded because an
+    #: unbounded loop is the failure this replaces, not an improvement on it.
+    lmstudio_max_iterations: int = 4
     opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""

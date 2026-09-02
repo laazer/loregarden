@@ -122,6 +122,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0101_lane_entry_force",
     "0102_backfill_stage_retry_block",
     "0103_rework_feedback_kind",
+    "0104_lmstudio_max_iterations",
 )
 
 

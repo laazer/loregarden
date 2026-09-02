@@ -49,6 +49,14 @@ class FakeTransport(httpx.BaseTransport):
 
 
 def _run(transport: FakeTransport, **kwargs) -> str:
+    """The inner loop's TEXT.
+
+    `_chat_with_tools` returns an `_IterationResult` since
+    lg-workflow-integrity-163 — it has to report whether the model answered or
+    the conversation ran out of rounds, because the outer fresh-context loop
+    decides on that. These tests are about what the model said, so they unwrap
+    it; `test_lmstudio_iterations.py` covers the finished/unfinished half.
+    """
     client = httpx.Client(transport=transport)
     try:
         # run_chat opens its own client, so drive the pieces it composes.
@@ -68,7 +76,7 @@ def _run(transport: FakeTransport, **kwargs) -> str:
             prompt="do the thing",
             bridge=bridge,
             tools=tools,
-        )
+        ).text
     finally:
         client.close()
 

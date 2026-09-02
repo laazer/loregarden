@@ -22,6 +22,7 @@ from loregarden.services.cli_settings import (
     resolve_effective_adapter,
     resolve_effort_for_adapter,
     resolve_lmstudio_base_url,
+    resolve_lmstudio_max_iterations,
     resolve_model_for_adapter,
     ticket_effort_for_adapter,
     ticket_model_for_adapter,
@@ -617,11 +618,14 @@ def _lmstudio_invocation(
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
+    max_iterations: int = 1,
 ) -> CliInvocation:
     argv = [
         sys.executable,
         "-m",
         "loregarden.agents.executors.lmstudio_runner",
+        "--max-iterations",
+        str(max_iterations),
         "--prompt-file",
         str(prompt_file),
         "--base-url",
@@ -774,6 +778,7 @@ def resolve_cli_invocation(
             run_id=run_id,
             workspace_slug=workspace_slug,
             granted_tools=granted_tools,
+            max_iterations=resolve_lmstudio_max_iterations(workspace),
         )
     elif selected == CliAdapter.OPENCODE:
         invocation = _opencode_invocation(

@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -264,6 +265,81 @@ def _chat_completion(
     return content
 
 
+@dataclass(frozen=True)
+class _IterationResult:
+    """What one fresh-context iteration produced, and whether it was done.
+
+    `finished` distinguishes "the model stopped asking for tools" from "this
+    conversation ran out of rounds". They produce the same kind of text and mean
+    opposite things: the first is an answer, the second is a conversation that
+    hit its ceiling mid-thought. Collapsing them is how an exhausted loop reads
+    as a successful stage.
+    """
+
+    text: str
+    finished: bool
+
+
+def _run_iterations(
+    *,
+    client: httpx.Client,
+    base_url: str,
+    model: str,
+    prompt: str,
+    bridge: McpBridge,
+    tools: list[dict],
+    effort: str,
+    max_iterations: int,
+) -> str:
+    """Drive the model across fresh-context iterations until the stage is done.
+
+    A small local model drowns in an ever-growing conversation long before it
+    finishes a real stage. Each iteration therefore starts a NEW message list
+    from the same task prompt, and the state a fresh start needs — what is done,
+    what remains, what the last attempt reported — already lives outside the
+    conversation, in the ticket row, the checkpoints and the working tree, which
+    the model reads back through its tools.
+
+    Two caps, deliberately not the same one. `MAX_TOOL_ROUNDS` bounds the
+    back-and-forth WITHIN one conversation; `max_iterations` bounds how many
+    conversations one stage gets. Conflating them would make a long-but-
+    progressing stage indistinguishable from a stuck one, which is the
+    distinction lg-workflow-integrity-455 exists to make elsewhere.
+
+    An exhausted cap RAISES. The stage-report parser reads stdout, and every
+    iteration prints, so returning the last text quietly would let a stage that
+    never finished read as one that did.
+    """
+    last_text = ""
+    for iteration in range(1, max_iterations + 1):
+        print(f"[ITERATION] {iteration}/{max_iterations}", flush=True)
+        result = _chat_with_tools(
+            client=client,
+            base_url=base_url,
+            model=model,
+            prompt=prompt,
+            bridge=bridge,
+            tools=tools,
+            effort=effort,
+        )
+        last_text = result.text
+        if result.finished:
+            print(f"[ITERATION] stage answered on iteration {iteration}", flush=True)
+            return last_text
+        print(
+            f"[ITERATION] {iteration} ended without answering; restarting with a fresh context",
+            file=sys.stderr,
+        )
+
+    raise RuntimeError(
+        f"LM Studio stage did not finish within {max_iterations} fresh-context "
+        f"iteration(s); each ran out of its {MAX_TOOL_ROUNDS} tool rounds. Raise "
+        f"LOREGARDEN_LMSTUDIO_MAX_ITERATIONS or the workspace setting if the stage "
+        f"genuinely needs more, but a stage that never converges is the thing this "
+        f"cap exists to surface."
+    )
+
+
 def _chat_with_tools(
     *,
     client: httpx.Client,
@@ -273,7 +349,7 @@ def _chat_with_tools(
     bridge: McpBridge,
     tools: list[dict],
     effort: str = "",
-) -> str:
+) -> _IterationResult:
     """Run the model until it stops asking for tools, then return its answer.
 
     Completions stay non-streaming so tool_calls arrive whole (streaming would
@@ -302,9 +378,11 @@ def _chat_with_tools(
         calls = message.get("tool_calls") or []
 
         if not calls:
+            # The model stopped asking for tools, which is this iteration
+            # answering rather than running out of room.
             content = _assistant_text(message)
             print(content)
-            return content
+            return _IterationResult(text=content, finished=True)
 
         messages.append(message)
         for call in calls:
@@ -332,13 +410,15 @@ def _chat_with_tools(
                 }
             )
 
-    # Out of rounds. The stage report parser reads stdout, so emit what we have
-    # rather than nothing.
+    # Out of rounds *within this iteration*. The stage report parser reads
+    # stdout, so emit what we have rather than nothing. Reported as unfinished so
+    # the caller can decide whether another fresh-context iteration is worth
+    # spending — this cap bounds one conversation, not the stage.
     print(f"[WARN] stopped after {MAX_TOOL_ROUNDS} tool rounds", file=sys.stderr)
     last = next((m for m in reversed(messages) if m.get("role") == "assistant"), {})
     content = _assistant_text(last if isinstance(last, dict) else {})
     print(content)
-    return content
+    return _IterationResult(text=content, finished=False)
 
 
 def run_chat(
@@ -352,6 +432,7 @@ def run_chat(
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
+    max_iterations: int = 1,
 ) -> str:
     stub = os.environ.get("LOREGARDEN_LMSTUDIO_STUB_RESPONSE")
     if stub is not None:
@@ -378,7 +459,7 @@ def run_chat(
                 print(f"[WARN] MCP unavailable, running without tools: {exc}", file=sys.stderr)
                 tools = []
             if tools:
-                return _chat_with_tools(
+                return _run_iterations(
                     client=client,
                     base_url=normalized,
                     model=resolved_model,
@@ -386,6 +467,7 @@ def run_chat(
                     bridge=bridge,
                     tools=tools,
                     effort=effort,
+                    max_iterations=max_iterations,
                 )
 
         return _chat_completion(
@@ -411,6 +493,16 @@ def main() -> int:
         "--tools", default="", help="Comma-separated MCP tools this agent may call."
     )
     parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=1,
+        help=(
+            "Fresh-context iterations this stage may take. Resolved and validated "
+            "by the caller (services.cli_settings.resolve_lmstudio_max_iterations); "
+            "the default of 1 keeps a direct invocation behaving as before."
+        ),
+    )
+    parser.add_argument(
         "--stream",
         action="store_true",
         default=os.environ.get("LOREGARDEN_LMSTUDIO_STREAM", "").lower() in {"1", "true", "yes"},
@@ -434,6 +526,7 @@ def main() -> int:
             run_id=args.run_id,
             workspace_slug=args.workspace_slug,
             granted_tools=[t for t in args.tools.split(",") if t.strip()],
+            max_iterations=args.max_iterations,
         )
     except httpx.HTTPError as exc:
         print(f"LM Studio request failed: {exc}", file=sys.stderr)

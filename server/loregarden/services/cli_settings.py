@@ -194,6 +194,7 @@ class WorkspaceCliSettings:
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    lmstudio_max_iterations: int = 0
     opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
@@ -211,6 +212,7 @@ def workspace_cli_settings(workspace: Workspace | None) -> WorkspaceCliSettings:
         codex_model=workspace.codex_model or "",
         lmstudio_base_url=workspace.lmstudio_base_url or "",
         lmstudio_model=workspace.lmstudio_model or "",
+        lmstudio_max_iterations=workspace.lmstudio_max_iterations or 0,
         opencode_model=workspace.opencode_model or "",
         claude_effort=workspace.claude_effort or "",
         cursor_effort=workspace.cursor_effort or "",
@@ -522,6 +524,42 @@ def resolve_lmstudio_base_url(workspace: Workspace | None) -> str:
         return env_url
     ws = workspace_cli_settings(workspace)
     return ws.lmstudio_base_url or settings.lmstudio_base_url
+
+
+#: A cap above this is not a configuration, it is a runaway. Each iteration is a
+#: full model conversation, so the ceiling is about spend as much as time.
+MAX_LMSTUDIO_ITERATIONS = 20
+
+
+def resolve_lmstudio_max_iterations(workspace: Workspace | None) -> int:
+    """How many fresh-context iterations one LM Studio stage may take.
+
+    Env, then workspace, then the global default — the same precedence as
+    `resolve_lmstudio_base_url` beside it.
+
+    Validated HERE rather than where it is used, because a nonsense value should
+    fail at the moment somebody configures it, not several minutes into a stage
+    that then has no bound at all. A zero, a negative, a word, or a number past
+    `MAX_LMSTUDIO_ITERATIONS` are all refused rather than clamped: silently
+    substituting a different number for the one an operator wrote is how a
+    setting stops meaning what it says.
+    """
+    raw = os.environ.get("LOREGARDEN_LMSTUDIO_MAX_ITERATIONS")
+    source = "LOREGARDEN_LMSTUDIO_MAX_ITERATIONS"
+    if raw is None:
+        workspace_value = workspace_cli_settings(workspace).lmstudio_max_iterations
+        if workspace_value:
+            raw, source = str(workspace_value), "the workspace setting"
+        else:
+            return settings.lmstudio_max_iterations
+
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{source} must be a whole number of iterations, got {raw!r}.") from None
+    if value < 1 or value > MAX_LMSTUDIO_ITERATIONS:
+        raise ValueError(f"{source} must be between 1 and {MAX_LMSTUDIO_ITERATIONS}, got {value}.")
+    return value
 
 
 def resolve_lmstudio_model(

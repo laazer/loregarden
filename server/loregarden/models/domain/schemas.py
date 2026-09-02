@@ -102,6 +102,7 @@ class WorkspaceRuntimeUpdate(SQLModel):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    lmstudio_max_iterations: int = 0
     opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
@@ -116,6 +117,7 @@ class WorkspaceRuntimeSettings(SQLModel):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    lmstudio_max_iterations: int = 0
     opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
@@ -1111,7 +1113,10 @@ class TicketStudioSessionView(SQLModel):
     clarifying_resolved: bool = True
     draft: list[TicketStudioDraftItem] = Field(default_factory=list)
     messages: list[dict[str, Any]] = Field(default_factory=list)
-    runtime: dict[str, str] = Field(default_factory=dict)
+    #: A dump of `WorkspaceRuntimeSettings`, which is no longer all strings —
+    #: `lmstudio_max_iterations` is a bounded count. Typed `str | int` rather than
+    #: `Any` so the widening says what actually varies.
+    runtime: dict[str, str | int] = Field(default_factory=dict)
     is_preview: bool = False
     imported_tickets: list[dict[str, Any]] = Field(default_factory=list)
     # idle | running. Server-derived, so a reload mid-turn still shows the
