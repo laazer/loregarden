@@ -168,8 +168,28 @@ class ChatTurnThinkingSink:
                 self._add_text(text)
                 self._set_activity("Thinking")
             return
+        if kind == "item.completed":
+            self._ingest_codex_item(payload.get("item") or {})
+            return
         if kind == "result":
             self._set_activity("")
+
+    def _ingest_codex_item(self, item: dict[str, Any]) -> None:
+        """Make each completed Codex commentary/final message visible live.
+
+        Codex emits both as ``agent_message`` items. Each message is a fresh
+        user-facing update, not a delta, so the newest replaces the previous
+        one. The reply extractor applies the same rule when the turn settles.
+        """
+        if item.get("type") != "agent_message":
+            return
+        text = item.get("text")
+        if not isinstance(text, str) or not text.strip():  # py-org: allow-isinstance
+            return
+        self._answer = text
+        self._trim()
+        self._pending = True
+        self._set_activity("Writing the reply")
 
     def _ingest_partial(self, event: dict[str, Any]) -> None:
         kind = event.get("type")

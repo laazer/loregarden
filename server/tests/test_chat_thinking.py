@@ -173,6 +173,39 @@ def test_the_reply_streams_apart_from_the_reasoning(db_session: Session):
     assert frame["activity"] == "Writing the reply"
 
 
+def test_codex_agent_updates_stream_and_the_newest_replaces_the_previous(db_session: Session):
+    """Codex emits commentary updates and its final answer as separate
+    ``agent_message`` items. The update must be visible immediately, while the
+    final answer replaces it instead of being appended into one late reply.
+    """
+    sink = ChatTurnThinkingSink("turn-codex")
+    sink.append_stream_line(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "I’ll inspect the runner first."},
+            }
+        )
+    )
+    assert read_chat_turn_thinking(db_session, "turn-codex")["answer"] == (
+        "I’ll inspect the runner first."
+    )
+
+    sink.append_stream_line(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "The runner uses the main checkout."},
+            }
+        )
+    )
+    sink.close()
+
+    assert read_chat_turn_thinking(db_session, "turn-codex")["answer"] == (
+        "The runner uses the main checkout."
+    )
+
+
 def test_the_streamed_reply_is_not_folded_into_the_message(db_session: Session):
     """The settled message is the reply; a second copy on the thinking part
     would show the same text twice, forever."""

@@ -72,6 +72,19 @@ def test_extract_triage_reply_codex_jsonl():
     assert extract_triage_reply(stdout) == "Listed the files."
 
 
+def test_extract_triage_reply_codex_uses_final_agent_message():
+    stdout = "\n".join(
+        [
+            '{"type":"item.completed","item":{"type":"agent_message","text":"I’ll inspect the runner first."}}',
+            '{"type":"item.completed","item":{"type":"command_execution","command":"rg runner","status":"completed"}}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":"The runner uses the main checkout."}}',
+            '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}',
+        ]
+    )
+
+    assert extract_triage_reply(stdout) == "The runner uses the main checkout."
+
+
 def test_extract_triage_reply_stream_json_without_result():
     stdout = '{"type":"assistant","message":{"content":[{"type":"text","text":"Only assistant"}]}}'
     assert extract_triage_reply(stdout) == "Only assistant"
