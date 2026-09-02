@@ -45,6 +45,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    ReworkStopReason,
     RunStatus,
     StageStatus,
     Ticket,
@@ -441,6 +442,45 @@ def _cli_auto_approve(
     return None
 
 
+def _scope_reroute_budget_spent(
+    session: Session, ticket: Ticket, *, message: str, run_id: str | None
+) -> bool:
+    """Record this scope-denial reroute, and report whether to stop bouncing.
+
+    Clears the pin durably when the budget is spent: a prior reroute committed
+    one, and leaving it would make a human's later resume dispatch the wrong
+    specialist.
+
+    Two details that are easy to get wrong here, which is why this is a function
+    rather than a block inside `_try_scope_reroute`.
+
+    The result is COMPARED, not tested for truth. `record_reroute_exhausts_budget`
+    returns a `ReworkStopReason`, and every member of a StrEnum is a non-empty
+    string, so `if record_reroute_exhausts_budget(...)` is unconditionally true —
+    which blocked this reroute before it could hand work to the sibling.
+
+    Convergence is switched OFF. A scope denial repeats its message by
+    construction — it is the same denial each round — so identical rounds are
+    this path's normal shape rather than evidence of a stuck loop
+    (lg-workflow-integrity-455). The count is the right bound here.
+    """
+    stop = record_reroute_exhausts_budget(
+        session,
+        ticket,
+        target_stage=_SCOPE_REROUTE_LEDGER_KEY,
+        from_stage=ticket.workflow_stage_key,
+        context=message,
+        run_id=run_id,
+        check_convergence=False,
+    )
+    if stop is ReworkStopReason.NONE:
+        return False
+    ticket.scope_reroute_agent = ""
+    session.add(ticket)
+    session.commit()
+    return True
+
+
 class PermissionBridgeRunner:
     """Run CLIs with permission prompts routed to the Loregarden inbox."""
 
@@ -829,20 +869,7 @@ class PermissionBridgeRunner:
             ticket.scope_reroute_agent = ""
             return None
 
-        if record_reroute_exhausts_budget(
-            self.session,
-            ticket,
-            target_stage=_SCOPE_REROUTE_LEDGER_KEY,
-            from_stage=ticket.workflow_stage_key,
-            context=message,
-            run_id=run_id,
-        ):
-            # Budget spent: stop bouncing between implementers and block instead.
-            # Clear the pin durably — a prior reroute committed one, and leaving
-            # it would make a human's later resume dispatch the wrong specialist.
-            ticket.scope_reroute_agent = ""
-            self.session.add(ticket)
-            self.session.commit()
+        if _scope_reroute_budget_spent(self.session, ticket, message=message, run_id=run_id):
             return None
 
         set_stage_status(ticket, instance, stages, ticket.workflow_stage_key, StageStatus.PENDING)
