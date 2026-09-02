@@ -50,6 +50,7 @@ class McpTool(StrEnum):
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
     FETCH_REFERENCE = "loregarden_fetch_reference"
+    SEARCH_REFERENCE = "loregarden_search_reference"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -78,6 +79,9 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # HTML is paid for once per URL rather than once per run, and a stage that
     # is not offered it reaches for WebFetch instead.
     McpTool.FETCH_REFERENCE,
+    # Offered beside it, because the pair is a two-step flow: search finds the
+    # exact page, fetch reads it. A stage given only the fetcher guesses URLs.
+    McpTool.SEARCH_REFERENCE,
 )
 
 MEMORY_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
@@ -148,7 +152,9 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: URL — an approval nobody can meaningfully grant in advance, spending the
 #: run's timeout budget to no benefit. Egress itself is bounded elsewhere: the
 #: SSRF guard rejects non-global addresses on every hop, and the body is capped.
-NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.FETCH_REFERENCE})
+NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {McpTool.FETCH_REFERENCE, McpTool.SEARCH_REFERENCE}
+)
 
 AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
     READ_ONLY_MCP_TOOLS | CONTROL_PLANE_WRITE_MCP_TOOLS | NETWORK_EGRESS_MCP_TOOLS

@@ -241,6 +241,13 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         stage_agent=True,
     ),
     StudioMcpToolGuide(
+        name="loregarden_search_reference",
+        description="Search DevDocs for a documentation page and get back ranked entries with their URLs.",
+        when_to_use="Before fetching framework docs — search for the exact page instead of guessing a URL, then pass the returned url to loregarden_fetch_reference. Omit docset to get suggestions.",
+        example='tools/call loregarden_search_reference {"query": "useEffect", "docset": "react"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
         name="loregarden_fetch_reference",
         description="Fetch a documentation page through loregarden's cache, extracted to markdown.",
         when_to_use="Instead of WebFetch for framework or library docs — the raw HTML is fetched and extracted once per URL, and repeat reads are served from the cache.",

@@ -94,16 +94,32 @@ via checkpoint protocol or block the ticket with a clear message.
 
 ## Reference docs (fetch-through cache)
 
-`loregarden_fetch_reference` fetches a documentation page, extracts it to markdown, and stores
-it. **Use it instead of WebFetch for framework and library docs.** The difference is what the
-run pays for: WebFetch re-fetches and re-extracts the same page every time anyone asks, so a
-page consulted by three stages is paid for three times. This tool pays that cost once per URL
-and serves every later read from the cache — including reads by a later stage, a later run, or
-a different agent.
+Two tools, and for framework or library docs they are a **two-step flow**: search for the page,
+then read the URL it gives you. Both go through one cache, so the raw HTML for a URL is fetched
+and extracted once and every later read — by a later stage, a later run, or a different agent —
+is served from that copy. WebFetch pays for it again every time.
+
+**Step 1 — find the page.** Do not guess a documentation URL; the guess is usually a 404 you
+pay for anyway.
 
 ```
-tools/call loregarden_fetch_reference {"url": "https://docs.pydantic.dev/latest/concepts/models/"}
+tools/call loregarden_search_reference {"query": "useEffect", "docset": "react"}
 ```
+
+Returns ranked entries with a `url` each, plus `total_matches` (uncapped, so you can tell
+"these are all of them" from "these are the first ten"). **Omit `docset` and you get
+suggestions instead of results** — that is the way to find the slug, not a failure. A name that
+matches several docsets (two Python releases share one) comes back as `docset_ambiguous` with
+candidates rather than a silent answer from the wrong release.
+
+**Step 2 — read it.** Pass a returned `url` straight through:
+
+```
+tools/call loregarden_fetch_reference {"url": "https://documents.devdocs.io/react/hooks/use_effect.html"}
+```
+
+`loregarden_fetch_reference` also takes any http(s) URL directly, which is what to use for a
+page outside DevDocs — a project's own docs, a changelog, an RFC.
 
 - **It never raises.** Every failure comes back as a payload that classifies itself: check
   `error` for the reason and `cache` to tell a fresh copy from a served-stale one. A stale copy
@@ -125,6 +141,7 @@ tools/call loregarden_fetch_reference {"url": "https://docs.pydantic.dev/latest/
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
+| Find the right documentation page | `loregarden_search_reference` — not a guessed URL |
 | Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |

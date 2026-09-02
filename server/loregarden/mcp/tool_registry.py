@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.devdocs_tool import search_reference_tool
 from loregarden.mcp.doctor_tool import doctor
 from loregarden.mcp.external_harness_tools import (
     begin_external_stage_tool,
@@ -52,4 +53,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
     McpTool.FETCH_REFERENCE.value: fetch_reference_tool,
+    McpTool.SEARCH_REFERENCE.value: search_reference_tool,
 }

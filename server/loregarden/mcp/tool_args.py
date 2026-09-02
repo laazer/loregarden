@@ -122,6 +122,20 @@ def normalize_fetch_reference(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_search_reference(args: dict[str, Any]) -> dict[str, Any]:
+    """All three declared fields survive, or the pinning test fails.
+
+    `limit` normalizes to 0 when absent rather than being dropped: the service
+    treats 0 as "use the default", so the key is always present and a caller
+    reading the normalized arguments sees the full shape.
+    """
+    return {
+        "query": coerce_string(args.get("query"), field="query"),
+        "docset": coerce_optional_string(args.get("docset")),
+        "limit": coerce_optional_int(args.get("limit"), field="limit") or 0,
+    }
+
+
 def normalize_search_prior_work(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "query": coerce_string(args.get("query"), field="query"),
@@ -141,4 +155,5 @@ def normalize_search_prior_work(args: dict[str, Any]) -> dict[str, Any]:
 TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.SEARCH_PRIOR_WORK.value: normalize_search_prior_work,
     McpTool.FETCH_REFERENCE.value: normalize_fetch_reference,
+    McpTool.SEARCH_REFERENCE.value: normalize_search_reference,
 }
