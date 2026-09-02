@@ -28,11 +28,9 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
-from loregarden.services.acceptance_criteria import serialize_criteria
+from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
-from loregarden.services.compatibility_posture import apply_compatibility_posture
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
-from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.run_completion import (
     complete_run_tail,
     release_execution_slot,
@@ -57,7 +55,6 @@ from loregarden.services.studio_routing import (
 )
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
-from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
@@ -68,13 +65,10 @@ from loregarden.services.workflow_state import (
     initial_stages_json,
     next_executable_stage,
     parse_stage_map,
-    parse_stage_notes,
     reconcile_workflow_state,
-    serialize_stage_map,
     set_stage_status,
     settle_unreached_stages,
 )
-from loregarden.services.worktree_lifecycle import release_ticket_worktree
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -133,71 +127,6 @@ def _blocking_issue_for_stage(
     session: Session, ticket: Ticket, stage_key: str, message: str
 ) -> str:
     return record_blocking_issue(session, ticket, run_id=None, stage_key=stage_key, message=message)
-
-
-def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
-    """The stored form of every field a content edit can touch.
-
-    Snapshotting once before and once after is what lets each field below be a
-    plain assignment: no per-field compare-then-flag, and no way to add a field
-    to the edit path but forget to make it bump the revision.
-    """
-    return (
-        ticket.title,
-        ticket.description,
-        ticket.acceptance_criteria_json,
-        ticket.tags_json,
-    )
-
-
-def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
-    """The fields whose change earns a revision bump. Returns whether any did."""
-    before = _content_fields(ticket)
-
-    if body.title is not None:
-        title = body.title.strip()
-        if not title:
-            raise ValueError("Title cannot be empty")
-        ticket.title = title
-
-    if body.description is not None:
-        ticket.description = body.description
-
-    if body.acceptance_criteria is not None:
-        ticket.acceptance_criteria_json = serialize_criteria(body.acceptance_criteria)
-
-    if body.tags is not None:
-        ticket.tags_json = serialize_tags(body.tags)
-
-    return _content_fields(ticket) != before
-
-
-def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
-    """Apply the fields a human edits directly (title, description, criteria, posture).
-
-    Module-level rather than another branch inside update_ticket_manual, which is
-    already well past its statement budget.
-    """
-    content_updated = _apply_content_edits(ticket, body)
-
-    if body.priority is not None:
-        if body.priority < 1 or body.priority > 3:
-            raise ValueError("Priority must be between 1 and 3")
-        if ticket.priority != body.priority:
-            ticket.priority = body.priority
-            content_updated = True
-
-    if body.compatibility_posture is not None:
-        apply_compatibility_posture(ticket, body.compatibility_posture)
-
-    if body.git_automation is not None:
-        # serialize_override drops unknown keys and stores "" for an empty
-        # override, so {} means "inherit the workspace policy again".
-        ticket.git_automation_json = serialize_override(body.git_automation)
-
-    if content_updated:
-        ticket.revision += 1
-        ticket.last_updated_by = "human"
 
 
 def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
@@ -438,94 +367,13 @@ class OrchestrationService:
         return ticket
 
     def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
-        _apply_operator_edits(ticket, body)
+        """Apply a human's or an agent's direct edits. See `ticket_manual_edit`.
 
-        if body.workflow_template_slug is not None:
-            from loregarden.services.workflow_service import WorkflowService
-
-            wf = WorkflowService(self.session)
-            if not body.workflow_template_slug.strip():
-                wf.clear_ticket_workflow(ticket)
-            else:
-                wf.set_ticket_workflow_template(ticket, body.workflow_template_slug)
-            self.session.refresh(ticket)
-
-        instance, stages = self._resolve_stages(ticket)
-        if body.auto_state is True:
-            ticket.state_locked = False
-        elif body.auto_state is False or body.state is not None:
-            ticket.state_locked = True
-
-        if body.state is not None:
-            # The one writer that took any value from the API and wrote it
-            # unchecked. `choose` validates it as a move somebody decided on.
-            choose(self.session, ticket, body.state, actor="human", emit=False)
-            if body.state == TicketState.WONT_DO:
-                ticket.state_locked = True
-
-        if body.branch is not None:
-            ticket.branch = body.branch.strip()
-            ticket.revision += 1
-            ticket.last_updated_by = "human"
-
-        if body.stage_updates and instance and stages:
-            self._apply_manual_stage_updates(
-                ticket,
-                instance,
-                stages,
-                body.stage_updates,
-                auto_state=body.auto_state is True or not ticket.state_locked,
-            )
-        elif body.stage_key and body.stage_status and instance and stages:
-            set_stage_status(ticket, instance, stages, body.stage_key, body.stage_status)
-            if body.stage_status == StageStatus.PENDING:
-                self.refresh_stage_retry_budget(ticket, body.stage_key)
-        elif instance and stages:
-            stage_map = parse_stage_map(instance, stages)
-            if body.workflow_stage_key:
-                if body.workflow_stage_key not in stage_map:
-                    raise ValueError(f"Unknown stage key: {body.workflow_stage_key}")
-                ticket.workflow_stage_key = body.workflow_stage_key
-            if body.workflow_stage_status:
-                ticket.workflow_stage_status = body.workflow_stage_status
-            if body.workflow_stage_key or body.workflow_stage_status:
-                key = ticket.workflow_stage_key
-                if key in stage_map:
-                    stage_map[key] = ticket.workflow_stage_status
-                    instance.stages_json = serialize_stage_map(
-                        stage_map, stages, notes=parse_stage_notes(instance)
-                    )
-                instance.current_stage_key = ticket.workflow_stage_key
-            if body.auto_state is True or not ticket.state_locked:
-                self._reconcile_workflow(ticket, instance, stages)
-        elif body.auto_state is True and instance and stages:
-            self._reconcile_workflow(ticket, instance, stages)
-
-        ticket.updated_at = datetime.now(timezone.utc)
-        if instance:
-            self.session.add(instance)
-        self.session.add(ticket)
-        self.session.commit()
-
-        if body.state is not None:
-            self._settle_manual_state_change(ticket)
-        return ticket
-
-    def _settle_manual_state_change(self, ticket: Ticket) -> None:
-        """What follows a human (or MCP) setting a ticket's state by hand."""
-        # Abandoning or finishing a ticket retires its tree too; otherwise the
-        # directory and its branch checkout outlive every reason they existed.
-        release_ticket_worktree(self.session, ticket)
-        # Closing the last open child finishes its parent, and a human closing
-        # it by hand is no different from an agent doing so.
-        reconcile_ancestors(self.session, ticket)
-        event_bus.publish(
-            self.session,
-            EventType.TICKET_STATE_CHANGED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"state": ticket.state.value, "manual": True},
-        )
+        A delegate rather than a re-export so every existing caller keeps
+        working unchanged; the implementation moved out when this module hit its
+        line cap (lg-workflow-integrity-449).
+        """
+        return ticket_manual_edit.update_ticket_manual(self, ticket, body)
 
     def refresh_stage_retry_budget(
         self, ticket: Ticket, stage_key: str, *, clear_dispatches: bool = True
@@ -550,28 +398,6 @@ class OrchestrationService:
         if ticket.state == TicketState.BLOCKED and not ticket.state_locked:
             choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human", emit=False)
             ticket.next_status = ""
-
-    def _apply_manual_stage_updates(
-        self,
-        ticket: Ticket,
-        instance: WorkflowInstance,
-        stages: list[WorkflowStageDef],
-        stage_updates: dict[str, StageStatus],
-        *,
-        auto_state: bool,
-    ) -> None:
-        stage_map = parse_stage_map(instance, stages)
-        for key, status in stage_updates.items():
-            if key not in stage_map:
-                raise ValueError(f"Unknown stage key: {key}")
-            stage_map[key] = status
-            if status == StageStatus.PENDING:
-                self.refresh_stage_retry_budget(ticket, key)
-        instance.stages_json = serialize_stage_map(
-            stage_map, stages, notes=parse_stage_notes(instance)
-        )
-        if auto_state:
-            self._reconcile_workflow(ticket, instance, stages)
 
     def _stage_start_clears_budget(
         self,

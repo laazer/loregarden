@@ -8,6 +8,7 @@ rather than repeating the silent drop with some other name.
 """
 
 from fastapi.testclient import TestClient
+from tests.mcp_helpers import call_mcp
 
 
 def _make_ticket(client: TestClient, criteria: list[str]) -> dict:
@@ -28,20 +29,6 @@ def _make_ticket(client: TestClient, criteria: list[str]) -> dict:
         },
     )
     assert res.status_code == 201, res.text
-    return res.json()
-
-
-def _call_mcp(client: TestClient, tool: str, args: dict) -> dict:
-    res = client.post(
-        "/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {"name": tool, "arguments": args},
-        },
-    )
-    assert res.status_code == 200, res.text
     return res.json()
 
 
@@ -133,7 +120,7 @@ def test_rewriting_identical_criteria_does_not_bump_revision(client: TestClient)
 def test_mcp_update_ticket_replaces_criteria(client: TestClient):
     ticket = _make_ticket(client, ["Old one", "Old two"])
 
-    body = _call_mcp(
+    body = call_mcp(
         client,
         "loregarden_update_ticket",
         {"ticket_id": ticket["id"], "acceptance_criteria": ["Fresh"]},
@@ -156,8 +143,8 @@ def test_mcp_update_ticket_appends_without_duplicating(client: TestClient):
         "mode": "append",
     }
 
-    _call_mcp(client, "loregarden_update_ticket", args)
-    _call_mcp(client, "loregarden_update_ticket", args)
+    call_mcp(client, "loregarden_update_ticket", args)
+    call_mcp(client, "loregarden_update_ticket", args)
 
     assert client.get(f"/api/tickets/{ticket['id']}").json()["acceptance_criteria"] == [
         "Existing one",
@@ -169,7 +156,7 @@ def test_mcp_update_ticket_appends_without_duplicating(client: TestClient):
 def test_mcp_update_ticket_still_sets_state(client: TestClient):
     ticket = _make_ticket(client, ["Unchanged"])
 
-    _call_mcp(
+    call_mcp(
         client,
         "loregarden_update_ticket",
         {"ticket_id": ticket["id"], "state": "in_progress"},
@@ -183,7 +170,7 @@ def test_mcp_update_ticket_still_sets_state(client: TestClient):
 def test_mcp_update_ticket_rejects_a_call_that_changes_nothing(client: TestClient):
     ticket = _make_ticket(client, ["Untouched"])
 
-    body = _call_mcp(client, "loregarden_update_ticket", {"ticket_id": ticket["id"]})
+    body = call_mcp(client, "loregarden_update_ticket", {"ticket_id": ticket["id"]})
 
     assert body.get("error") or body["result"].get("isError"), body
 
@@ -191,7 +178,7 @@ def test_mcp_update_ticket_rejects_a_call_that_changes_nothing(client: TestClien
 def test_mcp_update_ticket_rejects_mode_without_criteria(client: TestClient):
     ticket = _make_ticket(client, ["Untouched"])
 
-    body = _call_mcp(
+    body = call_mcp(
         client,
         "loregarden_update_ticket",
         {"ticket_id": ticket["id"], "state": "done", "mode": "append"},

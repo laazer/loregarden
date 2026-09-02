@@ -235,7 +235,7 @@ def test_the_run_commits_in_its_worktree_not_the_workspace(session, workspace, t
 def test_a_ticket_override_round_trips_through_the_patch_field(session, workspace, ticket):
     """The override is only useful if something can set it."""
     from loregarden.models.domain import UpdateTicketRequest
-    from loregarden.services.orchestration import _apply_operator_edits
+    from loregarden.services.ticket_manual_edit import _apply_operator_edits
 
     _apply_operator_edits(ticket, UpdateTicketRequest(git_automation={"commit": True}))
     session.add(ticket)

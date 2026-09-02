@@ -10,6 +10,7 @@ export const TICKET_STATES: TicketState[] = [
   "backlog",
   "in_progress",
   "blocked",
+  "parked",
   "done",
   "wont_do",
 ];

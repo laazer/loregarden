@@ -7,7 +7,14 @@ export type { TicketDependencyRef };
 
 import type { ChatPart } from "../components/chat/primitives/types";
 
-export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont_do";
+export type TicketState =
+  | "backlog"
+  | "in_progress"
+  | "blocked"
+  /** Waiting on a person, and deliberately not holding its parent up. */
+  | "parked"
+  | "done"
+  | "wont_do";
 /**
  * What is executing on a ticket, which `state` does not say: most of the
  * in-progress pile is idle between stages. Derived server-side from the run
