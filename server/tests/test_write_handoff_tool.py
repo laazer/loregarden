@@ -453,3 +453,113 @@ def test_a_working_gate_still_passes(isolated_db, tmp_path):
         result = _write(session, ticket)
 
     assert result["status"] == "PASS", result
+
+
+# --- an unvalidated handoff has to reach an operator -------------------------
+
+
+def test_an_unvalidated_handoff_reaches_the_ticket_not_just_the_agent(isolated_db, tmp_path):
+    """lg-workflow-integrity-89. The status was returned as JSON to the calling
+    agent and appeared nowhere else — no artifact, no event, no ticket state, no
+    UI — so an operator had no way to learn that a handoff on disk had never been
+    checked. The live example read `required_items_met: 2 of 4` with items marked
+    incomplete, written, never validated, and persisting.
+    """
+    from loregarden.models.domain import Artifact
+    from sqlmodel import select
+
+    repo = tmp_path / "repo"
+    _make_repo(repo, with_gate=False)
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        result = write_handoff(
+            session,
+            ticket_id=ticket.external_id,
+            workspace_slug="wsx",
+            from_agent="test_designer",
+            to_agent="test_breaker",
+            checklist=_good_checklist(),
+        )
+    assert result["status"] == "stored_unvalidated"
+
+    with Session(isolated_db) as session:
+        errors = session.exec(
+            select(Artifact).where(Artifact.ticket_id == ticket_pk, Artifact.kind == "error")
+        ).all()
+        assert len(errors) == 1
+        body = errors[0].content_json or ""
+        assert "not validated" in errors[0].title.lower()
+        # The reason has to travel with it, or the operator learns only that
+        # something is wrong and not what to do about it.
+        assert "no handoff gate" in body.lower()
+        # And the counters, which are the part they can act on directly.
+        assert "Required items met" in body
+
+
+def test_a_validated_handoff_files_no_error(isolated_db, tmp_path):
+    """The surface is for the unchecked case. A gate that ran and passed must not
+    leave an error artifact behind — that would train operators to ignore them."""
+    from loregarden.models.domain import Artifact
+    from sqlmodel import select
+
+    repo = tmp_path / "repo"
+    _make_repo(repo, with_gate=True)
+    with Session(isolated_db) as session:
+        ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        result = write_handoff(
+            session,
+            ticket_id=ticket.external_id,
+            workspace_slug="wsx",
+            from_agent="test_designer",
+            to_agent="test_breaker",
+            checklist=_good_checklist(),
+        )
+    assert result["status"] == "PASS"
+
+    with Session(isolated_db) as session:
+        errors = session.exec(
+            select(Artifact).where(Artifact.ticket_id == ticket_pk, Artifact.kind == "error")
+        ).all()
+        assert errors == []
+
+
+def test_each_way_the_gate_can_fail_to_run_names_itself(isolated_db, tmp_path):
+    """AC3, asserted rather than assumed. Four separate paths reach `ran: False`
+    — no gate module, timeout, unparseable output, non-zero exit — and an
+    operator reading "not validated" needs to know which one, because the fix
+    differs for each."""
+    from loregarden.services.handoff_writer import _validate_via_workspace_gate
+
+    repo = tmp_path / "nogate"
+    _make_repo(repo, with_gate=False)
+    result = _validate_via_workspace_gate(
+        repo,
+        external_id="t1-demo",
+        from_agent="test_designer",
+        to_agent="test_breaker",
+        checkpoints_dir="scratch",
+    )
+    assert result["ran"] is False
+    # Names the missing module and where it was looked for, not just "failed".
+    assert "no handoff gate" in result["reason"].lower()
+
+
+def test_the_tool_description_does_not_promise_a_repo_path_it_never_writes(
+    isolated_db,
+):
+    """AC2. The description claimed it writes
+    `project_board/checkpoints/<ticket>/handoff-latest.yaml`, while the handoff
+    is stored as an artifact row and the YAML goes to a gitignored scratch tree.
+    An agent that believed the description would look for a file that is not
+    there."""
+    from loregarden.mcp.tool_ids import McpTool
+    from loregarden.mcp.tools import TOOL_DEFINITIONS
+
+    tool = next(t for t in TOOL_DEFINITIONS if t["name"] == McpTool.WRITE_HANDOFF)
+    description = tool["description"]
+
+    assert "project_board/checkpoints" not in description
+    assert "artifact row" in description
+    assert "stored_unvalidated" in description
