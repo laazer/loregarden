@@ -448,7 +448,8 @@ const branchHistoryPanePrimitive = defineChatPanePrimitive({
     },
     {
       key: "branch",
-      kind: "string",
+      kind: "choice",
+      source: "branch",
       label: "Branch",
       default: "",
       help: "The branch whose recent commits this pane lists.",
@@ -504,7 +505,8 @@ const commitPanePrimitive = defineChatPanePrimitive({
     },
     {
       key: "branch",
-      kind: "string",
+      kind: "choice",
+      source: "branch",
       label: "Branch",
       default: "",
       help: "Optional — shown beside the commit.",
