@@ -26,9 +26,9 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
-from loregarden.services.artifact_service import looks_like_test_output, record_blocking_issue
+from loregarden.services.artifact_service import looks_like_test_output
 from loregarden.services.evidence import has_evidence, resolve_head_sha
-from loregarden.services.gate_attribution import attribute_gate_failure
+from loregarden.services.gate_attribution import GatePartition, partition_gate_output
 from loregarden.services.gate_observability import (
     clean_gate_detail,
     record_gate_evaluation,
@@ -53,6 +53,7 @@ from loregarden.services.run_lease import lease_renewal
 from loregarden.services.stage_retry_budget import (
     count_gate_fix_attempts,
     enforce_stage_retry_budget,
+    foreign_gate_failure_artifact_title,
     gate_failure_artifact_title,
 )
 from loregarden.services.studio_routing import (
@@ -687,15 +688,29 @@ class BuiltinOrchestrator:
         # tree. Anything less is UNKNOWN and takes the path below unchanged,
         # because the ticket's own side is empty far more often than not
         # (lg-workflow-integrity-406).
-        attribution, gate_paths = attribute_gate_failure(
+        partition = partition_gate_output(
             gate_output=detail,
             ticket_paths=set(self._ticket_changed_paths(ticket)),
         )
-        if attribution is GateFaultAttribution.FOREIGN:
-            self._escalate_foreign_gate_failure(
-                ticket, instance, stages, orch_run, from_stage, detail, gate_paths
+        if partition.attribution is GateFaultAttribution.FOREIGN:
+            # Record it loudly and let the ticket through. Blocking here was the
+            # first answer (lg-workflow-integrity-452) and it was too narrow a
+            # reading: FOREIGN means the violation is somewhere this ticket is
+            # not working at all, so it is not one ticket that stalls but every
+            # ticket crossing this gate until somebody cleans up. Charging a
+            # blameless ticket for another's uncommitted file is the same defect
+            # as the reroute this replaced, only quieter (-404).
+            self._record_foreign_gate_failure(ticket, from_stage, detail, partition)
+            return _GateDecision.PASS
+
+        if partition.is_mixed:
+            # Some of this failure is the ticket's and some is not. Remediate on
+            # its own share only — an agent handed a foreign violation alongside
+            # its own spends the turn explaining it cannot act on one of them.
+            self._record_foreign_gate_failure(
+                ticket, from_stage, partition.foreign_detail, partition
             )
-            return _GateDecision.BLOCKED
+            detail = partition.in_scope_detail or detail
 
         # Route back to the stage's own agent with the gate errors in context,
         # up to a bounded number of tries — counted durably (see
@@ -827,60 +842,51 @@ class BuiltinOrchestrator:
         self.session.add(instance)
         self.session.commit()
 
-    def _escalate_foreign_gate_failure(
+    def _record_foreign_gate_failure(
         self,
         ticket: Ticket,
-        instance: WorkflowInstance,
-        stages: list[WorkflowStageDef],
-        orch_run: OrchestrationRun,
         from_stage: str,
         detail: str,
-        gate_paths: set[str],
+        partition: GatePartition,
     ) -> None:
-        """The gate failed on code this ticket did not write.
+        """Write down a gate failure this ticket did not cause, and move on.
 
-        Blocks for a human like an exhausted gate does, but says something
-        different in the process: the paths that triggered it, and the fact that
-        none of them belong to this ticket. Rerouting instead spent a full agent
-        turn producing a document explaining the agent could not act, three times
-        over on ticket 22 of the blobert milestone 14 run.
+        Nothing this ticket's agent can do changes a file it does not own, so
+        rerouting cannot converge — that was the finding behind
+        lg-workflow-integrity-452, and it still holds. What changed is the
+        conclusion drawn from it. Blocking for a human made the debt somebody's
+        problem immediately, but it made it *every* passing ticket's problem:
+        one uncommitted file in a shared tree stops the queue.
 
-        Deliberately not an auto-fix and not a retry. Nothing this ticket's agent
-        can do changes a file it does not own, so more attempts cannot converge —
-        the only useful next actor is a person who can see the whole tree.
+        So the debt is recorded as an error artifact naming the offending files
+        and the exact command that found them, and the ticket advances. The
+        finding stays visible without a blameless ticket paying for it.
         """
-        offending = ", ".join(sorted(gate_paths)) or "(none reported)"
+        offending = ", ".join(sorted(partition.foreign_paths)) or "(none reported)"
+        share = (
+            "Some of the paths this gate named belong to other work"
+            if partition.is_mixed
+            else f"None of the paths this gate named belong to {ticket.external_id}"
+        )
         self.callbacks.attach_artifact(
             ticket,
             kind="error",
-            title=gate_failure_artifact_title(from_stage),
+            title=foreign_gate_failure_artifact_title(from_stage),
             content={
                 "message": (
                     f"{detail}\n\n"
-                    f"Attribution: none of the paths this gate named belong to "
-                    f"{ticket.external_id}. Offending paths: {offending}. This is a fault in "
+                    f"Attribution: {share}. Offending paths: {offending}. This is a fault in "
                     "the surroundings — most often another ticket's uncommitted work in a "
                     "shared tree — so it was not routed to this ticket's agent, which cannot "
-                    "fix a file it does not own."
+                    "fix a file it does not own, and it did not block this ticket. It remains "
+                    "real: re-run the command below against a clean tree to clear it."
                 ),
                 "run_code": "",
                 "agent_id": "",
                 "stage_key": from_stage,
-                "command": "",
+                "command": partition.command,
             },
         )
-        summary = (
-            f"Transition gate after '{from_stage}' failed on paths outside this ticket: "
-            f"{offending}. Needs an operator, not rework."
-        )
-        record_blocking_issue(
-            self.session,
-            ticket,
-            run_id=None,
-            stage_key=from_stage,
-            message=summary,
-        )
-        self.callbacks.block_ticket(orch_run, ticket, stage_key=from_stage, message=summary)
 
     def _block_after_gate_failure(
         self,

@@ -15,8 +15,17 @@ rerouting real rework — worse than the bug being fixed, and it would look like
 the feature working.
 """
 
-from loregarden.models.domain import GateFaultAttribution, Ticket, WorkItemType
-from loregarden.services.gate_attribution import attribute_gate_failure, gate_output_paths
+import json
+
+from loregarden.models.domain import Artifact, GateFaultAttribution, Ticket, WorkItemType
+from loregarden.services.gate_attribution import (
+    attribute_gate_failure,
+    gate_command,
+    gate_output_paths,
+    partition_gate_output,
+)
+from loregarden.services.stage_retry_budget import count_gate_fix_attempts
+from sqlmodel import select
 
 # -- reading paths out of what the configured gates actually print -------------
 
@@ -160,23 +169,82 @@ def test_json_of_an_unmodelled_shape_yields_nothing_rather_than_raising():
     assert gate_output_paths('{"unexpected": {"nested": 1}}') == set()
 
 
-def test_the_escalation_actually_runs(db_session):
-    """The gap that let two Criticals ship.
+def test_the_partition_splits_a_mixed_failure_by_owner():
+    """AC5. A failure naming one file the ticket wrote and one it did not is
+    TICKET as a whole — and handing the agent both asks it to fix a file it does
+    not own, which is the defect this ticket exists to close one level down."""
+    output = (
+        "server/loregarden/services/mine.py:10: something to fix\n"
+        "asset_generation/python/src/store.py:320: `isinstance(..., dict)`\n"
+        "(command: python3 py_organization_check.py --scope worktree)"
+    )
+    partition = partition_gate_output(
+        gate_output=output, ticket_paths={"server/loregarden/services/mine.py"}
+    )
 
-    Every test above exercises the classifier. None reached the function the
-    classifier triggers, so `_escalate_foreign_gate_failure` called both
-    `record_blocking_issue` and `block_ticket` with argument shapes that do not
-    exist and raised `TypeError` on every invocation — while the suite stayed
-    green at 3694 passing. The ticket still ended up blocked, through the generic
-    exception handler, carrying a traceback fragment instead of the attribution
-    message this feature exists to produce.
+    assert partition.attribution is GateFaultAttribution.TICKET
+    assert partition.is_mixed
+    assert partition.foreign_paths == frozenset({"asset_generation/python/src/store.py"})
+    assert "mine.py" in partition.in_scope_detail
+    assert "store.py" not in partition.in_scope_detail
+    assert "store.py" in partition.foreign_detail
+    assert "mine.py" not in partition.foreign_detail
+    # The command carries no path, so it stays with the agent's own findings.
+    assert "command:" in partition.in_scope_detail
 
-    Calling it for real is the whole point of this test. It asserts the ticket is
-    blocked and that the message names the offending path, because those are the
-    two things the escalation is for.
+
+def test_a_failure_that_is_entirely_the_ticket_s_own_is_not_mixed():
+    partition = partition_gate_output(
+        gate_output="server/mine.py:10: fix me", ticket_paths={"server/mine.py"}
+    )
+    assert partition.attribution is GateFaultAttribution.TICKET
+    assert not partition.is_mixed
+    assert partition.foreign_detail == ""
+
+
+def test_the_exact_command_is_recovered_from_the_detail():
+    """AC3. `clean_gate_detail` appends it, so the invocation that found the
+    violation is reportable without threading the result object through."""
+    assert (
+        gate_command("boom (command: python3 py_organization_check.py --scope worktree)")
+        == "python3 py_organization_check.py --scope worktree"
+    )
+    assert gate_command("no command here") == ""
+
+
+def test_a_compact_json_report_still_partitions():
+    """A single-line JSON report parses as its own line, so it splits like any
+    other. Asserted because the reasoning that produced this function assumed it
+    would not, and the assumption was wrong in the safe direction."""
+    output = '[{"filename": "somebody/else.py"}]'
+    partition = partition_gate_output(gate_output=output, ticket_paths={"server/mine.py"})
+    assert partition.foreign_detail == output
+    assert partition.in_scope_detail == ""
+
+
+def test_a_pretty_printed_json_report_degrades_to_all_in_scope():
+    """Split across lines, no single line parses as JSON, so no line is
+    attributable and everything routes as it does today. That is the floor: a
+    wrong split of a machine-readable report would drop real findings, while an
+    unsplit one only declines to add the new behaviour."""
+    output = '[\n  {\n    "filename": "somebody/else.py"\n  }\n]'
+    partition = partition_gate_output(gate_output=output, ticket_paths={"server/mine.py"})
+    assert partition.foreign_detail == ""
+    assert "somebody/else.py" in partition.in_scope_detail
+
+
+def test_a_foreign_gate_failure_leaves_the_ticket_running(db_session):
+    """AC2 and AC7, reproducing blobert ticket 8028's shape.
+
+    The first answer to a foreign failure (lg-workflow-integrity-452) blocked for
+    a human. That was too narrow: FOREIGN means the violation sits where this
+    ticket is not working, so the same uncommitted file stops *every* ticket
+    crossing the gate. This asserts the ticket keeps running, keeps its budget,
+    and that the debt is still written down with the command that found it.
     """
-    from loregarden.models.domain import OrchestrationRun, TicketState, Workspace
-    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.models.domain import AgentRun, OrchestrationRun, TicketState, Workspace
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator, _GateDecision
+    from loregarden.services.orchestration_profile import OrchestrationProfile
 
     workspace = Workspace(slug="esc", name="Esc", repo_path="/nonexistent/esc")
     db_session.add(workspace)
@@ -186,7 +254,7 @@ def test_the_escalation_actually_runs(db_session):
     ticket = Ticket(
         external_id="esc-1",
         workspace_id=workspace.id,
-        title="Escalation",
+        title="Godot shader work",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
         workflow_stage_key="implement",
@@ -195,21 +263,48 @@ def test_the_escalation_actually_runs(db_session):
     db_session.commit()
     db_session.refresh(ticket)
 
+    # The ticket touched shaders. The gate is complaining about Python.
+    db_session.add(
+        AgentRun(
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            run_code="esc_impl",
+            agent_id="engine_integration",
+            stage_key="implement",
+            changed_paths_json=json.dumps(["game/shaders/blend_shell.gdshader"]),
+        )
+    )
     orch_run = OrchestrationRun(ticket_id=ticket.id, workspace_id=workspace.id, run_code="esc_run")
     db_session.add(orch_run)
     db_session.commit()
     db_session.refresh(orch_run)
 
-    BuiltinOrchestrator(db_session)._escalate_foreign_gate_failure(
+    detail = (
+        "Python organization check failed:\n"
+        " - asset_generation/python/src/store.py:320: `isinstance(..., dict)`\n"
+        "(command: python3 py_organization_check.py --repo . --scope worktree)"
+    )
+    orchestrator = BuiltinOrchestrator(db_session)
+    decision = orchestrator._decide_unfixed_gate_failure(
         ticket,
         None,
         [],
         orch_run,
+        OrchestrationProfile(slug="esc"),
         "implement",
-        "creature_store/store.py:320: class `Store` is 250 lines",
-        {"creature_store/store.py"},
+        detail,
     )
     db_session.refresh(ticket)
 
-    assert ticket.state is TicketState.BLOCKED
-    assert "creature_store/store.py" in ticket.blocking_issues
+    assert decision is _GateDecision.PASS
+    assert ticket.state is TicketState.IN_PROGRESS
+    assert not (ticket.blocking_issues or "")
+    assert count_gate_fix_attempts(db_session, ticket.id, "implement") == 0
+
+    artifacts = db_session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "error")
+    ).all()
+    assert len(artifacts) == 1
+    body = artifacts[0].content_json
+    assert "store.py" in body
+    assert "py_organization_check.py" in body
