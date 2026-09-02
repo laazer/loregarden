@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from loregarden.models.domain import GateFaultAttribution
@@ -182,3 +183,80 @@ def attribute_gate_failure(
     if _roots(named) & _roots(owned):
         return GateFaultAttribution.UNKNOWN, named
     return GateFaultAttribution.FOREIGN, named
+
+
+#: `clean_gate_detail` appends the command it ran as `(command: ...)`, so the
+#: exact invocation that produced a finding is recoverable from the detail text
+#: without threading the `GateRunResult` through every caller.
+_COMMAND_RE = re.compile(r"\(command:\s*(?P<command>.+?)\)\s*$", re.MULTILINE)
+
+
+def gate_command(output: str) -> str:
+    """The gate command named in the output, or "" when it names none.
+
+    The last match wins: a detail built from several gates ends with the one
+    that actually failed.
+    """
+    found = _COMMAND_RE.findall(output or "")
+    return found[-1].strip() if found else ""
+
+
+@dataclass(frozen=True)
+class GatePartition:
+    """A gate failure split by whose files it names.
+
+    `attribution` is the whole-failure verdict, unchanged. The rest exists for
+    the mixed case, which that verdict cannot express: a failure naming one file
+    this ticket wrote and four it did not is TICKET, and handing all five to the
+    agent asks it to fix four it does not own.
+    """
+
+    attribution: GateFaultAttribution
+    named_paths: frozenset[str]
+    foreign_paths: frozenset[str]
+    in_scope_detail: str
+    foreign_detail: str
+    command: str
+
+    @property
+    def is_mixed(self) -> bool:
+        """The ticket owns some of what failed, and something else owns the rest."""
+        return self.attribution is GateFaultAttribution.TICKET and bool(self.foreign_paths)
+
+
+def partition_gate_output(*, gate_output: str, ticket_paths: set[str] | list[str]) -> GatePartition:
+    """Split gate output into the part this ticket owns and the part it does not.
+
+    The split is line-oriented, because that is the granularity every gate this
+    repo runs actually reports at. A line naming no path — a header, a summary,
+    the command — stays on the in-scope side: dropping it would hand the agent
+    findings with no context, and the cost of keeping it is a duplicated header,
+    not a wrong attribution.
+
+    JSON gate reports are one blob with no line structure to split, so they
+    partition to "all in scope" and route exactly as they do today. That is a
+    deliberate floor rather than an oversight: a wrong split of a machine-readable
+    report would silently drop real findings, while an unsplit one only fails to
+    add the new behaviour.
+    """
+    attribution, named = attribute_gate_failure(gate_output=gate_output, ticket_paths=ticket_paths)
+    owned_tails = {_comparable(path) for path in ticket_paths if path}
+    foreign = {path for path in named if _comparable(path) not in owned_tails}
+
+    mine: list[str] = []
+    theirs: list[str] = []
+    for line in (gate_output or "").splitlines():
+        line_paths = gate_output_paths(line)
+        if line_paths and all(_comparable(path) not in owned_tails for path in line_paths):
+            theirs.append(line)
+        else:
+            mine.append(line)
+
+    return GatePartition(
+        attribution=attribution,
+        named_paths=frozenset(named),
+        foreign_paths=frozenset(foreign),
+        in_scope_detail="\n".join(mine).strip(),
+        foreign_detail="\n".join(theirs).strip(),
+        command=gate_command(gate_output),
+    )

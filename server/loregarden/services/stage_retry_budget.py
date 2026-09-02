@@ -739,6 +739,18 @@ def gate_failure_artifact_title(stage_key: str) -> str:
     return f"Transition gate failed — {stage_key}"
 
 
+def foreign_gate_failure_artifact_title(stage_key: str) -> str:
+    """Title for a gate failure attributed to somebody else's files.
+
+    Deliberately NOT `gate_failure_artifact_title`: that string is the retry
+    budget's counter (see `count_gate_fix_attempts` below, which selects on it),
+    so filing a foreign failure under it would spend the gate-fix budget of a
+    ticket that caused nothing — the exact harm lg-workflow-integrity-404 exists
+    to stop, reintroduced by the artifact meant to report it.
+    """
+    return f"Transition gate failed elsewhere — {stage_key}"
+
+
 def count_gate_fix_attempts(session: Session, ticket_id: str, stage_key: str) -> int:
     """Count prior automatic gate-fix retries for this stage, persisted via the
     error artifacts `_reroute_for_agent_fix`/`_block_after_gate_failure` attach —
