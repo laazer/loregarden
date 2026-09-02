@@ -226,6 +226,28 @@ def _consume_scope_reroute_pin(ticket: Ticket, chosen_agent: str) -> None:
         ticket.scope_reroute_agent = ""
 
 
+def _consume_next_agent_pin(ticket: Ticket, chosen_agent: str) -> None:
+    """Clear the routing hint once the dispatch it asked for has happened.
+
+    `next_agent` is written by a reject to send work back to a named agent
+    (`workflow_routing.apply_stage_route`). It is a request about ONE dispatch,
+    and it was persisted as though it were a standing fact — so a hint set at
+    `verify` was still steering three stages later, which is the stale-pin loop
+    #164 documented.
+
+    Cleared only when the dispatch actually went to the pinned agent, matching
+    `_consume_scope_reroute_pin` above. A dispatch that resolved somewhere else
+    did not satisfy the request, so the request stands.
+
+    This only works because the read path stopped rewriting the field. It used
+    to be restored by `reconcile_workflow_state` on the next
+    `GET /api/tickets/{id}`, so clearing here would have been undone before the
+    stage after it ran.
+    """
+    if ticket.next_agent and ticket.next_agent == chosen_agent:
+        ticket.next_agent = ""
+
+
 class OrchestrationService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -310,7 +332,6 @@ class OrchestrationService:
                 first_stage = min(stages, key=lambda s: s.order)
                 ticket.workflow_stage_key = first_stage.key
                 ticket.workflow_stage_status = StageStatus.PENDING
-                ticket.next_agent = first_stage.agent_id
                 changed = True
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
@@ -1001,6 +1022,7 @@ class OrchestrationService:
             instance = self.get_workflow_instance(ticket.id) or instance
 
         _consume_scope_reroute_pin(ticket, chosen_agent)
+        _consume_next_agent_pin(ticket, chosen_agent)
 
         ticket.workflow_stage_key = target_key
         if target.stage_map.get(target_key) != StageStatus.RUNNING:
