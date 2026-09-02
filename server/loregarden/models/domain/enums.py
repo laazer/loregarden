@@ -673,6 +673,33 @@ class ReferenceFetchError(StrEnum):
     INTERNAL_ERROR = "internal_error"
 
 
+class DevDocsError(StrEnum):
+    """Why a DevDocs search produced no results.
+
+    Separate from ``ReferenceFetchError`` because these are the search's own
+    failures, not the cache's: a docset that does not resolve is not a fetch
+    problem, and flattening the two would tell a caller to retry a URL when the
+    thing that failed was their argument. A transport failure underneath is
+    still reported here, as ``*_UNAVAILABLE``, with the cache's own reason
+    carried in the message.
+    """
+
+    #: No docset given, and the query alone cannot pick one.
+    DOCSET_REQUIRED = "docset_required"
+    #: A docset was named and matched nothing.
+    DOCSET_UNRESOLVED = "docset_unresolved"
+    #: A name matched several docsets; the caller has to choose.
+    DOCSET_AMBIGUOUS = "docset_ambiguous"
+    #: The catalog or index could not be fetched — the cache said why.
+    CATALOG_UNAVAILABLE = "catalog_unavailable"
+    INDEX_UNAVAILABLE = "index_unavailable"
+    #: The body arrived and was not the shape DevDocs documents. Never cached,
+    #: for the same reason an empty page is not: a bad body kept for a TTL is a
+    #: broken docset for a TTL.
+    CATALOG_INVALID = "catalog_invalid"
+    INDEX_INVALID = "index_invalid"
+
+
 class MemoryBriefingOutcome(str, Enum):
     """What one inherited-wisdom assembly actually did.
 
