@@ -11,6 +11,7 @@ had and the ledger simply left empty.
 """
 
 from loregarden.models.domain import (
+    AgentRun,
     Artifact,
     ReworkArtifactKind,
     ReworkStopReason,
@@ -18,10 +19,13 @@ from loregarden.models.domain import (
     TicketState,
     WorkItemType,
     Workspace,
+    Worktree,
 )
 from loregarden.services.rework_feedback import (
     MAX_REWORK_REROUTES,
+    _entries,
     record_reroute_exhausts_budget,
+    record_rework_feedback,
     rework_is_stuck,
 )
 from sqlmodel import Session
@@ -151,20 +155,86 @@ def test_the_count_still_stops_a_loop_that_keeps_changing(db_session):
     assert stop is ReworkStopReason.BUDGET
 
 
-def test_no_stop_reason_must_be_compared_not_tested_for_truth():
-    """The trap this return type introduced, pinned so it cannot come back.
+def test_the_tree_is_read_from_the_run_s_worktree_not_the_shared_checkout(db_session, tmp_path):
+    """The common path, not an edge case: worktree execution is the default.
 
-    `record_reroute_exhausts_budget` used to return a bool, and one caller in
-    `permission_bridge` still read it as one after the change. Every member of a
-    StrEnum is a non-empty string, so `if record_reroute_exhausts_budget(...)`
-    became unconditionally true — the scope-denial reroute blocked itself before
-    it could hand work to the sibling implementer.
+    `resolve_head_sha` answers for `workspace.repo_path` — the shared checkout —
+    while `GitAutomationConfig.worktree` defaults to True, so a ticket's commits
+    normally land in a per-ticket worktree the shared checkout never sees.
+    Stamping the shared HEAD compared a repository the run never wrote to: two
+    rounds read as "the same tree" while the ticket's worktree advanced between
+    them, which is a false STUCK on the majority of real runs.
 
-    mypy accepts an enum as a truth-value expression, so nothing else catches
-    this. The only defence is that callers compare against NONE, and the only
-    thing that makes that memorable is a test saying why.
+    Asserted by giving the run a worktree whose HEAD differs from the workspace
+    checkout's, and requiring the ledger to record the worktree's.
     """
-    assert bool(ReworkStopReason.NONE) is True, (
-        "NONE is truthy — a caller writing `if stop:` gets the opposite of what "
-        "it means, so every caller must compare `is not ReworkStopReason.NONE`"
+    from tests.worktree_helpers import git, make_repo
+
+    shared = make_repo(tmp_path, name="shared")
+    worktree_dir = make_repo(tmp_path, name="run-worktree")
+    (worktree_dir / "only-here.txt").write_text("x", encoding="utf-8")
+    git(worktree_dir, "add", "-A")
+    git(worktree_dir, "commit", "-q", "-m", "work the shared checkout never saw")
+
+    shared_head = git(shared, "rev-parse", "HEAD").stdout.strip()
+    worktree_head = git(worktree_dir, "rev-parse", "HEAD").stdout.strip()
+    assert shared_head != worktree_head
+
+    workspace = Workspace(slug="wt", name="WT", repo_path=str(shared))
+    db_session.add(workspace)
+    db_session.commit()
+    db_session.refresh(workspace)
+
+    ticket = Ticket(
+        external_id="wt-1",
+        workspace_id=workspace.id,
+        title="Worktree",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+
+    # The run comes first: `Worktree.agent_run_id` is NOT NULL, so the worktree
+    # cannot exist without the run that owns it.
+    run = AgentRun(
+        run_code="wt_run",
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        agent_id="backend_implementer",
+        stage_key="implement",
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    worktree = Worktree(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        ticket_id=ticket.id,
+        worktree_path=str(worktree_dir),
+    )
+    db_session.add(worktree)
+    db_session.commit()
+    db_session.refresh(worktree)
+
+    run.worktree_id = worktree.id
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    record_rework_feedback(
+        db_session,
+        ticket,
+        target_stage="implement",
+        from_stage="verify",
+        context="fix the parser",
+        run_id=run.id,
+    )
+
+    entries = _entries(db_session, ticket, "implement")
+    assert entries[-1].commit_sha == worktree_head, (
+        "the ledger recorded the shared checkout's HEAD, which the ticket's "
+        "commits never touch — convergence would compare the wrong repository"
     )

@@ -29,12 +29,15 @@ from __future__ import annotations
 import json
 
 from loregarden.models.domain import (
+    AgentRun,
     Artifact,
     ReworkArtifactKind,
     ReworkStopReason,
     Ticket,
+    Workspace,
 )
-from loregarden.services.evidence import resolve_head_sha
+from loregarden.services.git_commit_push_service import head_commit_sha
+from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session, select
 
 # Feedback context, not a failure — kept off the Errors tab. The re-run agent's
@@ -59,6 +62,32 @@ def _ledger_title(target_stage: str) -> str:
     return f"Rework feedback — {target_stage}"
 
 
+def _tree_sha(session: Session, ticket: Ticket, run_id: str | None) -> str:
+    """HEAD of the checkout the run actually executed in.
+
+    Resolved through the RUN, not the workspace. `resolve_head_sha` answers for
+    `workspace.repo_path` — the shared checkout — and `GitAutomationConfig`
+    defaults `worktree` to True, so a ticket's commits normally land in a
+    per-ticket worktree that the shared checkout never sees. Stamping the shared
+    HEAD would have compared a repository the run never wrote to: two rounds
+    would read as "the same tree" while the ticket's worktree advanced between
+    them, which is a false STUCK, and the signal would be answering a question
+    about the wrong repo entirely.
+
+    `resolve_run_root` already falls back to the workspace checkout for a run
+    with no worktree, or one whose directory has been cleaned up.
+    """
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if not workspace:
+        return ""
+    root = resolve_workspace_root(workspace)
+    if run_id:
+        run = session.get(AgentRun, run_id)
+        if run:
+            root = resolve_run_root(session, run, root)
+    return head_commit_sha(root)
+
+
 def record_rework_feedback(
     session: Session,
     ticket: Ticket,
@@ -77,7 +106,9 @@ def record_rework_feedback(
     ``commit_sha`` records the tree the finding was raised against, which is what
     makes convergence answerable: a round that repeats the same finding against
     the same tree cannot differ from the one before it. The field already existed
-    on ``Artifact``; the ledger simply left it empty.
+    on ``Artifact``; the ledger simply left it empty. It is resolved through the
+    RUN rather than the workspace — see ``_tree_sha``, and note that a ticket
+    normally executes in its own worktree.
     """
     session.add(
         Artifact(
@@ -85,7 +116,7 @@ def record_rework_feedback(
             run_id=run_id,
             kind=REWORK_FEEDBACK_KIND,
             title=_ledger_title(target_stage),
-            commit_sha=resolve_head_sha(session, ticket),
+            commit_sha=_tree_sha(session, ticket, run_id),
             content_json=json.dumps(
                 {"from_stage": from_stage, "target_stage": target_stage, "context": context}
             ),
