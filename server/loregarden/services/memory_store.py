@@ -701,8 +701,28 @@ class AgentMemoryService:
         Reports only the three real stores. `MemoryStoreKind.SERVICE` never
         appears here: it names a factory failure, at which point there is no
         service to ask.
+
+        The vault is stat'd, not inferred from being configured. Reporting READ
+        because `self.obsidian` exists made a vault pointed at a path that does
+        not exist the only READ in the set, and `classify` returns EMPTY the
+        moment anything reads — so the operator was told "the vault was there
+        and had nothing to say" when the truth was "the vault path is wrong".
+        That is the counts-versus-states defect 183 removed, reappearing inside
+        the sampler 183 added (545).
+
+        Only the vault *root* is checked. The subdirectories are created on
+        first write, so a vault that exists and has never been written to is
+        genuinely readable and genuinely empty — which is EMPTY, correctly.
+
+        Stat'ing here is safe for the ordering rule above: the directory
+        accessors build paths and never `mkdir`. Only the write paths and
+        `MemoryGraphStore.__init__` create anything, and none of them run here.
         """
-        vault = MemoryStoreState.READ if self.obsidian else MemoryStoreState.UNCONFIGURED
+        vault = (
+            MemoryStoreState.READ
+            if self.obsidian is not None and self.obsidian.vault_dir.is_dir()
+            else MemoryStoreState.UNCONFIGURED
+        )
         graph_path = self._graph_path_for_workspace(workspace_slug)
         return {
             MemoryStoreKind.CHECKPOINTS: vault,
