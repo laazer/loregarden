@@ -213,11 +213,6 @@
    The picker used to share this rule. It is a dialog now (557) — sixteen
    options never fit under a header — so it is styled from the app's `.modal-*`
    classes and has left this file entirely. */
-.pane-settings-panel {
-  min-height: 0;
-  overflow-y: auto;
-}
-
 /* ── The canvas empty state ──────────────────────────────────────────────
    Laid over the viewport and transparent to the pointer, so a double-click
    still places a container through it. The card itself is the only thing that
@@ -281,12 +276,6 @@
    The inputs use the app's own `.input` and `.field-label`, which 556 gave a
    definition beside the six feature-scoped copies that had grown up instead
    of one. A seventh copy for this panel is the bug 555 was, rewritten. */
-.pane-settings-panel {
-  padding: 8px;
-  border-bottom: 1px solid var(--bd);
-  background: var(--bg1);
-}
-
 .pane-settings {
   display: flex;
   flex-direction: column;

@@ -39,6 +39,16 @@ import type { RegisteredPrimitive } from "../primitives/types";
 
 jest.mock("../../../api/client", () => require("../../../test/apiClientMock"));
 
+jest.mock("../../../lib/branchTriageApi", () => ({
+  ...jest.requireActual("../../../lib/branchTriageApi"),
+  fetchBranchTriage: jest.fn().mockResolvedValue({
+    branches: [
+      { name: "main", is_current: true },
+      { name: "claude/wip", is_current: false },
+    ],
+  }),
+}));
+
 jest.mock("../../../lib/viewsApi", () => ({
   ...jest.requireActual("../../../lib/viewsApi"),
   fetchView: jest.fn(),
@@ -336,6 +346,25 @@ describe("what gets stored", () => {
     await waitFor(() =>
       expect(settingsOf(lastLayout(), "c-seed")).toMatchObject({ workspace_slug: "" }),
     );
+  });
+});
+
+describe("branch fields", () => {
+  it("offers the workspace's branches, marking the current one", async () => {
+    // Left as free text when every other identifier became a picker, because
+    // the branch list lives in `branchTriageApi` rather than the main client —
+    // which is a reason to import it, not a reason to make an operator type a
+    // branch name from memory.
+    renderEditor("chat_branch_history", {
+      primitive_id: "chat_branch_history",
+      workspace_slug: "loregarden",
+      branch: "",
+      limit: 8,
+    });
+
+    const select = await screen.findByRole("combobox", { name: "Branch" });
+    expect(within(select).getByRole("option", { name: "main · current" })).toHaveValue("main");
+    expect(within(select).getByRole("option", { name: "claude/wip" })).toHaveValue("claude/wip");
   });
 });
 

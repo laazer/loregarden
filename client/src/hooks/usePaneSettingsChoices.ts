@@ -38,6 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import { baxterChatSessionsKey } from "./useBaxterChatSession";
+import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { TICKET_STATE_LABELS } from "../lib/ticketStates";
 import { useQueueLanes } from "./useQueueLanes";
 import type { ChoiceSource } from "../components/views/primitives/types";
@@ -111,6 +112,15 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
     enabled: source === "chat_session" && workspaceSlug !== "",
   });
 
+  const branches = useQuery({
+    // The Branch Triage page's own key, so opening this form costs nothing when
+    // that page has already scanned the repo — and a scan walks every branch,
+    // which is why it is worth sharing rather than repeating.
+    queryKey: ["branch-triage", workspaceSlug],
+    queryFn: () => fetchBranchTriage(workspaceSlug),
+    enabled: source === "branch" && workspaceSlug !== "",
+  });
+
   const tickets = useQuery({
     // Scoped to the workspace the chrome is showing, which is the one the view
     // belongs to. An unscoped list would offer tickets from workspaces this
@@ -175,6 +185,20 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
       isLoading: workspaceSlug !== "" && sessions.isLoading,
       isUnavailable:
         workspaceSlug === "" || sessions.isError || (sessions.data ?? []).length === 0,
+    },
+    branch: {
+      options: (branches.data?.branches ?? []).map((entry) => ({
+        value: entry.name,
+        // The current branch is worth marking: it is the one an operator means
+        // most often, and a list of forty names gives no other clue which.
+        label: entry.is_current ? `${entry.name} · current` : entry.name,
+      })),
+      mode: "select",
+      isLoading: workspaceSlug !== "" && branches.isLoading,
+      isUnavailable:
+        workspaceSlug === "" ||
+        branches.isError ||
+        (branches.data?.branches ?? []).length === 0,
     },
     ticket: {
       options: (tickets.data ?? []).map(ticketChoice),

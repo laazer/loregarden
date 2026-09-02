@@ -799,48 +799,17 @@ describe("readDraft — what a draft settles as", () => {
   });
 });
 
-describe("the header's settings panel survives a pane too short to hold it", () => {
-  it("declares the panel as a scroll container that may shrink", () => {
-    /**
-     * Structural, and it says so: jsdom has no layout engine, so "the Save
-     * button is off the bottom of a 148px pane" is not a question that can be
-     * asked here. What can be asked is the cause.
-     *
-     * The pane a header is drawn in is a flex column with `overflow: hidden`,
-     * and a flex child refuses to shrink below its content until `min-height:
-     * 0` says otherwise. Without both declarations the settings form was
-     * *clipped* — measured at 167px inside a 149px pane, with the Save button
-     * unreachable and no scrollbar to say so. Found in a browser, which is
-     * where the design pass this ticket follows found its own defects too.
-     */
-    const fs: typeof import("fs") = jest.requireActual("fs");
-    const path: typeof import("path") = jest.requireActual("path");
-    const css = fs.readFileSync(path.resolve(__dirname, "../paneChrome.css"), "utf8");
-
-    // `pane-picker-panel` was checked here too until 557 made the picker a
-    // dialog. It no longer exists, and a loop over a class no stylesheet
-    // declares asserts nothing — the modal's own overflow is pinned by
-    // `primitivePickerModal.test`, against the classes it actually uses.
-    for (const panel of ["pane-settings-panel"]) {
-      const declared: Record<string, string> = {};
-      for (const [, selector, body] of css
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-        const matches = selector
-          .split(",")
-          .some((part) => new RegExp(`\\.${panel}(?![\\w-])`).test(part));
-        if (!matches) continue;
-        for (const declaration of body.split(";")) {
-          const [property, ...rest] = declaration.split(":");
-          if (rest.length === 0) continue;
-          declared[property.trim().toLowerCase()] = rest.join(":").trim().toLowerCase();
-        }
-      }
-      expect({ panel, minHeight: declared["min-height"] }).toEqual({ panel, minHeight: "0" });
-      const scrolls = ["overflow", "overflow-y"].some((property) =>
-        ["auto", "scroll"].includes(declared[property] ?? ""),
-      );
-      expect({ panel, scrolls }).toEqual({ panel, scrolls: true });
-    }
-  });
-});
+/*
+ * The settings form's overflow stopped being this file's to check.
+ *
+ * A describe here asserted that `.pane-settings-panel` declared `min-height: 0`
+ * and scrolled — the cause of a 167px form clipped inside a 149px pane. That
+ * panel stopped existing when the form became a dialog: nothing renders the
+ * class, so the loop found no rules and passed on an empty set.
+ *
+ * This file had already caught the identical failure for `pane-picker-panel`
+ * and written the lesson down — "a loop over a class no stylesheet declares
+ * asserts nothing" — which turned out to be true of its neighbour too. The
+ * dialog's sizing is pinned by `paneSettingsModal.test`, against classes it
+ * renders.
+ */
