@@ -184,10 +184,17 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
     fields = _collect_update_fields(ticket, arguments)
+    if "parent" in arguments:
+        # Resolved here rather than in _collect_update_fields because only the
+        # handler holds the resolver, and a parent may be named by external id.
+        # "" is a deliberate detach (legal only for a milestone), so an empty
+        # string must reach reparent_ticket rather than being dropped as falsy.
+        parent = (arguments["parent"] or "").strip()
+        fields["parent_ticket_id"] = svc.resolve_ticket(ticket_id=parent).id if parent else ""
     if not fields:
         raise ValueError(
             "Nothing to update — supply at least one of: state, title, "
-            "description, priority, acceptance_criteria, tags."
+            "description, priority, acceptance_criteria, tags, parent."
         )
 
     OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
@@ -262,7 +269,7 @@ def normalize_update_ticket_args(
     payload: dict[str, Any] = {
         "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
     }
-    for field in ("state", "title", "description", "mode"):
+    for field in ("state", "title", "description", "mode", "parent"):
         if args.get(field) is not None:
             payload[field] = coerce_string(args.get(field), field=field)
     for field in ("acceptance_criteria", "tags"):

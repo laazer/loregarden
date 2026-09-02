@@ -1074,8 +1074,16 @@ def _orchestrate_incomplete_children(
     )
     prereqs = TicketDependencyService(builtin.session).prerequisites_map([c.id for c in children])
     children = order_children_for_subtree(children, prereqs)
+    parked: list[str] = []
     for child in children:
         if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
+            continue
+        if child.state == TicketState.PARKED:
+            # Owed by a person, and deliberately not holding the subtree up.
+            # Collected rather than ignored: the parent must still not report
+            # itself complete (see the return below), which is what separates
+            # parking from WONT_DO (lg-workflow-integrity-449).
+            parked.append(child.title)
             continue
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
@@ -1102,6 +1110,12 @@ def _orchestrate_incomplete_children(
             reason = (child_run.error_message or "").strip()
             suffix = f" — {reason}" if reason else ""
             return f"Child workflow paused: {child.title}{suffix}"
+    if parked:
+        # Every runnable sibling has now had its turn — this is reported after
+        # the loop, not on encountering the first parked child, because the
+        # point of parking is that the rest of the subtree keeps moving. The
+        # parent stays incomplete because the work is still owed.
+        return f"Child ticket parked, awaiting a person: {', '.join(parked)}"
     return None
 
 

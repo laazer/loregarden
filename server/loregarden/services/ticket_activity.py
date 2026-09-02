@@ -64,6 +64,9 @@ _PRECEDENCE = (
 )
 
 #: States where "is it running" is a question worth asking at all.
+#: PARKED is open but deliberately absent: these drive the activity axis
+#: (running/awaiting/queued/idle), and a parked ticket is waiting on a person,
+#: so it has no activity to classify (lg-workflow-integrity-449).
 OPEN_STATES = (TicketState.BACKLOG, TicketState.IN_PROGRESS, TicketState.BLOCKED)
 
 
@@ -178,6 +181,7 @@ def summarize_ticket_status(
         backlog=states[TicketState.BACKLOG],
         in_progress=states[TicketState.IN_PROGRESS],
         blocked=states[TicketState.BLOCKED],
+        parked=states[TicketState.PARKED],
         done=states[TicketState.DONE],
         wont_do=states[TicketState.WONT_DO],
         running=counts[TicketActivity.RUNNING],

@@ -4,6 +4,9 @@ export const TICKET_STATE_COLORS: Record<TicketState, string> = {
   backlog: "var(--txm)",
   in_progress: "var(--blue)",
   blocked: "var(--red)",
+  // Violet, not red: parked work is owed, not stuck, and colouring it like
+  // blocked would undo the distinction (lg-workflow-integrity-449).
+  parked: "var(--vio)",
   done: "var(--grn)",
   wont_do: "var(--amb)",
 };
@@ -12,6 +15,7 @@ export const TICKET_STATE_LABELS: Record<TicketState, string> = {
   backlog: "Backlog",
   in_progress: "In Progress",
   blocked: "Blocked",
+  parked: "Parked",
   done: "Done",
   wont_do: "Won't do",
 };

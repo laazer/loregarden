@@ -57,15 +57,46 @@ logger = logging.getLogger(__name__)
 #: ticket already finished or abandoned reopens through `backlog` rather than
 #: jumping straight back into flight. Reopening as a *consequence* — a child
 #: reviving its parent — is `derive`, which does not consult this at all.
+#: PARKED joins the open states, so anything goes between it and the other
+#: three. It is reachable from BLOCKED in particular because that is the move
+#: this exists for: an agent reported `blocked` on human-only work, and a person
+#: (or the parking call) reclassifies it as owed rather than stuck.
 _CHOSEN_TRANSITIONS: dict[TicketState, frozenset[TicketState]] = {
     TicketState.BACKLOG: frozenset(
-        {TicketState.IN_PROGRESS, TicketState.BLOCKED, TicketState.DONE, TicketState.WONT_DO}
+        {
+            TicketState.IN_PROGRESS,
+            TicketState.BLOCKED,
+            TicketState.PARKED,
+            TicketState.DONE,
+            TicketState.WONT_DO,
+        }
     ),
     TicketState.IN_PROGRESS: frozenset(
-        {TicketState.BLOCKED, TicketState.DONE, TicketState.BACKLOG, TicketState.WONT_DO}
+        {
+            TicketState.BLOCKED,
+            TicketState.PARKED,
+            TicketState.DONE,
+            TicketState.BACKLOG,
+            TicketState.WONT_DO,
+        }
     ),
     TicketState.BLOCKED: frozenset(
-        {TicketState.IN_PROGRESS, TicketState.BACKLOG, TicketState.DONE, TicketState.WONT_DO}
+        {
+            TicketState.IN_PROGRESS,
+            TicketState.PARKED,
+            TicketState.BACKLOG,
+            TicketState.DONE,
+            TicketState.WONT_DO,
+        }
+    ),
+    TicketState.PARKED: frozenset(
+        {
+            TicketState.IN_PROGRESS,
+            TicketState.BLOCKED,
+            TicketState.BACKLOG,
+            TicketState.DONE,
+            TicketState.WONT_DO,
+        }
     ),
     TicketState.DONE: frozenset({TicketState.BACKLOG, TicketState.WONT_DO}),
     TicketState.WONT_DO: frozenset({TicketState.BACKLOG, TicketState.IN_PROGRESS}),
@@ -155,7 +186,13 @@ def derive(ticket: Ticket, target: TicketState, *, actor: str) -> bool:
     - a `state_locked` ticket, which is how an operator says "I decided this"
     - a `wont_do` ticket, since abandoning is a statement about the ticket
       rather than a tally of its parts
+    - a `parked` ticket, for the same reason: parking says a person owes this
+      work, which no recomputation over stages or children can know. Parking
+      through `update_ticket_manual` also sets `state_locked`, so this guard is
+      belt and braces — but it is the honest place for the rule, and it keeps a
+      parked ticket parked when it is reached by any other writer
+      (lg-workflow-integrity-449).
     """
-    if ticket.state_locked or ticket.state == TicketState.WONT_DO:
+    if ticket.state_locked or ticket.state in (TicketState.WONT_DO, TicketState.PARKED):
         return False
     return _write(ticket, target, actor=actor)

@@ -671,17 +671,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.UPDATE_TICKET,
         "description": (
             "Update ticket state or content (state, title, description, priority, "
-            "acceptance criteria, tags). Supply at least one field besides ticket_id. "
+            "acceptance criteria, tags, parent). Supply at least one field besides ticket_id. "
             "Acceptance criteria belong here — never append them to the description."
         ),
         "inputSchema": _tool_schema(
             properties={
                 "ticket_id": _string_prop("Loregarden ticket UUID or external id."),
                 "state": _enum_string_prop(
-                    "New ticket state.",
-                    ["backlog", "in_progress", "blocked", "done", "wont_do"],
+                    "New ticket state. 'parked' means a person owes this work and the "
+                    "rest of the subtree should carry on without it; 'blocked' means the "
+                    "run stopped and someone should look, and holds the parent up.",
+                    ["backlog", "in_progress", "blocked", "parked", "done", "wont_do"],
                 ),
                 "title": _string_prop("New ticket title."),
+                "parent": _string_prop(
+                    "Move this work item under a different parent, by UUID or external id. "
+                    "Use it to lift a human-gated ticket off a critical path."
+                ),
                 "description": _string_prop("New ticket description (replaces the existing one)."),
                 "priority": {
                     "type": "integer",

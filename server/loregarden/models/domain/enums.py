@@ -53,6 +53,20 @@ class TicketState(str, Enum):
     BACKLOG = "backlog"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
+    #: Waiting on a person, and deliberately not holding anything up.
+    #:
+    #: BLOCKED means "this run stopped and someone should look", and a parent
+    #: waits for it — correctly, because a blocked child usually means the work
+    #: cannot proceed. PARKED means "a person owes this, carry on without it":
+    #: the subtree steps over it and keeps dispatching siblings, while the
+    #: ticket stays outstanding and its parent stays incomplete.
+    #:
+    #: The distinction is the whole point. On blobert milestone 14, ticket 22
+    #: reported `blocked` for GPU timings a headless agent cannot capture —
+    #: exactly as the stage-report contract prescribes — and took milestone 14,
+    #: feature 15, capability 21 and 30 unrelated backlog tickets down with it
+    #: (lg-workflow-integrity-449).
+    PARKED = "parked"
     DONE = "done"
     WONT_DO = "wont_do"
 

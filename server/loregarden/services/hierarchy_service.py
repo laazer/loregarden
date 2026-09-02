@@ -88,3 +88,65 @@ def build_tree(
 
     roots = sorted(children_map.get(None, []), key=sort_key)
     return [node_for(r) for r in roots]
+
+
+def _is_descendant(session: Session, *, candidate: Ticket, ancestor: Ticket) -> bool:
+    """Whether `candidate` sits somewhere under `ancestor`.
+
+    Walks parent links upward, which is bounded by the depth of the tree rather
+    than its width. The `seen` set is not defensive: it is what stops an
+    already-corrupt cycle in the stored data from hanging the request that
+    would otherwise report it.
+    """
+    seen: set[str] = set()
+    current: Ticket | None = candidate
+    while current is not None and current.parent_ticket_id:
+        if current.parent_ticket_id in seen:
+            return False
+        seen.add(current.parent_ticket_id)
+        if current.parent_ticket_id == ancestor.id:
+            return True
+        current = session.get(Ticket, current.parent_ticket_id)
+    return False
+
+
+def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | None) -> Ticket:
+    """Move a work item under a different parent.
+
+    Exists so a human-gated ticket can be lifted out of a critical path
+    directly, rather than by the four-step manual workaround parking replaces:
+    split the work, amend the criteria, clear the block, mark it done
+    (lg-workflow-integrity-449).
+
+    Lives here rather than on `TicketService` for two reasons. It is the same
+    concern `validate_parent_child` already owns, and `ticket_service` imports
+    `orchestration` at module level — so the REST patch path could only reach a
+    method on that service through a function-local import, which this repo
+    treats as a cycle to fix rather than a cycle to dodge.
+
+    The rules are creation's rules: a milestone takes no parent, everything else
+    requires one, and `validate_parent_child` decides which pairs are legal. The
+    one rule creation does not need is the cycle check — a ticket being created
+    has no descendants, so only a move can put a ticket underneath itself.
+    """
+    if ticket.work_item_type == WorkItemType.MILESTONE:
+        if parent_ticket_id:
+            raise ValueError("Milestones cannot have a parent")
+        ticket.parent_ticket_id = None
+    else:
+        if not parent_ticket_id:
+            raise ValueError(f"{ticket.work_item_type.value} requires a parent work item")
+        parent = session.get(Ticket, parent_ticket_id)
+        if not parent or parent.workspace_id != ticket.workspace_id:
+            raise ValueError("Parent work item not found in workspace")
+        if parent.id == ticket.id:
+            raise ValueError("A work item cannot be its own parent")
+        if _is_descendant(session, candidate=parent, ancestor=ticket):
+            raise ValueError("Cannot reparent a work item beneath one of its own descendants")
+        validate_parent_child(parent.work_item_type, ticket.work_item_type)
+        ticket.parent_ticket_id = parent.id
+
+    ticket.revision += 1
+    ticket.last_updated_by = "human"
+    session.add(ticket)
+    return ticket

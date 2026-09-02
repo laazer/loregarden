@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { TicketState, WorkItemType } from "../api/client";
+import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import { STATE_LABELS } from "./UpdateStateModal";
 import "./TicketPaneFilters.css";
@@ -42,27 +43,8 @@ function FilterDropdown<T extends string>({
   const summary = summarizeSelection(selected, options, allLabel);
   const filtered = selected.length > 0;
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismissOnOutside(open, rootRef, closePanel);
 
   return (
     <div className="ticket-filter-dropdown" ref={rootRef}>
@@ -139,6 +121,7 @@ const STATE_OPTIONS: TicketState[] = [
   "backlog",
   "in_progress",
   "blocked",
+  "parked",
   "done",
   "wont_do",
 ];

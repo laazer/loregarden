@@ -170,6 +170,10 @@ class TicketStatusSummary(SQLModel):
     backlog: int = 0
     in_progress: int = 0
     blocked: int = 0
+    #: Open, and waiting on a person rather than on the pipeline. Counted apart
+    #: from `blocked` because parked work holds nothing up — this is the tally
+    #: of what a human owes (lg-workflow-integrity-449).
+    parked: int = 0
     done: int = 0
     wont_do: int = 0
     #: Across every open ticket, not only the in-progress ones — work can be
@@ -609,6 +613,10 @@ class UpdateTicketRequest(SQLModel):
     #: Replaces the stored tags; omit to leave them alone, [] to clear them.
     tags: list[str] | None = None
     state: TicketState | None = None
+    #: Move this work item under a different parent. Omit to leave it alone;
+    #: "" detaches it (only legal for a milestone). `None` cannot mean "detach"
+    #: here because this model uses None for "not supplied" throughout.
+    parent_ticket_id: str | None = None
     priority: int | None = None
     branch: str | None = None
     workflow_stage_key: str | None = None

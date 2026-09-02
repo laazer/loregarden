@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, createContext, useContext, useRef, useState, type ReactNode } from "react";
+import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import "./OverflowMenu.css";
 
@@ -21,27 +22,8 @@ export function OverflowMenu({
   const panelRef = useRef<HTMLDivElement>(null);
   const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { align });
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismissOnOutside(open, rootRef, closePanel);
 
   return (
     <div className="overflow-menu" ref={rootRef}>
