@@ -14,7 +14,14 @@ from loregarden.services.run_service import (
     settle_dead_handoff_run,
 )
 from loregarden.services.run_steering import list_messages, queue_message, steer_refusal
-from loregarden.services.run_token_usage import TokenTotals, ticket_usage
+from loregarden.services.run_token_usage import (
+    TokenTotals,
+    ticket_runs,
+    totals_for,
+    unattributed_runs,
+    usage_by_model,
+    usage_by_stage,
+)
 from sqlmodel import Session, col, select
 
 _IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
@@ -99,11 +106,16 @@ def get_ticket_usage(
 
     Declared above ``/{run_id}`` so ``usage`` is not swallowed as a run id.
     """
-    total, by_stage = ticket_usage(session, ticket_id)
+    runs = ticket_runs(session, ticket_id)
     return {
         "ticket_id": ticket_id,
-        "total": _totals_payload(total),
-        "by_stage": [_totals_payload(stage) for stage in by_stage],
+        "total": _totals_payload(totals_for(runs, key=ticket_id)),
+        "by_stage": [_totals_payload(stage) for stage in usage_by_stage(runs)],
+        # A token figure with no model behind it cannot be turned into a price,
+        # which is the whole reason the model is recorded. Reported beside the
+        # totals rather than folded into them (lg-workflow-integrity-496).
+        "by_model": [_totals_payload(row) for row in usage_by_model(runs)],
+        "unattributed_runs": unattributed_runs(runs),
     }
 
 

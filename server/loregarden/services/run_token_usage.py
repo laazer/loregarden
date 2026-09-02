@@ -23,7 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from loregarden.models.domain import AgentRun
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 @dataclass(frozen=True)
@@ -124,3 +124,57 @@ def ticket_usage(session: Session, ticket_id: str) -> tuple[TokenTotals, list[To
     """This ticket's whole token cost, and the same broken down by stage."""
     runs = ticket_runs(session, ticket_id)
     return totals_for(runs, key=ticket_id), usage_by_stage(runs)
+
+
+#: Values an adapter puts in the model field that are not a model. Cursor's
+#: selector answers "Auto", which says a model was chosen and not which one — the
+#: tokens behind it cannot be priced, so it counts as unattributed rather than as
+#: a model named "Auto". Measured 2026-09-02: of the runs in this database that
+#: carry usage, 9 name no model and 4 name "Auto", all from `cursor-agent`
+#: (lg-workflow-integrity-496).
+NON_MODEL_VALUES = frozenset({"", "auto", "default", "unknown"})
+
+
+def is_costable_model(model: str | None) -> bool:
+    """Whether this model string can be turned into a price.
+
+    The original ticket put it plainly: a token figure with no model attached
+    cannot be turned into a cost. "Auto" is that case wearing a value.
+    """
+    return (model or "").strip().lower() not in NON_MODEL_VALUES
+
+
+def unattributed_runs(runs: list[AgentRun]) -> int:
+    """How many measured runs carry tokens nobody can price.
+
+    Reported beside a total rather than folded into it: work that cannot be
+    attributed to a model is a finding about the adapter, not a rounding error.
+    """
+    return sum(1 for run in runs if _measured(run) and not is_costable_model(run.model))
+
+
+def usage_by_model(runs: list[AgentRun]) -> list[TokenTotals]:
+    """One `TokenTotals` per model, heaviest known spend first.
+
+    Runs whose adapter named no usable model group under ``(unattributed)``
+    rather than being dropped — a cost report missing its most expensive
+    unattributable rows is the failure this is meant to surface.
+    """
+    grouped: dict[str, list[AgentRun]] = defaultdict(list)
+    for run in runs:
+        name = (run.model or "").strip()
+        grouped[name if is_costable_model(name) else "(unattributed)"].append(run)
+    rows = [totals_for(grouped[key], key=key) for key in grouped]
+    return sorted(rows, key=lambda r: r.total_tokens or 0, reverse=True)
+
+
+def subtree_runs(session: Session, ticket_ids: list[str]) -> list[AgentRun]:
+    """Runs across a set of tickets — a feature and its children, a milestone.
+
+    Takes ids rather than walking the tree, so the caller keeps ownership of what
+    "the subtree" means; `hierarchy_service.collect_ticket_scope_ids` already
+    answers that.
+    """
+    if not ticket_ids:
+        return []
+    return list(session.exec(select(AgentRun).where(col(AgentRun.ticket_id).in_(ticket_ids))).all())

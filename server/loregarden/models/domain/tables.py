@@ -24,6 +24,7 @@ from loregarden.models.domain.enums import (
     QueuePosition,
     ReferencePageKind,
     RunStatus,
+    RunUsageStatus,
     SidebarEntryKind,
     StageFanoutAttemptStatus,
     StageFanoutGroupStatus,
@@ -373,6 +374,15 @@ class AgentRun(SQLModel, table=True):
     # value answers a different question than this one.
     model: str | None = Field(default=None)
     effort: str | None = Field(default=None)
+    # Why the four columns above are empty when they are. NULL already says
+    # "nobody measured it"; this says whether anybody could have. An adapter with
+    # no usage surface is a known limitation, an adapter that should have
+    # reported and did not is a defect, and the two used to look identical
+    # (lg-workflow-integrity-496).
+    usage_status: RunUsageStatus = Field(
+        default=RunUsageStatus.UNKNOWN,
+        sa_column=_str_enum_column(RunUsageStatus, RunUsageStatus.UNKNOWN),
+    )
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

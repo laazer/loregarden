@@ -36,7 +36,7 @@ from loregarden.agents.prompt_blocks import (
     titled_block,
 )
 from loregarden.agents.registry import get_agent
-from loregarden.agents.run_usage import parse_run_usage
+from loregarden.agents.run_usage import parse_run_usage, usage_status_for
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
@@ -1007,6 +1007,7 @@ class CliAgentExecutor:
         run.cache_write_tokens = usage.cache_write_tokens
         run.model = usage.model or invocation.model or None
         run.effort = usage.effort or invocation.effort or None
+        run.usage_status = usage_status_for(usage, adapter=CliAdapter(invocation.adapter))
         self.session.add(run)
         self.session.commit()
 

@@ -51,7 +51,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Literal, TypeVar
 
-from loregarden.models.domain import CliAdapter, RunUsage
+from loregarden.models.domain import CliAdapter, RunUsage, RunUsageStatus
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # Foreign payloads, so every field is optional and unknown keys are dropped: a
@@ -297,6 +297,23 @@ _PARSERS: dict[CliAdapter, Callable[[str], RunUsage]] = {
     CliAdapter.CODEX: _codex_usage,
     CliAdapter.OPENCODE: _opencode_usage,
 }
+
+
+def usage_status_for(usage: RunUsage, *, adapter: CliAdapter) -> RunUsageStatus:
+    """Why this run's figures are, or are not, on the row.
+
+    Three different facts that all used to be NULL. An adapter with no usage
+    surface was never going to report (UNSUPPORTED) and is not worth chasing; an
+    adapter that has one and printed nothing is a defect worth chasing
+    (UNAVAILABLE); and a run that reported anything at all is MEASURED, even if
+    only partly, because a partial figure is still a measurement
+    (lg-workflow-integrity-496).
+    """
+    if usage.measured():
+        return RunUsageStatus.MEASURED
+    if _PARSERS.get(adapter) is None:
+        return RunUsageStatus.UNSUPPORTED
+    return RunUsageStatus.UNAVAILABLE
 
 
 def parse_run_usage(stdout: str, *, adapter: CliAdapter) -> RunUsage:

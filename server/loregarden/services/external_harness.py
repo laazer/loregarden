@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     RunStatus,
     RunUsage,
+    RunUsageStatus,
     StageStatus,
     Ticket,
     WorkflowStageDef,
@@ -456,6 +457,12 @@ def _record_external_usage(
         run.cache_write_tokens = usage.cache_write_tokens
         run.model = usage.model or None
         run.effort = usage.effort or None
+        # A harness that reported is measured; one that sent an empty block
+        # tried and had nothing, which is not the same as never having a usage
+        # surface (lg-workflow-integrity-496).
+        run.usage_status = (
+            RunUsageStatus.MEASURED if usage.measured() else RunUsageStatus.UNAVAILABLE
+        )
     if changed_paths:
         run.changed_paths_json = json.dumps(sorted(set(changed_paths)))
     if usage is not None or changed_paths:
