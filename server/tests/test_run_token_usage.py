@@ -15,7 +15,16 @@ from loregarden.agents.cli_adapters import CliInvocation, resolve_cli_invocation
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.run_usage import parse_run_usage
 from loregarden.models.domain import AgentRun, CliAdapter
-from loregarden.services.run_token_usage import ticket_usage, totals_for, usage_by_stage
+from loregarden.services.run_token_usage import (
+    is_costable_model,
+    subtree_runs,
+    ticket_runs,
+    ticket_usage,
+    totals_for,
+    unattributed_runs,
+    usage_by_model,
+    usage_by_stage,
+)
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_workspace
 
@@ -339,3 +348,161 @@ def test_an_adapter_that_reports_no_usage_still_records_model_and_effort(session
     assert run.effort == "high"
     assert run.input_tokens is None
     assert run.output_tokens is None
+
+
+# --- a figure with no model behind it is not a cost --------------------------
+
+
+def test_cursors_auto_is_not_a_model():
+    """Measured against the live database on 2026-09-02: of the runs carrying
+    usage, 9 name no model and 4 name the literal "Auto" — cursor's own selector
+    value, which says a model was chosen and not which one. The original ticket
+    put it plainly: a token figure with no model attached cannot be turned into
+    a cost, and "Auto" is that case wearing a value."""
+    assert is_costable_model("claude-opus-5") is True
+    assert is_costable_model("gpt-5.6-sol") is True
+    assert is_costable_model("Auto") is False
+    assert is_costable_model("auto") is False
+    assert is_costable_model("") is False
+    assert is_costable_model(None) is False
+
+
+def test_unpriceable_runs_are_grouped_and_counted_not_dropped(session):
+    """A cost report that silently omitted its unattributable rows would look
+    complete and understate the total."""
+    _run(session, "priced", model="claude-opus-5", input_tokens=1_000)
+    _run(session, "auto", model="Auto", input_tokens=354_880)
+    _run(session, "nameless", model="", input_tokens=127_032)
+
+    runs = ticket_runs(session, TICKET)
+    by_model = {row.key: row for row in usage_by_model(runs)}
+
+    assert set(by_model) == {"claude-opus-5", "(unattributed)"}
+    assert by_model["(unattributed)"].input_tokens == 354_880 + 127_032
+    assert by_model["(unattributed)"].runs == 2
+    assert unattributed_runs(runs) == 2
+
+
+def test_an_unmeasured_run_is_not_counted_as_unattributed(session):
+    """Two different gaps. A run nobody measured has no model *and* no tokens;
+    calling it unattributed would inflate a number meant to point at adapters
+    that report tokens without a model."""
+    _run(session, "nothing")  # no usage at all, no model
+    assert unattributed_runs(ticket_runs(session, TICKET)) == 0
+
+
+def test_models_are_ordered_by_known_spend(session):
+    _run(session, "small", model="claude-opus-5", input_tokens=10)
+    _run(session, "large", model="gpt-5.6-sol", input_tokens=2_642_668)
+
+    rows = usage_by_model(ticket_runs(session, TICKET))
+    assert [row.key for row in rows] == ["gpt-5.6-sol", "claude-opus-5"]
+
+
+def test_a_cached_claude_run_is_not_understated_by_its_uncached_share(session):
+    """The row shape that produced this ticket's own wrong status note:
+    input_tokens=38 beside cache_read_tokens=1,531,993. The 38 is correct — it is
+    only the uncached share — and reading it as the run's cost understates it
+    about 40,000-fold. `total_tokens` is the figure that means something."""
+    _run(
+        session,
+        "cached",
+        input_tokens=38,
+        output_tokens=11_269,
+        cache_read_tokens=1_531_993,
+        cache_write_tokens=71_657,
+    )
+    total = totals_for(ticket_runs(session, TICKET), key=TICKET)
+
+    assert total.input_tokens == 38
+    assert total.total_tokens == 38 + 11_269 + 1_531_993 + 71_657
+    assert total.total_tokens > 1_600_000
+
+
+def test_subtree_runs_span_several_tickets(session):
+    _run(session, "mine", input_tokens=1_000)
+    make_agent_run(
+        session,
+        run_code="sibling",
+        ticket_id="other-ticket",
+        workspace_id=WORKSPACE,
+        stage_key="implement",
+        input_tokens=2_000,
+    )
+
+    runs = subtree_runs(session, [TICKET, "other-ticket"])
+    assert totals_for(runs, key="subtree").input_tokens == 3_000
+    assert subtree_runs(session, []) == []
+
+
+def test_the_endpoint_reports_what_cannot_be_priced(client, db_session):
+    """AC3 with the gap attached: the caller is told how much of the spend has no
+    model behind it, in the same response as the totals."""
+    make_workspace(db_session, workspace_id=WORKSPACE, slug=WORKSPACE)
+    make_agent_run(
+        db_session,
+        run_code="api-auto",
+        ticket_id=TICKET,
+        workspace_id=WORKSPACE,
+        stage_key="implement",
+        model="Auto",
+        input_tokens=354_880,
+    )
+
+    payload = client.get("/api/runs/usage", params={"ticket_id": TICKET}).json()
+
+    assert payload["unattributed_runs"] == 1
+    assert payload["by_model"][0]["key"] == "(unattributed)"
+    assert payload["by_model"][0]["input_tokens"] == 354_880
+
+
+# --- why a figure is missing, not just that it is -----------------------------
+
+
+def test_the_reason_a_run_has_no_usage_is_recorded_not_guessed():
+    """AC1's second clause. NULL says "nobody measured it"; it cannot say whether
+    anybody could have. An adapter with no usage surface was never going to
+    report, while one that has a surface and printed nothing is a defect — and
+    only one of those is worth chasing."""
+    from loregarden.agents.run_usage import usage_status_for
+    from loregarden.models.domain import RunUsage, RunUsageStatus
+
+    measured = RunUsage(input_tokens=10)
+    assert usage_status_for(measured, adapter=CliAdapter.CLAUDE) is RunUsageStatus.MEASURED
+
+    # Claude has a parser, so silence here is a real gap.
+    assert usage_status_for(RunUsage(), adapter=CliAdapter.CLAUDE) is RunUsageStatus.UNAVAILABLE
+
+
+def test_an_adapter_with_no_usage_surface_is_unsupported_not_broken():
+    """LM Studio and friends were never going to report. Filing that as a defect
+    would bury the adapters that genuinely regressed."""
+    from loregarden.agents.run_usage import _PARSERS, usage_status_for
+    from loregarden.models.domain import RunUsage, RunUsageStatus
+
+    surfaceless = next((adapter for adapter in CliAdapter if _PARSERS.get(adapter) is None), None)
+    if surfaceless is None:
+        pytest.skip("every adapter now has a usage parser")
+    assert usage_status_for(RunUsage(), adapter=surfaceless) is RunUsageStatus.UNSUPPORTED
+
+
+def test_a_partial_figure_still_counts_as_measured():
+    """Some adapters report output and nothing else. Treating that as a gap
+    would discard a real number."""
+    from loregarden.agents.run_usage import usage_status_for
+    from loregarden.models.domain import RunUsage, RunUsageStatus
+
+    assert (
+        usage_status_for(RunUsage(output_tokens=4200), adapter=CliAdapter.CLAUDE)
+        is RunUsageStatus.MEASURED
+    )
+
+
+def test_rows_written_before_the_column_existed_read_back_as_unknown(session):
+    """AC5 for the new column: the historical gap must not look like a
+    measurement."""
+    from loregarden.models.domain import RunUsageStatus
+
+    run = _run(session, "historical")
+    session.refresh(run)
+    assert run.usage_status is RunUsageStatus.UNKNOWN

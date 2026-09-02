@@ -123,6 +123,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0102_backfill_stage_retry_block",
     "0103_rework_feedback_kind",
     "0104_lmstudio_max_iterations",
+    "0105_run_usage_status",
 )
 
 

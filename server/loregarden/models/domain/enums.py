@@ -453,6 +453,29 @@ class StageFanoutAttemptStatus(str, Enum):
     PROMOTED = "promoted"
 
 
+class RunUsageStatus(str, Enum):
+    """Why a run's token figures are, or are not, on the row.
+
+    NULL token columns already say "not measured", which is what stops an
+    unknown run being summed in as a free one. What they could not say is *why*,
+    and two different facts shared that value: an adapter with no usage surface
+    at all, and an adapter that should have reported and did not. The first is a
+    known limitation, the second is a defect, and only one of them is worth
+    chasing (lg-workflow-integrity-496).
+
+    UNKNOWN is the empty string, so every row written before this column existed
+    reads back as "nobody recorded a reason" rather than as a measurement.
+    """
+
+    UNKNOWN = ""
+    #: Figures were read from the adapter's output and are on the row.
+    MEASURED = "measured"
+    #: The run finished and its output carried no usage the parser could read.
+    UNAVAILABLE = "unavailable"
+    #: This adapter has no usage surface, so nothing was expected.
+    UNSUPPORTED = "unsupported"
+
+
 class ApprovalKind(str, Enum):
     WORKFLOW_GATE = "workflow_gate"
     CLI_PERMISSION = "cli_permission"
