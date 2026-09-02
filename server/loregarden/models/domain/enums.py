@@ -457,6 +457,34 @@ class ApprovalKind(str, Enum):
     WORKFLOW_GATE = "workflow_gate"
     CLI_PERMISSION = "cli_permission"
     CLI_QUESTION = "cli_question"
+    #: Work only a person can finish, handed over with whatever the agent
+    #: managed to prepare for them (lg-workflow-integrity-460).
+    HUMAN_ACTION = "human_action"
+
+
+class HumanActionTier(str, Enum):
+    """How much of a human-gated step the agent managed to remove.
+
+    A ladder, not a menu. An agent works down it and stops at the first rung it
+    can honestly claim, so the tier records how hard it tried rather than what
+    it preferred:
+
+    1. `AGENT_ATTEMPTED` — it ran the thing itself and the result was not good
+       enough (the probe needs a display, the timings need real hardware). The
+       block says what ran and why the output does not answer the question.
+    2. `ONE_CLICK` — it could not run it, but it committed a script that can,
+       and a person only has to say go. The control plane runs that script.
+    3. `MANUAL` — a person has to be present: plug in the device, open the
+       editor, make the judgement. Everything around that is still prepared.
+
+    The point of the ladder is that MANUAL has to be *earned*. A block that
+    lands there without a script, on work a script could have done, is the
+    failure this vocabulary exists to make visible.
+    """
+
+    AGENT_ATTEMPTED = "agent_attempted"
+    ONE_CLICK = "one_click"
+    MANUAL = "manual"
 
 
 class OrchestrationDriver(str, Enum):
