@@ -142,6 +142,64 @@ def claim_lane_slot(session: Session, slot_number: int) -> AgentSlot | None:
     return _claim_slot_row(session, row)
 
 
+def tickets_holding_lanes(
+    session: Session, *, exclude_slot: int | None = None
+) -> dict[str, list[int]]:
+    """Ticket ids mapped to the slot numbers they occupy.
+
+    A lane is claimed two ways and recorded in two columns: an orchestration
+    writes ``current_orchestration_run_id``, a dispatched stage writes
+    ``current_run_id``. Both are legitimate. Until 645 neither admission path
+    could see the other, so one ticket could hold two of the machine's lanes at
+    once — observed live, with an external orchestration in one lane and a
+    builtin stage run for the same ticket in another, two drivers advancing one
+    stage map and a third of capacity gone to a single ticket.
+
+    Reading both columns here rather than at each call site is the point: the
+    defect was two admission paths each checking the column it happened to
+    write. This also answers "which lanes does this ticket hold" directly, so a
+    double claim is something a caller can see rather than infer from two
+    tables.
+
+    ``exclude_slot`` is for a caller deciding whether the ticket it is about to
+    admit already holds a lane *elsewhere*. Admission claims the slot before it
+    resolves the ticket behind the entry, so without this a caller would find
+    its own fresh claim and refuse itself.
+    """
+    slots = [
+        slot for slot in session.exec(select(AgentSlot)).all() if slot.slot_number != exclude_slot
+    ]
+    run_ids = {slot.current_run_id for slot in slots if slot.current_run_id}
+    orch_ids = {
+        slot.current_orchestration_run_id for slot in slots if slot.current_orchestration_run_id
+    }
+
+    run_tickets: dict[str, str] = {}
+    if run_ids:
+        run_tickets = {
+            run.id: run.ticket_id
+            for run in session.exec(select(AgentRun).where(col(AgentRun.id).in_(run_ids))).all()
+        }
+    orch_tickets: dict[str, str] = {}
+    if orch_ids:
+        orch_tickets = {
+            run.id: run.ticket_id
+            for run in session.exec(
+                select(OrchestrationRun).where(col(OrchestrationRun.id).in_(orch_ids))
+            ).all()
+        }
+
+    held: dict[str, set[int]] = {}
+    for slot in slots:
+        for ticket_id in (
+            run_tickets.get(slot.current_run_id or ""),
+            orch_tickets.get(slot.current_orchestration_run_id or ""),
+        ):
+            if ticket_id:
+                held.setdefault(ticket_id, set()).add(slot.slot_number)
+    return {ticket_id: sorted(numbers) for ticket_id, numbers in held.items()}
+
+
 def release_slot(session: Session, slot: AgentSlot) -> None:
     """Give a claimed slot back, for a claim whose work never started."""
     slot.is_available = True

@@ -47,6 +47,7 @@ from loregarden.services.parallel_queue import (
     ParallelQueueService,
     claim_lane_slot,
     release_slot,
+    tickets_holding_lanes,
 )
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
@@ -264,31 +265,29 @@ class QueueLaneService:
             release_slot(self.session, slot)
             return self.start_lane_head(slot_number)
 
-        if head.entry_kind == "stage":
-            agent_run = self.dispatcher.dispatch_stage(ticket, head)
-            if agent_run is None:
-                release_slot(self.session, slot)
-                return None
-            slot.current_run_id = agent_run.id
-            head.run_id = agent_run.id
-            orch_run = None
-        else:
-            orch_run = self.dispatcher.dispatch_orchestration(
-                ticket,
-                auto_approve=head.auto_approve,
-                stop_at_stage_key=head.stop_at_stage_key or None,
-                driver=head.driver or "",
-                max_stages=head.max_stages,
-                timeout_seconds=head.timeout_seconds,
+        # 645: this lane is already claimed, so ask about the others. A ticket
+        # holding one lane must not take a second — whichever column recorded
+        # the first, and whichever way this one would be recorded.
+        elsewhere = tickets_holding_lanes(self.session, exclude_slot=slot_number).get(ticket.id)
+        if elsewhere:
+            logger.warning(
+                "Lane %d refused for ticket %s: it already holds lane(s) %s",
+                slot_number,
+                ticket.id,
+                elsewhere,
             )
-            if orch_run is None:
-                # Dispatch refused (already orchestrating, no workflow). Give the
-                # lane back and leave the entry in place, so 439's idle-lane
-                # retry picks it up rather than the lane sitting held by nothing.
-                release_slot(self.session, slot)
-                return None
-            slot.current_orchestration_run_id = orch_run.id
-            head.orchestration_run_id = orch_run.id
+            head.failure_reason = (
+                f"ticket already occupies lane(s) {elsewhere}; one lane per ticket"
+            )
+            head.last_failed_at = datetime.now(timezone.utc)
+            self.session.add(head)
+            self.session.commit()
+            release_slot(self.session, slot)
+            return None
+
+        if not self._start_entry_work(ticket, head, slot):
+            release_slot(self.session, slot)
+            return None
         slot.assigned_at = datetime.now(timezone.utc)
         head.status = QueuePosition.ACTIVE
         head.promoted_at = datetime.now(timezone.utc)
@@ -422,6 +421,44 @@ class QueueLaneService:
             emit_execution_update()
         return freed
 
+    def _start_entry_work(self, ticket: Ticket, head: QueuedRun, slot: AgentSlot) -> bool:
+        """Start whatever this entry names, and record it on the slot.
+
+        False means the dispatch refused and the caller must give the lane back:
+        for a stage, that the run could not start; for an orchestration, that the
+        ticket is already orchestrating or has no workflow. The entry stays in
+        place either way, so 439's idle-lane retry picks it up rather than the
+        lane sitting held by nothing.
+
+        Split out of `start_lane_head` when 645's one-lane-per-ticket guard put
+        that method over the complexity cap. The fork was the cohesive piece:
+        which column of the slot a claim is recorded in is exactly the
+        distinction 645 is about, and it now lives in one place.
+        """
+        if self.dispatcher is None:  # pragma: no cover - guarded by the caller
+            return False
+        if head.entry_kind == "stage":
+            agent_run = self.dispatcher.dispatch_stage(ticket, head)
+            if agent_run is None:
+                return False
+            slot.current_run_id = agent_run.id
+            head.run_id = agent_run.id
+            return True
+
+        orch_run = self.dispatcher.dispatch_orchestration(
+            ticket,
+            auto_approve=head.auto_approve,
+            stop_at_stage_key=head.stop_at_stage_key or None,
+            driver=head.driver or "",
+            max_stages=head.max_stages,
+            timeout_seconds=head.timeout_seconds,
+        )
+        if orch_run is None:
+            return False
+        slot.current_orchestration_run_id = orch_run.id
+        head.orchestration_run_id = orch_run.id
+        return True
+
     def _ticket_covered_by_ancestor_slot(
         self, ticket_id: str, held_orchestration_ids: set[str]
     ) -> bool:
@@ -497,6 +534,7 @@ class QueueLaneService:
             for slot in self.session.exec(select(AgentSlot)).all()
             if slot.current_orchestration_run_id
         }
+        lane_holders = tickets_holding_lanes(self.session)
         orphans = [
             run
             for run in self.session.exec(
@@ -504,7 +542,12 @@ class QueueLaneService:
                 .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
                 .order_by(col(OrchestrationRun.started_at).asc())
             ).all()
-            if run.id not in held and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
+            if run.id not in held
+            and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
+            # 645: the ancestor check reads orchestration claims only, so a
+            # ticket whose own stage run holds a lane through `current_run_id`
+            # was invisible here and got adopted into a second one.
+            and run.ticket_id not in lane_holders
         ]
         if not orphans:
             return []
