@@ -40,11 +40,22 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
 from loregarden.services.queue_lanes import set_lane_dispatcher_factory
 from loregarden.services.run_service import schedule_agent_run, schedule_orchestration
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
+
+
+def _live_external_orchestration(session: Session, ticket_id: str) -> OrchestrationRun | None:
+    """The external-harness orchestration currently driving this ticket, if any."""
+    return session.exec(
+        select(OrchestrationRun)
+        .where(OrchestrationRun.ticket_id == ticket_id)
+        .where(OrchestrationRun.driver == OrchestrationDriver.EXTERNAL_MCP)
+        .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
+    ).first()
 
 
 class LaneDispatch:
@@ -61,6 +72,27 @@ class LaneDispatch:
         of these is released by `complete_run_tail` (which frees whatever slot
         names the finished run) rather than by `complete_orchestration`.
         """
+        owner = _live_external_orchestration(self.session, ticket.id)
+        if owner is not None:
+            # 645 AC2. `driver=external_mcp` is a claim that something outside
+            # this control plane is advancing the stage map. Racing it for the
+            # next pending stage is how one ticket ended up with two drivers on
+            # one workflow — the lane accounting only made it visible.
+            logger.warning(
+                "Lane stage dispatch skipped for ticket %s: orchestration %s is driving it "
+                "from an external harness",
+                ticket.id,
+                owner.id,
+            )
+            entry.failure_reason = (
+                f"external orchestration {owner.id} is driving this ticket; "
+                "the builtin dispatcher does not race it"
+            )
+            entry.last_failed_at = datetime.now(timezone.utc)
+            self.session.add(entry)
+            self.session.commit()
+            return None
+
         try:
             run = OrchestrationService(self.session).start_run(
                 ticket,
