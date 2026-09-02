@@ -243,16 +243,24 @@ function LaneTicketMenu({
 function LaneMenu({
   slotNumber,
   running,
+  onAddTicket,
 }: {
   slotNumber: number;
   /** The ticket holding the slot, when one does. */
   running?: { label: string; ticketId: string; runningChild?: RunningChildTicket };
+  onAddTicket: () => void;
 }) {
   return (
-    <OverflowMenu label={`Lane ${slotNumber} actions`}>
+    // Named for both. "Lane 1 actions" alone lost which ticket the go-to items
+    // act on, and left `running.label` passed and unread — the tell that it had
+    // been dropped rather than decided against.
+    <OverflowMenu
+      label={running ? `Lane ${slotNumber} · ${running.label} actions` : `Lane ${slotNumber} actions`}
+    >
       {running ? (
         <TicketMenuItems ticketId={running.ticketId} runningChild={running.runningChild} />
       ) : null}
+      <OverflowMenuItem onSelect={onAddTicket}>Add ticket</OverflowMenuItem>
       <AddToTabItems
         primitiveId="queue_lane"
         values={new Map([['slot', String(slotNumber)]])}
@@ -326,6 +334,9 @@ export function ParallelQueueVisualization() {
   const [laneError, setLaneError] = useState<string | null>(null);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [draggedEntry, setDraggedEntry] = useState<LaneEntry | null>(null);
+  // Which lane's ticket picker is open, when one is. Lifted because the lane's
+  // menu offers "Add ticket" and the picker itself sits further down the card.
+  const [pickerOpenSlot, setPickerOpenSlot] = useState<number | null>(null);
 
   const slotUsagePercent = stats?.max_concurrent
     ? ((stats.active_count || 0) / stats.max_concurrent) * 100
@@ -566,6 +577,7 @@ export function ParallelQueueVisualization() {
               </span>
               <LaneMenu
                 slotNumber={lane.slot_number}
+                onAddTicket={() => setPickerOpenSlot(lane.slot_number)}
                 running={
                   lane.running
                     ? {
@@ -756,6 +768,8 @@ export function ParallelQueueVisualization() {
               ) : null}
 
               <QueueSlotTicketPicker
+                open={pickerOpenSlot === lane.slot_number}
+                onOpenChange={(next) => setPickerOpenSlot(next ? lane.slot_number : null)}
                 slotNumber={lane.slot_number}
                 excludedTicketIds={claimedTicketIds}
                 onPick={(ticket) =>

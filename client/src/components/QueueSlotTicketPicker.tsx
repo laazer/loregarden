@@ -35,15 +35,33 @@ interface QueueSlotTicketPickerProps {
     workspaceName: string;
     workspaceSlug: string;
   }) => void;
+  /**
+   * Open state, when a caller owns it — the lane's menu does, so "Add ticket"
+   * there opens this list instead of a second one. Omit both to keep the
+   * picker's own button in charge.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function QueueSlotTicketPicker({
   slotNumber,
   excludedTicketIds,
   onPick,
+  open: openProp,
+  onOpenChange,
 }: QueueSlotTicketPickerProps) {
   const { workspaces } = useQueueStatus();
-  const [open, setOpen] = useState(false);
+  const [selfOpen, setSelfOpen] = useState(false);
+  // Controlled when a caller passes `open`, so the lane's menu can offer "Add
+  // ticket" and open *this* list rather than growing a second copy of it. The
+  // button stays: the menu is a second door, not a replacement.
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : selfOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setSelfOpen(next);
+    onOpenChange?.(next);
+  };
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -107,7 +125,7 @@ export function QueueSlotTicketPicker({
         className="queue-slot-picker-btn"
         aria-expanded={open}
         aria-label={`Add a ticket to slot ${slotNumber}`}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => setOpen(!open)}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
           <path d="M12 5v14M5 12h14" />

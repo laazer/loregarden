@@ -90,7 +90,10 @@ describe("a known primitive that throws is contained", () => {
       </div>,
     );
 
-    expect(screen.getByTitle(/example\.com/)).toBeInTheDocument();
+    // The frame itself, not "anything titled with the URL": the embed's chrome
+    // now carries the URL too, and a locator that matched either would pass
+    // with the frame gone.
+    expect(screen.getByTitle("Embedded page: https://example.com/app")).toBeInTheDocument();
     expect(document.querySelector("[data-container-id='fine']")).not.toBeNull();
   });
 

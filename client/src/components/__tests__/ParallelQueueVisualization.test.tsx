@@ -38,16 +38,23 @@ jest.mock('../../lib/useAppNavigation', () => ({
 const mockTickets = api.tickets as jest.MockedFunction<typeof api.tickets>;
 
 // The picker owns its own ticket query; it has its own test.
+// The real picker fetches a dispatchable ticket list and has its own tests.
+// The stub reflects `open`, because the lane's menu now opens *this* list and a
+// stand-in that dropped the prop could not tell a working wiring from a dead
+// one — it would report the same thing either way.
 jest.mock('../QueueSlotTicketPicker', () => ({
   QueueSlotTicketPicker: ({
     slotNumber,
     onPick,
+    open,
   }: {
     slotNumber: number;
     onPick: (t: { ticketId: string; workspaceSlug: string }) => void;
+    open?: boolean;
   }) => (
     <button
       type="button"
+      aria-expanded={open ?? false}
       onClick={() => onPick({ ticketId: `picked-${slotNumber}`, workspaceSlug: 'loregarden' })}
     >
       Add ticket to slot {slotNumber}
@@ -427,23 +434,57 @@ describe('a running card’s overflow menu', () => {
   };
 
   test('goes to the running ticket', async () => {
-    await openLaneMenu('Lane 1 actions');
+    await openLaneMenu('Lane 1 · LG-101 actions');
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
 
     expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-1');
   });
 
   test('goes to the running child when one exists', async () => {
-    await openLaneMenu('Lane 1 actions', [runningChildOfRunner]);
+    await openLaneMenu('Lane 1 · LG-101 actions', [runningChildOfRunner]);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to running child' }));
 
     expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-3');
   });
 
   test('offers no running child when the ticket has none', async () => {
-    await openLaneMenu('Lane 1 actions');
+    await openLaneMenu('Lane 1 · LG-101 actions');
 
     expect(screen.queryByRole('menuitem', { name: 'Go to running child' })).not.toBeInTheDocument();
+  });
+
+  test('names the lane and the ticket its go-to items act on', async () => {
+    // "Lane 1 actions" alone lost which ticket those items lead to, and left the
+    // label passed and unread — the tell that it had been dropped rather than
+    // decided against.
+    render(<ParallelQueueVisualization />);
+    await act(async () => {});
+
+    const head = screen.getByTestId('slot-1').querySelector('.queue-slot-head') as HTMLElement;
+    expect(within(head).getByRole('button', { name: /Lane 1 · LG-101 actions/ })).toBeInTheDocument();
+  });
+
+  test('offers Add ticket, and opens the picker that already exists', async () => {
+    render(<ParallelQueueVisualization />);
+    await act(async () => {});
+
+    const head = screen.getByTestId('slot-2').querySelector('.queue-slot-head') as HTMLElement;
+    fireEvent.click(within(head).getByRole('button', { name: /actions/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add ticket' }));
+
+    // The lane's own picker, not a second copy: one list, two doors. Queried
+    // from the document rather than the slot, because the panel is anchored and
+    // may not sit inside the card's subtree.
+    // The lane's own picker, not a second copy: one list, two doors. Asserted
+    // through the existing button's expanded state, which is the picker saying
+    // it opened rather than a second panel appearing somewhere.
+    const pickerIn = (slot: string) =>
+      within(screen.getByTestId(slot)).getByRole('button', { name: /ticket to slot/ });
+    expect(pickerIn('slot-2')).toHaveAttribute('aria-expanded', 'true');
+    // And only that lane's: the open slot is a number, not a flag, because a
+    // boolean would open all three at once and no assertion on the lane you
+    // clicked would notice.
+    expect(pickerIn('slot-1')).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('an idle lane still has one, holding what applies to a lane', async () => {
