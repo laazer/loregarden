@@ -44,6 +44,7 @@ The module binds no engine and holds no module-level state — the caller's
 import ipaddress
 import logging
 import socket
+from collections.abc import Iterable
 from datetime import datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -647,7 +648,7 @@ def _fetch_through_cache(
     url: str,
     *,
     kind: ReferencePageKind,
-    accept_types: tuple[str, ...],
+    accept_types: Iterable[str],
     extract: bool,
     refresh: bool,
     max_chars: int,
@@ -663,18 +664,32 @@ def _fetch_through_cache(
     reintroduce an escape, and the guard is not inert, so a swallowed failure
     is still a visible one.
 
+    The argument normalization is inside the `try` for the same reason. Both
+    `url.strip()` and `tuple(accept_types)` assume the declared types, and both
+    used to run above this handler — so a `url` of None or an `accept_types` of
+    None reached a caller as an exception rather than a payload, which is the
+    one input class a caller cannot see coming (620). 174 sources URLs from
+    JSON and database rows, where None is live.
+
     This boundary does not touch the caller's transaction. Every write below it
     happens inside a SAVEPOINT that unwinds on the way out, so there is nothing
     of ours left pending for a rollback here to clean up — and a rollback here
     would discard the caller's own uncommitted work, which is not ours to end.
     """
-    normalized = url.strip()
+    # Named before the `try`, because the handler needs something to report even
+    # when the first statement inside it is what failed. The type is all that is
+    # safely knowable about an out-of-contract value — interpolating the object
+    # would run its `__repr__`, and one that raises would defeat this boundary
+    # from inside its own handler. It is also the more useful thing to say: the
+    # defect in `fetch_reference(session, None)` is the None, not the URL.
+    reported = f"<{type(url).__name__}>"
     try:
+        reported = url.strip()
         return _fetch_through_cache_uncaught(
             session,
             url,
             kind=kind,
-            accept_types=accept_types,
+            accept_types=tuple(accept_types),
             extract=extract,
             refresh=refresh,
             max_chars=max_chars,
@@ -682,13 +697,13 @@ def _fetch_through_cache(
         )
     except Exception as exc:  # noqa: BLE001 - the AC3 boundary; see docstring
         logger.exception(
-            "reference cache raised an unhandled %s for %s", type(exc).__name__, normalized
+            "reference cache raised an unhandled %s for %s", type(exc).__name__, reported
         )
         return _failure_payload(
-            normalized,
+            reported,
             _describe(
                 ReferenceFetchError.INTERNAL_ERROR,
-                f"unhandled {type(exc).__name__} handling {normalized}",
+                f"unhandled {type(exc).__name__} handling {reported}",
             ),
         )
 
@@ -808,7 +823,7 @@ def fetch_cached_text(
         session,
         url,
         kind=kind,
-        accept_types=tuple(accept_types),
+        accept_types=accept_types,
         extract=False,
         refresh=refresh,
         max_chars=max_chars,

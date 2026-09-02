@@ -745,6 +745,82 @@ def test_no_public_entry_point_raises(session, resolver):
 
 
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# AC3 — the escapes that came from *arguments*, not from the work (620)
+#
+# The boundary caught everything the fetch could throw, but two statements ran
+# above it: `url.strip()` and `tuple(accept_types)`. Both assume the declared
+# types, so the one input class that escaped as an exception was a caller
+# passing the wrong type — and 174, the first caller, sources URLs from JSON
+# and database rows where None is live. These are out-of-contract by
+# annotation, which is exactly why nothing else in this file covers them.
+# --------------------------------------------------------------------------
+
+
+#: Not str, and each broken in a different way: absent, a different scalar, and
+#: an object with no string protocol at all.
+OUT_OF_CONTRACT_URLS = [None, 42, object()]
+
+
+@pytest.mark.parametrize("bad_url", OUT_OF_CONTRACT_URLS, ids=["none", "int", "object"])
+@pytest.mark.parametrize("entry_point", ["fetch_reference", "fetch_cached_text"])
+def test_a_url_that_is_not_a_string_is_a_payload_not_an_exception(bad_url, entry_point, session):
+    """Fails if `url.strip()` moves back above the boundary's `try`."""
+    call = _entry_point(entry_point)
+
+    payload = call(session, bad_url)
+
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    _assert_self_classifying(payload)
+
+
+@pytest.mark.parametrize("bad_url", OUT_OF_CONTRACT_URLS, ids=["none", "int", "object"])
+def test_the_payload_for_a_bad_url_names_the_type_and_keeps_url_a_string(bad_url, session):
+    """The payload stays well-formed for an input that broke its own contract.
+
+    `url` must remain a string — 607 turns this envelope into a model, and a
+    None there would fail validation instead of reporting the caller's mistake.
+    The type is what the error names, for two reasons: it is the actual defect
+    (the None, not the URL), and it is all that can be read off the value
+    without running a `__repr__` that could itself raise inside the handler
+    that exists to stop things raising.
+    """
+    payload = reference_cache.fetch_reference(session, bad_url)
+
+    assert isinstance(payload["url"], str), (  # py-org: allow-isinstance
+        f"url came back as {type(payload['url']).__name__}, not a string"
+    )
+    assert type(bad_url).__name__ in payload["url"], payload
+    assert type(bad_url).__name__ in payload["error"], payload
+
+
+@pytest.mark.parametrize("bad_types", [None, 42], ids=["none", "int"])
+def test_accept_types_that_is_not_iterable_is_a_payload_not_an_exception(bad_types, session):
+    """The second statement that ran above the boundary, in its own entry point.
+
+    Fails if `tuple(accept_types)` moves back into `fetch_cached_text`'s body.
+    The URL here is valid, so a passing payload would mean the fetch was
+    attempted — the assertion is that it was classified instead.
+    """
+    payload = reference_cache.fetch_cached_text(
+        session,
+        "https://93.184.216.34/guide",
+        kind=ReferencePageKind.CATALOG,
+        accept_types=bad_types,
+    )
+
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    _assert_self_classifying(payload)
+
+
+def _entry_point(name: str):
+    if name == "fetch_reference":
+        return reference_cache.fetch_reference
+    return lambda session, url: reference_cache.fetch_cached_text(
+        session, url, kind=ReferencePageKind.CATALOG, accept_types=("application/json",)
+    )
+
+
 # AC3 — the escapes an enumerated `except` list let through
 #
 # Each of these three raised out of a public entry point before the boundary
