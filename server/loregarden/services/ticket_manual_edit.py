@@ -253,7 +253,20 @@ def _move_workflow_cursor(
         if body.workflow_stage_key not in stage_map:
             raise ValueError(f"Unknown stage key: {body.workflow_stage_key}")
         ticket.workflow_stage_key = body.workflow_stage_key
+        # The stage the cursor lands on keeps the status it already has.
+        #
+        # Without this it inherited whatever the *previous* cursor was showing,
+        # so moving off a `done` stage marked the target done — fabricating a
+        # completed stage that had never run. In a milestone about not reporting
+        # success the system never had, a cursor move that invents a passed
+        # stage is the same defect wearing a different coat, and worse than a
+        # silent failure: a silent failure leaves work undone, this leaves it
+        # *claimed* (lg-workflow-integrity-659).
+        ticket.workflow_stage_status = stage_map[body.workflow_stage_key]
     if body.workflow_stage_status:
+        # An explicit status still wins. A caller naming one is asserting it on
+        # purpose — that is how the documented recovery from a bad cursor move
+        # restores a finished stage.
         ticket.workflow_stage_status = body.workflow_stage_status
     key = ticket.workflow_stage_key
     if key in stage_map:
