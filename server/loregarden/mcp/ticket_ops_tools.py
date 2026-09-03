@@ -296,10 +296,14 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Workflow template slug to assign. Empty string removes the workflow."
                 ),
                 "stage_key": string_prop(
-                    "Stage to move the ticket to. Alone, it just becomes the current stage."
+                    "Stage to move the ticket to. Alone, it just becomes the current "
+                    "stage and keeps whatever status it already had — moving the cursor "
+                    "does not mark the target complete. Pass stage_status to set one."
                 ),
                 "stage_status": enum_string_prop(
-                    "Status to set on stage_key. Requires stage_key.",
+                    "Status to set on stage_key. Requires stage_key. Naming 'done' here "
+                    "asserts that stage finished, so use it to restore a real outcome, "
+                    "not to move the cursor.",
                     [status.value for status in StageStatus],
                 ),
             },

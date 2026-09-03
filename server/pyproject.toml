@@ -65,6 +65,14 @@ packages = ["loregarden"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Keep scratch only for tests that failed. The default keeps every run's
+# `tmp_path` tree, and `_pytest.pathlib.LOCK_TIMEOUT` is three DAYS — a run that
+# is killed rather than exiting cleanly never removes its lock, so its directory
+# is protected for that long. On 2026-09-03 this machine held 72 run
+# directories, ~71 GiB, and a full suite failed with 1463 errors that were all
+# `database or disk is full` rather than anything in the code. Passing tests do
+# not need their scratch kept.
+tmp_path_retention_policy = "failed"
 markers = [
     "real_shell_command: opt out of the plain-shell patch and see the real argv",
 ]
