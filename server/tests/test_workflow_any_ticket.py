@@ -388,9 +388,17 @@ class TestWorkflowHierarchyInteractions:
         assert capability_res.status_code == 201
         capability = capability_res.json()
 
-        # Verify both have workflows
-        assert feature["workflow_stage_key"] == "planning"
+        # The capability was just created, and creating a ticket sets up its
+        # workflow — so it has a cursor.
         assert capability["workflow_stage_key"] == "planning"
+        # The feature is seeded and has never been started. It has no cursor,
+        # and that is the point: this used to read "planning" only because
+        # `GET /api/tickets` created a workflow instance as a side effect of
+        # serializing, so a ticket gained a cursor the moment somebody looked at
+        # it. Initialisation moved to the start paths
+        # (lg-workflow-integrity-606); an unstarted ticket now has no cursor
+        # until something runs it.
+        assert feature["workflow_stage_key"] == ""
 
         # Verify both have stages
         feature_detail = client.get(f"/api/tickets/{feature['id']}").json()

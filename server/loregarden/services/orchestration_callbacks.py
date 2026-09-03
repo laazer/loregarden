@@ -254,6 +254,13 @@ class OrchestrationCallbackService:
         timeout_override_seconds: int | None = None,
         external_harness: ExternalHarness | None = None,
     ) -> OrchestrationRun:
+        # Starting work is what earns a ticket its workflow instance. This used
+        # to happen on the read path — `GET /api/tickets` created one per row as
+        # a side effect of serializing — so a ticket only had a cursor once
+        # somebody had looked at it. Removing that write (606) put the
+        # initialisation here, where a write belongs.
+        self.orch.ensure_workflow_instance(ticket, commit=True)
+
         active = self.get_active_orchestration_run(ticket.id)
         if active and active.status == OrchestrationRunStatus.QUEUED:
             # The claim this execution was dispatched for. Adopt it, so whoever
@@ -370,6 +377,10 @@ class OrchestrationCallbackService:
         force: bool = False,
     ) -> Ticket:
         self.touch_lease(orch_run)
+        # Same reason as start_orchestration_run: a stage started directly on an
+        # untouched ticket is still the moment work begins, and nothing on the
+        # read path sets this up any more (606).
+        self.orch.ensure_workflow_instance(ticket, commit=True)
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
