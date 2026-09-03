@@ -1206,11 +1206,35 @@ def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         help="Confine discovered candidates to this directory.",
     )
+    parser.add_argument(
+        "--select-root-candidate",
+        action="append",
+        default=[],
+        help=(
+            "Repo-relative directory to confine discovered candidates to, first "
+            "one that exists wins (repeatable). Unlike --select-root this is "
+            "resolved against the repository root *this* process derived, so a "
+            "caller that does not know the root yet can still express its own "
+            "source-root policy."
+        ),
+    )
     parser.add_argument("files", nargs="*")
     args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
 
-    repo = Path(args.repo).resolve() if args.repo else None
+    # `git_repo_root()` when unset, exactly as every Python gate does it. A
+    # caller that resolves its own root from `cwd` gets a different answer than
+    # the Python gates whenever it is not standing at the top level, and the
+    # containment guard is then measured against the wrong tree — skipped
+    # entirely for a file outside that root (594).
+    repo = Path(args.repo).resolve() if args.repo else git_repo_root()
     select_root = Path(args.select_root).resolve() if args.select_root else None
+    if select_root is None and repo is not None:
+        for candidate in args.select_root_candidate:
+            if (repo / candidate).is_dir():
+                select_root = (repo / candidate).resolve()
+                break
+        else:
+            select_root = repo if args.select_root_candidate else None
     selector = _suffix_selector(frozenset(args.suffix), select_root)
 
     # `resolve_gate_scope` prints the examined line (and any submodule notice)
@@ -1248,6 +1272,10 @@ def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
                 "degraded": run.scope.degraded,
                 "includes_untracked": run.scope.includes_untracked,
             },
+            # The root every check downstream must measure against — the
+            # caller does not re-derive it.
+            "repo_root": str(repo) if repo is not None else None,
+            "select_root": str(select_root) if select_root is not None else None,
             "files": [str(path) for path in run.files],
             "untracked": sorted(run.untracked),
             # Graded whole: git changed them but produced no usable diff.
