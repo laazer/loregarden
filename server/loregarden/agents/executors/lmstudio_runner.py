@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+from loregarden.agents.condenser import Condenser, NoOpCondenser
 from loregarden.services.lmstudio_discovery import is_chat_lmstudio_model
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
@@ -340,6 +341,90 @@ def _run_iterations(
     )
 
 
+#: Phrases a provider uses when the conversation no longer fits. Matched
+#: loosely on purpose: LM Studio fronts many engines and their wording differs,
+#: and a missed match costs the old behaviour rather than a wrong one.
+_CONTEXT_OVERFLOW_MARKERS = (
+    "context length",
+    "context window",
+    "too many tokens",
+    "maximum context",
+    "reduce the length",
+    "exceeds the model",
+)
+
+
+def _is_context_overflow(exc: httpx.HTTPStatusError) -> bool:
+    """Whether this HTTP error is the provider saying the context is full."""
+    if exc.response is None or exc.response.status_code not in (400, 413, 422):
+        return False
+    # Decoded from bytes rather than read through `.text`, which can raise on a
+    # body whose declared charset lies. `errors="replace"` cannot raise, so
+    # there is nothing to catch — and catching it to return False would decide
+    # "not an overflow" silently, which is the failure this whole milestone is
+    # about.
+    body = exc.response.content.decode("utf-8", errors="replace").lower()
+    return any(marker in body for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
+def _condense(condenser: Condenser, messages: list[dict]) -> list[dict]:
+    """Apply `condenser`, reporting on stdout what it did.
+
+    Printed rather than persisted: `lg-agent-prompt-379` owns condensation as a
+    recorded event, and inventing a second bookkeeping scheme here is what that
+    ticket exists to prevent. The line still means an operator reading a run log
+    can see the conversation shrink and by how much.
+    """
+    result = condenser.condense(messages)
+    if result.condensed:
+        print(f"[CONDENSE] {result.describe()}", flush=True)
+    return result.messages
+
+
+def _complete_round(
+    *,
+    client: httpx.Client,
+    base_url: str,
+    model: str,
+    messages: list[dict],
+    tools: list[dict],
+    effort: str,
+    condenser: Condenser,
+) -> tuple[httpx.Response, list[dict]]:
+    """One completion, condensing and retrying once if the context is full.
+
+    Returns the messages alongside the response because a retry may have
+    shortened them, and the caller must keep appending to the list the model
+    actually saw rather than the one it sent first.
+
+    Extracted so the loop stays a loop: the retry is a second call site for the
+    same request, and inlining it both duplicated the body and pushed the loop
+    past its complexity cap.
+    """
+    body = {
+        "model": model,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "stream": False,
+        "max_tokens": DEFAULT_MAX_TOKENS,
+    }
+    try:
+        return _post_chat(client, base_url, body, effort), messages
+    except httpx.HTTPStatusError as exc:
+        # The trigger that matters: the provider says the context is full.
+        # Condensing and retrying once turns a hard 400 into a recoverable
+        # round (lg-workflow-integrity-380).
+        if not _is_context_overflow(exc):
+            raise
+        condensed = _condense(condenser, messages)
+        if condensed == messages:
+            # Nothing shrank, so the retry would send the same request and fail
+            # the same way. Surface the provider's own error instead.
+            raise
+        return _post_chat(client, base_url, {**body, "messages": condensed}, effort), condensed
+
+
 def _chat_with_tools(
     *,
     client: httpx.Client,
@@ -349,6 +434,7 @@ def _chat_with_tools(
     bridge: McpBridge,
     tools: list[dict],
     effort: str = "",
+    condenser: Condenser | None = None,
 ) -> _IterationResult:
     """Run the model until it stops asking for tools, then return its answer.
 
@@ -357,22 +443,23 @@ def _chat_with_tools(
     budget alive while each round waits on the model.
     """
     messages: list[dict] = [{"role": "user", "content": prompt}]
+    # Inert unless a caller opts in, so this path is byte-identical to before
+    # for every runner that has not asked for it (lg-workflow-integrity-380).
+    condenser = condenser or NoOpCondenser()
 
     for round_index in range(MAX_TOOL_ROUNDS):
         print(f"[ROUND] {round_index + 1}/{MAX_TOOL_ROUNDS}", flush=True)
+        if condenser.should_condense(messages):
+            messages = _condense(condenser, messages)
         with _stdout_heartbeat(f"lmstudio round {round_index + 1}"):
-            response = _post_chat(
-                client,
-                base_url,
-                {
-                    "model": model,
-                    "messages": messages,
-                    "tools": tools,
-                    "tool_choice": "auto",
-                    "stream": False,
-                    "max_tokens": DEFAULT_MAX_TOKENS,
-                },
-                effort,
+            response, messages = _complete_round(
+                client=client,
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                tools=tools,
+                effort=effort,
+                condenser=condenser,
             )
         message = response.json().get("choices", [{}])[0].get("message", {}) or {}
         calls = message.get("tool_calls") or []
