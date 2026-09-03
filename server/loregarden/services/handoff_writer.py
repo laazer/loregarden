@@ -29,6 +29,7 @@ from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
 from loregarden.services.handoff_certainty import standing_of, unresolvable_evidence
+from loregarden.services.handoff_committed_work import uncommitted_ticket_work
 from loregarden.services.handoff_store import (
     HANDOFF_SCRATCH_SUBDIR,
     build_handoff_doc,
@@ -364,7 +365,21 @@ def write_handoff(
     # it worked in is the claim, not the evidence for it. The ticket's worktree,
     # not `repo_root` above — that is the shared checkout the gate export is
     # written under, while the agent's edits are in the tree the stages ran in.
-    boundary = read_boundary(resolve_ticket_root(session, ticket, workspace))
+    ticket_root = resolve_ticket_root(session, ticket, workspace)
+    boundary = read_boundary(ticket_root)
+
+    # 429. Checked here, before the handoff is stored, because the transition
+    # gate already catches this — but only after the stage has been declared
+    # complete, with no repair path. The agent writing this call can still
+    # commit; the gate reading it later cannot.
+    uncommitted = uncommitted_ticket_work(
+        session,
+        ticket,
+        ticket_root=ticket_root,
+        is_ticket_worktree=ticket_root != resolve_workspace_root(workspace),
+    )
+    if uncommitted.blocks_handoff:
+        raise HandoffWriteError(uncommitted.message())
     doc = build_handoff_doc(
         external_id=external_id,
         from_agent=from_agent,
