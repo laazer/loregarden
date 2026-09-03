@@ -10,13 +10,21 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from loregarden.models.domain import RunStatus
 from loregarden.services.run_duration_stats import (
+    CANONICAL_STAGE_KEYS,
     FALLBACK_KEY,
+    canonical_stage_key,
     estimate_for,
+    load_duration_stats,
     median_duration_by_agent,
     project_clear_time,
 )
 from sqlmodel import Session
-from tests.factories import make_agent_run, make_workspace
+from tests.factories import (
+    make_agent_run,
+    make_orchestration_run,
+    make_ticket,
+    make_workspace,
+)
 
 WORKSPACE = "ws-1"
 
@@ -138,3 +146,113 @@ def test_slower_agents_push_the_projection_out():
 
     assert slow == 600.0
     assert fast == 10.0
+
+
+# --- forked stage keys --------------------------------------------------------
+#
+# Stage keys are spelled differently across templates: implement/implementation,
+# test_design/test-design, plan/planning, spec/specification. Aggregation grouped
+# by the raw key and dropped anything under MIN_SAMPLES, so the smaller variant
+# of each pair got no median at all and the larger one was computed from a
+# fraction of the real sample. Every consumer inherited it — queue_status,
+# ticket_tree_estimate, parallel_queue, and the workflow monitor whose thresholds
+# are meant to be relative to these baselines (lg-workflow-integrity-558).
+
+
+def _staged_run(session: Session, stage_key: str, seconds: float, *, code: str):
+    started = datetime.now(timezone.utc) - timedelta(days=1)
+    make_workspace(session, workspace_id=WORKSPACE, slug=WORKSPACE)
+    return make_agent_run(
+        session,
+        run_code=code,
+        ticket_id="t-1",
+        workspace_id=WORKSPACE,
+        agent_id="impl",
+        stage_key=stage_key,
+        status=RunStatus.SUCCEEDED,
+        started_at=started,
+        finished_at=started + timedelta(seconds=seconds),
+    )
+
+
+def test_two_forked_spellings_now_reach_one_median(session):
+    """AC4, and the exact failure this ticket describes.
+
+    Two observations each: under raw grouping neither spelling reaches
+    MIN_SAMPLES = 3, so the stage had no median at all despite four real runs.
+    """
+    for i, seconds in enumerate((100, 200)):
+        _staged_run(session, "implement", seconds, code=f"a{i}")
+    for i, seconds in enumerate((300, 400)):
+        _staged_run(session, "implementation", seconds, code=f"b{i}")
+
+    stats = load_duration_stats(session, WORKSPACE)
+
+    assert stats.by_stage["implement"] == 250  # median of 100/200/300/400
+    # The raw variant is not a separate entry — that was the bug.
+    assert "implementation" not in stats.by_stage
+
+
+def test_either_spelling_finds_the_shared_median(session):
+    """A caller holding the raw key from a ticket or template must not miss the
+    median stored under its canonical twin."""
+    for i, seconds in enumerate((100, 200, 300)):
+        _staged_run(session, "implementation", seconds, code=f"c{i}")
+
+    stats = load_duration_stats(session, WORKSPACE)
+
+    assert stats.stage_seconds("implementation", "impl") == 200
+    assert stats.stage_seconds("implement", "impl") == 200
+
+
+def test_an_unforked_stage_is_unchanged(session):
+    """Unknown keys pass through. Inventing a normalisation rule for them would
+    silently merge stages that only look similar."""
+    for i, seconds in enumerate((10, 20, 30)):
+        _staged_run(session, "review", seconds, code=f"d{i}")
+
+    stats = load_duration_stats(session, WORKSPACE)
+    assert stats.by_stage["review"] == 20
+
+
+def test_the_mapping_is_one_named_constant(session):
+    """AC2. A mapping that lives in three places is a mapping that disagrees
+    with itself."""
+    assert canonical_stage_key("implementation") == "implement"
+    assert canonical_stage_key("test_design") == "test-design"
+    assert canonical_stage_key("planning") == "plan"
+    assert canonical_stage_key("specification") == "spec"
+    # Canonical spellings are fixed points, so applying it twice is safe.
+    for raw, canonical in CANONICAL_STAGE_KEYS.items():
+        assert canonical_stage_key(canonical) == canonical, f"{raw} -> {canonical} not stable"
+
+
+def test_rerun_rate_counts_a_forked_stage_once(session):
+    """`attempts_per_stage` divides attempts by distinct (orchestration, stage)
+    pairs. Two spellings of one stage would count as two pairs and deflate the
+    re-run rate the monitor's thresholds are relative to."""
+    started = datetime.now(timezone.utc) - timedelta(days=1)
+    make_workspace(session, workspace_id=WORKSPACE, slug=WORKSPACE)
+    # A real parent row: foreign keys are enforced on every engine here, so a
+    # bare id would fail the insert rather than the assertion.
+    make_ticket(session, ticket_id="t-1", workspace_id=WORKSPACE)
+    make_orchestration_run(
+        session, workspace_id=WORKSPACE, ticket_id="t-1", orchestration_run_id="orch-1"
+    )
+    for i, key in enumerate(("implement", "implementation")):
+        make_agent_run(
+            session,
+            run_code=f"e{i}",
+            ticket_id="t-1",
+            workspace_id=WORKSPACE,
+            orchestration_run_id="orch-1",
+            agent_id="impl",
+            stage_key=key,
+            status=RunStatus.SUCCEEDED,
+            started_at=started,
+            finished_at=started + timedelta(seconds=60),
+        )
+
+    stats = load_duration_stats(session, WORKSPACE)
+    # Two attempts at one stage, not one attempt at each of two stages.
+    assert stats.attempts_per_stage == 2.0

@@ -105,6 +105,37 @@ def estimate_for(medians: dict[str, float], agent_id: str | None) -> float | Non
     return medians.get(FALLBACK_KEY)
 
 
+#: Stage keys that name the same stage in different templates. Aggregation
+#: groups by the canonical spelling on the left; nothing else in the system is
+#: touched, so routing, templates and instances keep their own keys
+#: (lg-workflow-integrity-558).
+#:
+#: Verified before merging: no template declares both spellings of a pair, and
+#: none of the 172 recorded orchestrations ran both — so folding them cannot
+#: merge two genuinely distinct stages. A pair that ever does become distinct
+#: must come out of this table.
+#:
+#: One table rather than comparisons at each call site, because a mapping that
+#: lives in three places is a mapping that disagrees with itself.
+CANONICAL_STAGE_KEYS: dict[str, str] = {
+    "implementation": "implement",
+    "test_design": "test-design",
+    "test_break": "test-break",
+    "planning": "plan",
+    "specification": "spec",
+}
+
+
+def canonical_stage_key(stage_key: str) -> str:
+    """The spelling this stage's history is aggregated under.
+
+    Unknown keys pass through unchanged: a stage nobody has forked is already
+    canonical, and inventing a normalisation rule for it would silently merge
+    stages that only look similar.
+    """
+    return CANONICAL_STAGE_KEYS.get(stage_key, stage_key)
+
+
 #: Below this many observations a per-key median is noise, and a single
 #: outlying run would swing every estimate built on it. Such keys fall through
 #: to the next-broadest sample rather than being trusted.
@@ -130,8 +161,13 @@ class DurationStats:
         A stage's own history beats its agent's: the same implementer costs
         one thing at `implement` and another at `fix_review_findings`.
         """
-        if stage_key and stage_key in self.by_stage:
-            return self.by_stage[stage_key]
+        if stage_key:
+            # Canonicalised on the way in too: a caller holding the raw key
+            # from a ticket or template would otherwise miss the median stored
+            # under its canonical twin.
+            median_seconds = self.by_stage.get(canonical_stage_key(stage_key))
+            if median_seconds is not None:
+                return median_seconds
         return estimate_for(self.by_agent, agent_id)
 
 
@@ -165,7 +201,7 @@ def load_duration_stats(
             # Every attempt counts here, including the failures: a stage that
             # failed and ran again cost the pipeline both runs.
             attempts += 1
-            stage_pairs.add((run.orchestration_run_id, run.stage_key))
+            stage_pairs.add((run.orchestration_run_id, canonical_stage_key(run.stage_key)))
 
         if run.status != RunStatus.SUCCEEDED:
             continue
@@ -175,7 +211,11 @@ def load_duration_stats(
         by_agent[run.agent_id].append(seconds)
         by_agent[FALLBACK_KEY].append(seconds)
         if run.stage_key:
-            by_stage[run.stage_key].append(seconds)
+            # Grouped by canonical spelling so `implement` and `implementation`
+            # contribute to one median. Before this, MIN_SAMPLES dropped the
+            # smaller variant entirely and computed the larger one from a
+            # fraction of the real sample.
+            by_stage[canonical_stage_key(run.stage_key)].append(seconds)
 
     return DurationStats(
         by_agent={
