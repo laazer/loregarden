@@ -757,6 +757,28 @@ class ReferenceFetchError(StrEnum):
     INTERNAL_ERROR = "internal_error"
 
 
+class CommittedWorkBasis(StrEnum):
+    """What the uncommitted-work check was able to judge on.
+
+    Recorded because the three answers are not interchangeable and the weakest
+    one must not read like the strongest. `changed_paths_json` is empty for most
+    runs — measured on this control plane: 23 of 72 succeeded `implement` runs
+    record any paths at all — so a check that only ever intersected against the
+    ticket's recorded paths would pass vacuously for two thirds of handoffs
+    while looking exactly like a check that worked (429).
+    """
+
+    #: The ticket's own recorded paths were known and intersected with the
+    #: dirty tree. Precise: unrelated dirt cannot fail the handoff.
+    TICKET_PATHS = "ticket_paths"
+    #: No recorded paths, but the handoff is being written from this ticket's
+    #: own worktree, so everything uncommitted in it is this ticket's.
+    WHOLE_WORKTREE = "whole_worktree"
+    #: No recorded paths and a shared checkout. Whose the dirt is cannot be told
+    #: from here, so the check says that rather than guessing either way.
+    UNDETERMINED = "undetermined"
+
+
 class HandoffGateSkip(StrEnum):
     """Why a handoff was not judged by the workspace's gate.
 
