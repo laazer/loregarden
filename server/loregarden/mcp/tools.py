@@ -947,13 +947,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.WRITE_HANDOFF,
         "description": (
-            "Write a ticket's project_board/checkpoints/<ticket>/handoff-latest.yaml from a "
-            "STRUCTURED checklist, then validate it against the workspace's own handoff gate and "
-            "return any violations. Use this instead of hand-writing the YAML: it renders canonical "
-            "schema, auto-computes the required/met counters, and on validation FAIL rolls the file "
-            "back and returns violations so you can fix and retry in the same turn. Use the exact "
-            "item_key/item labels from the frozen catalog for the (from_agent → to_agent) pair "
-            "(see mandatory_workflow_gates_v1.md)."
+            "Record a ticket's handoff from a STRUCTURED checklist, then validate it against "
+            "the workspace's own handoff gate and return any violations. The handoff is stored "
+            "as an artifact row; the YAML the gate reads is exported to a gitignored scratch "
+            "tree, not written into the repository's tracked checkpoints. Use this instead of "
+            "hand-writing the YAML: it renders canonical schema and auto-computes the "
+            "required/met counters. On validation FAIL nothing is stored — the write is rolled "
+            "back and the violations returned, so you can fix and retry in the same turn. "
+            "Where the workspace has no handoff gate, or its gate cannot run, the handoff is "
+            "stored with status `stored_unvalidated` and a reason: nothing checked it, which "
+            "is not the same as it passing, and an error artifact says so on the ticket. Use "
+            "the exact item_key/item labels from the frozen catalog for the "
+            "(from_agent → to_agent) pair (see mandatory_workflow_gates_v1.md)."
         ),
         "inputSchema": _tool_schema(
             properties={

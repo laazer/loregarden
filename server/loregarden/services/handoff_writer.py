@@ -249,6 +249,50 @@ def _validate_via_workspace_gate(
     }
 
 
+def _record_unvalidated_handoff(
+    session: Session,
+    *,
+    ticket: Ticket,
+    artifact_id: str,
+    from_agent: str,
+    to_agent: str,
+    reason: str,
+    met: int,
+    total: int,
+) -> None:
+    """Put an unchecked handoff where a person will see it.
+
+    Filed as an error artifact rather than a blocking issue on purpose. Nothing
+    was violated — there was no catalog to violate — so blocking the ticket would
+    punish a workspace for not having a gate. But a handoff nobody checked is not
+    the same as one that passed, and the counters make that concrete: the live
+    example on ticket 89 read `required_items_met: 2 of 4` with items marked
+    incomplete, written, never validated, and persisting.
+
+    The counters go in the message because they are the part an operator can act
+    on without opening anything else.
+    """
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="error",
+        title=f"Handoff not validated — {from_agent} → {to_agent}",
+        content={
+            "message": (
+                f"A handoff was stored for {from_agent} → {to_agent} and no gate checked "
+                f"it: {reason}\n\n"
+                f"Required items met: {met} of {total}. Nothing was violated, because "
+                "this workspace has no catalog to violate — but nothing confirmed it "
+                "either, and an unvalidated handoff reads as a passed one wherever it is "
+                "consumed. Handoff artifact: {artifact}."
+            ).format(artifact=artifact_id),
+            "run_code": "",
+            "agent_id": from_agent,
+            "stage_key": ticket.workflow_stage_key or "",
+            "command": "",
+        },
+    )
+
+
 def write_handoff(
     session: Session,
     *,
@@ -378,6 +422,23 @@ def write_handoff(
         # there is no catalog to have violated, so the handoff stands — but say
         # plainly that nothing checked it, rather than letting "unvalidated" read
         # as "passed" (ticket 88).
+        #
+        # Saying it to the calling agent is not enough, which is the whole of
+        # lg-workflow-integrity-89: the status reached no artifact, event, ticket
+        # state or UI, so an operator had no way to learn that a handoff on disk
+        # had never been checked. This is now the only branch that still stores
+        # an unchecked handoff — 134 rolls the other three back — so it is the
+        # only one with something lingering to warn about.
+        _record_unvalidated_handoff(
+            session,
+            ticket=ticket,
+            artifact_id=artifact.id,
+            from_agent=from_agent,
+            to_agent=to_agent,
+            reason=str(validation["reason"]),
+            met=met,
+            total=total,
+        )
         session.commit()
         return {
             **base,
