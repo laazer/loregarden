@@ -1,17 +1,33 @@
 """Steering a run that is already going."""
 
 import json
+from unittest import mock
 
 import pytest
+from loregarden.agents.executors import permission_bridge
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner, _LoopState
 from loregarden.models.domain import AgentRun, RunMessage, RunStatus, Ticket
 from loregarden.services.run_steering import (
     MAX_MESSAGE_CHARS,
+    POLL_INTERVAL_SECONDS,
     pending_messages,
     queue_message,
     steer_refusal,
 )
 from sqlmodel import Session, select
+
+
+class _FakeClock:
+    """A clock the test moves, so timing assertions state intent not luck."""
+
+    def __init__(self, start: float) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 def _run(session: Session, ticket: Ticket, *, agent_id="planner", status=RunStatus.RUNNING):
@@ -132,20 +148,41 @@ def test_a_delivered_message_is_not_sent_twice(db_session: Session):
 
 def test_delivery_is_throttled(db_session: Session):
     """The run loop spins fast; polling every pass would swamp the DB for a
-    channel used a handful of times an hour."""
+    channel used a handful of times an hour.
+
+    The clock is driven rather than raced. This test used to make two calls
+    back-to-back and assert the second was throttled, which encoded "a database
+    write takes under a second" — true on an idle machine and not under
+    `-n auto`, where it failed twice (lg-workflow-integrity-654). Driving the
+    clock also lets it assert the *other* half, which the timing version could
+    not: that the message does get through once the window has passed.
+    """
     ticket = db_session.exec(select(Ticket)).first()
     run = _run(db_session, ticket)
     bridge = PermissionBridgeRunner(db_session)
     proc = _FakeProc()
     state = _LoopState(stdout_lines=[], session_id="s", last_persist=0.0)
+    clock = _FakeClock(1_000.0)
 
-    bridge._deliver_steer_messages(run_id=run.id, proc=proc, state=state, streamer=None)
-    first_poll = state.last_steer_poll
-    queue_message(db_session, run, "sent right after a poll")
-    bridge._deliver_steer_messages(run_id=run.id, proc=proc, state=state, streamer=None)
+    with mock.patch.object(permission_bridge, "_now", clock):
+        bridge._deliver_steer_messages(run_id=run.id, proc=proc, state=state, streamer=None)
+        first_poll = state.last_steer_poll
+        assert first_poll == 1_000.0
 
-    assert state.last_steer_poll == first_poll
-    assert proc.stdin.written == []
+        queue_message(db_session, run, "sent right after a poll")
+        bridge._deliver_steer_messages(run_id=run.id, proc=proc, state=state, streamer=None)
+
+        # Inside the window: no poll, nothing delivered, however long the write
+        # above actually took.
+        assert state.last_steer_poll == first_poll
+        assert proc.stdin.written == []
+
+        clock.advance(POLL_INTERVAL_SECONDS + 0.01)
+        bridge._deliver_steer_messages(run_id=run.id, proc=proc, state=state, streamer=None)
+
+    # Past the window: the throttle is a delay, not a drop.
+    assert state.last_steer_poll > first_poll
+    assert proc.stdin.written, "the queued message never arrived after the window"
 
 
 def test_a_broken_stdin_does_not_kill_the_run(db_session: Session):

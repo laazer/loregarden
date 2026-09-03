@@ -1,12 +1,14 @@
+import io
 import json
-import sys
-import time
+import os
 from types import SimpleNamespace
+from unittest import mock
 
 from loregarden.agents.cli_adapters import (
     permission_bypass_enabled,
     resolve_cli_invocation,
 )
+from loregarden.agents.executors import permission_bridge
 from loregarden.agents.executors.permission_bridge import (
     ApprovalResolution,
     PermissionBridgeRunner,
@@ -18,6 +20,8 @@ from loregarden.agents.executors.permission_bridge import (
     is_ask_user_question,
     is_auto_approved_mcp_tool,
 )
+from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER
+from loregarden.services.subprocess_lines import SubprocessLineReader
 
 
 class _FakeStdout:
@@ -986,16 +990,90 @@ def test_permission_bridge_agent_timeout(tmp_path):
         assert result.stderr == "Agent timed out after 2s"
 
 
-def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
+def proc_factory(proc):
+    """A `spawn_process` that hands back an already-built fake."""
+
+    def spawn(*_args, **_kwargs):
+        return proc
+
+    return spawn
+
+
+class _FakeClock:
+    """A clock the test moves, so a timing assertion states intent not luck."""
+
+    def __init__(self, start: float) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _ScriptedProc:
+    """A process whose output the test writes, over a real pipe.
+
+    Real pipe rather than a fake reader: `SubprocessLineReader` does its own
+    framing and select, and faking that would test the fake. The bytes are real;
+    only their *timing* is the test's to decide.
+    """
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        read_fd, write_fd = os.pipe()
+        self.stdout = os.fdopen(read_fd, "rb", buffering=0)
+        self._writer = os.fdopen(write_fd, "wb", buffering=0)
+        self.stdin = io.BytesIO()
+        self.stderr = io.BytesIO()
+        self._chunks = list(chunks)
+        self.returncode = None
+        self.killed = False
+
+    def emit_next(self) -> bool:
+        """Write one queued chunk. False when there are none left."""
+        if not self._chunks:
+            return False
+        self._writer.write(self._chunks.pop(0))
+        self._writer.flush()
+        return True
+
+    def finish(self, code: int = 0) -> None:
+        self.returncode = code
+        self._writer.close()
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):  # noqa: ARG002 - signature parity with Popen
+        return self.returncode or 0
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+
+def test_streaming_output_extends_the_idle_timeout(tmp_path):
+    """Output resets the idle deadline, so a run that keeps talking is not killed
+    for being slow.
+
+    Driven rather than raced. This test used to launch a real subprocess printing
+    every 0.2s against a 1s idle budget and assert the run survived — which
+    encoded "the parent observes output within a second of it being written".
+    True on an idle machine; under `-n auto` it failed twice and once took 118s
+    against 19s idle (lg-workflow-integrity-654).
+
+    Driving the clock makes it strictly stronger: the virtual run now outlives
+    its idle budget four times over, which the wall-clock version could not have
+    asserted without taking four seconds to do it.
+    """
     from loregarden.models.domain import AgentRun, RunStatus, Ticket
     from loregarden.services.seed import seed_database
     from sqlmodel import Session, SQLModel, create_engine, select
     from sqlmodel.pool import StaticPool
 
     engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -1015,15 +1093,34 @@ def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
         session.commit()
         session.refresh(run)
 
-        script = (
-            "import json, time\n"
-            "for i in range(8):\n"
-            "    print(json.dumps({'type': 'message', 'content': i}), flush=True)\n"
-            "    time.sleep(0.2)\n"
-            "print(json.dumps({'type': 'result', 'is_error': False, 'session_id': 's'}), flush=True)\n"
+        chunks = [json.dumps({"type": "message", "content": i}).encode() + b"\n" for i in range(8)]
+        chunks.append(
+            json.dumps({"type": "result", "is_error": False, "session_id": "s"}).encode() + b"\n"
         )
+        proc = _ScriptedProc(chunks)
+
+        IDLE_BUDGET = 1
+        # A quarter of the budget between writes: the deadline must be reset by
+        # the output itself, while nine of them stay inside the hard cap at
+        # `IDLE_BUDGET * TIMEOUT_HARD_CAP_MULTIPLIER`. Driving the clock is what
+        # made that ceiling visible — the first version of this test advanced
+        # 4.5s against a 4s cap and was correctly killed, which the wall-clock
+        # version could never have shown.
+        STEP = IDLE_BUDGET / 4
+        clock = _FakeClock(10_000.0)
+
+        _real_readline = SubprocessLineReader.readline
+
+        def readline_advancing(reader, timeout=0.5):  # noqa: ARG001 - parity
+            """Emit the next chunk and let virtual time pass, as a real run would."""
+            clock.advance(STEP)
+            if not proc.emit_next():
+                proc.finish()
+                return None
+            return _real_readline(reader, timeout=timeout)
+
         invocation = SimpleNamespace(
-            argv=[sys.executable, "-u", "-c", script],
+            argv=["unused"],
             cwd=str(tmp_path),
             adapter="claude",
             resume_session_id="",
@@ -1031,19 +1128,108 @@ def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
         )
 
         bridge = PermissionBridgeRunner(session)
-        start = time.time()
-        result = bridge.run(
-            run_id=run.id,
-            ticket=ticket,
-            invocation=invocation,
-            prompt="do work",
-            timeout_seconds=1,
-        )
-        elapsed = time.time() - start
+        with (
+            mock.patch.object(permission_bridge, "_now", clock),
+            mock.patch.object(SubprocessLineReader, "readline", readline_advancing),
+        ):
+            result = bridge.run(
+                run_id=run.id,
+                ticket=ticket,
+                invocation=invocation,
+                prompt="do work",
+                timeout_seconds=IDLE_BUDGET,
+                spawn_process=proc_factory(proc),
+            )
 
-        assert result.status == RunStatus.SUCCEEDED
+        assert result.status == RunStatus.SUCCEEDED, (
+            f"stderr={result.stderr!r} killed={proc.killed} clock={clock.now}"
+        )
         assert result.session_id == "s"
-        assert elapsed > 1.0
+        assert proc.killed is False, "the idle timer killed a run that never went idle"
+        # Nine reads at a quarter budget each: the run outlived its idle budget
+        # twice over, purely because output kept resetting it.
+        elapsed = clock.now - 10_000.0
+        assert elapsed > IDLE_BUDGET * 2
+        assert elapsed < IDLE_BUDGET * TIMEOUT_HARD_CAP_MULTIPLIER
+
+
+def test_the_hard_cap_stops_a_run_that_never_stops_talking(tmp_path):
+    """Output resets the idle deadline, but not forever.
+
+    A run that emits just often enough to stay un-idle would otherwise run
+    without bound, which is what `TIMEOUT_HARD_CAP_MULTIPLIER` exists to stop.
+    Asserting it used to mean a test that really waited four times an idle
+    budget; on a driven clock it costs nothing, so the ceiling is now pinned
+    rather than assumed (lg-workflow-integrity-654).
+    """
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_hard_cap_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="planning",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        IDLE_BUDGET = 1
+        # Chatty forever: a message every quarter budget and no result event.
+        chatty = [
+            json.dumps({"type": "message", "content": i}).encode() + b"\n" for i in range(200)
+        ]
+        proc = _ScriptedProc(chatty)
+        clock = _FakeClock(20_000.0)
+        _real_readline = SubprocessLineReader.readline
+
+        def readline_advancing(reader, timeout=0.5):  # noqa: ARG001 - parity
+            clock.advance(IDLE_BUDGET / 4)
+            if not proc.emit_next():
+                proc.finish()
+                return None
+            return _real_readline(reader, timeout=timeout)
+
+        invocation = SimpleNamespace(
+            argv=["unused"],
+            cwd=str(tmp_path),
+            adapter="claude",
+            resume_session_id="",
+            env={},
+        )
+        with (
+            mock.patch.object(permission_bridge, "_now", clock),
+            mock.patch.object(SubprocessLineReader, "readline", readline_advancing),
+        ):
+            result = bridge_run = PermissionBridgeRunner(session).run(
+                run_id=run.id,
+                ticket=ticket,
+                invocation=invocation,
+                prompt="do work",
+                timeout_seconds=IDLE_BUDGET,
+                spawn_process=proc_factory(proc),
+            )
+
+        assert bridge_run is result
+        assert result.status == RunStatus.FAILED
+        assert proc.killed is True
+        # Stopped at the ceiling, not at the idle budget it kept resetting.
+        elapsed = clock.now - 20_000.0
+        assert elapsed >= IDLE_BUDGET * TIMEOUT_HARD_CAP_MULTIPLIER
 
 
 def test_permission_bridge_triage_question_does_not_mutate_stage(tmp_path):

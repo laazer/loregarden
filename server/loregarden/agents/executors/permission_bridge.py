@@ -105,6 +105,20 @@ class BridgeResult:
     session_id: str = ""
 
 
+def _now() -> float:
+    """Wall clock for every timing decision in this module, in one place.
+
+    A seam rather than a direct `time.time()` at each site, so a test can *drive*
+    the clock instead of racing it. Two tests here asserted margins that hold on
+    an idle machine and not under `-n auto`: a 0.2s write cadence against a 1s
+    idle budget, and a throttle that must not fire twice in a second while a
+    database write happens between the calls. Both encode "this machine is not
+    busy", which is not a property of the code
+    (lg-workflow-integrity-654).
+    """
+    return time.time()
+
+
 def serialize_tool_input(tool_input: Any) -> str:
     """Persist full tool input JSON without truncation."""
     return json.dumps(tool_input, ensure_ascii=False)
@@ -228,8 +242,8 @@ def _drain_stdout_after_result(
     """Read trailing stream-json lines and terminate a CLI that stayed alive after result."""
     import subprocess
 
-    deadline = time.time() + max_seconds
-    while time.time() < deadline:
+    deadline = _now() + max_seconds
+    while _now() < deadline:
         if proc.poll() is not None:
             break
         line = stdout_reader.readline(timeout=0.2)
@@ -254,8 +268,8 @@ def wait_for_approval_resolution(
     poll_seconds: float = 2.0,
     timeout_seconds: float | None = None,
 ) -> ApprovalResolution:
-    deadline = time.time() + (timeout_seconds or settings.permission_approval_timeout_seconds)
-    while time.time() < deadline:
+    deadline = _now() + (timeout_seconds or settings.permission_approval_timeout_seconds)
+    while _now() < deadline:
         resolution = poll_approval_resolution(approval_id)
         if resolution is not None:
             return resolution
@@ -353,7 +367,7 @@ def _continue_while_awaiting(
     line = stdout_reader.readline(timeout=0.5)
     if line is not None:
         line = line.rstrip("\n")
-        state.last_persist = time.time()
+        state.last_persist = _now()
         state.idle_deadline = state.last_persist + timeout_seconds
         state.stdout_lines.append(line)
         if streamer:
@@ -366,9 +380,9 @@ def _continue_while_awaiting(
                 state.finished_with_result = True
                 state.result_is_error = failed
                 return _LoopStep("break")
-    elif streamer and time.time() - state.last_persist >= 2.0:
+    elif streamer and _now() - state.last_persist >= 2.0:
         streamer.touch()
-        state.last_persist = time.time()
+        state.last_persist = _now()
     return _LoopStep("continue")
 
 
@@ -420,7 +434,7 @@ def _resume_after_approval(
 
 def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | None:
     """Kill the CLI when the API has requested a cancel."""
-    now = time.time()
+    now = _now()
     if now - state.last_cancel_poll < POLL_INTERVAL_SECONDS:
         return None
     state.last_cancel_poll = now
@@ -542,7 +556,7 @@ class PermissionBridgeRunner:
         state = _LoopState(
             stdout_lines=[],
             session_id=invocation.resume_session_id or "",
-            last_persist=time.time(),
+            last_persist=_now(),
         )
         try:
             proc = spawn(
@@ -566,12 +580,12 @@ class PermissionBridgeRunner:
             proc.stdin.flush()
 
             stderr_lines: list[str] = []
-            start = time.time()
+            start = _now()
             state.idle_deadline = start + timeout_seconds
             state.hard_deadline = start + timeout_seconds * TIMEOUT_HARD_CAP_MULTIPLIER
 
             while True:
-                if time.time() >= state.idle_deadline or time.time() >= state.hard_deadline:
+                if _now() >= state.idle_deadline or _now() >= state.hard_deadline:
                     break
                 if proc.poll() is not None:
                     break
@@ -654,7 +668,7 @@ class PermissionBridgeRunner:
         and a broken write to it must not take down a run that is otherwise
         proceeding — the message stays undelivered, which is what the UI reports.
         """
-        now = time.time()
+        now = _now()
         if now - state.last_steer_poll < POLL_INTERVAL_SECONDS:
             return
         state.last_steer_poll = now
@@ -718,7 +732,7 @@ class PermissionBridgeRunner:
         resolve_poll: Callable[[str], ApprovalResolution | None],
     ) -> _LoopStep:
         assert state.pending_approval is not None
-        if time.time() > state.approval_deadline:
+        if _now() > state.approval_deadline:
             proc.kill()
             return _LoopStep(
                 "return",
@@ -756,9 +770,7 @@ class PermissionBridgeRunner:
             run_id,
             state.pending_tool_name,
             DECISION_APPROVED if resolution.approved else DECISION_REJECTED,
-            decision_ms=int((time.time() - state.pending_since) * 1000)
-            if state.pending_since
-            else 0,
+            decision_ms=int((_now() - state.pending_since) * 1000) if state.pending_since else 0,
         )
         state.pending_tool_input = None
         state.pending_tool_name = ""
@@ -1177,13 +1189,13 @@ class PermissionBridgeRunner:
     ) -> _LoopStep:
         line = stdout_reader.readline(timeout=1.0)
         if line is None:
-            if streamer and time.time() - state.last_persist >= 2.0:
+            if streamer and _now() - state.last_persist >= 2.0:
                 streamer.touch()
-                state.last_persist = time.time()
+                state.last_persist = _now()
             return _LoopStep("continue")
 
         line = line.rstrip("\n")
-        state.last_persist = time.time()
+        state.last_persist = _now()
         state.idle_deadline = state.last_persist + timeout_seconds
         state.stdout_lines.append(line)
         if streamer:
@@ -1266,7 +1278,7 @@ class PermissionBridgeRunner:
                 cli_session_id=state.session_id,
             )
 
-        remaining_for_approval = min(state.idle_deadline, state.hard_deadline) - time.time()
+        remaining_for_approval = min(state.idle_deadline, state.hard_deadline) - _now()
         if remaining_for_approval <= 0:
             proc.kill()
             return _LoopStep(
@@ -1287,8 +1299,8 @@ class PermissionBridgeRunner:
         state.pending_tool_name = str(permission["tool_name"])
         # Stamped when the operator is first asked, so decision_ms is their
         # thinking time rather than the loop's polling interval.
-        state.pending_since = time.time()
-        state.approval_deadline = time.time() + min(
+        state.pending_since = _now()
+        state.approval_deadline = _now() + min(
             remaining_for_approval, settings.permission_approval_timeout_seconds
         )
         return _LoopStep("continue")
@@ -1309,7 +1321,7 @@ class PermissionBridgeRunner:
             _close_stdin(proc)
             _drain_stdout_after_result(proc, stdout_reader, state.stdout_lines, streamer=streamer)
 
-        remaining = min(state.idle_deadline, state.hard_deadline) - time.time()
+        remaining = min(state.idle_deadline, state.hard_deadline) - _now()
         if proc.poll() is None:
             if remaining <= 0:
                 proc.kill()
