@@ -32,6 +32,7 @@ from loregarden.agents.plan_context import (
 from loregarden.agents.prompt_blocks import (
     AGENT_ROLE_HEADING,
     ROLE_BODY_CAP,
+    PromptTruncation,
     raw_block,
     titled_block,
 )
@@ -72,6 +73,7 @@ from loregarden.services.handoff_boundary import (
 )
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
@@ -889,6 +891,7 @@ class CliAgentExecutor:
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block
         # carries its own leading blank line and drops out when empty.
+        truncations: list[PromptTruncation] = []
         blocks: list[list[str]] = [
             [
                 f"# Run: {run.run_code}",
@@ -947,9 +950,18 @@ class CliAgentExecutor:
             skill_prompt_block(skill_name, skill_body),
             titled_block(AGENT_ROLE_HEADING, role_body),
             raw_block(build_studio_prompt_sections(agent, transport=transport)),
-            titled_block("## Loregarden control-plane module", mcp_doc, cap=12000),
-            titled_block("## Memory protocol module", memory_doc, cap=8000),
-            titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
+            titled_block(
+                "## Loregarden control-plane module",
+                mcp_doc,
+                cap=12000,
+                truncations=truncations,
+            ),
+            titled_block(
+                "## Memory protocol module", memory_doc, cap=8000, truncations=truncations
+            ),
+            titled_block(
+                "## Chat UI primitives", ui_primitives_doc, cap=6000, truncations=truncations
+            ),
             [
                 "",
                 "## Permission policy",
@@ -959,7 +971,45 @@ class CliAgentExecutor:
             # Last, because it governs the last thing the agent emits.
             titled_block("## Stage report contract", stage_report_doc),
         ]
-        return "\n".join(line for block in blocks for line in block)
+        prompt = "\n".join(line for block in blocks for line in block)
+        self._report_prompt_truncations(ticket, run, truncations)
+        return prompt
+
+    def _report_prompt_truncations(
+        self, ticket: Ticket, run: AgentRun, truncations: list[PromptTruncation]
+    ) -> None:
+        """Say out loud that an agent was handed less than the prompt intended.
+
+        A cap that bites removes instructions the agent is then judged against,
+        and it used to do so with no log, no artifact and no trace — the
+        gatekeeper agent lost its entire approve/reject contract this way and
+        the run looked normal (lg-workflow-integrity-91). `titled_block` already
+        logged; this puts it where an operator reviewing the ticket will find
+        it.
+        """
+        if not truncations:
+            return
+        detail = "\n".join(f" - {record.describe()}" for record in truncations)
+        OrchestrationCallbackService(self.session).attach_artifact(
+            ticket,
+            kind="error",
+            title=f"Prompt truncated — {run.stage_key or run.agent_id}",
+            content={
+                "message": (
+                    "This run's prompt exceeded its size caps and was cut before the "
+                    f"agent saw it:\n{detail}\n\n"
+                    "The agent was judged on instructions it did not fully receive. Cuts "
+                    "are made at a section boundary, so what arrived is whole sections — "
+                    "but the dropped ones are gone. Shorten the source document or raise "
+                    "the cap."
+                ),
+                "run_code": run.run_code,
+                "agent_id": run.agent_id,
+                "stage_key": run.stage_key or "",
+                "command": "",
+            },
+            run_id=run.id,
+        )
 
     def _record_changed_paths(self, run: AgentRun, repo_root: Path, before: set[str]) -> None:
         """Store the paths this run made dirty, so its commit can be scoped.
