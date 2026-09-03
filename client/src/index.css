@@ -172,11 +172,19 @@ textarea::placeholder {
   color: var(--txl);
 }
 
+/*
+ * Everything the app draws lives in here, and `isolation: isolate` makes this
+ * the stacking context they all share. That is what lets `.app-ambient` sit at
+ * `z-index: -1` — a negative layer paints behind its stacking context's root
+ * background, so without the isolation the wash would disappear behind this
+ * element's own `--bg0`.
+ */
 .app-frame {
   height: 100vh;
   display: flex;
   overflow: hidden;
   position: relative;
+  isolation: isolate;
   background: var(--bg0);
 }
 
@@ -184,18 +192,25 @@ textarea::placeholder {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
   background:
     radial-gradient(680px 420px at 12% -6%, rgba(111, 174, 143, 0.06), transparent 60%),
     radial-gradient(720px 480px at 92% 108%, rgba(75, 155, 255, 0.05), transparent 60%);
 }
 
-/* Rail on the left; topbar + body (screen + utility dock) to its right. */
+/*
+ * Rail on the left; topbar + body (screen + utility dock) to its right.
+ *
+ * **No `z-index` here.** A flex item with one is a stacking context, and this
+ * one used to trap `.app-action-bar`'s `z-index: 6` inside it — so the bar,
+ * nominally the topmost chrome, lost to `.app-sidebar`'s 5 and the rail covered
+ * the composer whenever the pointer expanded it. It only ever carried an index
+ * to clear `.app-ambient`, which now sits below everything on its own.
+ */
 .app-main {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  z-index: 1;
   display: flex;
   flex-direction: column;
 }

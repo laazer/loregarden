@@ -167,11 +167,31 @@
   border-radius: 3px;
 }
 
+/*
+ * `position: relative` is the anchor for `.app-sidebar-controls`, which is
+ * taken out of flow — see the note there.
+ */
 .app-sidebar-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
+  border-radius: 12px;
+}
+
+/*
+ * **The tab is the row, not the link.** A view row carries a kind badge beside
+ * its link, so painting the hover and active treatments on the link alone
+ * highlights part of a tab and leaves the rest of it dark. Both now paint on
+ * the row and the link keeps only its text colour.
+ */
+.app-sidebar-row:hover {
+  background: var(--bg2);
+}
+
+.app-sidebar-row:has(> .app-sidebar-link--active) {
+  background: rgba(111, 174, 143, 0.12);
 }
 
 .app-sidebar-link {
@@ -189,12 +209,10 @@
 }
 
 .app-sidebar-link:hover {
-  background: var(--bg2);
   color: var(--txm);
 }
 
 .app-sidebar-link--active {
-  background: rgba(111, 174, 143, 0.12);
   color: var(--ac2);
 }
 
@@ -236,11 +254,50 @@
   padding: 1px 5px;
 }
 
+/*
+ * **Out of flow, revealed on approach.** Six 22px controls and the kind badge
+ * come to ~180px of the 228px a row has, and the link is what gives that up:
+ * `flex: 1; min-width: 0` collapses it to its icon, so the tab shows an icon, a
+ * badge, a bank of buttons, and none of its own title — the state the crops
+ * that opened this read as wasted space. Absolutely positioned they cost the
+ * title nothing, and the row's own background carries under them so the title
+ * they cover on hover does not show through.
+ *
+ * `opacity`, not `display: none`: the controls are a roving group reached with
+ * Left/Right from the row's link (see `appSidebarRows`), and a control that is
+ * not rendered cannot be focused. Focusing one satisfies `:focus-within`, so
+ * arrowing into the group reveals it.
+ *
+ * Collapsed, `.app-sidebar-reveal` clips these instead — that rule is more
+ * specific and wins.
+ */
 .app-sidebar-controls {
-  flex: none;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 1px;
+  padding-left: 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, transparent, var(--bg2) 14px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-sidebar-row:hover > .app-sidebar-controls,
+.app-sidebar-row:focus-within > .app-sidebar-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-sidebar-row:has(> .app-sidebar-link--active) > .app-sidebar-controls {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--ac) 12%, var(--bg1)) 14px
+  );
 }
 
 .app-sidebar-control {
@@ -264,6 +321,16 @@
 .app-sidebar-control:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/*
+ * While the title field is open it holds focus, and `:focus-within` would
+ * reveal the controls on top of the text being typed. The field owns the row
+ * until it closes.
+ */
+.app-sidebar-row:has(> .app-sidebar-rename) > .app-sidebar-controls {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app-sidebar-rename {
