@@ -62,12 +62,14 @@ from loregarden.services.triage_question_log import (
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
+    derive_workflow,
     initial_stages_json,
     next_executable_stage,
     parse_stage_map,
     reconcile_workflow_state,
     set_stage_status,
     settle_unreached_stages,
+    stage_views_readonly,
 )
 from sqlmodel import Session, select
 
@@ -348,7 +350,76 @@ class OrchestrationService:
                 reconcile_ancestors(self.session, ticket)
         return ticket
 
+    def _instance_for_read(
+        self, ticket: Ticket, stages: list[WorkflowStageDef]
+    ) -> WorkflowInstance:
+        """This ticket's workflow instance, or a transient stand-in for one.
+
+        8 of the 13 seeded tickets have no instance — every one a milestone,
+        feature or capability. The old read path *created* one here, which is
+        the write this ticket removes; returning nothing instead would blank the
+        board for those rows.
+
+        So a stand-in is built and never added to the session: a reader sees the
+        stages the ticket would have, and the database is not touched. Whatever
+        legitimately starts work on the ticket creates the real one
+        (lg-workflow-integrity-606).
+        """
+        instance = self.get_workflow_instance(ticket.id)
+        if instance is not None:
+            return instance
+        return WorkflowInstance(
+            ticket_id=ticket.id,
+            template_id="",
+            template_version=0,
+            current_stage_key=(
+                ticket.workflow_stage_key or min(stages, key=lambda st: st.order).key
+            ),
+            stages_json=initial_stages_json(stages),
+        )
+
+    def stage_views_for_read(self, ticket: Ticket) -> list[WorkflowStageView]:
+        """Stage views for a serializer: no instance created, nothing committed.
+
+        `build_stage_views` below ensures an instance and commits twice, and
+        `GET /api/tickets` called it once per row — 21 commits for 13 tickets,
+        measured — while creating workflow instances as a side effect of a read.
+        A ticket with no instance yet returns no stages here rather than being
+        given one (lg-workflow-integrity-606).
+        """
+        _, stages = self._resolve_stages(ticket)
+        if not stages:
+            return []
+        return stage_views_readonly(ticket, self._instance_for_read(ticket, stages), stages)
+
+    def stage_cursor_for_read(self, ticket: Ticket) -> tuple[str, StageStatus]:
+        """The stage key and status this ticket's workflow derives, without
+        writing them to the row.
+
+        The read path used to persist these as a side effect of serializing —
+        that is how a ticket with no instance came to have a stage key at all.
+        A serializer wants the derived answer; the column is only authoritative
+        once something has actually run (lg-workflow-integrity-606).
+        """
+        instance = self.get_workflow_instance(ticket.id)
+        _, stages = self._resolve_stages(ticket)
+        if instance is None or not stages:
+            # No instance means no cursor, and inventing one is worse than
+            # reporting none: a derived key from the workspace template is not
+            # necessarily a key this ticket's own workflow has. Doing that fed
+            # callers `triage` for a ticket whose workflow had no such stage,
+            # and `start_stage` rejected it — a read that answers plausibly and
+            # wrongly is the failure this milestone is about.
+            return ticket.workflow_stage_key, ticket.workflow_stage_status
+        derived = derive_workflow(ticket, instance, stages)
+        return derived.current_key, derived.current_status
+
     def build_stage_views(self, ticket: Ticket) -> list[WorkflowStageView]:
+        """Ensure an instance, reconcile, persist, and return the views.
+
+        For callers that are changing something. A read wants
+        `stage_views_for_read`.
+        """
         instance, _ = self.ensure_workflow_instance(ticket, commit=True)
         _, stages = self._resolve_stages(ticket)
         if not instance or not stages:

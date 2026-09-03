@@ -109,11 +109,14 @@ def _ticket_summary(
     ws = session.get(Workspace, ticket.workspace_id)
     orch = OrchestrationService(session)
     template = orch.get_template_for_ticket(ticket)
+    # Derived, not read off the row: the column is only authoritative once
+    # something has run, and the read path used to backfill it as a side effect
+    # of serializing (lg-workflow-integrity-606).
+    stage_key, stage_status = orch.stage_cursor_for_read(ticket)
     stage_name = ""
-    if template and ticket.workflow_stage_key:
-        stage_name = stage_display_name(template, ticket.workflow_stage_key)
-    stages = orch.build_stage_views(ticket)
-    session.refresh(ticket)
+    if template and stage_key:
+        stage_name = stage_display_name(template, stage_key)
+    stages = orch.stage_views_for_read(ticket)
     return TicketSummary(
         id=ticket.id,
         external_id=ticket.external_id,
@@ -122,8 +125,8 @@ def _ticket_summary(
         state=ticket.state,
         priority=ticket.priority,
         workspace_slug=ws.slug if ws else "",
-        workflow_stage_key=ticket.workflow_stage_key,
-        workflow_stage_status=ticket.workflow_stage_status,
+        workflow_stage_key=stage_key,
+        workflow_stage_status=stage_status,
         workflow_stage_name=stage_name,
         run_code=_latest_run_code(session, ticket.id),
         work_item_type=ticket.work_item_type,

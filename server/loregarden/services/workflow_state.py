@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from loregarden.models.domain import (
@@ -190,6 +191,49 @@ def _derive_ticket_state(
     return TicketState.BACKLOG
 
 
+@dataclass(frozen=True)
+class WorkflowDerivation:
+    """What a ticket's workflow *would* say, computed without writing it.
+
+    `reconcile_workflow_state` mutates the ticket and instance it is handed —
+    `persist` only decides whether the caller commits, not whether anything
+    changed in memory. That is fine for a writer and wrong for a reader: the
+    ticket list reached it once per row, and the dirty objects were committed
+    per row (lg-workflow-integrity-606).
+
+    Splitting the derivation out lets a serializer ask the same question without
+    answering it in the database.
+    """
+
+    stage_map: dict[str, StageStatus]
+    current_key: str
+    current_status: StageStatus
+    ticket_state: TicketState
+
+
+def derive_workflow(
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+) -> WorkflowDerivation:
+    """The reconciled view of this workflow. Pure — nothing is assigned."""
+    stage_map = parse_stage_map(instance, stages)
+    current_key, current_status = _cursor_stage(ticket, stage_map, stages)
+    ticket_state = _derive_ticket_state(
+        stage_map,
+        stages,
+        blocking_issues=ticket.blocking_issues,
+        workflow_stage_key=current_key,
+        workflow_stage_status=current_status,
+    )
+    return WorkflowDerivation(
+        stage_map=stage_map,
+        current_key=current_key,
+        current_status=current_status,
+        ticket_state=ticket_state,
+    )
+
+
 def reconcile_workflow_state(
     ticket: Ticket,
     instance: WorkflowInstance,
@@ -210,15 +254,10 @@ def reconcile_workflow_state(
     ``owns_state=not has_children(...)``; the default suits a leaf, which is
     what this module was written for.
     """
-    stage_map = parse_stage_map(instance, stages)
-    current_key, current_status = _cursor_stage(ticket, stage_map, stages)
-    ticket_state = _derive_ticket_state(
-        stage_map,
-        stages,
-        blocking_issues=ticket.blocking_issues,
-        workflow_stage_key=current_key,
-        workflow_stage_status=current_status,
-    )
+    derived = derive_workflow(ticket, instance, stages)
+    stage_map = derived.stage_map
+    current_key, current_status = derived.current_key, derived.current_status
+    ticket_state = derived.ticket_state
 
     ticket.workflow_stage_key = current_key
     ticket.workflow_stage_status = current_status
@@ -283,6 +322,51 @@ def set_stage_status(
     return stage_map
 
 
+def _views_from(
+    *,
+    stage_map: dict[str, StageStatus],
+    stages: list[WorkflowStageDef],
+    note_by_key: dict[str, str],
+) -> list[WorkflowStageView]:
+    """One stage view per stage, in order. Shared so the reading and writing
+    builders cannot drift into showing different things."""
+    return [
+        WorkflowStageView(
+            key=stage.key,
+            name=stage.name,
+            status=stage_map[stage.key],
+            order=stage.order,
+            agent_id=stage.agent_id,
+            skill_name=stage.skill_name,
+            optional=stage.optional,
+            note=note_by_key.get(stage.key, ""),
+            stage_type=stage.stage_type or "agent",
+            agents=_stage_agent_refs(stage),
+            model=stage.model,
+        )
+        for stage in sorted(stages, key=lambda s: s.order)
+    ]
+
+
+def stage_views_readonly(
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+) -> list[WorkflowStageView]:
+    """The same views, computed without touching the ticket or the instance.
+
+    Reads the derivation rather than applying it, so nothing is left dirty for
+    a later commit to flush. `owns_state` is not a parameter because it only
+    ever gated a *write* — there is none here.
+    """
+    derived = derive_workflow(ticket, instance, stages)
+    return _views_from(
+        stage_map=derived.stage_map,
+        stages=stages,
+        note_by_key=parse_stage_notes(instance),
+    )
+
+
 def build_stage_views(
     ticket: Ticket,
     instance: WorkflowInstance,
@@ -290,27 +374,17 @@ def build_stage_views(
     *,
     owns_state: bool = True,
 ) -> list[WorkflowStageView]:
+    """Stage views, reconciling the ticket and instance in memory as it goes.
+
+    For a caller that is going to persist anyway. A serializer wants
+    `stage_views_readonly` instead — this one leaves the ticket and instance
+    dirty, and on the list path that was committed once per row
+    (lg-workflow-integrity-606).
+    """
     reconcile_workflow_state(ticket, instance, stages, persist=False, owns_state=owns_state)
     stage_map = parse_stage_map(instance, stages)
     note_by_key = parse_stage_notes(instance)
-    views: list[WorkflowStageView] = []
-    for stage in sorted(stages, key=lambda s: s.order):
-        views.append(
-            WorkflowStageView(
-                key=stage.key,
-                name=stage.name,
-                status=stage_map[stage.key],
-                order=stage.order,
-                agent_id=stage.agent_id,
-                skill_name=stage.skill_name,
-                optional=stage.optional,
-                note=note_by_key.get(stage.key, ""),
-                stage_type=stage.stage_type or "agent",
-                agents=_stage_agent_refs(stage),
-                model=stage.model,
-            )
-        )
-    return views
+    return _views_from(stage_map=stage_map, stages=stages, note_by_key=note_by_key)
 
 
 def _stage_agent_refs(stage: WorkflowStageDef) -> list[ParallelAgentSpec]:
