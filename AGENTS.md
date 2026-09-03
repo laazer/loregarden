@@ -95,8 +95,10 @@ task hooks:py-pylint           # Pylint (diff-scoped)
 task hooks:py-organization     # organization guardrails
 cd client && npm run lint      # oxlint
 
-# Organization guardrails against any workspace (what the orchestration gate runs)
-python3 .lefthook/scripts/py_organization_check.py --repo <workspace-root> --scope worktree
+# Organization guardrails against any workspace (what the orchestration gate runs).
+# Through server_python.sh, not a bare `python3`: the gate scripts need 3.11 and
+# refuse (exit 69, EX_UNAVAILABLE) on anything older rather than grading (657).
+bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py --repo <workspace-root> --scope worktree
 node .lefthook/scripts/ts_organization_check.cjs --repo <workspace-root> --scope worktree
 scripts/install-workspace-hooks.sh [--check] <workspace-root>   # same checks, their pre-commit
 ./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check

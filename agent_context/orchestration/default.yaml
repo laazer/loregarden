@@ -14,8 +14,8 @@ gates:
   # or TypeScript.
   enabled: true
   commands:
-    - python3 {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
-    - python3 {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
+    - bash {loregarden_root}/.lefthook/scripts/server_python.sh {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
+    - bash {loregarden_root}/.lefthook/scripts/server_python.sh {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
 subagents:
   spawn_via: external
