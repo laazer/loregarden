@@ -66,6 +66,12 @@ class Reservation:
     #: started the next entry — hands the slot to a live orchestration, and a
     #: blind release would mark it available while an agent is in it.
     _bound_id: str | None = field(default=None, repr=False)
+    #: True when this names a slot the caller's orchestration *already* held
+    #: rather than one claimed for it. Such a reservation must never release —
+    #: the orchestration still needs the slot for its next stage — and must not
+    #: re-bind, because the slot already points where it should
+    #: (lg-workflow-integrity-568).
+    reused: bool = False
 
     def bind(self, *, run_id: str | None = None, orchestration_run_id: str | None = None) -> None:
         """Point the reserved slot at what the caller actually started.
@@ -79,6 +85,10 @@ class Reservation:
         including a later success after an interruption failure.
         """
         if not self.admitted or self.slot_number is None or self._session is None:
+            return
+        if self.reused:
+            # Already pointing at this orchestration; re-binding would only
+            # rewrite the same values and re-emit an update.
             return
         slot = _slot(self._session, self.slot_number)
         if not slot:
@@ -104,6 +114,11 @@ class Reservation:
         as available and let the pool admit past its own limit.
         """
         if not self.admitted or self.slot_number is None or self._session is None:
+            return
+        if self.reused:
+            # Releasing here would take the slot away from an orchestration that
+            # is still running — this reservation never owned it. A failed stage
+            # start on a reused slot leaves the orchestration exactly as it was.
             return
         slot = _slot(self._session, self.slot_number)
         if not slot:
@@ -176,12 +191,22 @@ class QueueAdmissionService:
         preferred_slot: int | None = None,
         timeout_seconds: int | None = None,
         force: bool = False,
+        orchestration_run_id: str = "",
     ) -> Reservation:
         """A slot to run one stage in, or a place in line.
 
         Parked as a stage rather than an orchestration: "run this one stage" and
         "run everything left" are different requests, and silently promoting one
         to the other would be a surprise measured in agent-hours.
+
+        `orchestration_run_id` is the run this stage belongs to, when it belongs
+        to one. An externally driven orchestration starts its stages one at a
+        time through this path, and each start used to claim a *new* slot while
+        the orchestration still held the one it was admitted with — so a
+        12-stage ticket exhausted a 3-slot pool at its second stage and held the
+        surplus against nothing. The pool limits concurrent work, and stages run
+        sequentially inside one orchestration, so that orchestration is one
+        occupant however many stages it starts (lg-workflow-integrity-568).
         """
         return self._reserve(
             ticket,
@@ -192,6 +217,7 @@ class QueueAdmissionService:
             preferred_slot=preferred_slot,
             timeout_seconds=timeout_seconds,
             force=force,
+            orchestration_run_id=orchestration_run_id,
         )
 
     # ---- internals -----------------------------------------------------
@@ -209,8 +235,24 @@ class QueueAdmissionService:
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
         force: bool = False,
+        orchestration_run_id: str = "",
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
+
+        held = self._slot_held_by(orchestration_run_id)
+        if held is not None:
+            # This orchestration is already inside the pool. Handing it a second
+            # slot is what let one run hold two, which is also why releasing by
+            # run id could not tell them apart — the ambiguity is removed by not
+            # creating it (lg-workflow-integrity-568).
+            return Reservation(
+                admitted=True,
+                slot_number=held.slot_number,
+                message=f"Running in slot {held.slot_number}",
+                _session=self.session,
+                _bound_id=orchestration_run_id,
+                reused=True,
+            )
 
         # Claimed before the caller starts anything, and claimed atomically: the
         # select-then-mutate this replaced let two requests arriving together
@@ -262,6 +304,14 @@ class QueueAdmissionService:
             ),
             _session=self.session,
         )
+
+    def _slot_held_by(self, orchestration_run_id: str) -> AgentSlot | None:
+        """The slot this orchestration already occupies, if any."""
+        if not orchestration_run_id:
+            return None
+        return self.session.exec(
+            select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
+        ).first()
 
     def _shortest_lane(self) -> int:
         """The lane with the least waiting behind it, ties going to the lowest.
