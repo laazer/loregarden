@@ -1189,6 +1189,67 @@ def test_a_source_symlinked_to_a_device_is_refused_by_every_gate(
     assert Path(relpath).name in _out(result), _out(result)
 
 
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_a_non_regular_file_inside_the_repository_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The non-regular-file check, isolated from the escape check (588).
+
+    The device fixture above cannot pin this: `/dev/zero` is *outside* the
+    repository, so the escape check refuses it first and the non-regular check
+    is never the reason. Deleting `if (!stat.isFile())` from the `.cjs` left the
+    whole suite green — 172 passed — because nothing reached it.
+
+    A FIFO inside the repository isolates it. Nothing about its path leaves the
+    tree, so only "this is not a regular file" can refuse it, and with that
+    check gone the gate blocks forever on a pipe with no writer.
+
+    `timeout` is the assertion, as with the device fixture: no exit code
+    distinguishes a gate that hangs from a gate that is slow.
+    """
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(target)
+
+    result = _run_gate(gate, repo, str(target), timeout=60)
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_a_sibling_directory_sharing_the_repository_prefix_is_outside_it(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """Containment by path component, not by string prefix (588).
+
+    `/w/repo` is a string prefix of `/w/repo-vendor/x.ts`, which is exactly
+    where vendored trees sit. Dropping `+ path.sep` from the `.cjs` containment
+    test left the suite green — nothing built a sibling whose name extends the
+    repository's — while making every file in `<repo>-vendor` count as inside.
+    The Python side has had this as a unit test since 577; this is the fixture
+    that puts the rule itself under load, in both languages, through the gates.
+
+    The target is deliberately *clean*. If it carried a violation the gate would
+    exit non-zero for having found one, and this test would pass while the guard
+    was gone — the failure mode it exists to detect.
+    """
+    sibling = repo.parent / f"{repo.name}-vendor"
+    sibling.mkdir(exist_ok=True)
+    target = sibling / f"target{Path(relpath).suffix}"
+    target.write_text(body)
+    link = repo / relpath
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+
+    result = _run_gate(gate, repo, str(link), timeout=60)
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert "outside the repository" in _out(result), _out(result)
+
+
 # --------------------------------------------------------------------------- #
 # The paths git prints, and the files behind them
 # --------------------------------------------------------------------------- #
