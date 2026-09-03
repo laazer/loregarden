@@ -691,6 +691,20 @@ class SplitOrientation(str, Enum):
     VERTICAL = "vertical"
 
 
+class QueueEntryKind(str, Enum):
+    """What a queued entry asks for when its lane reaches it.
+
+    "Run this one stage" and "run everything left" are different requests, and
+    promoting one to the other silently would be a surprise measured in
+    agent-hours — so the entry says which. A closed set the control plane owns,
+    hence an enum rather than the bare strings it replaced
+    (lg-workflow-integrity-568).
+    """
+
+    ORCHESTRATION = "orchestration"
+    STAGE = "stage"
+
+
 class SidebarEntryKind(str, Enum):
     """The two things that share the sidebar's one ordered list."""
 

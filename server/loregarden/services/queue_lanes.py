@@ -35,6 +35,7 @@ from loregarden.models.domain import (
     AgentSlot,
     OrchestrationRun,
     QueuedRun,
+    QueueEntryKind,
     QueuePosition,
     Ticket,
     TicketState,
@@ -132,6 +133,24 @@ class QueueLaneService:
 
     # ---- writing -------------------------------------------------------
 
+    def _already_queued(
+        self, *, ticket_id: str, entry_kind: QueueEntryKind, stage_key: str
+    ) -> QueuedRun | None:
+        """A queued entry for this exact request, if one is already waiting.
+
+        Keyed on (ticket, kind, stage) rather than ticket alone: "run this one
+        stage" and "run everything left" are different asks, and two different
+        stages of one ticket may legitimately both be waiting.
+        """
+        return self.session.exec(
+            select(QueuedRun).where(
+                QueuedRun.ticket_id == ticket_id,
+                QueuedRun.status == QueuePosition.QUEUED,
+                QueuedRun.entry_kind == entry_kind,
+                QueuedRun.stage_key == stage_key,
+            )
+        ).first()
+
     def add_to_lane(
         self,
         *,
@@ -168,6 +187,33 @@ class QueueLaneService:
         slot = self._slot(slot_number)
         if not slot:
             raise ValueError(f"No such execution slot: {slot_number}")
+
+        existing = self._already_queued(
+            ticket_id=ticket.id, entry_kind=QueueEntryKind(entry_kind), stage_key=stage_key
+        )
+        if existing is not None:
+            # Retrying a refused request must not append a second entry for work
+            # already in line. Three retries once produced three entries for one
+            # (ticket, stage), and each would later promote and re-run that
+            # stage — one of them dispatched a real agent against a stage that
+            # had been done for 26 minutes, and moved the workflow cursor
+            # backwards onto it (lg-workflow-integrity-568).
+            logger.info(
+                "Admission reusing queued entry %s for ticket %s stage %r",
+                existing.id,
+                ticket.id,
+                stage_key,
+            )
+            return {
+                "status": "queued",
+                "slot_number": existing.slot_number,
+                "entry_id": existing.id,
+                "position": existing.position,
+                "message": (
+                    f"Already queued in slot {existing.slot_number} "
+                    f"at position {existing.position}."
+                ),
+            }
 
         waiting = self.waiting_in_lane(slot_number)
         entry = QueuedRun(

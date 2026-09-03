@@ -27,6 +27,11 @@ MCP_DISPATCH_SRCS = (
     MCP_DIR / "tools.py",
     MCP_DIR / "ticket_edit_tools.py",
     MCP_DIR / "ticket_ops_tools.py",
+    # Every new dispatch module has to be listed here or its tools read as
+    # advertised-but-undispatched. This detector caught exactly that when the
+    # memory handlers moved out of tools.py (lg-workflow-integrity-568), which
+    # is the point of it.
+    MCP_DIR / "memory_tools.py",
 )
 
 # Tools that do real work beyond bookkeeping and need care in a smoke test:

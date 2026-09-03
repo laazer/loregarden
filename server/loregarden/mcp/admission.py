@@ -45,6 +45,7 @@ def run_admitted(
     driver: str = "",
     max_stages: int | None = None,
     force: bool = False,
+    orchestration_run_id: str = "",
 ) -> tuple[Reservation, Any]:
     """Reserve, run `start`, and release the slot if it raised.
 
@@ -55,7 +56,15 @@ def run_admitted(
     """
     admission = QueueAdmissionService(session)
     reservation = (
-        admission.reserve_stage(ticket, stage_key=stage_key, force=force)
+        admission.reserve_stage(
+            ticket,
+            stage_key=stage_key,
+            force=force,
+            # The orchestration this stage belongs to, so an externally driven
+            # run reuses the slot it was admitted with instead of claiming one
+            # per stage (lg-workflow-integrity-568).
+            orchestration_run_id=orchestration_run_id,
+        )
         if stage_key is not None
         # Carried for the parked case only: an entry is the whole record of the
         # ask by the time a lane reaches it, and a dropped override is a

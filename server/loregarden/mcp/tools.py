@@ -23,6 +23,7 @@ from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
 )
+from loregarden.mcp.memory_tools import MEMORY_TOOL_NAMES, execute_memory_tool
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.ticket_edit_tools import (
@@ -58,7 +59,6 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
-from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.evidence import (
     ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
 )
@@ -67,23 +67,10 @@ from loregarden.services.evidence import (
     resolve_head_sha,
 )
 from loregarden.services.external_harness import start_external_orchestration
-from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
-
-_MEMORY_TOOL_NAMES = frozenset(
-    {
-        "loregarden_memory_status",
-        "loregarden_append_learning",
-        "loregarden_upsert_memory",
-        "loregarden_upsert_blog_post",
-        "loregarden_append_checkpoint",
-        "loregarden_search_memory",
-        "loregarden_create_memory_relation",
-    }
-)
 
 
 def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -113,7 +100,7 @@ def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
 def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any] | None:
     """Normalize arguments for loregarden's memory/learnings/blog-post/checkpoint
     tools. Returns None if `name` isn't one of these (caller falls through)."""
-    if name not in _MEMORY_TOOL_NAMES:
+    if name not in MEMORY_TOOL_NAMES:
         return None
 
     if name == "loregarden_append_learning":
@@ -1092,98 +1079,6 @@ def _get_run(session: Session, run_id: str):
     return run
 
 
-def _execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) -> str | None:
-    """Dispatch loregarden's memory/learnings/blog-post/checkpoint tools.
-    Returns None if `name` isn't one of these (caller falls through).
-
-    Takes a session for one reason: a checkpoint may declare an unresolved
-    blocker, and that has to reach the ticket (430). Everything else here
-    writes to the vault and needs no database at all.
-    """
-    if name not in _MEMORY_TOOL_NAMES:
-        return None
-
-    memory = AgentMemoryService.from_settings()
-
-    if name == "loregarden_memory_status":
-        return json.dumps(
-            memory.status(workspace_slug=arguments.get("workspace_slug", "")), indent=2
-        )
-
-    if name == "loregarden_append_learning":
-        result = memory.append_learning(
-            ticket_id=arguments["ticket_id"],
-            workspace_slug=arguments["workspace_slug"],
-            content=arguments["content"],
-            tags=arguments.get("tags"),
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_upsert_memory":
-        result = memory.upsert_memory(
-            node_id=arguments.get("node_id", ""),
-            title=arguments["title"],
-            body=arguments.get("body", ""),
-            tags=arguments.get("tags"),
-            ticket_id=arguments.get("ticket_id", ""),
-            workspace_slug=arguments["workspace_slug"],
-            discredited=arguments.get("discredited"),
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_upsert_blog_post":
-        result = memory.upsert_blog_post(
-            ticket_id=arguments["ticket_id"],
-            workspace_slug=arguments["workspace_slug"],
-            title=arguments["title"],
-            body=arguments["body"],
-            tags=arguments.get("tags"),
-            note_id=arguments.get("note_id", ""),
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_append_checkpoint":
-        result = memory.append_checkpoint(
-            ticket_id=arguments["ticket_id"],
-            workspace_slug=arguments["workspace_slug"],
-            run_id=arguments["run_id"],
-            entry=arguments["entry"],
-        )
-        if arguments.get("blocker"):
-            # 430. The checkpoint is written first: the record of *why* must
-            # survive even if resolving the ticket fails, and an operator
-            # reading a blocked ticket needs the entry to already exist.
-            ticket = OrchestrationCallbackService(session).resolve_ticket(
-                ticket_id=arguments["ticket_id"],
-                workspace_slug=arguments["workspace_slug"],
-            )
-            result = {
-                **result,
-                "blocked": True,
-                "blocking_issues": block_ticket_for_unresolved_blocker(
-                    session, ticket, entry=arguments["entry"]
-                ),
-            }
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_search_memory":
-        result = memory.search(
-            arguments["query"],
-            workspace_slug=arguments.get("workspace_slug", ""),
-            limit=int(arguments.get("limit") or 20),
-        )
-        return json.dumps(result, indent=2)
-
-    # loregarden_create_memory_relation
-    result = memory.create_relation(
-        source_id=arguments["source_id"],
-        target_id=arguments["target_id"],
-        relation_type=arguments.get("relation_type", "related"),
-        workspace_slug=arguments["workspace_slug"],
-    )
-    return json.dumps(result, indent=2)
-
-
 def _create_ticket(
     session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
 ) -> str:
@@ -1372,7 +1267,7 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = _execute_memory_tool(session, name, arguments)
+    memory_result = execute_memory_tool(session, name, arguments)
     if memory_result is not None:
         return memory_result
 
@@ -1389,6 +1284,7 @@ def execute_tool(
             ticket,
             stage_key=arguments["stage_key"],
             force=bool(arguments.get("force")),
+            orchestration_run_id=run.id,
             start=lambda: svc.start_stage(
                 run,
                 ticket,
