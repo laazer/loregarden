@@ -22,7 +22,9 @@ from loregarden.models.domain import (
     QueuedRun,
     RunStatus,
 )
+from loregarden.models.domain.enums import DetachedStopOutcome
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_detached_stop import stop_detached_process
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -105,6 +107,23 @@ def request_cancel(session: Session, run: AgentRun) -> AgentRun:
 
     session.commit()
     session.refresh(run)
+
+    # 471. The flag alone reaches only a supervisor that owns the pipe. Since
+    # 317 the agent is in its own session, and since 470 it can outlive the
+    # process that spawned it — so a stop served by any other server process
+    # would set a flag nobody acts on. Signalling here makes stop work from
+    # whichever process happens to answer.
+    #
+    # `_check_cancel` still runs in a supervising process and still kills its
+    # own child; a run whose supervisor is alive is simply stopped by whichever
+    # gets there first, and the second finds a process already gone.
+    outcome = stop_detached_process(run)
+    if outcome is DetachedStopOutcome.NOT_OURS:
+        logger.warning(
+            "Stop for run %s recorded, but its pid now belongs to another process; "
+            "nothing was signalled",
+            run.run_code,
+        )
     return run
 
 
