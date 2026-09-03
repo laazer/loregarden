@@ -1476,17 +1476,30 @@ def _conformance_repo(repo: Path) -> None:
     _git(repo, "commit", "-qm", "agent work")
 
 
+#: Each repo state crossed with whether the violating files *arrive* on the
+#: branch or are *edited* there — the crossing this table was missing (576).
+#: An added file is graded whole for being added, so the added half stays green
+#: however badly the suppression rule is broken; only the `modified` half puts
+#: that rule under load. `clean-filter` has no `modified` row for the same
+#: reason `SUPPRESSION_MATRIX` omits it: the clean step empties the blob, so an
+#: edit to an already-emptied file leaves the index unchanged and git records
+#: no commit at all.
 CONFORMANCE_MUTATIONS = [
-    pytest.param(lambda repo: None, id="plain-commit"),
-    pytest.param(lambda repo: (repo / "NOTES.txt").write_text("notes\n"), id="stray-untracked"),
-    pytest.param(lambda repo: _suppress_via_diff_driver(repo, "*"), id="diff-driver"),
-    pytest.param(lambda repo: _suppress_via_clean_filter(repo, "*"), id="clean-filter"),
-    pytest.param(lambda repo: (repo / ".gitattributes").write_text("* -diff\n"), id="attr-nodiff"),
+    pytest.param(mutate, added, id=f"{mutate_id}-{'added' if added else 'modified'}")
+    for mutate, mutate_id in [
+        (lambda repo: None, "plain-commit"),
+        (lambda repo: (repo / "NOTES.txt").write_text("notes\n"), "stray-untracked"),
+        (lambda repo: _suppress_via_diff_driver(repo, "*"), "diff-driver"),
+        (lambda repo: _suppress_via_clean_filter(repo, "*"), "clean-filter"),
+        (lambda repo: (repo / ".gitattributes").write_text("* -diff\n"), "attr-nodiff"),
+    ]
+    for added in (True, False)
+    if not (mutate_id == "clean-filter" and not added)
 ]
 
 
-@pytest.mark.parametrize("mutate", CONFORMANCE_MUTATIONS)
-def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate) -> None:
+@pytest.mark.parametrize(("mutate", "added"), CONFORMANCE_MUTATIONS)
+def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate, added: bool) -> None:
     """The conformance table: one repo state, three gates, identical answers.
 
     Each scenario plants exactly one violating source file per language, so
@@ -1494,8 +1507,26 @@ def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate) -> None:
     report `examined 1 file(s)` and exit 1. A `.cjs` that misses a fix the `.py`
     got — or vice versa — changes one of those two numbers, and this fails with
     the drift named, instead of the drift surviving to become the next instance.
+
+    Crossed with `added` since 576. Every scenario here planted only *added*
+    files, and an added file is graded whole for being added, whatever its diff
+    says — so the suppressed-diff rule was never under load and deleting the
+    `.cjs` half of it outright left all five green. The table was real, useful,
+    and blind to the thing it existed to hold.
     """
     _require_ts_parser()
+    if not added:
+        # Already on `main`, clean, so the branch *edits* these rather than
+        # adding them — the shape that reaches the suppression rule.
+        _git(repo, "checkout", "-q", "main")
+        for relpath in CONFORMANCE_PLANT:
+            (repo / relpath).parent.mkdir(parents=True, exist_ok=True)
+            comment = "#" if relpath.endswith(".py") else "//"
+            (repo / relpath).write_text(f"{comment} placeholder\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "baseline")
+        _git(repo, "checkout", "-q", "ticket-branch")
+        _git(repo, "merge", "-q", "main")
     mutate(repo)
     _git(repo, "add", "-A")
     if _porcelain(repo).strip():

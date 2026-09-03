@@ -917,48 +917,42 @@ def diff_header_path(line: str) -> Optional[str]:
     return name[2:] if name.startswith("b/") else None
 
 
-def diff_header_paths(diff: str) -> Set[str]:
-    """Every relpath this diff text actually produced a file header for.
-
-    The other half of the question ``--numstat`` answers. A file git lists as
-    changed but never emits a header for is a file whose diff something
-    suppressed — see `suppressed_diff_paths`.
-    """
-    return {
-        path
-        for path in (
-            diff_header_path(line) for line in diff.splitlines() if line.startswith("+++ ")
-        )
-        if path is not None
-    }
-
-
 def suppressed_diff_paths(
     diff: str, numstat: DiffNumstat, candidates: Iterable[str]
 ) -> FrozenSet[str]:
-    """Candidate relpaths git changed but produced no hunk for — graded whole.
+    """Candidate relpaths whose diff did not describe the change git counted.
 
     This is the *mechanism* behind the ``.gitattributes`` hole rather than one
-    of its spellings. ``-diff``/``binary`` is the spelling git labels for us,
-    with ``-\\t-`` in ``--numstat``; ``diff=<driver>`` naming a command that
-    prints nothing, and a ``filter=`` that cleans a file to empty, are the same
-    suppression with real counts still reported, so the marker never fired and
-    all three gates printed ``examined 1 file(s)`` and a pass over a committed
-    violation. Asking the diff itself — *did you emit a header for this path* —
-    is the question that has one answer for every way of suppressing a diff,
-    including the next one.
+    of its spellings, and the question has moved twice as the spellings ran out.
+    ``-diff``/``binary`` is the one git labels for us, with ``-\\t-`` in
+    ``--numstat``. A ``diff=<driver>`` printing nothing, and a ``filter=``
+    cleaning a file to empty, report real counts and no hunk. Asking "did the
+    diff emit a header for this path" closed those — and a driver that prints
+    the three header lines and exits walked straight through it (576).
 
-    Non-zero counts are the discriminator, and they are load-bearing in both
-    directions: a mode-only ``chmod`` reports ``0\\t0`` and legitimately has no
-    hunk, so it stays out; a rename's ``old => new`` operand never matches a
+    So the test is now against the thing the gate actually depends on: git says
+    N lines were added, and the parser found M. If M is short of N the diff did
+    not describe the change, whatever it printed. That subsumes every earlier
+    spelling — no hunk and no header are both M=0 — and catches a *partial*
+    suppression that the header rule and a plain "found nothing" test would both
+    pass.
+
+    Measured before choosing strict comparison over ``M == 0``: across the last
+    40 commits of this repository, 215 paths, the parsed count equalled the
+    numstat count every time and differed never. A false positive here grades a
+    file whole, which is the safe direction, but a noisy one — so it is worth
+    knowing the two agree on healthy diffs rather than assuming it.
+
+    A mode-only ``chmod`` reports ``0\\t0`` and legitimately has no hunk, so
+    ``0 < 0`` keeps it out. A rename's ``old => new`` operand never matches a
     candidate relpath, so it stays out too (a pre-existing gap in the size
     checks, not one this widens).
     """
-    headers = diff_header_paths(diff)
+    parsed = parse_staged_additions(diff)
     return frozenset(
         path
         for path in candidates
-        if path not in headers and sum(numstat.counts.get(path, (0, 0))) > 0
+        if len(parsed.get(path, ())) < numstat.counts.get(path, (0, 0))[0]
     )
 
 

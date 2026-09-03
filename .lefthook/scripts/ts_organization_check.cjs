@@ -803,22 +803,35 @@ function undiffablePaths(repoRoot, diffScope, baseRef) {
       suppressed.add(path.resolve(repoRoot, rel));
       continue;
     }
-    counted.set(rel, Number(parts[0]) + Number(parts[1]));
+    // The added column alone. The rule below compares it against additions the
+    // diff actually described, and a deletion has none to describe.
+    counted.set(rel, Number(parts[0]));
   }
   const diff = git(
     ["diff", ...scopeArgs(diffScope, baseRef), "--no-color", "-U0", "--"],
     repoRoot,
   );
-  const headers = new Set(
-    diff
-      .split("\n")
-      .filter((line) => line.startsWith("+++ "))
-      .map((line) => decodeGitPath(line.slice(4)))
-      .filter((name) => name.startsWith("b/"))
-      .map((name) => name.slice(2)),
-  );
-  for (const [rel, changed] of counted) {
-    if (changed > 0 && !headers.has(rel)) suppressed.add(path.resolve(repoRoot, rel));
+  // Additions per path, from the one diff — the parity of
+  // `precommit_git_diff.parse_staged_additions`. Counting them is what replaced
+  // asking whether a header was printed: a driver that emits the three header
+  // lines and exits satisfied that question and described nothing (576).
+  const parsedAdded = new Map();
+  let current = null;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++ ")) {
+      const name = decodeGitPath(line.slice(4));
+      current = name.startsWith("b/") ? name.slice(2) : null;
+      if (current !== null && !parsedAdded.has(current)) parsedAdded.set(current, 0);
+      continue;
+    }
+    if (current !== null && line.startsWith("+") && !line.startsWith("+++")) {
+      parsedAdded.set(current, parsedAdded.get(current) + 1);
+    }
+  }
+  for (const [rel, addedCount] of counted) {
+    // git counted N additions; the diff described M. Short means the diff did
+    // not describe the change, whatever it printed.
+    if ((parsedAdded.get(rel) ?? 0) < addedCount) suppressed.add(path.resolve(repoRoot, rel));
   }
   // A path this scope *adds* is new in its entirety, exactly like an untracked
   // one. Normally a no-op — every line of an added file is a `+` line anyway —
