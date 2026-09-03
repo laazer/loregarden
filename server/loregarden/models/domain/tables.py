@@ -30,6 +30,7 @@ from loregarden.models.domain.enums import (
     StageFanoutGroupStatus,
     StageFanoutOutcome,
     StageStatus,
+    StageVerdictChannel,
     TicketState,
     TicketStudioSessionStatus,
     ViewKind,
@@ -379,6 +380,13 @@ class AgentRun(SQLModel, table=True):
     # no usage surface is a known limitation, an adapter that should have
     # reported and did not is a defect, and the two used to look identical
     # (lg-workflow-integrity-496).
+    #: Which channel carried this run's stage verdict — the typed tool call or
+    #: the text sentinel. Recorded so adherence is a query rather than a grep
+    #: over stdout (lg-workflow-integrity-95).
+    verdict_channel: StageVerdictChannel = Field(
+        default=StageVerdictChannel.UNKNOWN,
+        sa_column=_str_enum_column(StageVerdictChannel, StageVerdictChannel.UNKNOWN),
+    )
     usage_status: RunUsageStatus = Field(
         default=RunUsageStatus.UNKNOWN,
         sa_column=_str_enum_column(RunUsageStatus, RunUsageStatus.UNKNOWN),

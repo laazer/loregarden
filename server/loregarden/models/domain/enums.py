@@ -476,6 +476,25 @@ class RunUsageStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+class StageVerdictChannel(str, Enum):
+    """How a stage run's verdict reached the control plane.
+
+    Two channels carry the same fact. `loregarden_complete_stage` is a typed tool
+    call; the `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel is text parsed back out of
+    stdout. Which one an agent used was not recorded anywhere, so "adherence" was
+    answerable only by grepping stdout — and doing that badly is how this
+    milestone's own ticket came to cite 7.1% when the real figure was 56.5%
+    (lg-workflow-integrity-95).
+
+    UNKNOWN is the empty string, so rows written before this column read as
+    "nobody recorded it" rather than as a run that reported nothing.
+    """
+
+    UNKNOWN = ""
+    TOOL = "tool"
+    SENTINEL = "sentinel"
+
+
 class ApprovalKind(str, Enum):
     WORKFLOW_GATE = "workflow_gate"
     CLI_PERMISSION = "cli_permission"

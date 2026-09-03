@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     ReworkStopReason,
     RunStatus,
     StageStatus,
+    StageVerdictChannel,
     Ticket,
     TicketState,
     Workspace,
@@ -170,6 +171,13 @@ def complete_run_tail(
         return run
 
     report = parse_stage_report(stdout)
+    if report is not None and run.verdict_channel is StageVerdictChannel.UNKNOWN:
+        # Only when the tool did not already claim it: an agent that called
+        # `complete_stage` and also printed the sentinel used the typed channel,
+        # and recording the fallback would overstate the sentinel's share
+        # (lg-workflow-integrity-95).
+        run.verdict_channel = StageVerdictChannel.SENTINEL
+        orch.session.add(run)
     if advance_workflow:
         advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
 
