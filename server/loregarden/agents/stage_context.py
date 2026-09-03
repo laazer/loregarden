@@ -12,20 +12,6 @@ from sqlmodel import Session
 #: whatever a downstream human gate will need to run.
 AUTHORING_STAGE_TYPES = frozenset({"agent", "classify"})
 
-# Legacy ticket / workflow-enforcement stage names agents recognize.
-LEGACY_STAGE_ALIASES: dict[str, str] = {
-    "planning": "PLANNING",
-    "context": "CONTEXT_GATHERING",
-    "specification": "SPECIFICATION",
-    "test_design": "TEST_DESIGN",
-    "test_break": "TEST_BREAK",
-    "implementation": "IMPLEMENTATION_BACKEND",
-    "testing": "STATIC_QA",
-    "review": "GATEKEEPER_REVIEW",
-    "approval": "AWAITING_APPROVAL",
-    "done": "COMPLETE",
-}
-
 
 def gate_prep_target(
     stages: list[WorkflowStageDef] | None, stage_key: str
@@ -64,7 +50,6 @@ def build_orchestration_context(
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
-    legacy_stage = LEGACY_STAGE_ALIASES.get(stage_key, stage_key.upper())
     skill = run.skill_name or (stage_def.skill_name if stage_def else "")
 
     lines = [
@@ -74,7 +59,6 @@ def build_orchestration_context(
         "",
         f"- Loregarden stage key: `{stage_key}`",
         f"- Display name: {display_name}",
-        f"- Legacy workflow alias: {legacy_stage}",
         f"- Assigned agent: {run.agent_id}",
         f"- Skill: {skill or '—'}",
         "",

@@ -238,7 +238,7 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
     if stage.stage_type == "classify":
         return _resolve_next_agent_from_routes(ticket, stage)
 
-    if stage.key in {"implementation", "route_impl", "implement"}:
+    if stage.key in GENERIC_IMPLEMENTATION_STAGES:
         return next_agent, stage.skill_name or ""
 
     # A stage that names its own agent in the template keeps it. `next_agent` is a
@@ -418,6 +418,21 @@ def resolve_display_agent(ticket: Ticket, stage: WorkflowStageDef) -> str:
         if members:
             return members[0]
     return stage.agent_id
+
+
+#: Implementation stages whose agent is chosen per ticket rather than by the
+#: template. These name a default agent, and the routing hint is allowed to
+#: override it — picking a backend or frontend specialist is the whole job of
+#: the stage.
+#:
+#: `route_impl` used to be listed here and matches no template in the system;
+#: it is gone. `backend-impl` and `frontend-impl` are deliberately NOT here.
+#: They look like they belong — they are implementation stages that this set
+#: misses — but they have already made the specialist choice, and letting a
+#: stale hint override them is how a frontend hint would run the backend stage.
+#: That is the defect the comment below this call describes, which ran the
+#: `learning` stage under `ac_gatekeeper` (lg-workflow-integrity-102).
+GENERIC_IMPLEMENTATION_STAGES = frozenset({"implementation", "implement"})
 
 
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
