@@ -58,7 +58,7 @@ inferring your outcome from prose or exit code alone.
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>"}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"]}
 <<<END_STAGE_REPORT>>>
 ```
 
@@ -80,6 +80,11 @@ Field rules:
   round and was then rerouted three more times on genuine new findings, none of which any
   criterion covered.
 
+- `unmet_criteria`: when `status` is `fail` or `needs_rework`, the acceptance criteria your
+  finding makes false — the grounds for the rejection, not a restatement of it. Delivered to the
+  target stage alongside `reroute_context`, so the agent redoing the work knows what "done" would
+  mean. Omit or leave empty on `pass`. If you cannot fill this in, re-read the rule above: the
+  work in front of you is finished and your finding is a new ticket.
 - `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
 - `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work, name its stage key **exactly as it appears in the "Valid `reroute_to_stage` values for this workflow" list in your run context** — do not guess or invent a plausible-sounding key, and do not use a stage's display name. A key that isn't in that list is discarded, and the rework falls back to the immediately preceding stage — which is rarely where you wanted it. Use `null` if you don't know or none applies: the orchestrator will then fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
 - `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up.
