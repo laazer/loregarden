@@ -67,6 +67,12 @@
   font-style: italic;
   color: var(--txm);
   white-space: pre-wrap;
+  /* Reasoning quotes the arguments it passed, and a tool query like
+     `select:a__b,c__d` is one word to the line breaker — `pre-wrap` alone has
+     nowhere to break it, so the line runs out past the card's own border. The
+     step rule below has carried this since it was written; prose needs it for
+     the same reason. */
+  overflow-wrap: anywhere;
 }
 
 .lg-thinking-stream-step {

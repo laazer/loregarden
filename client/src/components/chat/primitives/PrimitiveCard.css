@@ -487,6 +487,9 @@
   font-style: italic;
   line-height: 1.5;
   white-space: pre-wrap;
+  /* Same reason as `.lg-thinking-stream-prose`: an unspaced tool query is one
+     unbreakable word, and without this it overruns the card it sits in. */
+  overflow-wrap: anywhere;
 }
 
 .lg-primitive-calendar-grid {

@@ -38,6 +38,12 @@ const SANDBOX = "allow-scripts";
  * signals that leak differ by browser. So the bar tells the operator the URL
  * and offers to open it outside the app — which is the answer whether the frame
  * is refused, slow, or fine, and needs no guess about which.
+ *
+ * The one thing we can fix without knowing is how the refusal *looks*: the page
+ * the browser draws in a refused frame is its own, and it follows the frame's
+ * `color-scheme`. Left at the default it is a white sheet in a dark app, which
+ * reads as a rendering fault rather than as a site declining. Declaring `dark`
+ * gets the browser's own dark error page instead.
  */
 export function WebEmbedFrame({ src }: { src: string }) {
   const [loaded, setLoaded] = useState(false);
@@ -80,7 +86,14 @@ export function WebEmbedFrame({ src }: { src: string }) {
         allow=""
         referrerPolicy="no-referrer"
         onLoad={() => setLoaded(true)}
-        style={{ width: "100%", height: "100%", minWidth: "0", minHeight: "0", border: "none" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          minWidth: "0",
+          minHeight: "0",
+          border: "none",
+          colorScheme: "dark",
+        }}
       />
         {loaded ? null : (
           <div style={{ position: "absolute", inset: 0, display: "flex", background: "var(--bg1)" }}>
