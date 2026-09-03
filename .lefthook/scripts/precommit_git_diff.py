@@ -13,10 +13,15 @@ shape either way.
 
 from __future__ import annotations
 
+import argparse
 import ast
+import io
+import json
 import os
 import re
 import subprocess
+import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
@@ -298,6 +303,12 @@ _UNTRACKED_SCOPES = (WORKTREE, SINCE)
 #: The base every gate falls back to when its caller named none. Only this
 #: value is subject to trunk detection — see `effective_base_ref`.
 DEFAULT_BASE_REF = "main"
+
+#: Exit code for `--emit-scope-json` when the scope could not be resolved. Not
+#: 1: the caller has to tell "this run could not determine what to examine"
+#: apart from "this run graded files and found violations", which is the whole
+#: point of `UnexaminableError` existing.
+EXIT_UNEXAMINABLE = 3
 
 #: Trunk names to try when `DEFAULT_BASE_REF` names nothing in a repository.
 #: `origin/HEAD` is consulted first; these are the fallbacks for a checkout
@@ -1095,3 +1106,170 @@ def staged_file_text(repo: Path, relpath: str) -> Optional[str]:
     if proc.returncode != 0:
         return None
     return proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# `--emit-scope-json` — the scope, resolved once, for a gate in another language
+# --------------------------------------------------------------------------- #
+#
+# About 560 lines of `ts_organization_check.cjs` were a hand-port of this module:
+# the error classes, git-path decoding, env scrubbing, ref validation, scope
+# resolution, untracked discovery, submodule announcement and diff-suppression
+# detection. None of it was TypeScript-specific, and three of one review's nine
+# defects were the two copies drifting apart. The conformance table catches that
+# drift after the fact, on the repo states it enumerates; it does not remove the
+# surface, and every fix still had to be written twice (580).
+#
+# So the `.cjs` asks this instead. It already shells out to git repeatedly; one
+# more subprocess buys it a single implementation of scope policy.
+#
+# The language-specific half stays with the caller and is passed *in*: which
+# suffixes that gate grades, and which source root it confines discovery to.
+# That keeps the count honest — it is computed after the caller's own filter,
+# by the same code that computes it for the Python gates — without this module
+# needing to know what a TypeScript file is.
+
+
+def _suffix_selector(
+    suffixes: FrozenSet[str], select_root: Optional[Path]
+) -> "GateFileSelector":
+    """Build the caller's file filter from flags rather than from knowledge here.
+
+    `select_root` is applied only when the run *discovered* its own candidates,
+    matching every gate's existing behaviour: an explicitly named file was
+    chosen by the caller (lefthook passes staged paths) and is not second-
+    guessed, while a path the scope turned up is confined to the source root so
+    a stray match elsewhere in the repo is not graded.
+    """
+
+    def select(repo: Optional[Path], candidates: List[Path], discovered: bool) -> List[Path]:
+        chosen = []
+        for candidate in candidates:
+            if candidate.suffix not in suffixes:
+                continue
+            if discovered and select_root is not None:
+                # `located_path`, not `resolve()`: resolving the whole path
+                # follows a symlinked source out of the tree, drops it from the
+                # filter, and reports `examined 0` over a file the read guard
+                # was supposed to refuse. That is the vacuous pass this module's
+                # own docstring warns about, and using `resolve()` here
+                # reintroduced it (caught by the ts-org symlink tests).
+                try:
+                    located_path(candidate).relative_to(select_root)
+                except ValueError:
+                    continue
+            chosen.append(candidate)
+        return chosen
+
+    return select
+
+
+def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
+    """Print one JSON object describing what a gate run should examine.
+
+    Everything a gate needs before it can apply a single rule: the resolved
+    scope, the files that survived the caller's filter, which of them git is not
+    tracking, which of them git changed but would not diff, and the line numbers
+    the change touched in each.
+
+    Two things are deliberately *not* decided here, because they are the
+    caller's: which suffixes to grade, and what to do about the result. The
+    caller also prints `notices` itself rather than this process writing to the
+    terminal — stdout is the JSON channel, so the human-facing lines
+    `resolve_gate_scope` emits are captured and handed back to be printed in
+    the caller's own order.
+
+    An unresolvable scope exits `EXIT_UNEXAMINABLE` with the reason on the JSON,
+    not a traceback: the caller has its own sentence for "cannot determine what
+    to examine" and needs the message, not a Python stack.
+    """
+    parser = argparse.ArgumentParser(
+        prog="precommit_git_diff.py --emit-scope-json",
+        description="Resolve a gate run's scope and print it as JSON.",
+    )
+    parser.add_argument("--emit-scope-json", action="store_true", required=True)
+    parser.add_argument("--repo", default=None)
+    # No `choices=`: an unknown scope is rejected by `resolve_gate_scope`, which
+    # owns that rule and whose message says why it matters. Validating it twice
+    # is how the two copies start disagreeing.
+    parser.add_argument("--scope", dest="diff_scope", default=STAGED)
+    parser.add_argument("--base", dest="base_ref", default=DEFAULT_BASE_REF)
+    parser.add_argument("--label", default="gate")
+    parser.add_argument(
+        "--suffix",
+        action="append",
+        default=[],
+        help="File suffix this gate grades, with the dot (repeatable).",
+    )
+    parser.add_argument(
+        "--select-root",
+        default=None,
+        help="Confine discovered candidates to this directory.",
+    )
+    parser.add_argument("files", nargs="*")
+    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
+
+    repo = Path(args.repo).resolve() if args.repo else None
+    select_root = Path(args.select_root).resolve() if args.select_root else None
+    selector = _suffix_selector(frozenset(args.suffix), select_root)
+
+    # `resolve_gate_scope` prints the examined line (and any submodule notice)
+    # as it goes. Captured rather than suppressed: the caller still has to show
+    # them, and re-deriving the wording on the other side would reintroduce
+    # exactly the duplication this entry point exists to delete.
+    captured = io.StringIO()
+    try:
+        with redirect_stdout(captured):
+            run = resolve_gate_scope(
+                label=args.label,
+                repo=repo,
+                diff_scope=args.diff_scope,
+                base_ref=args.base_ref,
+                # Same reason as the selector above: `resolve()` here hands
+                # the caller the symlink's *target*, so a link pointing out of
+                # the repository arrives as an ordinary file and the caller's
+                # read guard has nothing left to refuse. The link's own path is
+                # what git spells and what must be graded.
+                explicit_files=[located_path(Path(f)) for f in args.files],
+                select=selector,
+            )
+    except UnexaminableError as exc:
+        json.dump({"error": str(exc), "notices": captured.getvalue().splitlines()}, sys.stdout)
+        sys.stdout.write("\n")
+        return EXIT_UNEXAMINABLE
+
+    json.dump(
+        {
+            "notices": captured.getvalue().splitlines(),
+            "scope": {
+                "diff_scope": run.scope.diff_scope,
+                "base_ref": run.scope.base_ref,
+                "description": run.scope.description,
+                "degraded": run.scope.degraded,
+                "includes_untracked": run.scope.includes_untracked,
+            },
+            "files": [str(path) for path in run.files],
+            "untracked": sorted(run.untracked),
+            # Graded whole: git changed them but produced no usable diff.
+            "undiffable": sorted(run.numstat.undiffable),
+            "additions": {rel: sorted(lines) for rel, lines in run.additions.items()},
+            # (added, deleted) per relpath — the caller's "is this file growing?"
+            "counts": {rel: list(pair) for rel, pair in run.numstat.counts.items()},
+        },
+        sys.stdout,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    # Importable as a library (every gate does) and runnable as this one entry
+    # point. Guarded on the flag so a future second mode has to be added
+    # deliberately rather than by accident.
+    if "--emit-scope-json" in sys.argv[1:]:
+        raise SystemExit(emit_scope_json())
+    print(
+        "precommit_git_diff.py is a library; its only CLI mode is --emit-scope-json",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)

@@ -764,6 +764,56 @@ def test_a_gate_script_edited_during_a_stage_is_graded_at_worktree_scope(
 # --------------------------------------------------------------------------- #
 
 
+#: Primitives that resolve *what a run examines*. The `.cjs` carried its own
+#: copy of every one of these — about 560 lines of hand-ported Python — and
+#: three of one review's nine defects were the two copies drifting apart (580).
+SCOPE_PRIMITIVES_THE_CJS_MUST_NOT_REIMPLEMENT = [
+    ("spawns git itself", 'execFileSync("git"'),
+    ("spawns git itself", '"git",'),
+    ("decodes git's quoted paths", "decodeGitPath"),
+    ("scrubs the git env", "scrubbedGitEnv"),
+    ("resolves the scope", "function resolveScope"),
+    ("validates a ref", "function validatedRef"),
+    ("builds scope args", "function scopeArgs"),
+    ("detects a suppressed diff", "function undiffablePaths"),
+    ("re-derives touched lines", "function stagedAdditions"),
+    ("lists untracked paths", "function untrackedPaths"),
+]
+
+
+@pytest.mark.parametrize(("what", "needle"), SCOPE_PRIMITIVES_THE_CJS_MUST_NOT_REIMPLEMENT)
+def test_the_ts_gate_does_not_reimplement_scope_resolution(what: str, needle: str) -> None:
+    """AC1/AC2 of 580, as a standing guard rather than a one-time cleanup.
+
+    The conformance table catches drift between two implementations *after* it
+    happens, on the repo states it enumerates. This removes the surface: there
+    is one implementation, in Python, and the `.cjs` asks it. A future edit that
+    quietly re-adds a git call here would restore the whole defect class, and
+    would otherwise look like a small local convenience.
+
+    Scoped to the primitives that decide what gets examined. The gate still does
+    plenty of its own work — reading files, parsing TypeScript, applying rules.
+    """
+    source = (_SCRIPTS / "ts_organization_check.cjs").read_text()
+
+    assert needle not in source, (
+        f"ts_organization_check.cjs {what} again ({needle!r}); scope policy "
+        "belongs to precommit_git_diff.py --emit-scope-json"
+    )
+
+
+def test_the_ts_gate_asks_the_python_resolver() -> None:
+    """The other half: not reimplementing is only right if it delegates.
+
+    Without this, deleting the shell-out along with the mirror would satisfy
+    every assertion above while leaving the gate with no scope at all.
+    """
+    source = (_SCRIPTS / "ts_organization_check.cjs").read_text()
+
+    assert "--emit-scope-json" in source
+    assert "server_python.sh" in source, "must not call a bare python3 (657)"
+
+
 def _load_script(module_name: str):
     """Import a gate script by name, with `.lefthook/scripts` on the path.
 
@@ -1503,10 +1553,17 @@ def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate, added: b
     """The conformance table: one repo state, three gates, identical answers.
 
     Each scenario plants exactly one violating source file per language, so
-    every gate has exactly one file of its own to grade and every gate should
-    report `examined 1 file(s)` and exit 1. A `.cjs` that misses a fix the `.py`
-    got — or vice versa — changes one of those two numbers, and this fails with
-    the drift named, instead of the drift surviving to become the next instance.
+    every gate has its own file to grade. What is asserted is what the
+    assertions actually check: all three gates return the *same* verdict and the
+    *same* examined count, that verdict is 1, and that count is at least 1. The
+    cross-gate equality is the load-bearing half — a `.cjs` that misses a fix
+    the `.py` got, or vice versa, moves one of the two numbers and fails here
+    with the drift named, instead of the drift surviving to become the next
+    instance. The count is not pinned to exactly 1 because a scenario may
+    legitimately pull in a sibling; equality across gates is the invariant.
+
+    (The docstring used to claim `examined 1 file(s)` exactly, which no
+    assertion checked — 580.)
 
     Crossed with `added` since 576. Every scenario here planted only *added*
     files, and an added file is graded whole for being added, whatever its diff
