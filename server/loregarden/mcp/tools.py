@@ -58,6 +58,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
+from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.evidence import (
     ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
 )
@@ -145,6 +146,7 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
             "run_id": _coerce_string(args.get("run_id"), field="run_id"),
             "entry": _coerce_string(args.get("entry"), field="entry"),
+            "blocker": _coerce_optional_bool(args.get("blocker")),
         }
 
     if name == "loregarden_search_memory":
@@ -940,6 +942,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Checkpoint entry markdown block "
                     "(### [TICKET_ID] Stage — label / Would have asked / Assumption made / Confidence)."
                 ),
+                "blocker": {
+                    "type": "boolean",
+                    "description": (
+                        "Set true when this entry records something you could NOT resolve "
+                        "and cannot proceed past. The ticket is blocked and the entry is "
+                        "surfaced to the operator. Leave false (the default) for an "
+                        "assumption you made and moved on from — that is what a checkpoint "
+                        "normally is. Recording a blocker is not the same as documenting "
+                        "one you worked around."
+                    ),
+                },
             },
             required=["ticket_id", "workspace_slug", "run_id", "entry"],
         ),
@@ -1079,9 +1092,14 @@ def _get_run(session: Session, run_id: str):
     return run
 
 
-def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
+def _execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) -> str | None:
     """Dispatch loregarden's memory/learnings/blog-post/checkpoint tools.
-    Returns None if `name` isn't one of these (caller falls through)."""
+    Returns None if `name` isn't one of these (caller falls through).
+
+    Takes a session for one reason: a checkpoint may declare an unresolved
+    blocker, and that has to reach the ticket (430). Everything else here
+    writes to the vault and needs no database at all.
+    """
     if name not in _MEMORY_TOOL_NAMES:
         return None
 
@@ -1131,6 +1149,21 @@ def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
             run_id=arguments["run_id"],
             entry=arguments["entry"],
         )
+        if arguments.get("blocker"):
+            # 430. The checkpoint is written first: the record of *why* must
+            # survive even if resolving the ticket fails, and an operator
+            # reading a blocked ticket needs the entry to already exist.
+            ticket = OrchestrationCallbackService(session).resolve_ticket(
+                ticket_id=arguments["ticket_id"],
+                workspace_slug=arguments["workspace_slug"],
+            )
+            result = {
+                **result,
+                "blocked": True,
+                "blocking_issues": block_ticket_for_unresolved_blocker(
+                    session, ticket, entry=arguments["entry"]
+                ),
+            }
         return json.dumps(result, indent=2)
 
     if name == "loregarden_search_memory":
@@ -1339,7 +1372,7 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = _execute_memory_tool(name, arguments)
+    memory_result = _execute_memory_tool(session, name, arguments)
     if memory_result is not None:
         return memory_result
 

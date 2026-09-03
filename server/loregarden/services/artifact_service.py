@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import AgentRun, Artifact, Ticket, Workspace
+from loregarden.models.domain import AgentRun, Artifact, Ticket, TicketState, Workspace
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -926,6 +927,43 @@ def _upsert_artifact(
 
 
 BLOCKING_ISSUE_INLINE_LIMIT = 200
+
+
+def block_ticket_for_unresolved_blocker(
+    session: Session,
+    ticket: Ticket,
+    *,
+    entry: str,
+    stage_key: str = "",
+) -> str:
+    """Block a ticket because an agent recorded a blocker it could not resolve.
+
+    Ticket-level only: the state and the blocking issue, not the orchestration.
+    Two reasons. `append_checkpoint`'s `run_id` is a filename slug — agents pass
+    arbitrary strings, and this session's own checkpoints used
+    `manual-2026-09-02-terminal-harness` — so there is often no orchestration to
+    resolve, and guessing one to finish would end the wrong run. And ending a
+    run is the orchestrator's decision; recording that the work cannot proceed
+    is not the same act.
+
+    Exists because documenting a blocker and *being* blocked were the same
+    action (430). An agent that hit an unresolvable problem appended a
+    checkpoint, which satisfied its "checkpoint logged" checklist item, and
+    completed the stage 4/4 — so the more honestly it recorded the blocker, the
+    more completely it discharged its obligations.
+    """
+    ticket.blocking_issues = record_blocking_issue(
+        session,
+        ticket,
+        run_id=None,
+        stage_key=stage_key,
+        message=entry,
+    )
+    # `choose`, not a derived transition: an agent said this cannot proceed.
+    choose(session, ticket, TicketState.BLOCKED, actor="agent", emit=True)
+    session.add(ticket)
+    session.commit()
+    return ticket.blocking_issues
 
 
 def record_blocking_issue(
