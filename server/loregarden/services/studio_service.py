@@ -463,17 +463,41 @@ def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflow
     )
 
 
+def _studio_stage_from(item: dict) -> StudioWorkflowStage:
+    """One stored stage as a `StudioWorkflowStage`, defaults filled.
+
+    The five `setdefault` calls this replaces appeared identically in two view
+    builders, and every field added to the model meant editing both — the same
+    hand-maintained-list problem as the publish path, one layer down
+    (lg-workflow-integrity-559).
+
+    They supply defaults for stages written before those fields existed. The
+    model already declares the same defaults, so this only covers keys stored as
+    an explicit `null`, which `model_validate` would otherwise reject.
+    """
+    payload = dict(item)
+    for field, default in _STORED_STAGE_DEFAULTS.items():
+        if payload.get(field) is None:
+            payload[field] = default() if callable(default) else default
+    return StudioWorkflowStage.model_validate(payload)
+
+
+#: Defaults for stage rows stored before a field existed. Callables where the
+#: default is mutable, so two stages never share one list.
+_STORED_STAGE_DEFAULTS: dict[str, object] = {
+    "stage_type": "agent",
+    "classify_routes": list,
+    "parallel_agents": list,
+    "gate_commands": list,
+    "gate_required": False,
+}
+
+
 def _template_workflow_view(template: WorkflowTemplate) -> StudioWorkflowView:
     stages_raw = json.loads(template.stages_json or "[]")
     stages: list[StudioWorkflowStage] = []
     for item in stages_raw:
-        payload = dict(item)
-        payload.setdefault("stage_type", "agent")
-        payload.setdefault("classify_routes", [])
-        payload.setdefault("parallel_agents", [])
-        payload.setdefault("gate_commands", [])
-        payload.setdefault("gate_required", False)
-        stages.append(StudioWorkflowStage.model_validate(payload))
+        stages.append(_studio_stage_from(item))
     return StudioWorkflowView(
         id=template.id,
         slug=template.slug,
@@ -496,13 +520,7 @@ def _template_snapshot_view(template: WorkflowTemplate, snap: dict) -> StudioWor
     """Render a historical template snapshot (read-only) for the version-detail view."""
     stages: list[StudioWorkflowStage] = []
     for item in json.loads(snap.get("stages_json") or "[]"):
-        payload = dict(item)
-        payload.setdefault("stage_type", "agent")
-        payload.setdefault("classify_routes", [])
-        payload.setdefault("parallel_agents", [])
-        payload.setdefault("gate_commands", [])
-        payload.setdefault("gate_required", False)
-        stages.append(StudioWorkflowStage.model_validate(payload))
+        stages.append(_studio_stage_from(item))
     source_path = snap.get("source_path", "")
     return StudioWorkflowView(
         id=template.id,
@@ -1234,43 +1252,27 @@ class StudioService:
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
         for stage in sorted(stages, key=lambda item: item.order):
-            agent_id = stage.agent_id
-            skill_name = stage.skill_name
+            # Derived from the model, not enumerated. The literal this replaces
+            # listed 17 keys by hand, and anything a caller added to
+            # `StudioWorkflowStage` but forgot here was dropped on first publish
+            # — silently, and visible later only as a gate that stopped firing.
+            # It happened twice: `terminal` and `skip_when` first, then
+            # `required_evidence`, `checklist` and `stage_brief`, each fixed by
+            # adding more entries to the same list. Starting from `model_dump()`
+            # makes the drift structurally impossible instead of test-detected
+            # (lg-workflow-integrity-559).
+            payload = stage.model_dump()
+            # The one thing publish genuinely computes: a classify stage with no
+            # agent of its own adopts its default route's, so the published
+            # template names an agent even though the draft left it to routing.
             if stage.stage_type == "classify" and stage.classify_routes:
                 default = next(
                     (route for route in stage.classify_routes if route.default),
                     stage.classify_routes[0],
                 )
-                agent_id = agent_id or default.agent_id
-                skill_name = skill_name or default.skill_name
-            stage_defs.append(
-                {
-                    "key": stage.key,
-                    "name": stage.name,
-                    "agent_id": agent_id,
-                    "skill_name": skill_name,
-                    "optional": stage.optional,
-                    "order": stage.order,
-                    "stage_type": stage.stage_type,
-                    # `terminal` and `skip_when` were dropped here, so a stage's
-                    # terminal marker (and its skip condition) never survived a
-                    # publish — the published template could not finalize.
-                    "terminal": stage.terminal,
-                    "skip_when": stage.skip_when,
-                    "classify_routes": [route.model_dump() for route in stage.classify_routes],
-                    "parallel_agents": [item.model_dump() for item in stage.parallel_agents],
-                    "gate_commands": list(stage.gate_commands),
-                    "gate_required": stage.gate_required,
-                    "model": stage.model,
-                    # Same lesson as `terminal` / `skip_when` above: a field left
-                    # out here is dropped from the published template. These three
-                    # are live — `required_evidence` is what makes the implement
-                    # and verify stages prove their work.
-                    "required_evidence": list(stage.required_evidence),
-                    "checklist": list(stage.checklist),
-                    "stage_brief": stage.stage_brief,
-                }
-            )
+                payload["agent_id"] = stage.agent_id or default.agent_id
+                payload["skill_name"] = stage.skill_name or default.skill_name
+            stage_defs.append(payload)
 
         transitions = json.loads(workflow.transitions_json or "[]")
         if not transitions:
