@@ -19,10 +19,11 @@ reason.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from loregarden.models.domain import AgentRun
+from loregarden.models.domain import AgentRun, StageVerdictChannel
 from sqlmodel import Session, col, select
 
 
@@ -178,3 +179,75 @@ def subtree_runs(session: Session, ticket_ids: list[str]) -> list[AgentRun]:
     if not ticket_ids:
         return []
     return list(session.exec(select(AgentRun).where(col(AgentRun.ticket_id).in_(ticket_ids))).all())
+
+
+@dataclass(frozen=True)
+class VerdictAdherence:
+    """How stage verdicts reached the control plane, per agent.
+
+    The counts are deliberately three-way. `unknown` is not a rounding bucket:
+    it holds runs that reported through neither channel *and* every row written
+    before the column existed, and collapsing it into "sentinel" is precisely
+    the error that produced this milestone's wrong adherence figures
+    (lg-workflow-integrity-95).
+    """
+
+    key: str
+    runs: int = 0
+    tool: int = 0
+    sentinel: int = 0
+    unknown: int = 0
+
+    @property
+    def reported(self) -> int:
+        return self.tool + self.sentinel
+
+    @property
+    def adherence(self) -> float | None:
+        """Share of runs that reported a verdict, or None when there are none.
+
+        None rather than 0.0, for the same reason the token totals are nullable:
+        a group with no runs has no adherence, and reporting 0% would read as
+        total non-compliance.
+        """
+        return self.reported / self.runs if self.runs else None
+
+
+def _adherence(runs: list[AgentRun], key_of: Callable[[AgentRun], str]) -> list[VerdictAdherence]:
+    """Verdict-channel counts per group, least adherent first.
+
+    Ordered by adherence ascending because the useful question is which agents
+    are not reporting, not which are.
+
+    Takes a key function rather than an attribute name: a string that has to be
+    `getattr`-ed is a field reference the type checker cannot see, and this repo
+    treats that as a structured API waiting to be written.
+    """
+    grouped: dict[str, list[AgentRun]] = defaultdict(list)
+    for run in runs:
+        grouped[(key_of(run) or "").strip() or "(unset)"].append(run)
+
+    rows: list[VerdictAdherence] = []
+    for name, group in grouped.items():
+        channels = Counter(run.verdict_channel for run in group)
+        rows.append(
+            VerdictAdherence(
+                key=name,
+                runs=len(group),
+                tool=channels[StageVerdictChannel.TOOL],
+                sentinel=channels[StageVerdictChannel.SENTINEL],
+                unknown=channels[StageVerdictChannel.UNKNOWN],
+            )
+        )
+    return sorted(rows, key=lambda r: (r.adherence if r.adherence is not None else 1.0, r.key))
+
+
+def adherence_by_agent(runs: list[AgentRun]) -> list[VerdictAdherence]:
+    """Which agents report a verdict, and through which channel."""
+    return _adherence(runs, lambda run: run.agent_id)
+
+
+def adherence_by_stage(runs: list[AgentRun]) -> list[VerdictAdherence]:
+    """Which stages get a verdict — a different question from which agents give
+    one, because one agent serves several stages."""
+    return _adherence(runs, lambda run: run.stage_key)

@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     RunStatus,
     StageStatus,
+    StageVerdictChannel,
     Ticket,
     TicketState,
     Workspace,
@@ -34,7 +35,7 @@ from loregarden.services.prepared_action import (
     assess_handover,
 )
 from loregarden.services.queue_lanes import QueueLaneService
-from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
 from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
 from loregarden.services.run_lease import SUPERVISED
 from loregarden.services.stage_retry_budget import (
@@ -372,6 +373,15 @@ class OrchestrationCallbackService:
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
+
+        # Which channel carried the verdict, observed rather than inferred. The
+        # alternative — deducing "the tool was used" from the stage having moved
+        # without a sentinel — is the kind of reasoning that produced this
+        # milestone's wrong adherence numbers (lg-workflow-integrity-95).
+        active = find_active_run(self.session, ticket.id)
+        if active is not None and active.stage_key == stage_key:
+            active.verdict_channel = StageVerdictChannel.TOOL
+            self.session.add(active)
 
         if stage_key not in parse_stage_map(instance, stages):
             raise ValueError(f"Unknown stage key: {stage_key}")

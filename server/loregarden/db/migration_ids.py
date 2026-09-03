@@ -125,6 +125,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0104_lmstudio_max_iterations",
     "0105_run_usage_status",
     "0106_blocked_run_reason",
+    "0107_verdict_channel",
 )
 
 

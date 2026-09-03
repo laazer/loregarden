@@ -101,6 +101,7 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_verdict_channel import m_verdict_channel
 from loregarden.db.migrations_views import (
     m_sidebar_entry_pinned,
     m_view_store,
@@ -1356,6 +1357,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0104_lmstudio_max_iterations", m_lmstudio_max_iterations),
     ("0105_run_usage_status", m_run_usage_status),
     ("0106_blocked_run_reason", m_blocked_run_reason),
+    ("0107_verdict_channel", m_verdict_channel),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
