@@ -27,8 +27,8 @@ gates:
     # uncommitted when this fires. No fixer pairs with these: naming a
     # vocabulary, modelling a payload, or deciding how a failure should surface
     # is a design decision, so a failure goes straight to the stage's own agent.
-    - python3 {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
-    - python3 {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
+    - bash {loregarden_root}/.lefthook/scripts/server_python.sh {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
+    - bash {loregarden_root}/.lefthook/scripts/server_python.sh {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."

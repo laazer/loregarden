@@ -31,6 +31,14 @@ _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
+# Before any sibling import, and before this module's own annotations are
+# evaluated: the gates need 3.11, and on an older interpreter they raise at
+# import time and exit 1 — indistinguishable from a finding. Refuse with
+# EX_UNAVAILABLE instead, so the runner reports "could not run" (657).
+from gate_python_guard import require_supported_python  # noqa: E402 - path set just above
+
+require_supported_python(Path(__file__).name)
+
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     UnexaminableError,
     UnexaminableFileError,

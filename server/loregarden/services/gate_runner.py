@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_TRANSITION_SCRIPT = "ci/scripts/run_workflow_transition_gates.py"
 GATE_TIMEOUT_SECONDS = 300
 
+#: `sysexits.h` EX_UNAVAILABLE, as raised by `.lefthook/scripts/
+#: gate_python_guard.py` when the interpreter is too old to run the gate at all.
+#: A gate that could not examine anything must not be reported as a gate that
+#: found something — see `_run_command`. Kept in sync by
+#: `tests/test_gate_python_guard.py`, which asserts the two constants agree.
+GATE_EX_UNAVAILABLE = 69
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -166,6 +173,20 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
 
     stdout = (completed.stdout or "").strip()
     stderr = (completed.stderr or "").strip()
+    if completed.returncode == GATE_EX_UNAVAILABLE:
+        # The command ran and told us it could not do its job — an interpreter
+        # too old to import the gate, so nothing was examined. Reporting that
+        # as FAILED sends the autofix loop after a violation that was never
+        # found; only UNAVAILABLE is true, and it is the outcome `_blocking`
+        # deliberately preserves.
+        return GateRunResult(
+            ok=False,
+            outcome=GateOutcome.UNAVAILABLE,
+            message=stderr or stdout or "gate unavailable",
+            command=command,
+            stdout=stdout,
+            stderr=stderr,
+        )
     if completed.returncode != 0:
         detail = stderr or stdout or f"exit code {completed.returncode}"
         return GateRunResult(
