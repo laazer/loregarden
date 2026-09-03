@@ -37,6 +37,7 @@ from loregarden.services.run_lease import (
     lease_renewal,
     pid_alive,
 )
+from loregarden.services.run_reattach import surviving_runs
 from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
@@ -173,6 +174,14 @@ def fail_interrupted_runs(
         # A ticket-scoped reap still claims it — that call is a deliberate
         # "start this stage again", which does supersede whoever held it.
         query = query.where(col(AgentRun.external_harness).is_(None))
+        # 470. Same side of the same distinction: since 317 detaches the agent,
+        # a run sitting at RUNNING during startup may have a live process behind
+        # it rather than a dead one. Failing it would be the reaper killing the
+        # row of a working agent — strictly worse than the restart it replaced.
+        # A ticket-scoped call still claims it, for the reason above.
+        survivors = {run.id for run in surviving_runs(session)}
+        if survivors:
+            query = query.where(col(AgentRun.id).not_in(survivors))
     if stage_key:
         query = query.where(AgentRun.stage_key == stage_key)
     if exclude_run_id:

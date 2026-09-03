@@ -56,6 +56,7 @@ from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescenc
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
 from loregarden.services.reconciliation import reconcile_once
+from loregarden.services.run_reattach import reattach_surviving_runs
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
@@ -84,6 +85,11 @@ async def lifespan(app: FastAPI):
     init_db()
     with Session(engine) as session:
         seed_database(session)
+        # Before the reapers, and before anything reads a run's status: since
+        # 317 detaches the agent, a run at RUNNING here may have a live process
+        # behind it. Adopting it keeps its row and starts renewing its lease in
+        # this process; the reapers below skip exactly what this adopted (470).
+        reattach_surviving_runs(session)
         fail_interrupted_runs(session)
         fail_interrupted_orchestration_runs(session)
         fail_interrupted_triage_turns(session)
