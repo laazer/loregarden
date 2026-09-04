@@ -245,3 +245,21 @@ def m_lane_entry_force(conn: Connection) -> None:
             "force": "ALTER TABLE queued_runs ADD COLUMN force INTEGER NOT NULL DEFAULT 0",
         },
     )
+
+
+def m_orchestration_monitor_mode(conn: Connection) -> None:
+    """Per-run override of the workflow monitor's autonomy.
+
+    Nullable, and null means "use the workspace profile" — not "report". The
+    distinction matters: a run written before this column existed made no choice,
+    and recording one on its behalf would be inventing intent.
+    """
+    if not table_exists(conn, "orchestration_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "orchestration_runs",
+        {
+            "monitor_mode": "ALTER TABLE orchestration_runs ADD COLUMN monitor_mode VARCHAR",
+        },
+    )

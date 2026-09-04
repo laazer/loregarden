@@ -65,6 +65,7 @@ from loregarden.db.migrations_queue import (
     m_lane_entry_force,
     m_lane_entry_kind,
     m_lane_entry_run_options,
+    m_orchestration_monitor_mode,
     m_orchestration_timeout_override,
     m_per_slot_queues,
 )
@@ -1360,6 +1361,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0106_blocked_run_reason", m_blocked_run_reason),
     ("0107_verdict_channel", m_verdict_channel),
     ("0108_alternative_impl_group", m_alternative_impl_group),
+    ("0109_orchestration_monitor_mode", m_orchestration_monitor_mode),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

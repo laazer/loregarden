@@ -434,6 +434,36 @@ class MonitorCondition(StrEnum):
     #: A `skip_when` naming a condition no resolver knows, so the stage it is
     #: on will never be pruned and nothing says so.
     SKIP_CONDITION_ROT = "skip_condition_rot"
+    #: A ticket cursor pointing at a stage its workflow does not have, or
+    #: disagreeing with stages_json. Auto-fixable: `reconcile_ticket` already
+    #: recomputes it, idempotently and without dispatching anything.
+    STALE_CURSOR = "stale_cursor"
+    #: Every member of an alternative group pruned, which derives a ticket DONE
+    #: with none of that group's work performed. Auto-fixable: restore the
+    #: earliest member to PENDING.
+    EMPTIED_GROUP = "emptied_group"
+
+
+#: The only conditions an auto-fix may repair, and it should stay this small.
+#: Both are idempotent, reversible, and cost zero agent runs. Deliberately
+#: absent: clearing a stale retry counter — re-arming a circuit breaker without a
+#: human is how a ticket reaches 28 attempts at one stage.
+#:
+#: Defined here rather than in `services.workflow_monitor` because
+#: `orchestration_profile` validates against it, and importing the service from
+#: there closes a cycle back through the agent executors.
+AUTO_FIXABLE_CONDITIONS = frozenset({MonitorCondition.STALE_CURSOR, MonitorCondition.EMPTIED_GROUP})
+
+
+class MonitorMode(StrEnum):
+    """How much the monitor is allowed to do about what it finds.
+
+    `REPORT` is the default everywhere and the only safe default: repairing
+    workflow state unattended is a decision, and the report costs nothing.
+    """
+
+    REPORT = "report"
+    AUTOFIX = "autofix"
 
 
 class ReworkArtifactKind(StrEnum):

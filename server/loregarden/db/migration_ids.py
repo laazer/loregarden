@@ -127,6 +127,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0106_blocked_run_reason",
     "0107_verdict_channel",
     "0108_alternative_impl_group",
+    "0109_orchestration_monitor_mode",
 )
 
 

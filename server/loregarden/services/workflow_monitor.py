@@ -28,15 +28,34 @@ import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from loregarden.core.stage_groups import emptied_groups, group_members
+from loregarden.core.workflow_loader import get_template_stages_at_version
 from loregarden.models.domain import (
+    AUTO_FIXABLE_CONDITIONS,
     AgentRun,
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
     Artifact,
     MonitorArtifactKind,
     MonitorCondition,
+    MonitorMode,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     RunStatus,
+    StageStatus,
+    Ticket,
+    TicketState,
+    WorkflowInstance,
     WorkflowTemplate,
+    Workspace,
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
+from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration_profile import (
+    MonitorConfig,
+    resolve_orchestration_profile,
+)
 from loregarden.services.run_duration_stats import (
     DurationStats,
     canonical_stage_key,
@@ -45,6 +64,7 @@ from loregarden.services.run_duration_stats import (
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, col, select
 
 #: A stage is thrashing at twice the observed re-run rate, but never below four
@@ -295,6 +315,102 @@ def _detect_skip_condition_rot(session: Session) -> list[MonitorFinding]:
     return findings
 
 
+#: Re-exported from the enum module, which owns it so `orchestration_profile`
+#: can validate against it without importing this service.
+AUTO_FIXABLE = AUTO_FIXABLE_CONDITIONS
+
+
+def _detect_stale_cursors(session: Session, ticket_id: str | None) -> list[MonitorFinding]:
+    """A ticket sitting on a stage its own workflow does not have.
+
+    Reported by comparing the cursor to the instance's stage map rather than to
+    the live template: an instance pinned to an older template version is not
+    stale, it is pinned, and calling that a defect would report most of the
+    database.
+    """
+    statement = select(Ticket, WorkflowInstance).join(
+        WorkflowInstance, col(WorkflowInstance.ticket_id) == col(Ticket.id)
+    )
+    if ticket_id:
+        statement = statement.where(col(Ticket.id) == ticket_id)
+
+    findings = []
+    for ticket, instance in session.exec(statement).all():
+        if ticket.state in (TicketState.DONE, TicketState.WONT_DO):
+            continue
+        stages = _instance_stages(session, instance)
+        if not stages or not ticket.workflow_stage_key:
+            continue
+        # Read through parse_stage_map rather than the raw JSON: stages_json is a
+        # list of stage records, not a key->status map, so `in` on the decoded
+        # value silently answers the wrong question.
+        stage_map = parse_stage_map(instance, stages)
+        if ticket.workflow_stage_key in stage_map:
+            continue
+        findings.append(
+            MonitorFinding(
+                condition=MonitorCondition.STALE_CURSOR,
+                ticket_id=ticket.id,
+                stage_key=ticket.workflow_stage_key,
+                summary=(
+                    f"Ticket cursor is on '{ticket.workflow_stage_key}', which this "
+                    "workflow instance does not have."
+                ),
+                evidence={
+                    "cursor": ticket.workflow_stage_key,
+                    "known_stages": ", ".join(sorted(stage_map)),
+                },
+            )
+        )
+    return findings
+
+
+def _detect_emptied_groups(session: Session, ticket_id: str | None) -> list[MonitorFinding]:
+    """An alternative group with every member pruned.
+
+    `_derive_ticket_state` already refuses to call such a ticket DONE (562), so
+    this is not a correctness hole — it is a ticket that will never finish and
+    has nothing saying why.
+    """
+    statement = select(Ticket, WorkflowInstance).join(
+        WorkflowInstance, col(WorkflowInstance.ticket_id) == col(Ticket.id)
+    )
+    if ticket_id:
+        statement = statement.where(col(Ticket.id) == ticket_id)
+
+    findings = []
+    for ticket, instance in session.exec(statement).all():
+        if ticket.state in (TicketState.DONE, TicketState.WONT_DO):
+            continue
+        stages = _instance_stages(session, instance)
+        if not stages:
+            continue
+        stage_map = parse_stage_map(instance, stages)
+        for group in emptied_groups(stages, stage_map):
+            members = [member.key for member in group_members(stages, group)]
+            findings.append(
+                MonitorFinding(
+                    condition=MonitorCondition.EMPTIED_GROUP,
+                    ticket_id=ticket.id,
+                    stage_key=members[0] if members else "",
+                    summary=(
+                        f"Every member of alternative group '{group}' is won't-do "
+                        f"({', '.join(members)}); none of that work will be done."
+                    ),
+                    evidence={"group": group, "members": ", ".join(members)},
+                )
+            )
+    return findings
+
+
+def _instance_stages(session: Session, instance: WorkflowInstance) -> list:
+    """The stage definitions this instance actually runs, honouring its pin."""
+    template = session.get(WorkflowTemplate, instance.template_id)
+    if template is None:
+        return []
+    return get_template_stages_at_version(session, template, instance.template_version)
+
+
 def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFinding]:
     """Every condition, read-only. Mutates nothing, decides nothing.
 
@@ -311,6 +427,8 @@ def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindi
         *_detect_stage_thrash(runs, stats),
         *_detect_unbudgeted_repeats(runs),
         *_detect_stalled_runs(runs, stats),
+        *_detect_stale_cursors(session, ticket_id),
+        *_detect_emptied_groups(session, ticket_id),
     ]
     if ticket_id is None:
         findings.extend(_detect_failure_clusters(runs))
@@ -394,13 +512,21 @@ def record_findings(session: Session, findings: list[MonitorFinding]) -> int:
 
 
 def sweep(session: Session) -> int:
-    """Scan and persist. Registered as a reconciliation step, not its own loop.
+    """Scan, persist, then repair whatever the config allows.
 
-    `reconcile_once` already runs on a worker thread and already wraps each step
-    so a bad pass cannot end the loop. A second `while True` would be a second
-    way to wedge the process.
+    Registered as a reconciliation step, not its own loop: `reconcile_once`
+    already runs on a worker thread and already wraps each step so a bad pass
+    cannot end the loop. A second `while True` would be a second way to wedge
+    the process.
+
+    Findings are recorded BEFORE any repair, so the record of what was wrong
+    survives the fix. A monitor that repaired first and reported after would
+    erase its own evidence.
     """
-    return record_findings(session, scan(session))
+    findings = scan(session)
+    touched = record_findings(session, findings)
+    apply_autofixes(session, findings)
+    return touched
 
 
 def list_findings(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindingView]:
@@ -444,3 +570,147 @@ def list_findings(session: Session, *, ticket_id: str | None = None) -> list[Mon
 
 def _parse_iso(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+#: Title of the approval raised when a fix cannot be applied. Upserted on, so a
+#: sweep that keeps failing produces one row a person can act on rather than a
+#: stream that buries the 395 real decisions already in that queue.
+AUTOFIX_REFUSED_TITLE = "Workflow monitor could not repair"
+
+
+def resolve_monitor_mode(
+    session: Session, ticket: Ticket
+) -> tuple[MonitorMode, MonitorConfig | None]:
+    """The mode and config in force for this ticket, run override winning.
+
+    `OrchestrationRun.monitor_mode` is the per-run dial, inherited by nested
+    subtree runs because a child orchestration carries its parent's value at
+    creation. Null there means the run made no choice, so the workspace profile
+    decides — which is not the same as choosing `report`.
+    """
+    workspace = session.get(Workspace, ticket.workspace_id)
+    profile = resolve_orchestration_profile(workspace) if workspace else None
+    config = profile.monitor if profile else None
+
+    run = session.exec(
+        select(OrchestrationRun)
+        .where(
+            col(OrchestrationRun.ticket_id) == ticket.id,
+            col(OrchestrationRun.status) == OrchestrationRunStatus.RUNNING,
+        )
+        .order_by(col(OrchestrationRun.created_at).desc())
+    ).first()
+    if run is not None and run.monitor_mode is not None:
+        return run.monitor_mode, config
+    return (config.mode if config else MonitorMode.REPORT), config
+
+
+def _repair_stale_cursor(session: Session, ticket: Ticket) -> bool:
+    """Recompute the cursor from the stage map. Idempotent by construction."""
+    OrchestrationService(session).reconcile_ticket(ticket, commit=True)
+    return True
+
+
+def _repair_emptied_group(session: Session, ticket: Ticket, group: str) -> bool:
+    """Restore the earliest member of an emptied group to PENDING.
+
+    The earliest rather than a chosen one: order is the only signal available
+    without asking an agent, and asking an agent is the thing this must never do.
+    """
+    instance = session.exec(
+        select(WorkflowInstance).where(col(WorkflowInstance.ticket_id) == ticket.id)
+    ).first()
+    if instance is None:
+        return False
+    stages = _instance_stages(session, instance)
+    members = group_members(stages, group)
+    if not members:
+        return False
+    set_stage_status(
+        ticket,
+        instance,
+        stages,
+        members[0].key,
+        StageStatus.PENDING,
+        note=(
+            f"Restored by the workflow monitor: every member of alternative group "
+            f"'{group}' had been pruned, which leaves that work undone."
+        ),
+    )
+    session.add_all([ticket, instance])
+    session.commit()
+    return True
+
+
+def _apply_one(session: Session, finding: MonitorFinding) -> bool:
+    ticket = session.get(Ticket, finding.ticket_id)
+    if ticket is None:
+        return False
+    if finding.condition is MonitorCondition.STALE_CURSOR:
+        return _repair_stale_cursor(session, ticket)
+    if finding.condition is MonitorCondition.EMPTIED_GROUP:
+        return _repair_emptied_group(session, ticket, finding.evidence.get("group", ""))
+    return False
+
+
+def _raise_refusal_approval(session: Session, finding: MonitorFinding) -> None:
+    """One approval per (ticket, condition), never one per sweep."""
+    existing = session.exec(
+        select(Approval).where(
+            col(Approval.ticket_id) == finding.ticket_id,
+            col(Approval.title) == AUTOFIX_REFUSED_TITLE,
+            col(Approval.status) == ApprovalStatus.PENDING,
+        )
+    ).first()
+    if existing is not None:
+        return
+    ticket = session.get(Ticket, finding.ticket_id)
+    if ticket is None:
+        return
+    session.add(
+        Approval(
+            ticket_id=finding.ticket_id,
+            workspace_id=ticket.workspace_id,
+            # HUMAN_ACTION, not a gate: this is work only a person can finish,
+            # handed over with what the monitor managed to establish about it.
+            kind=ApprovalKind.HUMAN_ACTION,
+            status=ApprovalStatus.PENDING,
+            title=AUTOFIX_REFUSED_TITLE,
+            stage_key=finding.stage_key,
+            impact=(
+                f"{finding.summary} The monitor was configured to repair this and "
+                "could not. It will not try again without a person looking."
+            ),
+        )
+    )
+    session.commit()
+
+
+def apply_autofixes(session: Session, findings: list[MonitorFinding]) -> list[MonitorFinding]:
+    """Repair what the config allows, and return what was repaired.
+
+    Two gates, both required. The mode must be `autofix` for this ticket, AND the
+    condition must be named in that config's `autofix` list — turning the mode on
+    does not opt into every repair. A condition outside `AUTO_FIXABLE` cannot get
+    here at all; the profile refuses to load with one in the list.
+
+    No branch of this dispatches an agent run. That is the whole point of the
+    milestone: an auto-fixer that spends runs is a loop generator.
+    """
+    repaired = []
+    for finding in findings:
+        if finding.condition not in AUTO_FIXABLE or not finding.ticket_id:
+            continue
+        ticket = session.get(Ticket, finding.ticket_id)
+        if ticket is None:
+            continue
+        mode, config = resolve_monitor_mode(session, ticket)
+        if mode is not MonitorMode.AUTOFIX or config is None:
+            continue
+        if finding.condition not in config.autofix:
+            continue
+        if _apply_one(session, finding):
+            repaired.append(finding)
+        else:
+            _raise_refusal_approval(session, finding)
+    return repaired
