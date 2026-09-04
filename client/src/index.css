@@ -816,6 +816,23 @@ textarea::placeholder {
    draft that has diverged from its template gets said so before the button. */
 /* The workflow monitor is report-only and usually silent; when it does speak it
    sits under the ticket title, above the tags. */
+/* A ticket's transition history, collapsed by default — worth finding, not worth
+   occupying the pane on every open. */
+.ticket-history {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.ticket-history-list {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.ticket-history-when {
+  color: var(--txl);
+}
+
 .monitor-findings {
   border: 1px solid rgba(240, 180, 41, 0.45);
   background: rgba(240, 180, 41, 0.08);

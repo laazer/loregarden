@@ -23,7 +23,6 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowTemplate,
-    WorkItemType,
     Workspace,
 )
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
@@ -35,21 +34,18 @@ from loregarden.services.workflow_monitor import (
     sweep,
 )
 from sqlmodel import Session, select
+from tests.factories import make_ticket
 
 
 def _ticket(db_session: Session, external_id: str) -> Ticket:
     ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
-    ticket = Ticket(
-        external_id=external_id,
+    return make_ticket(
+        db_session,
         workspace_id=ws.id,
+        external_id=external_id,
         title=external_id,
         state=TicketState.IN_PROGRESS,
-        work_item_type=WorkItemType.TASK,
     )
-    db_session.add(ticket)
-    db_session.commit()
-    db_session.refresh(ticket)
-    return ticket
 
 
 def _orchestration(db_session: Session, ticket: Ticket, code: str) -> str:

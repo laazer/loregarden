@@ -51,6 +51,7 @@ import type {
   MonitorFinding,
   StudioWorkflow,
   StudioWorkflowDrift,
+  TicketHistoryEvent,
   StudioWorkflowVersion,
   WorkflowTransition,
   CreateTicketRequest,
@@ -561,6 +562,8 @@ export const api = {
       `/api/studio/workflows/${slug}/publish?confirm_stage_removal=${confirmStageRemoval}`,
       { method: "POST" },
     ),
+  ticketHistory: (ticketId: string) =>
+    request<TicketHistoryEvent[]>(`/api/events/ticket/${ticketId}/history`),
   monitorFindings: (ticketId: string) =>
     request<MonitorFinding[]>(`/api/monitor/findings?ticket_id=${ticketId}`),
   studioWorkflowDrift: (slug: string) =>
