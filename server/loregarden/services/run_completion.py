@@ -92,6 +92,25 @@ def _rework_target(stages, from_key: str, reroute_to_stage: str) -> str:
     return previous_stage_key(stages, from_key) or ""
 
 
+def _rework_context(report: StageReport, stderr: str) -> str:
+    """What the rerouted agent is told, reason and grounds together.
+
+    The contract asks a rejecting stage to name the acceptance criteria its
+    finding makes false, and nothing read them — the complaint reached the
+    target stage without the evidence behind it, which is the half of
+    lg-workflow-integrity-205 that was never delivered.
+
+    Appended rather than replacing the prose: `reroute_context` is written for
+    the agent that has to act, and the criteria say what "done" would mean.
+    """
+    context = report.reroute_context or stderr[:2000] or "Agent run failed"
+    criteria = report.unmet_criteria
+    if not criteria:
+        return context
+    listed = "\n".join(f"- {item}" for item in criteria)
+    return f"{context}\n\nAcceptance criteria reported unmet:\n{listed}"
+
+
 def _reroute_or_block_for_rework(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -106,7 +125,7 @@ def _reroute_or_block_for_rework(
     either reroute upstream or — if this target has already been rerouted to the
     loop cap — block for a human instead of bouncing the work yet again.
     """
-    full_context = report.reroute_context or stderr[:2000] or "Agent run failed"
+    full_context = _rework_context(report, stderr)
     target_stage = _rework_target(stages, run.stage_key, report.reroute_to_stage or "")
     exhausted = record_reroute_exhausts_budget(
         orch.session,

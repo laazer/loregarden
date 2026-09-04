@@ -161,3 +161,86 @@ def test_parse_stage_report_stream_json_takes_last_report():
     report = parse_stage_report(stdout)
     assert report is not None
     assert report.status == "fail"
+
+
+# --- the grounds for a rejection, not just the complaint ----------------------
+#
+# The contract has told rejecting agents to name the acceptance criteria their
+# finding makes false since the reject-only-for-an-unmet-criterion rule landed.
+# Nothing read them. The field was absent from the parser, absent from
+# `StageReport`, and absent from the JSON schema the contract shows agents —
+# while the prose two paragraphs below instructed them to send it. So an agent
+# that did as it was told had its evidence dropped, and the stage it rerouted to
+# received the complaint without the grounds (lg-workflow-integrity-205).
+
+
+def test_unmet_criteria_are_parsed():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "needs_rework", "confidence": 0.9, "reroute_to_stage": "implement",'
+        ' "reroute_context": "the retry path is untested",'
+        ' "unmet_criteria": ["AC2: a failed run is retried once", "AC4: retries are logged"]}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.unmet_criteria == [
+        "AC2: a failed run is retried once",
+        "AC4: retries are logged",
+    ]
+
+
+def test_a_bare_string_is_not_a_criteria_list():
+    """The contract shows a list and Pydantic holds that line.
+
+    Accepting a bare string would mean a hand-written type check in the parser —
+    exactly what the organization gate asks us to model instead. What matters is
+    that the verdict survives a field the agent got wrong.
+    """
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "fail", "confidence": 1.0, "reroute_to_stage": null,'
+        ' "reroute_context": "x", "unmet_criteria": "AC1: the gate blocks a bad key"}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "fail"
+    assert report.unmet_criteria == []
+
+
+def test_a_malformed_criteria_field_costs_the_report_nothing():
+    """The verdict is the one thing this parser exists to recover. A field an
+    agent got wrong must not take the status down with it."""
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 1.0, "reroute_to_stage": null,'
+        ' "reroute_context": "", "unmet_criteria": {"not": "a list"}}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert report.unmet_criteria == []
+
+
+def test_a_report_without_the_field_still_parses():
+    """Every report emitted before today omits it."""
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 1.0, "reroute_to_stage": null, "reroute_context": ""}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.unmet_criteria == []
+
+
+def test_the_contract_schema_shows_the_field_it_asks_for():
+    """The schema block listed four fields while the prose told agents to send a
+    fifth. Whichever changes, they must not disagree again."""
+    from pathlib import Path
+
+    module = (
+        Path(__file__).resolve().parents[2]
+        / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
+    )
+    text = module.read_text(encoding="utf-8")
+    schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
+    assert "unmet_criteria" in schema_line, "the schema omits a field the prose demands"

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from loregarden.services.usage_limits import detect_usage_limit
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 _SENTINEL_RE = re.compile(
     r"<<<LOREGARDEN_STAGE_REPORT>>>\s*(\{.*?\})\s*<<<END_STAGE_REPORT>>>",
@@ -27,6 +28,12 @@ class StageReport:
     confidence: float
     reroute_to_stage: str | None
     reroute_context: str
+    #: The acceptance criteria this stage says are not met. The contract has
+    #: told agents to supply these since the reject-only-for-an-unmet-criterion
+    #: rule landed, and nothing read them — an agent that named its evidence had
+    #: it dropped on the floor, and the stage it rerouted to received the
+    #: complaint without the grounds (lg-workflow-integrity-205).
+    unmet_criteria: list[str] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -81,37 +88,63 @@ def parse_stage_report(stdout: str) -> StageReport | None:
     return None
 
 
+class _ReportPayload(BaseModel):
+    """The sentinel block as an agent actually writes it.
+
+    Modelled rather than shape-checked by hand: agents compose this JSON
+    themselves, so it is a foreign payload, and the `isinstance` chain this
+    replaces is the pattern the organization gate exists to stop. Pydantic's own
+    coercion does the work — no hand-written type tests.
+
+    `extra="ignore"` absorbs fields we do not read, which is what lets the
+    criteria below be parsed separately without this model rejecting them.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = ""
+    confidence: float = 0.0
+    reroute_to_stage: str | None = None
+    reroute_context: str = ""
+
+
+class _CriteriaPayload(BaseModel):
+    """`unmet_criteria` alone, parsed apart from the verdict on purpose.
+
+    A criterion list an agent got wrong must not cost the report its status —
+    that verdict is the one thing this parser exists to recover, and failing the
+    whole block over a malformed side field would turn a usable rejection into
+    no report at all, which fails the stage closed
+    (lg-workflow-integrity-205).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    unmet_criteria: list[str] = Field(default_factory=list)
+
+
+def _criteria_of(payload: str) -> list[str]:
+    """The criteria an agent named, or none when the field is unusable."""
+    try:
+        parsed = _CriteriaPayload.model_validate_json(payload)
+    except ValidationError:
+        return []
+    return [item.strip() for item in parsed.unmet_criteria if item.strip()]
+
+
 def _build_report(payload: str) -> StageReport | None:
     try:
-        data = json.loads(payload)
-    except (json.JSONDecodeError, TypeError):
+        parsed = _ReportPayload.model_validate_json(payload)
+    except ValidationError:
         return None
-    if not isinstance(data, dict):
+    if parsed.status not in _VALID_STATUSES:
         return None
-
-    status = data.get("status")
-    if status not in _VALID_STATUSES:
-        return None
-
-    try:
-        confidence = float(data.get("confidence", 0.0))
-    except (TypeError, ValueError):
-        confidence = 0.0
-    confidence = max(0.0, min(1.0, confidence))
-
-    reroute_to_stage = data.get("reroute_to_stage") or None
-    if reroute_to_stage is not None and not isinstance(reroute_to_stage, str):
-        reroute_to_stage = None
-
-    reroute_context = data.get("reroute_context") or ""
-    if not isinstance(reroute_context, str):
-        reroute_context = ""
-
     return StageReport(
-        status=status,
-        confidence=confidence,
-        reroute_to_stage=reroute_to_stage,
-        reroute_context=reroute_context,
+        status=parsed.status,
+        confidence=max(0.0, min(1.0, parsed.confidence)),
+        reroute_to_stage=parsed.reroute_to_stage or None,
+        reroute_context=parsed.reroute_context or "",
+        unmet_criteria=_criteria_of(payload),
     )
 
 

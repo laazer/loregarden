@@ -13,7 +13,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
 
-def test_build_orchestration_context_maps_testing_to_static_qa():
+def test_build_orchestration_context_names_the_real_stage_key():
     ticket = Ticket(
         external_id="03-wire-cli-agent-runner",
         title="Wire CLI agent runner",
@@ -38,7 +38,14 @@ def test_build_orchestration_context_maps_testing_to_static_qa():
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage)
     assert "authoritative for this run" in text
     assert "`testing`" in text
-    assert "STATIC_QA" in text
+    # The "Legacy workflow alias" line used to render STATIC_QA here. It mapped
+    # real stage keys onto a vocabulary that existed in no template and, after
+    # lg-workflow-integrity-101 deleted the STRICT stage enum it pointed at, in
+    # no document either — every prompt carried an alias for a naming scheme
+    # with no definition. What the context owes an agent is the key the control
+    # plane will actually accept (lg-workflow-integrity-102).
+    assert "Legacy workflow alias" not in text
+    assert "STATIC_QA" not in text
 
 
 def test_build_orchestration_context_does_not_imply_ticket_markdown():
@@ -106,7 +113,7 @@ def test_cli_prompt_includes_orchestration_context():
             assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "Loregarden run context (authoritative for this run)" in prompt
-        assert "STATIC_QA" in prompt
+        assert "Legacy workflow alias" not in prompt
 
 
 def test_prompt_block_order_is_declarative(tmp_path):
