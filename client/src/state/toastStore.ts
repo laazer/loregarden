@@ -97,6 +97,18 @@ export function describeError(error: unknown, fallback = "Unexpected error"): st
 }
 
 /**
+ * The HTTP status a failed request carried, or null if it was not one.
+ *
+ * A sibling of `describeError`: the narrowing lives here so callers asking
+ * "was this a 409?" do not each write their own `instanceof ApiError` at the
+ * call site. Status is what distinguishes a refusal the caller may override
+ * from one it may not.
+ */
+export function errorStatus(error: unknown): number | null {
+  return error instanceof ApiError ? error.status : null;
+}
+
+/**
  * Report an action that did not complete.
  *
  * `title` names the action ("Delete ticket"), not the failure — the toast

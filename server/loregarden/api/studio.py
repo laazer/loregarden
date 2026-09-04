@@ -8,11 +8,17 @@ from loregarden.models.domain import (
     StudioSkillCreate,
     StudioSkillRestore,
     StudioSkillUpdate,
+    StudioWorkflow,
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
+from loregarden.services.studio_drift import (
+    StageRemovalNeedsConfirmation,
+    detect_all_drift,
+    detect_drift,
+)
 from loregarden.services.studio_service import StudioService
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 
@@ -249,10 +255,35 @@ def delete_studio_workflow(slug: str, session: Session = Depends(get_session)) -
     return {"ok": True}
 
 
+@router.get("/workflows/drift")
+def studio_workflow_drift_all(session: Session = Depends(get_session)) -> list[dict]:
+    return [item.model_dump() for item in detect_all_drift(session)]
+
+
+@router.get("/workflows/{slug}/drift")
+def studio_workflow_drift(slug: str, session: Session = Depends(get_session)) -> dict:
+    workflow = session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail=f"Studio workflow not found: {slug}")
+    return detect_drift(session, workflow).model_dump()
+
+
 @router.post("/workflows/{slug}/publish")
-def publish_studio_workflow(slug: str, session: Session = Depends(get_session)) -> dict:
+def publish_studio_workflow(
+    slug: str,
+    confirm_stage_removal: bool = False,
+    session: Session = Depends(get_session),
+) -> dict:
     try:
-        return StudioService(session).publish_workflow(slug).model_dump()
+        return (
+            StudioService(session)
+            .publish_workflow(slug, confirm_stage_removal=confirm_stage_removal)
+            .model_dump()
+        )
+    except StageRemovalNeedsConfirmation as exc:
+        # 409, not 400: the draft is valid and the caller may proceed once told
+        # what it costs. A 400 would read as "fix your input".
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

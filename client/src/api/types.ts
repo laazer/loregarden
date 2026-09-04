@@ -868,6 +868,35 @@ export interface StudioWorkflow {
   updated_at: string;
 }
 
+/** One stage field that differs between a Studio draft and its published template. */
+export interface StageFieldDrift {
+  field: string;
+  draft: string;
+  template: string;
+}
+
+/**
+ * What publishing a Studio draft would change about the workflow that runs.
+ *
+ * `published: false` means the draft has never been published — not drift.
+ * `stranded` counts live tickets currently sitting on a stage the publish would
+ * remove; those instances read the live template, so their cursor would point at
+ * a stage that no longer exists.
+ */
+export interface StudioWorkflowDrift {
+  slug: string;
+  published_template_slug: string;
+  published: boolean;
+  drifted: boolean;
+  stages_added: string[];
+  stages_removed: string[];
+  stages_changed: Record<string, StageFieldDrift[]>;
+  draft_transition_count: number;
+  template_transition_count: number;
+  template_version: number;
+  stranded: { count: number; stage_keys: string[]; ticket_ids: string[] };
+}
+
 export interface CreateTicketRequest {
   workspace_slug: string;
   title: string;

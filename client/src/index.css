@@ -812,6 +812,24 @@ textarea::placeholder {
   color: var(--txl);
 }
 
+/* Publishing a Studio draft overwrites the workflow that actually runs, so a
+   draft that has diverged from its template gets said so before the button. */
+.studio-drift-notice {
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  background: rgba(240, 180, 41, 0.08);
+  color: var(--tx);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-drift-notice ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 .studio-field-row {
   display: flex;
   gap: 14px;
