@@ -163,7 +163,16 @@ def test_the_helper_itself_is_exempt():
 
 
 def test_real_services_are_clean():
-    """The invariant holds across the actual server tree, not just fixtures."""
+    """The invariant holds across the actual server tree, not just fixtures.
+
+    `repo=` is the real root, not None. This is the only test here that walks a
+    real repository tree, so it is the one place the read guard meets real
+    source — opting it out of the boundary (which the signature migration did)
+    left the rule exercised solely by fixtures (594).
+    """
+    repo_root = Path(__file__).resolve().parents[2]
     services = Path(__file__).resolve().parents[1] / "loregarden"
-    offenders = [str(py) for py in services.rglob("*.py") if checker.violations_in(py, repo=None)]
+    offenders = [
+        str(py) for py in services.rglob("*.py") if checker.violations_in(py, repo=repo_root)
+    ]
     assert offenders == []

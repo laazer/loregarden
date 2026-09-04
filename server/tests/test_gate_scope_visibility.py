@@ -1250,6 +1250,97 @@ def test_a_sibling_directory_sharing_the_repository_prefix_is_outside_it(
     assert "outside the repository" in _out(result), _out(result)
 
 
+NON_UTF8_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, "src/pkg/bad.py", b'x = "\xff\xfe caf\xe9"\n', id="py-org"),
+    pytest.param(
+        PY_SILENT_EXCEPT_GATE, "src/pkg/bad.py", b'x = "\xff\xfe caf\xe9"\n', id="py-silent-except"
+    ),
+    pytest.param(
+        TS_ORGANIZATION_GATE,
+        "client/src/bad.ts",
+        b'export const s = "\xff\xfe caf\xe9";\n',
+        id="ts-org",
+    ),
+]
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), NON_UTF8_GATES)
+def test_a_source_file_that_is_not_utf8_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: bytes
+) -> None:
+    """Bytes that are not the file's text are not the file (594).
+
+    Python has always refused this: `read_source_text` catches
+    `UnicodeDecodeError`. Node does not — `readFileSync(path, "utf8")`
+    substitutes U+FFFD rather than throwing, so the `.cjs` parsed mangled text
+    and reported it clean. Measured before the fix: `examined 1 file(s)`,
+    `TypeScript organization checks passed.`, exit 0 over a file it could not
+    read, while both Python gates exited 1 on the same fixture.
+
+    That is the same shape as every other hole in this file — a gate reporting a
+    pass over something it did not actually examine — in the half of the mirror
+    that could not express it.
+    """
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_the_escape_guard_does_not_depend_on_the_callers_directory(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory
+) -> None:
+    """ "The repository" is what git says it is, not where the caller stood (594).
+
+    The Python gates fall back to `git_repo_root()` when `--repo` is omitted.
+    The `.cjs` used `process.cwd()`, so the two agreed only while the caller
+    stood at the top level. From a subdirectory the containment test measured
+    against the wrong tree, found the graded file outside it, and skipped the
+    escape guard entirely.
+
+    That was survivable while an unrelated `git diff` error happened to fail the
+    run first. 580 moved the diffing into the Python resolver, which does not
+    fail there — so the guard's only remaining coverage went with it, and this
+    became a real pass over a file resolving outside the repository. Measured:
+    pre-580 `.cjs` exit 1, post-580 exit 0, Python exit 1 from either directory.
+
+    No `--repo` is passed here on purpose. That is the whole condition.
+    """
+    outside = tmp_path_factory.mktemp("outside") / f"target{Path(relpath).suffix}"
+    outside.write_text(body)
+    link = repo / relpath
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(outside)
+    subdir = repo / "src" / "pkg"
+    subdir.mkdir(parents=True, exist_ok=True)
+
+    result = subprocess.run(
+        [*gate, str(link)],
+        cwd=subdir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    # The *reason* matters here, not just the exit code. The first version of
+    # this test asserted only non-zero, and a mutant that removed the
+    # git-derived root satisfied it by crashing the gate on a null path — the
+    # same "coverage rests on an unrelated error" the ticket is about, one layer
+    # up. A refusal names the file; a crash names a stack frame.
+    assert "outside the repository" in _out(result), _out(result)
+    assert "ERR_INVALID_ARG_TYPE" not in _out(result), _out(result)
+    assert "Traceback" not in _out(result), _out(result)
+
+
 # --------------------------------------------------------------------------- #
 # The paths git prints, and the files behind them
 # --------------------------------------------------------------------------- #

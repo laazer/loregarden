@@ -32,6 +32,10 @@ const API_CALL_PATTERNS = [/\bfetch\s*\(/, /\baxios\s*\./, /\baxios\s*\(/];
 
 const ALLOW_INSTANCEOF = "ts-org: allow-instanceof";
 
+/** Where a TypeScript source tree lives, most specific first. This gate's own
+ *  policy; the resolver turns it into a path against the repository root. */
+const TS_SOURCE_ROOT_CANDIDATES = ["client/src", "src", "app", "frontend/src"];
+
 const errors = [];
 
 function isComponentFile(filePath) {
@@ -130,12 +134,12 @@ let errorHelperCache;
  * Returns `{ name, file }`, or null when the repo has no such helper yet — then
  * the advice is to extract one.
  */
-function findErrorHelper(repoRoot) {
+function findErrorHelper(sourceRoot) {
   if (errorHelperCache !== undefined) return errorHelperCache;
   const pattern = new RegExp(`export\\s+(?:async\\s+)?function\\s+(${ERROR_HELPER_NAMES.join("|")})\\b`);
   errorHelperCache = null;
-  const root = tsSourceRoot(repoRoot);
-  const stack = [root];
+  if (sourceRoot === null) return errorHelperCache;
+  const stack = [sourceRoot];
   while (stack.length > 0 && errorHelperCache === null) {
     const dir = stack.pop();
     let entries;
@@ -156,7 +160,7 @@ function findErrorHelper(repoRoot) {
           continue;
         }
         if (match) {
-          errorHelperCache = { name: match[1], file: path.relative(repoRoot, full) };
+          errorHelperCache = { name: match[1], file: path.relative(sourceRoot, full) };
           break;
         }
       }
@@ -174,10 +178,10 @@ function findErrorHelper(repoRoot) {
  * Error)) return …`) is how narrowing is supposed to work and stays legal — which
  * is also why the helper's own file is exempt.
  */
-function errorNarrowingErrors(filePath, ast, lines, added, repoRoot) {
+function errorNarrowingErrors(filePath, ast, lines, added, sourceRoot) {
   if (isTestFile(filePath)) return [];
-  const helper = findErrorHelper(repoRoot);
-  if (helper && path.resolve(repoRoot, helper.file) === path.resolve(filePath)) return [];
+  const helper = findErrorHelper(sourceRoot);
+  if (helper && path.resolve(sourceRoot, helper.file) === path.resolve(filePath)) return [];
   const advice = helper
     ? `use \`${helper.name}(error, "fallback")\` from ${helper.file}`
     : `extract one shared helper (\`describeError(error, fallback)\`) instead of repeating the ternary`;
@@ -288,11 +292,24 @@ function readSource(filePath, repoRoot) {
       `${filePath}: ${stat.size} bytes exceeds the ${MAX_SOURCE_BYTES}-byte grading limit (resolves to ${real}), so it cannot be graded and cannot be reported clean`,
     );
   }
+  let bytes;
   try {
-    return fs.readFileSync(real, "utf8");
+    bytes = fs.readFileSync(real);
   } catch (err) {
     throw new UnexaminableFileError(
       `${filePath}: this run could not read it, so it cannot be reported clean (${err.message})`,
+    );
+  }
+  try {
+    // `readFileSync(..., "utf8")` does not throw on invalid UTF-8 — it
+    // substitutes U+FFFD — so the gate parsed mangled text and could report it
+    // clean. Python refuses the same file with UnicodeDecodeError; this is that
+    // rule, in the half of the mirror that could not express it (594).
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (err) {
+    throw new UnexaminableFileError(
+      `${filePath}: is not valid UTF-8 (resolves to ${real}), so it cannot be graded ` +
+        `and cannot be reported clean (${err.message})`,
     );
   }
 }
@@ -379,8 +396,7 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
       path.join(scriptDir, "server_python.sh"),
       path.join(scriptDir, "precommit_git_diff.py"),
       "--emit-scope-json",
-      "--repo",
-      repoRoot,
+      ...(repoRoot === null ? [] : ["--repo", repoRoot]),
       "--scope",
       diffScope,
       "--base",
@@ -391,8 +407,11 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
       ".ts",
       "--suffix",
       ".tsx",
-      "--select-root",
-      tsSourceRoot(repoRoot),
+      // The candidate list is this gate's policy; resolving it is not. Passing
+      // names rather than an absolute path removes the chicken-and-egg where
+      // the source root had to be computed from a repository root only the
+      // resolver knows (594).
+      ...TS_SOURCE_ROOT_CANDIDATES.flatMap((dir) => ["--select-root-candidate", dir]),
       ...files.map((f) => path.resolve(f)),
     ],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
@@ -416,7 +435,17 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
   for (const notice of payload.notices || []) console.log(notice);
   if (payload.error) throw new UnexaminableError(payload.error);
 
-  const relOf = (filePath) => path.relative(repoRoot, path.resolve(filePath));
+  // Everything below measures against the root the resolver used, not the
+  // one this process guessed.
+  const resolvedRoot = payload.repo_root ?? repoRoot ?? null;
+  // No repository at all — a bare file list outside one. Python skips the
+  // containment check in exactly that case, so relpaths become absolute rather
+  // than this process crashing on `path.relative(null, ...)`, which would fail
+  // the run for a reason unrelated to what it examined.
+  const relOf = (filePath) =>
+    resolvedRoot === null
+      ? path.resolve(filePath)
+      : path.relative(resolvedRoot, path.resolve(filePath));
   const untracked = new Set(payload.untracked || []);
   const undiffable = new Set(payload.undiffable || []);
   const additions = payload.additions || {};
@@ -432,7 +461,13 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
     return { added: new Set(additions[rel] || []), addedCount, deletedCount };
   };
 
-  return { scope: payload.scope, files: payload.files, touched };
+  return {
+    scope: payload.scope,
+    files: payload.files,
+    touched,
+    repoRoot: resolvedRoot,
+    sourceRoot: payload.select_root ?? null,
+  };
 }
 
 function wholeFile(lineCount) {
@@ -441,7 +476,7 @@ function wholeFile(lineCount) {
   return { added, addedCount: lineCount, deletedCount: 0 };
 }
 
-function checkFile(filePath, content, lines, { added, netGrowing, repoRoot }) {
+function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }) {
   const fileErrors = [];
   const lineCount = lines.length;
 
@@ -477,7 +512,7 @@ function checkFile(filePath, content, lines, { added, netGrowing, repoRoot }) {
 
   const ast = parseGradedFile(filePath, content);
   {
-    fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, repoRoot));
+    fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, sourceRoot));
     const functions = extractFunctions(ast, lines);
     const seen = new Map();
     for (const fn of functions) {
@@ -500,18 +535,10 @@ function checkFile(filePath, content, lines, { added, netGrowing, repoRoot }) {
  * workspaces put it at src/ or app/. Detected, not hardcoded, because these
  * checks run against every workspace the control plane drives.
  */
-function tsSourceRoot(repoRoot) {
-  for (const candidate of ["client/src", "src", "app", "frontend/src"]) {
-    const full = path.resolve(repoRoot, candidate);
-    if (fs.existsSync(full)) return full;
-  }
-  return path.resolve(repoRoot);
-}
-
-function buildCatalog(changedSet, repoRoot) {
+function buildCatalog(changedSet, sourceRoot) {
   const catalog = new Map();
-  const clientSrc = tsSourceRoot(repoRoot);
-  if (!fs.existsSync(clientSrc)) return catalog;
+  const clientSrc = sourceRoot;
+  if (clientSrc === null || !fs.existsSync(clientSrc)) return catalog;
 
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -574,7 +601,10 @@ function parseArgv(argv) {
     else if (argv[i] === "--base" && argv[i + 1]) baseRef = argv[(i += 1)];
     else if (/\.(ts|tsx)$/.test(argv[i])) files.push(argv[i]);
   }
-  const repoRoot = repoArg ? path.resolve(repoArg) : process.cwd();
+  // Left null when unset: the scope resolver answers with the git-derived
+  // root, so this gate and the Python gates agree on what "the repository" is
+  // regardless of where the caller stood (594).
+  const repoRoot = repoArg ? path.resolve(repoArg) : null;
   const label = diffScope === "staged" && !repoArg ? "pre-commit" : "gate";
   return { files, repoRoot, diffScope, baseRef, label };
 }
@@ -587,10 +617,17 @@ function parseArgv(argv) {
  * narrowing it again would silently drop files that caller meant to have
  * graded.
  */
-function run({ files, repoRoot, diffScope, baseRef, label }) {
-  const { files: args, touched } = resolveGateScope({
-    label,
+function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
+  // `repoRoot` below is the one the resolver settled on, not the one this
+  // process asked for — those differ whenever `--repo` was omitted (594).
+  const {
+    files: args,
+    touched,
     repoRoot,
+    sourceRoot,
+  } = resolveGateScope({
+    label,
+    repoRoot: requestedRoot,
     diffScope,
     baseRef,
     files,
@@ -600,14 +637,14 @@ function run({ files, repoRoot, diffScope, baseRef, label }) {
   }
 
   const changedSet = new Set(args.map((a) => path.resolve(a)));
-  const catalog = buildCatalog(changedSet, repoRoot);
+  const catalog = buildCatalog(changedSet, sourceRoot);
 
   for (const filePath of args) {
     const content = readSource(filePath, repoRoot);
     const lines = content.split("\n");
     const { added, addedCount, deletedCount } = touched(filePath, lines.length);
     const netGrowing = addedCount > deletedCount;
-    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
+    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }));
     if (!isTestFile(filePath)) {
       errors.push(...crossDryErrors(filePath, content, lines, catalog));
     }

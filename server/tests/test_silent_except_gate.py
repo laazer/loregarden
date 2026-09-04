@@ -404,11 +404,18 @@ def test_workspace_hook_installer_ships_the_gate():
 
 
 def test_real_services_are_clean():
-    """The invariant holds across the actual server tree, not just fixtures."""
+    """The invariant holds across the actual server tree, not just fixtures.
+
+    `repo=` is the real root, not None — see the same test in
+    test_git_subprocess_gate.py. These two are the only tests that traverse a
+    real repository tree, so they are where the read guard meets real source
+    rather than fixtures (594).
+    """
+    repo_root = Path(__file__).resolve().parents[2]
     services = Path(__file__).resolve().parents[1] / "loregarden"
     offenders = [
         f"{py}:{lineno}"
         for py in services.rglob("*.py")
-        for lineno, _ in checker.violations_in(py, repo=None)
+        for lineno, _ in checker.violations_in(py, repo=repo_root)
     ]
     assert offenders == []
