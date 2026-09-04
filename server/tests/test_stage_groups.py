@@ -341,12 +341,33 @@ def _v2_shape() -> list[dict]:
     ]
 
 
-def _stages_of(engine, slug: str) -> dict[str, dict]:
+def _stages_of(engine, slug: str, table: str = "workflow_templates") -> dict[str, dict]:
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT stages_json FROM workflow_templates WHERE slug=:s"), {"s": slug}
+            text(f"SELECT stages_json FROM {table} WHERE slug=:s"),  # noqa: S608 — fixed literals
+            {"s": slug},
         ).scalar_one()
     return {stage["key"]: stage for stage in json.loads(row)}
+
+
+def _insert_draft(engine, slug: str, stages: list[dict]) -> None:
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO studio_workflows "
+                "(id, slug, name, description, stages_json, transitions_json, "
+                "created_at, updated_at) "
+                "VALUES (:id, :slug, :name, '', :st, '[]', :now, :now)"
+            ),
+            {
+                "id": f"draft-{slug}",
+                "slug": slug,
+                "name": slug,
+                "st": json.dumps(stages),
+                "now": now,
+            },
+        )
 
 
 def test_the_migration_groups_v2s_two_implementation_stages(tmp_path):
@@ -365,6 +386,39 @@ def test_the_migration_groups_v2s_two_implementation_stages(tmp_path):
     # alternatives, so the migration is keyed by slug, not inferred from
     # `optional`.
     assert [k for k, v in stages.items() if v.get("alternative_group")] == [BACKEND, FRONTEND]
+
+
+def test_the_migration_groups_the_studio_draft_as_well(tmp_path):
+    """The migration must not become a source of draft/template drift.
+
+    `publish_workflow` writes `f"studio-{draft.slug}"`, so the draft and the
+    template are separate rows. Grouping only the template leaves the draft able
+    to strip the grouping on the next publish — silently reopening the defect
+    this ticket exists to close.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'tpl.db'}")
+    SQLModel.metadata.create_all(engine)
+    _insert_template(engine, "studio-loregarden-tdd-v2", _v2_shape())
+    _insert_draft(engine, "loregarden-tdd-v2", _v2_shape())
+
+    with engine.begin() as conn:
+        m_alternative_impl_group(conn)
+
+    draft = _stages_of(engine, "loregarden-tdd-v2", table="studio_workflows")
+    assert draft[BACKEND]["alternative_group"] == GROUP
+    assert draft[FRONTEND]["alternative_group"] == GROUP
+
+
+def test_the_migration_runs_with_no_draft_present(tmp_path):
+    """A template with no draft behind it must still be grouped, not skipped."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'tpl.db'}")
+    SQLModel.metadata.create_all(engine)
+    _insert_template(engine, "studio-loregarden-tdd-v2", _v2_shape())
+
+    with engine.begin() as conn:
+        m_alternative_impl_group(conn)
+
+    assert _stages_of(engine, "studio-loregarden-tdd-v2")[BACKEND]["alternative_group"] == GROUP
 
 
 def test_the_migration_leaves_other_templates_alone(tmp_path):

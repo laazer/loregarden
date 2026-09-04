@@ -1208,14 +1208,14 @@ def m_repin_unregistered_skill_instances(conn: Connection) -> None:
         )
 
 
-#: The one alternative pair in the live templates. `studio-loregarden-tdd-v2`
-#: marks `backend-impl` and `frontend-impl` optional so a backend-only ticket can
-#: prune the frontend stage — and they are that template's ONLY optional stages,
-#: so pruning both leaves every required stage resolvable and the ticket derives
-#: DONE having implemented nothing. Grouping them makes the second prune a
-#: refusal.
+#: The one alternative pair in the live templates, keyed by STUDIO DRAFT slug.
+#: `studio-loregarden-tdd-v2` marks `backend-impl` and `frontend-impl` optional so
+#: a backend-only ticket can prune the frontend stage — and they are that
+#: template's ONLY optional stages, so pruning both leaves every required stage
+#: resolvable and the ticket derives DONE having implemented nothing. Grouping
+#: them makes the second prune a refusal.
 _ALTERNATIVE_GROUPS: dict[str, dict[str, str]] = {
-    "studio-loregarden-tdd-v2": {"backend-impl": "impl", "frontend-impl": "impl"},
+    "loregarden-tdd-v2": {"backend-impl": "impl", "frontend-impl": "impl"},
 }
 
 
@@ -1230,24 +1230,61 @@ def _apply_alternative_groups(stages: list[dict], assignments: dict[str, str]) -
     return changed
 
 
+def _group_the_studio_draft(conn: Connection, slug: str, assignments: dict[str, str]) -> None:
+    """Apply the same grouping to the editable draft behind a published template.
+
+    Without this the migration is itself a source of draft/template drift: the
+    template gains the grouping, the draft does not, and the next person to press
+    publish in Studio silently strips it — reopening the defect the grouping
+    exists to prevent. The draft is the copy a human edits, so it has to carry
+    the constraint too, not just the copy the orchestrator reads.
+    """
+    if not table_exists(conn, "studio_workflows"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, stages_json FROM studio_workflows WHERE slug=:slug"),
+            {"slug": slug},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return
+    stages = json.loads(row["stages_json"] or "[]")
+    if not _apply_alternative_groups(stages, assignments):
+        return
+    conn.execute(
+        text("UPDATE studio_workflows SET stages_json=:st, updated_at=:now WHERE id=:id"),
+        {"st": json.dumps(stages), "now": datetime.now(timezone.utc), "id": row["id"]},
+    )
+
+
 def m_alternative_impl_group(conn: Connection) -> None:
     """Group v2's two implementation stages so both cannot be pruned.
 
-    Keyed by template slug rather than by looking for optional stages: only a
-    template author knows which optional stages are alternatives and which are
+    Keyed by slug rather than by looking for optional stages: only a template
+    author knows which optional stages are alternatives and which are
     independently skippable. `ui-design` is optional on v3 and is nobody's
     alternative — inferring groups from `optional` would wrongly bind it.
+
+    Writes both copies. `publish_workflow` names the template
+    `f"studio-{draft.slug}"`, so the two slugs are never equal, and a migration
+    that updated only `workflow_templates` would leave the draft able to undo it.
     """
     if not table_exists(conn, "workflow_templates"):
         return
-    rows = (
-        conn.execute(text("SELECT id, slug, stages_json, version FROM workflow_templates"))
-        .mappings()
-        .all()
-    )
-    for row in rows:
-        assignments = _ALTERNATIVE_GROUPS.get(row["slug"] or "")
-        if not assignments:
+    for draft_slug, assignments in _ALTERNATIVE_GROUPS.items():
+        _group_the_studio_draft(conn, draft_slug, assignments)
+        row = (
+            conn.execute(
+                text("SELECT id, stages_json, version FROM workflow_templates WHERE slug=:slug"),
+                {"slug": f"studio-{draft_slug}"},
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
             continue
         stages = json.loads(row["stages_json"] or "[]")
         if not _apply_alternative_groups(stages, assignments):
