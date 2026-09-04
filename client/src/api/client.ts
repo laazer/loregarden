@@ -49,6 +49,7 @@ import type {
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
   StudioWorkflow,
+  StudioWorkflowDrift,
   StudioWorkflowVersion,
   WorkflowTransition,
   CreateTicketRequest,
@@ -554,8 +555,13 @@ export const api = {
     }),
   deleteStudioWorkflow: (slug: string) =>
     request<{ ok: boolean }>(`/api/studio/workflows/${slug}`, { method: "DELETE" }),
-  publishStudioWorkflow: (slug: string) =>
-    request<StudioWorkflow>(`/api/studio/workflows/${slug}/publish`, { method: "POST" }),
+  publishStudioWorkflow: (slug: string, confirmStageRemoval = false) =>
+    request<StudioWorkflow>(
+      `/api/studio/workflows/${slug}/publish?confirm_stage_removal=${confirmStageRemoval}`,
+      { method: "POST" },
+    ),
+  studioWorkflowDrift: (slug: string) =>
+    request<StudioWorkflowDrift>(`/api/studio/workflows/${slug}/drift`),
   studioWorkflowVersions: (slug: string) =>
     request<StudioWorkflowVersion[]>(`/api/studio/workflows/${slug}/versions`),
   studioWorkflowVersion: (slug: string, version: number) =>

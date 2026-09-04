@@ -50,6 +50,7 @@ from loregarden.models.domain import (
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_parking import park_stage
+from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, select
 
@@ -495,6 +496,49 @@ def check_gate_commands_resolve(
     )
 
 
+def check_studio_draft_drift(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """Studio drafts that have fallen out of step with their published template.
+
+    The drift that motivated this was invisible without a check: the
+    `loregarden-tdd-v3` draft sat at 9 stages against a live 12-stage template,
+    and would have dropped `verify` and the terminal stage on the next publish.
+    Nobody had opened Studio in between, so nothing had a reason to look.
+
+    Reported, never repaired. Which copy is right depends on whether the draft is
+    an unfinished edit or a stale one, and only a person knows that.
+    """
+    drifted = [item for item in detect_all_drift(session) if item.drifted]
+    if not drifted:
+        return _ok(DoctorCheck.STUDIO_DRAFT_DRIFT, "Every Studio draft matches its template.")
+    detail = "; ".join(
+        f"{item.slug}: "
+        + ", ".join(
+            part
+            for part in (
+                f"+{len(item.stages_added)} stage(s)" if item.stages_added else "",
+                f"-{len(item.stages_removed)} stage(s)" if item.stages_removed else "",
+                f"{len(item.stages_changed)} stage(s) changed" if item.stages_changed else "",
+                (f"{item.draft_transition_count} vs {item.template_transition_count} transitions")
+                if item.draft_transition_count != item.template_transition_count
+                else "",
+            )
+            if part
+        )
+        for item in drifted
+    )
+    return DoctorFinding(
+        check=DoctorCheck.STUDIO_DRAFT_DRIFT,
+        status=DoctorStatus.FAIL,
+        finding=f"{len(drifted)} Studio draft(s) differ from their published template — {detail}",
+        remedy=(
+            "Open Studio and reconcile the draft with its template before publishing. "
+            "Publishing now would overwrite the live workflow with the draft."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -507,6 +551,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.TOOLCHAIN_INSTALLED: check_toolchain_installed,
     DoctorCheck.GIT_WRITABLE: check_git_writable,
     DoctorCheck.GATE_COMMANDS_RESOLVE: check_gate_commands_resolve,
+    DoctorCheck.STUDIO_DRAFT_DRIFT: check_studio_draft_drift,
 }
 
 

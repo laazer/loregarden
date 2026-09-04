@@ -774,7 +774,7 @@ def test_workflow_rejects_classify_branch_to_unknown_stage():
     """A phantom branch target must fail on save, not mid-run at routing time."""
     import pytest
     from loregarden.models.domain import StudioWorkflowStage
-    from loregarden.services.studio_service import _validate_stage_route_targets
+    from loregarden.services.studio_workflow_validation import validate_stage_route_targets
 
     stages = [
         StudioWorkflowStage(
@@ -787,10 +787,10 @@ def test_workflow_rejects_classify_branch_to_unknown_stage():
         StudioWorkflowStage(key="implement", name="Implement", agent_id="backend", order=2),
     ]
     with pytest.raises(ValueError, match="branch to unknown stage"):
-        _validate_stage_route_targets(stages)
+        validate_stage_route_targets(stages)
 
     stages[0].classify_routes[0].to_stage = "implement"
-    _validate_stage_route_targets(stages)  # valid target: no raise
+    validate_stage_route_targets(stages)  # valid target: no raise
 
 
 def test_workflow_rejects_a_classify_route_only_list_order_can_choose():
@@ -804,7 +804,9 @@ def test_workflow_rejects_a_classify_route_only_list_order_can_choose():
     """
     import pytest
     from loregarden.models.domain import StudioWorkflowStage
-    from loregarden.services.studio_service import _validate_classify_routes_are_selectable
+    from loregarden.services.studio_workflow_validation import (
+        validate_classify_routes_are_selectable,
+    )
 
     stages = [
         StudioWorkflowStage(
@@ -819,12 +821,12 @@ def test_workflow_rejects_a_classify_route_only_list_order_can_choose():
         ),
     ]
     with pytest.raises(ValueError, match="list position"):
-        _validate_classify_routes_are_selectable(stages)
+        validate_classify_routes_are_selectable(stages)
 
     # Either way of making it choosable is enough.
     stages[0].classify_routes[0].specialties = ["backend"]
     stages[0].classify_routes[1].default = True
-    _validate_classify_routes_are_selectable(stages)
+    validate_classify_routes_are_selectable(stages)
 
 
 def test_two_routes_may_share_an_agent_and_differ_in_branch():
@@ -836,7 +838,9 @@ def test_two_routes_may_share_an_agent_and_differ_in_branch():
     delete a working shortcut to fix a bug that lives in the matching, not here.
     """
     from loregarden.models.domain import StudioWorkflowStage
-    from loregarden.services.studio_service import _validate_classify_routes_are_selectable
+    from loregarden.services.studio_workflow_validation import (
+        validate_classify_routes_are_selectable,
+    )
 
     stages = [
         StudioWorkflowStage(
@@ -853,4 +857,4 @@ def test_two_routes_may_share_an_agent_and_differ_in_branch():
         ),
         StudioWorkflowStage(key="test-design", name="Design Tests", agent_id="td", order=2),
     ]
-    _validate_classify_routes_are_selectable(stages)
+    validate_classify_routes_are_selectable(stages)

@@ -20,11 +20,13 @@ import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { ToolAccessSection } from "../components/studio/ToolAccessSection";
 import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
+import { WorkflowDriftNotice } from "../components/studio/WorkflowDriftNotice";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
 import { WorkspaceGatesPanel } from "../components/studio/WorkspaceGatesPanel";
 import { notifyStrippedSkills } from "../components/studio/skillOptions";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
 import { isStudioNewResource, studioPath } from "../lib/appNavigation";
+import { errorStatus } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import { StudioStagesCard } from "../components/studio/StudioStagesCard";
 import { emptyStage, modelOptionsForAdapter } from "../components/studio/studioWorkflowHelpers";
@@ -289,13 +291,23 @@ export function StudioPage() {
 
   const publishWorkflow = useMutation({
     meta: { errorTitle: "Publish workflow" },
-    mutationFn: (slug: string) => api.publishStudioWorkflow(slug),
+    // The server answers 409 when the publish would strand live tickets on a
+    // stage it removes. That is a confirmation, not an error: the toast carries
+    // the cost, and re-issuing with confirm proceeds.
+    mutationFn: ({ slug, confirm }: { slug: string; confirm: boolean }) =>
+      api.publishStudioWorkflow(slug, confirm),
     onSuccess: (published) => {
       notifyStrippedSkills("Workflow published", published);
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
       qc.invalidateQueries({ queryKey: ["workflow-templates"] });
+      qc.invalidateQueries({ queryKey: ["studio-workflow-drift"] });
     },
   });
+
+  // Only a 409 offers the override. Every other publish failure is an author
+  // error with no valid "anyway", and offering one would invite pushing past it.
+  const publishNeedsConfirmation =
+    errorStatus(publishWorkflow.error) === 409;
 
   const deleteWorkflow = useMutation({
     meta: { errorTitle: "Delete workflow" },
@@ -1053,6 +1065,10 @@ export function StudioPage() {
                 selectedWorkflow={selectedWorkflow}
               />
 
+              {!isWorkflowReadOnly && selectedWorkflowSlug && (
+                <WorkflowDriftNotice slug={selectedWorkflowSlug} />
+              )}
+
               {!isWorkflowReadOnly && (
                 <div className="studio-card-actions">
                   {selectedWorkflowSlug && (
@@ -1069,10 +1085,24 @@ export function StudioPage() {
                         type="button"
                         className="btn-secondary"
                         disabled={publishWorkflow.isPending}
-                        onClick={() => publishWorkflow.mutate(selectedWorkflowSlug)}
+                        onClick={() =>
+                          publishWorkflow.mutate({ slug: selectedWorkflowSlug, confirm: false })
+                        }
                       >
                         {publishWorkflow.isPending ? "Publishing…" : "Publish to templates"}
                       </button>
+                      {publishNeedsConfirmation && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={publishWorkflow.isPending}
+                          onClick={() =>
+                            publishWorkflow.mutate({ slug: selectedWorkflowSlug, confirm: true })
+                          }
+                        >
+                          Publish anyway
+                        </button>
+                      )}
                     </>
                   )}
                   <button

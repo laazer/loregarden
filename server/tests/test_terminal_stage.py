@@ -138,21 +138,21 @@ def test_migration_is_idempotent(tmp_path):
 def test_validate_has_terminal_stage_rejects_and_accepts():
     import pytest
     from loregarden.models.domain import StudioWorkflowStage
-    from loregarden.services.studio_service import _validate_has_terminal_stage
+    from loregarden.services.studio_workflow_validation import validate_has_terminal_stage
 
     no_terminal = [
         StudioWorkflowStage(key="implement", name="Implement", agent_id="backend", order=1),
         StudioWorkflowStage(key="gate", name="Gate", stage_type="gate", order=2),
     ]
     with pytest.raises(ValueError, match="terminal stage"):
-        _validate_has_terminal_stage(no_terminal)
+        validate_has_terminal_stage(no_terminal)
 
     # A `done` key satisfies it (historical fallback) ...
-    _validate_has_terminal_stage(
+    validate_has_terminal_stage(
         no_terminal + [StudioWorkflowStage(key="done", name="Done", order=3)]
     )
     # ... as does the explicit `terminal` flag on any key.
-    _validate_has_terminal_stage(
+    validate_has_terminal_stage(
         no_terminal + [StudioWorkflowStage(key="wrap", name="Wrap", order=3, terminal=True)]
     )
 

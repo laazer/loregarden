@@ -263,6 +263,11 @@ class DoctorCheck(str, Enum):
     #: A configured transition-gate command that does not resolve from the
     #: directory the agent will run it in.
     GATE_COMMANDS_RESOLVE = "gate_commands_resolve"
+    #: A Studio draft that no longer matches the template it publishes to, so
+    #: pressing publish would roll the live workflow back. Nobody opens Studio
+    #: between a template-editing migration and the next publish, so this is the
+    #: only thing that reports it.
+    STUDIO_DRAFT_DRIFT = "studio_draft_drift"
 
 
 class PortabilityState(str, Enum):
