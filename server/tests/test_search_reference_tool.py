@@ -439,3 +439,25 @@ def _with(transport):
         )
 
     return call
+
+
+def test_the_suite_never_resolves_a_real_hostname():
+    """The hermeticity guard covers DNS, not just HTTP.
+
+    `_url_block_reason` calls `socket.getaddrinfo` as an SSRF check BEFORE any
+    request is built, so patching only `httpx` left every test in this file
+    making a real lookup for devdocs.io. That passed on a machine with working
+    DNS and failed as 20 errors reading "devdocs.io did not resolve" on one
+    without — a pre-push run, on a change that touched none of this.
+
+    Tested by resolving a name that cannot exist: real DNS returns nothing for
+    it, so an answer proves the stub is in force. Identity comparison does not
+    work here — `reference_cache.socket` IS the stdlib module, so patching its
+    attribute changes every reference to it at once.
+    """
+    from loregarden.services.reference_cache import _resolved_addresses
+
+    assert _resolved_addresses("no-such-host.invalid", 443) is not None, (
+        "the autouse fixture must stub name resolution; without it this suite "
+        "depends on devdocs.io being reachable"
+    )
