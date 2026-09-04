@@ -814,6 +814,28 @@ textarea::placeholder {
 
 /* Publishing a Studio draft overwrites the workflow that actually runs, so a
    draft that has diverged from its template gets said so before the button. */
+/* The workflow monitor is report-only and usually silent; when it does speak it
+   sits under the ticket title, above the tags. */
+.monitor-findings {
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  background: rgba(240, 180, 41, 0.08);
+  color: var(--tx);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.monitor-findings ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.monitor-findings-count {
+  color: var(--txl);
+}
+
 .studio-drift-notice {
   border: 1px solid rgba(240, 180, 41, 0.45);
   background: rgba(240, 180, 41, 0.08);

@@ -396,6 +396,46 @@ class ReworkStopReason(StrEnum):
     STUCK = "stuck"
 
 
+class MonitorArtifactKind(StrEnum):
+    """The `artifacts.kind` value the workflow monitor owns.
+
+    Its own kind, upserted per (ticket, condition, stage), for the reason
+    `ReworkArtifactKind` exists: `context` is already the largest kind at 1765
+    rows because `record_gate_evaluation` never upserts, and a per-sweep finding
+    stream appended there would be unqueryable within a week.
+    """
+
+    #: One row per (ticket, condition, stage), with an occurrence count.
+    FINDING = "monitor_finding"
+
+
+class MonitorCondition(StrEnum):
+    """What the workflow monitor knows how to notice.
+
+    Deliberately closed. Each value is a shape that has actually cost runs here,
+    and each is reported with the rows that evidence it — the monitor observes
+    and never decides.
+    """
+
+    #: A (orchestration_run, stage) pair attempted far more often than the
+    #: 90-day baseline for that stage.
+    STAGE_THRASH = "stage_thrash"
+    #: Repeat attempts with no orchestration run behind them. The standalone
+    #: dispatch path had no retry budget at all until 560; these are the runs
+    #: nothing was counting.
+    UNBUDGETED_REPEAT = "unbudgeted_repeat"
+    #: A stage failing far more often than the workspace as a whole. Its fix is
+    #: a template or agent change, never a runtime action.
+    FAILURE_CLUSTER = "failure_cluster"
+    #: A run still RUNNING long past what that stage has ever taken.
+    STALLED_RUN = "stalled_run"
+    #: A Studio draft that no longer matches the template it publishes to.
+    DRAFT_DRIFT = "draft_drift"
+    #: A `skip_when` naming a condition no resolver knows, so the stage it is
+    #: on will never be pruned and nothing says so.
+    SKIP_CONDITION_ROT = "skip_condition_rot"
+
+
 class ReworkArtifactKind(StrEnum):
     """The `artifacts.kind` values the rework-feedback ledger owns.
 

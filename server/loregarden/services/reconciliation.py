@@ -50,6 +50,7 @@ from loregarden.services.run_service import (
     settle_stranded_stages,
 )
 from loregarden.services.ticket_rollup import reconcile_all_parents
+from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_stranded_stages", settle_stranded_stages),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
+    # Report-only: this one observes and writes findings, it repairs nothing.
+    # It rides the existing timer rather than adding a loop, and the wrapper
+    # above means a bad scan cannot take the repair sweeps down with it.
+    SweepStep("scan_workflow_monitor", monitor_sweep),
 )
 
 
