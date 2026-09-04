@@ -77,6 +77,7 @@ from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
+    m_alternative_impl_group,
     m_clear_phantom_skill_names,
     m_ensure_terminal_stage,
     m_light_heavy_rigor_triage,
@@ -1358,6 +1359,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0105_run_usage_status", m_run_usage_status),
     ("0106_blocked_run_reason", m_blocked_run_reason),
     ("0107_verdict_channel", m_verdict_channel),
+    ("0108_alternative_impl_group", m_alternative_impl_group),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -70,6 +70,17 @@ class WorkflowStageDef(SQLModel):
     # says — the seam that lets a duty move off a human gate and onto the stage
     # that should have been doing it.
     stage_brief: str = ""
+    # Names a set of stages that are alternatives to one another: a backend and
+    # a frontend implementation stage, where a given ticket needs one, the other,
+    # or both. Empty means the stage stands alone. The invariant is only that a
+    # non-empty group cannot end with every member pruned — there is no
+    # exclusivity, because existing templates already run both members happily.
+    #
+    # It exists because group members must be `optional` to be prunable at all,
+    # and `_derive_ticket_state` drops optional stages from the required set. So
+    # pruning every member leaves nothing required unresolved, and the ticket
+    # derives DONE having implemented nothing.
+    alternative_group: str = ""
 
 
 class WorkflowStageView(SQLModel):
@@ -953,6 +964,8 @@ class StudioWorkflowStage(SQLModel):
     required_evidence: list[str] = Field(default_factory=list)
     checklist: list[str] = Field(default_factory=list)
     stage_brief: str = ""
+    #: See `WorkflowStageDef.alternative_group`.
+    alternative_group: str = ""
 
 
 class StudioWorkflowCreate(SQLModel):
