@@ -57,6 +57,17 @@
   color: var(--bll);
 }
 
+.log-line__tag--think {
+  background: rgba(157, 140, 255, 0.14);
+  color: var(--vil);
+}
+
+/* Reasoning reads as commentary on the run, not as its output. */
+.log-line--think .log-line__text {
+  color: var(--txl);
+  font-style: italic;
+}
+
 .log-line__tag--warn {
   background: rgba(229, 167, 44, 0.16);
   color: var(--aml);
@@ -72,6 +83,71 @@
   color: var(--txm);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-line__headline {
+  color: var(--txm);
+}
+
+.log-line__json {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  overflow-x: auto;
+  font: inherit;
+  color: var(--txm);
+}
+
+/* Compact markdown for tool output. Kept here rather than folded into the
+   shared `.markdown-preview` list in index.css: that list styles authored
+   prose in chat and approvals, and the log feed sets its own type. */
+.log-line__md {
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 2px;
+}
+
+.log-line__md > :first-child {
+  margin-top: 0;
+}
+
+.log-line__md > :last-child {
+  margin-bottom: 0;
+}
+
+.log-line__md :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 12.5px;
+  margin: 0.6em 0 0.3em;
+}
+
+.log-line__md :is(p, ul, ol) {
+  margin: 0.3em 0;
+}
+
+.log-line__md :is(pre, code) {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.log-line__md pre {
+  margin: 0.4em 0;
+  padding: 6px 8px;
+  background: var(--bg1);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.log-line__md table {
+  border-collapse: collapse;
+}
+
+.log-line__md :is(th, td) {
+  border: 1px solid var(--bd);
+  padding: 2px 6px;
+  text-align: left;
 }
 
 .log-line--live {

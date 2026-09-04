@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from loregarden.dot_line import OUT
 from loregarden.services.run_log_stream import format_stream_payload
 
 
@@ -53,7 +54,9 @@ class _NdjsonReply:
                 self.codex_reply = codex_text
                 return None
         formatted = format_stream_payload(payload)
-        if formatted and formatted[0] == "OUT":
+        # OUT only: the reply is what the agent said, and reasoning now arrives
+        # under THINK rather than sharing this tag with the answer.
+        if formatted and formatted[0] == OUT.name:
             self.parts.append(formatted[1])
         return None
 
@@ -94,7 +97,7 @@ def _extract_from_single_json(raw: str) -> str | None:
         if text:
             return text
     formatted = format_stream_payload(payload)
-    if formatted and formatted[0] == "OUT":
+    if formatted and formatted[0] == OUT.name:
         return formatted[1]
     return None
 
