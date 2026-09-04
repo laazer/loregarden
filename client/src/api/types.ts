@@ -897,6 +897,24 @@ export interface StudioWorkflowDrift {
   stranded: { count: number; stage_keys: string[]; ticket_ids: string[] };
 }
 
+/**
+ * One thing the workflow monitor noticed, with the numbers that evidence it.
+ *
+ * No severity and no suggested action: whether a thrashing stage is a
+ * converging rework loop is the rework ledger's call, and it holds the retry
+ * cap. The monitor reports the signal and stops.
+ */
+export interface MonitorFinding {
+  condition: string;
+  ticket_id: string;
+  stage_key: string;
+  summary: string;
+  evidence: Record<string, string>;
+  occurrences: number;
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
 export interface CreateTicketRequest {
   workspace_slug: string;
   title: string;

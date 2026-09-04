@@ -48,6 +48,7 @@ import type {
   StudioGeneratedAgent,
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
+  MonitorFinding,
   StudioWorkflow,
   StudioWorkflowDrift,
   StudioWorkflowVersion,
@@ -560,6 +561,8 @@ export const api = {
       `/api/studio/workflows/${slug}/publish?confirm_stage_removal=${confirmStageRemoval}`,
       { method: "POST" },
     ),
+  monitorFindings: (ticketId: string) =>
+    request<MonitorFinding[]>(`/api/monitor/findings?ticket_id=${ticketId}`),
   studioWorkflowDrift: (slug: string) =>
     request<StudioWorkflowDrift>(`/api/studio/workflows/${slug}/drift`),
   studioWorkflowVersions: (slug: string) =>
