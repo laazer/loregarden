@@ -8,6 +8,7 @@ import secrets
 from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
+from loregarden.core.stage_groups import group_members, group_would_be_emptied
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     AgentRun,
@@ -556,6 +557,18 @@ class OrchestrationCallbackService:
             )
         if current == StageStatus.DONE:
             raise ValueError(f"Stage '{stage_key}' already ran and cannot be skipped")
+
+        emptied = group_would_be_emptied(stages, stage_map, stage_key)
+        if emptied:
+            siblings = ", ".join(
+                f"'{m.key}'" for m in group_members(stages, emptied) if m.key != stage_key
+            )
+            raise ValueError(
+                f"Stage '{stage_key}' is the last remaining member of alternative group "
+                f"'{emptied}' and cannot be skipped — one of {siblings} must run. "
+                "Pruning every member would leave the ticket deriving DONE with none of "
+                "this group's work performed."
+            )
 
         set_stage_status(
             ticket,

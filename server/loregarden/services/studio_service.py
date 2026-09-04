@@ -798,6 +798,47 @@ def _validate_has_terminal_stage(stages: list[StudioWorkflowStage]) -> None:
         )
 
 
+def _validate_alternative_groups(stages: list[StudioWorkflowStage]) -> None:
+    """Reject an alternative group that cannot mean what it says.
+
+    A group's whole content is the invariant "at least one of these must run",
+    which `skip_stage` enforces by refusing to prune the last surviving member.
+    Two shapes make that invariant unstatable, and both are author errors worth
+    catching on save rather than mid-run:
+
+      * A member that is not `optional` cannot be pruned at all, so the group is
+        a no-op — it reads as a constraint while enforcing nothing, which is
+        worse than no group.
+      * The terminal stage is never prunable (`is_prunable_stage`), so a group
+        containing it has the same problem plus a misleading name on the stage
+        that ends the workflow.
+
+    A one-member group is deliberately allowed: it is what an author has while
+    adding the second member, and it enforces correctly in the meantime.
+    """
+    groups: dict[str, list[StudioWorkflowStage]] = {}
+    for stage in stages:
+        if stage.alternative_group:
+            groups.setdefault(stage.alternative_group, []).append(stage)
+
+    for group, members in sorted(groups.items()):
+        terminal = [m.key for m in members if m.terminal or m.key == TERMINAL_STAGE_KEY]
+        if terminal:
+            raise ValueError(
+                f"Alternative group '{group}' contains the terminal stage "
+                f"{', '.join(sorted(terminal))} — the stage that ends the workflow "
+                "can never be pruned, so the group would enforce nothing."
+            )
+        required = sorted(m.key for m in members if not m.optional)
+        if required:
+            raise ValueError(
+                f"Alternative group '{group}' contains required stage(s) "
+                f"{', '.join(required)} — every member must be `optional`, or the "
+                "group's 'at least one must run' rule is already satisfied and "
+                "enforces nothing."
+            )
+
+
 def _available_skills() -> list[str]:
     return list_skills()
 
@@ -1169,6 +1210,7 @@ class StudioService:
         _validate_classify_routes_are_selectable(stages)
         _validate_has_terminal_stage(stages)
         _validate_stage_skill_names(stages)
+        _validate_alternative_groups(stages)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1202,6 +1244,7 @@ class StudioService:
             _validate_classify_routes_are_selectable(stages)
             _validate_has_terminal_stage(stages)
             _validate_stage_skill_names(stages)
+            _validate_alternative_groups(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1248,6 +1291,7 @@ class StudioService:
         _validate_classify_routes_are_selectable(stages)
         _validate_has_terminal_stage(stages)
         _validate_stage_skill_names(stages)
+        _validate_alternative_groups(stages)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []

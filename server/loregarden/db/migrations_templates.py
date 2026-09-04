@@ -1206,3 +1206,55 @@ def m_repin_unregistered_skill_instances(conn: Connection) -> None:
             text("UPDATE workflow_instances SET template_version=:v WHERE id=:id"),
             {"v": target, "id": row["id"]},
         )
+
+
+#: The one alternative pair in the live templates. `studio-loregarden-tdd-v2`
+#: marks `backend-impl` and `frontend-impl` optional so a backend-only ticket can
+#: prune the frontend stage — and they are that template's ONLY optional stages,
+#: so pruning both leaves every required stage resolvable and the ticket derives
+#: DONE having implemented nothing. Grouping them makes the second prune a
+#: refusal.
+_ALTERNATIVE_GROUPS: dict[str, dict[str, str]] = {
+    "studio-loregarden-tdd-v2": {"backend-impl": "impl", "frontend-impl": "impl"},
+}
+
+
+def _apply_alternative_groups(stages: list[dict], assignments: dict[str, str]) -> bool:
+    """Set `alternative_group` on the named stages, leaving the rest alone."""
+    changed = False
+    for stage in stages:
+        group = assignments.get(stage.get("key", ""))
+        if group and stage.get("alternative_group") != group:
+            stage["alternative_group"] = group
+            changed = True
+    return changed
+
+
+def m_alternative_impl_group(conn: Connection) -> None:
+    """Group v2's two implementation stages so both cannot be pruned.
+
+    Keyed by template slug rather than by looking for optional stages: only a
+    template author knows which optional stages are alternatives and which are
+    independently skippable. `ui-design` is optional on v3 and is nobody's
+    alternative — inferring groups from `optional` would wrongly bind it.
+    """
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(text("SELECT id, slug, stages_json, version FROM workflow_templates"))
+        .mappings()
+        .all()
+    )
+    for row in rows:
+        assignments = _ALTERNATIVE_GROUPS.get(row["slug"] or "")
+        if not assignments:
+            continue
+        stages = json.loads(row["stages_json"] or "[]")
+        if not _apply_alternative_groups(stages, assignments):
+            continue
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+            {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Alternative implementation group")

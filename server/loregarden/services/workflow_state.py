@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from loregarden.core.stage_groups import emptied_groups
 from loregarden.models.domain import (
     ParallelAgentSpec,
     StageStatus,
@@ -170,8 +171,16 @@ def _derive_ticket_state(
 
     ordered = sorted(stages, key=lambda s: s.order)
     required = [s for s in ordered if not s.optional]
-    if required and all(
-        _stage_resolved(stage_map.get(s.key, StageStatus.PENDING)) for s in required
+    if (
+        required
+        and all(_stage_resolved(stage_map.get(s.key, StageStatus.PENDING)) for s in required)
+        # An alternative group with every member pruned is unfinished work that
+        # the `required` filter above cannot see: members must be `optional` to
+        # be prunable at all, so they are never in that list. Without this the
+        # ticket derives DONE having implemented nothing. IN_PROGRESS, not
+        # BLOCKED — deriving state is a recomputation, not a decision, and the
+        # refusal in `skip_stage` is where the decision belongs.
+        and not emptied_groups(stages, stage_map)
     ):
         return TicketState.DONE
 

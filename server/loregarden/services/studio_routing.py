@@ -6,6 +6,11 @@ import json
 import re
 
 from loregarden.agents.registry import get_agent
+from loregarden.core.stage_groups import (  # noqa: F401 — re-exported for existing import sites
+    emptied_groups,
+    group_members,
+    group_would_be_emptied,
+)
 from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported for existing import sites
     TERMINAL_STAGE_KEY,
     find_terminal_stage,
