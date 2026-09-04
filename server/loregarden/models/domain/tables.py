@@ -18,6 +18,7 @@ from loregarden.models.domain.enums import (
     ExternalHarness,
     MemoryBriefingAssembly,
     MemoryBriefingOutcome,
+    MonitorMode,
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
@@ -260,6 +261,14 @@ class OrchestrationRun(SQLModel, table=True):
     error_message: str = ""
     auto_approve: bool = Field(default=False)
     stop_at_stage_key: str = ""
+    # Per-orchestration override of the workspace profile's monitor mode, for
+    # this run and every child ticket orchestration it recurses into. Null =
+    # use the profile. Lives here, beside auto_approve and
+    # timeout_override_seconds, because those are the other per-run autonomy
+    # dials and they already thread through nested execute() calls.
+    monitor_mode: MonitorMode | None = Field(
+        default=None, sa_column=_str_enum_column(MonitorMode, nullable=True)
+    )
     # Per-orchestration agent timeout for every stage run this orchestration
     # (and its child ticket orchestrations) starts. Null = each agent's default.
     timeout_override_seconds: int | None = Field(default=None)

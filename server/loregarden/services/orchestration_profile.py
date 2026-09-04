@@ -14,8 +14,14 @@ import io
 from pathlib import Path
 
 from loregarden.config import settings
-from loregarden.models.domain import OrchestrationDriver, Workspace
-from pydantic import BaseModel, Field
+from loregarden.models.domain import (
+    AUTO_FIXABLE_CONDITIONS,
+    MonitorCondition,
+    MonitorMode,
+    OrchestrationDriver,
+    Workspace,
+)
+from pydantic import BaseModel, Field, field_validator
 from ruamel.yaml import YAML
 
 
@@ -90,6 +96,39 @@ class RetryBudgetConfig(BaseModel):
     max_attempts_per_stage: int = 5
 
 
+class MonitorConfig(BaseModel):
+    """How much the workflow monitor may do about what it notices.
+
+    `report` is the default and the only safe one: repairing workflow state
+    unattended is a decision, and the report costs nothing. Turning a
+    brand-new repair loose across every ticket in every workspace on the day it
+    ships converts a diagnostic into an outage — the same reasoning
+    `BoundaryConfig.enforce` records.
+
+    A condition named in `autofix` that is not auto-fixable is an error at load,
+    not a silent no-op. A config that quietly does nothing is worse than one that
+    refuses to start: it reads, to the person who wrote it, exactly like a config
+    that works.
+    """
+
+    enabled: bool = True
+    mode: MonitorMode = MonitorMode.REPORT
+    autofix: list[MonitorCondition] = Field(default_factory=list)
+    #: A stage is thrashing at this multiple of the observed baseline.
+    thrash_multiple: float = 2.0
+
+    @field_validator("autofix")
+    @classmethod
+    def _only_auto_fixable(cls, value: list[MonitorCondition]) -> list[MonitorCondition]:
+        unfixable = sorted(item.value for item in value if item not in AUTO_FIXABLE_CONDITIONS)
+        if unfixable:
+            raise ValueError(
+                f"Conditions cannot be auto-fixed: {', '.join(unfixable)}. "
+                f"Auto-fixable: {', '.join(sorted(c.value for c in AUTO_FIXABLE_CONDITIONS))}."
+            )
+        return value
+
+
 class SubagentsConfig(BaseModel):
     spawn_via: str = "cli"
 
@@ -108,6 +147,7 @@ class OrchestrationProfile(BaseModel):
     git: GitAutomationConfig = Field(default_factory=GitAutomationConfig)
     boundary: BoundaryConfig = Field(default_factory=BoundaryConfig)
     retry_budget: RetryBudgetConfig = Field(default_factory=RetryBudgetConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0
