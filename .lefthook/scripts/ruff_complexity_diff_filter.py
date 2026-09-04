@@ -25,17 +25,45 @@ _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
-from precommit_git_diff import git_diff_cached, git_repo_root, parse_staged_additions
+from precommit_git_diff import (
+    UnexaminableError,
+    git_diff_cached,
+    git_repo_root,
+    parse_staged_additions,
+    read_source_text,
+)
 
 # "`name` is too complex (14 > 10)"
 _COMPLEXITY_RE = re.compile(r"is too complex \((\d+)\s*>\s*(\d+)\)")
 _FN_NAME_RE = re.compile(r"`([^`]+)` is too complex")
 
 
-def _function_span(py_file: Path, lineno: int) -> Tuple[int, int]:
+def _function_span(py_file: Path, lineno: int, repo: Optional[Path]) -> Tuple[int, int]:
+    """The line range of the function at `lineno`, or that line alone.
+
+    Read through `read_source_text` like every other gate: it resolves the path,
+    refuses a non-regular target, refuses one that leaves the repository, and
+    caps the size. The raw `read_text` this replaced would follow a committed
+    `src/x.py -> /dev/zero` and allocate without bound, and would read a file
+    linked out of the tree — the shape 577 removed everywhere else, left behind
+    here because these scripts filter another tool's findings rather than
+    emitting their own (589).
+
+    The fallback is deliberate rather than inherited. Narrowing to the reported
+    line keeps the finding whenever that line was touched, which is what the
+    tool actually claimed; widening to a guessed span would report on lines this
+    change never touched. But a refusal is not the same as a clean parse, so it
+    is announced rather than swallowed — silence here reads as "no span", and
+    that is how an unreadable file becomes an unremarkable one.
+    """
     try:
-        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-    except (SyntaxError, UnicodeDecodeError, OSError):
+        source = read_source_text(py_file, repo=repo)
+    except UnexaminableError as exc:
+        print(f"note: could not read {py_file} to find its function span: {exc}", file=sys.stderr)
+        return (lineno, lineno)
+    try:
+        tree = ast.parse(source, filename=str(py_file))
+    except SyntaxError:
         return (lineno, lineno)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno == lineno:
@@ -180,7 +208,7 @@ def main(argv: list[str]) -> int:
         if not touched:
             continue
         row = int((msg.get("location") or {}).get("row") or 0)
-        start, end = _function_span(Path(project_rel), row)
+        start, end = _function_span(Path(project_rel), row, repo)
         if not any(ln in touched for ln in range(start, end + 1)):
             continue
         obj = _fn_name(msg.get("message", ""))
