@@ -2208,6 +2208,115 @@ def test_the_bytes_graded_come_from_the_path_that_was_validated(tmp_path: Path) 
     assert read_paths == [target.resolve()], read_paths
 
 
+GIT_SUBPROCESS_GATE = [sys.executable, str(_SCRIPTS / "py_git_subprocess_check.py")]
+
+#: An unscrubbed git call: `cwd` says one repository, GIT_DIR may say another.
+GIT_SUBPROCESS_VIOLATION = (
+    "import subprocess\n\n\n"
+    "def show(repo):\n"
+    '    return subprocess.run(["git", "status"], cwd=repo, check=False)\n'
+)
+
+
+def test_the_fourth_gate_reports_a_count_like_the_other_three(repo: Path) -> None:
+    """595: no count is indistinguishable from a count of everything.
+
+    546 gave the three transition gates an `examined N file(s)` line so a run
+    that graded nothing could not look like a pass. This gate was built on the
+    same primitives and never got one — and worse, it read argv as a bare path
+    list, so `--repo`/`--scope` and their values failed its `.py` suffix test.
+    Measured before the fix, on exactly this invocation: no output at all, exit
+    0, while its sibling on the same argv reported `examined 121 file(s)`.
+    """
+    target = repo / "src" / "pkg" / "grader.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(GIT_SUBPROCESS_VIOLATION)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "unscrubbed call")
+
+    result = _run_gate(GIT_SUBPROCESS_GATE, repo, "--base", "main")
+
+    match = EXAMINED_RE.search(_out(result))
+    assert match is not None, _out(result)
+    assert int(match.group(1)) >= 1, _out(result)
+    assert result.returncode != 0, _out(result)
+    assert "grader.py" in _out(result), _out(result)
+
+
+def test_the_fourth_gate_does_not_claim_success_over_zero_files(repo: Path) -> None:
+    """595 AC2: the count is printed, and no pass is claimed over nothing.
+
+    Exiting 0 having legitimately graded nothing is correct — lefthook stages no
+    Python, so there is nothing to say. What must not happen is saying it
+    silently, or saying "passed" about a set that was empty. The three sibling
+    gates print the count and stop; this one now does too.
+    """
+    result = _run_gate(GIT_SUBPROCESS_GATE, repo, "--base", "main")
+
+    match = EXAMINED_RE.search(_out(result))
+    assert match is not None, _out(result)
+    assert int(match.group(1)) == 0, _out(result)
+    assert result.returncode == 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+
+
+def test_the_fourth_gate_grades_a_listed_file_whole(repo: Path) -> None:
+    """Adopting the scope resolver must not quietly narrow what this gate reads.
+
+    Its siblings are diff-scoped; this one never has been, and a violation the
+    branch merely moved past is still a violation. Pinned because the natural
+    way to route a gate through `GateRun` is to reach for `touched_lines`, and
+    doing so here would silently stop flagging exactly that case.
+
+    The violation is committed on `main` and the branch edits a *different* line
+    of the same file. That is what isolates it: the first version of this test
+    planted the violation on the branch, so it sat inside the touched set and a
+    diff-scoped mutant passed the test unchanged — the fixture never reached the
+    case it was written for.
+    """
+    relpath = "src/pkg/grader.py"
+    _git(repo, "checkout", "-q", "main")
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(GIT_SUBPROCESS_VIOLATION)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "violation lands on main")
+    _git(repo, "checkout", "-q", "ticket-branch")
+    _git(repo, "merge", "-q", "main")
+    # The branch touches the file, but not the offending line.
+    target.write_text(GIT_SUBPROCESS_VIOLATION + "\n# unrelated trailing edit\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "unrelated edit")
+
+    result = _run_gate(GIT_SUBPROCESS_GATE, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "grader.py" in _out(result), _out(result)
+
+
+def test_the_gate_scripts_do_not_leak_git_dir_themselves() -> None:
+    """The hook scripts are the worst place for this bug, not an exempt one.
+
+    `GIT_DIR` overrides `cwd`, and these scripts run *inside* git hooks, which is
+    exactly where git exports it. Two of them shelled out to `git show
+    HEAD:<path>` with `cwd=repo` and no `env=`, so the read could come from
+    whatever repository the hook was bound to.
+
+    Found by the fourth gate the first time it graded anything at all — the
+    missing count in 595 was not cosmetic, it was the reason nobody could see
+    that this gate had been reading nothing. Pinned here because the fix is one
+    keyword argument and reverting it is invisible in review.
+    """
+    checker = _load_script("py_git_subprocess_check")
+    offenders = [
+        f"{script.name}:{lineno}"
+        for script in sorted(_SCRIPTS.glob("*.py"))
+        for lineno, _command, _spawn in checker.violations_in(script, repo=_SCRIPTS.parents[1])
+    ]
+
+    assert offenders == [], offenders
+
+
 # --------------------------------------------------------------------------
 # 553 — two edges the scope work left fail-closed
 #

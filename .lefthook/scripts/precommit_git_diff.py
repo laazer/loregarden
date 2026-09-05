@@ -666,6 +666,53 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     )
 
 
+@dataclass(frozen=True)
+class GateInvocation:
+    """How a gate run was asked to scope itself.
+
+    Two callers, and they look nothing alike: lefthook passes staged file paths
+    and no flags, while an orchestration gate passes ``--repo``/``--scope`` and
+    no file list, because it is judging whatever an agent just did to a
+    workspace it does not enumerate.
+
+    A gate that reads ``argv`` as a bare path list handles the first and silently
+    mishandles the second — ``--repo``, ``--scope`` and their values fail the
+    suffix test, so the run grades nothing and exits 0 with no count. That is
+    595, and it is why this lives here rather than in whichever gate wrote it
+    first.
+    """
+
+    files: List[Path]
+    repo: Optional[Path]
+    diff_scope: str
+    base_ref: str
+    label: str
+
+
+def parse_gate_argv(argv: Sequence[str], *, suffix: str = ".py") -> GateInvocation:
+    """The argv every gate accepts: flags, then paths this gate might grade."""
+    files: List[Path] = []
+    repo_arg: Optional[str] = None
+    diff_scope = STAGED
+    base_ref = DEFAULT_BASE_REF
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--repo" and index + 1 < len(argv):
+            repo_arg, index = argv[index + 1], index + 2
+        elif arg == "--scope" and index + 1 < len(argv):
+            diff_scope, index = argv[index + 1], index + 2
+        elif arg == "--base" and index + 1 < len(argv):
+            base_ref, index = argv[index + 1], index + 2
+        else:
+            if arg.endswith(suffix):
+                files.append(Path(arg))
+            index += 1
+    repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
+    label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
+    return GateInvocation(files, repo, diff_scope, base_ref, label)
+
+
 def examined_line(label: str, count: int, description: str) -> str:
     """The one line every gate run prints, pass or fail.
 
