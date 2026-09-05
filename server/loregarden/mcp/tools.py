@@ -43,6 +43,7 @@ from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
 from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
 from loregarden.mcp.tool_args import coerce_string as _coerce_string
 from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
+from loregarden.mcp.tool_args import reject_truncated_call as _reject_truncated_call
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tool_schemas import boolean_prop as _boolean_prop
@@ -386,7 +387,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "workspace_slug": _coerce_optional_string(args.get("workspace_slug")),
             "title": _coerce_optional_string(args.get("title")),
             "work_item_type": _coerce_optional_string(args.get("work_item_type")) or "task",
-            "description": _coerce_optional_string(args.get("description")),
+            "description": _reject_truncated_call(
+                _coerce_optional_string(args.get("description")), field="description"
+            ),
             "acceptance_criteria": _coerce_string_list(
                 args.get("acceptance_criteria") or [], field="acceptance_criteria"
             ),
