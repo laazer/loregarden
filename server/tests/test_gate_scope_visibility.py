@@ -2106,6 +2106,108 @@ def test_a_symlink_cycle_is_refused_through_the_one_channel(tmp_path):
     assert "a.py" in str(excinfo.value)
 
 
+#: A committed two-link cycle, in each language the gates grade.
+SYMLINK_CYCLE_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, "src/pkg", ".py", id="py-org"),
+    pytest.param(PY_SILENT_EXCEPT_GATE, "src/pkg", ".py", id="py-silent-except"),
+    pytest.param(TS_ORGANIZATION_GATE, "client/src", ".ts", id="ts-org"),
+]
+
+
+def _plant_cycle(repo: Path, subdir: str, suffix: str) -> None:
+    target = repo / subdir
+    target.mkdir(parents=True, exist_ok=True)
+    (target / f"loop_a{suffix}").symlink_to(f"loop_b{suffix}")
+    (target / f"loop_b{suffix}").symlink_to(f"loop_a{suffix}")
+
+
+@pytest.mark.parametrize(("gate", "subdir", "suffix"), SYMLINK_CYCLE_GATES)
+def test_a_symlink_cycle_is_refused_by_the_gate_not_only_the_reader(
+    repo: Path, gate: list[str], subdir: str, suffix: str
+) -> None:
+    """591 AC3: the cycle case, through the gate, in both languages.
+
+    `test_a_symlink_cycle_is_refused_through_the_one_channel` pins the Python
+    reader directly and does catch the regression — reverting the `RuntimeError`
+    catch fails it. What it does not cover is either gate end to end, or the
+    `.cjs` at all, which is where 577's "both gates share the same rule" is
+    actually observable.
+
+    What must not appear is a traceback: exit is non-zero either way, so the
+    exit code alone cannot tell a named refusal from the gate dying in the
+    middle of its walk with a stack that names no actionable file.
+    """
+    _plant_cycle(repo, subdir, suffix)
+
+    result = _run_gate(gate, repo, "--base", "main", timeout=60)
+
+    assert result.returncode != 0, _out(result)
+    assert "Traceback" not in _out(result), _out(result)
+    assert "cannot determine what to examine" in _out(result), _out(result)
+    assert "loop_a" in _out(result), _out(result)
+
+
+def test_a_cycle_outside_the_listed_files_does_not_take_the_gate_down(repo: Path) -> None:
+    """591 AC2: the DRY catalog walks the whole source root.
+
+    So a cycle anywhere under it used to crash the organization gate even when
+    every listed file was clean — a repository's own contents blocking every
+    stage transition. Never a false pass, but the other way a gate stops being
+    useful.
+
+    The listed file here is clean and unrelated to the cycle, so a pass is the
+    correct outcome and the assertion is that the walk survived rather than that
+    nothing was found.
+    """
+    clean = repo / "src" / "pkg" / "ok.py"
+    clean.parent.mkdir(parents=True, exist_ok=True)
+    clean.write_text("x = 1\n")
+    _plant_cycle(repo, "src/pkg", ".py")
+
+    result = _run_gate(PY_ORGANIZATION_GATE, repo, str(clean), scope="staged", timeout=60)
+
+    assert result.returncode == 0, _out(result)
+    assert "Traceback" not in _out(result), _out(result)
+    assert "passed" in _out(result), _out(result)
+
+
+def test_the_bytes_graded_come_from_the_path_that_was_validated(tmp_path: Path) -> None:
+    """592: `real`, not `path` — the one word the whole guard rests on.
+
+    Every check in `read_source_text` runs against the resolved target: is it a
+    regular file, is it inside the repository, is it under the size cap. Reading
+    the *unresolved* path afterwards is a second, independent traversal, so
+    anything that rewrites the link between the two gets its contents graded and
+    its identifiers printed into the CI log — the original finding, restored
+    under a race.
+
+    That race is not what this test reproduces. Winning it deterministically
+    would need a writer scheduled between two syscalls; instead this pins the
+    invariant that makes the race unreachable — which path was actually read.
+    Measured before writing it: swapping `real` back to `path` left the whole
+    gate suite green, 241 passed. A one-word regression with no coverage at all.
+    """
+    diff = _load_script("precommit_git_diff")
+    target = tmp_path / "target.py"
+    target.write_text("x = 1\n")
+    link = tmp_path / "link.py"
+    link.symlink_to(target)
+
+    read_paths: list[Path] = []
+    original = Path.read_text
+
+    def spy(self: Path, *args, **kwargs):
+        read_paths.append(Path(self))
+        return original(self, *args, **kwargs)
+
+    with mock.patch.object(Path, "read_text", spy):
+        source = diff.read_source_text(link, repo=tmp_path)
+
+    assert source == "x = 1\n"
+    # The resolved target, not the link that was validated *through*.
+    assert read_paths == [target.resolve()], read_paths
+
+
 # --------------------------------------------------------------------------
 # 553 — two edges the scope work left fail-closed
 #
