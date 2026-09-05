@@ -128,6 +128,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0107_verdict_channel",
     "0108_alternative_impl_group",
     "0109_orchestration_monitor_mode",
+    "0110_domain_event_indexes",
 )
 
 

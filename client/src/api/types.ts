@@ -915,6 +915,22 @@ export interface MonitorFinding {
   last_seen: string | null;
 }
 
+/**
+ * One recorded transition in a ticket's life.
+ *
+ * The event log is the only place these exist: `tickets.state` holds the current
+ * value and a stage's status is overwritten in place, so without these rows
+ * there is no record that any transition ever happened.
+ */
+export interface TicketHistoryEvent {
+  id: string;
+  type: string;
+  ticket_id: string | null;
+  workspace_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface CreateTicketRequest {
   workspace_slug: string;
   title: string;

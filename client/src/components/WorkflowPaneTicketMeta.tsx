@@ -1,4 +1,5 @@
 import type { TicketDetail } from "../api/client";
+import { TicketHistory } from "./TicketHistory";
 import { WorkflowMonitorFindings } from "./WorkflowMonitorFindings";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 
@@ -53,6 +54,7 @@ export function WorkflowPaneTicketMeta({
         )}
       </div>
       <WorkflowMonitorFindings ticketId={ticket.id} />
+      <TicketHistory ticketId={ticket.id} />
       {tags.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {tags.map((tag) => (

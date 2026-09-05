@@ -263,3 +263,26 @@ def m_orchestration_monitor_mode(conn: Connection) -> None:
             "monitor_mode": "ALTER TABLE orchestration_runs ADD COLUMN monitor_mode VARCHAR",
         },
     )
+
+
+def m_domain_event_indexes(conn: Connection) -> None:
+    """Make the event log answerable.
+
+    `domain_events` had no index but its primary key across 7660 rows, and
+    `list_recent` took no filters — so the only question it could answer was "the
+    last N events installation-wide", which is why eight services wrote to it for
+    two months and nothing read it. These three cover the questions the log is
+    actually for: one ticket's history, one workspace's recent activity, and one
+    event type over time.
+    """
+    if not table_exists(conn, "domain_events"):
+        return
+    for statement in (
+        "CREATE INDEX IF NOT EXISTS ix_domain_events_ticket_created "
+        "ON domain_events (ticket_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_domain_events_workspace_created "
+        "ON domain_events (workspace_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_domain_events_type_created "
+        "ON domain_events (type, created_at)",
+    ):
+        conn.execute(text(statement))

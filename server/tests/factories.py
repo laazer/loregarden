@@ -22,6 +22,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     QueuedRun,
     Ticket,
+    TicketState,
     WorkItemType,
     Workspace,
 )
@@ -67,6 +68,10 @@ def make_ticket(
     external_id: str | None = None,
     title: str = "Test ticket",
     work_item_type: WorkItemType = WorkItemType.TASK,
+    #: Applied only when given, so existing callers keep the model's own default.
+    #: Tests about mid-flight behaviour need IN_PROGRESS, and setting it after
+    #: the fact is one more line every such test got slightly differently.
+    state: TicketState | None = None,
 ) -> Ticket:
     if ticket_id:
         existing = session.get(Ticket, ticket_id)
@@ -80,6 +85,8 @@ def make_ticket(
     )
     if ticket_id:
         ticket.id = ticket_id
+    if state is not None:
+        ticket.state = state
     session.add(ticket)
     session.commit()
     session.refresh(ticket)

@@ -255,6 +255,25 @@ def reference_network_refused(monkeypatch):
     focused suites still exercise real behaviour. `TestClient`'s httpx is
     untouched too: only the name `reference_cache` resolves is replaced.
     """
+
+    # DNS first. `_url_block_reason` calls socket.getaddrinfo as an SSRF guard
+    # BEFORE any request is built, so patching only httpx left every test in
+    # test_search_reference_tool.py making a real lookup for devdocs.io — slow,
+    # and dependent on someone else's uptime, which is the exact failure this
+    # fixture's docstring says it prevents. It surfaced as 20 failures under a
+    # pre-push run whose DNS was unavailable, all reading "devdocs.io did not
+    # resolve" rather than the refusal below.
+    #
+    # A deterministic global address rather than a failure: the guard's own
+    # logic (scheme, IP literal, is_global, non-global rejection) still runs, so
+    # this hides the network without hiding the check. A test that wants a
+    # resolution failure patches getaddrinfo itself, as test_fetch_reference_tool
+    # already does.
+    def _fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(2, 1, 6, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(reference_cache.socket, "getaddrinfo", _fake_getaddrinfo)
+
     real = reference_cache.httpx
 
     def refuse(request):
