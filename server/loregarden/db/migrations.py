@@ -60,6 +60,7 @@ from loregarden.db.migrations_mcp import (
 )
 from loregarden.db.migrations_memory_briefings import m_memory_briefings_table
 from loregarden.db.migrations_queue import (
+    m_agent_run_prompt_chars,
     m_domain_event_indexes,
     m_global_agent_slots,
     m_lane_entry_dismissed,
@@ -1364,6 +1365,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0108_alternative_impl_group", m_alternative_impl_group),
     ("0109_orchestration_monitor_mode", m_orchestration_monitor_mode),
     ("0110_domain_event_indexes", m_domain_event_indexes),
+    ("0111_agent_run_prompt_chars", m_agent_run_prompt_chars),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

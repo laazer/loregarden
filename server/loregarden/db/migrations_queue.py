@@ -286,3 +286,19 @@ def m_domain_event_indexes(conn: Connection) -> None:
         "ON domain_events (type, created_at)",
     ):
         conn.execute(text(statement))
+
+
+def m_agent_run_prompt_chars(conn: Connection) -> None:
+    """Record how large a rendered stage prompt was.
+
+    Null for every run written before this, which is not zero: "nobody measured"
+    and "the prompt was empty" are different claims, and a reader has to be able
+    to tell them apart.
+    """
+    if not table_exists(conn, "agent_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {"prompt_chars": "ALTER TABLE agent_runs ADD COLUMN prompt_chars INTEGER"},
+    )

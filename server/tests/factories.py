@@ -93,6 +93,31 @@ def make_ticket(
     return ticket
 
 
+def make_workspace_ticket(
+    session: Session,
+    external_id: str,
+    *,
+    slug: str = "loregarden",
+    state: TicketState = TicketState.IN_PROGRESS,
+) -> Ticket:
+    """A ticket in an already-seeded workspace, looked up by slug.
+
+    Three suites had grown the same five-line wrapper around `make_ticket` —
+    resolve the workspace, pass IN_PROGRESS, title it after its own id — which is
+    what the DRY gate flagged. The workspace lookup is the part worth sharing:
+    the tests that need this are about runs, events and prompts, and none of them
+    care which workspace their ticket is in beyond it existing.
+    """
+    workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).one()
+    return make_ticket(
+        session,
+        workspace_id=workspace.id,
+        external_id=external_id,
+        title=external_id,
+        state=state,
+    )
+
+
 def make_agent_run(
     session: Session,
     *,

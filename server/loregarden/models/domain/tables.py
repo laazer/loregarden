@@ -374,6 +374,14 @@ class AgentRun(SQLModel, table=True):
     # never print its usage block. SUM skips NULL and COUNT(col) counts only the
     # measured rows, so an unmeasured run drops out of a cost aggregate instead
     # of quietly deflating it — see `services.run_token_usage`.
+    # Characters in the rendered stage prompt at dispatch. Chars, not tokens:
+    # this is exact and free, whereas a token count here would be a second
+    # estimate of something the provider already reports below. Read alongside
+    # those, it answers "how much of what we sent was cached" — the question
+    # prompt-size work has to answer before it starts, because the invariant
+    # boilerplate IS the cache prefix and shortening it can cost more than it
+    # saves (see lg-workflow-integrity-498).
+    prompt_chars: int | None = Field(default=None)
     input_tokens: int | None = Field(default=None)
     output_tokens: int | None = Field(default=None)
     cache_read_tokens: int | None = Field(default=None)
