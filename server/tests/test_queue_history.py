@@ -201,6 +201,10 @@ def test_nested_child_orch_under_parent_is_not_synthesized(session, workspace):
     )
     session.add(parent_orch)
     session.add(child_orch)
+    # Committed before the entry that references parent_orch. These models are
+    # joined by bare foreign keys with no `Relationship`, so a parent and child
+    # added in one flush can be emitted child-first — see tests/factories.py.
+    session.commit()
     # Parent went through a lane; child was nested execute.
     session.add(
         QueuedRun(

@@ -854,7 +854,7 @@ def _m_ticket_enum_values(conn: Connection) -> None:
 
     Both columns were plain ``Field`` declarations, so SQLAlchemy persisted the member
     name (``BLOCKED``), while every enum column beside them — ``tickets.work_item_type``,
-    ``orchestration_runs.status`` — uses ``_str_enum_column`` and persists the value
+    ``orchestration_runs.status`` — uses ``str_enum_column`` and persists the value
     (``blocked``). One table, two conventions: anything writing the obvious lowercase
     form out of band produced a row the ORM could not read back, and because the enum
     is resolved on load, a *single* such row raised LookupError on every SELECT over

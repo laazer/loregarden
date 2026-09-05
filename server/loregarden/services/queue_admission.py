@@ -37,7 +37,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from loregarden.models.domain import AgentSlot, Ticket
+from loregarden.models.domain import AgentSlot, QueueEntryKind, Ticket
 
 # Imported for its install side effect as much as for anything: admission is the
 # gate every externally-started run passes through, so installing the lane
@@ -172,7 +172,7 @@ class QueueAdmissionService:
         """
         return self._reserve(
             ticket,
-            entry_kind="orchestration",
+            entry_kind=QueueEntryKind.ORCHESTRATION,
             stage_key="",
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key,
@@ -210,7 +210,7 @@ class QueueAdmissionService:
         """
         return self._reserve(
             ticket,
-            entry_kind="stage",
+            entry_kind=QueueEntryKind.STAGE,
             stage_key=stage_key or "",
             auto_approve=auto_approve,
             stop_at_stage_key=None,

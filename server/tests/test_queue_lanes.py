@@ -418,6 +418,10 @@ def test_reconcile_settles_a_stage_entry_whose_run_succeeded(lanes, session, wor
         status=RunStatus.SUCCEEDED,
     )
     session.add(run)
+    # Committed before the entry that references it. These models are joined by
+    # bare foreign keys with no `Relationship`, so a parent and child added in one
+    # flush can be emitted child-first — see the note in tests/factories.py.
+    session.commit()
     entry = QueuedRun(
         workspace_id=workspace.id,
         ticket_id=ticket.id,

@@ -22,7 +22,6 @@ from loregarden.models.domain.enums import (
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
-    QueuePosition,
     ReferencePageKind,
     RunStatus,
     RunUsageStatus,
@@ -37,7 +36,7 @@ from loregarden.models.domain.enums import (
     ViewKind,
     WorkItemType,
     WorktreeState,
-    _str_enum_column,
+    str_enum_column,
     utcnow,
 )
 from pydantic import model_validator
@@ -90,7 +89,7 @@ class Cycle(SQLModel, table=True):
     name: str
     status: CycleStatus = Field(
         default=CycleStatus.PLANNED,
-        sa_column=_str_enum_column(CycleStatus, CycleStatus.PLANNED),
+        sa_column=str_enum_column(CycleStatus, CycleStatus.PLANNED),
     )
     goal: str = ""
     created_at: datetime = Field(default_factory=utcnow)
@@ -156,14 +155,14 @@ class Ticket(SQLModel, table=True):
     description: str = ""
     state: TicketState = Field(
         default=TicketState.BACKLOG,
-        sa_column=_str_enum_column(TicketState, TicketState.BACKLOG),
+        sa_column=str_enum_column(TicketState, TicketState.BACKLOG),
     )
     priority: int = Field(default=3, ge=1, le=3)
     branch: str = ""
     milestone: str = ""
     work_item_type: WorkItemType = Field(
         default=WorkItemType.TASK,
-        sa_column=_str_enum_column(WorkItemType, WorkItemType.TASK, index=True),
+        sa_column=str_enum_column(WorkItemType, WorkItemType.TASK, index=True),
     )
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
@@ -175,7 +174,7 @@ class Ticket(SQLModel, table=True):
     workflow_stage_key: str = ""
     workflow_stage_status: StageStatus = Field(
         default=StageStatus.PENDING,
-        sa_column=_str_enum_column(StageStatus, StageStatus.PENDING),
+        sa_column=str_enum_column(StageStatus, StageStatus.PENDING),
     )
     revision: int = Field(default=0)
     last_updated_by: str = ""
@@ -235,7 +234,7 @@ class OrchestrationRun(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     driver: OrchestrationDriver = Field(
         default=OrchestrationDriver.BUILTIN_AUTOPILOT,
-        sa_column=_str_enum_column(
+        sa_column=str_enum_column(
             OrchestrationDriver, OrchestrationDriver.BUILTIN_AUTOPILOT, index=True
         ),
     )
@@ -251,11 +250,11 @@ class OrchestrationRun(SQLModel, table=True):
     last_seen_at: datetime | None = None
     external_harness: ExternalHarness | None = Field(
         default=None,
-        sa_column=_str_enum_column(ExternalHarness, index=True, nullable=True),
+        sa_column=str_enum_column(ExternalHarness, index=True, nullable=True),
     )
     status: OrchestrationRunStatus = Field(
         default=OrchestrationRunStatus.QUEUED,
-        sa_column=_str_enum_column(OrchestrationRunStatus, OrchestrationRunStatus.QUEUED),
+        sa_column=str_enum_column(OrchestrationRunStatus, OrchestrationRunStatus.QUEUED),
     )
     current_stage_key: str = ""
     error_message: str = ""
@@ -267,7 +266,7 @@ class OrchestrationRun(SQLModel, table=True):
     # timeout_override_seconds, because those are the other per-run autonomy
     # dials and they already thread through nested execute() calls.
     monitor_mode: MonitorMode | None = Field(
-        default=None, sa_column=_str_enum_column(MonitorMode, nullable=True)
+        default=None, sa_column=str_enum_column(MonitorMode, nullable=True)
     )
     # Per-orchestration agent timeout for every stage run this orchestration
     # (and its child ticket orchestrations) starts. Null = each agent's default.
@@ -299,13 +298,13 @@ class AgentRun(SQLModel, table=True):
     # own subprocess — inherited from the orchestration run that opened it.
     external_harness: ExternalHarness | None = Field(
         default=None,
-        sa_column=_str_enum_column(ExternalHarness, index=True, nullable=True),
+        sa_column=str_enum_column(ExternalHarness, index=True, nullable=True),
     )
     skill_name: str = ""
     stage_key: str = ""
     status: RunStatus = Field(
         default=RunStatus.QUEUED,
-        sa_column=_str_enum_column(RunStatus, RunStatus.QUEUED),
+        sa_column=str_enum_column(RunStatus, RunStatus.QUEUED),
     )
     command: str = ""
     # Paths this run left dirty, so its commit can be scoped to its own work
@@ -326,7 +325,7 @@ class AgentRun(SQLModel, table=True):
     # record-only to blocking.
     start_boundary_verdict: BoundaryVerdict = Field(
         default=BoundaryVerdict.UNKNOWN,
-        sa_column=_str_enum_column(BoundaryVerdict, BoundaryVerdict.UNKNOWN),
+        sa_column=str_enum_column(BoundaryVerdict, BoundaryVerdict.UNKNOWN),
     )
     # Doctor checks that failed before this run was dispatched, as a JSON array
     # of check ids. Only the failures: an empty array is a healthy environment,
@@ -402,11 +401,11 @@ class AgentRun(SQLModel, table=True):
     #: over stdout (lg-workflow-integrity-95).
     verdict_channel: StageVerdictChannel = Field(
         default=StageVerdictChannel.UNKNOWN,
-        sa_column=_str_enum_column(StageVerdictChannel, StageVerdictChannel.UNKNOWN),
+        sa_column=str_enum_column(StageVerdictChannel, StageVerdictChannel.UNKNOWN),
     )
     usage_status: RunUsageStatus = Field(
         default=RunUsageStatus.UNKNOWN,
-        sa_column=_str_enum_column(RunUsageStatus, RunUsageStatus.UNKNOWN),
+        sa_column=str_enum_column(RunUsageStatus, RunUsageStatus.UNKNOWN),
     )
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -434,11 +433,11 @@ class StageFanoutGroup(SQLModel, table=True):
     pre_fanout_next_agent: str = ""
     status: StageFanoutGroupStatus = Field(
         default=StageFanoutGroupStatus.OPEN,
-        sa_column=_str_enum_column(StageFanoutGroupStatus, StageFanoutGroupStatus.OPEN, index=True),
+        sa_column=str_enum_column(StageFanoutGroupStatus, StageFanoutGroupStatus.OPEN, index=True),
     )
     outcome: StageFanoutOutcome = Field(
         default=StageFanoutOutcome.PENDING,
-        sa_column=_str_enum_column(StageFanoutOutcome, StageFanoutOutcome.PENDING),
+        sa_column=str_enum_column(StageFanoutOutcome, StageFanoutOutcome.PENDING),
     )
     # Indexed but deliberately not a foreign key: StageFanoutAttempt.group_id
     # owns the child relation, and adding a reciprocal winner FK creates the
@@ -467,7 +466,7 @@ class StageFanoutAttempt(SQLModel, table=True):
     branch: str = ""
     status: StageFanoutAttemptStatus = Field(
         default=StageFanoutAttemptStatus.PLANNED,
-        sa_column=_str_enum_column(
+        sa_column=str_enum_column(
             StageFanoutAttemptStatus, StageFanoutAttemptStatus.PLANNED, index=True
         ),
     )
@@ -592,7 +591,7 @@ class ReferencePage(SQLModel, table=True):
     #: page / index / catalog — raw DevDocs JSON rows ride the same cache.
     kind: ReferencePageKind = Field(
         default=ReferencePageKind.PAGE,
-        sa_column=_str_enum_column(ReferencePageKind, ReferencePageKind.PAGE),
+        sa_column=str_enum_column(ReferencePageKind, ReferencePageKind.PAGE),
     )
     content_chars: int = 0
     hit_count: int = 0
@@ -632,11 +631,11 @@ class MemoryBriefing(SQLModel, table=True):
     stage_key: str = ""
     assembly_source: MemoryBriefingAssembly = Field(
         default=MemoryBriefingAssembly.DISPATCH,
-        sa_column=_str_enum_column(MemoryBriefingAssembly, MemoryBriefingAssembly.DISPATCH),
+        sa_column=str_enum_column(MemoryBriefingAssembly, MemoryBriefingAssembly.DISPATCH),
     )
     #: No default. The caller always classifies; a default would let an
     #: unclassified row read as a healthy bucket.
-    outcome: MemoryBriefingOutcome = Field(sa_column=_str_enum_column(MemoryBriefingOutcome))
+    outcome: MemoryBriefingOutcome = Field(sa_column=str_enum_column(MemoryBriefingOutcome))
     #: `_injected`, not `_found`: both counters are capped (6 checkpoints, 5
     #: learnings), so they plateau. The saturation flags are what stop a flat
     #: five reading as a healthy corpus.
@@ -703,7 +702,7 @@ class BtwExchange(SQLModel, table=True):
     answer: str = ""
     status: BtwStatus = Field(
         default=BtwStatus.PENDING,
-        sa_column=_str_enum_column(BtwStatus, BtwStatus.PENDING, index=True),
+        sa_column=str_enum_column(BtwStatus, BtwStatus.PENDING, index=True),
     )
     error: str = ""
     # Set when the question was also written into the live run's stdin. Nothing
@@ -740,7 +739,7 @@ class Approval(SQLModel, table=True):
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
     kind: ApprovalKind = Field(
         default=ApprovalKind.WORKFLOW_GATE,
-        sa_column=_str_enum_column(ApprovalKind, ApprovalKind.WORKFLOW_GATE),
+        sa_column=str_enum_column(ApprovalKind, ApprovalKind.WORKFLOW_GATE),
     )
     title: str
     level: str = "medium"
@@ -755,7 +754,7 @@ class Approval(SQLModel, table=True):
     response_json: str = "{}"
     status: ApprovalStatus = Field(
         default=ApprovalStatus.PENDING,
-        sa_column=_str_enum_column(ApprovalStatus, ApprovalStatus.PENDING),
+        sa_column=str_enum_column(ApprovalStatus, ApprovalStatus.PENDING),
     )
     created_at: datetime = Field(default_factory=utcnow)
     resolved_at: datetime | None = None
@@ -788,7 +787,7 @@ class DomainEvent(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     # No default: every event states its own type.
-    type: EventType = Field(sa_column=_str_enum_column(EventType))
+    type: EventType = Field(sa_column=str_enum_column(EventType))
     workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
     ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
@@ -894,7 +893,7 @@ class QueueOperation(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     operation_type: QueueOperationType = Field(
         default=QueueOperationType.BULK_CANCEL,
-        sa_column=_str_enum_column(QueueOperationType, QueueOperationType.BULK_CANCEL),
+        sa_column=str_enum_column(QueueOperationType, QueueOperationType.BULK_CANCEL),
     )
     description: str = ""
     before_state_json: str
@@ -1135,7 +1134,7 @@ class TicketStudioSession(SQLModel, table=True):
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
     status: TicketStudioSessionStatus = Field(
         default=TicketStudioSessionStatus.DRAFT,
-        sa_column=_str_enum_column(
+        sa_column=str_enum_column(
             TicketStudioSessionStatus, TicketStudioSessionStatus.DRAFT, index=True
         ),
     )
@@ -1201,7 +1200,7 @@ class CIRunResult(SQLModel, table=True):
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     status: CIStatus = Field(
         default=CIStatus.PENDING,
-        sa_column=_str_enum_column(CIStatus, CIStatus.PENDING, index=True),
+        sa_column=str_enum_column(CIStatus, CIStatus.PENDING, index=True),
     )
     provider: str = ""
     external_run_id: str | None = None
@@ -1221,7 +1220,7 @@ class AutoFixAttempt(SQLModel, table=True):
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
     status: AutoFixStatus = Field(
         default=AutoFixStatus.PENDING,
-        sa_column=_str_enum_column(AutoFixStatus, AutoFixStatus.PENDING, index=True),
+        sa_column=str_enum_column(AutoFixStatus, AutoFixStatus.PENDING, index=True),
     )
     result_summary: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -1244,7 +1243,7 @@ class Worktree(SQLModel, table=True):
     worktree_path: str = ""
     state: WorktreeState = Field(
         default=WorktreeState.ACTIVE,
-        sa_column=_str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
+        sa_column=str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
     )
     #: The branch checked out in this worktree, as opposed to `parent_branch`
     #: (what it was cut from) or the directory name. Merging needs this: the
@@ -1314,100 +1313,6 @@ class ConflictReport(SQLModel, table=True):
         return data
 
 
-class AgentSlot(SQLModel, table=True):
-    __tablename__ = "agent_slots"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    #: Null on every slot in the shared pool. Capacity belongs to the machine,
-    #: not to a workspace — the column survives only for rows written before
-    #: migration 0058 collapsed the per-workspace pools.
-    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id", index=True)
-    #: Unique, because the claim keys on it conceptually and the pool's size is
-    #: the machine's concurrency limit. Two threads initialising an empty pool
-    #: both inserted a full set, giving six slots for a limit of three — the
-    #: admission gate's whole purpose, doubled silently.
-    slot_number: int = Field(default=1, unique=True)
-    is_available: bool = True
-    current_run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
-    #: The orchestration occupying this lane. A lane runs a whole ticket, which
-    #: spans many agent runs, so this — not `current_run_id` — is what holds the
-    #: lane for the duration.
-    current_orchestration_run_id: str | None = Field(
-        default=None, foreign_key="orchestration_runs.id"
-    )
-    assigned_at: datetime | None = None
-    released_at: datetime | None = None
-
-
-class QueuedRun(SQLModel, table=True):
-    __tablename__ = "queued_runs"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    #: Null until this entry starts — a lane entry is a ticket waiting its turn,
-    #: and nothing runs on its behalf before then.
-    run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
-    orchestration_run_id: str | None = Field(
-        default=None, foreign_key="orchestration_runs.id", index=True
-    )
-    #: Which lane this entry waits in. Each slot is its own serial pipeline.
-    slot_number: int = Field(default=1, index=True)
-    #: Order *within the lane*, not across the board.
-    position: int = 0
-    #: Answers from the dialog that queued this, honoured whenever the lane
-    #: reaches it — which may be long after that dialog closed.
-    auto_approve: bool = False
-    stop_at_stage_key: str = ""
-    #: "orchestration" (run the ticket) or "stage" (run one stage of it).
-    #: Admission control parks both, and they dispatch differently.
-    entry_kind: str = "orchestration"
-    #: The stage to run, for a "stage" entry.
-    stage_key: str = ""
-    #: Overrides the caller asked for, held because the entry is the only record
-    #: of the ask by the time a lane reaches it. Empty/None means the workspace's
-    #: orchestration profile decides.
-    driver: str = ""
-    max_stages: int | None = None
-    #: Max seconds each agent run in this orchestration may take. Null = agent default.
-    timeout_seconds: int | None = None
-    #: Spend one dispatch past an exhausted stage retry budget when this entry
-    #: starts. Carried for the same reason the overrides above are: the decision
-    #: was made when the request was filed, and a lane reaching the entry hours
-    #: later has no other record of it. Without this the refusal simply fired
-    #: again at promotion, into `dispatch_stage`'s warning log.
-    force: bool = False
-    status: QueuePosition = Field(
-        default=QueuePosition.QUEUED,
-        sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),
-    )
-    retry_count: int = 0
-    max_retries: int = 3
-    estimated_start_at: datetime | None = None
-    promoted_at: datetime | None = None
-    started_at: datetime | None = None
-    failure_reason: str = ""
-    last_failed_at: datetime | None = None
-    #: When someone acknowledged this entry's blocked/failed outcome on the lane
-    #: card. Null while it still needs attention — the lane keeps showing it.
-    dismissed_at: datetime | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-
-
-class QueueSnapshot(SQLModel, table=True):
-    __tablename__ = "queue_snapshots"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    name: str = ""
-    description: str = ""
-    queue_state_json: str = "[]"
-    stats_json: str = "{}"
-    tags: str = ""
-    created_by: str = ""
-    created_at: datetime = Field(default_factory=utcnow)
-
-
 class View(SQLModel, table=True):
     """A user-composed workspace of containers — a flex grid or a canvas.
 
@@ -1421,7 +1326,7 @@ class View(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     kind: ViewKind = Field(
         default=ViewKind.FLEX_GRID,
-        sa_column=_str_enum_column(ViewKind, ViewKind.FLEX_GRID),
+        sa_column=str_enum_column(ViewKind, ViewKind.FLEX_GRID),
     )
     title: str = ""
     icon: str = ""
@@ -1476,7 +1381,7 @@ class SidebarEntry(SQLModel, table=True):
     position: int = Field(default=0)
     entry_kind: SidebarEntryKind = Field(
         default=SidebarEntryKind.VIEW,
-        sa_column=_str_enum_column(SidebarEntryKind, SidebarEntryKind.VIEW),
+        sa_column=str_enum_column(SidebarEntryKind, SidebarEntryKind.VIEW),
     )
     #: The built-in page this entry pins, from the frontend's `AppPage` union —
     #: a vocabulary owned by the client, not by the control plane. NULL on a
