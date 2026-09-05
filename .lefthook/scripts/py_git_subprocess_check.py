@@ -25,7 +25,7 @@ Usage: py_git_subprocess_check.py [staged files...]
 import ast
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
@@ -40,11 +40,14 @@ from gate_python_guard import require_supported_python  # noqa: E402 - path set 
 require_supported_python(Path(__file__).name)
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
+    GateInvocation,
     UnexaminableError,
     UnexaminableFileError,
-    git_repo_root,
+    parse_gate_argv,
     read_source_text,
+    resolve_gate_scope,
 )
+from py_organization_check import python_files_in_scope  # noqa: E402 - path set above
 
 # Commands that resolve a repository through git's environment.
 _GUARDED_COMMANDS: frozenset[str] = frozenset({"git", "gh"})
@@ -165,28 +168,57 @@ def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str, s
 
 
 def main(argv: list[str]) -> int:
+    invocation = parse_gate_argv(argv)
     try:
-        return _check(argv)
+        return _check(invocation)
     except UnexaminableError as exc:
-        print(f"pre-commit: cannot determine what to examine: {exc}")
+        # One handler for the one invariant: a scope this run could not resolve,
+        # and a file it could not read, are both things it did not examine.
+        print(f"{invocation.label}: cannot determine what to examine: {exc}")
         return 1
 
 
-def _check(argv: list[str]) -> int:
-    failures: list[str] = []
-    # This gate takes a bare file list — lefthook's staged files — and has no
-    # `GateRun` to carry the repository, so it asks for the boundary itself.
-    # `None` outside a checkout, which is the only honest answer there.
-    repo = git_repo_root()
+def _graded_files(repo: Optional[Path], candidates: Sequence[Path], discovered: bool) -> list[Path]:
+    """The Python files in scope this gate has an opinion about."""
+    in_scope = python_files_in_scope(repo, candidates, discovered)
+    return [path for path in in_scope if not _is_exempt(path)]
 
-    for raw in argv:
-        path = Path(raw)
-        if path.suffix != ".py" or _is_exempt(path):
-            continue
-        for lineno, command, spawn in violations_in(path, repo=repo):
+
+def _check(invocation: GateInvocation) -> int:
+    # Through `resolve_gate_scope` like the other three, which is what prints
+    # the `examined N file(s)` line. Before this the gate read argv as a bare
+    # path list: `--repo`/`--scope` and their values failed the `.py` test, so
+    # an orchestration-style invocation graded zero files and exited 0 in
+    # silence — indistinguishable from a gate that read everything and found
+    # nothing, which is the shape 546 removed everywhere else (595).
+    run = resolve_gate_scope(
+        label=invocation.label,
+        repo=invocation.repo,
+        diff_scope=invocation.diff_scope,
+        base_ref=invocation.base_ref,
+        explicit_files=invocation.files,
+        select=_graded_files,
+    )
+
+    if not run.files:
+        # The count above already said zero. Adding "check passed" to it would
+        # be a success claim about nothing examined, which is the thing the
+        # count exists to make visible — so the three sibling gates stop here
+        # too, and so does this one.
+        return 0
+
+    failures: list[str] = []
+    # Deliberately *not* diff-scoped, unlike its siblings. This gate has always
+    # graded a listed file whole, and narrowing it to touched lines here would
+    # quietly stop flagging an unscrubbed call that a change merely moved past.
+    # Adopting the scope resolver is about knowing what to read and saying how
+    # much was read; it is not licence to read less.
+    for path in run.files:
+        for lineno, command, spawn in violations_in(path, repo=run.repo):
             failures.append(f"   {path}:{lineno}: subprocess.{spawn}([{command!r}, ...]) — no env=")
 
     if not failures:
+        print(f"{invocation.label}: git subprocess check passed.")
         return 0
 
     print("❌ Unscrubbed git subprocess call (inherits GIT_DIR):")

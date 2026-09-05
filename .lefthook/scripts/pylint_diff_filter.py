@@ -28,6 +28,7 @@ from precommit_git_diff import (
     git_repo_root,
     parse_staged_additions,
     read_source_text,
+    scrubbed_git_env,
 )
 
 _COUNT_RE = re.compile(r"\((\d+)/(\d+)\)")
@@ -121,6 +122,12 @@ def _head_text(repo: Path, repo_rel: str) -> Optional[str]:
     proc = subprocess.run(
         ["git", "show", f"HEAD:{repo_rel}"],
         cwd=repo,
+        # GIT_DIR overrides `cwd`, and these filters run *inside* git hooks,
+        # which is exactly where git exports it. Without the scrub this reads
+        # HEAD from whatever repository the hook was bound to rather than from
+        # `repo` — the failure the py-git-subprocess gate exists to prevent, and
+        # which that gate could not report while it was grading zero files (595).
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
         check=False,
