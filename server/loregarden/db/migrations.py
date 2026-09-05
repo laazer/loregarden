@@ -80,6 +80,7 @@ from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
+    m_agent_is_default_stages,
     m_alternative_impl_group,
     m_clear_phantom_skill_names,
     m_ensure_terminal_stage,
@@ -1366,6 +1367,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0109_orchestration_monitor_mode", m_orchestration_monitor_mode),
     ("0110_domain_event_indexes", m_domain_event_indexes),
     ("0111_agent_run_prompt_chars", m_agent_run_prompt_chars),
+    ("0112_agent_is_default_stages", m_agent_is_default_stages),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

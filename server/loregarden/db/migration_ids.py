@@ -130,6 +130,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0109_orchestration_monitor_mode",
     "0110_domain_event_indexes",
     "0111_agent_run_prompt_chars",
+    "0112_agent_is_default_stages",
 )
 
 

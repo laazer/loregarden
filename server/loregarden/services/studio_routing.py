@@ -243,7 +243,7 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
     if stage.stage_type == "classify":
         return _resolve_next_agent_from_routes(ticket, stage)
 
-    if stage.key in GENERIC_IMPLEMENTATION_STAGES:
+    if agent_is_overridable(stage):
         return next_agent, stage.skill_name or ""
 
     # A stage that names its own agent in the template keeps it. `next_agent` is a
@@ -425,19 +425,36 @@ def resolve_display_agent(ticket: Ticket, stage: WorkflowStageDef) -> str:
     return stage.agent_id
 
 
-#: Implementation stages whose agent is chosen per ticket rather than by the
-#: template. These name a default agent, and the routing hint is allowed to
-#: override it — picking a backend or frontend specialist is the whole job of
-#: the stage.
+#: Stage keys that behaved as `agent_is_default` before that flag existed.
 #:
-#: `route_impl` used to be listed here and matches no template in the system;
-#: it is gone. `backend-impl` and `frontend-impl` are deliberately NOT here.
-#: They look like they belong — they are implementation stages that this set
-#: misses — but they have already made the specialist choice, and letting a
-#: stale hint override them is how a frontend hint would run the backend stage.
-#: That is the defect the comment below this call describes, which ran the
-#: `learning` stage under `ac_gatekeeper` (lg-workflow-integrity-102).
-GENERIC_IMPLEMENTATION_STAGES = frozenset({"implementation", "implement"})
+#: A FALLBACK, not the rule. The flag is authoritative; these keys keep working
+#: for templates authored before it — including version-pinned instances, which
+#: resolve their stages from a snapshot that will never grow the field. 16 open
+#: tickets were pinned to `loregarden-tdd` when this landed, all sitting on
+#: `planning` and yet to reach `implementation`; without this they would have
+#: lost the override on the way through. Exactly the reasoning behind
+#: `is_terminal_stage`'s `key == "done"` fallback, for exactly the same reason.
+#:
+#: `backend-impl` and `frontend-impl` are deliberately absent. They look like
+#: they belong — they are implementation stages this set misses — but they have
+#: already made the specialist choice, and letting a stale hint override them is
+#: how a frontend hint would run the backend stage (lg-workflow-integrity-102).
+LEGACY_DEFAULT_AGENT_STAGES = frozenset({"implementation", "implement"})
+
+
+def agent_is_overridable(stage: WorkflowStageDef) -> bool:
+    """Whether a routing hint may replace this stage's declared agent.
+
+    The template's own `agent_is_default` is authoritative. The key fallback
+    exists so a snapshot written before the flag keeps the behaviour it had, and
+    should be deleted once no live instance predates the flag.
+
+    Naming three keys was the old rule, and it encoded one workspace's naming
+    into routing every workspace runs: a new template keyed `implementation`
+    inherited the override by accident, and a template wanting it under any
+    other name could not have it (lg-workflow-integrity-648).
+    """
+    return bool(stage.agent_is_default) or stage.key in LEGACY_DEFAULT_AGENT_STAGES
 
 
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
