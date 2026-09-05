@@ -8,6 +8,7 @@ describe("logTagVariant", () => {
     expect(logTagVariant("OK")).toBe("ok");
     expect(logTagVariant("RUN")).toBe("run");
     expect(logTagVariant("TOOL")).toBe("run");
+    expect(logTagVariant("THINK")).toBe("think");
     expect(logTagVariant("WARN")).toBe("warn");
     expect(logTagVariant("ERR")).toBe("err");
     expect(logTagVariant("FAIL")).toBe("err");

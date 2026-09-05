@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.models.domain import Ticket, TriageMessage
@@ -135,3 +137,21 @@ def test_build_triage_invocation_codex_auto_approves_mcp_without_orchestrated(
     assert any(arg.startswith("mcp_servers.loregarden.command=") for arg in inv.argv)
     assert 'mcp_servers.loregarden.default_tools_approval_mode="approve"' in inv.argv
     assert not any("LOREGARDEN_MCP_ORCHESTRATED" in arg for arg in inv.argv)
+
+
+def test_reasoning_is_not_returned_as_the_reply():
+    """A thinking block reaching OUT made the model's reasoning the answer."""
+    stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"thinking": "The ticket looks stale."}]},
+                }
+            ),
+            json.dumps(
+                {"type": "assistant", "message": {"content": [{"text": "It is still open."}]}}
+            ),
+        ]
+    )
+    assert extract_triage_reply(stdout) == "It is still open."

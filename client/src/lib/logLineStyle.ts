@@ -1,4 +1,4 @@
-export type LogTagVariant = "info" | "ok" | "run" | "warn" | "err";
+export type LogTagVariant = "info" | "ok" | "run" | "warn" | "err" | "think";
 
 export function logTagVariant(tag: string | undefined | null): LogTagVariant {
   switch ((tag ?? "").toUpperCase()) {
@@ -7,6 +7,8 @@ export function logTagVariant(tag: string | undefined | null): LogTagVariant {
     case "RUN":
     case "TOOL":
       return "run";
+    case "THINK":
+      return "think";
     case "WARN":
       return "warn";
     case "ERR":

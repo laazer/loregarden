@@ -39,6 +39,7 @@ def test_format_stream_payload_codex_json_events():
             "usage": {"input_tokens": 10, "output_tokens": 4},
         }
     ) == ("SYS", "codex turn done · in=10 out=4")
+    # A read-only command that succeeded keeps its shape, not its contents.
     assert format_stream_payload(
         {
             "type": "item.completed",
@@ -49,7 +50,19 @@ def test_format_stream_payload_codex_json_events():
                 "aggregated_output": "a\nb\n",
             },
         }
-    ) == ("TOOL", "$ ls · completed\na\nb")
+    ) == ("TOOL", "$ ls · completed · 2 lines, 3 B")
+    # A command whose output is the finding keeps the body.
+    assert format_stream_payload(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "pytest -q",
+                "status": "failed",
+                "aggregated_output": "1 failed\n",
+            },
+        }
+    ) == ("TOOL", "$ pytest -q · failed\n1 failed")
 
 
 def test_run_log_streamer_updates_cmd_after_bootstrap():
@@ -249,7 +262,8 @@ def test_run_log_streamer_coalesces_cursor_thinking_deltas():
     """Cursor stream-partial-output emits thinking subtype=delta token events.
 
     These used to fall through format_stream_payload's generic text handler and
-    flush one OUT line per word.
+    flush one OUT line per word. They coalesce now, and land under THINK — the
+    channel that says this is the model reasoning, not its answer.
     """
     engine = create_engine(
         "sqlite://",
@@ -318,16 +332,17 @@ def test_run_log_streamer_coalesces_cursor_thinking_deltas():
             ).first()
             assert artifact is not None
             content = json.loads(artifact.content_json)
-            out_texts = [line["text"] for line in content["lines"] if line["tag"] == "OUT"]
-            assert out_texts == [title_chunk, body]
-            assert not any(text in {"need", "to", "start", "MCP"} for text in out_texts)
+            think_texts = [line["text"] for line in content["lines"] if line["tag"] == "THINK"]
+            assert think_texts == [title_chunk, body]
+            assert not any(line["tag"] == "OUT" for line in content["lines"])
+            assert not any(text in {"need", "to", "start", "MCP"} for text in think_texts)
             assert content["live"] is None
 
             streamer.append_stream_line(json.dumps({"type": "thinking", "subtype": "completed"}))
             session.refresh(artifact)
             content = json.loads(artifact.content_json)
-            out_texts = [line["text"] for line in content["lines"] if line["tag"] == "OUT"]
-            assert out_texts == [title_chunk, body]
+            think_texts = [line["text"] for line in content["lines"] if line["tag"] == "THINK"]
+            assert think_texts == [title_chunk, body]
             assert content["live"] is None
     finally:
         stream_mod.engine = original_engine
@@ -670,3 +685,160 @@ def test_run_log_streamer_persists_long_output():
             assert out_text == long_text
     finally:
         stream_mod.engine = original_engine
+
+
+def test_assistant_message_separates_reasoning_from_answer():
+    """Thinking and text used to be joined into one OUT line.
+
+    Every reader downstream then had to treat reasoning as output — including
+    `extract_triage_reply`, which showed it to the operator as the reply.
+    """
+    assert format_stream_payload(
+        {
+            "type": "assistant",
+            "message": {"content": [{"thinking": "Weighing two options."}]},
+        }
+    ) == ("THINK", "Weighing two options.")
+    assert format_stream_payload(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"thinking": "Weighing two options."},
+                    {"text": "Picked the second."},
+                ]
+            },
+        }
+    ) == ("OUT", "Picked the second.")
+
+
+def test_content_block_delta_separates_reasoning_from_answer():
+    assert format_stream_payload({"type": "content_block_delta", "delta": {"thinking": "hm"}}) == (
+        "THINK",
+        "hm",
+    )
+    assert format_stream_payload({"type": "content_block_delta", "delta": {"text": "hi"}}) == (
+        "OUT",
+        "hi",
+    )
+
+
+def test_thinking_and_answer_in_one_message_land_on_their_own_channels():
+    """A message carrying both used to write the answer under whichever tag the
+    buffer happened to be holding."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+            make_agent_run(
+                session,
+                run_id="run_mixed",
+                run_code="run_mixed",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
+            streamer = RunLogStreamer(
+                run_id="run_mixed",
+                ticket_id=ticket.id,
+                run_code="run_mixed",
+                agent_id="planner",
+                skill_name="plan",
+                partial_output=True,
+            )
+            streamer.append_stream_line(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"thinking": "Two options, and the second is cheaper."},
+                                {"text": "Taking the second option."},
+                            ]
+                        },
+                    }
+                )
+            )
+            streamer.finalize(status=RunStatus.SUCCEEDED)
+
+            artifact = session.exec(
+                select(Artifact).where(Artifact.run_id == "run_mixed", Artifact.kind == "log")
+            ).first()
+            assert artifact is not None
+            lines = json.loads(artifact.content_json)["lines"]
+            assert [line["text"] for line in lines if line["tag"] == "THINK"] == [
+                "Two options, and the second is cheaper."
+            ]
+            assert [line["text"] for line in lines if line["tag"] == "OUT"] == [
+                "Taking the second option."
+            ]
+    finally:
+        stream_mod.engine = original_engine
+
+
+def test_user_event_logs_a_tool_result_not_a_python_repr():
+    """`{'role': 'user', ...}` used to reach the log through `str()` on a dict.
+
+    Measured over 300 run logs that was 1.6M characters — a third of the whole
+    corpus — in the one shape neither a reader nor a JSON parser can take.
+    """
+    line = format_stream_payload(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": [{"type": "text", "text": '{"ticket_id": "abc"}'}],
+                    }
+                ],
+            },
+        }
+    )
+    assert line == ("TOOL", 'result\n{"ticket_id": "abc"}')
+
+
+def test_user_event_records_the_prompt_by_size():
+    """The opening prompt is the run's input, and rebuildable from the ticket."""
+    line = format_stream_payload(
+        {
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": "x" * 2048}]},
+        }
+    )
+    assert line == ("SYS", "prompt · 2.0 KB")
+
+
+def test_user_event_reads_a_string_tool_result():
+    line = format_stream_payload(
+        {
+            "type": "user",
+            "message": {
+                "content": [{"type": "tool_result", "tool_use_id": "t", "content": "a.ts\nb.ts"}]
+            },
+        }
+    )
+    assert line == ("TOOL", "result\na.ts\nb.ts")
+
+
+def test_an_uncharacterised_envelope_is_dropped_rather_than_stringified():
+    """A container reaching the fallback is an event nobody has modelled. Its
+    `repr` is not a reading of it, so there is nothing to log."""
+    assert format_stream_payload({"type": "mystery", "message": {"role": "user"}}) is None
+    assert format_stream_payload({"type": "mystery", "text": ["a", "b"]}) is None
+    # A string still comes through: an uncharacterised *text* stream is worth
+    # keeping verbatim.
+    assert format_stream_payload({"type": "mystery", "text": "raw"}) == ("OUT", "raw")

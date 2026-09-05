@@ -57,6 +57,17 @@
   color: var(--bll);
 }
 
+.log-line__tag--think {
+  background: rgba(157, 140, 255, 0.14);
+  color: var(--vil);
+}
+
+/* Reasoning reads as commentary on the run, not as its output. */
+.log-line--think .log-line__text {
+  color: var(--txl);
+  font-style: italic;
+}
+
 .log-line__tag--warn {
   background: rgba(229, 167, 44, 0.16);
   color: var(--aml);
@@ -69,9 +80,147 @@
 
 .log-line__text {
   flex: 1;
+  /* A flex item defaults to `min-width: auto`, so a wide preformatted block
+     stretches the row and scrolls the whole feed sideways, taking the time and
+     tag gutter off screen. Zero lets the block scroll inside its own frame. */
+  min-width: 0;
   color: var(--txm);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Brighter than the body beneath it: on a TOOL line the command is the thing
+   being scanned for, and its own output should not compete with it. */
+.log-line__headline {
+  color: var(--tx);
+  margin-bottom: 2px;
+}
+
+/* A block body — JSON or rendered markdown — is a panel, not a continuation of
+   the row stack. Both share one frame so the feed reads as a single system, and
+   the vertical margins are what separate a block-carrying row from the tight
+   single-line rows above and below it. */
+.log-line__json,
+.log-line__md {
+  margin: 6px 0 12px;
+  padding: 10px 12px;
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+/* A panel opening the row would push the time/tag down off its own top edge,
+   since the row aligns on the first baseline inside it. */
+.log-line__text > .log-line__json:first-child,
+.log-line__text > .log-line__md:first-child {
+  margin-top: 0;
+}
+
+/* Preformatted blocks scroll inside their own frame rather than wrap: an
+   aligned directory tree or a long path is unreadable broken mid-token.
+   The `.markdown-preview` selector is carried here to outrank the shared
+   `.markdown-preview pre code` rule in index.css, which wraps deliberately —
+   that is right for a narrow chat bubble and wrong for this feed. */
+.log-line__json,
+.log-line__md.markdown-preview pre,
+.log-line__md.markdown-preview pre code {
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.log-line__json {
+  font: inherit;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+/* Compact markdown for tool output. Kept here rather than folded into the
+   shared `.markdown-preview` list in index.css: that list styles authored
+   prose in chat and approvals, and the log feed sets its own type. */
+.log-line__md {
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--txm);
+  /* The row sets `pre-wrap` so plain output keeps its line breaks. Rendered
+     markdown must not inherit it: a .md file is hard-wrapped at ~90 columns,
+     and honouring those newlines breaks every paragraph mid-sentence. */
+  white-space: normal;
+}
+
+.log-line__md > :first-child {
+  margin-top: 0;
+}
+
+.log-line__md > :last-child {
+  margin-bottom: 0;
+}
+
+.log-line__md :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tx);
+  margin: 0.95em 0 0.4em;
+}
+
+.log-line__md :is(p, ul, ol, blockquote) {
+  margin: 0.5em 0;
+}
+
+.log-line__md :is(ul, ol) {
+  padding-left: 1.3em;
+}
+
+.log-line__md li {
+  margin: 0.2em 0;
+}
+
+.log-line__md blockquote {
+  border-left: 2px solid var(--bd2);
+  padding-left: 10px;
+  color: var(--txl);
+}
+
+.log-line__md code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Nested inside the panel, so a step darker than it rather than the same tone. */
+.log-line__md pre {
+  margin: 0.6em 0;
+  padding: 8px 10px;
+  background: var(--bg0);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.log-line__md pre code {
+  background: none;
+  padding: 0;
+}
+
+.log-line__md table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+
+.log-line__md :is(th, td) {
+  border: 1px solid var(--bd);
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.log-line__md th {
+  background: var(--bg2);
+  color: var(--tx);
 }
 
 .log-line--live {

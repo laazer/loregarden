@@ -17,14 +17,17 @@ from loregarden.dot_line import (
     OUT,
     RUN,
     SYS,
+    THINK,
     TOOL,
     LogLine,
     clip,
     kv,
     kv_space,
     shell,
+    size,
 )
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
+from loregarden.services.tool_body import command_outcome, with_tool_output
 from sqlmodel import Session, select
 
 
@@ -63,7 +66,12 @@ def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> LogL
         status = str(item.get("status") or item.get("exit_code") or "").strip()
         if msg_type == "item.started":
             return TOOL / shell(command)
-        return (TOOL / shell(command) / status).with_body(item.get("aggregated_output"))
+        return with_tool_output(
+            TOOL / shell(command) / status,
+            command=command,
+            output=item.get("aggregated_output"),
+            outcome=command_outcome(status),
+        )
     return TOOL / item_type
 
 
@@ -74,6 +82,18 @@ def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> LogL
 OpencodeEvent = Literal["step_start", "step_finish", "tool_use", "text"]
 
 _OPENCODE_EVENT_TYPES = frozenset(get_args(OpencodeEvent))
+
+#: The CLIs' own names for a tool exchange — as an event type, and as a content
+#: block inside a `user` message. Named here for the same reason `OpencodeEvent`
+#: is a `Literal`: the vocabulary is the adapter's, and an enum would imply
+#: Loregarden gets a say in when it changes.
+TOOL_RESULT_BLOCK = "tool_result"  # py-org: allow-string - adapter vocabulary
+TOOL_USE_BLOCK = "tool_use"  # py-org: allow-string - adapter vocabulary
+TOOL_CALL_EVENT = "tool_call"  # py-org: allow-string - adapter vocabulary
+_TOOL_EXCHANGE_EVENTS = frozenset({TOOL_USE_BLOCK, TOOL_RESULT_BLOCK})
+#: Every event that ends a partial-output message. Built once: `append_stream_line`
+#: tests it against every line of the stream.
+_TOOL_TURN_EVENTS = _TOOL_EXCHANGE_EVENTS | {TOOL_CALL_EVENT}
 
 
 def _format_opencode_stream_payload(
@@ -104,6 +124,59 @@ def _format_opencode_stream_payload(
     return None
 
 
+def _tool_result_text(content: object) -> str:
+    """The text a tool handed back, from either shape the CLIs send it in."""
+    if isinstance(content, str):  # py-org: allow-isinstance - third-party CLI payload
+        return content
+    if not isinstance(content, list):  # py-org: allow-isinstance - third-party CLI payload
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
+            continue
+        text = block.get("text") or block.get("tool_name")
+        if text:
+            parts.append(str(text))
+    return "\n".join(parts)
+
+
+def _format_user_event(payload: dict[str, Any]) -> LogLine | None:
+    """A `user` event is what went *into* the agent, not what came out of it.
+
+    Its `message` is a dict, and the generic fallback below used to `str()` it,
+    writing Python reprs — `{'role': 'user', 'content': [{...}]}` — into the
+    log under OUT as though the agent had said them. Measured over 300 run
+    logs, that was 1.6M characters, a third of the whole corpus, in the one
+    shape no reader can parse.
+
+    What survives is what the operator cannot get elsewhere: a tool's result,
+    because the Claude adapter logs no body for a tool call. The opening prompt
+    is the run's input, reconstructible from the ticket and the stage, so it is
+    recorded by size rather than stored again.
+    """
+    message = payload.get("message") or {}
+    content = message.get("content")
+    if isinstance(content, str):  # py-org: allow-isinstance - third-party CLI payload
+        return SYS / "prompt" / size(len(content))
+    if not isinstance(content, list):  # py-org: allow-isinstance - third-party CLI payload
+        return None
+    results: list[str] = []
+    prompt_chars = 0
+    for block in content:
+        if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
+            continue
+        if block.get("type") == TOOL_RESULT_BLOCK:
+            results.append(_tool_result_text(block.get("content")))
+        elif block.get("text"):
+            prompt_chars += len(str(block["text"]))
+    body = "\n".join(part for part in results if part.strip())
+    if body.strip():
+        return (TOOL / "result").with_body(body)
+    if prompt_chars:
+        return SYS / "prompt" / size(prompt_chars)
+    return None
+
+
 def _untyped_stream_payload(payload: dict[str, Any]) -> LogLine | None:
     """Last resort for an event no adapter's formatter claimed.
 
@@ -111,20 +184,38 @@ def _untyped_stream_payload(payload: dict[str, Any]) -> LogLine | None:
     text, or a `result` whose payload is neither string nor object, historically
     fell through to exactly this, and a stream nobody has characterised is worth
     more in the log verbatim than dropped.
+
+    Verbatim means *text*, though. A structured envelope reaching `str()` here
+    is what produced the Python reprs; an event whose payload is a container
+    has not been characterised, and its repr is not a reading of it.
     """
-    return OUT.maybe(payload.get("text") or payload.get("message"))
+    text = payload.get("text") or payload.get("message")
+    if isinstance(text, (dict, list)):  # py-org: allow-isinstance - third-party CLI payload
+        return None
+    return OUT.maybe(text)
 
 
 def _format_assistant_message(payload: dict[str, Any]) -> LogLine | None:
-    """Concatenated text/thinking blocks of a Claude `assistant` message."""
+    """A Claude `assistant` message's answer, or its reasoning when it has none.
+
+    The two used to share the OUT tag, which made them indistinguishable to
+    every reader: `cli_output` treats OUT as the agent's reply, so reasoning
+    arriving under it became part of the answer the operator was shown.
+    """
     message = payload.get("message") or {}
-    parts: list[str] = []
+    text_parts: list[str] = []
+    thinking_parts: list[str] = []
     for block in message.get("content") or []:
         if isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
-            text = block.get("text") or block.get("thinking")
-            if text:
-                parts.append(str(text))
-    return OUT / " ".join(parts) if parts else _untyped_stream_payload(payload)
+            if block.get("text"):
+                text_parts.append(str(block["text"]))
+            elif block.get("thinking"):
+                thinking_parts.append(str(block["thinking"]))
+    if text_parts:
+        return OUT / " ".join(text_parts)
+    if thinking_parts:
+        return THINK / " ".join(thinking_parts)
+    return _untyped_stream_payload(payload)
 
 
 def _format_result_event(payload: dict[str, Any]) -> LogLine | None:
@@ -148,7 +239,9 @@ def _format_system_event(payload: dict[str, Any]) -> LogLine | None:
 
 def _format_content_block_delta(payload: dict[str, Any]) -> LogLine | None:
     delta = payload.get("delta") or {}
-    return OUT.maybe(delta.get("text") or delta.get("thinking"))
+    if delta.get("text"):
+        return OUT.maybe(delta["text"])
+    return THINK.maybe(delta.get("thinking"))
 
 
 # The Claude/Cursor stream-json shapes, each keyed by its own event name. A table
@@ -159,6 +252,7 @@ _ASSISTANT_FORMATTERS: dict[str, Callable[[dict[str, Any]], LogLine | None]] = {
     "content_block_delta": _format_content_block_delta,
     "result": _format_result_event,
     "system": _format_system_event,
+    "user": _format_user_event,
 }
 
 # Event types whose answer is "log nothing", as opposed to "not my shape".
@@ -189,7 +283,7 @@ def format_stream_payload(payload: dict[str, Any]) -> LogLine | None:
     if codex is not None or msg_type.startswith(("thread.", "turn.", "item.")):
         return codex
 
-    if msg_type in {"tool_use", "tool_result"}:
+    if msg_type in _TOOL_EXCHANGE_EVENTS:
         name = payload.get("tool_name") or payload.get("name") or msg_type
         return TOOL / clip(name, 200)
 
@@ -234,6 +328,10 @@ class RunLogStreamer:
         self._lines: list[dict[str, str]] = []
         self._live = ""
         self._stream_buffer = ""
+        # Which channel the buffer is accumulating. Reasoning and answer text
+        # interleave in one stream, and a buffer that does not know which it is
+        # holding writes one under the other's tag.
+        self._stream_tag = OUT.name
         self._partial_output_text = ""
         self._partial_message_text = ""
         self._last_persist = 0.0
@@ -279,10 +377,22 @@ class RunLogStreamer:
         if force or now - self._last_persist >= self.PERSIST_INTERVAL_SECONDS:
             self._persist()
 
+    def _switch_channel(self, tag: str) -> None:
+        """Close the buffer before its channel changes.
+
+        Anything still buffered belongs to the channel that produced it, so it
+        is written under the outgoing tag rather than the incoming one.
+        """
+        if tag == self._stream_tag:
+            return
+        self._flush_stream_buffer(force=True)
+        self._stream_tag = tag
+
     def _prefer_stream_text(self, text: str) -> None:
         text = text.strip()
         if not text:
             return
+        self._switch_channel(OUT.name)
         if len(text) >= len(self._stream_buffer):
             self._stream_buffer = text
         elif text and text not in self._stream_buffer:
@@ -295,9 +405,9 @@ class RunLogStreamer:
         if keep_remainder and len(text) > self.CHUNK_FLUSH_CHARS:
             chunk = text[: self.CHUNK_FLUSH_CHARS]
             self._stream_buffer = text[self.CHUNK_FLUSH_CHARS :]
-            self._append_chunks("OUT", chunk, force=force)
+            self._append_chunks(self._stream_tag, chunk, force=force)
             return
-        self._append_chunks("OUT", text, force=force)
+        self._append_chunks(self._stream_tag, text, force=force)
         self._stream_buffer = ""
 
     def _maybe_chunk_flush(self, *, force: bool = False) -> None:
@@ -359,7 +469,8 @@ class RunLogStreamer:
     def append_line(self, line: LogLine, *, force: bool = False) -> None:
         self._append_chunks(line.tag, line.text, force=force)
 
-    def _ingest_delta_text(self, text: str) -> None:
+    def _ingest_delta_text(self, text: str, *, tag: str = OUT.name) -> None:
+        self._switch_channel(tag)
         if self.partial_output:
             self._append_partial_output(text)
             return
@@ -377,18 +488,26 @@ class RunLogStreamer:
             return
         text = payload.get("text")
         if text:
-            self._ingest_delta_text(str(text))
+            self._ingest_delta_text(str(text), tag=THINK.name)
 
     def _handle_assistant_event(self, payload: dict[str, Any]) -> None:
         message = payload.get("message") or {}
         parts: list[str] = []
+        thinking: list[str] = []
         for block in message.get("content") or []:
             if isinstance(block, dict):
-                chunk = block.get("text") or block.get("thinking")
-                if chunk:
-                    parts.append(str(chunk))
+                if block.get("text"):
+                    parts.append(str(block["text"]))
+                elif block.get("thinking"):
+                    thinking.append(str(block["thinking"]))
+        if thinking:
+            # Whole blocks, not deltas — nothing to accumulate, so they are
+            # written straight out under their own tag.
+            self._switch_channel(THINK.name)
+            self.append_line(THINK / " ".join(thinking), force=True)
         if not parts:
             return
+        self._switch_channel(OUT.name)
         if self.partial_output:
             chunk_text = "".join(parts)
             # Cursor closes a partial-output message by repeating it whole after
@@ -406,6 +525,7 @@ class RunLogStreamer:
 
     def _handle_result_event(self, payload: dict[str, Any]) -> None:
         result = payload.get("result")
+        self._switch_channel(OUT.name)
         if self.partial_output and self._partial_output_text:
             if isinstance(result, str) and result.startswith(self._partial_output_text):
                 self._stream_buffer += result[len(self._partial_output_text) :]
@@ -443,9 +563,11 @@ class RunLogStreamer:
         msg_type = payload.get("type", "")
         if msg_type == "content_block_delta":
             delta = payload.get("delta") or {}
-            text = delta.get("text") or delta.get("thinking")
-            if text:
-                self._stream_buffer += str(text)
+            text = delta.get("text")
+            thinking = delta.get("thinking")
+            if text or thinking:
+                self._switch_channel(OUT.name if text else THINK.name)
+                self._stream_buffer += str(text or thinking)
                 self._maybe_chunk_flush()
                 self._update_live_from_buffer()
             return
@@ -462,7 +584,7 @@ class RunLogStreamer:
             self._handle_result_event(payload)
             return
 
-        if self.partial_output and msg_type in {"tool_use", "tool_result", "tool_call"}:
+        if self.partial_output and msg_type in _TOOL_TURN_EVENTS:
             self._partial_message_text = ""
             self._flush_stream_buffer(force=True)
             self.set_live("")

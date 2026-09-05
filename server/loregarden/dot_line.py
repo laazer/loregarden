@@ -166,6 +166,13 @@ def shell(command: object, *, width: int = 180) -> str:
     )
 
 
+def size(chars: int) -> str:
+    """Human-readable byte count for a shape segment: ``11.2 KB``."""
+    if chars < 1024:
+        return f"{chars} B"
+    return f"{chars / 1024:.1f} KB"
+
+
 def kv(key: str, value: object, *, empty: str = "—") -> str:
     """Single ``key=value`` segment; blank values become ``empty`` (default em dash)."""
     text = "" if value is None else str(value)
@@ -185,6 +192,9 @@ def kv_space(**pairs: object) -> str:
 # Stream / artifact channel tags used by run_log_stream and friends.
 SYS = Tag("SYS")
 OUT = Tag("OUT")
+#: Model reasoning. Its own channel because a reader that cannot tell reasoning
+#: from an answer will quote one as the other.
+THINK = Tag("THINK")
 TOOL = Tag("TOOL")
 RUN = Tag("RUN")
 CMD = Tag("CMD")
