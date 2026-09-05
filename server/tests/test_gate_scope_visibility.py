@@ -1341,6 +1341,93 @@ def test_the_escape_guard_does_not_depend_on_the_callers_directory(
     assert "Traceback" not in _out(result), _out(result)
 
 
+#: The two lefthook filters that map another tool's findings onto the diff. They
+#: emit no findings of their own, which is why their raw reads outlived 577 —
+#: and why they were the last two paths not behind the one-way-in seam (589).
+DIFF_FILTER_SCRIPTS = ["pylint_diff_filter", "ruff_complexity_diff_filter"]
+
+_SPAN_DRIVER = """
+import sys
+sys.path.insert(0, {scripts!r})
+from pathlib import Path
+import {module} as m
+print(m._function_span(Path({target!r}), 7, Path({repo!r})))
+"""
+
+
+def _function_span_in_subprocess(module: str, target: Path, repo: Path):
+    """Call the filter's span helper out of process, under a timeout.
+
+    Out of process because hanging *is* one of the failures being pinned: a raw
+    read of a path resolving to `/dev/zero` never returns, and in-process that
+    stops the suite rather than failing a test.
+    """
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _SPAN_DRIVER.format(
+                scripts=str(_SCRIPTS), module=module, target=str(target), repo=str(repo)
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_scrubbed_env(),
+    )
+
+
+@pytest.mark.parametrize("module", DIFF_FILTER_SCRIPTS)
+def test_a_diff_filter_refuses_a_source_symlinked_out_of_the_repository(
+    module: str, repo: Path, tmp_path_factory
+) -> None:
+    """AC3: the filters read through the same door as the gates (589).
+
+    These two open a path that came out of a tool report on a repository file.
+    Before this they used a bare `read_text`, so a link out of the tree was read
+    and reported on — the hole 577 closed everywhere else.
+
+    The span falls back to the reported line, which is deliberate: it keeps the
+    finding whenever that line was touched, which is what the tool claimed,
+    where a guessed span would report on lines the change never touched. What
+    must not happen is silence — an unreadable file has to say so, or it reads
+    as an unremarkable one.
+    """
+    outside = tmp_path_factory.mktemp("outside") / "target.py"
+    outside.write_text("def f():\n    return 1\n")
+    link = repo / "src" / "pkg" / "linked.py"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(outside)
+
+    result = _function_span_in_subprocess(module, link, repo)
+
+    assert result.returncode == 0, _out(result)
+    assert "(7, 7)" in result.stdout, _out(result)
+    assert "could not read" in result.stderr, _out(result)
+    assert "outside the repository" in result.stderr, _out(result)
+
+
+@pytest.mark.parametrize("module", DIFF_FILTER_SCRIPTS)
+def test_a_diff_filter_does_not_follow_a_source_symlinked_to_a_device(
+    module: str, repo: Path
+) -> None:
+    """AC2: a committed link to a device node cannot make either allocate.
+
+    `timeout` is the assertion. Reading `/dev/zero` does not fail, it simply
+    never stops, so the old code had no exit status to report — it consumed the
+    host instead.
+    """
+    link = repo / "src" / "pkg" / "leak.py"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to("/dev/zero")
+
+    result = _function_span_in_subprocess(module, link, repo)
+
+    assert result.returncode == 0, _out(result)
+    assert "(7, 7)" in result.stdout, _out(result)
+    assert "not a regular file" in result.stderr, _out(result)
+
+
 # --------------------------------------------------------------------------- #
 # The paths git prints, and the files behind them
 # --------------------------------------------------------------------------- #
