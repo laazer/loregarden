@@ -11,7 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import AgentRun, Artifact, Ticket, TicketState, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    ArtifactKind,
+    Ticket,
+    TicketState,
+    Workspace,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
@@ -990,7 +997,7 @@ def record_blocking_issue(
         session,
         ticket_id=ticket.id,
         run_id=run_id,
-        kind="error",
+        kind=ArtifactKind.ERROR,
         title=f"Stage blocked — {stage_key}" if stage_key else "Stage blocked",
         content={
             "message": message,
@@ -1018,7 +1025,7 @@ def refresh_execution_artifacts(
             session,
             ticket_id=ticket.id,
             run_id=run.id,
-            kind="diff",
+            kind=ArtifactKind.DIFF,
             title=str(diff.get("file") or "git diff"),
             content=diff,
         )
@@ -1035,7 +1042,7 @@ def refresh_execution_artifacts(
                 session,
                 ticket_id=ticket.id,
                 run_id=run.id,
-                kind="test",
+                kind=ArtifactKind.TEST,
                 title=tests.get("summary", "test results"),
                 content=tests,
             )
@@ -1067,7 +1074,7 @@ def ensure_diff_artifact(
             session,
             ticket_id=ticket.id,
             run_id=None,
-            kind="diff",
+            kind=ArtifactKind.DIFF,
             title=str(diff.get("file") or "git diff"),
             content=diff,
         )
@@ -1104,7 +1111,7 @@ def ensure_test_artifact(
                 session,
                 ticket_id=ticket.id,
                 run_id=run.id,
-                kind="test",
+                kind=ArtifactKind.TEST,
                 title=tests.get("summary", "test results"),
                 content=tests,
             )

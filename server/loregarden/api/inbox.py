@@ -5,6 +5,7 @@ from loregarden.models.domain import (
     ApprovalAction,
     ApprovalKind,
     ApprovalStatus,
+    ArtifactKind,
     Ticket,
     TicketState,
     Workspace,
@@ -125,7 +126,7 @@ def run_human_action(
     callbacks = OrchestrationCallbackService(session)
     callbacks.attach_artifact(
         ticket,
-        kind="context" if result.ok else "error",
+        kind=ArtifactKind.CONTEXT if result.ok else "error",
         title=f"Human action — {action.command or action.script_path}",
         content={
             "message": result.output or result.error,

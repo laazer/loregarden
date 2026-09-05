@@ -13,6 +13,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
+    ArtifactKind,
     GateFaultAttribution,
     GateOutcome,
     OrchestrationDriver,
@@ -791,7 +792,7 @@ class BuiltinOrchestrator:
         if committed:
             self.callbacks.attach_artifact(
                 ticket,
-                kind="context",
+                kind=ArtifactKind.CONTEXT,
                 title=f"Auto-fixed static-analysis gate — {from_stage}",
                 content={
                     "title": f"Auto-fixed static-analysis gate — {from_stage}",
@@ -833,7 +834,7 @@ class BuiltinOrchestrator:
         """
         self.callbacks.attach_artifact(
             ticket,
-            kind="error",
+            kind=ArtifactKind.ERROR,
             title=gate_failure_artifact_title(from_stage),
             content={
                 "message": detail,
@@ -900,7 +901,7 @@ class BuiltinOrchestrator:
         )
         self.callbacks.attach_artifact(
             ticket,
-            kind="error",
+            kind=ArtifactKind.ERROR,
             title=foreign_gate_failure_artifact_title(from_stage),
             content={
                 "message": (
@@ -934,7 +935,7 @@ class BuiltinOrchestrator:
         """
         self.callbacks.attach_artifact(
             ticket,
-            kind="error",
+            kind=ArtifactKind.ERROR,
             title=gate_failure_artifact_title(from_stage),
             content={
                 "message": detail,

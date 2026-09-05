@@ -30,11 +30,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from loregarden.models.domain import Artifact, GitBoundary, Ticket, Workspace
+from loregarden.models.domain import Artifact, ArtifactKind, GitBoundary, Ticket, Workspace
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
-HANDOFF_ARTIFACT_KIND = "handoff"
+#: Kept as a name because this module's callers read it; the value is the
+#: platform vocabulary, not a local one (613).
+HANDOFF_ARTIFACT_KIND = ArtifactKind.HANDOFF
 HANDOFF_FILENAME = "handoff-latest.yaml"
 CHECKPOINTS_SUBDIR = "project_board/checkpoints"
 # Under the repo so the gate's own `_checkpoints_dir_allowed` accepts it (it requires a

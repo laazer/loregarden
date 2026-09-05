@@ -339,6 +339,55 @@ class BoundaryVerdict(str, Enum):
     REPO_CHANGED = "repo_changed"
 
 
+class ArtifactKind(StrEnum):
+    """The `artifacts.kind` values the platform itself writes.
+
+    Closed, and only for platform writes. `loregarden_attach_artifact` lets an
+    agent name what it is attaching, and ~27 kinds in the live database are that
+    feature being used — `source_analysis`, `test_strategy`, `spike`. Closing the
+    column would delete a real capability to tidy it, so the column stays `str`
+    and this enum covers one tier of it.
+
+    That split is the point. Before it, a reader could not tell a kind the
+    platform guarantees from a coinage one agent used once, because both were
+    bare strings in the same column. Now the platform tier is named and the rest
+    is visibly an open channel rather than platform inconsistency.
+
+    Enforcement is the py-organization gate, which fails a string literal
+    standing in for a closed vocabulary. No column type change, so every existing
+    reader matches exactly the rows it matched before.
+
+    The three subsystem enums below (StageBudget, Rework, Monitor) stay separate:
+    each owns a counter or ledger whose rows must never be confused with these,
+    which is why they were created. See lg-workflow-integrity-613.
+    """
+
+    #: Run context handed to a stage, and the largest kind in the database.
+    CONTEXT = "context"
+    #: Captured stdout/stderr from a run.
+    LOG = "log"
+    #: A diff produced by a stage.
+    DIFF = "diff"
+    #: A failure worth keeping after the run that produced it is gone.
+    ERROR = "error"
+    #: Test output.
+    TEST = "test"
+    #: Proof a stage produced for the commit it ran against; see `evidence_kind`.
+    EVIDENCE = "evidence"
+    #: The plan a planning stage settled on.
+    PLAN = "plan"
+    #: A handoff between stages, validated against its item keys.
+    HANDOFF = "handoff"
+    #: A pull request this run opened.
+    PR = "pr"
+    #: A gate evaluation recorded against a workflow transition.
+    WORKFLOW_GATE = "workflow_gate"
+    #: A record that a ticket's blocking issues were cleared.
+    BLOCKING_CLEAR = "blocking_clear"
+    #: An MCP call completing out of band.
+    MCP_COMPLETE = "mcp_complete"
+
+
 class StageBudgetArtifactKind(StrEnum):
     """The `artifacts.kind` values the stage retry breaker owns.
 

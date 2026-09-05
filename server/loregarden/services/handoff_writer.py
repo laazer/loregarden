@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import ClaimCertainty, Ticket, Workspace
+from loregarden.models.domain import ArtifactKind, ClaimCertainty, Ticket, Workspace
 from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
@@ -275,7 +275,7 @@ def _record_unvalidated_handoff(
     """
     OrchestrationCallbackService(session).attach_artifact(
         ticket,
-        kind="error",
+        kind=ArtifactKind.ERROR,
         title=f"Handoff not validated — {from_agent} → {to_agent}",
         content={
             "message": (

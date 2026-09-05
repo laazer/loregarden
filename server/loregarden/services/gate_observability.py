@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
+    ArtifactKind,
     EventType,
     GateOutcome,
     OrchestrationRun,
@@ -107,7 +108,7 @@ def record_gate_evaluation(
     title = gate_evaluation_title(outcome, from_stage, to_stage)
     callbacks.attach_artifact(
         ticket,
-        kind="context",
+        kind=ArtifactKind.CONTEXT,
         title=title,
         content={
             "title": title,

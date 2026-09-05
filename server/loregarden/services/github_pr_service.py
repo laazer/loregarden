@@ -6,7 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from loregarden.models.domain import Artifact, Ticket, Workspace
+from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -108,7 +108,7 @@ def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
 
     artifact = Artifact(
         ticket_id=ticket.id,
-        kind="pr",
+        kind=ArtifactKind.PR,
         title=f"PR #{number}" if number else "Pull request",
         content_json=json.dumps(content),
     )

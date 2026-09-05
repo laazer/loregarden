@@ -43,6 +43,7 @@ from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
+    ArtifactKind,
     CliAdapter,
     DoctorStatus,
     MemoryBriefingAssembly,
@@ -994,7 +995,7 @@ class CliAgentExecutor:
         detail = "\n".join(f" - {record.describe()}" for record in truncations)
         OrchestrationCallbackService(self.session).attach_artifact(
             ticket,
-            kind="error",
+            kind=ArtifactKind.ERROR,
             title=f"Prompt truncated — {run.stage_key or run.agent_id}",
             content={
                 "message": (
