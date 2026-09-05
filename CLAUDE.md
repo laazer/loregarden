@@ -243,6 +243,47 @@ Recorded because it happened: ticket 546 met all four of its acceptance criteria
 round, then ran three further implement rounds on real findings that no criterion covered. The
 work was good and the defects were real; the rounds should have been tickets.
 
+## A finding is a claim until it is runnable
+
+Reviews here file findings as tickets, and the tickets are good — but a ticket
+records a claim *as of a commit*, and nothing re-tests the claim before someone
+acts on it. Measured over seven gate tickets: the description was directionally
+right every time, the defect was often already fixed or smaller than stated, and
+the real finding only appeared when the gate was actually exercised.
+
+The clearest case: 591 and 592 were filed at 04:29 on 2026-08-30 by a review of
+577, and fixed by 577's *own* later rounds two days later in `60d74df`. Nothing
+closed them, so they sat in `backlog` until someone re-derived the answer by hand
+five days on.
+
+So when you file a defect that can be reproduced, put the reproduction in
+`server/tests/test_open_defect_repros.py`:
+
+- The test asserts the behaviour the code **should** have, marked
+  `@pytest.mark.xfail(strict=True, reason="<ticket-id> — open: …")`.
+- While the defect is open the test fails, `xfail` absorbs it, the suite is green.
+- When anyone fixes it — including the branch you are reviewing, on its next
+  round — pytest reports XPASS, `strict` turns that into a failure, and whoever
+  fixed it closes the ticket and moves the test into the suite that covers that
+  surface permanently.
+
+No sweep and no cron: a fix that lands anywhere cannot quietly leave its ticket
+open, because the existing suite goes red.
+
+**Build the fixture in a pytest fixture, not in the test body.** `xfail` absorbs
+failures in the call phase, so a repro whose *setup* is broken looks exactly like
+a healthy open defect. The first version of that module built its repository
+inside the test with a `git init` whose `cwd` did not exist; both repros failed
+at setup, both reported XFAIL, and the module proved nothing while looking green.
+A fixture error is an ERROR, which `xfail` does not swallow. Check a new repro
+with `pytest --runxfail` once: it should fail on *your* assertion, naming the
+real output, not on its own scaffolding.
+
+Two findings that cannot be reproduced — a race needing a scheduler, a defect
+only visible on another host — are still worth filing. Say so in the body, as
+592 did ("not raced in a live exercise"), so the next reader knows the claim was
+reasoned rather than observed.
+
 ## Workflow discipline
 
 - **The orchestrator commits the entire working tree.** Anything uncommitted when a stage
