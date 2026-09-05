@@ -134,6 +134,30 @@ beforeEach(() => {
   api.commitTicketStudioSession.mockClear();
 });
 
+/**
+ * What a test that drives a hundred sequential user interactions is allowed to
+ * cost.
+ *
+ * userEvent v14 puts a real delay between interactions, so 100 awaited clicks
+ * is inherently slow: measured at 561 ms idle, and the pre-push hook has been
+ * seen to fail it against jest's 5000 ms default. Saying so is not a
+ * workaround — these tests ARE long-running, and inheriting a default chosen
+ * for ordinary unit tests states their cost dishonestly.
+ *
+ * The budget is deliberately far above the measured idle cost. A timeout close
+ * to the observed duration turns machine load into a test failure, which is the
+ * defect being fixed rather than a stricter version of it.
+ */
+const SEQUENTIAL_INTERACTION_TIMEOUT_MS = 30_000;
+
+/**
+ * The delay STRESS-05.1's mocked API takes to answer.
+ *
+ * Named because it used to be a bare 5000 that exactly equalled jest's default
+ * timeout — a test whose fixture was calibrated to the limit it ran under.
+ */
+const SLOW_API_MS = 5000;
+
 // ===========================================================================
 // STRESS-01: LARGE DATASET PROCESSING
 // ===========================================================================
@@ -341,7 +365,7 @@ describe("STRESS-04: Event Queue Saturation", () => {
 
     // If we got here without crashing, good
     expect(true).toBe(true);
-  });
+  }, SEQUENTIAL_INTERACTION_TIMEOUT_MS);
 
   it("STRESS-04.2: keyboard spam (1000 keypresses) doesn't break focus", async () => {
     const user = userEvent.setup();
@@ -365,7 +389,7 @@ describe("STRESS-04: Event Queue Saturation", () => {
       // Focus should still be on button or document
       expect([btn, document.body]).toContain(document.activeElement);
     }
-  });
+  }, SEQUENTIAL_INTERACTION_TIMEOUT_MS);
 });
 
 // ===========================================================================
@@ -373,23 +397,35 @@ describe("STRESS-04: Event Queue Saturation", () => {
 // ===========================================================================
 describe("STRESS-05: Long-Running Async Operations", () => {
   it("STRESS-05.1: slow API (5s delay) doesn't lock UI", async () => {
+    // The handle is tracked and cleared because nothing awaits this promise.
+    // Left running, the timer outlived the test and fired during a LATER one —
+    // which is why a timeout in this file used to be reported against an
+    // unrelated test's line, sending anyone diagnosing it to the wrong code.
+    let pending: ReturnType<typeof setTimeout> | undefined;
     api.commitTicketStudioSession.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ created_count: 2 }), 5000)),
+      () =>
+        new Promise((resolve) => {
+          pending = setTimeout(() => resolve({ created_count: 2 }), SLOW_API_MS);
+        }),
     );
 
-    renderStudioWithPreview({
-      isPreview: true,
-      importedTickets: SAMPLE_TICKETS,
-    });
+    try {
+      renderStudioWithPreview({
+        isPreview: true,
+        importedTickets: SAMPLE_TICKETS,
+      });
 
-    const btn = screen.queryByRole("button", {
-      name: /finalize|confirm/i,
-    });
+      const btn = screen.queryByRole("button", {
+        name: /finalize|confirm/i,
+      });
 
-    if (btn) {
-      expect(btn).not.toBeDisabled();
-      // Button should remain responsive
-      expect(btn).toBeInTheDocument();
+      if (btn) {
+        expect(btn).not.toBeDisabled();
+        // Button should remain responsive
+        expect(btn).toBeInTheDocument();
+      }
+    } finally {
+      if (pending) clearTimeout(pending);
     }
   });
 
