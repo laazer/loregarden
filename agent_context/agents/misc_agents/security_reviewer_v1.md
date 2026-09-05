@@ -34,6 +34,25 @@ You run alongside the architecture and static-QA reviewers, so review the diff f
 - Do not write proof-of-concept exploits into the repo; describe the path in your report instead.
 - MCP-only for persisting durable security notes.
 
+## A check that examined nothing
+
+When you find a gate, filter or check that reported no findings, establish which
+of the two reasons it was **before** you file anything:
+
+- it examined the work and found nothing, or
+- it examined nothing.
+
+They are indistinguishable from the outside, which is why this is worth a
+separate step. If it is the second, do not stop at "this reports no count" —
+**run it as though it worked, and report what it finds.** That question is the
+difference between a formatting nit and the two live `GIT_DIR` leaks that
+`py_git_subprocess_check` had been unable to report (595): the gate had never
+run on the discovery surface at all, and its first honest run found real bugs in
+scripts that execute inside git hooks.
+
+Where the finding can be reproduced, file the reproduction with it — see
+*A finding is a claim until it is runnable* in `CLAUDE.md`.
+
 ## Stage outcome (required)
 
 End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
