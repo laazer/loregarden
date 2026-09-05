@@ -7,7 +7,10 @@ from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 
 
-def _str_enum_column(
+# Public because two modules in this package now build enum columns with it —
+# `tables` and `queue_tables`. A leading underscore said "detail of this module",
+# which stopped being true when the queue tables moved out (667).
+def str_enum_column(
     enum_cls: type[Enum],
     default: Enum | None = None,
     *,

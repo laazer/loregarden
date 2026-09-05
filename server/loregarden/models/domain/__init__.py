@@ -6,5 +6,6 @@ continues to work unchanged.
 """
 
 from loregarden.models.domain.enums import *  # noqa: F401,F403
+from loregarden.models.domain.queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403
 from loregarden.models.domain.tables import *  # noqa: F401,F403

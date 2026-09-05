@@ -158,7 +158,7 @@ class QueueLaneService:
         slot_number: int,
         auto_approve: bool = False,
         stop_at_stage_key: str | None = None,
-        entry_kind: str = "orchestration",
+        entry_kind: QueueEntryKind = QueueEntryKind.ORCHESTRATION,
         stage_key: str = "",
         driver: str = "",
         max_stages: int | None = None,
@@ -167,8 +167,8 @@ class QueueLaneService:
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
 
-        `entry_kind` is "orchestration" (run the whole ticket, what the board
-        does) or "stage" (run one stage, what the Dashboard and MCP ask for).
+        `entry_kind` is ORCHESTRATION (run the whole ticket, what the board
+        does) or STAGE (run one stage, what the Dashboard and MCP ask for).
         Parking a stage request as an orchestration would silently turn "run
         this one stage" into "run everything left", so the entry says which.
 
@@ -189,7 +189,7 @@ class QueueLaneService:
             raise ValueError(f"No such execution slot: {slot_number}")
 
         existing = self._already_queued(
-            ticket_id=ticket.id, entry_kind=QueueEntryKind(entry_kind), stage_key=stage_key
+            ticket_id=ticket.id, entry_kind=entry_kind, stage_key=stage_key
         )
         if existing is not None:
             # Retrying a refused request must not append a second entry for work
@@ -380,7 +380,7 @@ class QueueLaneService:
             slot_number=slot_number,
             position=1,
             status=QueuePosition.ACTIVE,
-            entry_kind="orchestration",
+            entry_kind=QueueEntryKind.ORCHESTRATION,
             promoted_at=now,
             started_at=orch.started_at or now,
         )
@@ -483,7 +483,7 @@ class QueueLaneService:
         """
         if self.dispatcher is None:  # pragma: no cover - guarded by the caller
             return False
-        if head.entry_kind == "stage":
+        if head.entry_kind is QueueEntryKind.STAGE:
             agent_run = self.dispatcher.dispatch_stage(ticket, head)
             if agent_run is None:
                 return False
