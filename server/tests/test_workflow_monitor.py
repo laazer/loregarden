@@ -20,10 +20,8 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     RunStatus,
     Ticket,
-    TicketState,
     WorkflowInstance,
     WorkflowTemplate,
-    Workspace,
 )
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_monitor import (
@@ -34,18 +32,7 @@ from loregarden.services.workflow_monitor import (
     sweep,
 )
 from sqlmodel import Session, select
-from tests.factories import make_ticket
-
-
-def _ticket(db_session: Session, external_id: str) -> Ticket:
-    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
-    return make_ticket(
-        db_session,
-        workspace_id=ws.id,
-        external_id=external_id,
-        title=external_id,
-        state=TicketState.IN_PROGRESS,
-    )
+from tests.factories import make_workspace_ticket
 
 
 def _orchestration(db_session: Session, ticket: Ticket, code: str) -> str:
@@ -105,7 +92,7 @@ def test_scan_mutates_nothing(db_session: Session):
     """AC1. Snapshotted across the scan, because a 'read-only' function that
     writes is the one defect this module cannot be allowed to have — it runs on
     the reconcile timer, against every ticket, unattended."""
-    ticket = _ticket(db_session, "monitor-readonly")
+    ticket = make_workspace_ticket(db_session, "monitor-readonly")
     template = WorkflowTemplate(slug="monitor-tpl", name="Monitor", stages_json="[]")
     db_session.add(template)
     db_session.commit()
@@ -138,7 +125,7 @@ def test_scan_mutates_nothing(db_session: Session):
 
 
 def test_stage_thrash_fires_on_repeated_attempts_in_one_orchestration(db_session: Session):
-    ticket = _ticket(db_session, "monitor-thrash")
+    ticket = make_workspace_ticket(db_session, "monitor-thrash")
     for _ in range(9):
         _run(db_session, ticket, stage_key="implement", orch_id="orch-thrash")
 
@@ -152,7 +139,7 @@ def test_a_normal_rework_round_is_not_thrash(db_session: Session):
     """The control. attempts_per_stage sits near 1.4 in this database, so two
     attempts is an ordinary reroute — a detector that fires on it reports every
     ticket and is therefore worth nothing."""
-    ticket = _ticket(db_session, "monitor-normal")
+    ticket = make_workspace_ticket(db_session, "monitor-normal")
     for _ in range(2):
         _run(db_session, ticket, stage_key="implement", orch_id="orch-normal")
 
@@ -161,7 +148,7 @@ def test_a_normal_rework_round_is_not_thrash(db_session: Session):
 
 def test_unbudgeted_repeats_are_reported_separately(db_session: Session):
     """Runs with no orchestration run had no retry budget at all before 560."""
-    ticket = _ticket(db_session, "monitor-unbudgeted")
+    ticket = make_workspace_ticket(db_session, "monitor-unbudgeted")
     for _ in range(4):
         _run(db_session, ticket, stage_key="triage-stage", orch_id=None)
 
@@ -179,7 +166,7 @@ def test_chat_turns_are_not_counted_as_stage_dispatches(db_session: Session):
     RunService.list_runs for the same reason. Counting them here would resurrect
     exactly that claim.
     """
-    ticket = _ticket(db_session, "monitor-chat")
+    ticket = make_workspace_ticket(db_session, "monitor-chat")
     for _ in range(28):
         _run(db_session, ticket, stage_key="triage", orch_id=None, agent_id=TRIAGE_AGENT_ID)
 
@@ -187,7 +174,7 @@ def test_chat_turns_are_not_counted_as_stage_dispatches(db_session: Session):
 
 
 def test_failure_clusters_are_relative_to_the_workspace_rate(db_session: Session):
-    ticket = _ticket(db_session, "monitor-cluster")
+    ticket = make_workspace_ticket(db_session, "monitor-cluster")
     for _ in range(12):
         _run(db_session, ticket, stage_key="testing", status=RunStatus.FAILED)
     for _ in range(40):
@@ -200,7 +187,7 @@ def test_failure_clusters_are_relative_to_the_workspace_rate(db_session: Session
 def test_a_uniformly_failing_pipeline_reports_no_cluster(db_session: Session):
     """The control for the test above, and the reason the rate is workspace-
     relative: when everything fails at the same rate, no stage is the outlier."""
-    ticket = _ticket(db_session, "monitor-uniform")
+    ticket = make_workspace_ticket(db_session, "monitor-uniform")
     for stage in ("testing", "implement"):
         for index in range(20):
             _run(
@@ -214,7 +201,7 @@ def test_a_uniformly_failing_pipeline_reports_no_cluster(db_session: Session):
 
 
 def test_a_long_running_run_is_reported_as_stalled(db_session: Session):
-    ticket = _ticket(db_session, "monitor-stalled")
+    ticket = make_workspace_ticket(db_session, "monitor-stalled")
     _run(
         db_session,
         ticket,
@@ -229,7 +216,7 @@ def test_a_long_running_run_is_reported_as_stalled(db_session: Session):
 
 
 def test_a_run_that_just_started_is_not_stalled(db_session: Session):
-    ticket = _ticket(db_session, "monitor-fresh")
+    ticket = make_workspace_ticket(db_session, "monitor-fresh")
     _run(
         db_session,
         ticket,
@@ -268,7 +255,7 @@ def test_an_unknown_skip_when_is_reported_as_rot(db_session: Session):
 def test_scanning_one_ticket_skips_workspace_wide_conditions(db_session: Session):
     """A failure cluster is a property of the pipeline, not of the ticket that
     happened to be scanned — reporting it against one would misattribute it."""
-    ticket = _ticket(db_session, "monitor-scoped")
+    ticket = make_workspace_ticket(db_session, "monitor-scoped")
     for _ in range(12):
         _run(db_session, ticket, stage_key="testing", status=RunStatus.FAILED)
 
@@ -290,7 +277,7 @@ def test_a_repeated_finding_upserts_rather_than_appending(db_session: Session):
     """AC4. record_gate_evaluation appends, which is why `context` is the largest
     artifact kind in the database; on the reconcile timer this would beat that
     inside a week."""
-    ticket = _ticket(db_session, "monitor-upsert")
+    ticket = make_workspace_ticket(db_session, "monitor-upsert")
     for _ in range(9):
         _run(db_session, ticket, stage_key="implement", orch_id="orch-upsert")
 
@@ -308,7 +295,7 @@ def test_a_repeated_finding_upserts_rather_than_appending(db_session: Session):
 def test_workspace_scoped_findings_are_not_persisted(db_session: Session):
     """They have no ticket_id, and artifacts.ticket_id is NOT NULL behind an
     enforced foreign key. Recomputed on read instead of hung on a invented row."""
-    ticket = _ticket(db_session, "monitor-ws")
+    ticket = make_workspace_ticket(db_session, "monitor-ws")
     for _ in range(12):
         _run(db_session, ticket, stage_key="testing", status=RunStatus.FAILED)
     for _ in range(40):
@@ -328,8 +315,8 @@ def test_record_findings_ignores_findings_with_no_ticket(db_session: Session):
 
 
 def test_list_findings_narrows_to_one_ticket(db_session: Session):
-    first = _ticket(db_session, "monitor-list-a")
-    second = _ticket(db_session, "monitor-list-b")
+    first = make_workspace_ticket(db_session, "monitor-list-a")
+    second = make_workspace_ticket(db_session, "monitor-list-b")
     for _ in range(9):
         _run(db_session, first, stage_key="implement", orch_id="orch-a")
     for _ in range(9):

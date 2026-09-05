@@ -36,7 +36,7 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     RunStatus,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 #: How far back to look for completed runs. Matches the widest window the
 #: analytics endpoint offers, so both read the same history.
@@ -358,3 +358,62 @@ def project_clear_time(
     ]
 
     return max(finishes, default=0.0)
+
+
+@dataclass
+class PromptSizeStats:
+    """What a stage's rendered prompt costs, and how much of it was cached.
+
+    Both halves matter together, and that is the point. The intuition that a
+    long prompt is an expensive prompt is wrong here: the invariant boilerplate
+    at the front of every stage prompt IS the cache prefix, and 95.6% of all
+    input tokens across recorded runs are cache reads, priced at roughly a tenth
+    of fresh input. Shortening the shared prefix can turn cached tokens into
+    fresh ones and cost more than the characters it saves.
+
+    So a reader deciding whether to trim needs `chars` next to `cached_share`,
+    not `chars` alone. See lg-workflow-integrity-498.
+    """
+
+    stage_key: str
+    runs: int
+    median_chars: int
+    fresh_tokens: int
+    cache_read_tokens: int
+
+    @property
+    def cached_share(self) -> float:
+        """Fraction of this stage's input tokens served from cache, 0.0 if unknown."""
+        total = self.fresh_tokens + self.cache_read_tokens
+        return self.cache_read_tokens / total if total else 0.0
+
+
+def prompt_size_by_stage(session: Session) -> list[PromptSizeStats]:
+    """Per-stage prompt size and cache share, largest prompt first.
+
+    Runs with no recorded `prompt_chars` are excluded rather than counted as
+    zero: they predate the column, and averaging them in would understate every
+    stage they appear under.
+    """
+    rows = session.exec(
+        select(AgentRun).where(
+            col(AgentRun.prompt_chars).is_not(None),
+            col(AgentRun.stage_key) != "",
+        )
+    ).all()
+
+    grouped: dict[str, list[AgentRun]] = defaultdict(list)
+    for run in rows:
+        grouped[canonical_stage_key(run.stage_key)].append(run)
+
+    stats = [
+        PromptSizeStats(
+            stage_key=stage_key,
+            runs=len(runs),
+            median_chars=int(median(run.prompt_chars or 0 for run in runs)),
+            fresh_tokens=sum(run.input_tokens or 0 for run in runs),
+            cache_read_tokens=sum(run.cache_read_tokens or 0 for run in runs),
+        )
+        for stage_key, runs in grouped.items()
+    ]
+    return sorted(stats, key=lambda item: item.median_chars, reverse=True)

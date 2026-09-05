@@ -15,6 +15,7 @@ from loregarden.agents.cli_adapters import (
 from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
+from loregarden.agents.executors.prompt_size import record_prompt_size
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -198,6 +199,7 @@ class CliAgentExecutor:
                 stage_def,
                 assembly_source=MemoryBriefingAssembly.DISPATCH,
             )
+            record_prompt_size(self.session, run, prompt)
         except SkillNotFoundError as exc:
             return self.orchestration.complete_run(
                 run,
