@@ -14,6 +14,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.tool_args import reject_truncated_call
 from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
@@ -272,6 +273,10 @@ def normalize_update_ticket_args(
     for field in ("state", "title", "description", "mode", "parent"):
         if args.get(field) is not None:
             payload[field] = coerce_string(args.get(field), field=field)
+    if "description" in payload:
+        # Checked after coercion so the message names the text that will be
+        # stored, not the raw argument.
+        reject_truncated_call(payload["description"], field="description")
     for field in ("acceptance_criteria", "tags"):
         if args.get(field) is not None:
             payload[field] = coerce_string_list(args.get(field), field=field)

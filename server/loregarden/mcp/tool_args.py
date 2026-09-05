@@ -56,6 +56,44 @@ def coerce_optional_string(value: Any) -> str:
     return str(value).strip()
 
 
+#: Substrings that prove a tool call lost arguments on its way here.
+#:
+#: A literal closing tag for the parameter it appears inside terminates that
+#: parameter early, and every argument after it is swallowed into the text. Six
+#: tickets reached the database that way with their acceptance criteria stored as
+#: prose and their `acceptance_criteria` field empty — which reads to the next
+#: agent as a ticket with no criteria, and the known failure from there is that it
+#: invents some.
+#:
+#: The trap is self-propagating: an agent quoting one of those descriptions in
+#: order to report the problem produces another one. That is how the seventh was
+#: created — by the ticket filed to describe the first six.
+TRUNCATION_MARKERS = ("</description>", "</parameter>", "<parameter name=")
+
+
+def reject_truncated_call(text: str, *, field: str) -> str:
+    """Refuse text carrying the wreckage of a mis-serialized call.
+
+    Loud rather than lenient, and deliberately not "strip the markup": the
+    fragment is evidence that arguments were LOST, so the surviving text is not
+    trustworthy either. Cleaning it would persist a ticket whose criteria
+    silently vanished, which is the defect this exists to stop.
+
+    A legitimate `description` really could want to name one of these tags — this
+    docstring's own ticket did. It cannot be sent as literal text regardless,
+    because the transport truncates it, so failing here costs nothing that was
+    ever going to work and tells the author immediately.
+    """
+    for marker in TRUNCATION_MARKERS:
+        if marker in text:
+            raise ValueError(
+                f"{field} contains {marker!r}, which means this call was truncated "
+                "mid-serialization and later arguments were lost. Re-send it, "
+                "describing the tag rather than writing it literally."
+            )
+    return text
+
+
 def coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
     if value is None or value == "":
         return None
