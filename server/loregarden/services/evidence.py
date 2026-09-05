@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loregarden.models.domain import Artifact, Ticket, Workspace
+from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
-ARTIFACT_KIND = "evidence"
+#: Kept as a name because this module's callers read it; the value is the
+#: platform vocabulary, not a local one (613).
+ARTIFACT_KIND = ArtifactKind.EVIDENCE
 
 # What a piece of evidence is. Closed rather than free-form so a gate can ask
 # "is there a real-surface proof for this commit?" and get a reliable answer.

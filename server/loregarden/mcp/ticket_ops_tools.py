@@ -23,6 +23,7 @@ from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import enum_string_prop, string_prop, tool_schema
 from loregarden.models.domain import (
+    ArtifactKind,
     StageStatus,
     Ticket,
     TicketState,
@@ -189,7 +190,7 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
 
     svc.attach_artifact(
         ticket,
-        kind="context",
+        kind=ArtifactKind.CONTEXT,
         title=f"Requeued — {stage_key}",
         content={
             "title": f"Requeued — {stage_key}",

@@ -26,7 +26,7 @@ from loregarden.dot_line import (
     shell,
     size,
 )
-from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
+from loregarden.models.domain import AgentRun, Artifact, ArtifactKind, RunStatus, Ticket
 from loregarden.services.tool_body import command_outcome, with_tool_output
 from sqlmodel import Session, select
 
@@ -667,7 +667,7 @@ class RunLogStreamer:
                 artifact = Artifact(
                     ticket_id=self.ticket_id,
                     run_id=self.run_id,
-                    kind="log",
+                    kind=ArtifactKind.LOG,
                     title=f"Run {self.run_code}",
                     content_json=json.dumps(content),
                 )

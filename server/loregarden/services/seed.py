@@ -4,6 +4,7 @@ from typing import TypedDict
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import sync_workflow_templates
 from loregarden.models.domain import (
+    ArtifactKind,
     EventType,
     StageStatus,
     Ticket,
@@ -381,7 +382,7 @@ def seed_database(session: Session) -> None:
 
         artifact = Artifact(
             ticket_id=in_progress.id,
-            kind="diff",
+            kind=ArtifactKind.DIFF,
             title="client/src/pages/Dashboard.tsx",
             content_json=json.dumps(
                 {

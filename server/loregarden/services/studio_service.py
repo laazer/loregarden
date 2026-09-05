@@ -18,6 +18,7 @@ from loregarden.mcp.tool_ids import (
     mcp_tool_values,
 )
 from loregarden.models.domain import (
+    ArtifactKind,
     ControlPlaneTransport,
     StudioAgent,
     StudioAgentCreate,
@@ -90,18 +91,18 @@ from sqlmodel import Session, select
 
 DEFAULT_HANDOFF_CHECKS = [
     StudioHandoffCheck(
-        kind="mcp_complete",
+        kind=ArtifactKind.MCP_COMPLETE,
         prompt="When stage deliverables are ready, ensure tests pass and call loregarden_complete_stage if you are the orchestrator; otherwise finish your role output clearly.",
     ),
     StudioHandoffCheck(
-        kind="blocking_clear",
+        kind=ArtifactKind.BLOCKING_CLEAR,
         prompt="Do not hand off with unresolved blocking_issues — document failures or request approval via loregarden_request_approval.",
     ),
 ]
 
 DEFAULT_GATE_CHECKS = [
     StudioGateCheck(
-        kind="workflow_gate",
+        kind=ArtifactKind.WORKFLOW_GATE,
         title="Stage sign-off",
         impact="Human review required before the workflow advances.",
     ),

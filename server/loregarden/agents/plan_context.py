@@ -14,12 +14,14 @@ from __future__ import annotations
 import json
 import logging
 
-from loregarden.models.domain import AgentRun, Artifact, Ticket
+from loregarden.models.domain import AgentRun, Artifact, ArtifactKind, Ticket
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-ARTIFACT_KIND = "plan"
+#: Kept as a name because this module's callers read it; the value is the
+#: platform vocabulary, not a local one (613).
+ARTIFACT_KIND = ArtifactKind.PLAN
 MAX_PLAN_CHARS = 6000
 MAX_SYNTHESIS_CHARS = 12000
 #: The stage writing the plan is not shown it. A verifier is withheld too, for
