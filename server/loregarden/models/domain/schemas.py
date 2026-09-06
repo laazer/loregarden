@@ -81,6 +81,16 @@ class WorkflowStageDef(SQLModel):
     # pruning every member leaves nothing required unresolved, and the ticket
     # derives DONE having implemented nothing.
     alternative_group: str = ""
+    # Whether the agent named above is a DEFAULT that a routing hint may
+    # override, rather than the template's final word. True for a stage whose
+    # specialist is chosen per ticket — picking a backend or frontend
+    # implementer is the whole job of such a stage.
+    #
+    # False is the safe default and the common case: a stage that names its own
+    # agent keeps it. `next_agent` is sticky, and on a standalone start there is
+    # no advance to refresh it, so it can still hold the PREVIOUS stage's agent —
+    # which is how a stale hint once ran `learning` under `ac_gatekeeper`.
+    agent_is_default: bool = False
 
 
 class WorkflowStageView(SQLModel):
@@ -966,6 +976,8 @@ class StudioWorkflowStage(SQLModel):
     stage_brief: str = ""
     #: See `WorkflowStageDef.alternative_group`.
     alternative_group: str = ""
+    #: See `WorkflowStageDef.agent_is_default`.
+    agent_is_default: bool = False
 
 
 class StudioWorkflowCreate(SQLModel):

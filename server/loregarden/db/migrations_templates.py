@@ -1295,3 +1295,55 @@ def m_alternative_impl_group(conn: Connection) -> None:
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
         _snapshot_template_version(conn, row["id"], new_version, "Alternative implementation group")
+
+
+#: The three stages that actually reach the routing-hint override today, keyed by
+#: template slug. Measured against the live templates rather than assumed: the two
+#: that look like the obvious cases (`blobert-tdd/implementation`,
+#: `studio-loregarden-tdd-v3/implement`) are classify stages that return two lines
+#: earlier and are unaffected either way. The three below are the ones nobody
+#: would think to check.
+_DEFAULT_AGENT_STAGES: dict[str, tuple[str, ...]] = {
+    "extended-tdd": ("implementation",),
+    "loregarden-tdd": ("implementation",),
+    "studio-blobert-ddd": ("implementation",),
+}
+
+
+def _mark_default_agent_stages(stages: list[dict], keys: tuple[str, ...]) -> bool:
+    changed = False
+    for stage in stages:
+        if stage.get("key") in keys and not stage.get("agent_is_default"):
+            stage["agent_is_default"] = True
+            changed = True
+    return changed
+
+
+def m_agent_is_default_stages(conn: Connection) -> None:
+    """Say on the stage what a hardcoded key set used to decide.
+
+    Behaviour-preserving by construction: these are exactly the stages that reach
+    the override branch today, so every template routes afterwards as it did
+    before. `studio_routing.LEGACY_DEFAULT_AGENT_STAGES` covers version-pinned
+    instances, whose snapshots will never grow the field.
+    """
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(text("SELECT id, slug, stages_json, version FROM workflow_templates"))
+        .mappings()
+        .all()
+    )
+    for row in rows:
+        keys = _DEFAULT_AGENT_STAGES.get(row["slug"] or "")
+        if not keys:
+            continue
+        stages = json.loads(row["stages_json"] or "[]")
+        if not _mark_default_agent_stages(stages, keys):
+            continue
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+            {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Stage agent_is_default")
