@@ -1047,9 +1047,13 @@ class CliAgentExecutor:
         # there degrades to the dirty set rather than silently narrowing it.
         committed = paths_committed_since(repo_root, run.start_head_sha or "")
         touched = sorted((after - before) | (committed or set()))
-        if not touched:
-            return
+        # Written even when empty. An early return left the column at its old
+        # "[]" default, which said the same thing as never having looked — the
+        # very collapse `working_tree_paths` returning None exists to prevent,
+        # repeated one level up. NULL now means no record; `[]` means this run
+        # looked and touched nothing (lg-workflow-integrity-675).
         run.changed_paths_json = json.dumps(touched)
+        run.changed_paths_recorded_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()
 

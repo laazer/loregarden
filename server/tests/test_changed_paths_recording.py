@@ -175,3 +175,110 @@ def test_the_recorder_itself_stores_committed_work(db_session, repo: Path):
 
     db_session.refresh(run)
     assert json.loads(run.changed_paths_json) == ["feature.py"]
+
+
+# --- "recorded nothing" is not "never recorded" (675) -----------------------
+
+
+def _run_row(db_session, repo: Path, code: str):
+    from loregarden.models.domain import AgentRun, RunStatus, Workspace
+    from sqlmodel import select
+    from tests.factories import make_workspace_ticket
+
+    ticket = make_workspace_ticket(db_session, f"cpr-{code}")
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    run = AgentRun(
+        run_code=code,
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+        start_head_sha=_head(repo),
+    )
+    db_session.add(run)
+    db_session.commit()
+    return run
+
+
+def test_the_three_outcomes_are_distinguishable(db_session, repo: Path):
+    """AC3. `[]` meant three things at once — looked-and-found-nothing,
+    never-looked, and (before #254) the read failed — and 1086 rows hold it.
+    That ambiguity is why 406 could not be measured on two separate attempts.
+    """
+    import json
+
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    executor = CliAgentExecutor(db_session)
+
+    # 1. never recorded
+    never = _run_row(db_session, repo, "cpr_never")
+    assert never.changed_paths_recorded_at is None
+
+    # 2. recorded, and it touched nothing
+    empty = _run_row(db_session, repo, "cpr_empty")
+    executor._record_changed_paths(empty, repo, working_tree_paths(repo) or set())
+    db_session.refresh(empty)
+    assert json.loads(empty.changed_paths_json) == []
+    assert empty.changed_paths_recorded_at is not None
+
+    # 3. recorded, with paths
+    touched = _run_row(db_session, repo, "cpr_touched")
+    before = working_tree_paths(repo) or set()
+    (repo / "wrote.py").write_text("x\n")
+    executor._record_changed_paths(touched, repo, before)
+    db_session.refresh(touched)
+    assert json.loads(touched.changed_paths_json) == ["wrote.py"]
+    assert touched.changed_paths_recorded_at is not None
+
+    # The three are separable, which is the whole point.
+    assert never.changed_paths_recorded_at is None
+    assert empty.changed_paths_json != touched.changed_paths_json
+
+
+def test_a_failed_tree_read_leaves_no_record(db_session, tmp_path: Path):
+    """A read that could not happen must not look like a run that touched
+    nothing — the collapse `working_tree_paths` returning None exists to stop,
+    now enforced one level up as well."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    not_a_repo = tmp_path / "bare"
+    not_a_repo.mkdir()
+    from loregarden.models.domain import AgentRun, RunStatus, Workspace
+    from sqlmodel import select
+    from tests.factories import make_workspace_ticket
+
+    ticket = make_workspace_ticket(db_session, "cpr-unreadable")
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    run = AgentRun(
+        run_code="cpr_unreadable",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    CliAgentExecutor(db_session)._record_changed_paths(run, not_a_repo, set())
+
+    db_session.refresh(run)
+    assert run.changed_paths_recorded_at is None, "a failed read must leave no record"
+
+
+def test_the_path_collecting_readers_treat_no_record_as_no_paths(db_session, repo: Path):
+    """AC4, pinning behaviour rather than changing it.
+
+    `builtin_orchestrator._ticket_changed_paths` and `handoff_committed_work`
+    union recorded paths to scope a commit, so a run with no record must
+    contribute nothing — you cannot commit paths you do not know about. Both rely
+    on `json.loads(raw or "[]")`, which is a small thing to lose in an edit.
+    """
+    from loregarden.models.domain import Ticket
+    from loregarden.services.handoff_committed_work import ticket_recorded_paths
+
+    run = _run_row(db_session, repo, "cpr_reader")
+    ticket = db_session.get(Ticket, run.ticket_id)
+    assert ticket_recorded_paths(db_session, ticket) == set()
