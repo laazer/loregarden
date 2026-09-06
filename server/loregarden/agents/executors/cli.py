@@ -66,7 +66,10 @@ from loregarden.services.doctor import park_for_environment, preflight_run, pref
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
-from loregarden.services.git_commit_push_service import working_tree_paths
+from loregarden.services.git_commit_push_service import (
+    paths_committed_since,
+    working_tree_paths,
+)
 from loregarden.services.handoff_boundary import (
     boundary_enforced,
     park_for_boundary,
@@ -1033,7 +1036,17 @@ class CliAgentExecutor:
                 repo_root,
             )
             return
-        touched = sorted(after - before)
+        # Dirty paths alone miss everything the agent COMMITTED during its turn:
+        # once committed, the file is no longer dirty, the delta is empty, and the
+        # run records nothing — indistinguishable from an agent that wrote no
+        # code. Reproduced against real git (lg-workflow-integrity-406).
+        #
+        # Unioned rather than swapped: uncommitted work is real too, and a run
+        # can leave both. `paths_committed_since` returns None when git cannot
+        # answer, which is not the same as "it committed nothing" — so a failure
+        # there degrades to the dirty set rather than silently narrowing it.
+        committed = paths_committed_since(repo_root, run.start_head_sha or "")
+        touched = sorted((after - before) | (committed or set()))
         if not touched:
             return
         run.changed_paths_json = json.dumps(touched)

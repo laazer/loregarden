@@ -21,6 +21,44 @@ class NothingToCommitError(ValueError):
 logger = logging.getLogger(__name__)
 
 
+def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
+    """Paths the commits after `base_sha` touched, or None if git could not say.
+
+    The companion to `working_tree_paths`, and the reason it is needed: a run
+    whose agent commits its own work leaves a CLEAN tree, so the dirty-path delta
+    is empty and the run records nothing — indistinguishable from an agent that
+    wrote no code. Reproduced against real git; see
+    lg-workflow-integrity-406.
+
+    None rather than an empty set when git cannot answer, for the reason the
+    whole of 406's first half exists: "I could not look" and "there was nothing
+    there" are different facts, and collapsing them is what made the original
+    measurement unrecoverable.
+
+    An empty `base_sha` is not a failure — a repository with no commit at its
+    start has nothing to diff against, and its work will be uncommitted anyway,
+    so the dirty set already covers it.
+    """
+    if not base_sha:
+        return set()
+    proc = run_git(
+        ["diff", "--name-only", "-z", f"{base_sha}..HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        logger.warning(
+            "git diff %s..HEAD failed in %s (exit %s): %s",
+            base_sha,
+            repo_root,
+            proc.returncode,
+            (proc.stderr or "").strip()[:400],
+        )
+        return None
+    return {path for path in proc.stdout.split("\0") if path}
+
+
 def working_tree_paths(repo_root: Path) -> set[str] | None:
     """Every path git currently reports as dirty, untracked included.
 
