@@ -4,8 +4,57 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from loregarden.services import usage_service
+
+
+class _RefusingHttpx:
+    """`httpx` with a Client that cannot reach the network.
+
+    Delegates everything else, so `httpx.HTTPStatusError` and friends still refer
+    to the real classes the code catches.
+    """
+
+    def __init__(self, real, client):
+        self._real = real
+        self.Client = client
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.fixture(autouse=True)
+def no_live_provider_calls(monkeypatch):
+    """No test in this module reaches a provider over the real network.
+
+    `get_usage_snapshot` fetches THREE providers and builds its own
+    `httpx.Client`. Five tests stubbed the two fetchers they cared about, and
+    `_fetch_codex_usage` connected out on every run — the same shape as the DNS
+    escape in lg-workflow-integrity-621, where the guard covered the mechanism
+    its author had in mind while the code reached out one layer over. A fourth
+    provider would have joined it silently.
+
+    Blocks the TRANSPORT rather than the fetchers, which is what
+    `reference_network_refused` does in conftest and why it survives: a test that
+    exercises a fetcher for real passes its own client (`_FakeHttpClient`) and is
+    untouched, so AC4's "tests that deliberately exercise connection failure keep
+    doing so" holds by construction rather than by an opt-out list.
+    """
+    real = usage_service.httpx
+
+    def refuse(request):
+        raise real.ConnectError(
+            "the usage tests refuse real network; pass your own client to exercise a fetch"
+        )
+
+    class _RefusingClient(real.Client):
+        def __init__(self, **kwargs):
+            if kwargs.get("transport") is None:
+                kwargs["transport"] = real.MockTransport(refuse)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(usage_service, "httpx", _RefusingHttpx(real, _RefusingClient))
 
 
 class _FakeResponse:
@@ -961,3 +1010,35 @@ def test_breakdown_survives_a_missing_credential(monkeypatch):
 
     assert result.logged_in is False
     assert [b.name for b in result.breakdown] == ["claude-opus-5"]
+
+
+def test_the_snapshot_builds_its_own_client_and_is_therefore_guarded():
+    """AC5: pin the reason the guard works, so a refactor cannot quietly undo it.
+
+    `get_usage_snapshot` constructs `httpx.Client()` itself rather than taking
+    one, which is what makes a transport-level guard sufficient and what made
+    stubbing individual fetchers insufficient — a fourth provider would have
+    joined `_fetch_codex_usage` in reaching the network unnoticed.
+
+    If this stops being true — the snapshot starts accepting an injected client,
+    or a fetcher builds its own — the guard no longer covers it, and this test is
+    where that gets noticed.
+    """
+    import inspect
+
+    source = inspect.getsource(usage_service.get_usage_snapshot)
+    assert "httpx.Client()" in source, (
+        "get_usage_snapshot no longer builds its own client; the autouse "
+        "transport guard may no longer cover every provider fetch"
+    )
+
+    fetchers = sorted(
+        name
+        for name in dir(usage_service)
+        if name.startswith("_fetch_") and name.endswith("_usage")
+    )
+    for name in fetchers:
+        signature = inspect.signature(getattr(usage_service, name))
+        assert "client" in signature.parameters, (
+            f"{name} does not take a client, so it may build its own and escape the transport guard"
+        )
