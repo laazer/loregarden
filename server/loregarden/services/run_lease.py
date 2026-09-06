@@ -127,6 +127,38 @@ def agent_run_lease_expired(
     return datetime.now(timezone.utc) - stamp > lease
 
 
+def run_is_locally_supervised(run: AgentRun) -> bool:
+    """Whether THIS process can see something working on this run.
+
+    The third liveness policy in the codebase, and the one that used to be an
+    inline clause in `drain.in_flight_runs` while its two siblings were named
+    functions. Three policies is correct — the fail direction genuinely differs
+    by purpose — but only two of them said so where a reader would look.
+
+    FAILS OPEN, and that is the whole difference. `agent_run_lease_expired` fails
+    CLOSED: a run it cannot judge reads as alive, because a reaper that guesses
+    wrong kills work an agent is still doing. This one fails OPEN: a run it
+    cannot judge is not waited on, because a drain that guesses wrong hangs a
+    shutdown. Neither direction is safer in general; each is safer for its
+    caller.
+
+    It asks no lease question at all, which is the concrete consequence worth
+    knowing: a CLI-kind run left RUNNING by an earlier crashed boot has a
+    renewer and no pid, so this counts it and it can spend the whole drain
+    window, where `stage_retry_budget._is_live_dispatch_evidence` would call it
+    dead. Waiting on a run that has already stopped costs a slow shutdown; not
+    waiting on one still working loses its output.
+
+    The pid is asked separately from the renewer rather than folded into an
+    `external_harness is not None` exclusion, because a recorded pid settles the
+    question whatever the run's kind — that exclusion would drop the one external
+    run whose process this machine can actually see. `pid_alive` rather than
+    `handoff_pid is not None` for the same reason in reverse: a pid that is gone
+    is the strongest evidence there is that nothing is running.
+    """
+    return run_has_renewer(run) or (run.handoff_pid is not None and pid_alive(run.handoff_pid))
+
+
 def renew_agent_run_lease(run_id: str) -> None:
     """Stamp one run as still supervised.
 

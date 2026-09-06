@@ -332,7 +332,12 @@ def test_what_the_drain_leaves_behind_is_what_the_boot_sweep_will_settle(db_sess
         db_session.add(run)
     db_session.commit()
 
-    with patch("loregarden.services.drain.pid_alive", side_effect=lambda pid: pid == os.getpid()):
+    # Patched where the predicate now lives: `run_is_locally_supervised` moved to
+    # run_lease (603), and it resolves `pid_alive` in that module's namespace —
+    # patching the old name in `drain` would silently do nothing.
+    with patch(
+        "loregarden.services.run_lease.pid_alive", side_effect=lambda pid: pid == os.getpid()
+    ):
         waited_for = {r.id for r in in_flight_runs(db_session)}
     settled = {r.id for r in fail_interrupted_runs(db_session)}
 
@@ -383,3 +388,32 @@ def test_draining_is_idempotent_and_reversible(db_session):
     assert is_draining() is True
     end_drain()
     assert is_draining() is False
+
+
+def test_the_three_liveness_policies_state_their_own_fail_direction():
+    """AC2 and AC3: three policies, each saying which way it fails and why.
+
+    Three is correct — a reaper that guesses wrong kills work, a drain that
+    guesses wrong hangs a shutdown — but the third used to be an inline clause
+    while its siblings were named functions, and a docstring claimed two of them
+    asked the same question. Asserted rather than trusted, because a docstring
+    that drifts is exactly how this ticket's defect arose.
+    """
+    from loregarden.services.run_lease import (
+        agent_run_lease_expired,
+        run_is_locally_supervised,
+    )
+    from loregarden.services.stage_retry_budget import _is_live_dispatch_evidence
+
+    reaper = agent_run_lease_expired.__doc__ or ""
+    drain_predicate = run_is_locally_supervised.__doc__ or ""
+    budget = _is_live_dispatch_evidence.__doc__ or ""
+
+    assert "fails closed" in reaper.lower()
+    assert "fails open" in drain_predicate.lower()
+    # The budget's own docstring explains why it does not simply reuse the
+    # reaper's answer; that contrast is the thing worth keeping.
+    assert "not the same one" in budget.lower() or "stricter question" in budget.lower()
+
+    for doc in (reaper, drain_predicate, budget):
+        assert "asks the same question" not in doc.lower()
