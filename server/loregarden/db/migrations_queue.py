@@ -302,3 +302,32 @@ def m_agent_run_prompt_chars(conn: Connection) -> None:
         "agent_runs",
         {"prompt_chars": "ALTER TABLE agent_runs ADD COLUMN prompt_chars INTEGER"},
     )
+
+
+def m_changed_paths_recorded_at(conn: Connection) -> None:
+    """Say whether a run's changed-path record exists at all.
+
+    `changed_paths_json` defaults to `'[]'`, and the recorder used to return
+    early on an empty result — so "looked and found nothing", "never looked" and
+    (before PR #254) "the read failed" all stored the same value. 1086 rows hold
+    it, which is why lg-workflow-integrity-406 could not be measured on two
+    separate attempts.
+
+    Additive on purpose. Making `changed_paths_json` nullable would need a full
+    SQLite table rebuild of `agent_runs` to drop one NOT NULL, and this answers
+    the same question without touching a 40-column table that other tables point at.
+
+    Existing rows keep NULL, which correctly reads as "no record": their meaning
+    is genuinely unknown and backfilling a timestamp would invent one.
+    """
+    if not table_exists(conn, "agent_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "changed_paths_recorded_at": (
+                "ALTER TABLE agent_runs ADD COLUMN changed_paths_recorded_at DATETIME"
+            )
+        },
+    )

@@ -465,6 +465,9 @@ def _record_external_usage(
         )
     if changed_paths:
         run.changed_paths_json = json.dumps(sorted(set(changed_paths)))
+        # Marked here too: a value without its marker reads as "no record",
+        # and this is the other writer of that column.
+        run.changed_paths_recorded_at = datetime.now(timezone.utc)
     if usage is not None or changed_paths:
         session.add(run)
         session.commit()

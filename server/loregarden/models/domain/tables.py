@@ -309,7 +309,24 @@ class AgentRun(SQLModel, table=True):
     command: str = ""
     # Paths this run left dirty, so its commit can be scoped to its own work
     # instead of sweeping unrelated edits out of the workspace.
+    #: What this run touched, as a JSON list. `[]` alone cannot say whether the
+    #: recorder looked and found nothing or never ran — read
+    #: `changed_paths_recorded_at` to tell those apart.
     changed_paths_json: str = "[]"
+    #: When the recorder produced the value above. NULL means NO RECORD: the run
+    #: never reached the recorder, or git could not be read.
+    #:
+    #: A companion column rather than making `changed_paths_json` nullable,
+    #: which would need a full SQLite table rebuild of `agent_runs` — 40-odd
+    #: columns with foreign keys pointing at it — to drop one NOT NULL. This is
+    #: additive and answers the same question.
+    #:
+    #: The question matters because `[]` meant three things at once and 1086 rows
+    #: hold it: looked-and-found-nothing, never-looked, and (before PR #254) the
+    #: read failed. That is why lg-workflow-integrity-406 could not be measured
+    #: twice running. Rows written before this stay ambiguous — their meaning is
+    #: unknown and inventing one would be worse (lg-workflow-integrity-675).
+    changed_paths_recorded_at: datetime | None = None
     # The git boundary this run started from — see schemas.GitBoundary, which is
     # how these four are read and written. Recorded at dispatch, after the
     # execution root and branch are resolved, so it describes the tree the agent
