@@ -162,6 +162,20 @@ def fail_interrupted_runs(
     discriminator (see ``triage_service.triage_run_status``); they are reconciled by
     ``triage_run_service.fail_interrupted_triage_turns`` instead.
     """
+    # INVARIANT, load-bearing and easy to break by a locally-correct edit: the
+    # ticket-scoped branch below must always select a SUPERSET of what
+    # `external_harness._resumable_stage_run` could adopt. That lookup declines on
+    # ambiguity — two runs in flight and no fact saying which the harness means —
+    # and relies on this reaper to claim what it declined. Narrow this branch (for
+    # instance by adding the `external_harness IS NOT NULL` filter the unscoped
+    # branch has) and the ambiguous case is stranded RUNNING with nothing that
+    # ever settles it.
+    #
+    # The two are deliberately NOT one shared selector: collapsing them forces a
+    # choice between the narrow and broad semantics, or becomes a parameterised
+    # query builder hiding the guarantee it exists to preserve. Rejected in
+    # lg-workflow-integrity-602; `test_the_reaper_selects_a_superset_of_what_resume_can_adopt`
+    # fails if this drifts.
     query = select(AgentRun).where(
         col(AgentRun.status).in_([RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]),
         AgentRun.agent_id != TRIAGE_AGENT_ID,

@@ -215,10 +215,17 @@ def _resumable_stage_run(session: Session, ticket: Ticket, stage_key: str) -> Ag
             AgentRun.ticket_id == ticket.id,
             AgentRun.stage_key == stage_key,
             AgentRun.status == RunStatus.RUNNING,
+            # Triage turns are a side channel, not workflow runs — see run_service.fail_interrupted_runs for why (602).
             AgentRun.agent_id != TRIAGE_AGENT_ID,
             col(AgentRun.external_harness).is_not(None),
         )
     ).all()
+    # Declining here is safe only because `run_service.fail_interrupted_runs`,
+    # ticket-scoped, selects a SUPERSET of everything this could have adopted —
+    # the caller reaps when this returns None. That relationship is the design,
+    # not drift, and it is asserted by
+    # `test_the_reaper_selects_a_superset_of_what_resume_can_adopt`
+    # (lg-workflow-integrity-602).
     live = [run for run in candidates if not agent_run_lease_expired(session, run)]
     return live[0] if len(live) == 1 else None
 
