@@ -56,6 +56,7 @@ def interrupted_stage_key(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id).order_by(AgentRun.created_at.desc())
     ).all()
     for run in runs:
+        # Triage turns are a side channel, not workflow runs — see run_service.fail_interrupted_runs for why (602).
         if run.agent_id == TRIAGE_AGENT_ID or run.stage_key not in blocked_keys:
             continue
         if (

@@ -82,12 +82,14 @@ def find_observed_run(session: Session, ticket_id: str) -> AgentRun | None:
         .order_by(AgentRun.created_at.desc())
     ).all()
     for run in in_flight:
+        # Triage turns are a side channel, not workflow runs — see run_service.fail_interrupted_runs for why (602).
         if run.agent_id != TRIAGE_AGENT_ID:
             return run
     if in_flight:
         return in_flight[0]
     return session.exec(
         select(AgentRun)
+        # Triage turns are a side channel, not workflow runs — see run_service.fail_interrupted_runs for why (602).
         .where(AgentRun.ticket_id == ticket_id, AgentRun.agent_id != TRIAGE_AGENT_ID)
         .order_by(AgentRun.created_at.desc())
         .limit(1)

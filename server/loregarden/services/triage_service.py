@@ -362,6 +362,7 @@ def build_triage_prompt(
 
     runs = session.exec(
         select(AgentRun)
+        # Triage turns are a side channel, not workflow runs — see run_service.fail_interrupted_runs for why (602).
         .where(AgentRun.ticket_id == ticket.id, AgentRun.agent_id != TRIAGE_AGENT_ID)
         .order_by(AgentRun.created_at.desc())
         .limit(5)
