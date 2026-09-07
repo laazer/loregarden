@@ -37,9 +37,9 @@ from loregarden.services.workflow_state import (
 )
 from sqlmodel import Session, select
 
-REQUIRED_STAGE = "specification"
+REQUIRED_STAGE = "spec"
 OPTIONAL_STAGE = "playtest"
-CURSOR_STAGE = "implementation"
+CURSOR_STAGE = "implement"
 
 
 def _setup(db_session: Session, *, external_id: str):

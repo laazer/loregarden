@@ -81,7 +81,7 @@ def test_triage_prompt_includes_playtest_gate_section(db_session: Session):
 
 
 def test_triage_prompt_skips_gate_section_for_agent_stage(db_session: Session):
-    ticket = _setup_ticket_at_stage(db_session, "implementation", StageStatus.RUNNING)
+    ticket = _setup_ticket_at_stage(db_session, "implement", StageStatus.RUNNING)
 
     prompt = build_triage_prompt(ticket, [], "status?", session=db_session, interactive=True)
 
@@ -96,7 +96,7 @@ def test_current_human_gate_stage_resolves_playtest(db_session: Session):
 
 
 def test_current_human_gate_stage_ignores_done_and_agent_stages(db_session: Session):
-    ticket = _setup_ticket_at_stage(db_session, "implementation", StageStatus.RUNNING)
+    ticket = _setup_ticket_at_stage(db_session, "implement", StageStatus.RUNNING)
     assert current_human_gate_stage(db_session, ticket) is None
 
     ticket.workflow_stage_key = "done"
@@ -214,5 +214,5 @@ def test_the_seeded_playtest_gate_asks_for_nothing_an_agent_could_sign_off(db_se
 
     assert stages["playtest"].checklist == ["{{playtest_scenes}}", "{{ticket_intent}}"]
     # The retired duties are now owned by the stages that can actually do them.
-    assert "console errors" in stages["implementation"].stage_brief
+    assert "console errors" in stages["implement"].stage_brief
     assert "regressions" in stages["script_review"].stage_brief

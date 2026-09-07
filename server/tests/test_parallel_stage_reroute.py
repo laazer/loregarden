@@ -98,7 +98,7 @@ def test_agent_specified_reroute_preferred_over_template_reject(db_session: Sess
             run.stdout = _stage_report(
                 "fail",
                 0.9,
-                reroute_to_stage="specification",
+                reroute_to_stage="spec",
                 reroute_context="Spec missing acid weak point section",
             )
         else:
@@ -121,7 +121,7 @@ def test_agent_specified_reroute_preferred_over_template_reject(db_session: Sess
     # The template's own `script_review -> reject -> implementation` transition
     # exists (test_blobert_template_includes_reject_transitions), but the
     # agent's explicit reroute_to_stage must win.
-    assert ticket.workflow_stage_key == "specification"
+    assert ticket.workflow_stage_key == "spec"
     assert "acid weak point" in ticket.blocking_issues
 
 
@@ -147,4 +147,4 @@ def test_falls_back_to_template_reject_when_no_agent_reroute(db_session: Session
 
     assert ok is True
     db_session.refresh(ticket)
-    assert ticket.workflow_stage_key == "implementation"
+    assert ticket.workflow_stage_key == "implement"

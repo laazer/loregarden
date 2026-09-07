@@ -25,6 +25,6 @@ def test_orchestrate_accepts_auto_approve_and_stop_at(client: TestClient):
     )
     res = client.post(
         f"/api/tickets/{ticket['id']}/orchestrate",
-        json={"auto_approve": True, "stop_at_stage_key": "planning"},
+        json={"auto_approve": True, "stop_at_stage_key": "plan"},
     )
     assert res.status_code == 200, res.text

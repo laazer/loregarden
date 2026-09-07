@@ -50,7 +50,7 @@ def _setup_implementation_ticket(
         description="Verify clean exit without report blocks",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         workflow_stage_status=StageStatus.RUNNING,
         next_agent="core_simulation",
     )
@@ -61,7 +61,7 @@ def _setup_implementation_ticket(
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
         stages_json=initial_stages_json(stages),
     )
     db_session.add(instance)
@@ -78,7 +78,7 @@ def test_succeeded_without_stage_report_blocks_instead_of_advancing(db_session: 
         workspace_id=ws.id,
         agent_id="ac_gatekeeper",
         skill_name="",
-        stage_key="implementation",
+        stage_key="implement",
         status=RunStatus.QUEUED,
     )
     db_session.add(run)
@@ -102,8 +102,8 @@ def test_succeeded_without_stage_report_blocks_instead_of_advancing(db_session: 
     stages = get_template_stages(template)
     resolved = parse_stage_map(instance, stages)
 
-    assert resolved["implementation"] == StageStatus.BLOCKED
-    assert ticket.workflow_stage_key == "implementation"
+    assert resolved["implement"] == StageStatus.BLOCKED
+    assert ticket.workflow_stage_key == "implement"
     assert ticket.state == TicketState.BLOCKED
     assert "LOREGARDEN_STAGE_REPORT" in ticket.blocking_issues
 
@@ -125,7 +125,7 @@ def test_usage_limit_blocks_with_the_provider_reason_not_the_missing_report(
         workspace_id=ws.id,
         agent_id="core_simulation",
         skill_name="",
-        stage_key="implementation",
+        stage_key="implement",
         status=RunStatus.QUEUED,
     )
     db_session.add(run)
@@ -151,7 +151,7 @@ def test_usage_limit_blocks_with_the_provider_reason_not_the_missing_report(
     assert instance is not None
     resolved = parse_stage_map(instance, get_template_stages(template))
 
-    assert resolved["implementation"] == StageStatus.BLOCKED
+    assert resolved["implement"] == StageStatus.BLOCKED
     assert ticket.state == TicketState.BLOCKED
     assert "Usage limit reached on Codex / ChatGPT" in ticket.blocking_issues
     assert "Aug 12, 2026 10:07 AM" in ticket.blocking_issues
@@ -167,7 +167,7 @@ def test_succeeded_with_pass_report_still_advances(db_session: Session):
         workspace_id=ws.id,
         agent_id="core_simulation",
         skill_name="",
-        stage_key="implementation",
+        stage_key="implement",
         status=RunStatus.QUEUED,
     )
     db_session.add(run)
@@ -189,6 +189,6 @@ def test_succeeded_with_pass_report_still_advances(db_session: Session):
     stages = get_template_stages(template)
     resolved = parse_stage_map(instance, stages)
 
-    assert resolved["implementation"] == StageStatus.DONE
+    assert resolved["implement"] == StageStatus.DONE
     assert ticket.state == TicketState.IN_PROGRESS
     assert ticket.blocking_issues == ""

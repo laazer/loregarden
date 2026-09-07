@@ -79,6 +79,7 @@ from loregarden.db.migrations_run_usage import m_agent_run_token_usage
 from loregarden.db.migrations_run_usage_status import m_run_usage_status
 from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
+from loregarden.db.migrations_stage_keys import m_canonical_stage_keys
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
     m_agent_is_default_stages,
@@ -1370,6 +1371,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0111_agent_run_prompt_chars", m_agent_run_prompt_chars),
     ("0112_agent_is_default_stages", m_agent_is_default_stages),
     ("0113_changed_paths_recorded_at", m_changed_paths_recorded_at),
+    ("0114_canonical_stage_keys", m_canonical_stage_keys),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

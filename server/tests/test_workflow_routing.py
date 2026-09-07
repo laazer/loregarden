@@ -26,17 +26,17 @@ from sqlmodel import Session, select
 def _blobert_transitions() -> list[dict[str, str]]:
     return [
         {"from": "script_review", "to": "ac_gate", "when": "pass"},
-        {"from": "script_review", "to": "implementation", "when": "reject"},
+        {"from": "script_review", "to": "implement", "when": "reject"},
         {"from": "ac_gate", "to": "playtest", "when": "pass"},
-        {"from": "ac_gate", "to": "implementation", "when": "reject"},
-        {"from": "test_design", "to": "specification", "when": "reject"},
+        {"from": "ac_gate", "to": "implement", "when": "reject"},
+        {"from": "test-design", "to": "spec", "when": "reject"},
     ]
 
 
 def test_resolve_transition_target_reject_route():
     transitions = _blobert_transitions()
     routed = StateMachine.resolve_transition_target(transitions, "ac_gate", "reject")
-    assert routed == ("implementation", "")
+    assert routed == ("implement", "")
 
 
 def test_resolve_transition_target_pass_route():
@@ -46,21 +46,21 @@ def test_resolve_transition_target_pass_route():
 
 
 def test_resolve_transition_target_legacy_linear():
-    transitions = [{"from": "planning", "to": "specification"}]
-    routed = StateMachine.resolve_transition_target(transitions, "planning", "pass")
-    assert routed == ("specification", "")
+    transitions = [{"from": "plan", "to": "spec"}]
+    routed = StateMachine.resolve_transition_target(transitions, "plan", "pass")
+    assert routed == ("spec", "")
 
 
 def test_reset_upstream_stages_reopens_rework_window():
     from loregarden.models.domain import WorkflowStageDef
 
     stages = [
-        WorkflowStageDef(key="implementation", name="Implementation", order=6),
+        WorkflowStageDef(key="implement", name="Implementation", order=6),
         WorkflowStageDef(key="script_review", name="Script Review", order=7),
         WorkflowStageDef(key="ac_gate", name="AC Gate", order=8),
     ]
     stage_map = {
-        "implementation": StageStatus.DONE,
+        "implement": StageStatus.DONE,
         "script_review": StageStatus.DONE,
         "ac_gate": StageStatus.RUNNING,
     }
@@ -68,9 +68,9 @@ def test_reset_upstream_stages_reopens_rework_window():
         stage_map,
         stages,
         from_key="ac_gate",
-        to_key="implementation",
+        to_key="implement",
     )
-    assert reset["implementation"] == StageStatus.PENDING
+    assert reset["implement"] == StageStatus.PENDING
     assert reset["script_review"] == StageStatus.PENDING
     assert reset["ac_gate"] == StageStatus.PENDING
 
@@ -129,19 +129,19 @@ def test_complete_stage_routes_upstream_via_api(client: TestClient, db_session: 
         json={
             "stage_key": "ac_gate",
             "outcome": "reject",
-            "next_stage_key": "implementation",
+            "next_stage_key": "implement",
             "next_agent": "core_simulation",
             "blocking_issues": "AC-2 missing test evidence",
         },
     )
     assert complete.status_code == 200
     body = complete.json()
-    assert body["workflow_stage_key"] == "implementation"
+    assert body["workflow_stage_key"] == "implement"
 
     db_session.refresh(ticket)
     db_session.refresh(instance)
     refreshed_map = parse_stage_map(instance, stage_defs)
-    assert refreshed_map["implementation"] == StageStatus.PENDING
+    assert refreshed_map["implement"] == StageStatus.PENDING
     assert refreshed_map["script_review"] == StageStatus.PENDING
     assert refreshed_map["ac_gate"] == StageStatus.PENDING
     assert ticket.next_agent == "core_simulation"
@@ -190,13 +190,13 @@ def test_apply_stage_route_uses_template_reject_transition(db_session: Session):
         from_key="script_review",
         outcome="reject",
     )
-    assert plan.to_key == "implementation"
+    assert plan.to_key == "implement"
     assert plan.upstream is True
-    assert ticket.workflow_stage_key == "implementation"
+    assert ticket.workflow_stage_key == "implement"
 
     reject = StateMachine.resolve_transition_target(transitions, "script_review", "reject")
     assert reject is not None
-    assert reject[0] == "implementation"
+    assert reject[0] == "implement"
 
 
 def test_apply_stage_route_ignores_next_agent_hint_on_pass():
@@ -404,9 +404,9 @@ def test_blobert_template_includes_reject_transitions(client: TestClient, db_ses
         for item in transitions
         if StateMachine._transition_when(item) == "reject"
     }
-    assert ("script_review", "implementation") in reject_targets
-    assert ("ac_gate", "implementation") in reject_targets
-    assert ("test_design", "specification") in reject_targets
+    assert ("script_review", "implement") in reject_targets
+    assert ("ac_gate", "implement") in reject_targets
+    assert ("test-design", "spec") in reject_targets
 
 
 def test_apply_stage_route_reject_ignores_unknown_explicit_stage_key():

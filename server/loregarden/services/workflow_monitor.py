@@ -58,7 +58,6 @@ from loregarden.services.orchestration_profile import (
 )
 from loregarden.services.run_duration_stats import (
     DurationStats,
-    canonical_stage_key,
     load_duration_stats,
 )
 from loregarden.services.studio_drift import detect_all_drift
@@ -127,7 +126,7 @@ def _detect_stage_thrash(runs: list[AgentRun], stats: DurationStats) -> list[Mon
     for run in runs:
         if not run.orchestration_run_id or not run.stage_key:
             continue
-        attempts[(run.ticket_id, run.orchestration_run_id, canonical_stage_key(run.stage_key))] += 1
+        attempts[(run.ticket_id, run.orchestration_run_id, run.stage_key)] += 1
 
     return [
         MonitorFinding(
@@ -160,7 +159,7 @@ def _detect_unbudgeted_repeats(runs: list[AgentRun]) -> list[MonitorFinding]:
     for run in runs:
         if run.orchestration_run_id or not run.stage_key:
             continue
-        attempts[(run.ticket_id, canonical_stage_key(run.stage_key))] += 1
+        attempts[(run.ticket_id, run.stage_key)] += 1
 
     return [
         MonitorFinding(
@@ -194,7 +193,7 @@ def _detect_failure_clusters(runs: list[AgentRun]) -> list[MonitorFinding]:
     for run in finished:
         if not run.stage_key:
             continue
-        bucket = totals[canonical_stage_key(run.stage_key)]
+        bucket = totals[run.stage_key]
         bucket[0] += 1
         bucket[1] += 1 if run.status is RunStatus.FAILED else 0
 

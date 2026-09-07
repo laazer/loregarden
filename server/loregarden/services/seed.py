@@ -44,7 +44,7 @@ BOOTSTRAP_TASKS: list[BootstrapTask] = [
         ),
         "state": TicketState.IN_PROGRESS,
         "priority": 1,
-        "stage_key": "implementation",
+        "stage_key": "implement",
         "stage_status": StageStatus.DONE,
         "capability_key": "api-core",
         "acceptance_criteria": [
@@ -63,7 +63,7 @@ BOOTSTRAP_TASKS: list[BootstrapTask] = [
         ),
         "state": TicketState.IN_PROGRESS,
         "priority": 1,
-        "stage_key": "implementation",
+        "stage_key": "implement",
         "stage_status": StageStatus.DONE,
         "capability_key": "ui-shell",
         "acceptance_criteria": [
@@ -82,7 +82,7 @@ BOOTSTRAP_TASKS: list[BootstrapTask] = [
         ),
         "state": TicketState.IN_PROGRESS,
         "priority": 2,
-        "stage_key": "implementation",
+        "stage_key": "implement",
         "stage_status": StageStatus.DONE,
         "capability_key": "agent-runtime",
         "acceptance_criteria": [
@@ -100,7 +100,7 @@ BOOTSTRAP_TASKS: list[BootstrapTask] = [
         ),
         "state": TicketState.IN_PROGRESS,
         "priority": 2,
-        "stage_key": "implementation",
+        "stage_key": "implement",
         "stage_status": StageStatus.DONE,
         "capability_key": "workflow-config",
         "acceptance_criteria": [
@@ -118,7 +118,7 @@ BOOTSTRAP_TASKS: list[BootstrapTask] = [
         ),
         "state": TicketState.DONE,
         "priority": 3,
-        "stage_key": "implementation",
+        "stage_key": "implement",
         "stage_status": StageStatus.DONE,
         "capability_key": "self-tracking",
         "acceptance_criteria": [

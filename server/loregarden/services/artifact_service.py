@@ -1030,7 +1030,7 @@ def refresh_execution_artifacts(
             content=diff,
         )
 
-    test_stages = {"testing", "test_break", "test_design"}
+    test_stages = {"testing", "test-break", "test-design"}
     if run.stage_key in test_stages or run.agent_id in {
         "static_qa",
         "test_breaker",
@@ -1099,7 +1099,7 @@ def ensure_test_artifact(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id).order_by(AgentRun.created_at.desc())
     ).all()
     for run in runs:
-        if run.stage_key not in {"testing", "test_break", "test_design"} and run.agent_id not in {
+        if run.stage_key not in {"testing", "test-break", "test-design"} and run.agent_id not in {
             "static_qa",
             "test_breaker",
             "test_designer",

@@ -1442,7 +1442,7 @@ def test_playtest_checklist_swaps_the_hand_written_scene_items(tmp_path):
     from sqlmodel import Session
 
     stages = [
-        {"key": "implementation", "name": "Implementation", "agent_id": "dev", "order": 1},
+        {"key": "implement", "name": "Implementation", "agent_id": "dev", "order": 1},
         {
             "key": "playtest",
             "name": "Playtest",
@@ -1518,7 +1518,12 @@ def test_agent_owned_playtest_items_move_to_the_stages_that_own_them(tmp_path):
     from sqlmodel import Session
 
     stages = [
-        {"key": "implementation", "name": "Implementation", "agent_id": "dev", "order": 1},
+        {
+            "key": "implementation",
+            "name": "Implementation",
+            "agent_id": "dev",
+            "order": 1,
+        },  # pre-0114 spelling: the brief migration targets it
         {
             "key": "script_review",
             "name": "Script Review",
@@ -1562,7 +1567,9 @@ def test_agent_owned_playtest_items_move_to_the_stages_that_own_them(tmp_path):
     by_key = {s["key"]: s for s in json.loads(stages_json)}
 
     assert by_key["playtest"]["checklist"] == ["{{playtest_scenes}}", "{{ticket_intent}}"]
-    assert "console errors" in by_key["implementation"]["stage_brief"]
+    assert (
+        "console errors" in by_key["implement"]["stage_brief"]
+    )  # renamed by 0114 (lg-workflow-integrity-660)
     assert "regressions" in by_key["script_review"]["stage_brief"]
 
     # Re-running must not append a second intent placeholder or restate a brief.

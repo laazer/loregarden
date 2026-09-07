@@ -44,10 +44,10 @@ def test_seeded_ticket_states_agree(client: TestClient):
     stages = _stage_statuses(detail)
 
     assert detail["state"] == "in_progress"
-    assert detail["workflow_stage_key"] == "implementation"
+    assert detail["workflow_stage_key"] == "implement"
     assert detail["workflow_stage_status"] == "done"
-    assert stages["implementation"] == "done"
-    assert stages["planning"] == "done"
+    assert stages["implement"] == "done"
+    assert stages["plan"] == "done"
     assert stages["testing"] == "pending"
     assert stages[detail["workflow_stage_key"]] == detail["workflow_stage_status"]
 
@@ -60,9 +60,9 @@ def test_start_run_syncs_all_layers(client: TestClient):
     stages = _stage_statuses(body)
 
     assert body["state"] == "in_progress"
-    assert body["workflow_stage_key"] == "implementation"
+    assert body["workflow_stage_key"] == "implement"
     assert body["workflow_stage_status"] == "done"
-    assert stages["implementation"] == "done"
+    assert stages["implement"] == "done"
     assert stages[body["workflow_stage_key"]] == body["workflow_stage_status"]
 
 
@@ -118,7 +118,7 @@ def test_starting_a_pending_stage_clears_stale_blocking_issues(
     db_session.add(ticket)
     db_session.commit()
 
-    OrchestrationService(db_session).start_run(ticket, stage_key="implementation")
+    OrchestrationService(db_session).start_run(ticket, stage_key="implement")
     db_session.refresh(ticket)
 
     assert ticket.blocking_issues == ""
@@ -157,7 +157,7 @@ def test_advance_stage_moves_cursor_and_keeps_steps_consistent(client: TestClien
 
     assert body["workflow_stage_key"] == "testing"
     assert body["workflow_stage_status"] == "pending"
-    assert stages["implementation"] == "done"
+    assert stages["implement"] == "done"
     assert stages["testing"] == "pending"
     assert stages[body["workflow_stage_key"]] == body["workflow_stage_status"]
 
@@ -236,17 +236,17 @@ def test_bulk_stage_updates(client: TestClient):
         f"/api/tickets/{ticket_id}",
         json={
             "stage_updates": {
-                "planning": "done",
+                "plan": "done",
                 "context": "done",
-                "specification": "done",
+                "spec": "done",
             }
         },
     )
     assert updated.status_code == 200
     stages = {s["key"]: s["status"] for s in updated.json()["stages"]}
-    assert stages["planning"] == "done"
+    assert stages["plan"] == "done"
     assert stages["context"] == "done"
-    assert stages["specification"] == "done"
+    assert stages["spec"] == "done"
 
 
 def test_stage_wont_do_skips_step_and_blocks_run(client: TestClient):
@@ -294,14 +294,14 @@ def test_advance_from_wont_do_stage(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     client.patch(
         f"/api/tickets/{ticket_id}",
-        json={"stage_key": "implementation", "stage_status": "wont_do"},
+        json={"stage_key": "implement", "stage_status": "wont_do"},
     )
     advanced = client.post(f"/api/tickets/{ticket_id}/advance", json={})
     assert advanced.status_code == 200
     body = advanced.json()
     stages = _stage_statuses(body)
 
-    assert stages["implementation"] == "wont_do"
+    assert stages["implement"] == "wont_do"
     assert body["workflow_stage_key"] == "testing"
     assert body["workflow_stage_status"] == "pending"
 
@@ -360,7 +360,7 @@ def test_reconcile_repairs_drifted_instance():
         ws = session.get(Workspace, ticket.workspace_id)
         ticket.workflow_stage_status = StageStatus.RUNNING
         ticket.state = TicketState.IN_PROGRESS
-        instance.stages_json = json.dumps([{"key": "implementation", "status": "pending"}])
+        instance.stages_json = json.dumps([{"key": "implement", "status": "pending"}])
         session.add(ticket)
         session.add(instance)
         session.commit()
@@ -446,12 +446,12 @@ def test_done_stage_completes_ticket_without_agent(client: TestClient, monkeypat
         ws = session.get(Workspace, ticket.workspace_id)
         _, stages = resolve_workspace_stages(session, ws)
         for key in (
-            "planning",
+            "plan",
             "context",
-            "specification",
-            "test_design",
-            "test_break",
-            "implementation",
+            "spec",
+            "test-design",
+            "test-break",
+            "implement",
             "testing",
             "review",
             "approval",

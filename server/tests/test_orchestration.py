@@ -81,7 +81,7 @@ def test_orchestration_callbacks(client: TestClient):
 
     complete = client.post(
         f"/api/orchestration/runs/{run_id}/complete_stage",
-        json={"stage_key": "planning", "next_agent": "spec"},
+        json={"stage_key": "plan", "next_agent": "spec"},
     )
     assert complete.status_code == 200
     assert complete.json()["ok"] is True

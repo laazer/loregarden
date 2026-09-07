@@ -57,7 +57,7 @@ def _setup_ticket_at_test_break(
         description="Verify a transition gate failure reroutes rather than hard-blocks",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="test_break",
+        workflow_stage_key="test-break",
         workflow_stage_status=StageStatus.PENDING,
         next_agent="test_breaker",
     )
@@ -68,8 +68,8 @@ def _setup_ticket_at_test_break(
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="test_break",
-        stages_json=stages_up_to_done_json(stages, "test_design"),
+        current_stage_key="test-break",
+        stages_json=stages_up_to_done_json(stages, "test-design"),
     )
     db_session.add(instance)
     db_session.commit()
@@ -103,7 +103,7 @@ def test_gate_failure_reroutes_to_same_stage_instead_of_blocking(
 
     db_session.refresh(ticket)
     assert ticket.state != TicketState.BLOCKED
-    assert ticket.workflow_stage_key == "test_break"
+    assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert ticket.blocking_issues
 
@@ -144,7 +144,7 @@ def test_gate_failure_keeps_blocking_issues_short_and_files_full_output_as_error
     ).all()
     assert len(error_artifacts) == 1
     content = json.loads(error_artifacts[0].content_json)
-    assert content["stage_key"] == "test_break"
+    assert content["stage_key"] == "test-break"
     assert "(command:" in content["message"]
 
 
@@ -176,7 +176,7 @@ def test_gate_passing_advances_normally(db_session: Session, monkeypatch, tmp_pa
     assert not ticket.blocking_issues
     # A passing gate must not reroute test_break back to itself — it should be
     # marked DONE, same as if gates were disabled entirely.
-    assert stage_map["test_break"] == StageStatus.DONE
+    assert stage_map["test-break"] == StageStatus.DONE
 
 
 def test_autofix_fixers_clear_gate_advances_without_reroute(
@@ -213,7 +213,7 @@ def test_autofix_fixers_clear_gate_advances_without_reroute(
     assert (tmp_path / "fixed.txt").is_file()
     assert ticket.state != TicketState.BLOCKED
     assert not ticket.blocking_issues
-    assert stage_map["test_break"] == StageStatus.DONE
+    assert stage_map["test-break"] == StageStatus.DONE
     # No reroute artifact was filed — the fix was invisible.
     error_artifacts = db_session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "error")
@@ -250,12 +250,12 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
     db_session.refresh(ticket)
     # Initial run + exactly autofix_max_agent_attempts inline retries.
     runs = db_session.exec(
-        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test_break")
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
     assert len(runs) == 3
     # Exhausted: rerouted for rework and paused with a short human-facing pointer.
     assert ticket.state != TicketState.BLOCKED
-    assert ticket.workflow_stage_key == "test_break"
+    assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert "Errors tab" in ticket.blocking_issues
     assert len(ticket.blocking_issues) < 200
@@ -292,7 +292,7 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     builtin.execute(ticket, profile, max_stages=10)
     db_session.refresh(ticket)
     runs_after_first_call = db_session.exec(
-        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test_break")
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
     assert len(runs_after_first_call) == 3  # initial + 2 inline retries, budget exhausted
 
@@ -308,12 +308,12 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
 
     db_session.refresh(ticket)
     runs_after_second_call = db_session.exec(
-        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test_break")
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
     # Exactly one more run — the stage's own agent re-running once on the fresh
     # call — then straight to blocked. No *additional* inline auto-fix retries
     # were spent, since the persisted budget was already used up.
     assert len(runs_after_second_call) == len(runs_after_first_call) + 1
-    assert ticket.workflow_stage_key == "test_break"
+    assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert "Errors tab" in ticket.blocking_issues

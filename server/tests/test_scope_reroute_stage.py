@@ -45,7 +45,7 @@ def _setup_implementation(db_session: Session) -> tuple[Ticket, OrchestrationRun
         title="Needs a server change",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         workflow_stage_status=StageStatus.RUNNING,
     )
     db_session.add(ticket)
@@ -55,7 +55,7 @@ def _setup_implementation(db_session: Session) -> tuple[Ticket, OrchestrationRun
         WorkflowInstance(
             ticket_id=ticket.id,
             template_id=template.id,
-            current_stage_key="implementation",
+            current_stage_key="implement",
             stages_json=initial_stages_json(stages),
         )
     )
@@ -63,7 +63,7 @@ def _setup_implementation(db_session: Session) -> tuple[Ticket, OrchestrationRun
         run_code="orch_scope_reroute",
         ticket_id=ticket.id,
         workspace_id=ws.id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
     )
     db_session.add(orch_run)
     db_session.commit()
@@ -92,7 +92,7 @@ def test_sequential_runner_continues_on_scope_reroute_pin(db_session: Session, m
     stop = builtin._run_sequential_stage(
         ticket,
         orch_run,
-        "implementation",
+        "implement",
         auto_approve=True,
         stop_at_stage_key=None,
     )
@@ -123,7 +123,7 @@ def test_sequential_runner_still_blocks_a_plain_failure(db_session: Session, mon
     stop = builtin._run_sequential_stage(
         ticket,
         orch_run,
-        "implementation",
+        "implement",
         auto_approve=True,
         stop_at_stage_key=None,
     )
@@ -204,7 +204,7 @@ def test_permission_bridge_reroutes_cross_scope_write_to_sibling(tmp_path):
         ticket = session.exec(
             select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
-        assert ticket.workflow_stage_key == "implementation"
+        assert ticket.workflow_stage_key == "implement"
 
         repo_root = tmp_path / "repo"
         (repo_root / "server" / "loregarden").mkdir(parents=True)
@@ -219,7 +219,7 @@ def test_permission_bridge_reroutes_cross_scope_write_to_sibling(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="frontend_implementer",
-            stage_key="implementation",
+            stage_key="implement",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -502,15 +502,15 @@ def test_scope_reroute_pin_exempts_stage_retry_budget(db_session: Session):
         run_code="orch_exempt",
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
     )
     db_session.add(orch_run)
     db_session.commit()
 
     # Drive the stage to its budget so a normal dispatch here would block.
     for _ in range(5):
-        record_stage_dispatch(db_session, ticket.id, "implementation")
-    before = count_stage_dispatches(db_session, ticket.id, "implementation")
+        record_stage_dispatch(db_session, ticket.id, "implement")
+    before = count_stage_dispatches(db_session, ticket.id, "implement")
 
     ticket.scope_reroute_agent = "backend_implementer"
     builtin = BuiltinOrchestrator(db_session)
@@ -519,7 +519,7 @@ def test_scope_reroute_pin_exempts_stage_retry_budget(db_session: Session):
         builtin.callbacks,
         orch_run,
         ticket,
-        "implementation",
+        "implement",
         RetryBudgetConfig(enabled=True, max_attempts_per_stage=5),
     )
 
@@ -527,4 +527,4 @@ def test_scope_reroute_pin_exempts_stage_retry_budget(db_session: Session):
     db_session.refresh(ticket)
     assert ticket.state != TicketState.BLOCKED
     # The handoff didn't consume the stage's dispatch budget either.
-    assert count_stage_dispatches(db_session, ticket.id, "implementation") == before
+    assert count_stage_dispatches(db_session, ticket.id, "implement") == before

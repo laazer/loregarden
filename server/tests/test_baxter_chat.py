@@ -818,7 +818,7 @@ def test_resolve_references_finds_a_ticket_by_uuid(db_session: Session):
         workspace_id=workspace.id,
         title="SDF blend-shell spike",
         state=TicketState.BLOCKED,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         next_agent="engine_integration",
         blocking_issues="Triage is currently running for this ticket",
         state_locked=True,
@@ -905,7 +905,7 @@ def test_resolve_references_finds_runs_by_code(db_session: Session):
         ticket_id=ticket.id,
         workspace_id=workspace.id,
         status=OrchestrationRunStatus.BLOCKED,
-        current_stage_key="implementation",
+        current_stage_key="implement",
         error_message="Triage is currently running for this ticket",
     )
     db_session.add(run)

@@ -45,7 +45,7 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert body["id"] is not None
 
         # Verify workflow was initialized
-        assert body["workflow_stage_key"] == "planning", (
+        assert body["workflow_stage_key"] == "plan", (
             f"Expected workflow_stage_key='planning', got {body['workflow_stage_key']}"
         )
         assert body["workflow_stage_status"] == "pending", (
@@ -86,7 +86,7 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert body["id"] is not None
 
         # Verify workflow was initialized
-        assert body["workflow_stage_key"] == "planning", (
+        assert body["workflow_stage_key"] == "plan", (
             f"Expected workflow_stage_key='planning', got {body['workflow_stage_key']}"
         )
         assert body["workflow_stage_status"] == "pending", (
@@ -117,7 +117,7 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert res.status_code == 201
         body = res.json()
         assert body["work_item_type"] == "feature"
-        assert body["workflow_stage_key"] == "planning"
+        assert body["workflow_stage_key"] == "plan"
         assert len(body["stages"]) >= 5
 
     def test_task_still_gets_workflow_backward_compatibility(self, client: TestClient):
@@ -143,7 +143,7 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert res.status_code == 201
         body = res.json()
         assert body["work_item_type"] == "task"
-        assert body["workflow_stage_key"] == "planning"
+        assert body["workflow_stage_key"] == "plan"
         assert len(body["stages"]) >= 5
 
     def test_bug_still_gets_workflow_backward_compatibility(self, client: TestClient):
@@ -169,7 +169,7 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert res.status_code == 201
         body = res.json()
         assert body["work_item_type"] == "bug"
-        assert body["workflow_stage_key"] == "planning"
+        assert body["workflow_stage_key"] == "plan"
         assert len(body["stages"]) >= 5
 
 
@@ -202,7 +202,7 @@ class TestWorkflowInstanceCreation:
             ).first()
             assert instance is not None, f"No WorkflowInstance found for milestone {milestone_id}"
             assert instance.template_id is not None
-            assert instance.current_stage_key == "planning"
+            assert instance.current_stage_key == "plan"
 
     def test_capability_workflow_instance_created(self, client: TestClient, monkeypatch):
         """
@@ -238,7 +238,7 @@ class TestWorkflowInstanceCreation:
             ).first()
             assert instance is not None, f"No WorkflowInstance found for capability {capability_id}"
             assert instance.template_id is not None
-            assert instance.current_stage_key == "planning"
+            assert instance.current_stage_key == "plan"
 
 
 class TestWorkflowStageFields:
@@ -353,8 +353,8 @@ class TestWorkflowHierarchyInteractions:
         feature = feature_res.json()
 
         # Verify both have workflows
-        assert milestone["workflow_stage_key"] == "planning"
-        assert feature["workflow_stage_key"] == "planning"
+        assert milestone["workflow_stage_key"] == "plan"
+        assert feature["workflow_stage_key"] == "plan"
 
         # Verify we can fetch detail and both have stages
         milestone_detail = client.get(f"/api/tickets/{milestone['id']}").json()
@@ -390,9 +390,9 @@ class TestWorkflowHierarchyInteractions:
 
         # The capability was just created, and creating a ticket sets up its
         # workflow — so it has a cursor.
-        assert capability["workflow_stage_key"] == "planning"
+        assert capability["workflow_stage_key"] == "plan"
         # The feature is seeded and has never been started. It has no cursor,
-        # and that is the point: this used to read "planning" only because
+        # and that is the point: this used to read "plan" only because
         # `GET /api/tickets` created a workflow instance as a side effect of
         # serializing, so a ticket gained a cursor the moment somebody looked at
         # it. Initialisation moved to the start paths
@@ -435,7 +435,7 @@ class TestWorkflowDetailRetrieval:
         assert "workflow_stage_key" in detail
         assert "workflow_stage_status" in detail
         assert "stages" in detail
-        assert detail["workflow_stage_key"] == "planning"
+        assert detail["workflow_stage_key"] == "plan"
         assert len(detail["stages"]) >= 5
 
     def test_capability_detail_includes_workflow_fields(self, client: TestClient):
@@ -469,7 +469,7 @@ class TestWorkflowDetailRetrieval:
         assert "workflow_stage_key" in detail
         assert "workflow_stage_status" in detail
         assert "stages" in detail
-        assert detail["workflow_stage_key"] == "planning"
+        assert detail["workflow_stage_key"] == "plan"
         assert len(detail["stages"]) >= 5
 
 
@@ -573,7 +573,7 @@ class TestWorkflowInitializationWithoutTemplate:
         )
         # Should succeed because loregarden has a template
         assert res.status_code == 201
-        assert res.json()["workflow_stage_key"] == "planning"
+        assert res.json()["workflow_stage_key"] == "plan"
 
 
 class TestWorkflowEdgeCases:
@@ -599,7 +599,7 @@ class TestWorkflowEdgeCases:
         milestone = create_res.json()
 
         # Verify initial stage is planning
-        assert milestone["workflow_stage_key"] == "planning"
+        assert milestone["workflow_stage_key"] == "plan"
         assert milestone["workflow_stage_status"] == "pending"
 
         # Get ticket detail to verify stages structure
@@ -607,7 +607,7 @@ class TestWorkflowEdgeCases:
 
         # Verify stages exist and are properly structured
         planning_stage = next(
-            (s for s in detail["stages"] if s["key"] == "planning"),
+            (s for s in detail["stages"] if s["key"] == "plan"),
             None,
         )
         assert planning_stage is not None, "planning stage not found in stages"
@@ -638,7 +638,7 @@ class TestWorkflowEdgeCases:
         capability = create_res.json()
 
         # Verify initial stage is planning
-        assert capability["workflow_stage_key"] == "planning"
+        assert capability["workflow_stage_key"] == "plan"
         assert capability["workflow_stage_status"] == "pending"
 
         # Get ticket detail to verify stages structure
@@ -646,7 +646,7 @@ class TestWorkflowEdgeCases:
 
         # Verify stages exist
         planning_stage = next(
-            (s for s in detail["stages"] if s["key"] == "planning"),
+            (s for s in detail["stages"] if s["key"] == "plan"),
             None,
         )
         assert planning_stage is not None, "planning stage not found in stages"
@@ -679,8 +679,8 @@ class TestWorkflowEdgeCases:
         milestone2 = res2.json()
 
         # Both should have workflows initialized
-        assert milestone1["workflow_stage_key"] == "planning"
-        assert milestone2["workflow_stage_key"] == "planning"
+        assert milestone1["workflow_stage_key"] == "plan"
+        assert milestone2["workflow_stage_key"] == "plan"
 
         # Verify they're different tickets
         assert milestone1["id"] != milestone2["id"]

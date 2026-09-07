@@ -4,7 +4,7 @@ description: >-
   Multi-domain TDD workflow with optional domain consultation and script review
   stages. Use for workspaces that need extra gates beyond the default web SDLC.
 stages:
-  - key: planning
+  - key: plan
     name: Planning
     agent_id: planner
     skill_name: plan
@@ -15,22 +15,22 @@ stages:
     skill_name: ""
     optional: true
     order: 2
-  - key: specification
+  - key: spec
     name: Specification
     agent_id: spec
     skill_name: ""
     order: 3
-  - key: test_design
+  - key: test-design
     name: Test Design
     agent_id: test_designer
     skill_name: ""
     order: 4
-  - key: test_break
+  - key: test-break
     name: Test Break
     agent_id: test_breaker
     skill_name: ""
     order: 5
-  - key: implementation
+  - key: implement
     name: Implementation
     agent_id: backend_implementer
     skill_name: ""
@@ -63,17 +63,17 @@ stages:
     skill_name: ""
     order: 10
 transitions:
-  - from: planning
+  - from: plan
     to: domain_consultation
   - from: domain_consultation
-    to: specification
-  - from: specification
-    to: test_design
-  - from: test_design
-    to: test_break
-  - from: test_break
-    to: implementation
-  - from: implementation
+    to: spec
+  - from: spec
+    to: test-design
+  - from: test-design
+    to: test-break
+  - from: test-break
+    to: implement
+  - from: implement
     to: static_qa
   - from: static_qa
     to: review

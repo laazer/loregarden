@@ -29,7 +29,7 @@ def session_fixture(isolated_db):
 
 
 def test_transition_name():
-    assert transition_name("planning", "specification") == "planning_to_specification"
+    assert transition_name("plan", "spec") == "plan_to_spec"
 
 
 def test_format_gate_command_substitutes_context():
@@ -74,8 +74,8 @@ def test_run_transition_gates_executes_script(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="planning",
-        to_stage="specification",
+        from_stage="plan",
+        to_stage="spec",
     )
     assert result.ok, result.message
 
@@ -112,7 +112,7 @@ def test_run_transition_gates_skips_transition_the_script_does_not_model(session
         profile,
         ws,
         ticket,
-        from_stage="implementation",
+        from_stage="implement",
         to_stage="script_review",
     )
     assert result.ok, result.message
@@ -138,7 +138,7 @@ def test_run_transition_gates_blocks_on_real_transition_gate_failure(session, tm
         profile,
         ws,
         ticket,
-        from_stage="implementation",
+        from_stage="implement",
         to_stage="static_qa",
     )
     assert not result.ok
@@ -165,8 +165,8 @@ def test_run_transition_gates_runs_profile_commands(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="specification",
-        to_stage="test_design",
+        from_stage="spec",
+        to_stage="test-design",
     )
     assert result.ok, result.message
 
@@ -187,8 +187,8 @@ def test_run_transition_gates_blocks_on_failure(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="test_design",
-        to_stage="test_break",
+        from_stage="test-design",
+        to_stage="test-break",
     )
     assert not result.ok
 
@@ -205,7 +205,7 @@ def test_run_transition_gates_includes_stage_gate_commands(session, tmp_path):
         ),
     )
     stage = WorkflowStageDef(
-        key="implementation",
+        key="implement",
         name="Implementation",
         gate_commands=["touch {workspace_root}/stage-gate.txt"],
     )
@@ -215,7 +215,7 @@ def test_run_transition_gates_includes_stage_gate_commands(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="implementation",
+        from_stage="implement",
         to_stage="review",
         stage_def=stage,
     )
@@ -230,11 +230,11 @@ def test_build_gate_context():
     ctx = build_gate_context(
         workspace=ws,
         ticket=ticket,
-        from_stage="planning",
-        to_stage="specification",
+        from_stage="plan",
+        to_stage="spec",
     )
     assert ctx["external_id"] == "M12-01"
-    assert ctx["transition"] == "planning_to_specification"
+    assert ctx["transition"] == "plan_to_spec"
 
 
 def test_strip_ansi_removes_escape_codes():
@@ -257,7 +257,7 @@ def test_run_gate_autofix_runs_commands(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="implementation",
+        from_stage="implement",
         to_stage="review",
     )
     assert result.ran
@@ -275,7 +275,7 @@ def test_run_gate_autofix_noop_without_commands(session, tmp_path):
         profile,
         ws,
         ticket,
-        from_stage="implementation",
+        from_stage="implement",
         to_stage="review",
     )
     assert not result.ran
@@ -297,7 +297,7 @@ def test_run_transition_gates_disabled_reports_disabled_outcome(session, tmp_pat
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=False))
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="spec", to_stage="test_design"
+        session, profile, ws, ticket, from_stage="spec", to_stage="test-design"
     )
 
     assert result.ok
@@ -314,7 +314,7 @@ def test_run_transition_gates_no_commands_reports_skipped_outcome(session, tmp_p
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert result.ok
@@ -353,7 +353,7 @@ def test_run_transition_gates_passing_reports_passed_outcome_with_message(sessio
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["true"]))
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="implementation", to_stage="review"
+        session, profile, ws, ticket, from_stage="implement", to_stage="review"
     )
 
     assert result.ok
@@ -369,7 +369,7 @@ def test_run_transition_gates_failure_reports_failed_outcome_and_preserves_messa
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["false"]))
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert not result.ok
@@ -438,7 +438,7 @@ def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(se
     )
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert result.ok
@@ -501,7 +501,7 @@ def test_run_transition_gates_malformed_quoting_reports_unavailable_not_crash(se
     )
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert not result.ok
@@ -528,7 +528,7 @@ def test_run_transition_gates_non_executable_script_reports_unavailable(session,
     )
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert not result.ok
@@ -550,7 +550,7 @@ def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_one
     )
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test-design", to_stage="test-break"
     )
 
     assert result.ok
@@ -601,14 +601,14 @@ def test_run_transition_gates_disabled_outcome_still_carries_stage_context(sessi
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=False))
 
     result = run_transition_gates(
-        session, profile, ws, ticket, from_stage="implementation", to_stage="review"
+        session, profile, ws, ticket, from_stage="implement", to_stage="review"
     )
 
     assert result.outcome == "disabled"
     context = build_gate_context(
-        workspace=ws, ticket=ticket, from_stage="implementation", to_stage="review"
+        workspace=ws, ticket=ticket, from_stage="implement", to_stage="review"
     )
-    assert context["from_stage"] == "implementation"
+    assert context["from_stage"] == "implement"
     assert context["to_stage"] == "review"
 
 

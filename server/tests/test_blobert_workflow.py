@@ -32,12 +32,12 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
     stages = get_template_stages(template)
     keys = [stage.key for stage in sorted(stages, key=lambda item: item.order)]
     assert keys == [
-        "planning",
+        "plan",
         "domain_consultation",
-        "specification",
-        "test_design",
-        "test_break",
-        "implementation",
+        "spec",
+        "test-design",
+        "test-break",
+        "implement",
         "script_review",
         "ac_gate",
         "playtest",
@@ -45,7 +45,7 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
         "done",
     ]
 
-    implementation = next(stage for stage in stages if stage.key == "implementation")
+    implementation = next(stage for stage in stages if stage.key == "implement")
     assert implementation.stage_type == "classify"
     assert {route.agent_id for route in implementation.classify_routes} == {
         "core_simulation",
@@ -84,7 +84,7 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
         description="Verify stage view metadata",
         state=TicketState.BACKLOG,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="planning",
+        workflow_stage_key="plan",
     )
     db_session.add(ticket)
     db_session.commit()
@@ -94,7 +94,7 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="planning",
+        current_stage_key="plan",
         stages_json=initial_stages_json(stages),
     )
     db_session.add(instance)
@@ -112,8 +112,8 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
         "static_qa",
         "architecture_reviewer",
     ]
-    assert by_key["implementation"]["stage_type"] == "classify"
-    assert len(by_key["implementation"]["agents"]) == 5
+    assert by_key["implement"]["stage_type"] == "classify"
+    assert len(by_key["implement"]["agents"]) == 5
     assert by_key["playtest"]["stage_type"] == "agent"
     assert by_key["playtest"]["agent_id"] == ""
 

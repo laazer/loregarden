@@ -156,7 +156,7 @@ class TestBoundaryConditions:
         assert len(set(milestone_ids)) == len(milestone_ids), "Each milestone should have unique ID"
 
         for r in results:
-            assert r["workflow_stage_key"] == "planning", (
+            assert r["workflow_stage_key"] == "plan", (
                 f"Milestone {r['id']} missing workflow initialization"
             )
             assert r["workflow_stage_status"] == "pending"
@@ -187,11 +187,11 @@ class TestBoundaryConditions:
         feature = feature_res.json()
 
         # Feature should have workflow even with zero children
-        assert feature["workflow_stage_key"] == "planning"
+        assert feature["workflow_stage_key"] == "plan"
 
         # Database should reflect this
         db_feature = db_session.exec(select(Ticket).where(Ticket.id == feature["id"])).first()
-        assert db_feature.workflow_stage_key == "planning"
+        assert db_feature.workflow_stage_key == "plan"
 
 
 class TestTypeMutations:
@@ -346,8 +346,8 @@ class TestOrderDependency:
         feature = feature_res.json()
 
         # Both must have workflows
-        assert milestone["workflow_stage_key"] == "planning"
-        assert feature["workflow_stage_key"] == "planning"
+        assert milestone["workflow_stage_key"] == "plan"
+        assert feature["workflow_stage_key"] == "plan"
 
 
 class TestCombinatorialInputs:
@@ -416,7 +416,7 @@ class TestCombinatorialInputs:
             (capability, "capability"),
             (task, "task"),
         ]:
-            assert ticket["workflow_stage_key"] == "planning", f"{name} missing workflow_stage_key"
+            assert ticket["workflow_stage_key"] == "plan", f"{name} missing workflow_stage_key"
             assert len(ticket["stages"]) > 0, f"{name} has empty stages"
 
 
@@ -753,7 +753,7 @@ class TestWorkflowInstanceDataIntegrity:
 
         assert instance is not None
         assert instance.template_id is not None, "WorkflowInstance must reference a template"
-        assert instance.current_stage_key == "planning"
+        assert instance.current_stage_key == "plan"
         assert instance.stages_json is not None, "WorkflowInstance stages_json should be populated"
 
     def test_multiple_instances_dont_share_stages_json(

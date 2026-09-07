@@ -24,7 +24,7 @@ from tests.worktree_helpers import seed_stage_report_contract
 
 def _impl_classify_stage() -> WorkflowStageDef:
     return WorkflowStageDef(
-        key="implementation",
+        key="implement",
         name="Implementation",
         stage_type="classify",
         classify_routes=[
@@ -101,7 +101,7 @@ def test_scope_reroute_pin_honored_via_static_agent_when_not_in_route_table():
         scope_reroute_agent="backend_implementer",
     )
     stage = WorkflowStageDef(
-        key="implementation",
+        key="implement",
         name="Implementation",
         stage_type="classify",
         agent_id="backend_implementer",
@@ -234,7 +234,7 @@ def test_resolve_stage_execution_honors_next_agent_on_implementation():
         next_agent="frontend_implementer",
     )
     stage = WorkflowStageDef(
-        key="implementation",
+        key="implement",
         name="Implementation",
         agent_id="backend_implementer",
         skill_name="apply_patch",
@@ -423,7 +423,7 @@ def test_orchestration_reroutes_when_gate_fails(
         description="Should reroute back to planning after a failing transition gate",
         state=TicketState.BACKLOG,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="planning",
+        workflow_stage_key="plan",
     )
     db_session.add(ticket)
     db_session.commit()
@@ -432,7 +432,7 @@ def test_orchestration_reroutes_when_gate_fails(
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="planning",
+        current_stage_key="plan",
         stages_json=initial_stages_json(stages),
     )
     db_session.add(instance)
@@ -448,5 +448,5 @@ def test_orchestration_reroutes_when_gate_fails(
     # stage's own output failing an objective check, so it self-redoes the same
     # stage instead of hard-blocking for a human.
     assert body["state"] != "blocked"
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"
     assert body["blocking_issues"]

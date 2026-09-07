@@ -125,14 +125,14 @@ def test_start_run_specific_stage(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     started = client.post(
         f"/api/tickets/{ticket_id}/start",
-        json={"manual": True, "stage_key": "planning"},
+        json={"manual": True, "stage_key": "plan"},
     )
     assert started.status_code == 200
     body = _ticket_detail(client, ticket_id)
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"
     assert body["workflow_stage_status"] == "done"
     stages = {s["key"]: s["status"] for s in body["stages"]}
-    assert stages["planning"] == "done"
+    assert stages["plan"] == "done"
 
 
 def test_start_run_bootstraps_live_log(client: TestClient):

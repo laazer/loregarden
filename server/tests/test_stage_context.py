@@ -189,9 +189,9 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
 def test_gate_prep_targets_the_last_authoring_stage_before_a_human_gate():
     """Only the implementer is briefed — not planning, spec, or the reviews in between."""
     stages = [
-        WorkflowStageDef(key="planning", name="Planning", agent_id="planner", order=1),
+        WorkflowStageDef(key="plan", name="Planning", agent_id="planner", order=1),
         WorkflowStageDef(
-            key="implementation",
+            key="implement",
             name="Implementation",
             agent_id="core_simulation",
             stage_type="classify",
@@ -205,8 +205,8 @@ def test_gate_prep_targets_the_last_authoring_stage_before_a_human_gate():
         WorkflowStageDef(key="done", name="Done", order=10, terminal=True),
     ]
 
-    assert gate_prep_target(stages, "implementation").key == "playtest"
-    assert gate_prep_target(stages, "planning") is None
+    assert gate_prep_target(stages, "implement").key == "playtest"
+    assert gate_prep_target(stages, "plan") is None
     assert gate_prep_target(stages, "script_review") is None
     assert gate_prep_target(stages, "playtest") is None
     assert gate_prep_target(stages, "done") is None
@@ -215,7 +215,7 @@ def test_gate_prep_targets_the_last_authoring_stage_before_a_human_gate():
 def test_gate_prep_brief_tells_the_implementer_to_build_what_the_gate_runs():
     stages = [
         WorkflowStageDef(
-            key="implementation", name="Implementation", agent_id="core_simulation", order=1
+            key="implement", name="Implementation", agent_id="core_simulation", order=1
         ),
         WorkflowStageDef(
             key="playtest", name="Playtest", order=2, checklist=["{{playtest_scenes}}"]
@@ -225,10 +225,10 @@ def test_gate_prep_brief_tells_the_implementer_to_build_what_the_gate_runs():
         external_id="gate-prep",
         workspace_id="ws",
         title="Dash",
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
     )
     run = AgentRun(
-        ticket_id="t", workspace_id="ws", agent_id="core_simulation", stage_key="implementation"
+        ticket_id="t", workspace_id="ws", agent_id="core_simulation", stage_key="implement"
     )
 
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
@@ -239,13 +239,13 @@ def test_gate_prep_brief_tells_the_implementer_to_build_what_the_gate_runs():
 
 def test_gate_prep_brief_absent_without_a_downstream_human_gate():
     stages = [
-        WorkflowStageDef(key="implementation", name="Implementation", agent_id="dev", order=1),
+        WorkflowStageDef(key="implement", name="Implementation", agent_id="dev", order=1),
         WorkflowStageDef(key="done", name="Done", order=2, terminal=True),
     ]
     ticket = Ticket(
-        external_id="no-gate", workspace_id="ws", title="t", workflow_stage_key="implementation"
+        external_id="no-gate", workspace_id="ws", title="t", workflow_stage_key="implement"
     )
-    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implementation")
+    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implement")
 
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
 
@@ -273,11 +273,11 @@ def test_stage_brief_reaches_the_stage_it_was_written_for():
 
 
 def test_no_brief_section_when_the_template_wrote_none():
-    stage = WorkflowStageDef(key="implementation", name="Implementation", agent_id="dev")
+    stage = WorkflowStageDef(key="implement", name="Implementation", agent_id="dev")
     ticket = Ticket(
-        external_id="no-brief", workspace_id="ws", title="t", workflow_stage_key="implementation"
+        external_id="no-brief", workspace_id="ws", title="t", workflow_stage_key="implement"
     )
-    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implementation")
+    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implement")
 
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage, stages=[stage])
 

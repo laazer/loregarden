@@ -5,7 +5,7 @@ description: >-
   gatekeeper with optional research, classify-based implementation routing, and
   parallel script review.
 stages:
-  - key: planning
+  - key: plan
     name: Planning
     agent_id: planner
     skill_name: plan
@@ -16,22 +16,22 @@ stages:
     skill_name: ""
     optional: true
     order: 2
-  - key: specification
+  - key: spec
     name: Specification
     agent_id: spec
     skill_name: ""
     order: 3
-  - key: test_design
+  - key: test-design
     name: Test Design
     agent_id: test_designer
     skill_name: ""
     order: 4
-  - key: test_break
+  - key: test-break
     name: Test Break
     agent_id: test_breaker
     skill_name: ""
     order: 5
-  - key: implementation
+  - key: implement
     name: Implementation
     agent_id: core_simulation
     skill_name: ""
@@ -105,41 +105,41 @@ stages:
     skill_name: ""
     order: 11
 transitions:
-  - from: planning
+  - from: plan
     to: domain_consultation
   - from: domain_consultation
-    to: specification
-  - from: specification
-    to: test_design
-  - from: test_design
-    to: test_break
-  - from: test_break
-    to: implementation
-  - from: implementation
+    to: spec
+  - from: spec
+    to: test-design
+  - from: test-design
+    to: test-break
+  - from: test-break
+    to: implement
+  - from: implement
     to: script_review
   - from: script_review
     to: ac_gate
     when: pass
   - from: script_review
-    to: implementation
+    to: implement
     when: reject
   - from: ac_gate
     to: playtest
     when: pass
   - from: ac_gate
-    to: implementation
+    to: implement
     when: reject
-  - from: test_design
-    to: specification
+  - from: test-design
+    to: spec
     when: reject
-  - from: test_break
-    to: specification
+  - from: test-break
+    to: spec
     when: reject
   - from: playtest
     to: learning
     when: pass
   - from: playtest
-    to: implementation
+    to: implement
     when: reject
   - from: learning
     to: done

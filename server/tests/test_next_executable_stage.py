@@ -16,22 +16,22 @@ def _stage(key: str, order: int) -> WorkflowStageDef:
     return WorkflowStageDef(key=key, name=key.title(), agent_id="agent", order=order)
 
 
-STAGES = [_stage("implementation", 1), _stage("script_review", 2), _stage("ac_gate", 3)]
+STAGES = [_stage("implement", 1), _stage("script_review", 2), _stage("ac_gate", 3)]
 
 
 def test_prefers_earlier_pending_stage_over_a_later_one():
     stage_map = {
-        "implementation": StageStatus.PENDING,
+        "implement": StageStatus.PENDING,
         "script_review": StageStatus.PENDING,
         "ac_gate": StageStatus.PENDING,
     }
 
-    assert next_executable_stage(STAGES, stage_map) == "implementation"
+    assert next_executable_stage(STAGES, stage_map) == "implement"
 
 
 def test_picks_the_first_unresolved_stage_once_earlier_ones_are_done():
     stage_map = {
-        "implementation": StageStatus.DONE,
+        "implement": StageStatus.DONE,
         "script_review": StageStatus.PENDING,
         "ac_gate": StageStatus.PENDING,
     }
@@ -41,14 +41,14 @@ def test_picks_the_first_unresolved_stage_once_earlier_ones_are_done():
 
 def test_running_awaiting_and_blocked_stages_still_take_priority():
     running_map = {
-        "implementation": StageStatus.DONE,
+        "implement": StageStatus.DONE,
         "script_review": StageStatus.RUNNING,
         "ac_gate": StageStatus.PENDING,
     }
     assert next_executable_stage(STAGES, running_map) == "script_review"
 
     blocked_map = {
-        "implementation": StageStatus.DONE,
+        "implement": StageStatus.DONE,
         "script_review": StageStatus.BLOCKED,
         "ac_gate": StageStatus.PENDING,
     }
@@ -56,6 +56,6 @@ def test_running_awaiting_and_blocked_stages_still_take_priority():
 
 
 def test_nothing_left_to_run_returns_none():
-    stage_map = dict.fromkeys(("implementation", "script_review", "ac_gate"), StageStatus.DONE)
+    stage_map = dict.fromkeys(("implement", "script_review", "ac_gate"), StageStatus.DONE)
 
     assert next_executable_stage(STAGES, stage_map) is None

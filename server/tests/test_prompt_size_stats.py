@@ -86,12 +86,16 @@ def test_runs_with_no_recorded_size_are_excluded_not_counted_as_zero(db_session:
     assert stats[0].median_chars == 40_000
 
 
-def test_forked_stage_spellings_are_folded(db_session: Session):
-    """Same reason 558 exists: `implement` and `implementation` are one stage,
-    and splitting them halves every sample."""
+def test_repeat_runs_at_one_stage_share_a_row(db_session: Session):
+    """Two runs at a stage are one stage with two samples, not two stages.
+
+    This used to assert that `implement` and `implementation` folded together.
+    Migration 0114 renamed the forks away and CANONICAL_STAGE_KEYS is gone
+    (lg-workflow-integrity-660 AC5), so the fold has nothing left to do — but the
+    grouping it protected still needs pinning."""
     ticket = make_workspace_ticket(db_session, "psr-fork")
     _run(db_session, ticket, stage_key="implement", prompt_chars=10_000)
-    _run(db_session, ticket, stage_key="implementation", prompt_chars=20_000)
+    _run(db_session, ticket, stage_key="implement", prompt_chars=20_000)
 
     stats = prompt_size_by_stage(db_session)
     assert len(stats) == 1
