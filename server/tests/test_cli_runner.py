@@ -747,7 +747,9 @@ def test_cli_executor_unknown_agent():
         assert ticket.state == TicketState.BLOCKED
 
 
-def test_cli_executor_threads_model_precedence_into_invocation(isolated_db, monkeypatch):
+def test_cli_executor_threads_model_precedence_into_invocation(
+    isolated_db, monkeypatch, isolate_seeded_repo
+):
     """execute() must resolve ticket/stage/agent model overrides and pass them through
     to resolve_cli_invocation — not just resolve_cli_invocation's own precedence logic,
     which test_resolve_claude_model_precedence covers in isolation.
@@ -764,6 +766,11 @@ def test_cli_executor_threads_model_precedence_into_invocation(isolated_db, monk
     engine = isolated_db
     with Session(engine) as session:
         seed_database(session)
+        # `execute()` runs the environment preflight, which shells out to git and
+        # write-probes the git directory. Without this the seeded workspace still
+        # points at the real checkout, so a model-precedence unit test writes into
+        # the actual project's `.git` (lg-workflow-integrity-668).
+        isolate_seeded_repo(session)
         ticket = session.exec(
             select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
