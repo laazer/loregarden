@@ -269,9 +269,10 @@ def test_elapsed_ms_measures_the_briefing_and_not_the_telemetry_write(isolated_d
     measurement that swallowed the write would attribute a slow database to a
     slow vault."""
     real_session = Session
+    write_delay = 0.4
 
     def slow(*args, **kwargs):
-        time.sleep(0.4)
+        time.sleep(write_delay)
         return real_session(*args, **kwargs)
 
     with Session(isolated_db, expire_on_commit=False) as session:
@@ -280,6 +281,15 @@ def test_elapsed_ms_measures_the_briefing_and_not_the_telemetry_write(isolated_d
             patch.object(AgentMemoryService, "from_settings", return_value=memory),
             patch("loregarden.services.memory_briefing_telemetry.Session", slow),
         ):
+            started = time.monotonic()
             _assemble(session, ticket, workspace, run)
+            wall_ms = (time.monotonic() - started) * 1000
 
-    assert _rows(isolated_db, run.id)[0].elapsed_ms < 250
+    # Scale-free oracle: the assertion is that the injected write delay is
+    # *excluded* from `elapsed_ms`, not that the briefing itself is fast. An
+    # absolute bound conflated the two and failed on a loaded runner at 364ms
+    # while the exclusion it meant to test was working correctly. Comparing the
+    # two measured quantities holds however slow the machine is, because both
+    # scale together (lg-workflow-integrity-668).
+    elapsed_ms = _rows(isolated_db, run.id)[0].elapsed_ms
+    assert wall_ms - elapsed_ms >= write_delay * 1000 * 0.85
