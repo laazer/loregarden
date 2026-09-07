@@ -177,18 +177,52 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.SUPERSEDE_TICKET,
 )
 
-#: Interim allowlist (a9-create-ticket-mcp-tool): orchestrated pipeline agents
-#: may not spawn tickets mid-run, and none of them may rehome, re-route or
-#: retire the ticket they are running — a stage clearing its own retry budget
-#: would defeat the circuit breaker that stopped it. Interactive chat is exempt.
+#: Tools an orchestrated pipeline agent may not call. Interactive chat is exempt.
+#:
+#: WHAT THIS IS: a GUARDRAIL against a confused or looping agent, decided in
+#: lg-workflow-integrity-584. It is NOT a security boundary, and grading a way
+#: around it as Critical mistakes what it was built to do.
+#:
+#: WHY IT CANNOT BE A BOUNDARY. `orchestrated` comes from the
+#: `X-Loregarden-Orchestrated` header the agent's own `--mcp-config` carries
+#: (`agents/mcp_context.py`), so an agent with a shell can send the same request
+#: without it. Authentication does not fix that: the agent MUST be able to reach
+#: `/mcp` to do its job, so any credential it holds is one it can reuse. Today
+#: the config carries no token at all, which means setting `LOREGARDEN_API_TOKEN`
+#: would break every agent's MCP tools rather than protect them — it is
+#: all-or-nothing, not a gradient.
+#:
+#: The one change that WOULD make this a boundary is deriving `orchestrated`
+#: from the run rather than the request. That touches every tool's dispatch and
+#: is deliberately not done here; see 584 for the conditions under which it is
+#: worth revisiting.
+#:
+#: So: this stops an agent that wanders into the wrong tool. It does not stop one
+#: that decides to route around it, and it is not trying to.
 ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {
+        #: Orchestrated agents may not spawn tickets mid-run
+        #: (a9-create-ticket-mcp-tool).
         McpTool.CREATE_TICKET,
         # An agent this control plane dispatched is *inside* a stage; checking
         # another one out to an outside harness from there would fork the
         # pipeline it is running.
         McpTool.BEGIN_EXTERNAL_STAGE,
         McpTool.FINISH_EXTERNAL_STAGE,
+        # Same reasoning as BEGIN_EXTERNAL_STAGE, and the position 584 AC5 asked
+        # for: an agent inside a stage starting an orchestration forks the
+        # pipeline it is running. Nothing legitimate breaks — the control plane
+        # starts child orchestrations itself through `subtree_auto_run`, not
+        # through this tool.
+        #
+        # BLOCK_TICKET is deliberately NOT here, which is the other half of that
+        # position. It is the sanctioned way for an agent to stop when it is
+        # genuinely stuck, and denying it would push agents to invent worse
+        # signals. The bypass it used to enable — block, restart, wipe the
+        # counter — was closed in 560 by narrowing `clear_budget` to
+        # `budget_reset_pending` alone.
+        McpTool.START_ORCHESTRATION,
+        #: None of them may rehome, re-route or retire the ticket they run.
         *TRIAGE_OPS_MCP_TOOLS,
     }
 )
