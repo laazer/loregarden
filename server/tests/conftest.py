@@ -166,6 +166,28 @@ def client_fixture(isolated_db, tmp_path):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(name="isolate_seeded_repo")
+def isolate_seeded_repo_fixture(tmp_path):
+    """Hand a test the repoint that the `client` fixture applies for free.
+
+    A test that seeds the database itself — `isolated_db` plus
+    `seed_database(session)`, without going through `client` — leaves the seeded
+    workspace on `repo_path=""`, which resolves to the real `settings.repo_root`.
+    Any code path that then reaches git operates on the actual project checkout:
+    `lg-workflow-integrity-668`'s filesystem probe caught exactly one test doing
+    this, writing a preflight probe file into the live `.git` directory.
+
+    Returns a callable rather than doing the work itself, because the isolation
+    has to land *after* the test's own `seed_database` call, and a fixture body
+    runs before the test.
+    """
+
+    def apply(session: Session) -> None:
+        _isolate_seeded_workspace_repo(session, tmp_path)
+
+    return apply
+
+
 @pytest.fixture(name="db_session")
 def db_session_fixture(client, isolated_db):
     with Session(isolated_db) as session:
