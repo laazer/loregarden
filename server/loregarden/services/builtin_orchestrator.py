@@ -48,6 +48,7 @@ from loregarden.services.parallel_stage import (
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
 )
+from loregarden.services.review_relens import decide_lenses, record_relens_decisions
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import lease_renewal
@@ -985,14 +986,20 @@ class BuiltinOrchestrator:
             self.session.refresh(ticket)
             return True, ""
 
+        # A fresh start of a stage that ran before is a RE-review, measured at
+        # ~300k tokens a round. `decide_lenses` re-runs the rejecting lens, any
+        # lens whose reads the rework touched, and anything it cannot be sure of.
+        decisions = [] if resuming else decide_lenses(self.session, ticket, stage_def, stage_key)
         pending_specs = (
             self._incomplete_parallel_specs(ticket, stage_def, stage_key, specs)
             if resuming
-            else specs
+            else [decision.spec for decision in decisions if decision.rerun]
         )
+        if decisions:
+            record_relens_decisions(self.session, ticket, stage_def, stage_key, decisions)
         if not pending_specs:
-            # Resuming after an interruption, but every member had already
-            # succeeded before the crash — nothing left to redo.
+            # Every member already succeeded before a crash (resuming), or every
+            # lens passed and the rework touched nothing it read (re-review).
             self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
             self.session.refresh(ticket)
             return True, ""
