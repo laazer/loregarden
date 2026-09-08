@@ -137,6 +137,30 @@ class CallbacksConfig(BaseModel):
     mode: str = "api"
 
 
+class ApprovalPolicyConfig(BaseModel):
+    """What a stage run may do without stopping for a person.
+
+    Measured on the live inbox (lg-workflow-integrity-107): 279 tool-permission
+    requests, ONE rejected. 98 workflow-gate requests, 13 rejected. The prompts
+    that stop a run are not the ones carrying judgement, and the median response
+    to a tool prompt was 8.3 seconds — reflexive — while a gate waited 58 minutes
+    on average and once 9.8 hours.
+
+    `safe_commands` defaults ON because that is the finding. `file_writes`
+    defaults OFF because it is NOT: `CHAT_WORKSPACE_CLI_TOOLS` already lets an
+    interactive chat turn write, and deliberately does not extend that to stage
+    runs — a pipeline agent writing the repo is a different bar from an operator
+    talking to Baxter. A workspace that wants it can say so; nothing decides it
+    on that workspace's behalf.
+    """
+
+    #: Run tests and linters unattended, subject to `services.command_allowlist`,
+    #: which reads the whole command rather than its leading verb.
+    safe_commands: bool = True
+    #: Let Write/Edit through on stage runs. Off by default; see above.
+    file_writes: bool = False
+
+
 class OrchestrationProfile(BaseModel):
     slug: str
     name: str = ""
@@ -148,6 +172,7 @@ class OrchestrationProfile(BaseModel):
     boundary: BoundaryConfig = Field(default_factory=BoundaryConfig)
     retry_budget: RetryBudgetConfig = Field(default_factory=RetryBudgetConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
+    approvals: ApprovalPolicyConfig = Field(default_factory=ApprovalPolicyConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0

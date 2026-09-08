@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { api, type Approval } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
@@ -98,6 +98,19 @@ export function ApprovalInboxPanel() {
     setInboxOpen(false);
   };
 
+  // Gates first. The rail rendered whatever order the API returned, so a stage
+  // sign-off could sit below a stack of permission prompts — and the inbox data
+  // says which deserves the top: permission prompts are rejected 0.4% of the
+  // time, gates 13.3% (lg-workflow-integrity-107). Stable, so ordering within
+  // each group is unchanged.
+  const orderedApprovals = useMemo(
+    () =>
+      [...(approvals.data ?? [])].sort(
+        (a, b) => Number(hasHumanCriteria(b)) - Number(hasHumanCriteria(a)),
+      ),
+    [approvals.data],
+  );
+
   if (!inboxOpen) return null;
 
   const approvalCount = approvals.data?.length ?? 0;
@@ -134,6 +147,8 @@ export function ApprovalInboxPanel() {
             </div>
           )}
 
+  );
+
           {!empty ? (
             <>
           <section className="inbox-section" aria-label="Pending approvals">
@@ -141,7 +156,7 @@ export function ApprovalInboxPanel() {
               <span className="inbox-section-title">Approvals</span>
               <span className="count-pill">{approvalCount}</span>
             </div>
-            {approvals.data?.map((a) => (
+            {orderedApprovals.map((a) => (
               <ApprovalCard
                 key={a.id}
                 approval={a}

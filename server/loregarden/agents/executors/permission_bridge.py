@@ -25,8 +25,10 @@ from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     AUTO_APPROVED_CLI_TOOLS,
     AUTO_APPROVED_MCP_TOOLS,
     ORCHESTRATED_DENIED_MCP_TOOLS,
+    approval_policy,
     bare_mcp_tool_name,
     build_ask_user_question_input,
+    cli_auto_approve,
     denied_cli_tool_message,
     enrich_mcp_tool_input,
     is_ask_user_question,
@@ -79,7 +81,6 @@ from loregarden.services.tool_telemetry import (
     DECISION_ALLOWLIST,
     DECISION_APPROVED,
     DECISION_RATE_LIMITED,
-    DECISION_READ_ONLY_CLI,
     DECISION_REJECTED,
     DECISION_RUN_AUTO,
     DECISION_TRUSTED_SERVER,
@@ -453,21 +454,6 @@ def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | N
         stderr="Cancelled by operator",
         session_id=state.session_id,
     )
-
-
-def _cli_auto_approve(
-    tool_name: str, tool_input: dict[str, Any], *, interactive: bool
-) -> tuple[str, str] | None:
-    """Decision + log label when a CLI tool skips the inbox, else None.
-
-    WebFetch/WebSearch always. File writes and ordinary git only on interactive
-    chat — stage runs still prompt for those.
-    """
-    if is_auto_approved_cli_tool(tool_name):
-        return DECISION_READ_ONLY_CLI, "read-only"
-    if interactive and is_chat_auto_approved_cli_tool(tool_name, tool_input):
-        return DECISION_ALLOWLIST, "chat"
-    return None
 
 
 def _scope_reroute_budget_spent(
@@ -1105,20 +1091,6 @@ class PermissionBridgeRunner:
                 streamer.set_live("Agent running…")
             return True
 
-        cli_auto = _cli_auto_approve(
-            tool_name,
-            tool_input,
-            interactive=not self.track_workflow_stage and not question,
-        )
-        if cli_auto:
-            decision, label = cli_auto
-            self._send_response(proc, build_control_response(request_id=request_id, approved=True))
-            self._record(ctx.agent_id, scope, run_id, tool_name, decision)
-            if streamer:
-                streamer.append("TOOL", f"Auto-approved {label}: {tool_name}", force=True)
-                streamer.set_live("Agent running…")
-            return True
-
         if ctx.auto_approve and not question:
             if bare_mcp:
                 tool_input = enrich_mcp_tool_input(
@@ -1171,6 +1143,27 @@ class PermissionBridgeRunner:
                     )
                     streamer.set_live("Agent running…")
                 return True
+
+        # Last of the auto-approvals deliberately. An explicit workspace or ticket
+        # rule is a human decision and returns the enriched input; the workspace
+        # policy below generalises over command SHAPE and must not pre-empt it
+        # (lg-workflow-integrity-107).
+        cli_auto = cli_auto_approve(
+            tool_name,
+            tool_input,
+            interactive=not self.track_workflow_stage and not question,
+            policy=approval_policy(
+                self.session, scope.workspace_id, auto_approving=ctx.auto_approve
+            ),
+        )
+        if cli_auto:
+            decision, label = cli_auto
+            self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+            self._record(ctx.agent_id, scope, run_id, tool_name, decision)
+            if streamer:
+                streamer.append("TOOL", f"Auto-approved {label}: {tool_name}", force=True)
+                streamer.set_live("Agent running…")
+            return True
 
         return False
 

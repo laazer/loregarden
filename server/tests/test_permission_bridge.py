@@ -486,7 +486,10 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
                 "request": {
                     "subtype": "can_use_tool",
                     "tool_name": "Bash",
-                    "tool_input": {"command": "npm test"},
+                    # `rm -rf` deliberately: this exercises the path where a human is
+                    # asked, and command_allowlist now auto-approves test and lint
+                    # commands, so `npm test` here would stop testing anything (107).
+                    "tool_input": {"command": "rm -rf build"},
                 },
             }
         )
@@ -535,7 +538,7 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
             item for item in control_writes if item.get("type") == "control_response"
         )
         assert allow_response["response"]["response"]["updatedInput"] == {
-            "command": "npm test",
+            "command": "rm -rf build",
         }
 
 
@@ -1684,7 +1687,7 @@ def test_permission_bridge_workspace_scoped_approval_has_no_ticket(tmp_path):
                 "request": {
                     "subtype": "can_use_tool",
                     "tool_name": "Bash",
-                    "tool_input": {"command": "ls"},
+                    "tool_input": {"command": "rm -rf build"},
                 },
             }
         )
