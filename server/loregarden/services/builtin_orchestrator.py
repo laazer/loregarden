@@ -1103,19 +1103,11 @@ def _orchestrate_incomplete_children(
     children = list(
         builtin.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
     )
-    prereqs = TicketDependencyService(builtin.session).prerequisites_map([c.id for c in children])
+    dependencies = TicketDependencyService(builtin.session)
+    prereqs = dependencies.prerequisites_map([c.id for c in children])
     children = order_children_for_subtree(children, prereqs)
-    parked: list[str] = []
-    for child in children:
-        if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
-            continue
-        if child.state == TicketState.PARKED:
-            # Owed by a person, and deliberately not holding the subtree up.
-            # Collected rather than ignored: the parent must still not report
-            # itself complete (see the return below), which is what separates
-            # parking from WONT_DO (lg-workflow-integrity-449).
-            parked.append(child.title)
-            continue
+    runnable, parked, waiting = _partition_children(builtin.session, dependencies, children)
+    for child in runnable:
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
             continue
@@ -1141,6 +1133,12 @@ def _orchestrate_incomplete_children(
             reason = (child_run.error_message or "").strip()
             suffix = f" — {reason}" if reason else ""
             return f"Child workflow paused: {child.title}{suffix}"
+    if waiting:
+        # Reported after the loop for the same reason parking is: the rest of the
+        # subtree keeps moving, and the parent stays incomplete because the work
+        # is still owed. Distinct from parked, which is owed by a person — this
+        # is owed by another ticket, and naming it is the whole value.
+        return f"Child ticket waiting on a prerequisite: {'; '.join(waiting)}"
     if parked:
         # Every runnable sibling has now had its turn — this is reported after
         # the loop, not on encountering the first parked child, because the
@@ -1148,6 +1146,75 @@ def _orchestrate_incomplete_children(
         # parent stays incomplete because the work is still owed.
         return f"Child ticket parked, awaiting a person: {', '.join(parked)}"
     return None
+
+
+def _partition_children(
+    session: Session, dependencies: TicketDependencyService, children: list[Ticket]
+) -> tuple[list[Ticket], list[str], list[str]]:
+    """Split ordered children into those that may run now, and two kinds of hold.
+
+    Deciding *whether* a child may run is a different job from running it, and
+    separating them keeps the run loop to the one thing it does. Both holds leave
+    the parent incomplete; they differ in who is owed:
+
+    - ``parked`` is owed by a person, and deliberately does not stop the rest of
+      the subtree (lg-workflow-integrity-449);
+    - ``waiting`` is owed by another ticket *outside this sibling set*.
+
+    That last qualifier is the whole seam, and getting it wrong is a regression
+    the integration-review test catches: a prerequisite that is itself a sibling
+    is ordering's job, and `order_children_for_subtree` has already put it
+    earlier in this list. Blocking on it as well would hold a child whose
+    prerequisite is about to run — an integration review depends on every
+    sibling, so it would never start at all.
+
+    What ordering cannot express is a prerequisite it never saw. It drops edges
+    pointing outside the set, which is every cross-workspace edge and every edge
+    to a ticket under a different parent, so before this the orchestrator picked
+    up children whose prerequisite had not been started — in another repository —
+    and reported the failure as the child's own (676). Those are exactly the
+    edges nothing in this run can satisfy, which is what makes them a hold
+    rather than an ordering hint.
+    """
+    sibling_ids = {child.id for child in children}
+    runnable: list[Ticket] = []
+    parked: list[str] = []
+    waiting: list[str] = []
+    for child in children:
+        if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
+            continue
+        if child.state == TicketState.PARKED:
+            parked.append(child.title)
+            continue
+        unmet = [
+            prereq
+            for prereq in dependencies.unmet_prerequisites(child.id)
+            if prereq.id not in sibling_ids
+        ]
+        if unmet:
+            waiting.append(f"{child.title} (waits for {_name_prerequisites(session, unmet)})")
+            continue
+        runnable.append(child)
+    return runnable, parked, waiting
+
+
+def _name_prerequisites(session: Session, unmet: list[Ticket]) -> str:
+    """Name each blocking prerequisite with its workspace.
+
+    The workspace is not decoration. A prerequisite in another workspace is
+    invisible from the board the reader is looking at, so "waits for
+    lor-extract-lore-35" sends them looking in the wrong place; "lore-eden:
+    lor-extract-lore-35" does not.
+    """
+    slugs = {
+        row.id: row.slug
+        for row in session.exec(
+            select(Workspace).where(Workspace.id.in_({t.workspace_id for t in unmet}))
+        ).all()
+    }
+    return ", ".join(
+        f"{slugs.get(t.workspace_id, '?')}:{t.external_id} [{t.state.value}]" for t in unmet
+    )
 
 
 def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemberResult]:

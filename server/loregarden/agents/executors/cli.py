@@ -1051,7 +1051,7 @@ class CliAgentExecutor:
         # "[]" default, which said the same thing as never having looked — the
         # very collapse `working_tree_paths` returning None exists to prevent,
         # repeated one level up. NULL now means no record; `[]` means this run
-        # looked and touched nothing (lg-workflow-integrity-675).
+        # looked and touched nothing (lg-workflow-integrity-676).
         run.changed_paths_json = json.dumps(touched)
         run.changed_paths_recorded_at = datetime.now(timezone.utc)
         self.session.add(run)
