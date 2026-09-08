@@ -1,14 +1,31 @@
 """Ticket dependency edges: directed, best-effort "waits for" links.
 
 ``ticket_id`` depends on ``depends_on_ticket_id`` and should run after it. The
-edges are kept acyclic on insert. They steer subtree run order (see
-``order_children_for_subtree`` in subtree_auto_run) — they do not hard-block a
-standalone run, so an operator can always force a ticket to run out of order.
+edges are kept acyclic on insert.
+
+Two consumers, and they answer different questions. ``order_children_for_subtree``
+in subtree_auto_run asks *what order should these siblings run in*, and ignores
+edges pointing outside the sibling set. ``unmet_prerequisites`` here asks *may
+this ticket start at all*, and ignores nothing — which is what makes an edge to
+another workspace mean something. Before it existed, every cross-workspace edge
+was recorded, rendered in the UI as a prerequisite, and had no effect on
+anything (676).
+
+Enforcement is deliberately asymmetric, and the asymmetry is the point:
+
+- The orchestrator will not *choose* a ticket whose prerequisites are unmet. It
+  holds it and reports why, the way it already holds a parked child.
+- An operator starting a named ticket is not blocked. That escape is why this
+  module said edges "do not hard-block a standalone run" from the beginning, and
+  removing it would let one stale edge wedge a ticket with no way out.
+
+So the system stops picking up work that cannot succeed yet, and a person can
+still override it.
 """
 
 from __future__ import annotations
 
-from loregarden.models.domain import TicketDependency
+from loregarden.models.domain import Ticket, TicketDependency, TicketState
 from sqlmodel import Session, select
 
 
@@ -72,6 +89,30 @@ class TicketDependencyService:
                 )
             ).all()
         )
+
+    #: A prerequisite stops blocking when it reaches one of these. ``WONT_DO``
+    #: counts: work that will never be done cannot be waited for, and treating it
+    #: as unmet is how a dependency graph deadlocks on a decision already taken.
+    SATISFIED_STATES = (TicketState.DONE, TicketState.WONT_DO)
+
+    def unmet_prerequisites(self, ticket_id: str) -> list[Ticket]:
+        """Prerequisite tickets that have not reached a satisfied state.
+
+        Returns the ticket rows, not ids, because the caller has to be able to
+        *name* them — and for a cross-workspace edge the name alone is not
+        enough. The board you are looking at does not show the other workspace,
+        so "waiting on lor-extract-lore-35" is only actionable with the
+        workspace beside it.
+
+        No workspace filter, anywhere in this path. An edge is two ticket ids;
+        that they belong to different workspaces is not a special case to
+        support, it is the absence of a restriction nobody had reason to add.
+        """
+        prerequisite_ids = self.prerequisites(ticket_id)
+        if not prerequisite_ids:
+            return []
+        rows = self.session.exec(select(Ticket).where(Ticket.id.in_(prerequisite_ids))).all()
+        return [row for row in rows if row.state not in self.SATISFIED_STATES]
 
     def dependents(self, ticket_id: str) -> list[str]:
         return list(
