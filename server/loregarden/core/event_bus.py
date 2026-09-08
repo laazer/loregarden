@@ -38,11 +38,18 @@ from sqlmodel import Session, col, select
 #: The events no other table records. A reader asking "how did this ticket get
 #: here" wants these and not the eight kinds it could reconstruct from the rows
 #: they describe.
+#:
+#: `GATE_EVALUATED` belongs by that same rule and was missing by omission rather
+#: than by argument: no table records a gate evaluation, and 203 of them —
+#: including 43 failures — were invisible to every reader
+#: (lg-workflow-integrity-684). It is also the one transition a person most wants
+#: to see on an unattended run, now that it can say what fixed it (683).
 TRANSITION_EVENTS: tuple[EventType, ...] = (
     EventType.TICKET_STATE_CHANGED,
     EventType.STAGE_STARTED,
     EventType.STAGE_COMPLETED,
     EventType.STAGE_SKIPPED,
+    EventType.GATE_EVALUATED,
 )
 
 
