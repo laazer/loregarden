@@ -60,7 +60,7 @@ def _setup_ticket(db_session: Session, *, external_id: str) -> tuple[Ticket, lis
         description="Verify long raw output is filed as an error artifact",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         workflow_stage_status=StageStatus.RUNNING,
         next_agent="core_simulation",
     )
@@ -71,7 +71,7 @@ def _setup_ticket(db_session: Session, *, external_id: str) -> tuple[Ticket, lis
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
         stages_json=initial_stages_json(stages),
     )
     db_session.add(instance)
@@ -88,7 +88,7 @@ def test_blocked_self_report_with_long_context_files_error_artifact(db_session: 
         workspace_id=ws.id,
         agent_id="core_simulation",
         skill_name="apply_patch",
-        stage_key="implementation",
+        stage_key="implement",
         status=RunStatus.QUEUED,
     )
     db_session.add(run)
@@ -114,7 +114,7 @@ def test_blocked_self_report_with_long_context_files_error_artifact(db_session: 
     assert len(error_artifacts) == 1
     content = json.loads(error_artifacts[0].content_json)
     assert content["message"] == _RAW_DUMP
-    assert content["stage_key"] == "implementation"
+    assert content["stage_key"] == "implement"
 
 
 def test_block_ticket_with_long_message_files_error_artifact(db_session: Session):
@@ -124,7 +124,7 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
         run_code="orch_test_block_ticket",
         ticket_id=ticket.id,
         workspace_id=ws.id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
         status=OrchestrationRunStatus.RUNNING,
     )
     db_session.add(orch_run)
@@ -134,7 +134,7 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
     callbacks.block_ticket(
         orch_run,
         ticket,
-        stage_key="implementation",
+        stage_key="implement",
         message=_RAW_DUMP,
     )
 
@@ -150,4 +150,4 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
     assert len(error_artifacts) == 1
     content = json.loads(error_artifacts[0].content_json)
     assert content["message"] == _RAW_DUMP
-    assert content["stage_key"] == "implementation"
+    assert content["stage_key"] == "implement"

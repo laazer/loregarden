@@ -44,11 +44,11 @@ def test_parent_orchestration_runs_child_workflow_first(client: TestClient, tmp_
     assert child_res.status_code == 201
     child = child_res.json()
 
-    assert child["workflow_stage_key"] == "planning"
+    assert child["workflow_stage_key"] == "plan"
     assert child["state"] == "backlog"
 
     parent_before = client.get(f"/api/tickets/{feature['id']}").json()
-    assert parent_before["workflow_stage_key"] == "planning"
+    assert parent_before["workflow_stage_key"] == "plan"
     assert parent_before["stages"][0]["status"] == "pending"
 
     res = client.post(f"/api/tickets/{feature['id']}/orchestrate", json={"max_stages": 1})

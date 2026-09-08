@@ -192,7 +192,7 @@ async def test_a_lane_carries_what_blocked_or_failed_in_it(db_session):
         ticket_id=stopped.id,
         workspace_id=ws.id,
         status=OrchestrationRunStatus.BLOCKED,
-        current_stage_key="test_design",
+        current_stage_key="test-design",
         error_message="No workflow template",
     )
     db_session.add(orch)
@@ -216,7 +216,7 @@ async def test_a_lane_carries_what_blocked_or_failed_in_it(db_session):
     card = lane["attention"][0]
     assert card["ticket_id"] == stopped.id
     assert card["outcome"] == "blocked"
-    assert card["last_stage_key"] == "test_design"
+    assert card["last_stage_key"] == "test-design"
     assert card["failure_reason"] == "No workflow template"
     # The websocket sends this snapshot with json.dumps, which has no opinion
     # about datetime other than raising.

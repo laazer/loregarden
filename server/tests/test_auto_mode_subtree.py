@@ -729,7 +729,7 @@ def test_ask_user_question_still_pauses_for_an_auto_approved_run(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
             auto_approve=True,
         )

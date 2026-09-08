@@ -90,7 +90,7 @@ def test_released_lane_entry_reports_the_orchestration_outcome(session, workspac
         code="t-blocked",
         status=QueuePosition.STARTED,
         orchestration_status=OrchestrationRunStatus.BLOCKED,
-        stage_key="test_design",
+        stage_key="test-design",
         error_message="Jailed creature definition persistence",
     )
 
@@ -100,7 +100,7 @@ def test_released_lane_entry_reports_the_orchestration_outcome(session, workspac
     card = entries[0]
     assert card.status == "started"
     assert card.outcome == "blocked"
-    assert card.last_stage_key == "test_design"
+    assert card.last_stage_key == "test-design"
     assert card.failure_reason == "Jailed creature definition persistence"
     assert card.ticket_external_id == "t-blocked"
     assert card.duration_seconds == 5 * 60

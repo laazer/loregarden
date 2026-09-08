@@ -249,7 +249,7 @@ def test_publish_versions_the_template(db_session: Session):
             slug="verwf",
             name="Ver WF",
             stages=[
-                StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1),
+                StudioWorkflowStage(key="plan", name="Plan", agent_id="planner", order=1),
                 StudioWorkflowStage(key="done", name="Done", agent_id="", order=2),
             ],
         )
@@ -282,7 +282,7 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
             slug="pinwf",
             name="Pin WF",
             stages=[
-                StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1),
+                StudioWorkflowStage(key="plan", name="Plan", agent_id="planner", order=1),
                 StudioWorkflowStage(key="done", name="Done", order=2, terminal=True),
             ],
         )
@@ -298,7 +298,7 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
         "pinwf",
         StudioWorkflowUpdate(
             stages=[
-                StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1),
+                StudioWorkflowStage(key="plan", name="Plan", agent_id="planner", order=1),
                 StudioWorkflowStage(key="spec", name="Spec", agent_id="spec", order=2),
                 StudioWorkflowStage(key="done", name="Done", order=3, terminal=True),
             ]

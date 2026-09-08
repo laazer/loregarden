@@ -735,7 +735,7 @@ def test_cli_executor_unknown_agent():
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="nonexistent_agent",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)

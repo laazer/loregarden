@@ -82,7 +82,7 @@ def test_not_ready_while_agent_stream_active(client: TestClient, db_session: Ses
             ticket_id=ticket.id,
             workspace_id=workspace.id,
             agent_id="backend_implementer",
-            stage_key="implementation",
+            stage_key="implement",
             status=RunStatus.RUNNING,
         )
     )
@@ -128,7 +128,7 @@ def test_not_ready_while_other_workflow_stage_running(client: TestClient, db_ses
         title="Other running workflow",
         workspace_id=workspace.id,
         state=TicketState.IN_PROGRESS,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         workflow_stage_status=StageStatus.RUNNING,
     )
     db_session.add(other)

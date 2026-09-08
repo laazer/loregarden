@@ -52,14 +52,14 @@ def test_route_workflow_api_moves_cursor_upstream(client: TestClient, db_session
         json={
             "from_stage_key": "ac_gate",
             "outcome": "reject",
-            "next_stage_key": "implementation",
+            "next_stage_key": "implement",
             "next_agent": "core_simulation",
             "blocking_issues": "Needs more tests",
         },
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["workflow_stage_key"] == "implementation"
+    assert body["workflow_stage_key"] == "implement"
     # Response field renamed: the pin is still what the request WROTE (above),
     # and the derived reader honours it for a plain agent stage.
     assert body["current_stage_agent"] == "core_simulation"
@@ -67,10 +67,10 @@ def test_route_workflow_api_moves_cursor_upstream(client: TestClient, db_session
 
     db_session.refresh(instance)
     stage_map = parse_stage_map(instance, stages)
-    assert stage_map["implementation"] == StageStatus.PENDING
+    assert stage_map["implement"] == StageStatus.PENDING
     assert stage_map["ac_gate"] == StageStatus.PENDING
 
     transitions = StateMachine.parse_transitions(template.transitions_json)
     reject = StateMachine.resolve_transition_target(transitions, "ac_gate", "reject")
     assert reject is not None
-    assert reject[0] == "implementation"
+    assert reject[0] == "implement"

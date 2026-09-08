@@ -51,7 +51,7 @@ def test_blocked_report_halts_ticket_instead_of_advancing(db_session: Session):
         description="Verify a blocked self-report halts rather than advances",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="implementation",
+        workflow_stage_key="implement",
         workflow_stage_status=StageStatus.RUNNING,
         next_agent="core_simulation",
     )
@@ -59,12 +59,12 @@ def test_blocked_report_halts_ticket_instead_of_advancing(db_session: Session):
     db_session.commit()
     db_session.refresh(ticket)
 
-    stage_map = {s.key: StageStatus.DONE for s in stages if s.key != "implementation"}
-    stage_map["implementation"] = StageStatus.RUNNING
+    stage_map = {s.key: StageStatus.DONE for s in stages if s.key != "implement"}
+    stage_map["implement"] = StageStatus.RUNNING
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="implementation",
+        current_stage_key="implement",
         stages_json=initial_stages_json(stages),
     )
     db_session.add(instance)
@@ -76,7 +76,7 @@ def test_blocked_report_halts_ticket_instead_of_advancing(db_session: Session):
         workspace_id=ws.id,
         agent_id="core_simulation",
         skill_name="apply_patch",
-        stage_key="implementation",
+        stage_key="implement",
         status=RunStatus.QUEUED,
     )
     db_session.add(run)
@@ -94,7 +94,7 @@ def test_blocked_report_halts_ticket_instead_of_advancing(db_session: Session):
     db_session.refresh(instance)
     resolved_stage_map = parse_stage_map(instance, stages)
 
-    assert resolved_stage_map["implementation"] == StageStatus.BLOCKED
-    assert ticket.workflow_stage_key == "implementation"
+    assert resolved_stage_map["implement"] == StageStatus.BLOCKED
+    assert ticket.workflow_stage_key == "implement"
     assert ticket.state == TicketState.BLOCKED
     assert "asset licensing" in ticket.blocking_issues

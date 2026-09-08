@@ -16,7 +16,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from loregarden.db.migration_utils import table_exists
+from loregarden.db.migration_utils import table_columns, table_exists
 from loregarden.services.skill_service import skill_seed_root
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -32,6 +32,8 @@ def _snapshot_template_version(
     NULL with no DDL default.
     """
     if not table_exists(conn, "workflow_template_versions"):
+        return
+    if "snapshot_json" not in table_columns(conn, "workflow_template_versions"):
         return
     snapshot = (
         conn.execute(

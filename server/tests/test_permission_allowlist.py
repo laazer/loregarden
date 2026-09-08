@@ -293,7 +293,7 @@ def test_resolve_cli_permission_with_ticket_and_stage_allow(isolated_db):
                 session,
                 workspace_id=ticket.workspace_id,
                 ticket_id=ticket.id,
-                stage_key="planning",
+                stage_key="plan",
                 tool_name="Bash",
                 tool_input={"command": "npm run stage-scope"},
             )
@@ -329,7 +329,7 @@ def test_stage_allow_rule_does_not_apply_to_other_stages(isolated_db):
                 session,
                 workspace_id=ticket.workspace_id,
                 ticket_id=ticket.id,
-                stage_key="planning",
+                stage_key="plan",
                 tool_name="Bash",
                 tool_input={"command": "npm run stage-only"},
             )

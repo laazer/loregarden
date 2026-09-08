@@ -94,7 +94,7 @@ class TestAnsweredTriageQuestionsReachTheChat:
 
     def test_a_stage_run_question_stays_out_of_the_triage_chat(self, client: TestClient):
         """Questions a stage run asks belong to that run, not to a conversation."""
-        approval_id, ticket_id = _seed_question_approval("implementation", ONE_QUESTION)
+        approval_id, ticket_id = _seed_question_approval("implement", ONE_QUESTION)
         before = len(_triage_messages(ticket_id))
 
         resolved = client.post(

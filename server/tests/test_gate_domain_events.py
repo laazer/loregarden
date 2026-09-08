@@ -63,7 +63,7 @@ def _setup_ticket_at_test_break(
         description="Verify a gate evaluation always emits a domain event",
         state=TicketState.IN_PROGRESS,
         work_item_type=WorkItemType.TASK,
-        workflow_stage_key="test_break",
+        workflow_stage_key="test-break",
         workflow_stage_status=StageStatus.PENDING,
         next_agent="test_breaker",
     )
@@ -74,8 +74,8 @@ def _setup_ticket_at_test_break(
     instance = WorkflowInstance(
         ticket_id=ticket.id,
         template_id=template.id,
-        current_stage_key="test_break",
-        stages_json=stages_up_to_done_json(stages, "test_design"),
+        current_stage_key="test-break",
+        stages_json=stages_up_to_done_json(stages, "test-design"),
     )
     db_session.add(instance)
     db_session.commit()
@@ -167,7 +167,7 @@ def test_passing_gate_emits_gate_evaluated_event_with_passed_outcome(
     payload = json.loads(events[0].payload_json)
     assert payload["outcome"] == "passed"
     assert payload["message"]  # preserved, not collapsed to ""
-    assert payload.get("from_stage", payload.get("stage_key")) == "test_break"
+    assert payload.get("from_stage", payload.get("stage_key")) == "test-break"
 
 
 def test_gates_disabled_still_emits_gate_evaluated_event_with_disabled_outcome(

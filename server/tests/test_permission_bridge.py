@@ -268,7 +268,7 @@ def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -375,7 +375,7 @@ def test_permission_bridge_denies_out_of_scope_write_without_human_approval(tmp_
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="backend_implementer",
-            stage_key="implementation",
+            stage_key="implement",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -829,7 +829,7 @@ def test_permission_bridge_question_returns_answers(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -934,7 +934,7 @@ def test_permission_bridge_agent_timeout(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -1086,7 +1086,7 @@ def test_streaming_output_extends_the_idle_timeout(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)
@@ -1181,7 +1181,7 @@ def test_the_hard_cap_stops_a_run_that_never_stops_talking(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)

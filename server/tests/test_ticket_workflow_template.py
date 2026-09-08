@@ -38,7 +38,7 @@ def test_assign_workflow_template_to_ticket(client: TestClient):
     assert body["workflow_template_slug"] == "extended-tdd"
     assert body["workflow_template_name"] == "Extended TDD"
     assert any(s["key"] == "domain_consultation" for s in body["stages"])
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"
 
 
 def test_ticket_template_preserved_when_workspace_default_changes(client: TestClient):
@@ -96,4 +96,4 @@ def test_reassign_workflow_after_clearing(client: TestClient):
     body = patch.json()
     assert body["workflow_template_slug"] == "extended-tdd"
     assert any(s["key"] == "domain_consultation" for s in body["stages"])
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"

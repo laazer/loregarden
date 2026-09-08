@@ -32,7 +32,7 @@ def test_create_feature_work_item_gets_workflow(client: TestClient):
     assert res.status_code == 201
     body = res.json()
     assert body["work_item_type"] == "feature"
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"
     assert len(body["stages"]) >= 5
 
 
@@ -66,7 +66,7 @@ def test_create_task_work_item(client: TestClient):
     assert body["title"] == "Add export filters"
     assert body["work_item_type"] == "task"
     assert body["state"] == "backlog"
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"
     assert len(body["stages"]) >= 5
     assert body["acceptance_criteria"] == [
         "User can filter by type",
@@ -128,4 +128,4 @@ def test_create_bug_under_milestone(client: TestClient):
     body = res.json()
     assert body["work_item_type"] == "bug"
     assert body["parent_ticket_id"] == milestone_id
-    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_key"] == "plan"

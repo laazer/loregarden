@@ -17,7 +17,7 @@ def test_start_run_bootstraps_live_log(isolated_db):
             select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
-        run = orch.start_run(ticket, stage_key="planning")
+        run = orch.start_run(ticket, stage_key="plan")
         artifact = session.exec(
             select(Artifact).where(Artifact.run_id == run.id, Artifact.kind == "log")
         ).first()

@@ -127,7 +127,7 @@ def test_cli_executor_fails_when_workspace_repo_missing(tmp_path):
             ticket_id=ticket.id,
             workspace_id=ws.id,
             agent_id="planner",
-            stage_key="planning",
+            stage_key="plan",
             status=RunStatus.RUNNING,
         )
         session.add(run)

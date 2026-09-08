@@ -10,9 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from loregarden.models.domain import RunStatus
 from loregarden.services.run_duration_stats import (
-    CANONICAL_STAGE_KEYS,
     FALLBACK_KEY,
-    canonical_stage_key,
     estimate_for,
     load_duration_stats,
     median_duration_by_agent,
@@ -175,36 +173,6 @@ def _staged_run(session: Session, stage_key: str, seconds: float, *, code: str):
     )
 
 
-def test_two_forked_spellings_now_reach_one_median(session):
-    """AC4, and the exact failure this ticket describes.
-
-    Two observations each: under raw grouping neither spelling reaches
-    MIN_SAMPLES = 3, so the stage had no median at all despite four real runs.
-    """
-    for i, seconds in enumerate((100, 200)):
-        _staged_run(session, "implement", seconds, code=f"a{i}")
-    for i, seconds in enumerate((300, 400)):
-        _staged_run(session, "implementation", seconds, code=f"b{i}")
-
-    stats = load_duration_stats(session, WORKSPACE)
-
-    assert stats.by_stage["implement"] == 250  # median of 100/200/300/400
-    # The raw variant is not a separate entry — that was the bug.
-    assert "implementation" not in stats.by_stage
-
-
-def test_either_spelling_finds_the_shared_median(session):
-    """A caller holding the raw key from a ticket or template must not miss the
-    median stored under its canonical twin."""
-    for i, seconds in enumerate((100, 200, 300)):
-        _staged_run(session, "implementation", seconds, code=f"c{i}")
-
-    stats = load_duration_stats(session, WORKSPACE)
-
-    assert stats.stage_seconds("implementation", "impl") == 200
-    assert stats.stage_seconds("implement", "impl") == 200
-
-
 def test_an_unforked_stage_is_unchanged(session):
     """Unknown keys pass through. Inventing a normalisation rule for them would
     silently merge stages that only look similar."""
@@ -215,22 +183,15 @@ def test_an_unforked_stage_is_unchanged(session):
     assert stats.by_stage["review"] == 20
 
 
-def test_the_mapping_is_one_named_constant(session):
-    """AC2. A mapping that lives in three places is a mapping that disagrees
-    with itself."""
-    assert canonical_stage_key("implementation") == "implement"
-    assert canonical_stage_key("test_design") == "test-design"
-    assert canonical_stage_key("planning") == "plan"
-    assert canonical_stage_key("specification") == "spec"
-    # Canonical spellings are fixed points, so applying it twice is safe.
-    for raw, canonical in CANONICAL_STAGE_KEYS.items():
-        assert canonical_stage_key(canonical) == canonical, f"{raw} -> {canonical} not stable"
-
-
-def test_rerun_rate_counts_a_forked_stage_once(session):
+def test_rerun_rate_counts_repeat_attempts_at_one_stage(session):
     """`attempts_per_stage` divides attempts by distinct (orchestration, stage)
-    pairs. Two spellings of one stage would count as two pairs and deflate the
-    re-run rate the monitor's thresholds are relative to."""
+    pairs, so two goes at one stage read as a re-run rather than as two stages.
+
+    This used to assert that two *spellings* folded together. Migration
+    0114 renamed the forks away, so the fold has nothing left to do and
+    `CANONICAL_STAGE_KEYS` is gone (lg-workflow-integrity-660 AC5). The
+    arithmetic it protected is still worth pinning, so the test keeps the
+    assertion and drops the premise that can no longer occur."""
     started = datetime.now(timezone.utc) - timedelta(days=1)
     make_workspace(session, workspace_id=WORKSPACE, slug=WORKSPACE)
     # A real parent row: foreign keys are enforced on every engine here, so a
@@ -239,7 +200,7 @@ def test_rerun_rate_counts_a_forked_stage_once(session):
     make_orchestration_run(
         session, workspace_id=WORKSPACE, ticket_id="t-1", orchestration_run_id="orch-1"
     )
-    for i, key in enumerate(("implement", "implementation")):
+    for i, key in enumerate(("implement", "implement")):
         make_agent_run(
             session,
             run_code=f"e{i}",

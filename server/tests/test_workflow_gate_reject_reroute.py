@@ -83,8 +83,8 @@ def test_rejecting_playtest_gate_reroutes_to_implementation(db_session: Session)
     db_session.refresh(instance)
     stage_map = parse_stage_map(instance, stages)
 
-    assert ticket.workflow_stage_key == "implementation"
-    assert stage_map["implementation"] == StageStatus.PENDING
+    assert ticket.workflow_stage_key == "implement"
+    assert stage_map["implement"] == StageStatus.PENDING
     assert "movement felt broken" in ticket.blocking_issues.lower()
 
 
@@ -119,7 +119,7 @@ def test_approving_playtest_gate_with_rework_route_reroutes_upstream(
         approval.id,
         approved=True,
         response_text="Playtest tuning changes need real implementation and tests",
-        route_to_stage_key="test_design",
+        route_to_stage_key="test-design",
     )
 
     db_session.refresh(ticket)
@@ -128,9 +128,9 @@ def test_approving_playtest_gate_with_rework_route_reroutes_upstream(
     stage_map = parse_stage_map(instance, stages)
 
     assert approval.status == ApprovalStatus.APPROVED
-    assert ticket.workflow_stage_key == "test_design"
-    assert stage_map["test_design"] == StageStatus.PENDING
-    assert stage_map["implementation"] == StageStatus.PENDING
+    assert ticket.workflow_stage_key == "test-design"
+    assert stage_map["test-design"] == StageStatus.PENDING
+    assert stage_map["implement"] == StageStatus.PENDING
     assert stage_map["playtest"] == StageStatus.PENDING
     assert "gate approved with rework" in ticket.blocking_issues
     assert "real implementation and tests" in ticket.blocking_issues
@@ -141,10 +141,10 @@ def test_rework_route_without_note_uses_default_context(db_session: Session, mon
     ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
 
     svc = ApprovalService(db_session)
-    svc.resolve(approval.id, approved=True, route_to_stage_key="implementation")
+    svc.resolve(approval.id, approved=True, route_to_stage_key="implement")
 
     db_session.refresh(ticket)
-    assert ticket.workflow_stage_key == "implementation"
+    assert ticket.workflow_stage_key == "implement"
     assert "formalize the prototype changes" in ticket.blocking_issues.lower()
 
 
@@ -160,7 +160,7 @@ def test_approving_gate_with_rework_route_triggers_resume(db_session: Session, m
     ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
 
     svc = ApprovalService(db_session)
-    svc.resolve(approval.id, approved=True, route_to_stage_key="implementation")
+    svc.resolve(approval.id, approved=True, route_to_stage_key="implement")
 
     assert calls == [ticket.id]
 
@@ -200,9 +200,7 @@ def test_reject_with_explicit_route_does_not_trigger_resume(db_session: Session,
     )
     ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
 
-    ApprovalService(db_session).resolve(
-        approval.id, approved=False, route_to_stage_key="implementation"
-    )
+    ApprovalService(db_session).resolve(approval.id, approved=False, route_to_stage_key="implement")
 
     assert calls == []
 
@@ -248,7 +246,7 @@ def test_rejecting_gate_with_explicit_route_overrides_default(db_session: Sessio
         approval.id,
         approved=False,
         response_text="Tuning is fine but the test plan missed the fusion combo",
-        route_to_stage_key="test_design",
+        route_to_stage_key="test-design",
     )
 
     db_session.refresh(ticket)
@@ -257,9 +255,9 @@ def test_rejecting_gate_with_explicit_route_overrides_default(db_session: Sessio
     stage_map = parse_stage_map(instance, stages)
 
     assert approval.status == ApprovalStatus.REJECTED
-    assert ticket.workflow_stage_key == "test_design"
-    assert stage_map["test_design"] == StageStatus.PENDING
-    assert stage_map["implementation"] == StageStatus.PENDING
+    assert ticket.workflow_stage_key == "test-design"
+    assert stage_map["test-design"] == StageStatus.PENDING
+    assert stage_map["implement"] == StageStatus.PENDING
     assert "fusion combo" in ticket.blocking_issues.lower()
 
 
@@ -287,8 +285,8 @@ def test_pending_gate_approval_view_offers_upstream_route_options(db_session: Se
     view = approval_to_view(db_session, approval)
     option_keys = [option["key"] for option in view["route_options"]]
 
-    assert "implementation" in option_keys
-    assert "test_design" in option_keys
+    assert "implement" in option_keys
+    assert "test-design" in option_keys
     assert "playtest" not in option_keys
     assert "learning" not in option_keys
     assert "done" not in option_keys

@@ -40,13 +40,13 @@ def test_parse_stage_report_valid_pass():
 
 def test_parse_stage_report_valid_fail_with_reroute():
     stdout = _wrap(
-        '{"status": "fail", "confidence": 0.8, "reroute_to_stage": "implementation", '
+        '{"status": "fail", "confidence": 0.8, "reroute_to_stage": "implement", '
         '"reroute_context": "missing edge case coverage"}'
     )
     report = parse_stage_report(stdout)
     assert report is not None
     assert report.status == "fail"
-    assert report.reroute_to_stage == "implementation"
+    assert report.reroute_to_stage == "implement"
     assert report.reroute_context == "missing edge case coverage"
 
 
@@ -105,7 +105,7 @@ def test_parse_stage_report_takes_last_block_when_multiple():
 def test_stage_report_artifact_content_shape():
     report = parse_stage_report(
         _wrap(
-            '{"status": "fail", "confidence": 0.7, "reroute_to_stage": "implementation", '
+            '{"status": "fail", "confidence": 0.7, "reroute_to_stage": "implement", '
             '"reroute_context": "regression in acid weak point"}'
         )
     )
@@ -113,7 +113,7 @@ def test_stage_report_artifact_content_shape():
     content = stage_report_artifact_content("script_review", report)
     assert content["stage_key"] == "script_review"
     assert content["status"] == "fail"
-    assert content["reroute_to_stage"] == "implementation"
+    assert content["reroute_to_stage"] == "implement"
     row_keys = {row["k"] for row in content["rows"]}
     assert row_keys == {"status", "confidence", "reroute_to_stage", "reroute_context"}
 

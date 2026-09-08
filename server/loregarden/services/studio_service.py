@@ -142,7 +142,7 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         name="loregarden_start_stage",
         description="Mark a workflow stage as running before invoking a sub-agent.",
         when_to_use="Orchestrator only — before delegating to a sub-agent.",
-        example='tools/call loregarden_start_stage {"run_id": "<orch run id>", "stage_key": "implementation", "agent_id": "backend_implementer"}',
+        example='tools/call loregarden_start_stage {"run_id": "<orch run id>", "stage_key": "implement", "agent_id": "backend_implementer"}',
         orchestrator_only=True,
         stage_agent=False,
     ),

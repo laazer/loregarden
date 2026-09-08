@@ -215,7 +215,7 @@ def _setup_single_stage(db_session: Session, tmp_path, *, stage_key: str, next_a
         ticket_id=ticket.id,
         template_id=template.id,
         current_stage_key=stage_key,
-        stages_json=stages_up_to_done_json(stages, "test_design"),
+        stages_json=stages_up_to_done_json(stages, "test-design"),
     )
     db_session.add(instance)
     db_session.commit()
@@ -232,7 +232,7 @@ def test_single_stage_reroute_delivers_full_context_not_a_pointer(
     from loregarden.services.orchestration_profile import OrchestrationProfile
 
     ticket, stages = _setup_single_stage(
-        db_session, tmp_path, stage_key="test_break", next_agent="test_breaker"
+        db_session, tmp_path, stage_key="test-break", next_agent="test_breaker"
     )
 
     def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
@@ -240,7 +240,7 @@ def test_single_stage_reroute_delivers_full_context_not_a_pointer(
             run,
             status=RunStatus.SUCCEEDED,
             stdout=_report(
-                "needs_rework", 0.93, reroute_to_stage="test_design", reroute_context=LONG_FINDING
+                "needs_rework", 0.93, reroute_to_stage="test-design", reroute_context=LONG_FINDING
             ),
             stderr="",
         )
@@ -251,19 +251,19 @@ def test_single_stage_reroute_delivers_full_context_not_a_pointer(
     builtin.execute(ticket, OrchestrationProfile(slug="rework-int"), max_stages=1)
     db_session.refresh(ticket)
 
-    assert ticket.workflow_stage_key == "test_design"
+    assert ticket.workflow_stage_key == "test-design"
     # UI field: short pointer, not the wall of text.
     assert len(ticket.blocking_issues) <= 200
     # Ledger: full context, delivered to the re-run agent.
-    assert rework_reroute_count(db_session, ticket, "test_design") == 1
+    assert rework_reroute_count(db_session, ticket, "test-design") == 1
     rerun = AgentRun(
         run_code="r2",
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
         agent_id="test_designer",
-        stage_key="test_design",
+        stage_key="test-design",
     )
-    stage_def = next(s for s in stages if s.key == "test_design")
+    stage_def = next(s for s in stages if s.key == "test-design")
     text = build_orchestration_context(
         ticket=ticket, run=rerun, stage_def=stage_def, stages=stages, session=db_session
     )
@@ -276,15 +276,15 @@ def test_single_stage_reroute_blocks_for_human_at_cap(db_session: Session, monke
     from loregarden.services.orchestration_profile import OrchestrationProfile
 
     ticket, stages = _setup_single_stage(
-        db_session, tmp_path, stage_key="test_break", next_agent="test_breaker"
+        db_session, tmp_path, stage_key="test-break", next_agent="test_breaker"
     )
     # Pre-seed the ledger to the cap so the next reroute is the (MAX+1)th.
     for i in range(MAX_REWORK_REROUTES):
         record_rework_feedback(
             db_session,
             ticket,
-            target_stage="test_design",
-            from_stage="test_break",
+            target_stage="test-design",
+            from_stage="test-break",
             context=f"prior round {i}",
         )
 
@@ -295,7 +295,7 @@ def test_single_stage_reroute_blocks_for_human_at_cap(db_session: Session, monke
             stdout=_report(
                 "needs_rework",
                 0.9,
-                reroute_to_stage="test_design",
+                reroute_to_stage="test-design",
                 reroute_context="same finding again",
             ),
             stderr="",
@@ -367,7 +367,7 @@ def test_parallel_reroute_records_full_ledger_below_cap(db_session: Session, mon
         if run.agent_id == "static_qa":
             run.status = RunStatus.SUCCEEDED
             run.stdout = _report(
-                "needs_rework", 0.9, reroute_to_stage="implementation", reroute_context=LONG_FINDING
+                "needs_rework", 0.9, reroute_to_stage="implement", reroute_context=LONG_FINDING
             )
         else:
             run.status = RunStatus.SUCCEEDED
@@ -384,10 +384,10 @@ def test_parallel_reroute_records_full_ledger_below_cap(db_session: Session, mon
 
     assert ok is True
     db_session.refresh(ticket)
-    assert ticket.workflow_stage_key == "implementation"
+    assert ticket.workflow_stage_key == "implement"
     assert ticket.state != TicketState.BLOCKED
-    assert rework_reroute_count(db_session, ticket, "implementation") == 1
-    assert render_rework_feedback(db_session, ticket, "implementation") == LONG_FINDING
+    assert rework_reroute_count(db_session, ticket, "implement") == 1
+    assert render_rework_feedback(db_session, ticket, "implement") == LONG_FINDING
 
 
 def test_parallel_reroute_blocks_for_human_at_cap(db_session: Session, monkeypatch):
@@ -398,7 +398,7 @@ def test_parallel_reroute_blocks_for_human_at_cap(db_session: Session, monkeypat
         record_rework_feedback(
             db_session,
             ticket,
-            target_stage="implementation",
+            target_stage="implement",
             from_stage="script_review",
             context=f"prior {i}",
         )
@@ -409,7 +409,7 @@ def test_parallel_reroute_blocks_for_human_at_cap(db_session: Session, monkeypat
             run.stdout = _report(
                 "needs_rework",
                 0.9,
-                reroute_to_stage="implementation",
+                reroute_to_stage="implement",
                 reroute_context="same finding yet again",
             )
         else:

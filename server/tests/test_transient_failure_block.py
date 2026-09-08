@@ -165,7 +165,7 @@ def test_transient_only_failure_blocks_stage_not_reroute(db_session: Session, mo
     assert ticket.workflow_stage_key == "script_review"
     assert "transient" in ticket.blocking_issues.lower()
     # The loop budget must be untouched — no rework-ledger entry was recorded.
-    assert rework_reroute_count(db_session, ticket, "implementation") == 0
+    assert rework_reroute_count(db_session, ticket, "implement") == 0
 
 
 def test_genuine_rejection_still_reroutes_despite_a_transient_sibling(
@@ -184,7 +184,7 @@ def test_genuine_rejection_still_reroutes_despite_a_transient_sibling(
             run.stdout = _report(
                 "needs_rework",
                 0.9,
-                reroute_to_stage="implementation",
+                reroute_to_stage="implement",
                 reroute_context="Real finding: missing acid weak-point check",
             )
         else:
@@ -205,5 +205,5 @@ def test_genuine_rejection_still_reroutes_despite_a_transient_sibling(
     assert ok is True
     db_session.refresh(ticket)
     assert ticket.state != TicketState.BLOCKED
-    assert ticket.workflow_stage_key == "implementation"
-    assert rework_reroute_count(db_session, ticket, "implementation") == 1
+    assert ticket.workflow_stage_key == "implement"
+    assert rework_reroute_count(db_session, ticket, "implement") == 1
