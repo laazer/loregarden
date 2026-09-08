@@ -745,6 +745,28 @@ class GateOutcome(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class GateFixTier(str, Enum):
+    """What, if anything, had already tried to fix a gate before it was evaluated.
+
+    Without this, a passing gate cannot say why it passed. The recovery path has
+    two tiers — mechanical fixers, then a bounded agent retry — and an evaluation
+    recorded no differently from a first-time pass makes both unmeasurable: you
+    cannot tell whether `autofix_commands` earns its keep, and "failed once and
+    got fixed" reads the same as "passed on the first try"
+    (lg-workflow-integrity-683).
+
+    ``NONE`` is the honest default for an evaluation that ran before any fixer,
+    which is most of them. It does not mean "nothing could have fixed it".
+    """
+
+    #: The first evaluation of this transition — nothing has tried yet.
+    NONE = "none"
+    #: Re-evaluated after `profile.gates.autofix_commands` ran. No agent involved.
+    MECHANICAL = "mechanical"
+    #: Re-evaluated after the stage's own agent was handed the failure.
+    AGENT = "agent"
+
+
 class CIStatus(str, Enum):
     PENDING = "pending"
     PASSING = "passing"
