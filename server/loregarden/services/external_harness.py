@@ -54,6 +54,11 @@ from loregarden.services.parallel_stage import (
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
 )
+from loregarden.services.review_relens import (
+    decide_lenses,
+    record_relens_decisions,
+    skipped_members,
+)
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
@@ -262,8 +267,18 @@ def _begin_parallel_stage(
             message=SUPERSEDED_RUN_MESSAGE,
         )
 
+    # Same rule as the builtin driver, so a stage does not re-review three lenses
+    # here and one there purely because of who dispatched it
+    # (lg-workflow-integrity-499).
+    decisions = [] if resuming else decide_lenses(session, ticket, stage_def, stage_key)
+    if decisions:
+        record_relens_decisions(session, ticket, stage_def, stage_key, decisions)
+    skipped = skipped_members(stage_def, decisions)
+
     runs: list[AgentRun] = []
     for spec in stage_def.parallel_agents:
+        if (spec.agent_id, member_skill_name(stage_def, spec)) in skipped:
+            continue
         latest = (
             latest_member_run(session, ticket, stage_def, stage_key, spec) if resuming else None
         )
