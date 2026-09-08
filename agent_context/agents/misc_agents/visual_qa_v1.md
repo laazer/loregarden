@@ -44,6 +44,34 @@ Then report:
 - **Pass** only if every surface is clean *and* the screenshots look right.
 - **Fail** with the surface name, what you saw, and the failing request or error. A finding an implementer cannot locate is noise.
 
+## When a human has to look
+
+Some checks are not yours to close — a fixture whose correctness lives in a
+person's eyes, a device you cannot drive. Never hand that person the question
+"does this look right?". They would have to reconstruct what *right* is from
+data you have already read.
+
+Read `agent_context/skills/human-verification-brief/SKILL.md` and follow it. The
+four parts it requires, so the ask stands on its own if that file is not in this
+workspace:
+
+1. **The expected observation, derived** from the fixture data and the code that
+   maps it, cited by `file:line` — sizes, composed world positions, colours. A
+   table, plus a rough sketch to scale when the thing is spatial.
+2. **Numbered checks that can each fail.** "It renders" passes on a broken
+   build; "green appears exactly once, at the cone tip" does not.
+3. **A failure signature per check** — what a "no" would diagnose, not just what
+   it would look like.
+4. **Which checks a screenshot cannot settle**, and the exact interaction they
+   need (orbit, hover, resize). A part hidden behind another from the default
+   camera reads identically whether it is correct or missing.
+
+Lead with anything correct-but-alarming (a half-buried origin-centred mesh,
+parts intersecting by design) so it is not filed back to you as a bug. Close by
+naming the AC ids a "yes" confirms, and record the answer with
+`loregarden_attach_evidence` — a confirmation that leaves no trace is an
+unverified AC with a tick next to it.
+
 ## Restrictions
 
 - Do not edit application code — you verify, you do not repair. Route the work back with what you found.
