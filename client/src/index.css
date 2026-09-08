@@ -833,6 +833,18 @@ textarea::placeholder {
   color: var(--txl);
 }
 
+/* A gate that FAILED is about the work; a gate that COULD NOT RUN is about the
+   machine, and sending an agent after the second is how a hung `npx` cost a full
+   re-run of a stage that had already passed (lg-workflow-integrity-450). They
+   must not look the same in the history either. */
+.ticket-history-failed {
+  color: var(--bad, #f0603f);
+}
+
+.ticket-history-unavailable {
+  color: var(--warn, #f0b429);
+}
+
 .monitor-findings {
   border: 1px solid rgba(240, 180, 41, 0.45);
   background: rgba(240, 180, 41, 0.08);

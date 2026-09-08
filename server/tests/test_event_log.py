@@ -12,6 +12,7 @@ filters, so the only answerable question was "the last N events installation
 wide".
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from loregarden.core.event_bus import TRANSITION_EVENTS, event_bus
@@ -145,3 +146,38 @@ def test_stage_skipped_now_reaches_a_reader(db_session: Session):
     ticket = make_workspace_ticket(db_session, "ev-skipped")
     event_bus.publish(db_session, EventType.STAGE_SKIPPED, ticket_id=ticket.id)
     assert len(event_bus.ticket_history(db_session, ticket.id)) == 1
+
+
+def test_gate_evaluations_now_reach_a_reader(db_session: Session):
+    """lg-workflow-integrity-684. 203 gate evaluations were recorded and none was
+    readable: `GATE_EVALUATED` was outside TRANSITION_EVENTS, so the ticket
+    history filtered every one of them out. It qualifies by the same rule as the
+    other four — no other table records a gate evaluation."""
+    assert EventType.GATE_EVALUATED in TRANSITION_EVENTS
+    ticket = make_workspace_ticket(db_session, "ev-gate")
+    event_bus.publish(
+        db_session,
+        EventType.GATE_EVALUATED,
+        ticket_id=ticket.id,
+        payload={"outcome": "failed", "stage_key": "implement", "fix_tier": "none"},
+    )
+    history = event_bus.ticket_history(db_session, ticket.id)
+    assert [e.type for e in history] == [EventType.GATE_EVALUATED]
+
+
+def test_a_gate_evaluation_carries_its_outcome_and_attribution_to_the_reader(
+    db_session: Session,
+):
+    """The row is only worth surfacing if it says what happened and why. A bare
+    "gate evaluated" would be the shape 684 was filed against — visible, and
+    still not an answer."""
+    ticket = make_workspace_ticket(db_session, "ev-gate-payload")
+    event_bus.publish(
+        db_session,
+        EventType.GATE_EVALUATED,
+        ticket_id=ticket.id,
+        payload={"outcome": "passed", "stage_key": "implement", "fix_tier": "mechanical"},
+    )
+    payload = json.loads(event_bus.ticket_history(db_session, ticket.id)[0].payload_json)
+    assert payload["outcome"] == "passed"
+    assert payload["fix_tier"] == "mechanical"

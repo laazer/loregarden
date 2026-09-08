@@ -2,26 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../api/client";
+import { historyLines } from "../utils/ticketHistory";
 
 interface TicketHistoryProps {
   ticketId: string;
-}
-
-/** Transition types, in the vocabulary the log stores them under. */
-const LABELS: Record<string, string> = {
-  TicketStateChanged: "State",
-  StageStarted: "Stage started",
-  StageCompleted: "Stage completed",
-  StageSkipped: "Stage skipped",
-};
-
-function describe(event: { type: string; payload: Record<string, unknown> }): string {
-  const stage = event.payload.stage_key ?? event.payload.stage;
-  const to = event.payload.to ?? event.payload.state ?? event.payload.status;
-  const parts = [LABELS[event.type] ?? event.type];
-  if (stage) parts.push(String(stage));
-  if (to) parts.push(`→ ${String(to)}`);
-  return parts.join(" ");
 }
 
 /**
@@ -30,6 +14,10 @@ function describe(event: { type: string; payload: Record<string, unknown> }): st
  * Collapsed by default: the history is worth having and worth finding, but it is
  * not what someone opening a ticket is usually looking at. Renders nothing at
  * all when the ticket predates the transitions being recorded.
+ *
+ * Gate evaluations land here too (lg-workflow-integrity-684). They were recorded
+ * all along — 203 of them, 43 failures — and filtered out of every reader, which
+ * made the one thing worth watching on an unattended run the one thing invisible.
  */
 export function TicketHistory({ ticketId }: TicketHistoryProps) {
   const [open, setOpen] = useState(false);
@@ -40,20 +28,21 @@ export function TicketHistory({ ticketId }: TicketHistoryProps) {
   });
 
   if (!events?.length) return null;
+  const lines = historyLines(events);
 
   return (
     <div className="ticket-history">
       <button type="button" className="btn-secondary btn-compact" onClick={() => setOpen(!open)}>
-        {open ? "Hide history" : `History (${events.length})`}
+        {open ? "Hide history" : `History (${lines.length})`}
       </button>
       {open && (
         <ol className="ticket-history-list">
-          {events.map((event) => (
-            <li key={event.id}>
+          {lines.map((line) => (
+            <li key={line.id} className={`ticket-history-${line.tone}`}>
               <span className="ticket-history-when">
-                {new Date(event.created_at).toLocaleString()}
+                {new Date(line.at).toLocaleString()}
               </span>{" "}
-              {describe(event)}
+              {line.text}
             </li>
           ))}
         </ol>
