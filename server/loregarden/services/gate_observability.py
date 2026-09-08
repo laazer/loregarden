@@ -17,6 +17,7 @@ from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     ArtifactKind,
     EventType,
+    GateFixTier,
     GateOutcome,
     OrchestrationRun,
     Ticket,
@@ -36,18 +37,28 @@ def clean_gate_detail(result: GateRunResult) -> str:
     return strip_ansi(detail)
 
 
-def run_gates_detail(
+def run_and_record_gates(
     session: Session,
+    callbacks,
     ticket: Ticket,
+    orch_run: OrchestrationRun | None,
     profile: OrchestrationProfile,
     workspace: Workspace,
     stage_def: WorkflowStageDef,
+    *,
     from_stage: str,
     to_stage: str,
+    fix_tier: GateFixTier,
 ) -> str:
-    """Run the transition gates once. Returns "" if they pass, else a cleaned,
-    human-readable failure detail. Pure — no ticket/stage mutation, so it can be
-    re-run after an auto-fix pass to check whether the fix cleared it."""
+    """Re-run the transition gates after a fix attempt, and RECORD the result.
+
+    This replaces a pure re-check that recorded nothing. That was defensible in
+    the abstract and wrong for its only caller: when mechanical fixers cleared a
+    gate, the successful re-evaluation produced no event at all, so the log
+    showed the failure and then silence — "failed once and got fixed" read as
+    "failed", the exact confusion `record_gate_evaluation`'s own docstring says
+    must not happen (lg-workflow-integrity-683).
+    """
     result = run_transition_gates(
         session,
         profile,
@@ -57,9 +68,17 @@ def run_gates_detail(
         to_stage=to_stage,
         stage_def=stage_def,
     )
-    if result.ok:
-        return ""
-    return clean_gate_detail(result)
+    record_gate_evaluation(
+        session,
+        callbacks,
+        ticket,
+        orch_run,
+        result,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        fix_tier=fix_tier,
+    )
+    return "" if result.ok else clean_gate_detail(result)
 
 
 def gate_evaluation_title(outcome: str, from_stage: str, to_stage: str) -> str:
@@ -77,6 +96,7 @@ def record_gate_evaluation(
     *,
     from_stage: str,
     to_stage: str,
+    fix_tier: GateFixTier = GateFixTier.NONE,
 ) -> None:
     """Emit a GATE_EVALUATED event and an outcome-titled context artifact.
 
@@ -102,6 +122,10 @@ def record_gate_evaluation(
             "to_stage": to_stage,
             "stage_key": from_stage,
             "command": result.command,
+            # What had already tried to fix it. Without this a pass cannot say
+            # why it passed, and neither recovery tier can be judged on evidence
+            # (lg-workflow-integrity-683).
+            "fix_tier": fix_tier.value,
             "orchestration_run_id": orch_run.id if orch_run else None,
         },
     )
@@ -116,6 +140,11 @@ def record_gate_evaluation(
                 {"k": "Outcome", "v": outcome},
                 {"k": "Transition", "v": f"{from_stage} → {to_stage}"},
                 {"k": "Detail", "v": message},
+                *(
+                    [{"k": "After", "v": f"{fix_tier.value} fix"}]
+                    if fix_tier is not GateFixTier.NONE
+                    else []
+                ),
             ],
         },
         # Same reason as the event above: `Artifact.run_id` references

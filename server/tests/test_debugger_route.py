@@ -20,7 +20,7 @@ Found 1 error.
 
 
 def _agent_for(session, detail: str) -> str:
-    return BuiltinOrchestrator(session)._gate_failure_agent(detail)
+    return BuiltinOrchestrator(session).gates._gate_failure_agent(detail)
 
 
 def test_failing_tests_hand_over_to_the_debugger(db_session):
@@ -103,7 +103,7 @@ def test_reroute_hands_the_stage_to_the_debugger(db_session):
     db_session.add(orch_run)
     db_session.commit()
 
-    BuiltinOrchestrator(db_session)._reroute_for_agent_fix(
+    BuiltinOrchestrator(db_session).gates._reroute_for_agent_fix(
         ticket, instance, stages, orch_run, "implement", PYTEST_FAILURE
     )
 

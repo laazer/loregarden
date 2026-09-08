@@ -307,3 +307,94 @@ def test_gate_evaluation_does_not_claim_an_agent_run(db_session: Session, monkey
     gate_artifacts = [a for a in _context_artifacts(db_session, ticket) if "Gate" in a.title]
     assert gate_artifacts
     assert all(a.run_id is None for a in gate_artifacts)
+
+
+# --- lg-workflow-integrity-683: a gate that passed must say what fixed it ----
+
+
+def test_a_first_evaluation_is_attributed_to_no_fix(db_session: Session, monkeypatch, tmp_path):
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-tier-none")
+    profile.gates.commands = ["true"]
+
+    _run_stage(db_session, monkeypatch, ticket, profile)
+
+    events = _gate_events(db_session, ticket)
+    assert [json.loads(e.payload_json)["fix_tier"] for e in events] == ["none"]
+
+
+def test_a_mechanical_fix_that_clears_the_gate_is_recorded_at_all(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """The defect, and it was bigger than a missing field.
+
+    The re-check after the fixers ran went through a helper that recorded
+    nothing, so a fixer clearing a gate produced NO event: the log showed the
+    failure and then silence. `record_gate_evaluation`'s own docstring says
+    "failed once and got fixed" must not read the same as "has failed on every
+    retry" — and that is exactly what it read as.
+    """
+    marker = tmp_path / "fixed"
+    check = tmp_path / "check.sh"
+    check.write_text(f"#!/bin/sh\n[ -f {marker} ]\n", encoding="utf-8")
+    check.chmod(check.stat().st_mode | stat.S_IEXEC)
+    fixer = tmp_path / "fix.sh"
+    fixer.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    fixer.chmod(fixer.stat().st_mode | stat.S_IEXEC)
+
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-tier-mechanical")
+    profile.gates.commands = ["./check.sh"]
+    profile.gates.autofix_commands = ["./fix.sh"]
+
+    _run_stage(db_session, monkeypatch, ticket, profile)
+
+    payloads = [json.loads(e.payload_json) for e in _gate_events(db_session, ticket)]
+    assert [p["outcome"] for p in payloads] == ["failed", "passed"], (
+        "the fixer's successful re-evaluation must leave a row of its own"
+    )
+    assert payloads[0]["fix_tier"] == "none"
+    assert payloads[1]["fix_tier"] == "mechanical"
+
+
+def test_a_re_evaluation_after_an_agent_retry_says_so(db_session: Session, monkeypatch, tmp_path):
+    """The second tier. `count_gate_fix_attempts` is already the durable record
+    of a gate-fix reroute, so this costs no new state — but without reading it,
+    a pass after an agent fixed something is indistinguishable from a pass that
+    never needed one."""
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-tier-agent")
+    profile.gates.commands = ["false"]
+    profile.gates.autofix_agent_fallback = True
+    profile.gates.autofix_max_agent_attempts = 2
+
+    _run_stage(db_session, monkeypatch, ticket, profile)  # fails, reroutes to the agent
+    _run_stage(db_session, monkeypatch, ticket, profile)  # re-evaluated after that reroute
+
+    tiers = [json.loads(e.payload_json)["fix_tier"] for e in _gate_events(db_session, ticket)]
+    assert tiers[0] == "none"
+    assert tiers[1] == "agent"
+
+
+def test_the_context_artifact_names_the_fix_that_cleared_it(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """Attribution has to reach a reader, not just a query. The artifact is what
+    the context tab shows, and it gains a row only when a fix actually ran — a
+    first-time pass should not carry an empty 'After' line."""
+    marker = tmp_path / "fixed2"
+    check = tmp_path / "check2.sh"
+    check.write_text(f"#!/bin/sh\n[ -f {marker} ]\n", encoding="utf-8")
+    check.chmod(check.stat().st_mode | stat.S_IEXEC)
+    fixer = tmp_path / "fix2.sh"
+    fixer.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    fixer.chmod(fixer.stat().st_mode | stat.S_IEXEC)
+
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-tier-artifact")
+    profile.gates.commands = ["./check2.sh"]
+    profile.gates.autofix_commands = ["./fix2.sh"]
+
+    _run_stage(db_session, monkeypatch, ticket, profile)
+
+    rows = [
+        json.loads(a.content_json).get("rows", []) for a in _context_artifacts(db_session, ticket)
+    ]
+    afters = [r["v"] for row in rows for r in row if r.get("k") == "After"]
+    assert afters == ["mechanical fix"]
