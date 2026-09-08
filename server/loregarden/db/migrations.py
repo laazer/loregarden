@@ -49,6 +49,7 @@ from loregarden.db.migrations_git_boundary import (
     m_agent_run_git_boundary,
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
+from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
@@ -1374,6 +1375,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0113_changed_paths_recorded_at", m_changed_paths_recorded_at),
     ("0114_canonical_stage_keys", m_canonical_stage_keys),
     ("0115_agent_run_read_paths", m_agent_run_read_paths),
+    ("0116_human_verification_brief", m_human_verification_brief),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

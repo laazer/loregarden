@@ -50,6 +50,7 @@ def test_list_skills_returns_seeded_database_slugs(client):
     assert list_skills() == [
         "absorb-adapt",
         "autopilot",
+        "human-verification-brief",
         "plan",
         "plan-risk",
         "plan-seams",
