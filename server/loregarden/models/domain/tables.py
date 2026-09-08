@@ -327,6 +327,25 @@ class AgentRun(SQLModel, table=True):
     #: twice running. Rows written before this stay ambiguous — their meaning is
     #: unknown and inventing one would be worse (lg-workflow-integrity-675).
     changed_paths_recorded_at: datetime | None = None
+    #: What this run READ, as a JSON list of repo-relative paths. Recovered from
+    #: the CLI transcript, which carries the tool calls in two schemas — see
+    #: `agents/executors/read_paths`. Search scopes (Grep/Glob) are deliberately
+    #: excluded; these are files whose contents the run opened.
+    #:
+    #: Reviewers write nothing, so `changed_paths_json` cannot tell two review
+    #: runs apart. This is what lg-workflow-integrity-499 intersects a rework
+    #: diff against to decide whether a lens that passed has anything to
+    #: re-derive.
+    read_paths_json: str = "[]"
+    #: When the reader above ran. NULL means NO RECORD — the run predates this
+    #: column, or never reached the recorder. `[]` with a stamp means the run
+    #: read nothing inside the repo, which is a real answer and a different one
+    #: (lg-workflow-integrity-681, following 675's companion-column pattern
+    #: rather than repeating the ambiguity it had to unpick).
+    #:
+    #: A list at exactly `read_paths.MAX_READ_PATHS` may be truncated and should
+    #: be read as incomplete rather than exhaustive.
+    read_paths_recorded_at: datetime | None = None
     # The git boundary this run started from — see schemas.GitBoundary, which is
     # how these four are read and written. Recorded at dispatch, after the
     # execution root and branch are resolved, so it describes the tree the agent

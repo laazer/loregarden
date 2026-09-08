@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from loregarden.agents.executors.run_evidence import record_changed_paths
 from loregarden.services.git_commit_push_service import (
     paths_committed_since,
     working_tree_paths,
@@ -47,7 +48,7 @@ def _head(repo: Path) -> str:
 
 
 def _recorded(repo: Path, before: set[str], base_sha: str) -> list[str]:
-    """Exactly what `_record_changed_paths` computes, without the executor."""
+    """Exactly what `record_changed_paths` computes, without the executor."""
     after = working_tree_paths(repo)
     assert after is not None
     committed = paths_committed_since(repo, base_sha)
@@ -138,7 +139,7 @@ def test_no_base_sha_is_not_a_failure(repo: Path):
 
 
 def test_the_recorder_itself_stores_committed_work(db_session, repo: Path):
-    """Drives `_record_changed_paths`, not a copy of its logic.
+    """Drives `record_changed_paths`, not a copy of its logic.
 
     The tests above exercise the helper pair directly, which means neutering the
     executor's union does NOT fail them — a control run proved exactly that. A
@@ -147,7 +148,6 @@ def test_the_recorder_itself_stores_committed_work(db_session, repo: Path):
     """
     import json
 
-    from loregarden.agents.executors.cli import CliAgentExecutor
     from loregarden.models.domain import AgentRun, RunStatus, Workspace
     from sqlmodel import select
     from tests.factories import make_workspace_ticket
@@ -171,7 +171,7 @@ def test_the_recorder_itself_stores_committed_work(db_session, repo: Path):
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "the agent commits its own work")
 
-    CliAgentExecutor(db_session)._record_changed_paths(run, repo, before)
+    record_changed_paths(db_session, run, repo, before)
 
     db_session.refresh(run)
     assert json.loads(run.changed_paths_json) == ["feature.py"]
@@ -208,17 +208,13 @@ def test_the_three_outcomes_are_distinguishable(db_session, repo: Path):
     """
     import json
 
-    from loregarden.agents.executors.cli import CliAgentExecutor
-
-    executor = CliAgentExecutor(db_session)
-
     # 1. never recorded
     never = _run_row(db_session, repo, "cpr_never")
     assert never.changed_paths_recorded_at is None
 
     # 2. recorded, and it touched nothing
     empty = _run_row(db_session, repo, "cpr_empty")
-    executor._record_changed_paths(empty, repo, working_tree_paths(repo) or set())
+    record_changed_paths(db_session, empty, repo, working_tree_paths(repo) or set())
     db_session.refresh(empty)
     assert json.loads(empty.changed_paths_json) == []
     assert empty.changed_paths_recorded_at is not None
@@ -227,7 +223,7 @@ def test_the_three_outcomes_are_distinguishable(db_session, repo: Path):
     touched = _run_row(db_session, repo, "cpr_touched")
     before = working_tree_paths(repo) or set()
     (repo / "wrote.py").write_text("x\n")
-    executor._record_changed_paths(touched, repo, before)
+    record_changed_paths(db_session, touched, repo, before)
     db_session.refresh(touched)
     assert json.loads(touched.changed_paths_json) == ["wrote.py"]
     assert touched.changed_paths_recorded_at is not None
@@ -241,7 +237,6 @@ def test_a_failed_tree_read_leaves_no_record(db_session, tmp_path: Path):
     """A read that could not happen must not look like a run that touched
     nothing — the collapse `working_tree_paths` returning None exists to stop,
     now enforced one level up as well."""
-    from loregarden.agents.executors.cli import CliAgentExecutor
 
     not_a_repo = tmp_path / "bare"
     not_a_repo.mkdir()
@@ -262,7 +257,7 @@ def test_a_failed_tree_read_leaves_no_record(db_session, tmp_path: Path):
     db_session.add(run)
     db_session.commit()
 
-    CliAgentExecutor(db_session)._record_changed_paths(run, not_a_repo, set())
+    record_changed_paths(db_session, run, not_a_repo, set())
 
     db_session.refresh(run)
     assert run.changed_paths_recorded_at is None, "a failed read must leave no record"

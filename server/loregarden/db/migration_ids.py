@@ -133,6 +133,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0112_agent_is_default_stages",
     "0113_changed_paths_recorded_at",
     "0114_canonical_stage_keys",
+    "0115_agent_run_read_paths",
 )
 
 

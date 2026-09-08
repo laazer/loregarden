@@ -331,3 +331,32 @@ def m_changed_paths_recorded_at(conn: Connection) -> None:
             )
         },
     )
+
+
+def m_agent_run_read_paths(conn: Connection) -> None:
+    """Record what a run read, not only what it changed.
+
+    A reviewer writes nothing, so `changed_paths_json` is empty for every review
+    run and cannot tell two of them apart. lg-workflow-integrity-499 needs to
+    know whether a rework touched what a lens examined, and the reads turned out
+    to be in the retained transcript all along — see `agents/executors/
+    read_paths`, which parses both the Claude and cursor-agent schemas.
+
+    Two columns for the same reason 675 needed two: `'[]'` alone cannot say
+    whether the run read nothing in the repo or nobody looked. Existing rows keep
+    NULL, which correctly reads as "no record" — the transcripts are still there
+    and can be parsed later, but inventing a timestamp now would claim these rows
+    were examined when they were not.
+    """
+    if not table_exists(conn, "agent_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "read_paths_json": "ALTER TABLE agent_runs ADD COLUMN read_paths_json TEXT DEFAULT '[]'",
+            "read_paths_recorded_at": (
+                "ALTER TABLE agent_runs ADD COLUMN read_paths_recorded_at DATETIME"
+            ),
+        },
+    )
