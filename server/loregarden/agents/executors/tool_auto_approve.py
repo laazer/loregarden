@@ -14,9 +14,16 @@ from loregarden.mcp.tool_ids import (
     TICKET_SCOPED_MCP_TOOLS,
     McpTool,
 )
-from loregarden.models.domain import Ticket
+from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.agent_scope import FILE_WRITE_TOOLS
+from loregarden.services.command_allowlist import is_safe_command
+from loregarden.services.orchestration_profile import (
+    ApprovalPolicyConfig,
+    resolve_orchestration_profile,
+)
 from loregarden.services.organization_gate_service import READ_ONLY_ACTIONS, OrganizationAction
+from loregarden.services.tool_telemetry import DECISION_ALLOWLIST, DECISION_READ_ONLY_CLI
+from sqlmodel import Session
 
 ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
@@ -415,3 +422,53 @@ def validate_question_answers(
             continue
         if not str(answer or "").strip():
             raise ValueError(f"Answer required for: {question_text}")
+
+
+def cli_auto_approve(
+    tool_name: str,
+    tool_input: dict[str, Any],
+    *,
+    interactive: bool,
+    policy: ApprovalPolicyConfig,
+) -> tuple[str, str] | None:
+    """Decision + log label when a CLI tool skips the inbox, else None.
+
+    Lives here rather than in `permission_bridge` because it is auto-approval
+    policy and everything it consults is here; the bridge is at its file cap and
+    this was the only thing in it that did not need the bridge's state.
+
+    Order matters. The always-on read-only set first, then the interactive-chat
+    allowance, then the two a workspace can opt into. Anything unrecognised falls
+    through to a human, which is what the system did before any of this existed.
+    """
+    if is_auto_approved_cli_tool(tool_name):
+        return DECISION_READ_ONLY_CLI, "read-only"
+    if interactive and is_chat_auto_approved_cli_tool(tool_name, tool_input):
+        return DECISION_ALLOWLIST, "chat"
+    if policy.safe_commands and tool_name == "Bash":
+        command = tool_input.get("command")
+        # Not `str(command)`: a missing or non-string command is a request this
+        # cannot read, and reading it wrongly is the failure that matters.
+        if isinstance(command, str) and is_safe_command(command):  # py-org: allow-isinstance
+            return DECISION_ALLOWLIST, "safe command"
+    if policy.file_writes and tool_name in FILE_WRITE_TOOLS:
+        return DECISION_ALLOWLIST, "workspace policy"
+    return None
+
+
+def approval_policy(
+    session: Session, workspace_id: str, *, auto_approving: bool
+) -> ApprovalPolicyConfig:
+    """The auto-approval policy in force for one request.
+
+    Empty when the run already auto-approves: that path owns the decision and the
+    enriched input it returns, and this policy exists for runs that would
+    otherwise stop and ask. Resolved per request, so a profile edit lands on the
+    next prompt rather than the next restart.
+    """
+    if auto_approving:
+        return ApprovalPolicyConfig(safe_commands=False, file_writes=False)
+    workspace = session.get(Workspace, workspace_id) if workspace_id else None
+    if workspace is None:
+        return ApprovalPolicyConfig()
+    return resolve_orchestration_profile(workspace).approvals
