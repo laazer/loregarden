@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 from loregarden.agents.cli_adapters import CliInvocation, resolve_cli_invocation
-from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.agents.executors.run_evidence import record_usage
 from loregarden.agents.run_usage import parse_run_usage
 from loregarden.models.domain import AgentRun, CliAdapter
 from loregarden.services.run_token_usage import (
@@ -326,7 +326,7 @@ def test_a_supervised_run_records_the_model_the_stream_reported_over_the_pin(ses
     run = _run(session, "supervised")
     invocation = CliInvocation(argv=[], adapter="claude", model="opus", effort="high")
 
-    CliAgentExecutor(session)._record_usage(run, stdout=CLAUDE_RESULT, invocation=invocation)
+    record_usage(session, run, stdout=CLAUDE_RESULT, invocation=invocation)
     session.refresh(run)
 
     assert run.model == "claude-opus-5"
@@ -341,7 +341,7 @@ def test_an_adapter_that_reports_no_usage_still_records_model_and_effort(session
     run = _run(session, "lmstudio")
     invocation = CliInvocation(argv=[], adapter="lmstudio", model="qwen3-coder-30b", effort="high")
 
-    CliAgentExecutor(session)._record_usage(run, stdout="hello", invocation=invocation)
+    record_usage(session, run, stdout="hello", invocation=invocation)
     session.refresh(run)
 
     assert run.model == "qwen3-coder-30b"

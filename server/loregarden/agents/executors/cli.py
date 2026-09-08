@@ -16,6 +16,7 @@ from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.prompt_size import record_prompt_size
+from loregarden.agents.executors.run_evidence import record_run_evidence
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -38,13 +39,11 @@ from loregarden.agents.prompt_blocks import (
     titled_block,
 )
 from loregarden.agents.registry import get_agent
-from loregarden.agents.run_usage import parse_run_usage, usage_status_for
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
-    CliAdapter,
     DoctorStatus,
     MemoryBriefingAssembly,
     RunStatus,
@@ -67,7 +66,6 @@ from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import (
-    paths_committed_since,
     working_tree_paths,
 )
 from loregarden.services.handoff_boundary import (
@@ -299,8 +297,14 @@ class CliAgentExecutor:
                     )
 
                 streamer.finalize(status=status, stderr=stderr)
-                self._record_changed_paths(run, repo_root, paths_before)
-                self._record_usage(run, stdout=stdout, invocation=invocation)
+                record_run_evidence(
+                    self.session,
+                    run,
+                    repo_root=repo_root,
+                    paths_before=paths_before,
+                    stdout=stdout,
+                    invocation=invocation,
+                )
                 artifacts = self._build_context_artifact(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
@@ -354,11 +358,19 @@ class CliAgentExecutor:
         """
         msg = agent_timeout_message(exc.timeout or fallback_timeout)
         streamer.finalize(status=RunStatus.FAILED, stderr=msg)
-        self._record_changed_paths(run, repo_root, paths_before)
         # TimeoutExpired.output is bytes | str | None — a foreign union, not a schema.
         output = exc.output
         partial_stdout = output if isinstance(output, str) else ""  # py-org: allow-isinstance
-        self._record_usage(run, stdout=partial_stdout, invocation=invocation)
+        # A killed run still touched and read things, and a partial transcript is
+        # a partial record rather than no record.
+        record_run_evidence(
+            self.session,
+            run,
+            repo_root=repo_root,
+            paths_before=paths_before,
+            stdout=partial_stdout,
+            invocation=invocation,
+        )
         return self.orchestration.complete_run(
             run,
             status=RunStatus.FAILED,
@@ -1016,70 +1028,6 @@ class CliAgentExecutor:
             },
             run_id=run.id,
         )
-
-    def _record_changed_paths(self, run: AgentRun, repo_root: Path, before: set[str]) -> None:
-        """Store the paths this run made dirty, so its commit can be scoped.
-
-        Only the delta: a path already dirty when the run started belongs to
-        whatever else is in the workspace, and attributing it here is exactly how
-        unrelated work used to get swept into a ticket's commit.
-        """
-        after = working_tree_paths(repo_root)
-        if after is None:
-            # Not the same as "nothing changed", and this column is the record
-            # of what a run touched — lg-workflow-integrity-452's gate
-            # attribution reads it, and an empty value there means "cannot say".
-            # Leaving it empty silently is what made that unanswerable.
-            logger.warning(
-                "could not read the working tree for run %s in %s; changed paths not recorded",
-                run.id,
-                repo_root,
-            )
-            return
-        # Dirty paths alone miss everything the agent COMMITTED during its turn:
-        # once committed, the file is no longer dirty, the delta is empty, and the
-        # run records nothing — indistinguishable from an agent that wrote no
-        # code. Reproduced against real git (lg-workflow-integrity-406).
-        #
-        # Unioned rather than swapped: uncommitted work is real too, and a run
-        # can leave both. `paths_committed_since` returns None when git cannot
-        # answer, which is not the same as "it committed nothing" — so a failure
-        # there degrades to the dirty set rather than silently narrowing it.
-        committed = paths_committed_since(repo_root, run.start_head_sha or "")
-        touched = sorted((after - before) | (committed or set()))
-        # Written even when empty. An early return left the column at its old
-        # "[]" default, which said the same thing as never having looked — the
-        # very collapse `working_tree_paths` returning None exists to prevent,
-        # repeated one level up. NULL now means no record; `[]` means this run
-        # looked and touched nothing (lg-workflow-integrity-675).
-        run.changed_paths_json = json.dumps(touched)
-        run.changed_paths_recorded_at = datetime.now(timezone.utc)
-        self.session.add(run)
-        self.session.commit()
-
-    def _record_usage(self, run: AgentRun, *, stdout: str, invocation: CliInvocation) -> None:
-        """Store what this run consumed, and what it was charged against.
-
-        Two sources, in that order of authority. The CLI's own usage event is
-        what the provider billed, so it wins; the invocation's pins are the
-        fallback for the model and effort, and are all there is for an adapter
-        that reports no usage at all.
-
-        Anything neither source knows is left NULL. A killed run, an adapter
-        with no usage surface and a stream that ended before its usage event
-        all land here, and every one of them is *unmeasured* — writing a zero
-        would put them in a cost average as free work.
-        """
-        usage = parse_run_usage(stdout, adapter=CliAdapter(invocation.adapter))
-        run.input_tokens = usage.input_tokens
-        run.output_tokens = usage.output_tokens
-        run.cache_read_tokens = usage.cache_read_tokens
-        run.cache_write_tokens = usage.cache_write_tokens
-        run.model = usage.model or invocation.model or None
-        run.effort = usage.effort or invocation.effort or None
-        run.usage_status = usage_status_for(usage, adapter=CliAdapter(invocation.adapter))
-        self.session.add(run)
-        self.session.commit()
 
     def _build_context_artifact(
         self,
