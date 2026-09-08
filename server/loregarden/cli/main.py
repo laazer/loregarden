@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     except UsageError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
-    except Exception as exc:  # a failed operation is a result, not a crash
+    except Exception as exc:  # noqa: BLE001 - top-level CLI boundary: report on stderr, exit non-zero
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return EXIT_ERROR
     if output:

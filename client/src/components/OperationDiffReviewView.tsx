@@ -10,6 +10,7 @@ import {
   type QueueOperationDetails,
   type RunOutputReviewData,
 } from "../lib/queueReviewApi";
+import { describeError } from "../state/toastStore";
 import { QueueDiffViewer } from "./QueueDiffViewer";
 import { QueueOperationReview } from "./QueueOperationReview";
 import { RunOutputReview } from "./RunOutputReview";
@@ -53,7 +54,7 @@ export function OperationDiffReviewView({
         const review = await ensureRunOutputReview(workspaceId, runId, type, content);
         setOutputReview(review);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load run output review");
+        setError(describeError(err, "Failed to load run output review"));
         setOutputReview(null);
       } finally {
         setIsLoading(false);
@@ -79,7 +80,7 @@ export function OperationDiffReviewView({
       });
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add comment");
+      setError(describeError(err, "Failed to add comment"));
     } finally {
       setIsLoading(false);
     }
@@ -92,7 +93,7 @@ export function OperationDiffReviewView({
       await approveQueueOperation(workspaceId, operation.operation_id);
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to approve");
+      setError(describeError(err, "Failed to approve"));
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +109,7 @@ export function OperationDiffReviewView({
       });
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit to agent");
+      setError(describeError(err, "Failed to submit to agent"));
     } finally {
       setIsLoading(false);
     }
@@ -128,7 +129,7 @@ export function OperationDiffReviewView({
       const refreshed = await getRunOutputReview(workspaceId, selectedRunId, outputReview.review_id);
       setOutputReview(refreshed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add line comment");
+      setError(describeError(err, "Failed to add line comment"));
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,9 @@
 import { create } from "zustand";
 
-import { ApiError } from "../api/client";
+// Imported from `api/http`, where the class is defined, rather than through the
+// `api/client` barrel: a test that mocks the barrel leaves `ApiError` undefined
+// and `describeError` throws inside the failure it was called to describe.
+import { ApiError } from "../api/http";
 
 export type ToastTone = "error" | "warning" | "success" | "info";
 
@@ -114,6 +117,14 @@ export function errorStatus(error: unknown): number | null {
  * `title` names the action ("Delete ticket"), not the failure — the toast
  * appends "failed" so every call reads the same way.
  */
+/**
+ * A degraded-but-continuing step: the action still happened, and this names what
+ * could not be checked or did not run alongside it.
+ */
+export function toastWarning(title: string, error: unknown, fallback: string): string {
+  return pushToast({ tone: "warning", title, message: describeError(error, fallback) });
+}
+
 export function toastActionFailed(title: string, error: unknown): string {
   return pushToast({
     tone: "error",

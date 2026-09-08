@@ -23,6 +23,7 @@ def looks_like_ticket_uuid(value: str) -> bool:
     try:
         UUID(text)
     except ValueError:
+        # silent-ok: a rejected parse is this predicate's False answer, not a failure
         return False
     return True
 

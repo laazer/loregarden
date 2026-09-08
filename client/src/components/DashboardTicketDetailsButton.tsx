@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TicketDetailsModal, type TicketDetailsSaveDraft } from './TicketDetailsModal';
+import { describeError } from '../state/toastStore';
 import * as apiClient from '../api/client';
 
 export interface DashboardTicketDetailsButtonProps {
@@ -60,7 +61,7 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
       qc.invalidateQueries({ queryKey: ['tickets'] });
     },
     onError: (err) => {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save ticket details');
+      setSaveError(describeError(err, 'Failed to save ticket details'));
     },
   });
 
@@ -79,7 +80,8 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
     try {
       await saveDetails.mutateAsync(draft);
     } catch {
-      // saveError is set via mutation onError
+      // silent-ok: the mutation's onError puts the message in `saveError`,
+      // which is handed to TicketDetailsModal and rendered there.
     }
   };
 

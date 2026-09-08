@@ -26,7 +26,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed.detail === "string") message = parsed.detail;
     } catch {
-      // response wasn't JSON — fall back to raw text
+      // silent-ok: the body is not JSON, so the raw text already read into
+      // `message` is the best description there is; the ApiError below still
+      // throws and still carries the status.
     }
     throw new ApiError(res.status, message);
   }

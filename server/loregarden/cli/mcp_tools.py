@@ -160,6 +160,8 @@ def _is_read_only(name: str) -> bool:
     try:
         return McpTool(name) in READ_ONLY_MCP_TOOLS
     except ValueError:
+        # silent-ok: the ValueError IS the answer — an unknown tool is not on the
+        # read-only list, and False fails closed by treating it as a write
         return False
 
 

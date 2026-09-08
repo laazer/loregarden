@@ -27,6 +27,7 @@ workflow pane renders. This ledger is a separate, agent-facing channel.
 from __future__ import annotations
 
 import json
+import logging
 
 from loregarden.models.domain import (
     AgentRun,
@@ -39,6 +40,8 @@ from loregarden.models.domain import (
 from loregarden.services.git_commit_push_service import head_commit_sha
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 # Feedback context, not a failure — kept off the Errors tab. The re-run agent's
 # context is assembled from these; the human-facing error artifact that
@@ -179,6 +182,9 @@ def _context_of(artifact: Artifact) -> str:
     try:
         payload = json.loads(artifact.content_json or "{}")
     except json.JSONDecodeError:
+        # "" also means "no context recorded", so a corrupt artifact silently
+        # reads as a fresh one and the loop-detection below stops matching.
+        logger.warning("rework artifact %s has unparseable content", artifact.id, exc_info=True)
         return ""
     return (payload.get("context") or "").strip()
 
@@ -254,6 +260,12 @@ def render_rework_feedback(session: Session, ticket: Ticket, target_stage: str) 
         try:
             payload = json.loads(artifact.content_json or "{}")
         except json.JSONDecodeError:
+            logger.warning(
+                "Unparseable rework artifact %s for stage %s; its feedback is dropped",
+                artifact.id,
+                target_stage,
+                exc_info=True,
+            )
             continue
         context = (payload.get("context") or "").strip()
         if not context or context in seen:

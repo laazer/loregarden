@@ -24,6 +24,7 @@ export function stashHomeBaxterPrompt(prompt: string): void {
   try {
     sessionStorage.setItem(HOME_BAXTER_PROMPT_KEY, content);
   } catch {
-    /* private mode — chat still opens; prompt just won't prefill */
+    /* silent-ok: private mode blocks sessionStorage; the chat still opens, the
+       draft simply does not prefill, and the user retypes it. */
   }
 }

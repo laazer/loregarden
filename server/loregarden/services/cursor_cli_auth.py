@@ -57,7 +57,12 @@ def read_cursor_ide_access_token() -> str | None:
         token = token.strip()
         return token or None
     except sqlite3.Error as exc:
-        logger.debug("cursor IDE credential sqlite read failed: %s", exc)
+        logger.warning(
+            "cursor IDE credential store %s could not be read, so cursor-agent "
+            "subprocesses get no CURSOR_API_KEY from it: %s",
+            db_path,
+            exc,
+        )
         return None
 
 
@@ -78,7 +83,13 @@ def prime_cursor_api_key_env(*, repo_root: Path) -> str | None:
     if key_path.is_file():
         try:
             key = key_path.read_text(encoding="utf-8").strip()
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "cursor API key file %s exists but could not be read; "
+                "falling back to the Cursor IDE session token: %s",
+                key_path,
+                exc,
+            )
             key = ""
         if _valid_env_secret(key):
             os.environ["CURSOR_API_KEY"] = key

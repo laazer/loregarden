@@ -3,6 +3,8 @@ import type { Application } from "pixi.js";
 
 import type { HiveSkinId } from "../../../lib/hive/skins";
 import type { HiveWorldModel } from "../../../lib/hive/worldModel";
+import { describeError, pushToast } from "../../../state/toastStore";
+import { HiveErrorBoundary } from "./HiveErrorBoundary";
 import { createHiveApplication, type OfficeFloor } from "./scene/OfficeFloor";
 
 interface HiveFloorSceneProps {
@@ -21,7 +23,20 @@ function modelSyncKey(model: HiveWorldModel): string {
 
 const INIT_TIMEOUT_MS = 3500;
 
-export function HiveFloorScene({ model, skin }: HiveFloorSceneProps) {
+/**
+ * The Pixi floor, behind the boundary it was written for: a WebGL/WebGPU crash
+ * throws during render, where `bootError` cannot catch it, and would otherwise
+ * take the whole page down with it.
+ */
+export function HiveFloorScene(props: HiveFloorSceneProps) {
+  return (
+    <HiveErrorBoundary>
+      <HiveFloorSceneCanvas {...props} />
+    </HiveErrorBoundary>
+  );
+}
+
+function HiveFloorSceneCanvas({ model, skin }: HiveFloorSceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const floorRef = useRef<OfficeFloor | null>(null);
@@ -119,7 +134,13 @@ export function HiveFloorScene({ model, skin }: HiveFloorSceneProps) {
             app.render();
           }
         } catch (skinErr) {
-          console.error("[hive] skin load failed", skinErr);
+          // The floor is up but dressed in nothing: say so, because a blank
+          // office and an empty office look identical on screen.
+          pushToast({
+            tone: "warning",
+            title: "Hive artwork failed to load",
+            message: describeError(skinErr, "The floor is running without its sprites"),
+          });
         }
 
         const tick = (now: number) => {
@@ -137,7 +158,7 @@ export function HiveFloorScene({ model, skin }: HiveFloorSceneProps) {
         window.clearTimeout(timeoutId);
         console.error("[hive] boot failed", err);
         if (alive) {
-          setBootError(err instanceof Error ? err.message : "Failed to start hive floor");
+          setBootError(describeError(err, "Failed to start hive floor"));
           setReady(false);
         }
       }
@@ -165,7 +186,13 @@ export function HiveFloorScene({ model, skin }: HiveFloorSceneProps) {
         floor.sync(modelRef.current);
         app?.render();
       } catch (err) {
-        console.error("[hive] sync failed", err);
+        // A sync that threw leaves the last frame on screen — stale, and
+        // indistinguishable from a quiet office unless it is reported.
+        pushToast({
+          tone: "warning",
+          title: "Hive floor is out of date",
+          message: describeError(err, "The floor stopped following the run"),
+        });
       }
     })();
     return () => {

@@ -256,8 +256,8 @@ def cancel_baxter_chat_turn(
         try:
             request_cancel(session, run)
         except ValueError:
-            # Already cancelling or no longer in flight — the pending row is what
-            # unlocks the composer; the run flag is best-effort.
+            # silent-ok: already cancelling or finished; the settled pending row is
+            # what unlocks the composer and it is returned to the caller either way.
             pass
 
     pending = latest_pending_turn(session, chat_session.id)

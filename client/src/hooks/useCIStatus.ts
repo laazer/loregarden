@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "../api/http";
+import { describeError } from "../state/toastStore";
 import { api, type CIRunResult, type AutoFixAttempt } from "../api/client";
 
 export interface CIStatusData {
@@ -31,10 +33,16 @@ export function useCIStatus(ticketId: string): CIStatusData {
       setCIStatus(ci_status);
       setAutoFixHistory(auto_fix_history || []);
     } catch (err) {
-      // CI endpoint may not exist yet (not all tickets have CI), don't treat as error
-      console.debug("CI status not available for ticket", ticketId);
+      // A 404 is the honest answer "this ticket has no CI". Anything else — a
+      // 500, a dropped connection, an expired session — is a failure, and
+      // reporting it as "no CI" hides a broken pipeline behind a blank panel.
       setCIStatus(null);
       setAutoFixHistory([]);
+      setError(
+        err instanceof ApiError && err.status === 404
+          ? null
+          : describeError(err, "Could not read CI status"),
+      );
     } finally {
       setLoading(false);
     }
@@ -75,7 +83,7 @@ export function useAutoFix(ticketId: string) {
       await api.triggerAutoFix(ticketId);
       // Poll will pick up the new attempt
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to trigger auto-fix";
+      const message = describeError(err, "Failed to trigger auto-fix");
       setFixError(message);
       console.error("Error triggering auto-fix:", err);
     } finally {
@@ -89,7 +97,7 @@ export function useAutoFix(ticketId: string) {
       setFixError(null);
       await api.skipCICheck(ticketId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to skip CI check";
+      const message = describeError(err, "Failed to skip CI check");
       setFixError(message);
       console.error("Error skipping CI check:", err);
     } finally {

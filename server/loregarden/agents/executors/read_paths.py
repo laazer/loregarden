@@ -110,6 +110,9 @@ def _args_paths(raw: object) -> list[str]:
     try:
         return ReadArgs.model_validate(raw).paths()
     except ValidationError:
+        # No paths and an unreadable payload look the same to the evidence
+        # tracker, which then reports the agent read nothing at all.
+        logger.warning("ignoring an unparseable Read tool call payload", exc_info=True)
         return []
 
 

@@ -214,7 +214,7 @@ class BuiltinOrchestrator:
                     return advanced
 
             self._complete_run(orch_run, ticket)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - run boundary; the ticket is blocked with this message
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,
@@ -753,7 +753,7 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
         for run in runs:
             try:
                 results.append(_run_agent(run.id))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - member boundary; recorded as a ParallelMemberResult failure
                 results.append(
                     ParallelMemberResult(agent_id=run.agent_id, failure=f"{run.agent_id}: {exc}")
                 )
@@ -764,7 +764,7 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
                 agent_label = future_map[future]
                 try:
                     results.append(future.result())
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - future.result() re-raises the worker's error; recorded below
                     results.append(
                         ParallelMemberResult(agent_id=agent_label, failure=f"{agent_label}: {exc}")
                     )

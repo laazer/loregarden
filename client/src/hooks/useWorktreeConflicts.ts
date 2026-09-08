@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { describeError } from '../state/toastStore';
+
 export interface ConflictFile {
   path: string;
   type: 'code' | 'lock' | 'json' | 'markdown' | 'other';
@@ -89,11 +91,10 @@ export function useWorktreeConflicts(
         }
       } catch (err) {
         if (isMounted) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to fetch conflicts';
-          // Only set error if it's not 404 (which means no conflicts)
-          if (!errorMessage.includes('404')) {
-            setError(errorMessage);
-          }
+          // The real 404 is answered above, where the response is in hand.
+          // Matching on the message text as well dropped any conflict whose
+          // body happened to contain "404".
+          setError(describeError(err, 'Failed to fetch conflicts'));
         }
       } finally {
         if (isMounted) {

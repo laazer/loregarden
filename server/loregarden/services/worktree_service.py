@@ -21,6 +21,15 @@ from sqlmodel import Session, select
 logger = logging.getLogger(__name__)
 
 
+class ConflictDetectionError(RuntimeError):
+    """The conflict check could not be completed.
+
+    Distinct from "no conflicts" on purpose. `detect_conflicts` used to return
+    ``False`` on any failure, which is the same value it returns for a clean
+    merge — so a broken git call read as permission to merge.
+    """
+
+
 def repo_path_for_workspace(session: Session, workspace_id: str) -> str:
     """The checkout a workspace's worktrees hang off.
 
@@ -230,6 +239,8 @@ class WorktreeService:
         worktree.cleaned_at = datetime.now(timezone.utc)
         self.session.add(worktree)
         self.session.commit()
+        # silent-ok: pruning stale metadata is idempotent and best-effort; the
+        # next cleanup or `worktree add` prunes again if this one did nothing
         run_git(
             ["worktree", "prune"],
             cwd=str(self.repo_path),
@@ -307,17 +318,32 @@ class WorktreeService:
 
         Returns:
             True if conflicts detected, False otherwise
+
+        Raises:
+            ConflictDetectionError: the check could not be completed. This used
+                to return ``False`` — indistinguishable from "no conflicts", on
+                the one call that decides whether a merge may proceed.
         """
         try:
             worktree_path = Path(worktree.worktree_path)
 
-            # Fetch latest from remote
-            run_git(
+            # A failed fetch is not fatal, but the merge-base below is then
+            # computed against a stale origin/main — say so rather than
+            # silently comparing against yesterday's remote.
+            fetch = run_git(
                 ["fetch", "origin"],
                 cwd=str(worktree_path),
                 check=False,
                 capture_output=True,
             )
+            if fetch.returncode != 0:
+                logger.warning(
+                    "fetch origin failed in %s (rc=%s); conflict detection is computed "
+                    "against a possibly stale origin/%s",
+                    worktree_path,
+                    fetch.returncode,
+                    target_branch,
+                )
 
             # Try dry-run merge to detect conflicts
             # git merge --no-commit --no-ff origin/target_branch
@@ -339,6 +365,8 @@ class WorktreeService:
                 logger.warning(f"Conflicts detected in worktree {worktree.id}: {conflict_files}")
             else:
                 # Abort the dry-run merge
+                # silent-ok: undoing a merge we only started to probe; if it did
+                # not start there is nothing to abort, and the next probe re-runs
                 run_git(
                     ["merge", "--abort"],
                     cwd=str(worktree_path),
@@ -351,9 +379,11 @@ class WorktreeService:
 
             return has_conflicts
 
-        except Exception as e:
-            logger.error(f"Error detecting conflicts: {e}", exc_info=True)
-            return False
+        except Exception as e:  # noqa: BLE001 - boundary: any failure means "unknown"
+            logger.exception("Error detecting conflicts for worktree %s", worktree.id)
+            raise ConflictDetectionError(
+                f"Could not determine merge conflicts for worktree {worktree.id}: {e}"
+            ) from e
 
     def _extract_conflict_files(self, worktree_path: Path) -> list[str]:
         """Extract list of files with merge conflicts."""
@@ -367,9 +397,12 @@ class WorktreeService:
             )
             files = result.stdout.strip().split("\n")
             return [f for f in files if f]  # Filter empty strings
-        except Exception as e:
-            logger.error(f"Error extracting conflict files: {e}")
-            return []
+        except Exception:
+            # Reached only after the dry-run merge already reported conflicts, so
+            # an empty list here would read as "conflicts in 0 files". Let it
+            # propagate: detect_conflicts turns it into ConflictDetectionError.
+            logger.exception("Error extracting conflict files from %s", worktree_path)
+            raise
 
     def merge_worktree(
         self,
@@ -478,8 +511,8 @@ class WorktreeService:
             logger.info(f"Successfully merged worktree {worktree.id}")
             return True
 
-        except Exception as e:
-            logger.error(f"Error merging worktree: {e}", exc_info=True)
+        except Exception:  # noqa: BLE001 - boundary: any failure fails the merge
+            logger.exception("Error merging worktree %s", worktree.id)
             worktree.state = WorktreeState.FAILED
             self.session.add(worktree)
             self.session.commit()
@@ -518,8 +551,16 @@ class WorktreeService:
             logger.info(f"Auto-resolved conflicts in {len(conflict_files)} files")
             return True
 
-        except Exception as e:
-            logger.error(f"Error auto-resolving conflicts: {e}")
+        except Exception:  # noqa: BLE001 - boundary: auto-resolution is all-or-nothing
+            # The three git calls above are check=True, so a failure can land
+            # between them: files checked out but not staged, or staged but not
+            # committed. The caller only learns "False", so name the partial
+            # state here — it is what someone debugging the worktree needs.
+            logger.exception(
+                "Error auto-resolving conflicts in %s; the worktree may be left "
+                "part-resolved (checked out and/or staged but not committed)",
+                worktree_path,
+            )
             return False
 
     def cleanup_worktree(self, worktree: Worktree) -> bool:
@@ -543,6 +584,9 @@ class WorktreeService:
             # Remove git worktree
             if worktree_path.exists():
                 logger.info(f"Removing worktree: {worktree_path}")
+                # silent-ok: removal is verified below — if the path still
+                # exists the shutil fallback removes it, so a failure here has a
+                # real alternate path rather than passing unnoticed
                 run_git(
                     ["worktree", "remove", "--force", str(worktree_path)],
                     cwd=str(self.repo_path),

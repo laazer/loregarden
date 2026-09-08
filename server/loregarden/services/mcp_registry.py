@@ -12,12 +12,15 @@ nothing acts on.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
 from loregarden.models.domain import McpServer, McpServerCreate, McpServerUpdate, McpServerView
 from loregarden.services.tool_policy import TOOL_POLICIES
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 #: Transports the CLI config understands. A stdio server is launched by the CLI
 #: itself; an http one is dialled.
@@ -37,7 +40,12 @@ def parse_string_list(raw: str) -> list[str]:
     a column an operator or an older build wrote badly should not 500 a read."""
     try:
         parsed = json.loads(raw or "[]")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "MCP server JSON array column is unparseable; reading it as empty: %s",
+            exc,
+            exc_info=True,
+        )
         return []
     return [str(item) for item in parsed] if isinstance(parsed, list) else []
 

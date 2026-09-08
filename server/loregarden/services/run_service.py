@@ -254,7 +254,12 @@ def settle_stranded_stages(
         try:
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.BLOCKED)
         except ValueError:
-            # Stage key no longer in the template — nothing coherent to settle.
+            logger.warning(
+                "Stage %s is no longer in ticket %s's template; leaving it unsettled",
+                stage_key,
+                ticket.external_id,
+                exc_info=True,
+            )
             continue
         ticket.blocking_issues = record_blocking_issue(
             session,
@@ -547,8 +552,8 @@ def execute_orchestration_background(
                 auto_approve=auto_approve,
                 timeout_seconds=timeout_seconds,
             )
-    except Exception as exc:
-        logger.exception("Background orchestration failed for ticket %s: %s", ticket_id, exc)
+    except Exception:  # noqa: BLE001 - background boundary: a dead task must still be reported
+        logger.exception("Background orchestration failed for ticket %s", ticket_id)
 
 
 def schedule_orchestration(

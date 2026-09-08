@@ -78,7 +78,15 @@ def _is_primary_checkout(repo_root: Path, worktree_path: str) -> bool:
     try:
         return Path(worktree_path).resolve() == repo_root.resolve()
     except OSError:
-        return False
+        # Fail closed: an unresolvable path may well BE the primary checkout, and
+        # answering False here is what authorizes `worktree remove --force`.
+        logger.warning(
+            "Could not resolve worktree path %r against %s; treating it as the primary checkout",
+            worktree_path,
+            repo_root,
+            exc_info=True,
+        )
+        return True
 
 
 def _try_free_worktree_lock(repo_root: Path, branch: str, locked_at: str) -> tuple[bool, str]:
@@ -113,6 +121,7 @@ def _try_free_worktree_lock(repo_root: Path, branch: str, locked_at: str) -> tup
         return False, f"Tried to remove locking worktree {locked_at} but failed: {detail}"
 
     run_git(
+        # silent-ok: bookkeeping after the removal above already freed the branch
         ["worktree", "prune"],
         cwd=repo_root,
         capture_output=True,

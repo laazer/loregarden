@@ -15,10 +15,13 @@ untyped value *is* before anything typed can hold it.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from loregarden.mcp.tool_ids import McpTool
+
+logger = logging.getLogger(__name__)
 
 
 def coerce_mapping(raw: Any) -> dict[str, Any]:
@@ -31,6 +34,9 @@ def coerce_mapping(raw: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError:
+            # An empty mapping makes the schema report every field as missing,
+            # which sends the caller hunting a schema bug that was a typo.
+            logger.warning("tool arguments were not valid JSON; treating as empty", exc_info=True)
             return {}
         if isinstance(parsed, dict):  # py-org: allow-isinstance
             return parsed

@@ -252,7 +252,11 @@ class ParallelRunService:
         """
         from loregarden.services.git_automation import run_git_automation
         from loregarden.services.git_automation_config import resolve_git_automation
-        from loregarden.services.worktree_service import WorktreeService, repo_path_for_workspace
+        from loregarden.services.worktree_service import (
+            ConflictDetectionError,
+            WorktreeService,
+            repo_path_for_workspace,
+        )
 
         ticket = self.session.get(Ticket, run.ticket_id)
         workspace = self.session.get(Workspace, run.workspace_id)
@@ -283,7 +287,16 @@ class ParallelRunService:
         # sit on a conflicted PR indefinitely rather than report anything back,
         # so without this the auto-resolve setting could never fire for the one
         # configuration anybody actually runs.
-        if worktree_service.detect_conflicts(worktree, config.base_branch):
+        try:
+            conflicted = worktree_service.detect_conflicts(worktree, config.base_branch)
+        except ConflictDetectionError:
+            # Fail closed: an unknown conflict state must not become an
+            # automatic merge. Route it down the conflict path, which is the
+            # one that surfaces to a human.
+            logger.exception("Conflict detection failed for run %s; treating as conflicted", run.id)
+            conflicted = True
+
+        if conflicted:
             return self._handle_merge_conflicts(run, ticket, workspace, worktree, config, result)
 
         # Clean. With a PR open, auto-merge lands it once checks pass — merging

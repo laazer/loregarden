@@ -208,7 +208,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
 
     try:
         reply = invoke_triage_model(session, ticket, text)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any provider error becomes a visible "unavailable" reply
         reply = format_agent_unavailable(TRIAGE_AGENT_NAME, exc)
 
     assistant_message = TriageMessage(

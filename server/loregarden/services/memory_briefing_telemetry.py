@@ -109,7 +109,7 @@ def record_briefing(
             telemetry.add(row)
             telemetry.commit()
             return row.id
-    except Exception:
+    except Exception:  # noqa: BLE001 - telemetry boundary; logged at warning with the run code
         logger.warning(
             "Memory briefing telemetry write failed for run %s", run.run_code, exc_info=True
         )

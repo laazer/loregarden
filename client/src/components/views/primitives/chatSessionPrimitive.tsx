@@ -87,7 +87,10 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
         value={draft}
         onChange={setDraft}
         onSubmit={submit}
-        onStop={() => void chat.stop().catch(() => undefined)}
+        onStop={() =>
+          /* silent-ok: stop is a mutation with meta.errorTitle, so the global MutationCache toast reports it */
+          void chat.stop().catch(() => undefined)
+        }
         placeholder="Reply to Baxter…"
         sendLabel="Send"
         isSending={chat.isBusy}

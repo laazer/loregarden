@@ -111,11 +111,13 @@ export function ImportTicketsModal({
       const result = onContinue(selected.map((file) => file.path), mode);
       if (result instanceof Promise) {
         result.catch(() => {
-          // Error handling - allow caller to observe the rejection without crashing
+          // silent-ok: the failure belongs to the caller's mutation, which
+          // hands it back as the `errorMessage` prop this modal renders.
         });
       }
     } catch {
-      // Error handling - allow caller to observe the error without crashing
+      // silent-ok: same owner as above — a synchronous throw from onContinue
+      // still reaches the operator through the rendered `errorMessage` prop.
     }
   };
 

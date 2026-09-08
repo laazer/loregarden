@@ -17,6 +17,7 @@ is a separate question from what the verdict is, and lives in `verdict_proceeds`
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,8 @@ from loregarden.services.handoff_store import boundary_from_doc, latest_handoff_
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_parking import park_stage
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 #: Verdicts a stage may start on. ADVANCED is here because the orchestrator
 #: commits between stages, so a receiver almost always inherits a descendant of
@@ -64,7 +67,14 @@ def _repo_contains(repo_root: Path, sha: str) -> bool:
             capture_output=True,
             text=True,
         )
-    except OSError:
+    except OSError as exc:
+        logger.warning(
+            "git cat-file failed in %s; treating %s as absent from this repository: %s",
+            repo_root,
+            sha,
+            exc,
+            exc_info=True,
+        )
         return False
     return proc.returncode == 0
 
@@ -77,7 +87,15 @@ def _is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
             capture_output=True,
             text=True,
         )
-    except OSError:
+    except OSError as exc:
+        logger.warning(
+            "git merge-base failed in %s; treating %s as not an ancestor of %s: %s",
+            repo_root,
+            ancestor,
+            descendant,
+            exc,
+            exc_info=True,
+        )
         return False
     return proc.returncode == 0
 

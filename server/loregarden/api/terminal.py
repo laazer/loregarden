@@ -70,7 +70,8 @@ async def _pump_output(websocket: WebSocket, session: TerminalSession) -> None:
     try:
         await websocket.close(code=NORMAL_CLOSURE, reason="The shell exited.")
     except RuntimeError:
-        # Already closed from the other side; the disconnect is the same event.
+        # silent-ok: teardown — the socket was already closed from the browser side,
+        # which is the same event this close was trying to deliver.
         pass
 
 
@@ -107,6 +108,8 @@ async def terminal_socket(
                 try:
                     message = json.loads(raw)
                 except json.JSONDecodeError:
+                    # silent-ok: not a control frame after all — the operator typed
+                    # text starting with '{"type"', so it goes to the shell verbatim.
                     session.write(raw)
                     continue
                 if message.get("type") == "resize":
@@ -117,6 +120,8 @@ async def terminal_socket(
                     continue
             session.write(raw)
     except WebSocketDisconnect:
+        # silent-ok: the browser closed the terminal tab; the finally block below
+        # reaps the shell, which is the whole of the required response.
         pass
     except Exception:  # noqa: BLE001 - a broken socket must still reap the shell
         logger.warning("Terminal socket for %s failed", workspace_slug, exc_info=True)

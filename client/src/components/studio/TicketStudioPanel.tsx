@@ -34,6 +34,7 @@ import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
+import { describeError, pushToast } from "../../state/toastStore";
 import { ImportTicketsModal } from "../ImportTicketsModal";
 import { ReferenceRepoPicker, ReferenceReposSection } from "./ReferenceRepos";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
@@ -156,7 +157,8 @@ export function TicketStudioPanel({
         sessionStorage.removeItem(HOME_BAXTER_PROMPT_KEY);
       }
     } catch {
-      /* ignore storage failures */
+      /* silent-ok: private mode blocks sessionStorage; the draft simply does
+         not prefill from the home composer and the user types it here. */
     }
     setNewDraft(next);
     setNewReferenceRepoIds([]);
@@ -238,7 +240,14 @@ export function TicketStudioPanel({
         // which parts to pursue before anything is scoped into tickets.
         try {
           return await api.generateTicketStudioSurvey(created.id);
-        } catch {
+        } catch (error) {
+          // The session is real and worth keeping, but the survey it was
+          // created for is not there — say so instead of opening an empty one.
+          pushToast({
+            tone: "warning",
+            title: "Session created without its survey",
+            message: describeError(error, "The reference survey could not be generated"),
+          });
           return created;
         }
       }
@@ -246,7 +255,15 @@ export function TicketStudioPanel({
         // auto_scope: the server generates the breakdown itself when the scoper
         // has nothing to ask, so the chain is not lost if this page goes away.
         return await api.requestTicketStudioClarifications(created.id, true);
-      } catch {
+      } catch (error) {
+        // The session exists, so keep it rather than throwing the operator's
+        // brief away — but the scoper never ran, and a studio that opens empty
+        // with no word said is indistinguishable from one with nothing to ask.
+        pushToast({
+          tone: "warning",
+          title: "Session created without a breakdown",
+          message: describeError(error, "Scoping did not start; retry it from the session"),
+        });
         return created;
       }
     },
@@ -290,7 +307,15 @@ export function TicketStudioPanel({
         // auto_scope: the server generates the breakdown itself when the scoper
         // has nothing to ask, so the chain is not lost if this page goes away.
         return await api.requestTicketStudioClarifications(created.id, true);
-      } catch {
+      } catch (error) {
+        // The session exists, so keep it rather than throwing the operator's
+        // brief away — but the scoper never ran, and a studio that opens empty
+        // with no word said is indistinguishable from one with nothing to ask.
+        pushToast({
+          tone: "warning",
+          title: "Session created without a breakdown",
+          message: describeError(error, "Scoping did not start; retry it from the session"),
+        });
         return created;
       }
     },

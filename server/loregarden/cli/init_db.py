@@ -48,6 +48,7 @@ def _initialize(*, empty: bool) -> str:
     try:
         display = db_path.relative_to(settings.repo_root)
     except ValueError:
+        # silent-ok: the db simply lives outside the repo; print the absolute path
         display = db_path
     lines = [f"removed {len(removed)} existing file(s)"] if removed else []
     lines.append(f"initialized {display}")

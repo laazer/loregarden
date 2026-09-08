@@ -915,6 +915,16 @@ def resolve_gate_scope(
         candidates = [repo / rel for rel in scope.paths]
     else:
         scope = ResolvedScope(diff_scope, base_ref, [], describe_scope(diff_scope, base_ref))
+        # lefthook's `{staged_files}` lists deletions too, and a file this commit
+        # removes has nothing left to grade. Dropped by name rather than in
+        # silence: the whole point of `read_source_text` refusing an unreadable
+        # path is that "I could not read it" must never pass as "it is clean",
+        # and a deletion is the one case where there is genuinely nothing to read.
+        deleted = [path for path in candidates if not path.exists()]
+        if deleted:
+            names = ", ".join(sorted(path.name for path in deleted))
+            print(f"{label}: skipping {len(deleted)} deleted file(s): {names}")
+            candidates = [path for path in candidates if path.exists()]
     files = select(repo, candidates, discovered)
     if scope.degraded and not files:
         # The fallback is only tolerable while it still has something to grade.

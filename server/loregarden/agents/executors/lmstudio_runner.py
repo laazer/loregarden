@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -15,6 +16,8 @@ from pathlib import Path
 import httpx
 from loregarden.agents.condenser import Condenser, NoOpCondenser
 from loregarden.services.lmstudio_discovery import is_chat_lmstudio_model
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 DEFAULT_TIMEOUT_SECONDS = 600.0
@@ -81,6 +84,8 @@ def _assistant_text(message: dict) -> str:
         try:
             json.loads(candidate)
         except json.JSONDecodeError:
+            # silent-ok: a probe, not a parse — the braces were prose, and the
+            # reasoning text is returned unchanged below.
             pass
         else:
             return candidate
@@ -478,6 +483,11 @@ def _chat_with_tools(
             try:
                 arguments = json.loads(function.get("arguments") or "{}")
             except json.JSONDecodeError:
+                # The call is still attempted with no arguments — local models emit
+                # invalid JSON often enough that the tool's own error is the better
+                # correction signal — but the operator has to see which call lost
+                # its arguments, or an empty-argument tool result looks intended.
+                logger.warning("%s: tool arguments are not valid JSON", name, exc_info=True)
                 arguments = {}
             if not isinstance(arguments, dict):
                 arguments = {}

@@ -179,6 +179,13 @@ def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, 
         behind = int(parts[0])
         ahead = int(parts[1])
     except ValueError:
+        logger.warning(
+            "Unreadable rev-list counts for %s...%s (%r); reporting 0/0",
+            base,
+            branch,
+            parts,
+            exc_info=True,
+        )
         return 0, 0
     return ahead, behind
 
@@ -265,6 +272,7 @@ def _pr_row_rank(row: dict[str, Any]) -> tuple[int, int]:
     try:
         number = int(row.get("number") or 0)
     except (TypeError, ValueError):
+        # silent-ok: sort key only; a gh row with no numeric number ranks last
         number = 0
     return (0 if state == "open" else 1, -number)
 
@@ -299,14 +307,31 @@ def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
+        logger.warning(
+            "`gh pr list` failed in %s; falling back to per-branch lookups",
+            repo_root,
+            exc_info=True,
+        )
         return {}, False
     if proc.returncode != 0:
+        logger.warning(
+            "`gh pr list` exited %s in %s; falling back to per-branch lookups: %s",
+            proc.returncode,
+            repo_root,
+            (proc.stderr or "").strip(),
+        )
         return {}, False
     try:
         rows = json.loads(proc.stdout or "[]")
     except ValueError:
+        logger.warning(
+            "Unparseable `gh pr list` JSON in %s; falling back to per-branch lookups",
+            repo_root,
+            exc_info=True,
+        )
         return {}, False
     if not isinstance(rows, list):
+        logger.warning("`gh pr list` returned %s, not a list; falling back", type(rows).__name__)
         return {}, False
 
     best: dict[str, dict[str, Any]] = {}
@@ -369,8 +394,12 @@ def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[
             name = future_map[future]
             try:
                 value = future.result()
-            except Exception as exc:
-                logger.warning("PR status lookup failed for branch %s: %s", name, exc)
+            except Exception:  # noqa: BLE001 - future.result() re-raises whatever the worker raised
+                logger.warning(
+                    "PR status lookup failed for branch %s; reporting unknown",
+                    name,
+                    exc_info=True,
+                )
                 value = None
             _pr_status_cache[(str(repo_root), name)] = (now, value)
             results[name] = value
@@ -472,7 +501,12 @@ def _detect_issues(
                     }
                 )
         except ValueError:
-            pass
+            logger.warning(
+                "Unreadable last-commit date %r on branch %s; skipping the stale check",
+                last_commit_date,
+                branch,
+                exc_info=True,
+            )
 
     if is_current and linked_tickets and ahead == 0 and behind == 0 and not dirty:
         # Healthy current branch — no extra noise

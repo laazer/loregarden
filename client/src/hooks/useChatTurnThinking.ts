@@ -90,9 +90,9 @@ export function useChatTurnThinking(turnId: string | null | undefined): ChatTurn
           lastSeq.current = next.seq;
           setFrame(next);
         })
-        // A failed read is the socket's problem to recover from, not something
-        // to surface: the panel is an aid, and an error toast for it would
-        // interrupt the answer the operator is actually waiting for.
+        // silent-ok: retryable — this poll re-reads every few seconds and the
+        // socket resumes the stream; the reasoning panel is an aid beside the
+        // answer, not the answer, and a toast per poll would bury it.
         .catch(() => undefined);
     };
 

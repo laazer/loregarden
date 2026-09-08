@@ -197,7 +197,7 @@ def _list_tools_http(url: str, headers: dict[str, str], session_id: str) -> list
             follow_redirects=False,
         )
     except httpx.HTTPError:
-        logger.debug("tools/list failed for %s", url, exc_info=True)
+        logger.warning("tools/list failed for %s", url, exc_info=True)
         return None
     if response.status_code >= 400:
         return None
@@ -218,7 +218,7 @@ def _json_payloads(body: str) -> list[dict]:
         parsed = json.loads(text)
         return [parsed] if isinstance(parsed, dict) else []
     except json.JSONDecodeError:
-        pass
+        pass  # silent-ok: expected for SSE/multi-object bodies, parsed by the line scan below
 
     payloads: list[dict] = []
     for line in text.splitlines():
@@ -229,7 +229,7 @@ def _json_payloads(body: str) -> list[dict]:
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            continue
+            continue  # silent-ok: SSE frames carry non-JSON lines (event:, id:, comments)
         if isinstance(parsed, dict):
             payloads.append(parsed)
     return payloads

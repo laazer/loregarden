@@ -295,9 +295,10 @@ export function BaxterChatPage() {
     // Sending from the gallery leaves it: the canned thread is a reference, not
     // a conversation to continue.
     setGalleryTurns(null);
-    // The failure is shown from `chat.error`; swallowing here keeps a failed
-    // send from surfacing as an unhandled rejection as well.
-    void chat.send(content, { skill }).catch(() => undefined);
+    void chat.send(content, { skill }).catch(() => {
+      // silent-ok: `chat.error` renders the failure as `sendError` on this
+      // page, and send carries meta.errorTitle so the global toast fires too.
+    });
   };
 
   const archive = useMemo<ChatArchive | null>(() => {
@@ -346,7 +347,10 @@ export function BaxterChatPage() {
     onSend: (content, skill) => respond(content, skill),
     onSendInNewChat: (content) => {
       setGalleryTurns(null);
-      void chat.sendInNewChat(content).catch(() => undefined);
+      void chat.sendInNewChat(content).catch(() => {
+        // silent-ok: sendInNewChat is a mutation with meta.errorTitle, so the
+        // global MutationCache toast already reported the failure.
+      });
     },
     // This is the one thread whose turn carries a skill to the agent.
     skillsEnabled: true,
@@ -451,7 +455,12 @@ export function BaxterChatPage() {
 
           <BaxterHeroAsk
             onSend={(text) => void respond(text)}
-            onStop={() => void chat.stop().catch(() => undefined)}
+            onStop={() =>
+              void chat.stop().catch(() => {
+                // silent-ok: stop is a mutation with meta.errorTitle, so the
+                // global MutationCache toast reports a stop that did not take.
+              })
+            }
             busy={busy}
             stopping={chat.isStopping}
             blocked={!workspaceSlug}
@@ -531,7 +540,12 @@ export function BaxterChatPage() {
           ) : null}
           <BaxterReplyDock
             onSend={(text) => void respond(text)}
-            onStop={() => void chat.stop().catch(() => undefined)}
+            onStop={() =>
+              void chat.stop().catch(() => {
+                // silent-ok: stop is a mutation with meta.errorTitle, so the
+                // global MutationCache toast reports a stop that did not take.
+              })
+            }
             busy={busy}
             stopping={chat.isStopping}
             suggestions={latestSuggestions}

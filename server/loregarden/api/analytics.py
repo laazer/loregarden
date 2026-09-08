@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
 from sqlmodel import Session, select
@@ -114,14 +114,12 @@ async def get_global_analytics(
     """Historical run metrics across every workspace sharing the slot pool."""
     try:
         return _build_metrics(session, workspace_id=None, range=range)
-    except Exception as e:
-        logger.error("Error retrieving global analytics: %s", e, exc_info=True)
-        return {
-            "workspace_id": "",
-            "range": range,
-            "metrics": [],
-            "error": str(e),
-        }
+    except Exception as e:  # noqa: BLE001 - endpoint boundary
+        # A 200 carrying `metrics: []` is shaped exactly like a real empty
+        # result, so a broken query rendered as "no data yet". Fail loudly and
+        # let the client's error path show what happened.
+        logger.exception("Error retrieving global analytics")
+        raise HTTPException(status_code=500, detail=f"Could not retrieve analytics: {e}") from e
 
 
 @router.get("/workspace/{workspace_id}/analytics")
@@ -144,11 +142,8 @@ async def get_analytics(
         body = _build_metrics(session, workspace_id=workspace_id, range=range)
         logger.debug("Analytics retrieved for %s: %d types", workspace_id, len(body["metrics"]))
         return body
-    except Exception as e:
-        logger.error("Error retrieving analytics: %s", e, exc_info=True)
-        return {
-            "workspace_id": workspace_id,
-            "range": range,
-            "metrics": [],
-            "error": str(e),
-        }
+    except Exception as e:  # noqa: BLE001 - endpoint boundary
+        # See get_global_analytics: an empty metrics list is a valid answer, so
+        # it must never double as the error channel.
+        logger.exception("Error retrieving analytics for %s", workspace_id)
+        raise HTTPException(status_code=500, detail=f"Could not retrieve analytics: {e}") from e

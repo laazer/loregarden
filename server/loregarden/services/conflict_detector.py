@@ -33,23 +33,39 @@ class ConflictDetectorService:
 
         Returns:
             {
+                "checked": bool,        # False when the check itself failed
                 "has_conflicts": bool,
                 "conflicting_files": list[str],
                 "summary": str,
                 "auto_mergeable": bool,
                 "conflict_details": dict,
             }
+
+        ``checked`` exists because "no conflicts" and "could not tell" are
+        different answers that used to look identical: a git failure returned
+        ``has_conflicts: False``, which the API reported as "Ready to merge".
+        Callers must treat ``checked=False`` as unknown, never as clean.
         """
         try:
             worktree_path = Path(worktree.worktree_path)
 
-            # Fetch latest from remote
-            run_git(
+            # A failed fetch is not fatal, but every merge-base below is then
+            # computed against a stale origin/main — say so rather than
+            # silently comparing against yesterday's remote.
+            fetch = run_git(
                 ["fetch", "origin"],
                 cwd=str(worktree_path),
                 check=False,
                 capture_output=True,
             )
+            if fetch.returncode != 0:
+                logger.warning(
+                    "fetch origin failed in %s (rc=%s); conflict preview is computed "
+                    "against a possibly stale origin/%s",
+                    worktree_path,
+                    fetch.returncode,
+                    target_branch,
+                )
 
             # Try dry-run merge to detect conflicts
             result = run_git(
@@ -69,6 +85,8 @@ class ConflictDetectorService:
                 auto_mergeable = self._check_auto_mergeable(worktree_path, conflict_files)
 
                 # Abort the dry-run merge
+                # silent-ok: undoing a merge we only started to probe; if it did
+                # not start there is nothing to abort, and the next probe re-runs
                 run_git(
                     ["merge", "--abort"],
                     cwd=str(worktree_path),
@@ -81,6 +99,7 @@ class ConflictDetectorService:
                     summary += "s"
 
                 return {
+                    "checked": True,
                     "has_conflicts": True,
                     "conflicting_files": conflict_files,
                     "summary": summary,
@@ -93,6 +112,8 @@ class ConflictDetectorService:
                 }
             else:
                 # No conflicts, abort merge
+                # silent-ok: undoing a merge we only started to probe; if it did
+                # not start there is nothing to abort, and the next probe re-runs
                 run_git(
                     ["merge", "--abort"],
                     cwd=str(worktree_path),
@@ -101,6 +122,7 @@ class ConflictDetectorService:
                 )
 
                 return {
+                    "checked": True,
                     "has_conflicts": False,
                     "conflicting_files": [],
                     "summary": f"Clean merge with {target_branch}",
@@ -108,12 +130,15 @@ class ConflictDetectorService:
                     "conflict_details": {},
                 }
 
-        except Exception as e:
-            logger.error(f"Error checking conflict preview: {e}", exc_info=True)
+        except Exception as e:  # noqa: BLE001 - boundary: any failure means "unknown"
+            logger.exception("Error checking conflict preview for %s", worktree.worktree_path)
+            # Fail closed. `has_conflicts: True` with `checked: False` keeps a
+            # caller that ignores `checked` from auto-merging on a broken probe.
             return {
-                "has_conflicts": False,
+                "checked": False,
+                "has_conflicts": True,
                 "conflicting_files": [],
-                "summary": f"Error checking conflicts: {str(e)}",
+                "summary": f"Could not check for conflicts: {e}",
                 "auto_mergeable": False,
                 "error": str(e),
             }
@@ -130,9 +155,12 @@ class ConflictDetectorService:
             )
             files = result.stdout.strip().split("\n")
             return [f for f in files if f]  # Filter empty strings
-        except Exception as e:
-            logger.error(f"Error extracting conflict files: {e}")
-            return []
+        except Exception:
+            # Reached only after the dry-run merge already reported conflicts, so
+            # an empty list here would read as "conflicts in 0 files". Let it
+            # propagate: get_conflict_preview turns it into checked=False.
+            logger.exception("Error extracting conflict files from %s", worktree_path)
+            raise
 
     def _check_auto_mergeable(
         self,
@@ -189,13 +217,9 @@ class ConflictDetectorService:
 
             return len(lines_with_code) < 5
 
-        except Exception as exc:
-            logger.warning(
-                "Conflict simplicity check failed for %s in %s: %s",
-                file_path,
-                worktree_path,
-                exc,
-            )
+        except Exception:  # noqa: BLE001 - boundary: any failure means "not simple"
+            # Fail closed: "not simple" keeps the conflict out of auto-resolution.
+            logger.exception("Error inspecting conflict in %s", file_path)
             return False
 
     async def get_conflict_details(
@@ -300,8 +324,8 @@ class ConflictDetectorService:
                 "preview": preview,
             }
 
-        except Exception as e:
-            logger.error(f"Error getting file conflict details: {e}")
+        except Exception as e:  # noqa: BLE001 - per-file detail; status carries it
+            logger.exception("Error getting conflict details for %s", file_path)
             return {
                 "file": file_path,
                 "status": "error",
@@ -421,4 +445,4 @@ class ConflictDetectorService:
             .where(ConflictReport.worktree_id == worktree_id)
             .order_by(ConflictReport.created_at.desc())
         )
-        return list(self.session.exec(stmt).all())
+        return self.session.exec(stmt).all()

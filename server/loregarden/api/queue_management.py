@@ -112,7 +112,7 @@ async def reorder_queued_run(
                     code="QUEUE_REORDER_ERROR",
                     context={"run_id": run_id, "new_position": new_position},
                 )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - notifying the UI must not mask the original failure re-raised below
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -282,7 +282,7 @@ async def promote_run(
                     code="QUEUE_PROMOTION_ERROR",
                     context={"run_id": run_id},
                 )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - notifying the UI must not mask the original failure re-raised below
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e

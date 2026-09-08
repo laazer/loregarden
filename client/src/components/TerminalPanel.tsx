@@ -73,6 +73,8 @@ export function TerminalPanel({ workspaceSlug }: TerminalPanelProps) {
       try {
         fit.fit();
       } catch {
+        // silent-ok: fit() throws on a detached or collapsed mount; the
+        // ResizeObserver calls sync() again as soon as the box has a size.
         return;
       }
       socket.resize(term.rows, term.cols);

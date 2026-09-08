@@ -311,10 +311,10 @@ class ChatTurnThinkingSink:
         }
         try:
             self._persist(payload)
-        except Exception:
-            # A thinking panel is an aid, never the work. A failed write must
-            # not take down the turn that produced the text.
-            logger.debug("Failed to persist thinking for turn %s", self.turn_id, exc_info=True)
+        except Exception:  # noqa: BLE001 - a thinking panel is an aid, never the work
+            # A failed write must not take down the turn that produced the text,
+            # but it is a real defect and must be visible in the logs.
+            logger.warning("Failed to persist thinking for turn %s", self.turn_id, exc_info=True)
         event_hub.publish(self._topic, {"type": "chat_thinking", "data": payload})
 
     def _persist(self, payload: dict[str, Any]) -> None:
@@ -376,6 +376,8 @@ def with_thinking_part(parts_json: str, thinking: str) -> str:
     try:
         parts = json.loads(parts_json or "[]")
     except json.JSONDecodeError:
+        # Dropping unreadable parts loses rendered content, not just formatting.
+        logger.warning("Unreadable parts_json; rebuilding parts from the thinking text only")
         parts = []
     if not isinstance(parts, list):
         parts = []

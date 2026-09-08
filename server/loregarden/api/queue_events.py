@@ -140,6 +140,8 @@ async def queue_socket(websocket: WebSocket) -> None:
             await _send_events(websocket, batch)
             await _send_snapshot(websocket)
     except WebSocketDisconnect:
+        # silent-ok: the viewer closed the tab; the finally block unsubscribes, and
+        # the queue keeps running whether or not a browser is watching it.
         pass
     except Exception:  # noqa: BLE001 - one bad socket must not take the loop down
         logger.warning("Queue socket failed", exc_info=True)

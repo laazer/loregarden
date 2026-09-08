@@ -68,11 +68,15 @@ def pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
+        # silent-ok: "no such process" IS the answer, not a failure to get one
         return False
     except PermissionError:
-        # Alive, owned by somebody else.
+        # silent-ok: EPERM proves the process exists; ownership is not our concern
         return True
     except OSError:
+        logger.warning(
+            "Could not probe pid %s for liveness; treating it as dead", pid, exc_info=True
+        )
         return False
     return True
 

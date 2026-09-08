@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 
 import { API_BASE } from '../api/client';
+import { describeError } from '../state/toastStore';
 import { DEFAULT_PARALLEL_STATS } from '../lib/queueSocket';
 import type { ActiveRun, ParallelStats, QueueLane, QueuedRun } from '../lib/queueSocket';
 
@@ -86,7 +87,7 @@ export function useParallelExecution(
         }
       } catch (err) {
         if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch status');
+          setError(describeError(err, 'Failed to fetch status'));
           // Keep previous data on error
         }
       } finally {

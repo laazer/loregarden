@@ -87,6 +87,10 @@ export function ViewPage() {
     // A 404 is an answer, not a hiccup: re-asking three times delays the state
     // the user is owed and hammers the server on every mistyped link.
     retry: false,
+    // Both failure shapes are rendered below — not-found, and the fallback that
+    // prints `describeError`. A global toast on top of either is an alarm over
+    // a state that already explains itself.
+    meta: { suppressErrorToast: true },
   });
 
   const loaded = view.data;

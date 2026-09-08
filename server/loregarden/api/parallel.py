@@ -95,7 +95,7 @@ async def create_parallel_run(
                     code="RUN_CREATION_ERROR",
                     context={"ticket_id": ticket_id},
                 )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - best-effort emit; logged, real error still raised
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -182,7 +182,7 @@ async def cancel_queued_run(
                     code="RUN_CANCELLATION_ERROR",
                     context={"run_id": run_id},
                 )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - best-effort emit; logged, real error still raised
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -223,6 +223,14 @@ async def check_conflicts(
         )
         preview = await conflict_service.get_conflict_preview(worktree, target_branch)
 
+        if not preview.get("checked", True):
+            # The probe itself failed. Reporting "Ready to merge" here is how a
+            # broken git call used to reach the UI as a clean merge.
+            raise HTTPException(
+                status_code=503,
+                detail=preview.get("summary") or "Could not check for conflicts",
+            )
+
         if not preview.get("has_conflicts"):
             return {
                 "has_conflicts": False,
@@ -245,7 +253,7 @@ async def check_conflicts(
                 preview=preview,
                 severity=details.get("severity", "medium"),
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - best-effort emit; logged, real error still raised
             logger.warning(f"Failed to emit conflict_detected: {e}")
 
         return {
@@ -271,7 +279,7 @@ async def check_conflicts(
                 code="CONFLICT_CHECK_ERROR",
                 context={"worktree_id": worktree_id},
             )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - best-effort emit; logged, real error still raised
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -328,7 +336,7 @@ async def merge_worktree(
                     worktree_id=worktree_id,
                     run_id=worktree.agent_run_id,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - best-effort emit; logged, real error still raised
                 logger.warning(f"Failed to emit conflict_resolved: {e}")
 
             return {
@@ -350,7 +358,7 @@ async def merge_worktree(
                             "conflict_files": worktree.conflict_files,
                         },
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - best-effort emit; logged, real error still raised
                     logger.warning(f"Failed to emit error: {e}")
 
                 return {
@@ -379,7 +387,7 @@ async def merge_worktree(
                     code="MERGE_ERROR",
                     context={"worktree_id": worktree_id},
                 )
-        except Exception as emit_err:
+        except Exception as emit_err:  # noqa: BLE001 - best-effort emit; logged, real error still raised
             logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e

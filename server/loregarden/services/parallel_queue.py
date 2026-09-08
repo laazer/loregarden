@@ -369,6 +369,7 @@ class ParallelQueueService:
                 return
 
             except IntegrityError:
+                # silent-ok: expected create race; the retry loop re-reads the pool
                 # Someone else created these between the read and the write. The
                 # pool they built is the one this was going to build, so rolling
                 # back and looking again is the whole recovery.
@@ -378,8 +379,17 @@ class ParallelQueueService:
                 # session, and every later query on it raises instead of
                 # answering — which turned one lost race into a dead caller.
                 self.session.rollback()
-                logger.error("Error initializing slots", exc_info=True)
+                logger.exception("Error initializing slots")
                 return
+
+        # Falling out of the loop means every attempt lost the race. That is
+        # almost always benign — whoever won built the same pool — but it is not
+        # provable from here, and returning quietly with no slots is how a queue
+        # that never dispatches looks exactly like an idle one.
+        logger.warning(
+            "Slot pool initialization lost the create race on every attempt; "
+            "assuming another worker built the pool"
+        )
 
     async def queue_run(
         self,
@@ -482,8 +492,8 @@ class ParallelQueueService:
                     code="QUEUE_ERROR",
                     context={"run_id": run_id},
                 )
-            except Exception as emit_err:
-                logger.warning(f"Failed to emit error: {emit_err}")
+            except Exception as emit_err:  # noqa: BLE001 - event bus is best-effort; the caller already gets the error
+                logger.warning("Failed to emit error: %s", emit_err)
 
             return {
                 "status": "error",
@@ -530,7 +540,7 @@ class ParallelQueueService:
 
             if freed:
                 self.session.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort sweep; a board status read must not die with it
             # Best-effort: a sweep that cannot run must not take the board's
             # status read down with it.
             self.session.rollback()
@@ -883,8 +893,8 @@ class ParallelQueueService:
                     slot_number=available_slot.slot_number,
                     **run_notify_fields(self.session, promoted_run),
                 )
-            except Exception as e:
-                logger.warning(f"Failed to emit queue_promoted: {e}")
+            except Exception as e:  # noqa: BLE001 - event bus is best-effort; the promotion already committed
+                logger.warning("Failed to emit queue_promoted: %s", e)
 
             # Re-order remaining queue
             self._reorder_queue_sync()
@@ -909,8 +919,8 @@ class ParallelQueueService:
                     code="PROMOTION_ERROR",
                     context={},
                 )
-            except Exception as emit_err:
-                logger.warning(f"Failed to emit error: {emit_err}")
+            except Exception as emit_err:  # noqa: BLE001 - event bus is best-effort; the caller already gets the error
+                logger.warning("Failed to emit error: %s", emit_err)
 
             return None
 
@@ -947,8 +957,8 @@ class ParallelQueueService:
                     status=run_status,
                     **run_notify_fields(self.session, run),
                 )
-            except Exception as e:
-                logger.warning(f"Failed to emit run_completed: {e}")
+            except Exception as e:  # noqa: BLE001 - event bus is best-effort; the completion already committed
+                logger.warning("Failed to emit run_completed: %s", e)
 
             # Mark the queue entry FAILED so retry-all-failed / get-failed-runs
             # (api/bulk_queue_operations.py) can actually see and act on it —
@@ -1016,8 +1026,8 @@ class ParallelQueueService:
                     code="COMPLETION_HANDLER_ERROR",
                     context={"run_id": run_id},
                 )
-            except Exception as emit_err:
-                logger.warning(f"Failed to emit error: {emit_err}")
+            except Exception as emit_err:  # noqa: BLE001 - event bus is best-effort; the caller already gets the error
+                logger.warning("Failed to emit error: %s", emit_err)
 
             return None
 

@@ -810,7 +810,7 @@ def _release_execution_lane_impl(session, orch_run) -> None:
     """
     try:
         QueueLaneService(session).on_orchestration_complete(orch_run.id)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort lane release; a lost completion is worse
         logger.warning(
             "Failed to release the execution lane for orchestration %s",
             orch_run.id,

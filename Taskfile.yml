@@ -165,6 +165,12 @@ tasks:
     cmds:
       - bash .lefthook/scripts/ts-organization.sh {{.CLI_ARGS}}
 
+  hooks:ts-silent-failures:
+    desc: TypeScript silent failure check (swallowed rejections); --all audits the whole tree
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/ts-silent-failures.sh {{.CLI_ARGS}}
+
   hooks:py-mypy:
     desc: mypy on staged server Python files
     dir: "{{.ROOT_DIR}}"

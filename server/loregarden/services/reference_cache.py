@@ -191,9 +191,13 @@ def _resolved_addresses(host: str, port: int) -> list[str] | None:
     try:
         infos = socket.getaddrinfo(host, port)
     except OSError as exc:
+        # silent-ok: unresolvable means blocked, and the refusal is what the
+        # caller reports — "I could not check" is not "it is safe"
         logger.info("reference guard could not resolve %s: %s", host, exc)
         return None
     except UnicodeError as exc:
+        # silent-ok: a hostname that cannot be encoded is rejected the same way,
+        # and the block is surfaced by the caller rather than by this log
         logger.info("reference guard rejected the hostname %s: %s", host, exc)
         return None
     return [info[4][0] for info in infos]
@@ -360,6 +364,8 @@ def _usable_encoding(label: str) -> str:
     try:
         _ENCODING_PROBE.decode(label, errors="replace")
     except (LookupError, ValueError, UnicodeError) as exc:
+        # silent-ok: expected with a real alternate path — an unusable charset
+        # label falls back to the default encoding and the fetch still succeeds
         logger.info("reference fetch ignoring unusable charset %r: %s", label, exc)
         return _DEFAULT_ENCODING
     return label
@@ -597,6 +603,7 @@ def _store(
             writer.add(target)
             writer.flush()
     except IntegrityError as exc:
+        # silent-ok: a transient insert race whose recovery is the re-read below
         # Another caller inserted this URL between our read and our write. The
         # unique index is the arbiter; the SAVEPOINT this raised out of is
         # already unwound by the `with`, so re-read and use whatever it kept.

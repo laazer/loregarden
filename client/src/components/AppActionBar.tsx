@@ -149,7 +149,10 @@ export function AppActionBar() {
     const message = excerpt
       ? `Question about the run logs below:\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${question}`
       : question;
-    void session.send(message, { autoApprove, skill }).catch(() => {});
+    void session.send(message, { autoApprove, skill }).catch(() => {
+      // silent-ok: send is a mutation carrying meta.errorTitle, so the global
+      // MutationCache toast fires and session.error renders in the bar's pill.
+    });
   };
 
   const onAfterNewChat = useCallback(() => {
@@ -191,7 +194,10 @@ export function AppActionBar() {
     onSendInNewChat: archive
       ? (content) => {
           setChatOpen(true);
-          void archive.sendInNewChat(content).catch(() => {});
+          void archive.sendInNewChat(content).catch(() => {
+            // silent-ok: sendInNewChat is a mutation with meta.errorTitle, so
+            // the global MutationCache toast already reported the failure.
+          });
         }
       : undefined,
     skillsEnabled: session?.kind === "baxter-home" && !asideMode,
@@ -464,7 +470,10 @@ export function AppActionBar() {
         }
         onClick={() => {
           if (canStop && session?.stop) {
-            void session.stop().catch(() => undefined);
+            void session.stop().catch(() => {
+              // silent-ok: stop is a mutation with meta.errorTitle, so the
+              // global MutationCache toast reports a stop that did not take.
+            });
             return;
           }
           submit(draft);

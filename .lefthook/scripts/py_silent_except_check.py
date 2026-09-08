@@ -79,6 +79,37 @@ from py_organization_check import python_files_in_scope  # noqa: E402 - same
 _BROAD_EXCEPTIONS: frozenset[str] = frozenset({"Exception", "BaseException"})
 
 _ALLOW_MARKER = "# py-silent: allow"
+#: `# silent-ok:` is the spelling shared with the TypeScript gate, so one idiom
+#: covers both languages. Both are accepted; both need an argument.
+_ALLOW_MARKERS: tuple[str, ...] = (_ALLOW_MARKER, "# silent-ok:")
+
+#: A marker with nothing after it is a reflex, not a decision — and a reviewer
+#: cannot verify a reason that was never written. The gate can only check that
+#: one exists and is substantive; checking that it is *true* is the reviewer's job.
+_MIN_WAIVER_REASON_CHARS = 12
+
+#: debug/info sit below the default handler level, so a failure reported there is
+#: reported nowhere. warning and above is what an operator actually sees.
+_OBSERVED_LOG_LEVELS: frozenset[str] = frozenset(
+    {"warning", "warn", "error", "exception", "critical", "fatal", "log"}
+)
+_QUIET_LOG_LEVELS: frozenset[str] = frozenset({"debug", "info"})
+
+#: Names that push a failure somewhere a human will find it.
+_SURFACING_CALLS: frozenset[str] = frozenset(
+    {"emit_error", "emit_execution_update", "print", "print_exc", "capture_exception"}
+)
+
+#: Helpers that spawn a child process. `run`/`Popen` count only when qualified by
+#: the subprocess module — `uvicorn.run(...)` is not a child process.
+_PROCESS_HELPERS: frozenset[str] = frozenset({"run_git", "run_gh"})
+_SUBPROCESS_SPAWNERS: frozenset[str] = frozenset(
+    {"run", "call", "check_call", "check_output", "Popen"}
+)
+_SUBPROCESS_MODULES: frozenset[str] = frozenset({"subprocess", "sp"})
+
+#: Values a handler can return that the caller cannot tell from success.
+_SUCCESS_SHAPED_CONSTANTS: tuple[object, ...] = (None, False, 0, "")
 
 _HELP = """
 💡 Fix: make the failure visible, or narrow the catch.
@@ -97,8 +128,16 @@ Logging, re-raising, recording the error on the result, or returning something
 built from `exc` all satisfy this gate — the point is that something downstream
 can tell the difference between "nothing to report" and "nobody looked".
 
-A swallow that is genuinely right (best-effort cleanup on an already-failing
-path) waives with `# py-silent: allow` on the `except` line.
+A swallow that is genuinely right waives on the `except` line — but the marker
+alone waives nothing, because a reviewer cannot verify a reason nobody wrote:
+
+    except OSError:  # py-silent: allow - cleanup on an already-failing path
+    except OSError:  # silent-ok: best-effort warm; the next read repopulates
+
+Both spellings work (`silent-ok:` is shared with the TypeScript gate), on the
+handler line or in the comment block directly above it. The reason must say why
+the failure is safe to lose: transient, retryable, or expected with a real
+alternate path the user is still told about.
 """
 
 
@@ -164,10 +203,189 @@ def _is_suppress_call(node: ast.expr) -> ast.Call | None:
     return node if name == "suppress" else None
 
 
-def _line_waives(lines: list[str], lineno: int) -> bool:
-    if 1 <= lineno <= len(lines):
-        return _ALLOW_MARKER in lines[lineno - 1]
+def _waiver_reason(line: str) -> str | None:
+    """The justification on this line, if it carries either marker."""
+    for marker in _ALLOW_MARKERS:
+        if marker in line:
+            return line.split(marker, 1)[1].lstrip(" -:\t").strip()
+    return None
+
+
+def _waiver_start(lines: list[str], lineno: int) -> int:
+    """Walk up over the comment block above, where a multi-line reason lives."""
+    first = lineno
+    while first > 1 and lines[first - 2].strip().startswith("#"):
+        first -= 1
+    return first
+
+
+def _line_waives(lines: list[str], lineno: int, end_lineno: int | None = None) -> bool:
+    """True when a substantive reason is written on or just above the construct."""
+    last = min(end_lineno or lineno, len(lines))
+    for i in range(_waiver_start(lines, lineno), last + 1):
+        reason = _waiver_reason(lines[i - 1])
+        if reason is not None and len(reason) >= _MIN_WAIVER_REASON_CHARS:
+            return True
     return False
+
+
+def _thin_waiver_line(lines: list[str], lineno: int, end_lineno: int | None = None) -> int | None:
+    """Where a marker was written with no real reason behind it."""
+    last = min(end_lineno or lineno, len(lines))
+    for i in range(_waiver_start(lines, lineno), last + 1):
+        reason = _waiver_reason(lines[i - 1])
+        if reason is not None and len(reason) < _MIN_WAIVER_REASON_CHARS:
+            return i
+    return None
+
+
+# The checks below walk `ast`, whose node types are a closed, foreign hierarchy
+# with no protocol to dispatch on — `isinstance` is the only way to read them,
+# which is why each of these lines carries the organization gate's waiver.
+def _call_name(node: ast.Call) -> str | None:
+    func = node.func
+    if isinstance(func, ast.Attribute):  # py-org: allow-isinstance
+        return func.attr
+    if isinstance(func, ast.Name):  # py-org: allow-isinstance
+        return func.id
+    return None
+
+
+def _spawns_process(node: ast.Call) -> bool:
+    """A call that runs a child process whose exit code could go unread."""
+    name = _call_name(node)
+    if name is None:
+        return False
+    if name in _PROCESS_HELPERS:
+        return True
+    if name not in _SUBPROCESS_SPAWNERS:
+        return False
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)  # py-org: allow-isinstance
+        and isinstance(func.value, ast.Name)  # py-org: allow-isinstance
+        and func.value.id in _SUBPROCESS_MODULES
+    )
+
+
+def _annotation_is_optional(annotation: ast.expr | None) -> bool:
+    """Whether a signature already says this call can fail to produce a value."""
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Constant):  # py-org: allow-isinstance
+        if annotation.value is None:
+            return True
+        if isinstance(annotation.value, str):  # py-org: allow-isinstance
+            try:
+                return _annotation_is_optional(ast.parse(annotation.value, mode="eval").body)
+            except SyntaxError:
+                # silent-ok: an unparseable annotation is mypy's finding, not this
+                # gate's; treating it as non-Optional only widens what we grade
+                return False
+        return False
+    if isinstance(annotation, ast.BinOp) and isinstance(  # py-org: allow-isinstance
+        annotation.op, ast.BitOr
+    ):  # py-org: allow-isinstance
+        return any(
+            isinstance(side, ast.Constant) and side.value is None  # py-org: allow-isinstance
+            for side in (annotation.left, annotation.right)
+        )
+    if isinstance(annotation, ast.Subscript):  # py-org: allow-isinstance
+        base = annotation.value
+        if isinstance(base, ast.Attribute):  # py-org: allow-isinstance
+            return base.attr == "Optional"
+        if isinstance(base, ast.Name):  # py-org: allow-isinstance
+            return base.id == "Optional"
+        return False
+    return False
+
+
+def _handler_owners(tree: ast.AST) -> dict[int, ast.AST]:
+    """Map each handler to the innermost function containing it."""
+    owners: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):  # py-org: allow-isinstance
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.ExceptHandler):  # py-org: allow-isinstance
+                    # ast.walk is breadth-first, so the innermost def writes last.
+                    owners[id(inner)] = node
+    return owners
+
+
+def _quiet_only(handler: ast.ExceptHandler) -> bool:
+    """The handler's only account of the failure is a debug/info log line."""
+    quiet = False
+    for node in ast.walk(handler):
+        if isinstance(node, ast.Raise):  # py-org: allow-isinstance
+            return False
+        if not isinstance(node, ast.Call):  # py-org: allow-isinstance
+            continue
+        name = _call_name(node)
+        if name in _OBSERVED_LOG_LEVELS or name in _SURFACING_CALLS:
+            return False
+        if name in _QUIET_LOG_LEVELS:
+            quiet = True
+    return quiet
+
+
+def _is_success_shaped_value(value: ast.expr | None) -> bool:
+    """A returned value the caller cannot tell from a real, successful answer.
+
+    Narrower than `_is_inert_value`: `return "unavailable"` carries something,
+    `return ""` does not.
+    """
+    if value is None:
+        return True
+    if isinstance(value, ast.Constant):  # py-org: allow-isinstance
+        return value.value in _SUCCESS_SHAPED_CONSTANTS
+    if isinstance(value, (ast.List, ast.Tuple, ast.Set)):  # py-org: allow-isinstance
+        return not value.elts
+    if isinstance(value, ast.Dict):  # py-org: allow-isinstance
+        return not value.keys
+    return False
+
+
+def _returns_success_shape(handler: ast.ExceptHandler, owner: ast.AST | None) -> bool:
+    """The handler hands back a value the caller cannot tell from a real answer.
+
+    An Optional return type is exempt: `-> Action | None` returning None is the
+    documented contract, and a type checker forces every caller to handle it.
+    That is the difference between it and `-> list[str]` returning `[]` on a
+    corrupt file, where an empty answer and a broken one are the same value.
+    """
+    returns = [
+        n
+        for n in ast.walk(handler)
+        if isinstance(n, ast.Return)  # py-org: allow-isinstance
+    ]  # py-org: allow-isinstance
+    if not returns:
+        return False
+    for node in ast.walk(handler):
+        if isinstance(node, ast.Raise):  # py-org: allow-isinstance
+            return False
+        if isinstance(node, ast.Call) and (  # py-org: allow-isinstance
+            _call_name(node) in _OBSERVED_LOG_LEVELS or _call_name(node) in _SURFACING_CALLS
+        ):
+            return False
+        if (
+            handler.name
+            and isinstance(node, ast.Name)  # py-org: allow-isinstance
+            and node.id == handler.name  # py-org: allow-isinstance
+        ):  # py-org: allow-isinstance
+            return False  # the exception itself is carried into the result
+    inert = [n for n in returns if _is_success_shaped_value(n.value)]
+    if len(inert) != len(returns):
+        return False
+    # Only claim this when the signature proves the caller cannot tell. An
+    # unannotated `except FileNotFoundError: return None` is an expected, named
+    # failure — the case this gate has always deliberately left alone — and an
+    # annotated `-> X | None` says so in the type. What is left is the shape that
+    # actually lies: `-> list[str]` returning `[]`, `-> bool` returning False.
+    if not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):  # py-org: allow-isinstance
+        return False
+    if owner.returns is None or _annotation_is_optional(owner.returns):
+        return False
+    return True
 
 
 def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str]]:
@@ -191,13 +409,69 @@ def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str]]:
 
     lines = source.splitlines()
     found: list[tuple[int, str]] = []
+    owners = _handler_owners(tree)
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ExceptHandler):
-            if not _is_broad(node.type) or not _is_inert_body(node.body):
+        if isinstance(node, ast.ExceptHandler):  # py-org: allow-isinstance
+            end = node.end_lineno or node.lineno
+            thin = _thin_waiver_line(lines, node.lineno, end)
+            if thin is not None:
+                found.append(
+                    (
+                        thin,
+                        "a waiver marker with no real reason; say why the failure is safe to "
+                        "swallow — transient, retryable, or expected with a surfaced "
+                        f"alternate path — in at least {_MIN_WAIVER_REASON_CHARS} characters",
+                    )
+                )
                 continue
-            caught = ", ".join(_exception_names(node.type)) or "bare except"
-            lineno = node.lineno
+            if _line_waives(lines, node.lineno, end):
+                continue
+
+            names = ", ".join(_exception_names(node.type)) or "bare except"
+            if _is_broad(node.type) and _is_inert_body(node.body):
+                found.append((node.lineno, f"`{names}` with nothing logged, raised, or recorded"))
+            elif _quiet_only(node):
+                found.append(
+                    (
+                        node.lineno,
+                        f"`{names}` reported only at debug/info, which is below the default "
+                        "handler level; log it at warning or above, or surface it",
+                    )
+                )
+            elif _returns_success_shape(node, owners.get(id(node))):
+                found.append(
+                    (
+                        node.lineno,
+                        f"`{names}` returns a value indistinguishable from success; return a "
+                        "failure-carrying result (ok=False / error=…), raise, or log at warning+",
+                    )
+                )
+            continue
+        elif isinstance(node, ast.Expr) and isinstance(  # py-org: allow-isinstance
+            node.value, ast.Call
+        ):  # py-org: allow-isinstance
+            call = node.value
+            if not _spawns_process(call):
+                continue
+            if any(
+                kw.arg == "check"
+                and isinstance(kw.value, ast.Constant)  # py-org: allow-isinstance
+                and kw.value.value is True  # py-org: allow-isinstance
+                for kw in call.keywords
+            ):
+                continue
+            end = node.end_lineno or node.lineno
+            if _line_waives(lines, node.lineno, end):
+                continue
+            found.append(
+                (
+                    node.lineno,
+                    "a process result discarded with check=True not set, so a non-zero exit "
+                    "passes unnoticed; keep the result and test returncode, or pass check=True",
+                )
+            )
+            continue
         elif isinstance(node, (ast.With, ast.AsyncWith)):
             lineno, caught = 0, ""
             for item in node.items:
@@ -219,7 +493,7 @@ def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str]]:
 
         if _line_waives(lines, lineno):
             continue
-        found.append((lineno, caught))
+        found.append((lineno, f"`{caught}` with nothing logged, raised, or recorded"))
 
     return sorted(found)
 
@@ -303,9 +577,7 @@ def _check(invocation: Invocation) -> int:
         for lineno, caught in violations_in(path, repo=run.repo):
             if touched is not None and lineno not in touched:
                 continue
-            failures.append(
-                f"   {path}:{lineno}: `{caught}` with nothing logged, raised, or recorded"
-            )
+            failures.append(f"   {path}:{lineno}: {caught}")
 
     if not failures:
         if invocation.label == "gate":

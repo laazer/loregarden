@@ -18,9 +18,11 @@ def _process_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
+        # silent-ok: "no such process" is the answer this probe asked for, not a fault
         return False
     except PermissionError:
-        return True  # exists, just not ours to signal
+        # silent-ok: EPERM proves the pid exists; it just is not ours to signal
+        return True
     return True
 
 

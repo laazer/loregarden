@@ -41,8 +41,9 @@ def _verify_github_signature(
         ).hexdigest()
 
         return hmac.compare_digest(computed_sig, expected_sig)
-    except Exception as e:
-        logger.error(f"Error verifying GitHub signature: {e}")
+    except (ValueError, TypeError):
+        # A malformed header is attacker-controlled input: reject it, but say so.
+        logger.warning("Malformed GitHub webhook signature header", exc_info=True)
         return False
 
 
@@ -122,13 +123,13 @@ async def receive_ci_webhook(
             }
 
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in webhook body: {e}")
+        logger.exception("Invalid JSON in webhook body")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid JSON payload",
         ) from e
     except Exception as e:
-        logger.error(f"Error processing CI webhook: {e}", exc_info=True)
+        logger.exception("Error processing CI webhook")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error processing webhook",
@@ -175,7 +176,7 @@ async def get_ci_status(
         }
 
     except Exception as e:
-        logger.error(f"Error fetching CI status: {e}")
+        logger.exception("Error fetching CI status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error fetching CI status",
@@ -202,7 +203,7 @@ async def skip_ci_check(
         }
 
     except Exception as e:
-        logger.error(f"Error skipping CI check: {e}")
+        logger.exception("Error skipping CI check")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error skipping CI check",
@@ -247,7 +248,7 @@ async def trigger_manual_auto_fix(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering auto-fix: {e}")
+        logger.exception("Error triggering auto-fix")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error triggering auto-fix",

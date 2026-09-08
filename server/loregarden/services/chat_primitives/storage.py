@@ -10,11 +10,14 @@ thread must never depend on re-running a resolver over a stale reply.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
 from loregarden.services.chat_primitives.resolver import resolve_parts
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 EMPTY_PARTS_JSON = "[]"
 
@@ -37,6 +40,9 @@ def load_parts_json(parts_json: str | None) -> list[dict[str, Any]]:
     try:
         loaded = json.loads(parts_json)
     except json.JSONDecodeError:
+        # The thread still renders from message content, but a row that cannot be
+        # parsed is corruption, not a legacy plain-text row.
+        logger.warning("Unreadable parts_json; falling back to plain message content")
         return []
     if not isinstance(loaded, list):
         return []

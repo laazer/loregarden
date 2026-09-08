@@ -84,14 +84,27 @@ src = ["loregarden"]
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes, I: isort, UP: pyupgrade, B: bugbear, C4: comprehensions
+# BLE: blind-except, TRY: tryceratops, S110/S112: try-except-pass / -continue.
 # C901 (McCabe) is *not* in select — 50+ pre-existing hits. Growth is gated by the
 # diff-scoped py-complexity pre-commit hook (ruff_complexity_diff_filter.py).
-select = ["E", "W", "F", "I", "UP", "B", "C4"]
+#
+# BLE/TRY/S11x were added after the silent-failure audit found 23 `# noqa: BLE001`
+# comments in the tree suppressing a rule that had never been enabled — the
+# codebase believed blind-except was gated for years while nothing checked it.
+select = ["E", "W", "F", "I", "UP", "B", "C4", "BLE", "TRY", "S110", "S112"]
 ignore = [
     "E501",  # line length handled by the formatter, not enforced as a lint error
     "B008",  # FastAPI dependency-injection idiom relies on calls in defaults
     "E712",  # `Column == True/False` is SQLAlchemy/SQLModel filter syntax, not a bug;
              # `is True` would break query building since `is` can't be overloaded
+    # The TRY family is selected for the sub-rules that bear on observability
+    # (TRY400 error-instead-of-exception, TRY401 verbose-log-message, and BLE001
+    # alongside it). The rest are message/placement style with no bearing on
+    # whether a failure is visible, and carry heavy pre-existing debt:
+    "TRY003",  # long messages outside the exception class — 471 hits, pure style
+    "TRY300",  # "consider else block" — placement, not observability
+    "TRY301",  # "raise within try" — placement, not observability
+    "TRY004",  # prefer TypeError for type checks — unrelated to silent failure
 ]
 
 [tool.ruff.lint.mccabe]
@@ -99,7 +112,10 @@ ignore = [
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B", "E402"]
+# BLE/S110/S112: a suite proves enforcement by provoking a failure and swallowing
+# it — `except Exception: pass` around a write the database is supposed to refuse
+# IS the assertion. py_silent_except_check.py exempts tests for the same reason.
+"tests/*" = ["B", "E402", "BLE", "S110", "S112"]
 
 [tool.pylint.main]
 disable = ["all"]

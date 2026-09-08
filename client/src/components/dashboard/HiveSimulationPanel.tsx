@@ -11,6 +11,7 @@ import {
 import { agentStatusSnapshot, buildHiveWorld } from "../../lib/hive/worldModel";
 import { useUiStore } from "../../state/uiStore";
 import { HiveCssFloor } from "./hive/HiveCssFloor";
+import { HiveErrorBoundary } from "./hive/HiveErrorBoundary";
 import "./HiveSimulationPanel.css";
 
 function FloorIcon() {
@@ -169,11 +170,13 @@ export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
       </div>
 
       <div className="hive-panel__floor">
-        <HiveCssFloor
-          key={`floor-${replayNonce}-${hiveSkin}`}
-          model={model}
-          speedMultiplier={speedMultiplier}
-        />
+        <HiveErrorBoundary>
+          <HiveCssFloor
+            key={`floor-${replayNonce}-${hiveSkin}`}
+            model={model}
+            speedMultiplier={speedMultiplier}
+          />
+        </HiveErrorBoundary>
         {model.idle && !playing ? (
           <div className="hive-panel__idle">
             <div className="hive-panel__idle-title">The floor is quiet</div>

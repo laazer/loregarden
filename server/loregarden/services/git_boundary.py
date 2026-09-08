@@ -16,6 +16,7 @@ unreadable would be a worse failure than the one this exists to catch.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from loregarden.models.domain import AgentRun, GitBoundary
 from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
 from loregarden.services.git_subprocess import run_git
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 
 def current_branch(repo_root: Path) -> str:
@@ -40,6 +43,11 @@ def current_branch(repo_root: Path) -> str:
             text=True,
         )
     except OSError:
+        logger.warning(
+            "Could not read the checked-out branch of %s; recording an unknown boundary",
+            repo_root,
+            exc_info=True,
+        )
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
@@ -65,6 +73,11 @@ def read_boundary(repo_root: Path, *, dirty_paths: set[str] | None = None) -> Gi
             dirty_paths=sorted(paths),
         )
     except (OSError, subprocess.SubprocessError):
+        logger.warning(
+            "Could not read the git boundary of %s; the run starts from an unknown tree",
+            repo_root,
+            exc_info=True,
+        )
         return GitBoundary()
 
 

@@ -59,6 +59,8 @@ def _is_ours(run: AgentRun) -> bool:
     try:
         return os.getpgid(run.agent_pid) == run.agent_pid
     except (OSError, ProcessLookupError):
+        # silent-ok: "no such process" IS this predicate's False answer — the pid
+        # is gone, so it is certainly not still ours
         return False
 
 

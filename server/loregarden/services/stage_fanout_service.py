@@ -389,7 +389,15 @@ def promote_attempt(session: Session, group_id: str, attempt_id: str) -> dict:
     if merge.returncode != 0:
         # Leave the fan-out open: the operator can pick a different attempt or
         # decline, and an aborted merge leaves the ticket tree as it was.
-        run_git(["merge", "--abort"], cwd=str(ticket_root), check=False, capture_output=True)
+        abort = run_git(
+            ["merge", "--abort"], cwd=str(ticket_root), check=False, capture_output=True
+        )
+        if abort.returncode != 0:
+            logger.warning(
+                "`git merge --abort` failed in %s after a failed fan-out merge; "
+                "the ticket tree may be left mid-merge",
+                ticket_root,
+            )
         detail = (merge.stderr or merge.stdout or "merge failed").strip()
         raise FanoutError(f"Could not merge {attempt.branch} into the ticket branch: {detail}")
 
@@ -485,12 +493,18 @@ def _discard_attempts(
         if worktree:
             service.cleanup_worktree(worktree)
         if attempt.branch:
-            run_git(
+            deleted = run_git(
                 ["branch", "-D", attempt.branch],
                 cwd=repo_root,
                 check=False,
                 capture_output=True,
             )
+            if deleted.returncode != 0:
+                logger.warning(
+                    "Could not delete discarded fan-out branch %s in %s; it is left behind",
+                    attempt.branch,
+                    repo_root,
+                )
         if attempt.status != StageFanoutAttemptStatus.PROMOTED:
             groups.update_attempt_status(session, attempt.id, StageFanoutAttemptStatus.DECLINED)
         discarded.append(attempt.id)

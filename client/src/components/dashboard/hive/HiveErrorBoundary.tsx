@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { toastActionFailed } from "../../../state/toastStore";
+
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
@@ -19,6 +21,10 @@ export class HiveErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error("[hive] floor crashed", error, info.componentStack);
+    // The fallback replaces one panel on a page full of them, and reads a lot
+    // like the ordinary "quiet floor" state; the toast is what distinguishes a
+    // crash from an idle ticket.
+    toastActionFailed("Hive floor", error);
   }
 
   render(): ReactNode {
