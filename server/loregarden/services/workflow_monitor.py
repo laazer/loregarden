@@ -605,9 +605,15 @@ def resolve_monitor_mode(
 
 
 def _repair_stale_cursor(session: Session, ticket: Ticket) -> bool:
-    """Recompute the cursor from the stage map. Idempotent by construction."""
+    """Recompute the cursor from the stage map. Idempotent by construction.
+
+    Returns whether the cursor actually moved. `reconcile_ticket` returns early
+    when the instance or stage list does not resolve, so a repair that reported
+    its own success would report one it had not made.
+    """
+    before = ticket.workflow_stage_key
     OrchestrationService(session).reconcile_ticket(ticket, commit=True)
-    return True
+    return ticket.workflow_stage_key != before
 
 
 def _repair_emptied_group(session: Session, ticket: Ticket, group: str) -> bool:
@@ -641,15 +647,57 @@ def _repair_emptied_group(session: Session, ticket: Ticket, group: str) -> bool:
     return True
 
 
+def _finding_still_holds(session: Session, ticket: Ticket, finding: MonitorFinding) -> bool:
+    """Whether the condition that produced this finding is still true.
+
+    A repair is judged by re-asking the detector's own question rather than by a
+    second rule written alongside it. Two predicates for one condition is how a
+    sweep ends up re-finding forever what the repair keeps calling fixed.
+
+    An instance or stage list that does not resolve answers "still true": there
+    is nothing to reconcile against, so nothing was repaired
+    (lg-workflow-integrity-678).
+    """
+    instance = session.exec(
+        select(WorkflowInstance).where(col(WorkflowInstance.ticket_id) == ticket.id)
+    ).first()
+    if instance is None:
+        return True
+    stages = _instance_stages(session, instance)
+    if not stages:
+        return True
+    stage_map = parse_stage_map(instance, stages)
+    if finding.condition is MonitorCondition.STALE_CURSOR:
+        return bool(ticket.workflow_stage_key) and ticket.workflow_stage_key not in stage_map
+    if finding.condition is MonitorCondition.EMPTIED_GROUP:
+        return finding.evidence.get("group", "") in set(emptied_groups(stages, stage_map))
+    return False
+
+
 def _apply_one(session: Session, finding: MonitorFinding) -> bool:
+    """Attempt the repair, then report whether the condition actually cleared.
+
+    The return value is what `apply_autofixes` counts as repaired and what
+    decides whether a refusal reaches a human, so it has to be an observation
+    rather than the repair's own opinion of itself.
+    """
     ticket = session.get(Ticket, finding.ticket_id)
     if ticket is None:
         return False
     if finding.condition is MonitorCondition.STALE_CURSOR:
-        return _repair_stale_cursor(session, ticket)
-    if finding.condition is MonitorCondition.EMPTIED_GROUP:
-        return _repair_emptied_group(session, ticket, finding.evidence.get("group", ""))
-    return False
+        wrote = _repair_stale_cursor(session, ticket)
+    elif finding.condition is MonitorCondition.EMPTIED_GROUP:
+        wrote = _repair_emptied_group(session, ticket, finding.evidence.get("group", ""))
+    else:
+        return False
+    # Both halves are required. "The condition no longer holds" alone would count
+    # a condition that was never true — a finding for a group this workflow does
+    # not have clears trivially without anything being repaired. "I wrote
+    # something" alone would count a write that failed to resolve the finding.
+    if not wrote:
+        return False
+    session.refresh(ticket)
+    return not _finding_still_holds(session, ticket, finding)
 
 
 def _raise_refusal_approval(session: Session, finding: MonitorFinding) -> None:
