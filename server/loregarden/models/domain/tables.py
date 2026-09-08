@@ -325,7 +325,7 @@ class AgentRun(SQLModel, table=True):
     #: hold it: looked-and-found-nothing, never-looked, and (before PR #254) the
     #: read failed. That is why lg-workflow-integrity-406 could not be measured
     #: twice running. Rows written before this stay ambiguous — their meaning is
-    #: unknown and inventing one would be worse (lg-workflow-integrity-675).
+    #: unknown and inventing one would be worse (lg-workflow-integrity-676).
     changed_paths_recorded_at: datetime | None = None
     # The git boundary this run started from — see schemas.GitBoundary, which is
     # how these four are read and written. Recorded at dispatch, after the

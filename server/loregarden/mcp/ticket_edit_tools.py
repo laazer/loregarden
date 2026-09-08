@@ -15,7 +15,7 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.tool_args import reject_truncated_call
-from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest
+from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest, Workspace
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
     load_criteria,
@@ -71,19 +71,35 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
             session, TicketDependencyService(session).dependents(ticket.id)
         ),
         "related": ticket_summaries(session, TicketRelationService(session).related(ticket.id)),
+        # The subset of `depends_on` that is actually holding this ticket up.
+        # `depends_on` alone does not answer "can this start?" — a reader has to
+        # check each far end's state, and for an edge into another workspace
+        # they cannot see that board at all (676).
+        "blocked_by": ticket_summaries(
+            session,
+            [t.id for t in TicketDependencyService(session).unmet_prerequisites(ticket.id)],
+        ),
     }
 
 
 def ticket_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, str]]:
-    """The far end of an edge, in the shape both dependencies and relations use."""
+    """The far end of an edge, in the shape both dependencies and relations use.
+
+    Carries the workspace because the far end need not be in this one. Nine such
+    edges already existed when this was written, including a chain running both
+    ways between loregarden and lore-eden, and an external id on its own sends
+    the reader to the wrong board (676).
+    """
     out: list[dict[str, str]] = []
     for tid in ticket_ids:
         dep = session.get(Ticket, tid)
         if dep is not None:
+            workspace = session.get(Workspace, dep.workspace_id)
             out.append(
                 {
                     "id": dep.id,
                     "external_id": dep.external_id,
+                    "workspace": workspace.slug if workspace is not None else "",
                     "title": dep.title,
                     "state": dep.state.value,
                 }
