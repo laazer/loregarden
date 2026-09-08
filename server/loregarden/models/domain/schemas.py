@@ -70,6 +70,17 @@ class WorkflowStageDef(SQLModel):
     # says — the seam that lets a duty move off a human gate and onto the stage
     # that should have been doing it.
     stage_brief: str = ""
+    #: Seconds this stage's agent may run before it is killed, or 0 to inherit the
+    #: run-wide budget. Measured across 1049 succeeded runs
+    #: (lg-workflow-integrity-686): the spread between stages is structural, not
+    #: incidental — `triage` has a median of 83s while `implement` has a p90 of
+    #: 1989s and a max of 10801s. One budget cannot serve both, and at the 600s
+    #: default 35% of `implement` runs that DID succeed would have been killed.
+    #:
+    #: Still a wall-clock bound, deliberately. Two of the recorded timeouts
+    #: produced no output at all, and an agent producing nothing is exactly what
+    #: a hard cap is for; this changes the size of the bound, not its existence.
+    timeout_seconds: int = 0
     # Names a set of stages that are alternatives to one another: a backend and
     # a frontend implementation stage, where a given ticket needs one, the other,
     # or both. Empty means the stage stands alone. The invariant is only that a
@@ -974,6 +985,8 @@ class StudioWorkflowStage(SQLModel):
     required_evidence: list[str] = Field(default_factory=list)
     checklist: list[str] = Field(default_factory=list)
     stage_brief: str = ""
+    #: See `WorkflowStageDef.timeout_seconds`.
+    timeout_seconds: int = 0
     #: See `WorkflowStageDef.alternative_group`.
     alternative_group: str = ""
     #: See `WorkflowStageDef.agent_is_default`.

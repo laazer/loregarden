@@ -1349,3 +1349,31 @@ def m_agent_is_default_stages(conn: Connection) -> None:
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
         _snapshot_template_version(conn, row["id"], new_version, "Stage agent_is_default")
+
+
+#: Per-stage agent budgets, in seconds, keyed by stage key.
+#:
+#: Set from the duration distribution of runs that SUCCEEDED, per stage, across
+#: 1049 timed runs — not from the runs that timed out. Reading a cap off the
+#: failures would set it just above the worst failure and no higher, which is the
+#: survivorship trap lg-workflow-integrity-686 was filed warning against.
+#:
+#: The rule is a round number above the observed p90, so the budget covers the
+#: work the stage actually does with headroom, and the p90 is quoted beside each
+#: so a later reader can re-derive the choice rather than trust it:
+#:
+#:     implement     p90 1989s, max 10801s, 35% of successes over 600s
+#:     verify        p90 1201s,             39% over 600s
+#:     test-design   p90 1002s,             24% over 600s
+#:     test-break    p90  802s,             15% over 600s
+#:     review        p90  717s,             15% over 600s
+#:     gate          p90  763s,             30% over 600s
+#:     backend-impl / frontend-impl  p90 787s, 43% over 600s
+#:
+#: Canonical spellings only. Migration 0114 renames the forked stage keys before
+#: this runs, so a `test_design` entry here would be a stale fork mapping of the
+#: kind lg-workflow-integrity-660 deleted.
+#:
+#: Stages absent from this table keep 0 and inherit the run-wide budget: triage,
+#: spec, plan, ui-design, ac_gate, testing and the rest sit far below 600s at p90
+#: and gain nothing from a bigger one.
