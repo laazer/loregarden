@@ -213,14 +213,14 @@ def _orchestrator(session):
 def test_stage_without_a_requirement_is_unaffected(session_and_ticket):
     """Templates that never asked for proof keep advancing as before."""
     session, ticket = session_and_ticket
-    detail = _orchestrator(session)._missing_evidence_detail(ticket, _gate_stage([]))
+    detail = _orchestrator(session).gates._missing_evidence_detail(ticket, _gate_stage([]))
     assert detail == ""
 
 
 def test_missing_proof_names_what_is_missing(session_and_ticket):
     session, ticket = session_and_ticket
     stage = _gate_stage(["test_red_green", "real_surface"])
-    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    detail = _orchestrator(session).gates._missing_evidence_detail(ticket, stage)
     assert "test_red_green" in detail and "real_surface" in detail
     # The message has to tell the agent how to satisfy it, since this reason is
     # what gets handed back for the retry.
@@ -241,7 +241,7 @@ def test_green_tests_alone_do_not_satisfy_a_two_artifact_stage(session_and_ticke
         commit_sha=resolve_head_sha(session, ticket),
     )
     stage = _gate_stage(["test_red_green", "real_surface"])
-    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    detail = _orchestrator(session).gates._missing_evidence_detail(ticket, stage)
     assert "real_surface" in detail
     assert "test_red_green" not in detail
 
@@ -262,7 +262,7 @@ def test_both_artifacts_for_this_commit_let_the_stage_pass(session_and_ticket):
             commit_sha=head,
         )
     stage = _gate_stage(["test_red_green", "real_surface"])
-    assert _orchestrator(session)._missing_evidence_detail(ticket, stage) == ""
+    assert _orchestrator(session).gates._missing_evidence_detail(ticket, stage) == ""
 
 
 def test_proof_from_an_earlier_commit_does_not_count(session_and_ticket):
@@ -277,7 +277,7 @@ def test_proof_from_an_earlier_commit_does_not_count(session_and_ticket):
         commit_sha="a-commit-from-before",
     )
     stage = _gate_stage(["real_surface"])
-    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    detail = _orchestrator(session).gates._missing_evidence_detail(ticket, stage)
     assert "real_surface" in detail
 
 
@@ -291,7 +291,7 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
         WorkflowStageDef,
         WorkflowTemplate,
     )
-    from loregarden.services.builtin_orchestrator import _GateDecision
+    from loregarden.services.gate_recovery import GateDecision
     from loregarden.services.orchestration_profile import resolve_orchestration_profile
     from loregarden.services.workflow_state import initial_stages_json
 
@@ -326,7 +326,7 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
     profile = resolve_orchestration_profile(workspace)
     profile.gates.enabled = False
 
-    decision = _orchestrator(session)._run_gates_with_autofix(
+    decision = _orchestrator(session).gates.run_gates_with_autofix(
         ticket,
         profile,
         stages[0],
@@ -336,7 +336,7 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
         from_stage="implement",
         to_stage="review",
     )
-    assert decision is not _GateDecision.PASS
+    assert decision is not GateDecision.PASS
     # The agent is told why, so it can attach the proof and retry.
     assert "real_surface" in (ticket.blocking_issues or "")
 
@@ -357,7 +357,7 @@ def test_verify_blocks_until_it_records_a_verdict(session_and_ticket):
     )
     orchestrator = _orchestrator(session)
 
-    detail = orchestrator._missing_evidence_detail(ticket, stage)
+    detail = orchestrator.gates._missing_evidence_detail(ticket, stage)
     assert "verify_verdict" in detail
 
     from loregarden.services.evidence import resolve_head_sha
@@ -370,7 +370,7 @@ def test_verify_blocks_until_it_records_a_verdict(session_and_ticket):
         evidence_kind="verify_verdict",
         commit_sha=resolve_head_sha(session, ticket),
     )
-    assert orchestrator._missing_evidence_detail(ticket, stage) == ""
+    assert orchestrator.gates._missing_evidence_detail(ticket, stage) == ""
 
 
 def test_a_verdict_from_an_earlier_commit_does_not_carry_over(session_and_ticket):
@@ -394,7 +394,7 @@ def test_a_verdict_from_an_earlier_commit_does_not_carry_over(session_and_ticket
         stage_type="verify",
         required_evidence=["verify_verdict"],
     )
-    assert "verify_verdict" in _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    assert "verify_verdict" in _orchestrator(session).gates._missing_evidence_detail(ticket, stage)
 
 
 def _light_heavy_stages():
@@ -434,7 +434,7 @@ def test_heavy_work_must_show_the_change_working(session_and_ticket):
     ticket.title = "Add auth token rotation with schema migration"
     stages = _light_heavy_stages()
 
-    detail = _orchestrator(session)._missing_evidence_detail(
+    detail = _orchestrator(session).gates._missing_evidence_detail(
         ticket, _implement_stage(stages), stages
     )
     assert "real_surface" in detail
@@ -448,7 +448,9 @@ def test_light_work_is_exempt_from_capturing_a_real_surface(session_and_ticket):
     stages = _light_heavy_stages()
 
     assert (
-        _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), stages)
+        _orchestrator(session).gates._missing_evidence_detail(
+            ticket, _implement_stage(stages), stages
+        )
         == ""
     )
 
@@ -468,7 +470,9 @@ def test_heavy_work_passes_once_the_capture_is_recorded(session_and_ticket):
         commit_sha=resolve_head_sha(session, ticket),
     )
     assert (
-        _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), stages)
+        _orchestrator(session).gates._missing_evidence_detail(
+            ticket, _implement_stage(stages), stages
+        )
         == ""
     )
 
@@ -480,5 +484,7 @@ def test_without_template_context_the_requirement_still_applies(session_and_tick
     ticket.title = "Fix typo in the settings header"
     stages = _light_heavy_stages()
 
-    detail = _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), None)
+    detail = _orchestrator(session).gates._missing_evidence_detail(
+        ticket, _implement_stage(stages), None
+    )
     assert "real_surface" in detail

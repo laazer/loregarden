@@ -266,7 +266,7 @@ def test_a_failed_tree_read_leaves_no_record(db_session, tmp_path: Path):
 def test_the_path_collecting_readers_treat_no_record_as_no_paths(db_session, repo: Path):
     """AC4, pinning behaviour rather than changing it.
 
-    `builtin_orchestrator._ticket_changed_paths` and `handoff_committed_work`
+    `gate_recovery._ticket_changed_paths` and `handoff_committed_work`
     union recorded paths to scope a commit, so a run with no record must
     contribute nothing — you cannot commit paths you do not know about. Both rely
     on `json.loads(raw or "[]")`, which is a small thing to lose in an edit.

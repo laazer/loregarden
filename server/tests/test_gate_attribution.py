@@ -243,7 +243,8 @@ def test_a_foreign_gate_failure_leaves_the_ticket_running(db_session):
     and that the debt is still written down with the command that found it.
     """
     from loregarden.models.domain import AgentRun, OrchestrationRun, TicketState, Workspace
-    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator, _GateDecision
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.services.gate_recovery import GateDecision
     from loregarden.services.orchestration_profile import OrchestrationProfile
 
     workspace = Workspace(slug="esc", name="Esc", repo_path="/nonexistent/esc")
@@ -285,7 +286,7 @@ def test_a_foreign_gate_failure_leaves_the_ticket_running(db_session):
         "(command: python3 py_organization_check.py --repo . --scope worktree)"
     )
     orchestrator = BuiltinOrchestrator(db_session)
-    decision = orchestrator._decide_unfixed_gate_failure(
+    decision = orchestrator.gates._decide_unfixed_gate_failure(
         ticket,
         None,
         [],
@@ -296,7 +297,7 @@ def test_a_foreign_gate_failure_leaves_the_ticket_running(db_session):
     )
     db_session.refresh(ticket)
 
-    assert decision is _GateDecision.PASS
+    assert decision is GateDecision.PASS
     assert ticket.state is TicketState.IN_PROGRESS
     assert not (ticket.blocking_issues or "")
     assert count_gate_fix_attempts(db_session, ticket.id, "implement") == 0

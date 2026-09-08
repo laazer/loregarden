@@ -57,7 +57,7 @@ class UncommittedWork:
 def ticket_recorded_paths(session: Session, ticket: Ticket) -> set[str]:
     """Every path this ticket's runs have claimed to touch.
 
-    The same source `builtin_orchestrator._ticket_changed_paths` reads. Usually
+    The same source `gate_recovery._ticket_changed_paths` reads. Usually
     empty, which is why it is never the only basis.
     """
     rows = session.exec(
