@@ -31,6 +31,7 @@ from loregarden.services.orchestration_profile import MonitorConfig, Orchestrati
 from loregarden.services.workflow_monitor import (
     AUTO_FIXABLE,
     AUTOFIX_REFUSED_TITLE,
+    MonitorFinding,
     apply_autofixes,
     scan,
 )
@@ -346,3 +347,109 @@ def test_a_successful_fix_raises_no_approval(db_session: Session):
         apply_autofixes(db_session, scan(db_session))
 
     assert _pending_refusals(db_session) == []
+
+
+# --- lg-workflow-integrity-678: a repair reports what happened, not its intent ---
+
+
+def _make_the_cursor_stale(db_session: Session, ticket: Ticket) -> None:
+    """Park the ticket on a stage its instance does not have."""
+    ticket.workflow_stage_key = "a-stage-this-workflow-never-had"
+    db_session.add(ticket)
+    db_session.commit()
+
+
+def test_a_repaired_stale_cursor_is_counted_and_raises_nothing(db_session: Session):
+    """The healthy path, so the unrepairable test below is not the only evidence
+    that this branch is reachable at all."""
+    ticket, _instance, _stages = _setup(db_session, "autofix-cursor-ok")
+    _make_the_cursor_stale(db_session, ticket)
+
+    with _with_profile(_profile(MonitorMode.AUTOFIX, [MonitorCondition.STALE_CURSOR])):
+        repaired = apply_autofixes(db_session, scan(db_session, ticket_id=ticket.id))
+
+    assert [f.condition for f in repaired] == [MonitorCondition.STALE_CURSOR]
+    refusals = db_session.exec(select(Approval).where(Approval.ticket_id == ticket.id)).all()
+    assert refusals == []
+
+
+def test_an_unrepairable_stale_cursor_is_not_counted_as_repaired(db_session: Session):
+    """AC1/AC2/AC3. `_repair_stale_cursor` used to `return True` unconditionally.
+
+    The unrepairable case is real, not simulated: `reconcile_ticket` resolves
+    stages through `resolve_ticket_stages`, which returns nothing for a ticket
+    with `workflow_disabled`, so it takes its early return and moves no cursor.
+    The detector resolves stages through the instance's own template pin, so it
+    still reports the finding. Two resolution paths, one disagreement — and the
+    old code called that a repair.
+    """
+    ticket, _instance, _stages = _setup(db_session, "autofix-cursor-stuck")
+    _make_the_cursor_stale(db_session, ticket)
+    ticket.workflow_disabled = True
+    db_session.add(ticket)
+    db_session.commit()
+
+    with _with_profile(_profile(MonitorMode.AUTOFIX, [MonitorCondition.STALE_CURSOR])):
+        repaired = apply_autofixes(db_session, scan(db_session, ticket_id=ticket.id))
+
+    assert repaired == []
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == "a-stage-this-workflow-never-had"
+
+    # AC2: the finding escalates instead of being silently re-found every sweep.
+    refusals = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.title == AUTOFIX_REFUSED_TITLE,
+        )
+    ).all()
+    assert len(refusals) == 1
+
+
+def test_the_refusal_is_raised_once_not_once_per_sweep(db_session: Session):
+    """An unrepairable finding is re-found on every pass. One approval per
+    (ticket, condition) is what keeps that from burying the inbox."""
+    ticket, _instance, _stages = _setup(db_session, "autofix-cursor-repeat")
+    _make_the_cursor_stale(db_session, ticket)
+    ticket.workflow_disabled = True
+    db_session.add(ticket)
+    db_session.commit()
+
+    with _with_profile(_profile(MonitorMode.AUTOFIX, [MonitorCondition.STALE_CURSOR])):
+        for _ in range(3):
+            apply_autofixes(db_session, scan(db_session, ticket_id=ticket.id))
+
+    refusals = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.title == AUTOFIX_REFUSED_TITLE,
+        )
+    ).all()
+    assert len(refusals) == 1
+
+
+def test_an_emptied_group_repair_that_changes_nothing_is_not_counted(db_session: Session):
+    """AC4, the other auto-fixable condition. `_repair_emptied_group` returns
+    early when the named group has no members, and used to report success on the
+    way out."""
+    ticket, instance, stages = _setup(db_session, "autofix-group-missing")
+    _empty_the_group(db_session, instance, stages)
+
+    phantom = MonitorFinding(
+        condition=MonitorCondition.EMPTIED_GROUP,
+        ticket_id=ticket.id,
+        stage_key="",
+        summary="a group this workflow does not have",
+        evidence={"group": "no-such-group"},
+    )
+    with _with_profile(_profile(MonitorMode.AUTOFIX, [MonitorCondition.EMPTIED_GROUP])):
+        repaired = apply_autofixes(db_session, [phantom])
+
+    assert repaired == []
+    refusals = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.title == AUTOFIX_REFUSED_TITLE,
+        )
+    ).all()
+    assert len(refusals) == 1
