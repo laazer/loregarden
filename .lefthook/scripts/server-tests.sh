@@ -18,6 +18,8 @@ set -euo pipefail
 
 # shellcheck source=hook-noninteractive.sh
 source "$(cd "$(dirname "$0")" && pwd)/hook-noninteractive.sh"
+# shellcheck source=test-workers.sh
+source "$(cd "$(dirname "$0")" && pwd)/test-workers.sh"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PY_ROOT="$ROOT/server"
@@ -100,8 +102,9 @@ fi
 
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
-  echo "pre-push: pytest -q -n auto ..."
-  LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto --basetemp="$BASETEMP"
+  echo "pre-push: pytest -q -n $TEST_WORKERS ..."
+  LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+    pytest -q -n "$TEST_WORKERS" --basetemp="$BASETEMP"
   exit 0
 fi
 
@@ -119,7 +122,8 @@ while IFS= read -r target; do
   FILES+=("$rel")
 done <<< "$TARGETS"
 
-echo "pre-push: pytest -q -n auto on ${#FILES[@]} test file(s) reaching the pushed changes:"
+echo "pre-push: pytest -q -n $TEST_WORKERS on ${#FILES[@]} test file(s) reaching the pushed changes:"
 printf '  %s\n' "${FILES[@]}"
 echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
-LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto --basetemp="$BASETEMP" "${FILES[@]}"
+LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+  pytest -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" "${FILES[@]}"
