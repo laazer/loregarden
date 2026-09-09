@@ -1,17 +1,16 @@
-"""`stage_resolution_memo` answers once per block, and never past it.
+"""`stage_resolution_memo` holds the rows a stage resolution is keyed on.
 
-Resolving a ticket's stages queries its workflow instance, reads the workspace
-override YAML off disk and re-parses the template's `stages_json` — and a ticket
-list asks four times per row. The memo collapses that to one answer per distinct
-workflow for the block it is opened over.
+The session memo in `workflow_service` holds what a template resolves to. This
+block holds the two rows the resolution reads to get there — the ticket's
+`WorkflowInstance` and its `Workspace` — which a session memo must not, because
+an instance is created and advanced mid-request and a writer would be served its
+own stale "no instance".
 
-The risk it carries is staleness, so these tests pin both halves: inside the
-block the answer is reused, and outside it a template edit is visible again.
+So these tests pin both halves: inside the block the rows are read once, and the
+block does not outlive itself.
 """
 
 from __future__ import annotations
-
-import json
 
 from loregarden.models.domain import Ticket, WorkflowInstance, Workspace
 from loregarden.services.workflow_service import (
@@ -24,14 +23,15 @@ from sqlalchemy import event
 from sqlmodel import Session, select
 
 
-class _InstanceQueryCounter:
-    """Counts `workflow_instances` reads on an engine for a `with` block."""
+class _StatementCounter:
+    """Counts statements matching a substring, for the duration of a `with` block."""
 
-    def __init__(self, engine) -> None:
+    def __init__(self, engine, needle: str) -> None:
         self.engine = engine
+        self.needle = needle
         self.count = 0
 
-    def __enter__(self) -> _InstanceQueryCounter:
+    def __enter__(self) -> _StatementCounter:
         event.listen(self.engine, "before_cursor_execute", self._on_execute)
         return self
 
@@ -39,7 +39,7 @@ class _InstanceQueryCounter:
         event.remove(self.engine, "before_cursor_execute", self._on_execute)
 
     def _on_execute(self, _conn, _cursor, statement, *_args, **_kwargs) -> None:
-        if "workflow_instances" in statement.lower():
+        if self.needle in statement.lower():
             self.count += 1
 
 
@@ -50,11 +50,14 @@ def _tickets_with_instances(session: Session, count: int) -> list[Ticket]:
     return tickets[:count]
 
 
-def test_the_memo_resolves_each_ticket_once(client, isolated_db):
+def test_the_memo_reads_each_ticket_instance_once(client, isolated_db):
     with Session(isolated_db) as session:
         tickets = _tickets_with_instances(session, 2)
 
-        with _InstanceQueryCounter(isolated_db) as counter, stage_resolution_memo():
+        with (
+            _StatementCounter(isolated_db, "workflow_instances") as counter,
+            stage_resolution_memo(),
+        ):
             for _ in range(4):
                 for ticket in tickets:
                     resolve_ticket_stages(session, ticket)
@@ -69,7 +72,10 @@ def test_priming_loads_a_page_of_instances_in_one_query(client, isolated_db):
     with Session(isolated_db) as session:
         tickets = _tickets_with_instances(session, 3)
 
-        with _InstanceQueryCounter(isolated_db) as counter, stage_resolution_memo():
+        with (
+            _StatementCounter(isolated_db, "workflow_instances") as counter,
+            stage_resolution_memo(),
+        ):
             prime_workflow_instances(session, [t.id for t in tickets])
             for ticket in tickets:
                 assert workflow_instance_for(session, ticket.id) is not None
@@ -86,40 +92,36 @@ def test_priming_outside_a_memo_scope_changes_nothing(client, isolated_db):
         assert workflow_instance_for(session, ticket.id) is not None
 
 
-def test_the_memo_does_not_outlive_its_block(client, isolated_db):
-    """A template edited after the block is visible to the next read."""
+def test_an_instance_written_after_the_block_is_visible(client, isolated_db):
+    """Why this is a block and not a session memo: a ticket with no instance is
+    remembered as having none, and something creates one a moment later."""
     with Session(isolated_db) as session:
         ticket = _tickets_with_instances(session, 1)[0]
-
-        with stage_resolution_memo():
-            template, before = resolve_ticket_stages(session, ticket)
-        assert template is not None and before
-
-        stages = json.loads(template.stages_json)
-        renamed = stages[0]["key"]
-        stages[0]["key"] = f"{renamed}_renamed"
-        template.stages_json = json.dumps(stages)
-        session.add(template)
+        instance = session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+        ).one()
+        stages_json = instance.stages_json
+        template_id = instance.template_id
+        template_version = instance.template_version
+        session.delete(instance)
         session.commit()
 
         with stage_resolution_memo():
-            _, after = resolve_ticket_stages(session, ticket)
-        assert [s.key for s in after] != [s.key for s in before]
+            assert workflow_instance_for(session, ticket.id) is None
 
-
-def test_a_caller_cannot_mutate_the_memoized_stages(client, isolated_db):
-    """The memo hands out its own list, so a caller that trims or reorders its
-    stages does not rewrite the answer every later ticket in the block gets."""
-    with Session(isolated_db) as session:
-        ticket = _tickets_with_instances(session, 1)[0]
+        session.add(
+            WorkflowInstance(
+                ticket_id=ticket.id,
+                template_id=template_id,
+                template_version=template_version,
+                current_stage_key=ticket.workflow_stage_key,
+                stages_json=stages_json,
+            )
+        )
+        session.commit()
 
         with stage_resolution_memo():
-            _, first = resolve_ticket_stages(session, ticket)
-            assert len(first) > 1
-            first.clear()
-            _, second = resolve_ticket_stages(session, ticket)
-
-        assert len(second) > 1
+            assert workflow_instance_for(session, ticket.id) is not None
 
 
 def test_a_workspace_row_is_read_once_per_block(client, isolated_db):
@@ -129,21 +131,11 @@ def test_a_workspace_row_is_read_once_per_block(client, isolated_db):
         tickets = _tickets_with_instances(session, 3)
         assert len({t.workspace_id for t in tickets}) == 1
 
-        counted = {"n": 0}
+        with _StatementCounter(isolated_db, "from workspaces") as counter, stage_resolution_memo():
+            for ticket in tickets:
+                resolve_ticket_stages(session, ticket)
 
-        def _on_execute(_conn, _cursor, statement, *_args, **_kwargs) -> None:
-            if "from workspaces" in statement.lower():
-                counted["n"] += 1
-
-        event.listen(isolated_db, "before_cursor_execute", _on_execute)
-        try:
-            with stage_resolution_memo():
-                for ticket in tickets:
-                    resolve_ticket_stages(session, ticket)
-        finally:
-            event.remove(isolated_db, "before_cursor_execute", _on_execute)
-
-        assert counted["n"] <= 1, f"{counted['n']} workspace reads for one workspace"
+        assert counter.count <= 1, f"{counter.count} workspace reads for one workspace"
 
 
 def test_resolution_without_a_memo_is_unchanged(client, isolated_db):

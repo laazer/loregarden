@@ -79,6 +79,9 @@
   color: var(--tx);
   font-size: 14.5px;
   line-height: 1.45;
+  /* Pasted paths and tool ids are one unbreakable word to the line breaker;
+     the bubble is a fixed max-width, so they run out past its border. */
+  overflow-wrap: break-word;
 }
 
 .lg-chat-assistant-col {
@@ -140,6 +143,9 @@
   color: var(--tx);
   font-size: 14.5px;
   line-height: 1.55;
+  /* Same reason as the user bubble, and it also covers the plain-text children
+     — the streaming answer and the session summary — that render no markdown. */
+  overflow-wrap: break-word;
 }
 
 .lg-chat-reply .markdown-preview > :first-child {

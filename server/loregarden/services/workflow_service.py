@@ -24,9 +24,6 @@ from loregarden.services.ticket_rollup import has_children
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from sqlmodel import Session, col, select
 
-#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
-_ID_CHUNK = 400
-
 
 def _overrides_dir() -> Path:
     return settings.workflow_templates_dir / "overrides"
@@ -55,53 +52,44 @@ def apply_stage_overrides(stages: list[WorkflowStageDef], override: dict) -> lis
     return result
 
 
-def resolve_workspace_stages(
-    session: Session, workspace: Workspace
-) -> tuple[WorkflowTemplate | None, list[WorkflowStageDef]]:
-    if not workspace.workflow_template_id:
-        return None, []
-    template = session.get(WorkflowTemplate, workspace.workflow_template_id)
-    if not template:
-        return None, []
-    stages = get_template_stages(template)
-    override = load_workspace_override(workspace.slug)
-    if workspace.workflow_override_json and workspace.workflow_override_json != "{}":
-        override = {**override, **json.loads(workspace.workflow_override_json)}
-    return template, apply_stage_overrides(stages, override)
+#: Keys of the session-scoped memos, held in ``Session.info``.
+_STAGE_MEMO = "_resolved_stage_memo"
+_OVERRIDE_MEMO = "_workspace_override_memo"
 
+#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
+_ID_CHUNK = 400
 
 #: Memo buckets for the block a `stage_resolution_memo()` scope is open over;
 #: `None` outside one, which is what every writer and single-ticket reader sees.
-_STAGE_RESOLUTION_MEMO: ContextVar[dict[str, dict] | None] = ContextVar(
-    "_STAGE_RESOLUTION_MEMO", default=None
-)
+_READ_SCOPE_MEMO: ContextVar[dict[str, dict] | None] = ContextVar("_READ_SCOPE_MEMO", default=None)
 
 
 @contextmanager
 def stage_resolution_memo() -> Iterator[None]:
-    """Resolve each distinct workflow, and each ticket's instance, once per block.
+    """Read each ticket's workflow instance, and each workspace row, once per block.
 
-    A ticket list asks `resolve_ticket_stages` four times per row — template, stage
-    cursor, stage views, stage agent — and every one of those re-queries the
-    ticket's `WorkflowInstance`, re-reads the workspace override YAML off disk, and
-    re-parses the template's `stages_json` through `WorkflowStageDef`. For a page of
-    837 tickets sharing one template that is the same answer 3348 times.
+    The stage memo above holds what a template resolves to; this holds the two
+    rows the resolution is keyed on. They are scoped differently on purpose. A
+    template is edited by a studio publish and its version is in the memo key, so
+    it is safe to hold for a whole session. A workflow instance is created and
+    advanced constantly — `ensure_workflow_instance` writes one mid-request — so
+    holding one for the session would serve a writer its own stale "no instance".
 
-    The scope is opened deliberately, around a read that serializes many tickets,
-    rather than hung off the session: nothing inside may edit a template, an
-    instance or a workspace override and then expect to read its own write. The
-    stage key carries the pinned template version, so a ticket held at an older
-    snapshot is still resolved separately from one on the live template.
+    So this scope is opened deliberately, by a read that serializes many tickets
+    and writes nothing: a ticket list asks `resolve_ticket_stages` four times per
+    row, and each call re-queried the instance and re-fetched the workspace.
+    SQLAlchemy's identity map holds weak references, so a serializer that reads
+    `ws.slug` and drops the row re-queries the same four workspaces per ticket.
     """
-    token = _STAGE_RESOLUTION_MEMO.set({"instances": {}, "stages": {}, "workspaces": {}})
+    token = _READ_SCOPE_MEMO.set({"instances": {}, "workspaces": {}, "templates": {}})
     try:
         yield
     finally:
-        _STAGE_RESOLUTION_MEMO.reset(token)
+        _READ_SCOPE_MEMO.reset(token)
 
 
 def _memo_bucket(name: str) -> dict | None:
-    memo = _STAGE_RESOLUTION_MEMO.get()
+    memo = _READ_SCOPE_MEMO.get()
     return None if memo is None else memo[name]
 
 
@@ -144,12 +132,7 @@ def prime_workflow_instances(session: Session, ticket_ids: list[str]) -> None:
 
 
 def workspace_for(session: Session, workspace_id: str) -> Workspace | None:
-    """A workspace row, held for the length of a read scope.
-
-    SQLAlchemy's identity map holds weak references, so a serializer that reads
-    `ws.slug` and drops the row re-queries the same four workspaces once per
-    ticket. The memo keeps them alive for the block.
-    """
+    """A workspace row, held for the length of a read scope."""
     bucket = _memo_bucket("workspaces")
     if bucket is not None and workspace_id in bucket:
         return bucket[workspace_id]
@@ -159,30 +142,68 @@ def workspace_for(session: Session, workspace_id: str) -> Workspace | None:
     return ws
 
 
-def _resolve_stages(
-    session: Session, ws: Workspace, instance: WorkflowInstance | None
+def _template_for(session: Session, template_id: str) -> WorkflowTemplate | None:
+    """A template row, held for the length of a read scope.
+
+    The stage memo above is keyed on `template.version`, so it reads the row
+    before it can answer — and dropping it means the weak identity map re-fetches
+    the same template for every ticket on the page.
+    """
+    bucket = _memo_bucket("templates")
+    if bucket is not None and template_id in bucket:
+        return bucket[template_id]
+    template = session.get(WorkflowTemplate, template_id)
+    if bucket is not None:
+        bucket[template_id] = template
+    return template
+
+
+def _merged_override(session: Session, workspace: Workspace) -> dict:
+    """A workspace's stage override: the YAML on disk, then its stored JSON.
+
+    Memoised per session. The disk read depends on nothing but the workspace,
+    so it must not repeat per ticket — or per pinned template version, which
+    is why this is keyed more coarsely than the stage memo.
+    """
+    memo: dict[tuple[str, str], dict] = session.info.setdefault(_OVERRIDE_MEMO, {})
+    key = (workspace.slug, workspace.workflow_override_json or "")
+    override = memo.get(key)
+    if override is None:
+        override = load_workspace_override(workspace.slug)
+        if workspace.workflow_override_json and workspace.workflow_override_json != "{}":
+            override = {**override, **json.loads(workspace.workflow_override_json)}
+        memo[key] = override
+    return override
+
+
+def resolve_workspace_stages(
+    session: Session, workspace: Workspace
 ) -> tuple[WorkflowTemplate | None, list[WorkflowStageDef]]:
-    template: WorkflowTemplate | None = None
-    pinned_version: int | None = None
-    if instance and instance.template_id:
-        template = session.get(WorkflowTemplate, instance.template_id)
-        pinned_version = instance.template_version
-    if not template and ws.workflow_template_id:
-        template = session.get(WorkflowTemplate, ws.workflow_template_id)
+    if not workspace.workflow_template_id:
+        return None, []
+    template = session.get(WorkflowTemplate, workspace.workflow_template_id)
     if not template:
         return None, []
-
-    stages = get_template_stages_at_version(session, template, pinned_version)
-    override = load_workspace_override(ws.slug)
-    if ws.workflow_override_json and ws.workflow_override_json != "{}":
-        override = {**override, **json.loads(ws.workflow_override_json)}
-    return template, apply_stage_overrides(stages, override)
+    stages = get_template_stages(template)
+    return template, apply_stage_overrides(stages, _merged_override(session, workspace))
 
 
 def resolve_ticket_stages(
     session: Session, ticket: Ticket
 ) -> tuple[WorkflowTemplate | None, list[WorkflowStageDef]]:
-    """Resolve workflow template + stages for a ticket (per-ticket override or workspace default)."""
+    """Resolve workflow template + stages for a ticket (per-ticket override or workspace default).
+
+    Memoised per session, because the tail of this function is expensive and
+    identical for every ticket sharing a template: it parses the template's
+    ``stages_json``, validates every stage, and reads the workspace override
+    **off disk**. A page of tickets used to pay all three per row — 836 tickets
+    meant 836 YAML reads of the same file.
+
+    The key names everything the result depends on, `template.version`
+    included, so a template edited mid-session (studio publish bumps it) is not
+    served from the memo. The memo lives on the `Session`, which the API
+    creates per request, so nothing survives the response.
+    """
     if ticket.workflow_disabled:
         return None, []
 
@@ -191,25 +212,34 @@ def resolve_ticket_stages(
         return None, []
 
     instance = workflow_instance_for(session, ticket.id)
-    bucket = _memo_bucket("stages")
-    if bucket is None:
-        template, stages = _resolve_stages(session, ws, instance)
-        return template, stages
+    template: WorkflowTemplate | None = None
+    pinned_version: int | None = None
+    if instance and instance.template_id:
+        template = _template_for(session, instance.template_id)
+        pinned_version = instance.template_version
+    if not template and ws.workflow_template_id:
+        template = _template_for(session, ws.workflow_template_id)
+    if not template:
+        return None, []
 
-    # Everything `_resolve_stages` reads: the workspace row, and the template the
-    # instance pins it to. Two tickets agreeing on this key cannot disagree on the
-    # stages — the same key `ticket_tree_estimate` already caches on.
+    memo: dict[tuple, list[WorkflowStageDef]] = session.info.setdefault(_STAGE_MEMO, {})
     key = (
         ws.id,
-        instance.template_id if instance else "",
-        instance.template_version if instance else None,
+        ws.slug,
+        ws.workflow_override_json,
+        template.id,
+        template.version,
+        pinned_version,
     )
-    if key not in bucket:
-        bucket[key] = _resolve_stages(session, ws, instance)
-    template, stages = bucket[key]
-    # A copy, so a caller that sorts or trims its stages in place cannot rewrite
-    # the answer every later ticket in this block gets.
-    return template, list(stages)
+    cached = memo.get(key)
+    if cached is None:
+        stages = get_template_stages_at_version(session, template, pinned_version)
+        cached = apply_stage_overrides(stages, _merged_override(session, ws))
+        memo[key] = cached
+    # A copy per caller: the memo hands out the same list to every ticket that
+    # shares a template, and a caller that sorted or trimmed it in place would
+    # corrupt every later read in the request.
+    return template, list(cached)
 
 
 class WorkflowService:

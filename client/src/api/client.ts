@@ -107,9 +107,9 @@ function ticketQuery(params?: {
   if (params?.parent_ticket_id) q.set("parent_ticket_id", params.parent_ticket_id);
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
-  if (params?.limit !== undefined) q.set("limit", String(params.limit));
-  if (params?.offset) q.set("offset", String(params.offset));
   if (params?.search) q.set("search", params.search);
+  if (params?.limit !== undefined) q.set("limit", String(params.limit));
+  if (params?.offset !== undefined) q.set("offset", String(params.offset));
   const suffix = q.toString() ? `?${q}` : "";
   return suffix;
 }
@@ -229,10 +229,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  // `limit`/`offset` page the list. Both are opt-in: every caller here asks for a
-  // whole workspace, and a default page size would truncate the pickers and
-  // dashboards built on that without saying so. The response carries
-  // `X-Total-Count` for a caller that does page.
   tickets: (params?: {
     workspace?: string;
     state?: TicketState | TicketState[];
@@ -240,7 +236,9 @@ export const api = {
     parent_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
+    /** Opt-in page size. Unset returns the whole filtered set, as before. */
     limit?: number;
+    /** Only meaningful with `limit`; the API rejects it on its own. */
     offset?: number;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
   ticketStatusSummary: (workspace?: string) =>

@@ -4815,6 +4815,12 @@ textarea::placeholder {
   font-size: 12px;
   line-height: 1.6;
   color: var(--tx);
+  /* Agent prose quotes file paths and tool ids — `scripts/a/b_c.gd`,
+     `mcp__x__y` — and the line breaker sees each as one unbreakable word, so
+     without this they run past the bubble that holds them. `break-word`, not
+     `anywhere`: it leaves min-content sizing alone, so tables and flex rows
+     keep the widths they have. */
+  overflow-wrap: break-word;
 }
 
 .markdown-preview > :first-child {

@@ -158,9 +158,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # A paged list answers "how many are there" in a header; a cross-origin
-    # client cannot read one that is not named here.
-    expose_headers=["X-Total-Count"],
 )
 
 

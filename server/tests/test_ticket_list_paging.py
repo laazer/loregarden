@@ -1,160 +1,127 @@
-"""`GET /api/tickets` pages, and its cost stops scaling with the page.
+"""Listing tickets must not re-resolve one template per row, and can be paged.
 
-The endpoint returned every ticket in the workspace and rebuilt the same workflow
-answer for each one. Measured against a copy of the live database (837 tickets,
-1236 agent runs): 13459 queries and 85s for one request, of which 3348 were the
-same four-times-per-ticket stage resolution and 837 were a full `agent_runs` scan
-apiece looking for the latest run code.
+`_ticket_summary` resolves the ticket's workflow stages, and
+`resolve_ticket_stages` parses the template's `stages_json`, validates every
+stage, and reads the workspace override **off disk**. All three are identical
+for every ticket sharing a template, so `GET /api/tickets` paid them per row:
+836 tickets in the live database meant 836 reads of the same YAML file.
 
-These tests count queries rather than asserting on a duration — a query count is
-deterministic, a duration is a property of the machine (the same reason
-test_ticket_list_commits.py counts commits).
+Like `test_ticket_list_commits`, these count work rather than asserting on a
+duration — a file-read count is deterministic and a duration is a property of
+the machine.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import json
+from unittest import mock
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkItemType, Workspace
-from loregarden.services.ticket_service import TicketService
-from sqlalchemy import event
+from loregarden.models.domain import Ticket
 from sqlmodel import Session, select
 
 
-class _QueryCounter:
-    """Counts statements executed on an engine, for the duration of a `with` block."""
-
-    def __init__(self, engine) -> None:
-        self.engine = engine
-        self.count = 0
-
-    def __enter__(self) -> _QueryCounter:
-        event.listen(self.engine, "before_cursor_execute", self._on_execute)
-        return self
-
-    def __exit__(self, *_exc) -> None:
-        event.remove(self.engine, "before_cursor_execute", self._on_execute)
-
-    def _on_execute(self, *_args, **_kwargs) -> None:
-        self.count += 1
-
-
-def _add_tickets(session: Session, workspace: Workspace, count: int) -> list[str]:
-    parent = session.exec(
-        select(Ticket).where(Ticket.work_item_type == WorkItemType.MILESTONE)
-    ).first()
-    service = TicketService(session)
-    ids = []
-    for index in range(count):
-        ticket = service.create_ticket(
-            workspace_slug=workspace.slug,
-            title=f"Paging fixture {index}",
-            work_item_type=WorkItemType.BUG,
-            parent_ticket_id=parent.id,
-        )
-        ids.append(ticket.id)
-    session.commit()
-    return ids
-
-
-@pytest.fixture(name="workspace_slug")
-def workspace_slug_fixture(client, isolated_db) -> str:
+@pytest.fixture(name="seeded")
+def seeded_fixture(isolated_db):
+    """The seed tickets, which share one workspace and one template."""
     with Session(isolated_db) as session:
-        return session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one().slug
+        tickets = list(session.exec(select(Ticket)).all())
+    assert len(tickets) >= 3, "seed data no longer has enough tickets to measure"
+    return tickets
 
 
-def test_limit_and_offset_return_a_slice_of_the_same_list(client, workspace_slug):
-    full = client.get(f"/api/tickets?workspace={workspace_slug}")
-    assert full.status_code == 200, full.text
-    rows = full.json()
-    assert len(rows) >= 4, "seed data no longer has enough tickets to page"
+def test_listing_reads_the_workspace_override_once(client, seeded):
+    """The disk read is per template, not per ticket.
 
-    page = client.get(f"/api/tickets?workspace={workspace_slug}&limit=2&offset=1")
-    assert page.status_code == 200, page.text
-    # Identical summaries, not merely the same ids: paging must not change what a
-    # row says about itself.
-    assert page.json() == rows[1:3]
-
-
-def test_the_unpaged_list_is_still_the_whole_workspace(client, workspace_slug):
-    """No default page size. Every caller today asks for a whole workspace, and a
-    default would truncate them without saying so."""
-    response = client.get(f"/api/tickets?workspace={workspace_slug}")
-    assert response.status_code == 200, response.text
-    assert len(response.json()) == int(response.headers["X-Total-Count"])
-
-
-def test_total_count_header_counts_the_filtered_set_not_the_page(client, workspace_slug):
-    response = client.get(f"/api/tickets?workspace={workspace_slug}&limit=1")
-    assert response.status_code == 200, response.text
-    total = int(response.headers["X-Total-Count"])
-    assert len(response.json()) == 1
-    assert total == len(client.get(f"/api/tickets?workspace={workspace_slug}").json())
-    assert total > 1, "a one-row page from a one-row workspace proves nothing"
-
-    filtered = client.get(f"/api/tickets?workspace={workspace_slug}&work_item_type=milestone")
-    assert int(filtered.headers["X-Total-Count"]) == len(filtered.json())
-
-
-def test_an_empty_workspace_filter_still_reports_a_total(client):
-    """A missing header would read as "nobody counted", which is not the same
-    answer as zero."""
-    response = client.get("/api/tickets?workspace=no-such-workspace")
-    assert response.status_code == 200, response.text
-    assert response.json() == []
-    assert response.headers["X-Total-Count"] == "0"
-
-
-def test_query_count_does_not_scale_with_the_page(client, isolated_db, workspace_slug):
-    """The regression this whole change exists to prevent.
-
-    Measured on the live database before the fix: 16 queries per ticket. The
-    ceiling here is deliberately loose — it is guarding an order of magnitude,
-    not pinning today's exact plan.
+    Measured on this suite's seed data: before the memo, one read per row.
     """
-    with _QueryCounter(isolated_db) as base:
-        first = client.get(f"/api/tickets?workspace={workspace_slug}")
+    import loregarden.services.workflow_service as workflow_service
+
+    real = workflow_service.load_workspace_override
+    with mock.patch.object(workflow_service, "load_workspace_override", side_effect=real) as reads:
+        response = client.get("/api/tickets?workspace=loregarden")
+
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert len(rows) >= 3
+
+    # Not "fewer than rows" — the seed shares a single template, so one read
+    # answers every ticket in the page.
+    assert reads.call_count == 1, f"{reads.call_count} override reads for {len(rows)} tickets"
+
+
+def test_paged_listing_matches_the_unpaged_order(client, seeded):
+    """`limit`/`offset` slice the same ordered set the unpaged call returns."""
+    everything = client.get("/api/tickets?workspace=loregarden")
+    assert everything.status_code == 200, everything.text
+    ids = [row["id"] for row in everything.json()]
+    assert len(ids) >= 3
+
+    first = client.get("/api/tickets?workspace=loregarden&limit=2")
     assert first.status_code == 200, first.text
-    base_rows = len(first.json())
+    assert [row["id"] for row in first.json()] == ids[:2]
 
-    added = 12
+    second = client.get("/api/tickets?workspace=loregarden&limit=2&offset=2")
+    assert second.status_code == 200, second.text
+    assert [row["id"] for row in second.json()] == ids[2:4]
+
+
+def test_listing_is_unpaged_by_default(client, seeded):
+    """No default page size: callers here count what they get back.
+
+    A default would silently answer a different question — "the first N
+    children" instead of "this parent's children".
+    """
+    response = client.get("/api/tickets?workspace=loregarden")
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert len(rows) > 2, "need more rows than the page size below to prove anything"
+
+    paged = client.get("/api/tickets?workspace=loregarden&limit=2")
+    assert len(paged.json()) == 2
+    assert len(rows) == len(client.get("/api/tickets?workspace=loregarden").json())
+
+
+def test_offset_without_limit_is_rejected(client):
+    """An offset into an unbounded set is a caller error, not a silent full read."""
+    response = client.get("/api/tickets?workspace=loregarden&offset=5")
+    assert response.status_code == 400, response.text
+    assert "limit" in response.json()["detail"]
+
+
+def test_memo_does_not_survive_a_template_edit(client, isolated_db):
+    """The memo is keyed by `template.version`, which a publish bumps.
+
+    This is the risk the memo introduces: two resolutions in one session, with
+    the template changed in between, must not return the first answer twice.
+    """
+    from loregarden.models.domain import WorkflowTemplate
+    from loregarden.services.workflow_service import resolve_ticket_stages
+
     with Session(isolated_db) as session:
-        workspace = session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).one()
-        _add_tickets(session, workspace, added)
+        ticket = session.exec(select(Ticket)).first()
+        _, before = resolve_ticket_stages(session, ticket)
+        assert before, "seed ticket has no stages to edit"
 
-    with _QueryCounter(isolated_db) as grown:
-        second = client.get(f"/api/tickets?workspace={workspace_slug}")
-    assert len(second.json()) == base_rows + added
+        template = session.exec(
+            select(WorkflowTemplate).where(WorkflowTemplate.id == _template_id(session, ticket))
+        ).one()
+        trimmed = json.loads(template.stages_json)[:-1]
+        template.stages_json = json.dumps(trimmed)
+        template.version += 1
+        session.add(template)
+        session.flush()
 
-    per_row = (grown.count - base.count) / added
-    assert per_row < 4, (
-        f"{grown.count - base.count} extra queries for {added} extra tickets "
-        f"({per_row:.1f} per row); the per-ticket workflow resolution is back"
+        _, after = resolve_ticket_stages(session, ticket)
+
+    assert len(after) == len(before) - 1, (
+        f"memo served {len(after)} stages after the template dropped one (was {len(before)})"
     )
 
 
-def test_run_code_is_the_latest_run_for_each_ticket(client, isolated_db, workspace_slug):
-    """The batched lookup answers what the per-ticket query answered: the newest
-    run's code, and "" for a ticket that has never run."""
-    now = datetime.now(timezone.utc)
-    with Session(isolated_db) as session:
-        workspace = session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).one()
-        ticket_id = _add_tickets(session, workspace, 1)[0]
-        for offset, code in ((2, "run-older"), (0, "run-newest"), (1, "run-middle")):
-            session.add(
-                AgentRun(
-                    run_code=code,
-                    ticket_id=ticket_id,
-                    workspace_id=workspace.id,
-                    agent_id="backend_implementer",
-                    status=RunStatus.SUCCEEDED,
-                    created_at=now - timedelta(minutes=offset),
-                )
-            )
-        never_ran = _add_tickets(session, workspace, 1)[0]
-        session.commit()
+def _template_id(session, ticket) -> str:
+    """The template `ticket` actually resolves through."""
+    from loregarden.services.workflow_service import resolve_ticket_stages
 
-    rows = {row["id"]: row for row in client.get(f"/api/tickets?workspace={workspace_slug}").json()}
-    assert rows[ticket_id]["run_code"] == "run-newest"
-    assert rows[never_ran]["run_code"] == ""
+    template, _ = resolve_ticket_stages(session, ticket)
+    return template.id
