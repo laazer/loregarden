@@ -34,10 +34,23 @@ def _db_path_from_engine_url(url: str) -> Path | None:
     return Path(url.removeprefix("sqlite:///"))
 
 
-engine = create_engine(
-    _sqlite_url(settings.database_url),
-    connect_args={"check_same_thread": False, "timeout": 30.0},
-)
+def create_app_engine(url: str) -> Engine:
+    """An engine sized for the concurrency this application actually has.
+
+    See ``Settings.db_pool_size`` for why the pool is not SQLAlchemy's default.
+    The short version: a pool smaller than the request threadpool turns a slow
+    handler into failed requests everywhere else, which is exactly what happened
+    when model discovery held a connection across a CLI probe.
+    """
+    return create_engine(
+        url,
+        connect_args={"check_same_thread": False, "timeout": 30.0},
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
+
+
+engine = create_app_engine(_sqlite_url(settings.database_url))
 
 
 @event.listens_for(Engine, "connect")

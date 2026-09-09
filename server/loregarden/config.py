@@ -27,6 +27,20 @@ class Settings(BaseSettings):
 
     repo_root: Path = _find_repo_root()
     database_url: str = "sqlite:///data/loregarden.db"
+    #: Connections held open for the database pool, and the burst headroom above
+    #: it. Together they must cover everything that can want a connection at
+    #: once: one per in-flight sync request (FastAPI runs those in AnyIO's worker
+    #: threadpool, forty threads by default), plus every ``/ws/queue`` snapshot,
+    #: the reconciliation timer and run streaming.
+    #:
+    #: Sizing them below that does not shed load, it relocates the queue — from
+    #: the threadpool, where waiting costs latency, to the connection pool, where
+    #: it costs a thirty-second timeout and a failed request. The values these
+    #: replace were SQLAlchemy's defaults, five and ten, which are meant for
+    #: databases where a connection is a server-side process. A SQLite
+    #: connection is a file handle; there is nothing to conserve by rationing it.
+    db_pool_size: int = 20
+    db_max_overflow: int = 40
     #: Seconds between reconciliation passes. Short enough that a wedged lane or
     #: a stranded stage clears itself well inside the time it takes an operator
     #: to notice; 0 or less turns the timer off and leaves repair to startup,
