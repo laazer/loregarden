@@ -7,17 +7,35 @@ from dataclasses import dataclass
 
 import httpx
 from loregarden.config import settings
+from loregarden.services.discovery_cache import ProbeCache
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_LMSTUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
 DISCOVERY_TIMEOUT_SECONDS = 2.0
+# An unreachable server costs both attempts — native, then the OpenAI-compat
+# fallback — so the budget a caller can actually wait is twice the per-request
+# timeout, and that is the number the failure TTL has to outlast.
+PROBE_BUDGET_SECONDS = DISCOVERY_TIMEOUT_SECONDS * 2
+# Short, because the picker reports which models are *loaded* and the operator
+# changes that in LM Studio while the settings modal is open. A reachable server
+# answers in milliseconds, so re-probing this often is nearly free; it is the
+# unreachable case that is slow, and that is held by the failure TTL below.
+CACHE_TTL_SECONDS = 30.0
+FAILURE_CACHE_TTL_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
 class LmStudioChatModel:
     id: str
     loaded: bool
+
+
+_CACHE: ProbeCache[LmStudioChatModel] = ProbeCache(
+    probe_budget_seconds=PROBE_BUDGET_SECONDS,
+    success_ttl_seconds=CACHE_TTL_SECONDS,
+    failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
+)
 
 
 def is_chat_lmstudio_model(model_id: str) -> bool:
@@ -90,8 +108,25 @@ def _parse_openai_models(payload: object) -> list[LmStudioChatModel]:
     return found
 
 
+def reset_model_cache() -> None:
+    """Drop every memoized catalog so the next call re-probes."""
+    _CACHE.reset()
+
+
 def list_lmstudio_chat_models(base_url: str = "") -> list[LmStudioChatModel]:
-    """Return chat models from LM Studio (prefer native API with load state)."""
+    """Return chat models from LM Studio (prefer native API with load state).
+
+    Memoized per server, and single-flighted: one caller probes while the rest
+    are served the last known list. This runs inside a request holding a
+    database connection, and an unreachable LM Studio costs both timeouts.
+    """
+    return _CACHE.get(
+        normalize_lmstudio_base_url(base_url),
+        lambda: _probe(base_url),
+    )
+
+
+def _probe(base_url: str) -> list[LmStudioChatModel]:
     native_url = _native_models_url(base_url)
     openai_url = _openai_models_url(base_url)
     try:

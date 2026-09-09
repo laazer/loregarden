@@ -13,11 +13,10 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import threading
-import time
 from shutil import which
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES
+from loregarden.services.discovery_cache import ProbeCache
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +29,20 @@ DISCOVERY_TIMEOUT_SECONDS = 45.0
 # (CLI absent, provider not yet authenticated) are fixed by the operator, who
 # should not wait five minutes to see the result.
 CACHE_TTL_SECONDS = 300.0
-# Longer than the discovery budget on purpose. A CLI that hangs burns the full
-# timeout before it fails, so a failure TTL shorter than that budget lets the
-# next request start probing the moment the last one gave up — a hung binary
-# then keeps a probe in flight permanently instead of being retried now and
-# then. ``test_a_hung_cli_cannot_be_probed_back_to_back`` pins the ordering.
+# Longer than the discovery budget on purpose, and ProbeCache refuses to be built
+# otherwise: a CLI that hangs burns the full timeout before it fails, so a
+# shorter failure TTL lets the next request start probing the moment the last one
+# gave up.
 FAILURE_CACHE_TTL_SECONDS = 60.0
 DEFAULT_OPTION = {"id": "", "label": "Default (OpenCode profile)"}
 
-#: Guards the cache fields below, and nothing else. It is never held across the
-#: CLI probe: doing so made every concurrent caller queue behind a subprocess
-#: that can take the better part of a minute.
-_cache_lock = threading.Lock()
-#: Single-flight. One caller probes; the rest are served the last answer rather
-#: than piling up. ``runtime_options_payload`` runs inside a request holding a
-#: database connection, so a probe that blocks N callers takes N connections out
-#: of the pool for its whole duration — 15 of them exhausted the pool outright
-#: and the API stopped answering, ``/health`` included.
-_probe_lock = threading.Lock()
-_cached_models: list[str] = []
-_cache_expires_at = 0.0
+_CACHE: ProbeCache[str] = ProbeCache(
+    probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
+    success_ttl_seconds=CACHE_TTL_SECONDS,
+    failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
+)
+#: One catalog, so one entry.
+_CACHE_KEY = ""
 
 
 def resolve_opencode_binary() -> str | None:
@@ -110,52 +103,12 @@ def _list_from_cli() -> list[str]:
 
 def reset_model_cache() -> None:
     """Drop the memoized catalog so the next call re-runs the CLI."""
-    global _cached_models, _cache_expires_at
-    with _cache_lock:
-        _cached_models = []
-        _cache_expires_at = 0.0
-
-
-def _read_cache() -> tuple[list[str], bool]:
-    """The memoized catalog, and whether it is still fresh."""
-    with _cache_lock:
-        return list(_cached_models), time.monotonic() < _cache_expires_at
-
-
-def _store_cache(models: list[str]) -> None:
-    global _cached_models, _cache_expires_at
-    with _cache_lock:
-        _cached_models = list(models)
-        _cache_expires_at = time.monotonic() + (
-            CACHE_TTL_SECONDS if models else FAILURE_CACHE_TTL_SECONDS
-        )
+    _CACHE.reset()
 
 
 def list_opencode_models() -> list[str]:
-    """Return the local OpenCode CLI's model ids, or []. Memoized for a few minutes.
-
-    At most one caller probes the CLI at a time. Anyone arriving while a probe is
-    in flight gets the last known answer immediately instead of waiting: the
-    catalog is decoration for a picker, and no request should hold a database
-    connection for the length of a subprocess to render it.
-    """
-    cached, fresh = _read_cache()
-    if fresh:
-        return cached
-
-    if not _probe_lock.acquire(blocking=False):
-        return cached
-
-    try:
-        # The holder may have finished between the read above and the acquire.
-        cached, fresh = _read_cache()
-        if fresh:
-            return cached
-        models = _list_from_cli()
-        _store_cache(models)
-        return list(models)
-    finally:
-        _probe_lock.release()
+    """Return the local OpenCode CLI's model ids, or []. Memoized for a few minutes."""
+    return _CACHE.get(_CACHE_KEY, _list_from_cli)
 
 
 def opencode_model_options() -> list[dict[str, str]]:

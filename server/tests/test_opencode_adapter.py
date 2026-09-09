@@ -31,6 +31,7 @@ from loregarden.services.cli_settings import (
     resolve_effort_for_adapter,
     resolve_model_for_adapter,
 )
+from loregarden.services.discovery_cache import ProbeCache
 from loregarden.services.opencode_discovery import (
     DISCOVERY_TIMEOUT_SECONDS,
     FAILURE_CACHE_TTL_SECONDS,
@@ -322,7 +323,12 @@ def test_cached_catalog_cannot_be_mutated_by_a_caller():
 
 
 def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
-    monkeypatch.setattr("loregarden.services.opencode_discovery.FAILURE_CACHE_TTL_SECONDS", 0.0)
+    # The TTLs are read when the cache is built, so shorten them by building one
+    # — the module constant is no longer consulted per call.
+    monkeypatch.setattr(
+        "loregarden.services.opencode_discovery._CACHE",
+        ProbeCache(probe_budget_seconds=0.0, success_ttl_seconds=300.0, failure_ttl_seconds=0.01),
+    )
     with (
         patch(
             "loregarden.services.opencode_discovery.resolve_opencode_binary",
@@ -338,6 +344,7 @@ def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
     ):
         # Authenticating a provider must not take five minutes to show up.
         assert list_opencode_models() == []
+        time.sleep(0.05)
         assert list_opencode_models() == ["opencode/a"]
 
 

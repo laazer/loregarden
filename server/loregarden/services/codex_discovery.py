@@ -18,10 +18,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES
+from loregarden.services.discovery_cache import ProbeCache
 
 logger = logging.getLogger(__name__)
 
 DISCOVERY_TIMEOUT_SECONDS = 12.0
+# ``codex debug models`` used to run on every runtime-options request, inside a
+# request holding a database connection. Hold the catalog instead: it changes
+# when OpenAI ships a model or the operator signs in, not between two keystrokes
+# in the settings modal.
+CACHE_TTL_SECONDS = 300.0
+# Must outlast DISCOVERY_TIMEOUT_SECONDS — ProbeCache refuses to be built
+# otherwise. A CLI that hangs burns the whole budget before it fails, and a
+# shorter failure TTL would let the next caller start probing as this one
+# gives up.
+FAILURE_CACHE_TTL_SECONDS = 60.0
 DEFAULT_OPTION = {"id": "", "label": "Default (Codex profile)"}
 
 
@@ -30,6 +41,15 @@ class CodexModel:
     slug: str
     display_name: str
     priority: int = 0
+
+
+_CACHE: ProbeCache[CodexModel] = ProbeCache(
+    probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
+    success_ttl_seconds=CACHE_TTL_SECONDS,
+    failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
+)
+#: One catalog, so one entry.
+_CACHE_KEY = ""
 
 
 def resolve_codex_binary() -> str | None:
@@ -131,12 +151,26 @@ def _list_from_cache() -> list[CodexModel]:
     return _parse_models_payload(payload)
 
 
-def list_codex_models() -> list[CodexModel]:
-    """Return listable Codex models for the signed-in account, or []."""
+def _discover() -> list[CodexModel]:
     models = _list_from_cli()
     if models:
         return models
     return _list_from_cache()
+
+
+def reset_model_cache() -> None:
+    """Drop the memoized catalog so the next call re-runs discovery."""
+    _CACHE.reset()
+
+
+def list_codex_models() -> list[CodexModel]:
+    """Return listable Codex models for the signed-in account, or [].
+
+    Memoized, and single-flighted: one caller probes while the rest are served
+    the last known catalog. A queue of callers behind a 12s subprocess is a
+    queue of held database connections.
+    """
+    return _CACHE.get(_CACHE_KEY, _discover)
 
 
 def codex_model_options() -> list[dict[str, str]]:
