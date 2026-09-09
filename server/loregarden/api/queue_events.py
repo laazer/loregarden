@@ -21,7 +21,7 @@ from loregarden.core.auth import websocket_token_ok
 from loregarden.db.session import engine
 from loregarden.services.event_hub import event_hub
 from loregarden.services.queue_status import build_queue_status
-from loregarden.websocket_events import QUEUE_TOPIC
+from loregarden.websocket_events import QUEUE_TOPIC, build_error_event
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -60,10 +60,6 @@ async def _snapshot() -> dict:
         return await build_queue_status(session)
 
 
-async def _send_snapshot(websocket: WebSocket) -> None:
-    await websocket.send_json({"type": "queue_status", "data": await _snapshot()})
-
-
 def _notifiable(events: list[dict]) -> list[dict]:
     """The events a person should be told about, each at most once.
 
@@ -89,6 +85,39 @@ async def _send_events(websocket: WebSocket, events: list[dict]) -> None:
         await websocket.send_json({"type": "queue_event", "data": event})
 
 
+async def _send_snapshot(websocket: WebSocket, *, notify_failure: bool = True) -> bool:
+    """Push one snapshot. Returns False when the read failed.
+
+    A queue read that raises must not be drawn as a queue that is empty. The
+    board is told, in the ``error`` envelope it already renders as a sticky
+    toast, and the socket stays up so a later tick can recover on its own —
+    closing here would look identical to a backend restart and the client would
+    reconnect straight back into the same failure.
+
+    ``notify_failure`` is False once the outage has already been announced: the
+    client's queue-error toast stays until dismissed, so re-sending it every
+    five seconds would bury the screen while the queue is already down.
+    """
+    try:
+        snapshot = await _snapshot()
+    except Exception as exc:  # noqa: BLE001 - reported to the client here, and retried next tick
+        logger.exception("Queue snapshot failed")
+        if notify_failure:
+            await _send_events(
+                websocket,
+                [
+                    build_error_event(
+                        message=f"Queue status is unavailable: {exc}",
+                        code="QUEUE_STATUS_UNAVAILABLE",
+                    )
+                ],
+            )
+        return False
+
+    await websocket.send_json({"type": "queue_status", "data": snapshot})
+    return True
+
+
 async def _await_disconnect(websocket: WebSocket) -> None:
     """Park on the receive side so a closed socket is noticed immediately.
 
@@ -112,7 +141,7 @@ async def queue_socket(websocket: WebSocket) -> None:
     disconnected = asyncio.create_task(_await_disconnect(websocket))
 
     try:
-        await _send_snapshot(websocket)
+        healthy = await _send_snapshot(websocket)
 
         while not disconnected.done():
             pending = asyncio.create_task(queue.get())
@@ -138,7 +167,7 @@ async def queue_socket(websocket: WebSocket) -> None:
             if disconnected.done():
                 break
             await _send_events(websocket, batch)
-            await _send_snapshot(websocket)
+            healthy = await _send_snapshot(websocket, notify_failure=healthy)
     except WebSocketDisconnect:
         # silent-ok: the viewer closed the tab; the finally block unsubscribes, and
         # the queue keeps running whether or not a browser is watching it.

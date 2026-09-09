@@ -1,10 +1,10 @@
 """The websocket that replaced the queue dashboard's polling."""
 
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS
+from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS, _send_snapshot
 from loregarden.services.event_hub import event_hub
 from loregarden.websocket_events import QUEUE_TOPIC
 from starlette.websockets import WebSocketDisconnect
@@ -182,3 +182,82 @@ def test_disconnecting_releases_the_subscription(ws_client):
         time.sleep(0.05)
 
     assert event_hub.subscriber_count(QUEUE_TOPIC) == 0
+
+
+class _RecordingSocket:
+    """Just enough websocket to see what a failed snapshot sends."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_snapshot_is_reported_rather_than_drawn_as_an_empty_queue():
+    """The failure this exists for: a missing `queued_runs` table used to reach
+    the board as a healthy, empty queue."""
+    socket = _RecordingSocket()
+
+    with patch(
+        "loregarden.api.queue_events._snapshot",
+        AsyncMock(side_effect=RuntimeError("no such table: queued_runs")),
+    ):
+        healthy = await _send_snapshot(socket)
+
+    assert healthy is False
+    assert [message["type"] for message in socket.sent] == ["queue_event"]
+    event = socket.sent[0]["data"]
+    assert event["type"] == "error"
+    assert event["data"]["code"] == "QUEUE_STATUS_UNAVAILABLE"
+    assert "no such table" in event["data"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_an_ongoing_outage_is_announced_once_not_every_tick():
+    """The client's queue-error toast has no timeout, so a tick that re-sends it
+    every five seconds buries the screen while the queue is already down."""
+    socket = _RecordingSocket()
+
+    with patch(
+        "loregarden.api.queue_events._snapshot",
+        AsyncMock(side_effect=RuntimeError("still down")),
+    ):
+        healthy = await _send_snapshot(socket)
+        healthy = await _send_snapshot(socket, notify_failure=healthy)
+        await _send_snapshot(socket, notify_failure=healthy)
+
+    assert len(socket.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_recovered_read_goes_back_to_snapshots():
+    """The socket stays up through an outage, so recovery must need no reconnect."""
+    socket = _RecordingSocket()
+
+    with patch(
+        "loregarden.api.queue_events._snapshot",
+        AsyncMock(side_effect=[RuntimeError("down"), {"queue_length": 0}]),
+    ):
+        healthy = await _send_snapshot(socket)
+        healthy = await _send_snapshot(socket, notify_failure=healthy)
+
+    assert healthy is True
+    assert [message["type"] for message in socket.sent] == ["queue_event", "queue_status"]
+
+
+def test_the_socket_does_not_close_when_the_first_snapshot_fails(ws_client):
+    """Closing would look exactly like a backend restart, and the client would
+    reconnect straight into the same failure without ever reporting it."""
+    with (
+        patch(
+            "loregarden.api.queue_events.build_queue_status",
+            AsyncMock(side_effect=RuntimeError("no such table: queued_runs")),
+        ),
+        ws_client.websocket_connect("/ws/queue") as socket,
+    ):
+        message = socket.receive_json()
+
+    assert message["type"] == "queue_event"
+    assert message["data"]["data"]["code"] == "QUEUE_STATUS_UNAVAILABLE"

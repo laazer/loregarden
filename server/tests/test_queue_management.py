@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from loregarden.api.queue_management import _reorder_queue_internal
 from loregarden.models.domain import (
     AgentSlot,
@@ -13,6 +14,9 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.event_hub import event_hub
+from loregarden.services.parallel_queue import ParallelQueueService
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, queued_run
 
@@ -391,6 +395,33 @@ class TestQueueInfo:
         assert result["queue_length"] == 0
         assert result["max_position"] == 0
         assert result["runs"] == []
+
+    async def test_a_broken_queue_read_is_a_500_not_an_empty_queue(self, db_session: Session):
+        """Observed during profiling: a misconfigured database path made
+        `queued_runs` a missing table, and this endpoint still answered 200 with
+        `queue_length: 0`. The board drew a calm, empty queue over a query that
+        was failing outright."""
+        from loregarden.api.queue_management import get_queue_info
+
+        db_session.exec(text("DROP TABLE queued_runs"))
+
+        with pytest.raises(HTTPException) as raised:
+            await get_queue_info(db_session)
+
+        assert raised.value.status_code == 500
+
+    async def test_the_readers_raise_rather_than_return_an_empty_list(self, db_session: Session):
+        """`[]` is what an idle pool and an empty queue both return on success,
+        so a failure that returns one cannot be told apart from either."""
+        db_session.exec(text("DROP TABLE queued_runs"))
+        db_session.exec(text("DROP TABLE agent_slots"))
+
+        service = ParallelQueueService(db_session)
+
+        with pytest.raises(OperationalError):
+            await service.get_queued_runs()
+        with pytest.raises(OperationalError):
+            await service.get_active_runs()
 
     async def test_get_queue_info_estimated_clear_time(self, db_session: Session):
         """Verify estimated clear time calculation."""
