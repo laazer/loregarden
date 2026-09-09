@@ -812,6 +812,33 @@ class QueuePosition(str, Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
     SKIPPED = "skipped"
+    #: The entry's work blocked, but the block may still resolve itself, so the
+    #: lane is held rather than handed on. Not a waiting status and not a
+    #: finished one: the entry still owns its slot. See `services.queue_repair`.
+    REPAIRING = "repairing"
+
+
+class RepairRoute(str, Enum):
+    """Why a block is provisional — the mechanism that would make the next
+    dispatch of this ticket different from the one that just blocked.
+
+    A block with no route here is final on arrival: the lane settles it and
+    moves on, exactly as it did before repair holds existed. Adding a member
+    means claiming a re-dispatch would do something new, which is the whole
+    justification for holding a machine's lane while nothing runs on it.
+    """
+
+    #: The run died to a reload or was left stranded — nothing about the work
+    #: failed. `run_interruption.blocked_by_interruption` owns the test.
+    INTERRUPTION = "interruption"
+    #: A scope-denial handoff is pinned and unconsumed: the next dispatch runs
+    #: the sibling implementer, not the agent that was refused.
+    SCOPE_REROUTE = "scope_reroute"
+    #: The stage's own run FAILED with dispatch budget still on it, so the
+    #: breaker that bounds re-runs has not fired. Its own block is deliberately
+    #: *not* a route — that one exists to stop exactly this retry — and neither
+    #: is a stage whose agent declared a blocker and exited cleanly.
+    STAGE_RETRY = "stage_retry"
 
 
 class ViewKind(str, Enum):

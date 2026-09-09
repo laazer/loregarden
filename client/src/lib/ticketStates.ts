@@ -59,7 +59,26 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   succeeded: "Succeeded",
   failed: "Failed",
   cancelled: "Cancelled",
+  blocked: "Blocked",
+  // A lane keeping its slot while a block that may still resolve is repaired.
+  // Distinct from "Blocked": the lane has not finished with the ticket.
+  repairing: "Repairing",
 };
+
+/**
+ * Why a lane is being held through a block — the mechanism that makes the next
+ * dispatch different from the one that blocked. Mirrors `RepairRoute` on the
+ * server; an unrecognised value renders as itself rather than as a guess.
+ */
+const REPAIR_ROUTE_LABELS: Record<string, string> = {
+  interruption: "interrupted run",
+  scope_reroute: "scope handoff",
+  stage_retry: "retry budget left",
+};
+
+export function repairRouteLabel(route: string | undefined): string {
+  return fromMap(REPAIR_ROUTE_LABELS, route, route || "unknown reason");
+}
 
 export function runStatusLabel(status: string | undefined): string {
   return fromMap(RUN_STATUS_LABELS, status, status || "Unknown");

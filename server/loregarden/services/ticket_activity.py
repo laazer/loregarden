@@ -130,6 +130,16 @@ def classify_ticket_activity(
     awaiting = _ids_tied_to_live_orchestration(session, AgentRun, ids, _AWAITING_RUN_STATUSES)
 
     queued = _ids_tied_to_live_orchestration(session, QueuedRun, ids, _QUEUED_QUEUE_STATUSES)
+    # Repair holds are read directly, not through the live-parent filter: the
+    # orchestration a hold names is BLOCKED by construction, so that filter
+    # would classify every held ticket as idle while its lane is occupied and a
+    # re-dispatch is pending. QUEUED, not RUNNING — nothing is executing yet.
+    queued |= _ids_with(
+        session,
+        select(QueuedRun.ticket_id)
+        .where(col(QueuedRun.ticket_id).in_(ids))
+        .where(QueuedRun.status == QueuePosition.REPAIRING),
+    )
     queued |= _ids_with(
         session,
         select(OrchestrationRun.ticket_id)

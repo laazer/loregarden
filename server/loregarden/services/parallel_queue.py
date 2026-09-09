@@ -21,9 +21,17 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     QueuedRun,
+    QueueEntryKind,
     QueuePosition,
     RunStatus,
+    StageStatus,
     Ticket,
+    TicketState,
+)
+from loregarden.services.queue_repair import (
+    begin_repair,
+    repair_exhausted,
+    resolve_repair_route,
 )
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.studio_routing import ticket_stage_agent
@@ -34,6 +42,7 @@ from loregarden.websocket_events import (
     emit_queue_promoted,
     emit_run_completed,
 )
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select, update
 
@@ -561,6 +570,14 @@ class ParallelQueueService:
         orchestration into it. A reservation that never binds is still collected,
         just a grace period later.
         """
+        if self._held_for_repair(slot):
+            # A repair hold is deliberate occupancy of a lane whose work has
+            # already gone terminal, which is the exact shape this sweep exists
+            # to reclaim. Without this the first reconciliation would take the
+            # lane back and the hold would protect nothing. The hold is bounded
+            # by `queue_repair`, and `QueueLaneService._drive_repairing_entries`
+            # is what ends it.
+            return True
         if slot.current_orchestration_run_id:
             orch_run = self.session.get(OrchestrationRun, slot.current_orchestration_run_id)
             if not orch_run or orch_run.status not in LIVE_ORCHESTRATION_STATUSES:
@@ -575,6 +592,76 @@ class ParallelQueueService:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES
         return self._within_reservation_grace(slot)
+
+    def _hold_stage_entry_for_repair(self, run_id: str) -> bool:
+        """Hold a lane whose single-stage entry blocked on a repairable block.
+
+        True means the caller must leave the slot claimed. The entry has to be
+        an *active lane* entry: a shared-queue entry shares this table and this
+        column but holds no lane, and putting one in a hold would leave a row
+        nothing drives.
+        """
+        entry = self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.run_id == run_id)
+            .where(QueuedRun.status == QueuePosition.ACTIVE)
+            .where(QueuedRun.entry_kind == QueueEntryKind.STAGE)
+        ).first()
+        if entry is None:
+            return False
+        ticket = self.session.get(Ticket, entry.ticket_id)
+        if ticket is None:
+            return False
+        if (
+            ticket.state != TicketState.BLOCKED
+            and ticket.workflow_stage_status != StageStatus.BLOCKED
+        ):
+            return False
+
+        spent = repair_exhausted(entry)
+        if spent:
+            logger.warning(
+                "Lane %d stops repairing ticket %s: %s", entry.slot_number, entry.ticket_id, spent
+            )
+            entry.failure_reason = entry.failure_reason or spent
+            self.session.add(entry)
+            self.session.commit()
+            return False
+
+        route = resolve_repair_route(self.session, ticket)
+        if route is None:
+            return False
+        begin_repair(entry, route)
+        self.session.add(entry)
+        self.session.commit()
+        logger.info(
+            "Lane %d held for repair of ticket %s stage %r via %s",
+            entry.slot_number,
+            entry.ticket_id,
+            entry.stage_key,
+            route.value,
+        )
+        return True
+
+    def _repair_hold(self, slot: AgentSlot) -> QueuedRun | None:
+        """The lane entry holding this slot through a provisional block, if any."""
+        if not (slot.current_orchestration_run_id or slot.current_run_id):
+            return None
+        conditions = []
+        if slot.current_orchestration_run_id:
+            conditions.append(QueuedRun.orchestration_run_id == slot.current_orchestration_run_id)
+        if slot.current_run_id:
+            conditions.append(QueuedRun.run_id == slot.current_run_id)
+        return self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.status == QueuePosition.REPAIRING)
+            .where(or_(*conditions))
+            .limit(1)
+        ).first()
+
+    def _held_for_repair(self, slot: AgentSlot) -> bool:
+        """Whether a lane entry is holding this slot through a provisional block."""
+        return self._repair_hold(slot) is not None
 
     def _within_reservation_grace(self, slot: AgentSlot) -> bool:
         """Whether a slot naming nothing was claimed too recently to reclaim."""
@@ -661,12 +748,24 @@ class ParallelQueueService:
 
     def _occupant_card(self, slot: AgentSlot) -> dict | None:
         """What to show for an occupied slot, or None if nothing holds it."""
+        card: dict | None = None
         if slot.current_orchestration_run_id:
-            return self._orchestration_card(slot.current_orchestration_run_id)
-        if slot.current_run_id:
+            card = self._orchestration_card(slot.current_orchestration_run_id)
+        elif slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
-            return self._run_card(run) if run else None
-        return None
+            card = self._run_card(run) if run else None
+        if card is None:
+            return None
+
+        # A held lane reports the hold, not the blocked run underneath it. The
+        # card's status is the *lane's* — and this lane is not finished with the
+        # ticket, which is the whole difference a hold makes.
+        hold = self._repair_hold(slot)
+        if hold is not None:
+            card["status"] = QueuePosition.REPAIRING.value
+            card["repair_route"] = hold.repair_route.value if hold.repair_route else ""
+            card["repair_attempts"] = hold.repair_attempts
+        return card
 
     def _orchestration_card(self, orchestration_run_id: str) -> dict | None:
         """A lane's card: the ticket it is running, described by its live stage.
@@ -991,6 +1090,17 @@ class ParallelQueueService:
             # Find slot with this run
             slot_stmt = select(AgentSlot).where(AgentSlot.current_run_id == run_id)
             slot = self.session.exec(slot_stmt).first()
+
+            # A lane entry that ran a single stage holds its lane through this
+            # column, so this is where its block would end the occupancy. Offer
+            # the same repair hold the orchestration path gets: the lane stays
+            # claimed and `QueueLaneService.reconcile_lanes` drives it.
+            if slot is not None and self._hold_stage_entry_for_repair(run_id):
+                emit_execution_update()
+                return {
+                    "status": "repairing",
+                    "message": f"Lane {slot.slot_number} held while the block is repaired",
+                }
 
             if slot:
                 total_slots = len(self.session.exec(select(AgentSlot)).all())

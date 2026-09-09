@@ -103,6 +103,13 @@ export interface ActiveRun extends RunLabels, RunEstimates {
   elapsed_seconds: number;
   status: string;
   agent_id: string;
+  /**
+   * Set only while `status` is `repairing`: which mechanism justified holding
+   * the lane through a block, and how many re-dispatches this entry has already
+   * spent on repairs.
+   */
+  repair_route?: string;
+  repair_attempts?: number;
 }
 
 export interface QueuedRun extends RunLabels, RunEstimates {

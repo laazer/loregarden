@@ -41,6 +41,10 @@ LIVE_STATUSES = (
     QueuePosition.SCHEDULED,
     QueuePosition.PROMOTED,
     QueuePosition.ACTIVE,
+    #: A repair hold still owns its lane, so it is on the board rather than in
+    #: history. Filing it as history would show a blocked card for an entry the
+    #: queue is about to re-dispatch, and then a second card when it really ends.
+    QueuePosition.REPAIRING,
 )
 
 #: What a card says happened, independent of which status the entry exited

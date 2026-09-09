@@ -50,6 +50,7 @@ loregarden/
 | Ticket/stage/state sync | `services/workflow_state.py` | `reconcile_workflow_state` is called from many places; mind its side effects |
 | Stage transitions | `services/workflow_routing.py` | `apply_stage_route` — reconcile-then-resolve ordering is deliberate |
 | Running a pipeline | `services/orchestration.py`, `services/builtin_orchestrator.py` | Sweeps and commits the working tree |
+| Lanes / repair holds | `services/queue_lanes.py`, `services/queue_repair.py` | A block with a live repair route keeps its lane instead of releasing it — `resolve_repair_route` decides, `_drive_repairing_entries` spends it |
 | Prompt assembly | `agents/executors/cli.py` | Builds the full agent prompt; embeds MCP + memory modules |
 | Injected run context | `agents/stage_context.py`, `agents/mcp_context.py` | Text every agent sees, before its role file |
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |

@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
     OrchestrationRun,
+    OrchestrationRunStatus,
     QueuedRun,
     QueueEntryKind,
     QueuePosition,
@@ -49,6 +50,13 @@ from loregarden.services.parallel_queue import (
     claim_lane_slot,
     release_slot,
     tickets_holding_lanes,
+)
+from loregarden.services.queue_repair import (
+    REPAIR_ATTEMPT_CAP,
+    begin_repair,
+    end_repair,
+    repair_exhausted,
+    resolve_repair_route,
 )
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
@@ -404,14 +412,25 @@ class QueueLaneService:
         entry = self.session.exec(
             select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
         ).first()
-        if entry and entry.status != QueuePosition.STARTED:
-            entry.status = QueuePosition.STARTED
-            self.session.add(entry)
-            self.session.commit()
-
         slot = self.session.exec(
             select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
         ).first()
+
+        # Before the entry is settled: a block that may still resolve itself
+        # keeps this lane rather than handing it to the next ticket. The hold is
+        # only offered while a slot still names this orchestration — there is no
+        # lane to hold otherwise, and pretending there is would leave an entry
+        # REPAIRING with nothing behind it.
+        if entry is not None and slot is not None and self._hold_for_repair(entry):
+            emit_execution_update()
+            return
+
+        if entry and entry.status != QueuePosition.STARTED:
+            entry.status = QueuePosition.STARTED
+            end_repair(entry)
+            self.session.add(entry)
+            self.session.commit()
+
         if not slot:
             emit_execution_update()
             return
@@ -437,6 +456,12 @@ class QueueLaneService:
         every status read rather than waiting for a hand-reset.
         """
         self._requeue_stranded_entries()
+        # Before the slot sweep: a repairing entry holds a slot whose
+        # orchestration is already terminal, so this is the pass that either
+        # spends the hold or gives the lane back. `reconcile_slots` leaves those
+        # slots alone (`_occupant_is_live` reads the entry), which is what makes
+        # holding one survive a sweep at all.
+        repaired = self._drive_repairing_entries()
         cancelled = self._cancel_terminal_ticket_entries()
         settled = self._settle_finished_entries()
         freed = self.slots.reconcile_slots()
@@ -463,7 +488,7 @@ class QueueLaneService:
         # Nested children of a slotted ancestor are not orphans — they share
         # that ancestor's lane for the life of the tree.
         claimed = self._claim_orphaned_orchestrations()
-        if freed or claimed or settled or cancelled:
+        if freed or claimed or settled or cancelled or repaired:
             emit_execution_update()
         return freed
 
@@ -778,6 +803,199 @@ class QueueLaneService:
         if settled:
             self.session.commit()
         return settled
+
+    # ---- repair holds --------------------------------------------------
+
+    def _hold_for_repair(self, entry: QueuedRun) -> bool:
+        """Keep this entry's lane because its block may still resolve itself.
+
+        True means the caller must leave the slot exactly as it is: the entry
+        now reads REPAIRING and `reconcile_lanes` owns what happens next. False
+        means the block is final (or the hold is spent) and the caller settles
+        and releases as it always has.
+
+        Only a BLOCKED orchestration is offered a hold. A run that succeeded,
+        failed outright or was cancelled has no repair route by construction,
+        and asking for one would put a hold on the ordinary end of a lane.
+        """
+        if not entry.orchestration_run_id:
+            return False
+        orch = self.session.get(OrchestrationRun, entry.orchestration_run_id)
+        if orch is None or orch.status is not OrchestrationRunStatus.BLOCKED:
+            return False
+        ticket = self.session.get(Ticket, entry.ticket_id)
+        if ticket is None:
+            return False
+
+        spent = repair_exhausted(entry)
+        if spent:
+            # Loud, and written onto the entry: this is the moment the lane
+            # stops absorbing a ticket's blocks, and a cap that fires only into
+            # a log is a cap nobody can see fire.
+            logger.warning(
+                "Lane %d stops repairing ticket %s: %s",
+                entry.slot_number,
+                entry.ticket_id,
+                spent,
+            )
+            entry.failure_reason = entry.failure_reason or spent
+            self.session.add(entry)
+            self.session.commit()
+            return False
+
+        route = resolve_repair_route(self.session, ticket)
+        if route is None:
+            return False
+
+        begin_repair(entry, route)
+        self.session.add(entry)
+        self.session.commit()
+        logger.info(
+            "Lane %d held for repair of ticket %s via %s (attempt %d of %d)",
+            entry.slot_number,
+            entry.ticket_id,
+            route.value,
+            entry.repair_attempts + 1,
+            REPAIR_ATTEMPT_CAP,
+        )
+        return True
+
+    def _drive_repairing_entries(self) -> list[str]:
+        """Spend or end every hold. Returns the entry ids this pass changed.
+
+        The driver, not just a sweep: a held lane is capacity committed to a
+        repair, so something has to actually attempt the repair. Nothing else
+        does — `resume_interrupted_orchestrations` runs at boot only, and the
+        other routes wait for a human to press Continue.
+        """
+        entries = self.session.exec(
+            select(QueuedRun).where(QueuedRun.status == QueuePosition.REPAIRING)
+        ).all()
+        return [entry.id for entry in entries if self._drive_one_repair(entry)]
+
+    def _drive_one_repair(self, entry: QueuedRun) -> bool:
+        """Advance one held entry. True when this pass changed it."""
+        ticket = self.session.get(Ticket, entry.ticket_id)
+        if ticket is None:
+            self._settle_repair(entry, "the ticket went away while its block was being repaired")
+            return True
+        if ticket.state in (TicketState.DONE, TicketState.WONT_DO, TicketState.PARKED):
+            self._settle_repair(
+                entry, f"the ticket is {ticket.state.value}; nothing left to repair"
+            )
+            return True
+
+        spent = repair_exhausted(entry)
+        if spent:
+            self._settle_repair(entry, spent)
+            return True
+
+        if (
+            ticket.state == TicketState.BLOCKED
+            and resolve_repair_route(self.session, ticket) is None
+        ):
+            # The route that justified the hold is gone — the breaker fired, a
+            # human was asked, the state was locked. The block is final now.
+            self._settle_repair(
+                entry, ticket.blocking_issues or "the block has no repair route left"
+            )
+            return True
+
+        slot = self._slot_holding(entry)
+        if slot is None:
+            self._settle_repair(entry, "the lane was reclaimed while the block was being repaired")
+            return True
+
+        # 645's guard, asked from the repair side. Startup runs both this driver
+        # and `resume_interrupted_orchestrations`, and that one reserves a slot
+        # of its own — so whichever goes second must not put the same ticket in
+        # a second lane. The hold has lost its purpose either way: the ticket is
+        # already running.
+        elsewhere = tickets_holding_lanes(self.session, exclude_slot=slot.slot_number).get(
+            ticket.id
+        )
+        if elsewhere:
+            self._settle_repair(entry, f"the ticket was restarted in lane(s) {elsewhere}")
+            return True
+
+        # Counted before the dispatch, not after: a refused dispatch is an
+        # attempt spent, or a repair that can never start would hold the lane
+        # until the wall clock and report nothing about why.
+        entry.repair_attempts += 1
+        now = datetime.now(timezone.utc)
+        if not self._start_entry_work(ticket, entry, slot):
+            entry.last_failed_at = now
+            self.session.add(entry)
+            self.session.commit()
+            logger.warning(
+                "Repair attempt %d for ticket %s was refused; lane %d still held",
+                entry.repair_attempts,
+                entry.ticket_id,
+                entry.slot_number,
+            )
+            return True
+
+        slot.assigned_at = now
+        entry.status = QueuePosition.ACTIVE
+        entry.promoted_at = now
+        entry.started_at = now
+        end_repair(entry)
+        self.session.add(slot)
+        self.session.add(entry)
+        self.session.commit()
+        logger.info(
+            "Repair attempt %d restarted ticket %s in lane %d",
+            entry.repair_attempts,
+            entry.ticket_id,
+            entry.slot_number,
+        )
+        return True
+
+    def _settle_repair(self, entry: QueuedRun, reason: str) -> None:
+        """End a hold as the block it always was: settle, release, drain.
+
+        The same two writes `on_orchestration_complete` would have made at the
+        moment of the block, made later and with the reason the hold ended
+        recorded — the entry keeps whichever failure text it already carried,
+        because that one describes the work rather than the queue.
+        """
+        logger.warning(
+            "Lane %d releases ticket %s as blocked: %s",
+            entry.slot_number,
+            entry.ticket_id,
+            reason,
+        )
+        slot = self._slot_holding(entry)
+        entry.status = QueuePosition.STARTED
+        entry.failure_reason = entry.failure_reason or reason
+        entry.last_failed_at = datetime.now(timezone.utc)
+        end_repair(entry)
+        self.session.add(entry)
+        self.session.commit()
+        if slot is not None:
+            release_slot(self.session, slot)
+            self.start_lane_head(slot.slot_number)
+
+    def _slot_holding(self, entry: QueuedRun) -> AgentSlot | None:
+        """The slot this entry occupies, by whichever column recorded the claim.
+
+        Both regimes hold a lane — an orchestration entry through
+        `current_orchestration_run_id`, a stage entry through `current_run_id` —
+        and a hold has to find its own lane through the same fork the claim used.
+        """
+        if entry.orchestration_run_id:
+            slot = self.session.exec(
+                select(AgentSlot).where(
+                    AgentSlot.current_orchestration_run_id == entry.orchestration_run_id
+                )
+            ).first()
+            if slot is not None:
+                return slot
+        if entry.run_id:
+            return self.session.exec(
+                select(AgentSlot).where(AgentSlot.current_run_id == entry.run_id)
+            ).first()
+        return None
 
     def remove_entry(self, entry_id: str) -> bool:
         """Take a waiting entry out of its lane. Running entries are untouched."""

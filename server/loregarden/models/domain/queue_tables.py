@@ -25,6 +25,7 @@ from uuid import uuid4
 from loregarden.models.domain.enums import (
     QueueEntryKind,
     QueuePosition,
+    RepairRoute,
     str_enum_column,
     utcnow,
 )
@@ -106,6 +107,21 @@ class QueuedRun(SQLModel, table=True):
     )
     retry_count: int = 0
     max_retries: int = 3
+    #: Why this entry's block was judged provisional the last time it blocked,
+    #: or null because it never has. Null and "no route" are the same fact here
+    #: — an entry that has never repaired has nothing to say about how.
+    repair_route: RepairRoute | None = Field(
+        default=None,
+        sa_column=str_enum_column(RepairRoute, None, nullable=True),
+    )
+    #: How many times this entry has been re-dispatched out of a repair hold.
+    #: Counted per entry and never reset: it bounds how long one lane occupancy
+    #: may keep repairing itself, which a per-stage counter cannot.
+    repair_attempts: int = 0
+    #: When the current hold began; null whenever the entry is not holding. The
+    #: wall-clock cap is measured from here, so it starts fresh for each hold
+    #: rather than aging across the run that the last repair bought.
+    repairing_since: datetime | None = None
     estimated_start_at: datetime | None = None
     promoted_at: datetime | None = None
     started_at: datetime | None = None

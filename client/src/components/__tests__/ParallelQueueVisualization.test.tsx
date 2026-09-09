@@ -299,6 +299,33 @@ describe('the running half of a lane', () => {
     expect(fill.style.width).toBe('');
   });
 
+  test('a lane held through a repairable block says so, and why', () => {
+    // "Blocked" and "Repairing" look the same on a card that only reads the
+    // orchestration's status — but one lane is finished with its ticket and the
+    // other is about to re-dispatch it.
+    withStatus({
+      lanes: [
+        {
+          ...runningLane,
+          running: {
+            ...runningLane.running,
+            status: 'repairing',
+            repair_route: 'interruption',
+            repair_attempts: 1,
+            ticket_activity: 'queued',
+          },
+        },
+      ],
+    });
+
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByText(/Repairing · slot held/)).toBeInTheDocument();
+    expect(screen.getByTestId('slot-1-repair')).toHaveTextContent(
+      'interrupted run · attempt 2',
+    );
+  });
+
   test('a slot held by a finished run stops pretending to be busy', () => {
     // The slot-leak case: occupied, but nothing is working behind it.
     withStatus({
