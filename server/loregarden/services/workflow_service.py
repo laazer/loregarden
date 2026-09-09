@@ -49,6 +49,29 @@ def apply_stage_overrides(stages: list[WorkflowStageDef], override: dict) -> lis
     return result
 
 
+#: Keys of the session-scoped memos, held in ``Session.info``.
+_STAGE_MEMO = "_resolved_stage_memo"
+_OVERRIDE_MEMO = "_workspace_override_memo"
+
+
+def _merged_override(session: Session, workspace: Workspace) -> dict:
+    """A workspace's stage override: the YAML on disk, then its stored JSON.
+
+    Memoised per session. The disk read depends on nothing but the workspace,
+    so it must not repeat per ticket — or per pinned template version, which
+    is why this is keyed more coarsely than the stage memo.
+    """
+    memo: dict[tuple[str, str], dict] = session.info.setdefault(_OVERRIDE_MEMO, {})
+    key = (workspace.slug, workspace.workflow_override_json or "")
+    override = memo.get(key)
+    if override is None:
+        override = load_workspace_override(workspace.slug)
+        if workspace.workflow_override_json and workspace.workflow_override_json != "{}":
+            override = {**override, **json.loads(workspace.workflow_override_json)}
+        memo[key] = override
+    return override
+
+
 def resolve_workspace_stages(
     session: Session, workspace: Workspace
 ) -> tuple[WorkflowTemplate | None, list[WorkflowStageDef]]:
@@ -58,16 +81,25 @@ def resolve_workspace_stages(
     if not template:
         return None, []
     stages = get_template_stages(template)
-    override = load_workspace_override(workspace.slug)
-    if workspace.workflow_override_json and workspace.workflow_override_json != "{}":
-        override = {**override, **json.loads(workspace.workflow_override_json)}
-    return template, apply_stage_overrides(stages, override)
+    return template, apply_stage_overrides(stages, _merged_override(session, workspace))
 
 
 def resolve_ticket_stages(
     session: Session, ticket: Ticket
 ) -> tuple[WorkflowTemplate | None, list[WorkflowStageDef]]:
-    """Resolve workflow template + stages for a ticket (per-ticket override or workspace default)."""
+    """Resolve workflow template + stages for a ticket (per-ticket override or workspace default).
+
+    Memoised per session, because the tail of this function is expensive and
+    identical for every ticket sharing a template: it parses the template's
+    ``stages_json``, validates every stage, and reads the workspace override
+    **off disk**. A page of tickets used to pay all three per row — 836 tickets
+    meant 836 YAML reads of the same file.
+
+    The key names everything the result depends on, `template.version`
+    included, so a template edited mid-session (studio publish bumps it) is not
+    served from the memo. The memo lives on the `Session`, which the API
+    creates per request, so nothing survives the response.
+    """
     if ticket.workflow_disabled:
         return None, []
 
@@ -88,11 +120,24 @@ def resolve_ticket_stages(
     if not template:
         return None, []
 
-    stages = get_template_stages_at_version(session, template, pinned_version)
-    override = load_workspace_override(ws.slug)
-    if ws.workflow_override_json and ws.workflow_override_json != "{}":
-        override = {**override, **json.loads(ws.workflow_override_json)}
-    return template, apply_stage_overrides(stages, override)
+    memo: dict[tuple, list[WorkflowStageDef]] = session.info.setdefault(_STAGE_MEMO, {})
+    key = (
+        ws.id,
+        ws.slug,
+        ws.workflow_override_json,
+        template.id,
+        template.version,
+        pinned_version,
+    )
+    cached = memo.get(key)
+    if cached is None:
+        stages = get_template_stages_at_version(session, template, pinned_version)
+        cached = apply_stage_overrides(stages, _merged_override(session, ws))
+        memo[key] = cached
+    # A copy per caller: the memo hands out the same list to every ticket that
+    # shares a template, and a caller that sorted or trimmed it in place would
+    # corrupt every later read in the request.
+    return template, list(cached)
 
 
 class WorkflowService:
