@@ -3,15 +3,30 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from loregarden.services.codex_discovery import (
+    DISCOVERY_TIMEOUT_SECONDS,
+    FAILURE_CACHE_TTL_SECONDS,
     CodexModel,
     _parse_models_payload,
     codex_model_options,
     list_codex_models,
+    reset_model_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog():
+    """The catalog is process-wide; one test's answer must not serve the next."""
+    reset_model_cache()
+    yield
+    reset_model_cache()
+
 
 CATALOG = {
     "models": [
@@ -95,3 +110,54 @@ def test_codex_model_options_prepends_default():
     assert options[0] == {"id": "", "label": "Default (Codex profile)"}
     assert options[1] == {"id": "gpt-5.5", "label": "GPT-5.5"}
     assert "gpt-5" not in {opt["id"] for opt in options}
+
+
+def test_the_cli_runs_once_and_the_catalog_is_reused():
+    completed = MagicMock(stdout=json.dumps(CATALOG), stderr="", returncode=0)
+    with patch("loregarden.services.codex_discovery.subprocess.run", return_value=completed) as run:
+        with patch(
+            "loregarden.services.codex_discovery.resolve_codex_binary",
+            return_value="/bin/codex",
+        ):
+            assert [m.slug for m in list_codex_models()] == ["gpt-5.6-sol", "gpt-5.5"]
+            assert [m.slug for m in list_codex_models()] == ["gpt-5.6-sol", "gpt-5.5"]
+
+    # It used to run on every runtime-options request, inside a request holding
+    # a database connection.
+    assert run.call_count == 1
+
+
+def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe():
+    probing = threading.Event()
+    release = threading.Event()
+
+    def hanging_cli(*args, **kwargs):
+        probing.set()
+        assert release.wait(timeout=10), "the second caller never returned"
+        return MagicMock(stdout=json.dumps(CATALOG), stderr="", returncode=0)
+
+    with (
+        patch(
+            "loregarden.services.codex_discovery.resolve_codex_binary",
+            return_value="/bin/codex",
+        ),
+        patch("loregarden.services.codex_discovery.subprocess.run", side_effect=hanging_cli),
+        patch("loregarden.services.codex_discovery._list_from_cache", return_value=[]),
+    ):
+        prober = threading.Thread(target=list_codex_models)
+        prober.start()
+        try:
+            assert probing.wait(timeout=10), "the probe never reached the CLI"
+
+            started = time.monotonic()
+            assert list_codex_models() == []
+            waited = time.monotonic() - started
+        finally:
+            release.set()
+            prober.join(timeout=10)
+
+    assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+
+
+def test_a_hung_cli_cannot_be_probed_back_to_back():
+    assert FAILURE_CACHE_TTL_SECONDS > DISCOVERY_TIMEOUT_SECONDS

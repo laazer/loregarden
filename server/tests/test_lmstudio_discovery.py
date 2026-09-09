@@ -1,14 +1,28 @@
 """LM Studio model discovery — chat models only, embeddings skipped."""
 
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
+import pytest
 from loregarden.services.lmstudio_discovery import (
+    FAILURE_CACHE_TTL_SECONDS,
+    PROBE_BUDGET_SECONDS,
     LmStudioChatModel,
     is_chat_lmstudio_model,
     list_lmstudio_chat_model_ids,
     list_lmstudio_chat_models,
     lmstudio_model_options,
+    reset_model_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog():
+    """The catalog is process-wide; one test's answer must not serve the next."""
+    reset_model_cache()
+    yield
+    reset_model_cache()
 
 
 def test_is_chat_lmstudio_model_filters_embeddings():
@@ -128,3 +142,66 @@ def test_runtime_options_payload_includes_lmstudio_models():
         payload = runtime_options_payload()
     assert payload["lmstudio_models"][1]["id"] == "local-a"
     assert payload["lmstudio_models"][1]["label"] == "local-a · loaded"
+
+
+def test_the_server_is_probed_once_and_the_catalog_is_reused():
+    response = MagicMock()
+    response.json.return_value = {"data": [{"id": "qwen/qwen3.5-9b", "state": "loaded"}]}
+    client = _mock_client(response)
+
+    with patch("httpx.Client", return_value=client) as httpx_client:
+        assert list_lmstudio_chat_model_ids("http://127.0.0.1:1234/v1") == ["qwen/qwen3.5-9b"]
+        assert list_lmstudio_chat_model_ids("http://127.0.0.1:1234/v1") == ["qwen/qwen3.5-9b"]
+
+    # Two HTTP round trips per runtime-options request, inside a request holding
+    # a database connection, is what this replaces.
+    assert httpx_client.call_count == 1
+
+
+def test_each_server_is_cached_separately():
+    def answer_for(model_id):
+        response = MagicMock()
+        response.json.return_value = {"data": [{"id": model_id, "state": "loaded"}]}
+        return _mock_client(response)
+
+    with patch("httpx.Client", side_effect=[answer_for("a/one"), answer_for("b/two")]):
+        assert list_lmstudio_chat_model_ids("http://127.0.0.1:1234/v1") == ["a/one"]
+        assert list_lmstudio_chat_model_ids("http://127.0.0.1:9999/v1") == ["b/two"]
+
+    # A trailing slash is the same server, so it must hit the same entry.
+    with patch("httpx.Client", side_effect=AssertionError("re-probed a cached server")):
+        assert list_lmstudio_chat_model_ids("http://127.0.0.1:1234/v1/") == ["a/one"]
+
+
+def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe():
+    probing = threading.Event()
+    release = threading.Event()
+
+    def hanging_client(*args, **kwargs):
+        probing.set()
+        assert release.wait(timeout=10), "the second caller never returned"
+        response = MagicMock()
+        response.json.return_value = {"data": [{"id": "qwen/qwen3.5-9b", "state": "loaded"}]}
+        return _mock_client(response)
+
+    with patch("httpx.Client", side_effect=hanging_client):
+        prober = threading.Thread(
+            target=lambda: list_lmstudio_chat_models("http://127.0.0.1:1234/v1")
+        )
+        prober.start()
+        try:
+            assert probing.wait(timeout=10), "the probe never reached the server"
+
+            started = time.monotonic()
+            assert list_lmstudio_chat_models("http://127.0.0.1:1234/v1") == []
+            waited = time.monotonic() - started
+        finally:
+            release.set()
+            prober.join(timeout=10)
+
+    assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+
+
+def test_an_unreachable_server_cannot_be_probed_back_to_back():
+    # Unreachable costs both attempts, native then OpenAI-compat.
+    assert FAILURE_CACHE_TTL_SECONDS > PROBE_BUDGET_SECONDS
