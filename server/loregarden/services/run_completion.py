@@ -170,6 +170,12 @@ def _reroute_or_block_for_rework(
     except ValueError:
         # No reject transition, no agent-specified target, and no preceding
         # stage to fall back to (already first-in-order).
+        logger.warning(
+            "No rework route from stage %s on ticket %s; blocking in place",
+            run.stage_key,
+            ticket.external_id,
+            exc_info=True,
+        )
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, full_context)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
 
@@ -247,7 +253,7 @@ def release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:
 
     try:
         ParallelQueueService(orch.session).on_run_complete_sync(run.id)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort slot release; a lost completion is worse
         logger.warning("Failed to release the execution slot for run %s", run.id, exc_info=True)
 
 

@@ -83,8 +83,8 @@ export abstract class ReconnectingSocket<THandlers extends SocketStatusHandler> 
       try {
         message = JSON.parse(event.data);
       } catch {
-        // A frame we cannot parse is the server's problem, not a reason to
-        // tear down a working connection.
+        // silent-ok: an unparseable frame is skipped, not fatal — the socket
+        // stays open and the next well-formed frame is handled normally.
         return;
       }
       this.handleMessage(message);

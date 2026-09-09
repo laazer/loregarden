@@ -93,6 +93,8 @@ def _parse_models_payload(payload: object) -> list[CodexModel]:
         try:
             priority = int(entry.get("priority") or 0)
         except (TypeError, ValueError):
+            # silent-ok: priority only orders the picker; a malformed value sorts
+            # the model first and it is still listed and selectable
             priority = 0
         found.append(CodexModel(slug=slug, display_name=display, priority=priority))
     found.sort(key=lambda m: (m.priority, m.slug.lower()))
@@ -126,7 +128,11 @@ def _list_from_cli() -> list[CodexModel]:
             timeout=DISCOVERY_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.debug("Codex model discovery CLI failed: %s", exc)
+        logger.warning(
+            "Codex model discovery failed running %s; falling back to the on-disk models cache: %s",
+            binary,
+            exc,
+        )
         return []
 
     payload = _json_object_from_cli_output(completed.stdout) or _json_object_from_cli_output(
@@ -146,7 +152,12 @@ def _list_from_cache() -> list[CodexModel]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("Codex models cache unreadable at %s: %s", path, exc)
+        logger.warning(
+            "Codex models cache unreadable at %s and the CLI listed nothing, so "
+            "the picker offers only the profile default: %s",
+            path,
+            exc,
+        )
         return []
     return _parse_models_payload(payload)
 

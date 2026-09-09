@@ -181,6 +181,10 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
     try:
         return JSONResponse(status_code=422, content={"detail": errors})
     except ValueError:
+        logger.warning(
+            "422 body held a non-encodable value; dropping the `input` echo",
+            exc_info=True,
+        )
         stripped = [
             {key: value for key, value in error.items() if key != "input"} for error in errors
         ]

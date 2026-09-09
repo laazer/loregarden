@@ -47,7 +47,12 @@ def is_signed_in() -> bool:
     auth = codex_home() / "auth.json"
     try:
         return auth.is_file() and auth.stat().st_size > 0
-    except OSError:
+    except OSError as exc:
+        logger.warning(
+            "could not stat codex auth.json at %s; reporting Codex as signed out: %s",
+            auth,
+            exc,
+        )
         return False
 
 
@@ -60,7 +65,12 @@ def auth_tokens() -> tuple[str, str] | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("could not read codex auth.json: %s", exc)
+        logger.warning(
+            "could not read codex auth.json at %s; live ChatGPT meters are "
+            "unavailable and usage falls back to rollout transcripts: %s",
+            path,
+            exc,
+        )
         return None
     if not isinstance(raw, dict):  # py-org: allow-isinstance — auth.json is foreign JSON
         return None
@@ -92,6 +102,8 @@ def _rollout_files(*, since: float | None = None) -> list[Path]:
         try:
             mtime = path.stat().st_mtime
         except OSError:
+            # silent-ok: a live codex run can rotate or delete a transcript between
+            # the rglob and this stat; the next poll re-walks the directory
             continue
         # A transcript last written before the window can only hold rows outside
         # it, so skip the read rather than parsing the whole history each poll.
@@ -106,7 +118,11 @@ def _read_lines(path: Path) -> list[str]:
     try:
         return path.read_text(encoding="utf-8", errors="ignore").splitlines()
     except OSError as exc:
-        logger.debug("could not read codex rollout %s: %s", path, exc)
+        logger.warning(
+            "could not read codex rollout %s; its turns are missing from the usage breakdown: %s",
+            path,
+            exc,
+        )
         return []
 
 
@@ -137,6 +153,8 @@ def latest_rate_limits() -> tuple[dict[str, Any] | None, str | None]:
                 try:
                     observed = json.loads(line).get("timestamp")
                 except json.JSONDecodeError:
+                    # silent-ok: unreachable — _event_payload above already parsed
+                    # this same line; the limits still return without a timestamp
                     observed = None
                 return limits, observed if isinstance(observed, str) else None
     return None, None
@@ -225,7 +243,13 @@ def fetch_live_rate_limits(
         return None, response
     try:
         body = response.json()
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning(
+            "codex usage API answered HTTP %s with an unreadable body; meters "
+            "fall back to rollout transcripts: %s",
+            response.status_code,
+            exc,
+        )
         return None, response
     return limits_from_usage_body(body), response
 

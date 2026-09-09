@@ -170,7 +170,12 @@ def _read_claude_credentials_file() -> dict[str, Any] | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("could not read claude credentials file %s: %s", path, exc)
+        logger.warning(
+            "claude credentials file %s exists but could not be read; falling back "
+            "to the Keychain item and the CLAUDE_CODE_OAUTH_TOKEN routes: %s",
+            path,
+            exc,
+        )
         return None
 
 
@@ -191,7 +196,12 @@ def _read_claude_oauth_token_file() -> str | None:
     try:
         token = path.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        logger.debug("could not read claude oauth token file %s: %s", path, exc)
+        logger.warning(
+            "claude oauth token file %s exists but could not be read; treating the "
+            "token as absent: %s",
+            path,
+            exc,
+        )
         return None
     if not token:
         return None
@@ -227,7 +237,11 @@ def _read_claude_keychain_credentials() -> dict[str, Any] | None:
             return None
         return json.loads(result.stdout)
     except (OSError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
-        logger.debug("could not read claude keychain credentials: %s", exc)
+        logger.warning(
+            "could not read the Claude Code Keychain credentials; falling back to "
+            "the credentials file and CLAUDE_CODE_OAUTH_TOKEN routes: %s",
+            exc,
+        )
         return None
 
 
@@ -249,7 +263,11 @@ def _claude_keychain_item_exists() -> bool:
         )
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError) as exc:
-        logger.debug("could not check claude keychain item existence: %s", exc)
+        logger.warning(
+            "could not check whether the Claude Code Keychain item exists; "
+            "reporting it as absent: %s",
+            exc,
+        )
         return False
 
 
@@ -497,6 +515,8 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
                 if path.stat().st_mtime < since:
                     continue
             except OSError:
+                # silent-ok: a live claude session can rotate or delete a transcript
+                # between the rglob and this stat; the next poll re-walks the tree
                 continue
             try:
                 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -505,6 +525,8 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
                     try:
                         row = json.loads(line)
                     except json.JSONDecodeError:
+                        # silent-ok: one half-flushed JSONL row out of millions; every
+                        # other row in the transcript is still counted
                         continue
                     if not isinstance(row, dict):
                         continue
@@ -523,7 +545,13 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
                     if tokens <= 0:
                         continue
                     totals[model_name] = totals.get(model_name, 0) + tokens
-            except OSError:
+            except OSError as exc:
+                logger.warning(
+                    "could not read claude transcript %s; its turns are missing from "
+                    "the usage breakdown: %s",
+                    path,
+                    exc,
+                )
                 continue
     if not totals:
         return []
@@ -614,6 +642,8 @@ def _format_usage_http_error(
             if isinstance(error, dict):
                 detail = str(error.get("message") or error.get("type") or "").strip()
         except (json.JSONDecodeError, ValueError):
+            # silent-ok: the body only decorates the message; the rate-limit error and
+            # its Retry-After hint are returned to the user either way
             detail = ""
         retry = _retry_after_seconds(response)
         parts = [f"{label} usage API rate limited"]
@@ -797,7 +827,10 @@ def _claude_usage_from_session_key(
             rate_limit_streak=oauth_result.rate_limit_streak,
         )
     except httpx.HTTPError as exc:
-        logger.debug("claude.ai session-key usage request failed: %s", exc)
+        logger.warning(
+            "claude.ai session-key usage request failed; keeping the OAuth result: %s",
+            exc,
+        )
         return None
 
     if body is None:
@@ -940,7 +973,12 @@ def _scan_cursor_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        logger.debug("cursor usage sqlite read failed: %s", exc)
+        logger.warning(
+            "cursor usage database %s could not be read; the Cursor activity "
+            "breakdown will be empty: %s",
+            db_path,
+            exc,
+        )
         return []
     for name, count in rows:
         totals[str(name)] = int(count)
@@ -1128,7 +1166,12 @@ def _read_usage_cache() -> dict[str, dict[str, Any]]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("could not read usage cache %s: %s", path, exc)
+        logger.warning(
+            "usage cache %s exists but could not be read; cached meters and "
+            "rate-limit backoff state are lost for this poll: %s",
+            path,
+            exc,
+        )
         return {}
     if not isinstance(raw, dict):
         return {}

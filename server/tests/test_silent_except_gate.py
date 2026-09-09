@@ -40,6 +40,103 @@ def _write(tmp_path: Path, source: str, name: str = "service.py") -> Path:
 
 
 FLAGGED = {
+    # A conditional `raise` only covers the branch that takes it (658).
+    "conditional_raise_leaves_the_other_path_quiet": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if "not allowed" in str(exc):
+            raise
+        logger.debug("did not resolve; falling back: %s", exc)
+        return root
+""",
+    "conditional_raise_with_success_shaped_return": """
+def load(raw) -> list[str]:
+    try:
+        return parse(raw)
+    except ValueError as exc:
+        if fatal(exc):
+            raise
+        return []
+""",
+    "observation_inside_a_branch_does_not_cover_the_fallthrough": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if noisy:
+            logger.warning("did not resolve: %s", exc)
+        logger.debug("falling back")
+        return root
+""",
+    # --- rules folded in from the silent-failure audit (658) ---
+    "quiet_debug_only": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(path):
+    try:
+        return read(path)
+    except OSError:
+        logger.debug("could not read %s", path)
+""",
+    "quiet_info_only": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(path):
+    try:
+        return read(path)
+    except OSError:
+        logger.info("could not read %s", path)
+""",
+    "success_shaped_empty_list": """
+def allowlist(raw: str) -> list[str]:
+    try:
+        return parse(raw)
+    except ValueError:
+        return []
+""",
+    "success_shaped_false": """
+def has_conflicts(repo) -> bool:
+    try:
+        return detect(repo)
+    except OSError:
+        return False
+""",
+    "discarded_run_git": """
+from loregarden.services.git_subprocess import run_git
+
+def sync(repo):
+    run_git(["fetch", "origin"], cwd=repo, check=False)
+""",
+    "discarded_subprocess_run": """
+import subprocess
+
+def sync(repo):
+    subprocess.run(["rsync", "-a", "src", "dst"], cwd=repo)
+""",
+    "waiver_with_no_reason": """
+def warm(path):
+    try:
+        return read(path)
+    except FileNotFoundError:  # silent-ok:
+        pass
+""",
+    "waiver_with_throwaway_reason": """
+def warm(path):
+    try:
+        return read(path)
+    except FileNotFoundError:  # py-silent: allow - nope
+        pass
+""",
     "pass": """
 def f():
     try:
@@ -115,6 +212,103 @@ def f():
 }
 
 ALLOWED = {
+    # Path analysis must not over-fire: these all observe on every way out (658).
+    "unconditional_reraise_after_a_quiet_log": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        logger.debug("context: %s", exc)
+        raise
+""",
+    "warning_before_a_conditional_raise": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        logger.warning("did not resolve: %s", exc, exc_info=True)
+        if fatal(exc):
+            raise
+        return root
+""",
+    "every_branch_observes": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if fatal(exc):
+            raise
+        logger.warning("did not resolve: %s", exc, exc_info=True)
+        return root
+""",
+    "closure_logging_does_not_count_but_the_raise_does": """
+def f(raw):
+    try:
+        return resolve(raw)
+    except ValueError:
+        raise
+""",
+    # --- counterparts for the folded-in rules (658) ---
+    "optional_contract_is_not_a_lie": """
+def try_parse(name: str) -> "Action | None":
+    try:
+        return Action(name)
+    except ValueError:
+        return None
+""",
+    "unannotated_narrow_return_is_left_alone": """
+def f():
+    try:
+        return work()
+    except FileNotFoundError:
+        return None
+""",
+    "warning_beats_debug": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(path):
+    try:
+        return read(path)
+    except OSError:
+        logger.warning("could not read %s", path, exc_info=True)
+""",
+    "waiver_with_a_real_reason": """
+def warm(path):
+    try:
+        return read(path)
+    except FileNotFoundError:  # silent-ok: best-effort warm; the next read repopulates
+        pass
+""",
+    "waiver_reason_may_sit_above": """
+from loregarden.services.git_subprocess import run_git
+
+def sync(repo):
+    # silent-ok: pruning is idempotent and best-effort; the next call prunes again
+    run_git(["worktree", "prune"], cwd=repo, check=False)
+""",
+    "process_result_kept": """
+from loregarden.services.git_subprocess import run_git
+
+def sync(repo) -> bool:
+    proc = run_git(["fetch", "origin"], cwd=repo, check=False)
+    return proc.returncode == 0
+""",
+    "not_a_subprocess_run": """
+import uvicorn
+
+def serve():
+    uvicorn.run("app:app", host="127.0.0.1", port=8000)
+""",
     "logs_then_recovers": """
 import logging
 

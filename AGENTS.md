@@ -93,6 +93,7 @@ cd client && npm test                                       # frontend (Jest)
 task hooks:py-review           # Ruff
 task hooks:py-pylint           # Pylint (diff-scoped)
 task hooks:py-organization     # organization guardrails
+task hooks:ts-silent-failures  # swallowed rejections (add --all to audit the tree)
 cd client && npm run lint      # oxlint
 
 # Organization guardrails against any workspace (what the orchestration gate runs).
@@ -100,6 +101,8 @@ cd client && npm run lint      # oxlint
 # refuse (exit 69, EX_UNAVAILABLE) on anything older rather than grading (657).
 bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py --repo <workspace-root> --scope worktree
 node .lefthook/scripts/ts_organization_check.cjs --repo <workspace-root> --scope worktree
+python3 .lefthook/scripts/py_silent_except_check.py --repo <workspace-root> --scope worktree
+node .lefthook/scripts/ts_no_silent_failures_check.cjs --repo <workspace-root> --scope worktree
 scripts/install-workspace-hooks.sh [--check] <workspace-root>   # same checks, their pre-commit
 ./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check
 
@@ -148,6 +151,9 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | `run.status == "failed"`, `kind: str`, inline literal sets | Stringly-typed vocabularies. ~100 enum members already exist in `models/domain/enums.py` and `mcp/tool_ids.py`; use them, or add one | `.lefthook/scripts/py_string_vocab.py` |
 | `isinstance(payload, dict)` | A schema check by hand. Model it with Pydantic at the boundary; `isinstance` on a class wants polymorphism | 220 of 238 target builtins; `py_organization_check.py` → `isinstance_errors` |
 | `err instanceof Error ? err.message : "…"` | Copy-pasted 46× and drops the `ApiError` status; use `describeError(error, fallback)` | `.lefthook/scripts/ts_organization_check.cjs` |
+| Swallowing an exception (`except: pass`, `catch {}`, `.catch(() => {})`, a handler that only logs at `debug`) | A failure nobody sees. Log at warning+, return a failure-carrying result, rethrow, or waive with `# silent-ok: <reason>` / `// silent-ok: <reason>` | `.lefthook/scripts/py_silent_except_check.py` |
+| Returning `False`/`[]`/`{}`/`""` from a handler when the same function returns that on success | "It failed" and "there is nothing" become the same answer — this is how a crashed conflict check reported a clean merge | `services/conflict_detector.py` → `checked` |
+| A discarded `run_git(..., check=False)` / `subprocess.run` result | A non-zero exit passes unnoticed; a failed `fetch origin` silently makes every later merge-base stale | `.lefthook/scripts/py_silent_except_check.py` |
 | Assuming `alwaysApply: true` in prompt frontmatter does anything | It is a Cursor convention loregarden does not honor. A common asset reaches an agent only if its `role_file` says to read it, or the executor embeds it | `agents/executors/cli.py` |
 | Backgrounding a synthetic CPU-load generator (`for i in 1..N; do (while :; do :; done) & done`) without `trap ... EXIT` + `timeout` guarding the whole thing | If the guarded command hangs or the session/terminal is torn down before the manual `kill $LOADPIDS` line runs, the loops reparent to `launchd` and pin every core indefinitely — nothing else is watching them | orphaned load-test in worktree `chat-triage-prompts-accessibility-0d5aea` ran 3 days, ~90 processes, load avg ~200, until found and killed manually (2026-09-01) |
 

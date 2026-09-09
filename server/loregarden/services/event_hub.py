@@ -68,10 +68,11 @@ class EventHub:
         try:
             self._loop.call_soon_threadsafe(self._deliver, topic, event)
         except RuntimeError:
-            # The loop these subscribers belonged to is gone — the dev server
-            # restarts on every backend edit, and a queue operation still in
-            # flight must not fail because nobody is left to tell. Publishing
-            # is best-effort by design; the caller's work is not.
+            # silent-ok: the loop these subscribers registered on is closed, so every
+            # socket that would have received this event went down with it. The dev
+            # server restarts on every backend edit, and a queue operation still in
+            # flight must not fail because nobody is left to tell. Publishing is
+            # best-effort by design; the caller's work is not.
             logger.debug("Dropped %s event for %s: event loop is closed", event, topic)
 
     def subscriber_count(self, topic: str) -> int:

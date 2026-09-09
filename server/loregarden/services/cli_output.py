@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from loregarden.dot_line import OUT
 from loregarden.services.run_log_stream import format_stream_payload
+
+logger = logging.getLogger(__name__)
 
 
 def _result_text(payload: dict[str, Any]) -> str:
@@ -74,6 +77,9 @@ def _extract_from_ndjson_lines(lines: list[str]) -> str | None:
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
+            # A dropped line can be the one carrying the agent's reply, and the
+            # run then reports empty output rather than a parse problem.
+            logger.warning("dropping an unparseable NDJSON line from CLI stdout", exc_info=True)
             continue
         if not isinstance(payload, dict):  # py-org: allow-isinstance
             continue

@@ -118,6 +118,13 @@ export const api = {
       `/api/system/reload?workspace=${encodeURIComponent(workspace)}`,
       { method: "POST" },
     ),
+  /** Pause / resume / cancel one queued run. Goes through `request`, so a 4xx
+   *  or 5xx becomes an ApiError carrying the server's `detail` — a raw fetch
+   *  resolves on those, which is how a bulk action once reported no failures. */
+  queueRunAction: (runId: string, action: string) =>
+    request<unknown>(`/api/parallel/queue/${encodeURIComponent(runId)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+    }),
   health: () => request<unknown>("/health"),
   workspaces: () => request<WorkspaceSummary[]>("/api/workspaces"),
   createWorkspace: (body: WorkspaceCreateRequest) =>

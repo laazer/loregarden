@@ -47,7 +47,7 @@ def handle_request(
                 "id": req_id,
                 "result": {"content": [{"type": "text", "text": result}]},
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: any tool failure becomes an isError result
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,

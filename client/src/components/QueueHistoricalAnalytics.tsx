@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { API_BASE } from '../api/client';
+import { describeError } from '../state/toastStore';
 import './QueueHistoricalAnalytics.css';
 
 export interface RunMetrics {
@@ -50,7 +51,7 @@ export function QueueHistoricalAnalytics({
         setMetrics(data.metrics || []);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : 'Failed to load analytics'
+          describeError(err, 'Failed to load analytics')
         );
       } finally {
         setLoading(false);

@@ -79,6 +79,9 @@ def _backoff_until(response: httpx.Response, streak: int) -> str:
     try:
         base = max(1, int(raw)) if raw else 300
     except ValueError:
+        # silent-ok: RFC 9110 allows Retry-After to be an HTTP-date rather than a
+        # delta in seconds; the 300s default backoff applies and is surfaced to the
+        # user as the "backing off (~N min remaining)" provider error
         base = 300
     seconds = min(base * (2 ** max(streak, 0)), RATE_LIMIT_MAX_BACKOFF_SECONDS)
     return (datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)).isoformat()
@@ -203,7 +206,7 @@ def fetch_codex_provider(
     try:
         limits, response = codex_usage.fetch_live_rate_limits(client)
     except httpx.HTTPError as exc:
-        logger.debug("codex usage API request failed: %s", exc)
+        logger.warning("codex usage API request failed; using local transcripts: %s", exc)
         return _from_local_transcripts(error=f"Codex usage API unreachable ({type(exc).__name__}).")
 
     if response is None:

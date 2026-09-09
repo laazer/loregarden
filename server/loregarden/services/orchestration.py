@@ -139,6 +139,12 @@ def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
     try:
         criteria = json.loads(ticket.acceptance_criteria_json or "[]")
     except json.JSONDecodeError:
+        logger.warning(
+            "Unparseable acceptance_criteria_json on ticket %s; the %s gate brief omits it",
+            ticket.external_id,
+            stage_name,
+            exc_info=True,
+        )
         criteria = []
     if criteria:
         lines.append("Acceptance criteria:")
@@ -1312,6 +1318,12 @@ class ApprovalService:
             except ValueError:
                 # No reject transition and no preceding stage to fall back to
                 # (already first-in-order) — hard-block in place.
+                logger.warning(
+                    "No rework route from stage %s on ticket %s; blocking in place",
+                    approval.stage_key,
+                    ticket.external_id,
+                    exc_info=True,
+                )
                 ticket.blocking_issues = reject_message
                 set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
 

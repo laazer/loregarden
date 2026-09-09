@@ -67,6 +67,8 @@ def is_under_icloud(path: Path, icloud_root: Path | None = None) -> bool:
         path.resolve().relative_to(root.resolve())
         return True
     except ValueError:
+        # silent-ok: relative_to raises ValueError to mean "not under root", which
+        # is this predicate's answer, not a failure
         return False
 
 

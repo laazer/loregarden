@@ -4,7 +4,8 @@
  */
 
 import { useState } from 'react';
-import { API_BASE } from '../api/client';
+import { api } from '../api/client';
+import { describeError } from '../state/toastStore';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './QueueAdvancedControls.css';
 
@@ -34,23 +35,12 @@ export function QueueAdvancedControls({
       if (onRunControl) {
         await onRunControl(action, runId);
       } else {
-        // Default API call
-        const response = await fetch(
-          `${API_BASE}/api/parallel/queue/${runId}/${action}`,
-          { method: 'POST' }
-        );
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.detail || `Failed to ${action}`);
-        }
+        await api.queueRunAction(runId, action);
       }
 
       setExpandedRun(null);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : `Failed to ${action} run`
-      );
+      setError(describeError(err, `Failed to ${action} run`));
     } finally {
       setIsProcessing(null);
     }
@@ -63,24 +53,27 @@ export function QueueAdvancedControls({
     setError(null);
 
     try {
+      // fetch resolves for 4xx/5xx, so a rejected promise is only the network
+      // half of the story: a run the server refused has to be counted too, or
+      // a bulk action every one of whose calls failed reports nothing wrong.
       const results = await Promise.allSettled(
-        Array.from(selectedRuns).map((runId) =>
-          fetch(`${API_BASE}/api/parallel/queue/${runId}/${action}`, {
-            method: 'POST',
-          })
-        )
+        Array.from(selectedRuns).map((runId) => api.queueRunAction(runId, action))
       );
 
-      const failed = results.filter((r) => r.status === 'rejected').length;
-      if (failed > 0) {
-        setError(`Failed to ${action} ${failed} run(s)`);
+      const rejections = results.filter((r) => r.status === 'rejected');
+      if (rejections.length > 0) {
+        const [first] = rejections;
+        const detail = describeError(first.reason, `Failed to ${action}`);
+        setError(
+          rejections.length === 1
+            ? detail
+            : `Failed to ${action} ${rejections.length} of ${results.length} run(s): ${detail}`
+        );
       }
 
       setSelectedRuns(new Set());
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : `Failed to ${action} runs`
-      );
+      setError(describeError(err, `Failed to ${action} runs`));
     } finally {
       setIsProcessing(null);
     }

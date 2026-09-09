@@ -32,6 +32,8 @@ def is_under(path: Path, root: Path) -> bool:
         path.resolve().relative_to(root.resolve())
         return True
     except ValueError:
+        # silent-ok: relative_to raises ValueError to mean "not under root", which
+        # is this predicate's answer, not a failure
         return path.resolve() == root.resolve()
 
 
@@ -57,6 +59,10 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
     except ValueError as exc:
         if "outside the allowed browse scope" in str(exc):
             raise
+        # silent-ok: a browse path the user typed that does not resolve is ordinary
+        # input, not a fault — and the fallback is surfaced, because the response
+        # carries `current_path`, so the client shows the directory it landed on.
+        # debug keeps a mistyped path out of the operator's warnings.
         logger.debug("browse target %r did not resolve; falling back to root: %s", raw, exc)
         return root
 
@@ -73,6 +79,8 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
         try:
             parent = assert_browse_allowed(parent)
         except ValueError:
+            # silent-ok: climbing hit the browse ceiling; the fallback to root below
+            # is the intended answer
             break
         if parent.is_dir():
             return parent
@@ -126,7 +134,13 @@ def list_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                     if not entry.is_dir(follow_symlinks=False):
                         continue
                 except OSError as exc:
-                    logger.debug("skipping unreadable entry %s: %s", entry.path, exc)
+                    logger.warning(
+                        "browse listing of %s is incomplete; %s could not be stat'd: %s",
+                        current,
+                        entry.path,
+                        exc,
+                        exc_info=True,
+                    )
                     continue
                 child = Path(entry.path).resolve()
                 if not is_under(child, ceiling):
@@ -172,7 +186,13 @@ def list_import_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                     is_dir = entry.is_dir(follow_symlinks=False)
                     is_file = entry.is_file(follow_symlinks=False)
                 except OSError as exc:
-                    logger.debug("skipping unreadable entry %s: %s", entry.path, exc)
+                    logger.warning(
+                        "browse listing of %s is incomplete; %s could not be stat'd: %s",
+                        current,
+                        entry.path,
+                        exc,
+                        exc_info=True,
+                    )
                     continue
                 if not is_dir and not (is_file and _is_importable_file(entry.name)):
                     continue

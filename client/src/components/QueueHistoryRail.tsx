@@ -14,6 +14,7 @@ import {
   type QueueHistoryEntry,
   type QueueHistoryOutcome,
 } from "../lib/queueHistoryApi";
+import { describeError } from "../state/toastStore";
 import { navigateToTicket } from "../lib/useAppNavigation";
 
 const OUTCOME_FILTERS: { key: string; label: string }[] = [
@@ -66,7 +67,7 @@ export function QueueHistoryRail() {
       setEntries(page.entries);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load queue history");
+      setError(describeError(err, "Failed to load queue history"));
     } finally {
       setLoading(false);
     }

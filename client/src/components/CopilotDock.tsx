@@ -75,7 +75,10 @@ export function CopilotDock() {
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError) return;
-    void session.send(content, { autoApprove: false }).catch(() => {});
+    void session.send(content, { autoApprove: false }).catch(() => {
+      // silent-ok: send is a mutation carrying meta.errorTitle, so the global
+      // MutationCache toast reports the failure and session.error renders it.
+    });
   };
 
   return (

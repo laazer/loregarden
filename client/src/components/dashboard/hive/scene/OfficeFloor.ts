@@ -266,9 +266,13 @@ export async function createHiveApplication(host: HTMLElement): Promise<{
   try {
     await app.init({ ...initOpts, preference: "webgl" });
   } catch {
+    // silent-ok: renderer fallback, not a failure — WebGL is the preference,
+    // WebGPU the alternate, and the last init rethrows if neither backend works.
     try {
       await app.init({ ...initOpts, preference: "webgpu" });
     } catch {
+      // silent-ok: last resort before the unpreferenced init, which is not
+      // caught — if that one throws, the caller renders the scene's error.
       await app.init({ ...initOpts });
     }
   }

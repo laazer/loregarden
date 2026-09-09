@@ -232,7 +232,10 @@ export function BranchTriageOverviewPanel({
               disabled={session.isBusy || session.loadError}
               onClick={() => {
                 setCopilotOpen(true);
-                void session.send("commit and push").catch(() => {});
+                void session.send("commit and push").catch(() => {
+                  // silent-ok: send is a mutation with meta.errorTitle, so the
+                  // global MutationCache toast already reported the failure.
+                });
               }}
             >
               {session.isBusy ? "Sending…" : "Commit & push"}

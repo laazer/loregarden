@@ -42,6 +42,7 @@ import type {
   TicketHierarchyNode,
   TicketTreeEstimate,
 } from '../lib/queueSocket';
+import { describeError } from '../state/toastStore';
 import { navigateToTicket } from '../lib/useAppNavigation';
 import {
   runStatusLabel,
@@ -380,7 +381,7 @@ export function ParallelQueueVisualization() {
     try {
       await action();
     } catch (error) {
-      setLaneError(error instanceof Error ? error.message : 'Lane update failed');
+      setLaneError(describeError(error, 'Lane update failed'));
     } finally {
       setBusyEntryId(null);
     }

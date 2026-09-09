@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -15,6 +16,8 @@ from loregarden.services.path_browser import (
     to_workspace_repo_path,
 )
 from loregarden.services.workspace_paths import resolve_workspace_root
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 512_000
 BLOCKED_DIR_NAMES = {
@@ -243,7 +246,14 @@ def list_editor_browse(
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
                     is_file = entry.is_file(follow_symlinks=False)
-                except OSError:
+                except OSError as exc:
+                    logger.warning(
+                        "editor listing of %s is incomplete; %s could not be stat'd: %s",
+                        current,
+                        entry.path,
+                        exc,
+                        exc_info=True,
+                    )
                     continue
                 if not is_dir and not (is_file and _is_text_file(entry.name)):
                     continue

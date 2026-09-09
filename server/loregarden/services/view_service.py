@@ -239,6 +239,8 @@ def _commit_with_retry(session: Session, attempt: Callable[[], None]) -> None:
             attempt()
             session.commit()
         except (IntegrityError, StaleDataError):
+            # silent-ok: transient write contention, retried below; exhausting the
+            # attempt budget raises SidebarContentionError
             session.rollback()
             continue
         return
@@ -291,6 +293,8 @@ def create_view(
         try:
             session.commit()
         except IntegrityError:
+            # silent-ok: transient write contention, retried below; exhausting the
+            # attempt budget raises SidebarContentionError
             session.rollback()
             continue
         session.refresh(view)
@@ -396,6 +400,8 @@ def pin_page(session: Session, workspace_id: str, page_key: str) -> SidebarEntry
         except IntegrityError:
             # Either a peer pinned this page first, or it took the rank we read.
             # The next pass tells them apart; both are resolved by re-reading.
+            # silent-ok: transient contention, retried below; exhausting the budget
+            # raises SidebarContentionError
             session.rollback()
             continue
         session.refresh(entry)

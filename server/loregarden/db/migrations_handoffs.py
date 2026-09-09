@@ -42,6 +42,11 @@ def _existing_signatures(conn: Connection) -> set[tuple[str, str]]:
         try:
             doc = json.loads(content_json or "{}")
         except json.JSONDecodeError:
+            # An artifact we cannot read is an artifact we cannot dedupe against,
+            # so the backfill may write a second copy of this handoff.
+            logger.warning(
+                "handoff backfill: unreadable artifact content_json for ticket %s", ticket_id
+            )
             continue
         handoff = doc.get("handoff") if isinstance(doc, dict) else None
         if isinstance(handoff, dict):

@@ -13,11 +13,24 @@ interface CIStatusWidgetProps {
  * Displays: status (passing/failing/pending), auto-fix history, logs.
  */
 export function CIStatusWidget({ ticketId, compact = false }: CIStatusWidgetProps) {
-  const { ciStatus, autoFixHistory } = useCIStatus(ticketId);
+  const { ciStatus, autoFixHistory, error } = useCIStatus(ticketId);
   const { triggerManualAutoFix, skipCICheck, isFixing, fixError } = useAutoFix(ticketId);
   const [expanded, setExpanded] = useState(false);
 
-  if (!ciStatus) return null;
+  // No CI on this ticket renders as nothing, which is right. A CI read that
+  // failed is a different thing and says so: otherwise a broken pipeline and a
+  // ticket that never had one look identical.
+  if (!ciStatus) {
+    if (!error) return null;
+    return (
+      <div className="ci-status-widget">
+        <span className="ci-badge ci-failing" title={error}>
+          <span className="icon">⚠️</span>
+          <span className="label">CI status unavailable</span>
+        </span>
+      </div>
+    );
+  }
 
   const statusIcon = {
     passing: "✓",

@@ -63,11 +63,11 @@ class DecompositionService:
             response_text = self._generate(prompt)
             hierarchy = self._parse_response(response_text)
             return ProposalValidator.validate_all(hierarchy)
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error("Parsing error: %s", e)
+        except (json.JSONDecodeError, ValueError):
+            logger.exception("Parsing error")
             raise
-        except ProposalValidationError as e:
-            logger.error("Proposal validation error: %s", e)
+        except ProposalValidationError:
+            logger.exception("Proposal validation error")
             raise
 
     def _build_prompt(self, ticket_content: dict) -> str:
@@ -133,8 +133,8 @@ Return a JSON object with this exact structure:
         """Parse model JSON response into HierarchyWorkItem objects."""
         try:
             data = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse JSON response: %s", e)
+        except json.JSONDecodeError:
+            logger.exception("Failed to parse JSON response")
             raise
 
         hierarchy_data = data.get("hierarchy", [])

@@ -44,7 +44,8 @@ import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } f
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab, isArtifactsSubTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
-import { pushToast } from "../state/toastStore";
+import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
+import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
 import {
@@ -515,13 +516,14 @@ export function Dashboard() {
         setPendingWorkflow({ template, preview });
         return;
       }
-    } catch {
-      // The preview is advisory. If it cannot be fetched, fall through rather
-      // than blocking a change the operator asked for.
+    } catch (error) {
+      // Advisory, so the change proceeds — but this is the only warning that it can discard stages.
+      toastWarning("Could not check what this workflow change would discard", error, "Applying it anyway — progress may be reset");
     }
     setTicketTemplate.mutate({ ticketId, template });
   };
 
+  const { save: saveTicketBranch, saveOrThrow: saveTicketBranchOrThrow } = useTicketBranchSave();
   const runtimeOptions = useQuery({
     queryKey: ["runtime-options", workspace],
     queryFn: () => api.runtimeOptions({ workspace }),
@@ -623,7 +625,9 @@ export function Dashboard() {
         // auto_scope: the server generates the breakdown itself when the scoper
         // has nothing to ask, so the chain is not lost if this page goes away.
         return await api.requestTicketStudioClarifications(created.id, true);
-      } catch {
+      } catch (error) {
+        // Keep the session rather than lose the brief; an empty studio otherwise looks intended.
+        toastWarning("Session created without a breakdown", error, "Scoping did not start; retry it from the session");
         return created;
       }
     },
@@ -764,7 +768,7 @@ export function Dashboard() {
       try {
         await startSmartImport.mutateAsync({ workspaceSlug: slug, filePaths });
       } catch {
-        // Error surfaced to the modal via startSmartImportError below.
+        // silent-ok: startSmartImport.error renders as the modal's errorMessage
       }
       return;
     }
@@ -839,7 +843,7 @@ export function Dashboard() {
         slotNumber,
       });
     } catch {
-      // Modal stays open; mutation error state clears on retry.
+      // silent-ok: setRuntime/startRun carry meta.errorTitle; the modal stays open to retry
     }
   };
 
@@ -850,7 +854,7 @@ export function Dashboard() {
         await setRuntime.mutateAsync({ slug: activeWorkspaceSlug, runtime: options.runtime });
       }
       if (options.branch !== (sel.branch || "")) {
-        await api.updateTicket(selectedId, { branch: options.branch });
+        await saveTicketBranchOrThrow(selectedId, options.branch);
       }
       await orchestrate.mutateAsync({
         ticketId: selectedId,
@@ -862,7 +866,7 @@ export function Dashboard() {
         },
       });
     } catch {
-      // Modal stays open on error.
+      // silent-ok: every step above reports itself; the modal stays open to retry
     }
   };
 
@@ -1214,9 +1218,7 @@ export function Dashboard() {
                       }}
                       onBlur={(e) => {
                         if (!selectedId || e.target.value === (detail.data?.branch ?? "")) return;
-                        api.updateTicket(selectedId, { branch: e.target.value.trim() }).then(() => {
-                          qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-                        });
+                        void saveTicketBranch(selectedId, e.target.value.trim());
                       }}
                     />
                     <button
@@ -1229,9 +1231,7 @@ export function Dashboard() {
                           current ? { ...current, branch: "main" } : current,
                         );
                         if ((detail.data?.branch ?? "") !== "main") {
-                          api.updateTicket(selectedId, { branch: "main" }).then(() => {
-                            qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-                          });
+                          void saveTicketBranch(selectedId, "main");
                         }
                       }}
                     >
@@ -1385,9 +1385,7 @@ export function Dashboard() {
                               void buildStageTerminalHandoffCommand(sel, s)
                                 .then(copyTerminalCommand)
                                 .catch((err) =>
-                                  window.alert(
-                                    err instanceof Error ? err.message : "Failed to build terminal command",
-                                  ),
+                                  toastActionFailed("Copy terminal command", err),
                                 )
                             }
                             onSetCursor={(stageKey) =>

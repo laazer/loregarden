@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from loregarden.agents.registry import get_agent
@@ -19,6 +20,8 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
     # Deliberately narrow. Generic structural verbs — move, split, simplify,
@@ -119,7 +122,13 @@ def _classify_haystack(ticket: Ticket) -> str:
     try:
         acceptance_criteria = " ".join(json.loads(ticket.acceptance_criteria_json or "[]"))
     except (TypeError, ValueError):
-        pass
+        # Routing still runs on title alone, but it runs on less signal than the
+        # ticket actually carries — that has misrouted tickets before.
+        logger.warning(
+            "Unreadable acceptance_criteria_json on ticket %s; routing on title alone",
+            ticket.id,
+            exc_info=True,
+        )
 
     return " ".join(
         [
@@ -348,6 +357,14 @@ def should_skip_stage(
         try:
             criteria = json.loads(ticket.acceptance_criteria_json or "[]")
         except (TypeError, ValueError):
+            # Cannot prove the criteria exist, so the stage runs. Safe, but the
+            # unreadable column is a defect and must not stay invisible.
+            logger.warning(
+                "Unreadable acceptance_criteria_json on ticket %s; not skipping stage %s",
+                ticket.id,
+                stage.key,
+                exc_info=True,
+            )
             return False
         return bool(criteria)
     if condition == "routed_as_light_work":

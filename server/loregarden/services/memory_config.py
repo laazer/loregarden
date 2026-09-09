@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from loregarden.services.path_resolve import (
     expand_path,
     resolve_sqlite_path,
 )
+
+logger = logging.getLogger(__name__)
 
 MEMORY_CONFIG_FILENAME = "memory.local.json"
 CONFIG_KEYS = (
@@ -40,7 +43,13 @@ def read_local_memory_config(repo_root: Path | None = None) -> dict[str, str]:
         return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "memory config %s could not be read; falling back to defaults: %s",
+            path,
+            exc,
+            exc_info=True,
+        )
         return {}
     if not isinstance(raw, dict):
         return {}

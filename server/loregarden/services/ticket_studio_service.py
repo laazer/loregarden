@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -51,6 +52,8 @@ from loregarden.services.reference_repo_service import ReferenceRepoService, is_
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 TICKET_STUDIO_AGENT_ID = "ticket_scoper"
 
@@ -184,6 +187,13 @@ def parse_scope_payload(text: str) -> tuple[str, list[str], list[TicketStudioDra
         try:
             work_item_type = WorkItemType(str(raw.get("work_item_type") or "task"))
         except ValueError:
+            # The draft the operator reviews will say "task" where the model said
+            # something else, so the substitution has to be traceable.
+            logger.warning(
+                "Scoper proposed unknown work_item_type %r for %r; drafting it as a task",
+                raw.get("work_item_type"),
+                title,
+            )
             work_item_type = WorkItemType.TASK
         ac_raw = raw.get("acceptance_criteria") or []
         acceptance = [str(line).strip() for line in ac_raw if str(line).strip()]
@@ -1138,7 +1148,7 @@ class TicketStudioService:
 
         try:
             reply = invoke_ticket_studio_model(self.session, row, prompt, mode="survey")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any provider error becomes a visible "unavailable" reply
             reply = f"Ticket studio assistant unavailable: {exc}"
 
         self.session.add(TicketStudioMessage(session_id=row.id, role="assistant", content=reply))

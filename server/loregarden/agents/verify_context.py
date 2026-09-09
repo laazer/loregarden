@@ -33,6 +33,11 @@ def _latest_stage_claim(session: Session, ticket: Ticket) -> dict | None:
         try:
             content = json.loads(row.content_json or "{}")
         except (TypeError, ValueError):
+            # Older reports are still searched, but a corrupt newest one means the
+            # verifier checks a claim that is not the one just made.
+            logger.warning(
+                "Context artifact %s holds unreadable JSON; skipping", row.id, exc_info=True
+            )
             continue
         # Stage reports are the context artifacts carrying a status verdict.
         if content.get("stage_key") and content.get("status"):

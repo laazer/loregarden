@@ -96,6 +96,8 @@ async def chat_turn_socket(websocket: WebSocket, turn_id: str) -> None:
             if event.get("type") == "chat_thinking_done":
                 break
     except WebSocketDisconnect:
+        # silent-ok: the viewer closed the tab; the finally block unsubscribes,
+        # and the turn itself runs on regardless of who is watching.
         pass
     except Exception:  # noqa: BLE001 - one bad socket must not take the loop down
         logger.warning("Chat turn socket failed for %s", turn_id, exc_info=True)

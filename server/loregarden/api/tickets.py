@@ -1009,7 +1009,8 @@ def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Tick
         try:
             request_cancel(session, run)
         except ValueError:
-            # Already finishing / double-stop — skip rather than 409 the whole ticket.
+            # silent-ok: already finishing / double-stop; the run is stopping anyway,
+            # and the refreshed ticket returned below reports its real status.
             continue
 
     orch_runs = session.exec(
@@ -1038,6 +1039,8 @@ def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Tick
         try:
             request_orchestration_cancel(session, orch_run)
         except ValueError:
+            # silent-ok: already finishing / double-stop; the refreshed ticket
+            # returned below reports the orchestration's real status.
             continue
 
     session.refresh(ticket)

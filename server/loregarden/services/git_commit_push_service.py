@@ -13,6 +13,8 @@ from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
+logger = logging.getLogger(__name__)
+
 
 class NothingToCommitError(ValueError):
     """Raised when the workspace has no working-tree changes to commit."""
@@ -132,6 +134,11 @@ def head_commit_sha(repo_root: Path) -> str:
             text=True,
         )
     except OSError:
+        logger.warning(
+            "Could not read HEAD of %s; evidence for this run carries no commit sha",
+            repo_root,
+            exc_info=True,
+        )
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 

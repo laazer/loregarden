@@ -52,6 +52,11 @@ def latest_plan(session: Session, ticket: Ticket) -> dict | None:
         try:
             content = json.loads(row.content_json or "{}")
         except (TypeError, ValueError):
+            # Skipping to the older plan is the alternate path, but a corrupt
+            # newest plan silently demotes a later stage to a stale one.
+            logger.warning(
+                "Plan artifact %s holds unreadable JSON; skipping", row.id, exc_info=True
+            )
             continue
         if isinstance(content, dict) and content:
             return content
@@ -105,6 +110,13 @@ def round_plans(session: Session, ticket: Ticket) -> list[tuple[str, dict]]:
         try:
             content = json.loads(artifact.content_json or "{}")
         except (TypeError, ValueError):
+            # The lane drops out of synthesis entirely; without this line the
+            # round just looks like it had one fewer planner.
+            logger.warning(
+                "Plan artifact %s holds unreadable JSON; lane dropped from the round",
+                artifact.id,
+                exc_info=True,
+            )
             continue
         if not isinstance(content, dict) or not content:
             continue

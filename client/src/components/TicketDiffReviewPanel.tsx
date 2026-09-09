@@ -10,6 +10,7 @@ import {
   type QueueOperationDetails,
   type RunOutputReviewData,
 } from "../lib/queueReviewApi";
+import { describeError } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { RunOutputReview } from "./RunOutputReview";
 import "./TicketDiffReviewPanel.css";
@@ -63,7 +64,7 @@ export function TicketDiffReviewPanel({
       const review = await ensureRunOutputReview(workspaceId, selectedRunId, outputType, content);
       setOutputReview(review);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load output review");
+      setError(describeError(err, "Failed to load output review"));
       setOutputReview(null);
     } finally {
       setIsLoading(false);
@@ -104,7 +105,7 @@ export function TicketDiffReviewPanel({
       setRunOutputById(outputs);
       setMode("operation");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load queue operation review");
+      setError(describeError(err, "Failed to load queue operation review"));
     } finally {
       setIsLoading(false);
     }
@@ -125,7 +126,7 @@ export function TicketDiffReviewPanel({
       const refreshed = await getRunOutputReview(workspaceId, selectedRunId, outputReview.review_id);
       setOutputReview(refreshed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add comment");
+      setError(describeError(err, "Failed to add comment"));
     } finally {
       setIsLoading(false);
     }

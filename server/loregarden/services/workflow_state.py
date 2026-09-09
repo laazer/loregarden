@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -18,6 +19,8 @@ from loregarden.models.domain import (
 )
 from loregarden.services.ticket_state_service import derive
 
+logger = logging.getLogger(__name__)
+
 
 def initial_stages_json(stages: list[WorkflowStageDef]) -> str:
     ordered = sorted(stages, key=lambda s: s.order)
@@ -31,6 +34,11 @@ def stages_up_to_done_json(stages: list[WorkflowStageDef], completed_key: str) -
     try:
         done_idx = keys.index(completed_key)
     except ValueError:
+        logger.warning(
+            "Stage %r is not in this workflow (%s); marking every stage pending",
+            completed_key,
+            ", ".join(keys),
+        )
         done_idx = -1
     payload = []
     for i, stage in enumerate(ordered):

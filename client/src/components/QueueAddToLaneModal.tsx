@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '../api/client';
 import type { WorkspaceRuntimeSettings } from '../api/types';
+import { describeError } from '../state/toastStore';
 import { queueLanesApi } from '../lib/queueLanesApi';
 import { AgentsAssembleModal, type AgentsAssembleOptions } from './AgentsAssembleModal';
 import { runtimeSettingsEqual } from './WorkspaceRuntimeFields';
@@ -109,7 +110,7 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
       await addToLane.mutateAsync(options);
       onClose();
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Could not add to the lane');
+      onError(describeError(error, 'Could not add to the lane'));
     }
   };
 

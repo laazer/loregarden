@@ -12,12 +12,15 @@ deliberately does not apply: a path is a path.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import Workspace
 from loregarden.services.file_editor import BLOCKED_DIR_NAMES, resolve_editor_root
+
+logger = logging.getLogger(__name__)
 
 #: Ceiling on entries returned to the picker. A menu is read, not scrolled.
 DEFAULT_LIMIT = 20
@@ -154,7 +157,13 @@ def _top_level(root: Path) -> list[PathCandidate]:
                     continue
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
-                except OSError:
+                except OSError as exc:
+                    logger.warning(
+                        "path picker skipped %s; it could not be stat'd: %s",
+                        entry.path,
+                        exc,
+                        exc_info=True,
+                    )
                     continue
                 candidates.append(
                     PathCandidate(repo_path=entry.name, name=entry.name, is_dir=is_dir)

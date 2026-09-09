@@ -9,6 +9,7 @@ import {
   type QueueOperationSummary,
 } from "../lib/queueReviewApi";
 import { useQueueStatus } from "../state/QueueStatusContext";
+import { describeError, pushToast, toastActionFailed } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
@@ -52,7 +53,9 @@ export function QueueDashboard({
       const data = await listQueueOperations({ limit: 20 });
       setOperations(data.operations || []);
     } catch (error) {
-      console.error("Failed to fetch operations:", error);
+      // An empty list and a failed read look identical on the Review tab, so
+      // the failure has to say so rather than pass for "no operations yet".
+      toastActionFailed("Load queue operations", error);
     }
   }, []);
 
@@ -76,6 +79,10 @@ export function QueueDashboard({
     ];
 
     const outputs: Record<string, { stdout?: string; stderr?: string; run_code?: string }> = {};
+    // A run whose output could not be read renders as a run that produced
+    // none. Collected here and reported once, rather than one toast per run.
+    const failedRuns: string[] = [];
+    let firstOutputError: unknown;
     await Promise.all(
       runIds.map(async (runId) => {
         try {
@@ -85,12 +92,21 @@ export function QueueDashboard({
             stderr: run.stderr,
             run_code: run.run_code,
           };
-        } catch {
+        } catch (error) {
           outputs[runId] = { run_code: runId };
+          failedRuns.push(runId);
+          firstOutputError ??= error;
         }
       }),
     );
     setRunOutputById(outputs);
+    if (failedRuns.length > 0) {
+      pushToast({
+        tone: "warning",
+        title: `Output unavailable for ${failedRuns.length} run(s)`,
+        message: describeError(firstOutputError, "The run log could not be read"),
+      });
+    }
   }, [selectedOperationId, selectedWorkspaceId]);
 
   useEffect(() => {
@@ -106,7 +122,7 @@ export function QueueDashboard({
       return;
     }
     void refreshOperationDetails().catch((error) => {
-      console.error("Failed to fetch operation details:", error);
+      toastActionFailed("Load operation details", error);
     });
   }, [selectedOperationId, refreshOperationDetails]);
 

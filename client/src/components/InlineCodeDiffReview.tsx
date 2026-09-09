@@ -16,6 +16,7 @@ import {
   type BranchDiffComment,
 } from "../lib/branchTriageApi";
 import type { EditDiffComment } from "../lib/textDiff";
+import { describeError } from "../state/toastStore";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import "./InlineCodeDiffReview.css";
 
@@ -538,7 +539,7 @@ export function InlineCodeDiffReview({
           }
         })
         .catch((err) => {
-          setError(err instanceof Error ? err.message : "Failed to load file diff");
+          setError(describeError(err, "Failed to load file diff"));
         })
         .finally(() => {
           setLoadingFile((current) => (current === path ? null : current));
@@ -616,7 +617,7 @@ export function InlineCodeDiffReview({
   useEffect(() => {
     if (localMode) return;
     void refreshComments().catch((err) => {
-      setError(err instanceof Error ? err.message : "Failed to load review comments");
+      setError(describeError(err, "Failed to load review comments"));
     });
   }, [refreshComments, localMode]);
 
@@ -667,7 +668,7 @@ export function InlineCodeDiffReview({
       setActiveAnchor(null);
       await refreshComments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add comment");
+      setError(describeError(err, "Failed to add comment"));
     } finally {
       setIsLoading(false);
     }
@@ -728,7 +729,7 @@ export function InlineCodeDiffReview({
       setShowSubmit(false);
       setSubmitInstructions("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit review");
+      setError(describeError(err, "Failed to submit review"));
     } finally {
       setIsLoading(false);
     }

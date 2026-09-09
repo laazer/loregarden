@@ -66,6 +66,50 @@ Concretely, and these are the mistakes agents actually make here:
 Writing real source code and real test files is, of course, still the job. The rule is about
 *reports about* the work.
 
+## No silent failures
+
+A failure nobody sees is worse than a crash. This control plane runs agents
+unattended, so its characteristic bug is not an exception — it is a run that dies
+quietly and keeps *looking* alive. A conflict check that returned
+`has_conflicts: False` because the check itself threw is not a hypothetical; it
+reported "Ready to merge" to the UI.
+
+**The rule.** An error may only be suppressed when it is transient,
+auto-repairable, or retryable — or when it is expected *and* there is a real
+alternate way of performing the function. In that last case the failure must
+still be surfaced. Everything else must be observable:
+
+- **Backend:** re-raise, log at `warning`/`exception` (never `debug`/`info` — both
+  are below the default handler level, so a failure reported there is reported
+  nowhere), or return a failure-carrying result. The codebase already has that
+  last pattern: `GateRunResult(ok=False, …)`, `HealthResult(ok=False, error=…)`,
+  `CheckerResult`, and `services/doctor.py` turning a raising check into a
+  user-visible `DoctorFinding`. Anything on a run's path should also reach
+  `event_hub` / `websocket_events`, so a dead run cannot look like a live one.
+- **Frontend:** surface it through `describeError` → `pushToast` (`ToastHost` is
+  mounted in `AppLayout`), or record it in state you actually render. Never a
+  bare `console.error`.
+- **Never** return `False`/`[]`/`{}`/`""` from a handler when the same function
+  returns that on success — "it failed" and "there is nothing" must not collapse
+  into one answer. Never discard a `run_git(..., check=False)` result.
+
+**Waivers.** A legitimate suppression says so on the line, with a reason:
+
+    except FileNotFoundError:  # silent-ok: cache warm is best-effort; next read repopulates
+        pass          # `# py-silent: allow - <reason>` is the same waiver, older spelling
+
+    } catch { /* silent-ok: probe only; the poll re-checks in 2s */ }
+
+The marker alone does not waive anything — the gate rejects an empty or
+throwaway reason. `.lefthook/scripts/py_silent_except_check.py` and
+`ts_no_silent_failures_check.cjs` enforce this, diff-scoped, in all three places
+the organization gates run (pre-commit, orchestration, `loregarden_check_organization`).
+
+Ruff carries the part it can see: `BLE` (blind-except), `TRY400`
+(`logger.exception`, not `logger.error`, inside a handler), `S110`/`S112`. These
+were switched on during this audit — 23 `# noqa: BLE001` comments were already in
+the tree suppressing a rule that had never been enabled.
+
 ## Verify, don't infer
 
 This control plane observes itself, and several of its tables record only part of the story.
@@ -125,6 +169,14 @@ Reviewers run in a fixed order: **organization first** (boundaries, cohesion, DR
 belong here at all), **then best practices** (correctness, readability, naming, error handling,
 testability). Report **Critical → High → Medium**; omit Low. Flag and require removal of tests
 asserting prose or logging text that no spec requires.
+
+**Every `silent-ok:` waiver on a changed line is a claim to verify, not a comment
+to read past.** The gate can only check that a reason exists and is substantive;
+only a reviewer can check that it is *true*. Confirm the failure really is
+transient/retryable, or that the alternate path really exists and the user really
+is told. A waiver whose reason is false or unverifiable is a **Critical** finding —
+the same severity as the raw swallow it is hiding, because it is that swallow plus
+a comment asserting someone thought about it.
 
 Return the review in your response, or via `loregarden_attach_artifact` if long. Never as a
 markdown file.

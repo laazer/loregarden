@@ -56,7 +56,6 @@ import { RouterBridgeSync } from "../RouterBridgeSync";
 // cascades into "unable to find an element" for every test after it. The work
 // still completes (this file runs in ~9s idle, ~45s loaded), so the budget is
 // what is wrong, not the tests.
-jest.setTimeout(20_000);
 
 
 jest.mock("../../lib/viewsApi", () => ({

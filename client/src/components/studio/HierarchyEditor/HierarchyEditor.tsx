@@ -21,6 +21,7 @@ import {
   type ValidationError,
   type ValidationObserver,
 } from "./models";
+import { describeError, pushToast, toastActionFailed } from "../../../state/toastStore";
 import styles from "./HierarchyEditor.module.css";
 
 export interface HierarchyEditorProps {
@@ -166,8 +167,14 @@ export function HierarchyEditor({
         const command = new MoveChildCommand(node, newParent);
         history.execute(command);
         setRootNodes([...rootNodes]);
-      } catch (e) {
-        // Invalid move (circular reference, etc.)
+      } catch (error) {
+        // The row snaps back on its own; without this the drag just refuses to
+        // land and the user is left guessing which rule they broke.
+        pushToast({
+          tone: "warning",
+          title: "Move not allowed",
+          message: describeError(error, "That would put a folder inside itself"),
+        });
       }
     },
     [history, rootNodes],
@@ -200,8 +207,10 @@ export function HierarchyEditor({
       await onFinalize(rootNodes);
       history.clear();
       setRootNodes([]);
-    } catch (e) {
-      // Error handled by parent
+    } catch (error) {
+      // history.clear() above is skipped, so the editor stays dirty with the
+      // user's edits intact — say so, or it reads as a finalize that took.
+      toastActionFailed("Finalize hierarchy", error);
     }
   }, [rootNodes, onFinalize, history]);
 

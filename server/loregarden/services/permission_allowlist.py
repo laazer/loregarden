@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Literal
 
 from loregarden.models.domain import Ticket, Workspace
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 PermissionScope = Literal["workspace", "ticket", "stage"]
 
@@ -31,8 +34,20 @@ def load_allowlist(raw_json: str | None) -> list[dict[str, Any]]:
     try:
         parsed = json.loads(raw_json)
     except json.JSONDecodeError:
+        # Falling back to "no rules" is the safe direction — it grants nothing
+        # and sends the call to the approval inbox — but doing it quietly means
+        # a corrupted allowlist looks exactly like one nobody configured, and
+        # the operator just sees approvals they thought they had automated.
+        logger.warning("Ignoring an unparseable permission allowlist", exc_info=True)
         return []
-    return parsed if isinstance(parsed, list) else []
+    # json.loads returns an unmodelled foreign payload, and this is the boundary
+    # that decides whether it is the list the column promised.
+    if not isinstance(parsed, list):  # py-org: allow-isinstance
+        logger.warning(
+            "Ignoring a permission allowlist that is %s, not a list", type(parsed).__name__
+        )
+        return []
+    return parsed
 
 
 def load_workspace_allowlist(workspace: Workspace | None) -> list[dict[str, Any]]:

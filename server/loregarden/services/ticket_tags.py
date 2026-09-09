@@ -9,7 +9,10 @@ imports so anything below the service layer can reach it.
 """
 
 import json
+import logging
 from collections.abc import Iterable
+
+logger = logging.getLogger(__name__)
 
 #: Long enough for a readable label, short enough to stay a pill in the UI.
 MAX_TAG_LENGTH = 32
@@ -52,7 +55,8 @@ def load_tags(raw: str | None) -> list[str]:
         return []
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.warning("ticket tags_json is unparseable; reading no tags: %s", exc, exc_info=True)
         return []
     if not isinstance(parsed, list):
         return []

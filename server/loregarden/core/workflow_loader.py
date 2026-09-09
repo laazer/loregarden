@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from loregarden.models.domain import (
     WorkflowTemplateVersion,
 )
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 # Fields captured verbatim in each WorkflowTemplateVersion snapshot. Must match the
 # migration backfill (0022) so restore round-trips cleanly.
@@ -95,6 +98,13 @@ def expand_gate_checklist(
     try:
         criteria = json.loads(ticket.acceptance_criteria_json or "[]")
     except json.JSONDecodeError:
+        # The placeholder then expands to nothing, and a gate with no play-test
+        # steps looks exactly like a ticket that needed none.
+        logger.warning(
+            "Unreadable acceptance_criteria_json on ticket %s; play-test checklist will be empty",
+            ticket.id,
+            exc_info=True,
+        )
         criteria = []
     expanded: list[str] = []
     for item in checklist:

@@ -132,6 +132,9 @@ def parse_stored_tool_input(raw: str) -> dict[str, Any]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
+        # An unparseable payload becomes an empty tool input, which is what the
+        # approver sees and what an always-allow rule would be written from.
+        logger.exception("Stored tool input is not valid JSON; treating as empty input")
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -228,7 +231,7 @@ def _close_stdin(proc: Any) -> None:
         return
     try:
         close()
-    except OSError:
+    except OSError:  # silent-ok: teardown — the CLI's stdin pipe is already closed or broken
         pass
 
 
@@ -260,7 +263,7 @@ def _drain_stdout_after_result(
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            proc.kill()  # silent-ok: teardown — the reap raced the kill; send SIGKILL again
 
 
 def wait_for_approval_resolution(
@@ -446,7 +449,7 @@ def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | N
     _close_stdin(proc)
     try:
         proc.kill()
-    except OSError:
+    except OSError:  # silent-ok: teardown — the CLI already exited, so cancel is satisfied
         pass
     return BridgeResult(
         status=RunStatus.CANCELLED,
@@ -1321,6 +1324,8 @@ class PermissionBridgeRunner:
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
+                    # silent-ok: teardown — the reap raced the kill; the timeout is
+                    # already reported below as RunStatus.FAILED.
                     proc.kill()
                 return BridgeResult(
                     status=RunStatus.FAILED,
@@ -1335,6 +1340,8 @@ class PermissionBridgeRunner:
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
+                    # silent-ok: teardown — the reap raced the kill; the timeout is
+                    # already reported below as RunStatus.FAILED.
                     proc.kill()
                 return BridgeResult(
                     status=RunStatus.FAILED,
@@ -1346,6 +1353,8 @@ class PermissionBridgeRunner:
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
+                # silent-ok: teardown — reaping an exited CLI; an unreaped returncode
+                # of None still resolves the run below as RunStatus.FAILED.
                 proc.kill()
         stderr_stream = proc.stderr
         if stderr_stream:

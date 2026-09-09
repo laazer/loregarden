@@ -1,6 +1,7 @@
 """SQLModel table definitions (the persisted schema)."""
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -42,6 +43,8 @@ from loregarden.models.domain.enums import (
 from pydantic import model_validator
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
+
+logger = logging.getLogger(__name__)
 
 
 class Workspace(SQLModel, table=True):
@@ -1298,6 +1301,13 @@ class Worktree(SQLModel, table=True):
         try:
             return json.loads(self.conflict_files_json or "[]")
         except json.JSONDecodeError:
+            # An unreadable blob reads as "no conflicts", which is the one answer
+            # a merge gate must never be given by accident.
+            logger.warning(
+                "Unreadable conflict_files_json on worktree %s; reporting no files",
+                self.id,
+                exc_info=True,
+            )
             return []
 
     @conflict_files.setter
@@ -1333,6 +1343,13 @@ class ConflictReport(SQLModel, table=True):
         try:
             return json.loads(self.conflicting_files_json or "[]")
         except json.JSONDecodeError:
+            # Same trap as Worktree.conflict_files: empty must mean empty, not
+            # "the column could not be read".
+            logger.warning(
+                "Unreadable conflicting_files_json on conflict report %s; reporting no files",
+                self.id,
+                exc_info=True,
+            )
             return []
 
     @conflicting_files.setter

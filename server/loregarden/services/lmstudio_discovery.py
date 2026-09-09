@@ -136,6 +136,9 @@ def _probe(base_url: str) -> list[LmStudioChatModel]:
                 response.raise_for_status()
                 return _parse_native_models(response.json())
             except Exception as native_exc:  # noqa: BLE001 — try OpenAI fallback
+                # silent-ok: /api/v0 is absent on older LM Studio builds; the
+                # OpenAI-compat fallback runs on the next line and the outer
+                # handler warns when that one fails too
                 logger.debug(
                     "LM Studio native discovery failed at %s: %s; trying %s",
                     native_url,
@@ -146,7 +149,12 @@ def _probe(base_url: str) -> list[LmStudioChatModel]:
                 response.raise_for_status()
                 return _parse_openai_models(response.json())
     except Exception as exc:  # noqa: BLE001 — discovery must never break Settings
-        logger.debug("LM Studio model discovery failed at %s: %s", openai_url, exc)
+        logger.warning(
+            "LM Studio model discovery failed at %s; the picker falls back to "
+            "'Auto (first loaded chat model)': %s",
+            openai_url,
+            exc,
+        )
         return []
 
 

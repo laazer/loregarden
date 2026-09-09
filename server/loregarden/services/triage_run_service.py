@@ -179,7 +179,7 @@ class TriageTurnExecutor:
             self._finish(
                 run, ticket, status=RunStatus.SUCCEEDED, reply=turn.reply[:8000], stderr=""
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any provider error is recorded as a FAILED run
             self._finish(
                 run,
                 ticket,

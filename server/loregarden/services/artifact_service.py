@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -24,6 +25,8 @@ from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 MAX_DIFF_LINES = 400
 MAX_DIFF_LINE_CHARS = 500
@@ -241,14 +244,26 @@ def _untracked_manifest_entries(cwd: Path) -> list[dict[str, Any]]:
             continue
         try:
             size = full_path.stat().st_size
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "untracked file %s omitted from the diff artifact; stat failed: %s",
+                full_path,
+                exc,
+                exc_info=True,
+            )
             continue
         if size > MAX_UNTRACKED_FILE_BYTES:
             entries.append({"path": path, "add": 1, "del": 0})
             continue
         try:
             text = full_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "untracked file %s omitted from the diff artifact; read failed: %s",
+                full_path,
+                exc,
+                exc_info=True,
+            )
             continue
         line_count = len(text.splitlines()) or (1 if text else 0)
         entries.append({"path": path, "add": line_count, "del": 0})
@@ -425,7 +440,13 @@ def _untracked_diff_sections(cwd: Path, *, only_path: str | None = None) -> list
             continue
         try:
             size = full_path.stat().st_size
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "untracked file %s omitted from the diff artifact; stat failed: %s",
+                full_path,
+                exc,
+                exc_info=True,
+            )
             continue
         if size > MAX_UNTRACKED_FILE_BYTES:
             sections.append(
@@ -447,7 +468,13 @@ def _untracked_diff_sections(cwd: Path, *, only_path: str | None = None) -> list
 
         try:
             text = full_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "untracked file %s omitted from the diff artifact; read failed: %s",
+                full_path,
+                exc,
+                exc_info=True,
+            )
             continue
 
         lines: list[dict[str, str]] = []
@@ -718,6 +745,8 @@ def extract_pytest_sections_from_stream_json(text: str) -> list[tuple[str, str]]
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
+            # silent-ok: a run log interleaves pretty-printed JSON from tool
+            # output, whose lines are not standalone objects
             continue
 
         if payload.get("type") == "assistant":
@@ -1144,6 +1173,7 @@ def list_ticket_artifacts(
         try:
             content = json.loads(raw)
         except json.JSONDecodeError:
+            # silent-ok: unparseable content is handed to the caller verbatim under _raw
             content = {"_raw": raw}
         items.append(
             {

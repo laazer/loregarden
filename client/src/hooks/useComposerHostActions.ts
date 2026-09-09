@@ -119,7 +119,10 @@ export function useComposerHostActions({
 
   const onFork = useCallback(
     (body: string) => {
-      void forkSession?.(body).catch(() => undefined);
+      void forkSession?.(body).catch(() => {
+        // silent-ok: forkSession is a mutation with meta.errorTitle, so the
+        // global MutationCache toast already reported the failure.
+      });
       onAfterNewChat?.();
     },
     [forkSession, onAfterNewChat],
@@ -127,37 +130,51 @@ export function useComposerHostActions({
 
   const onOrchestrate = useCallback(() => {
     if (!ticketId) return;
-    void orchestrate.mutateAsync(ticketId).catch(() => undefined);
+    void orchestrate.mutateAsync(ticketId).catch(() => {
+      // silent-ok: orchestrate carries meta.errorTitle and its own onError
+      // toast, so the failure is reported before this handler runs.
+    });
   }, [ticketId, orchestrate]);
 
   const onStop = useCallback(() => {
-    void stop?.().catch(() => undefined);
+    void stop?.().catch(() => {
+      // silent-ok: stop is a mutation with meta.errorTitle, so the global
+      // MutationCache toast reports a stop that did not take.
+    });
   }, [stop]);
 
   const onApprove = useCallback(() => {
     if (!firstPendingId) return;
-    void resolveApproval
-      .mutateAsync({ id: firstPendingId, action: "approve" })
-      .catch(() => undefined);
+    void resolveApproval.mutateAsync({ id: firstPendingId, action: "approve" }).catch(() => {
+      // silent-ok: resolveApproval carries meta.errorTitle, so the global
+      // MutationCache toast reports a decision that did not register.
+    });
   }, [firstPendingId, resolveApproval]);
 
   const onReject = useCallback(() => {
     if (!firstPendingId) return;
-    void resolveApproval
-      .mutateAsync({ id: firstPendingId, action: "reject" })
-      .catch(() => undefined);
+    void resolveApproval.mutateAsync({ id: firstPendingId, action: "reject" }).catch(() => {
+      // silent-ok: resolveApproval carries meta.errorTitle, so the global
+      // MutationCache toast reports a decision that did not register.
+    });
   }, [firstPendingId, resolveApproval]);
 
   const onOpenTicket = useCallback(
     (id: string) => {
-      void openTicket.mutateAsync(id).catch(() => undefined);
+      void openTicket.mutateAsync(id).catch(() => {
+        // silent-ok: openTicket has meta.errorTitle and its own onError toast;
+        // the failure is reported twice over before this handler runs.
+      });
     },
     [openTicket],
   );
 
   const onCreateTicket = useCallback(
     (title: string) => {
-      void createTicket.mutateAsync(title).catch(() => undefined);
+      void createTicket.mutateAsync(title).catch(() => {
+        // silent-ok: createTicket has meta.errorTitle and its own onError
+        // toast; the failure is reported before this handler runs.
+      });
     },
     [createTicket],
   );

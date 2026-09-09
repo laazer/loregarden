@@ -126,7 +126,12 @@ def _write_skill_version(
 def _required_capabilities(raw: str) -> list[str]:
     try:
         loaded = json.loads(raw or "[]")
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "skill required_capabilities_json is unparseable; treating it as empty: %s",
+            exc,
+            exc_info=True,
+        )
         return []
     if not isinstance(loaded, list):
         return []

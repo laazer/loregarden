@@ -85,7 +85,12 @@ def read_session_key() -> str | None:
     try:
         raw = path.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        logger.debug("could not read claude session key file %s: %s", path, exc)
+        logger.warning(
+            "claude session key file %s exists but could not be read; the "
+            "claude.ai usage route stays unconfigured: %s",
+            path,
+            exc,
+        )
         return None
     if not raw:
         return None

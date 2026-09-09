@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.models.domain import (
@@ -17,6 +18,8 @@ from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.prepared_action import PreparedAction
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 
 def _gate_route_options(session: Session, ticket: Ticket | None, gate_stage_key: str) -> list[dict]:
@@ -57,6 +60,13 @@ def _parsed_questions(approval: Approval) -> list[dict]:
     try:
         return _QuestionPayload.model_validate_json(approval.tool_input_json or "{}").questions
     except ValidationError:
+        # An approval that renders with no questions looks exactly like one that
+        # asked none, and the operator is left with a prompt they cannot answer.
+        logger.warning(
+            "approval %s has an unparseable question payload; showing none",
+            approval.id,
+            exc_info=True,
+        )
         return []
 
 

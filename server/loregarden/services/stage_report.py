@@ -6,6 +6,7 @@ See agent_context/agents/common_assets/workflow_enforcement_v1.md — "STAGE REP
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -128,6 +129,9 @@ def _criteria_of(payload: str) -> list[str]:
     try:
         parsed = _CriteriaPayload.model_validate_json(payload)
     except ValidationError:
+        # "no unmet criteria" is how a passing stage looks, so an unreadable
+        # payload would otherwise report the work as meeting every criterion.
+        logger.warning("stage report criteria could not be parsed", exc_info=True)
         return []
     return [item.strip() for item in parsed.unmet_criteria if item.strip()]
 
@@ -136,6 +140,9 @@ def _build_report(payload: str) -> StageReport | None:
     try:
         parsed = _ReportPayload.model_validate_json(payload)
     except ValidationError:
+        # No report and an unreadable one settle the stage differently, and the
+        # operator otherwise sees a run that simply "reported nothing".
+        logger.warning("stage report payload could not be parsed", exc_info=True)
         return None
     if parsed.status not in _VALID_STATUSES:
         return None
@@ -175,6 +182,8 @@ _AUTH_FAILURE_SIGNATURES = (
     "invalid api key",
     "not logged in",
 )
+
+logger = logging.getLogger(__name__)
 
 
 def is_transient_failure(stdout: str, stderr: str) -> bool:

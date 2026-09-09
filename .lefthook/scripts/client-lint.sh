@@ -33,4 +33,8 @@ fi
 
 echo "pre-commit: running oxlint on staged client files..."
 cd "$CLIENT_ROOT"
+# Deliberately not --deny-warnings: the repo carries unrelated warning debt
+# (exhaustive-deps, only-export-components) that would block every commit. The
+# swallowed-error cases oxlint's warnings hint at are enforced properly, with
+# waivers, by ts_no_silent_failures_check.cjs.
 ./node_modules/.bin/oxlint "${rel_args[@]}"

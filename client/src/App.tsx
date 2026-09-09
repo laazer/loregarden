@@ -19,6 +19,7 @@ import { ViewPage } from "./pages/ViewPage";
 import { viewIdFromPath } from "./lib/appNavigation";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
 import { createQueryClient } from "./api/queryClient";
+import { toastActionFailed } from "./state/toastStore";
 import { QueueStatusProvider } from "./state/QueueStatusContext";
 import "./index.css";
 
@@ -42,6 +43,10 @@ class PageErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Page render failed", error, info);
+    // The fallback below explains this page; the toast is what an operator who
+    // has already navigated away still sees, and what puts the failure in the
+    // same place as every other one.
+    toastActionFailed("Page render", error);
   }
 
   render() {

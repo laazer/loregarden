@@ -510,6 +510,13 @@ def _m_clear_classify_next_agent_backfill(conn: Connection) -> None:
         try:
             stages = json.loads(stages_json or "[]")
         except (TypeError, ValueError):
+            # A ticket skipped here keeps its stale next_agent, which is the exact
+            # bug this migration exists to clear — say so rather than move on.
+            logger.warning(
+                "stale-next_agent backfill: unreadable stages_json for ticket %s; left as-is",
+                ticket_id,
+                exc_info=True,
+            )
             continue
         if not isinstance(stages, list):
             continue

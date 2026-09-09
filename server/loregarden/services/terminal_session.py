@@ -86,7 +86,9 @@ class TerminalSession:
         try:
             os.write(self.master_fd, data.encode("utf-8"))
         except OSError:
-            logger.debug("Write to a closed terminal ignored")
+            # The keystrokes are lost and nothing else reports it, so this is the
+            # only trace that input reached a terminal whose shell had exited.
+            logger.warning("Write to a closed terminal ignored", exc_info=True)
 
     def resize(self, rows: int, cols: int) -> None:
         """Tell the pty its new size.
@@ -98,6 +100,8 @@ class TerminalSession:
             size = struct.pack("HHHH", max(1, rows), max(1, cols), 0, 0)
             fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, size)
         except OSError:
+            # silent-ok: the pty is gone, and a window size only matters while a
+            # shell is there to read it; the read loop reports the exit itself.
             logger.debug("Resize on a closed terminal ignored")
 
     def close(self) -> None:
@@ -110,12 +114,18 @@ class TerminalSession:
             try:
                 os.killpg(os.getpgid(self.proc.pid), signal.SIGHUP)
             except (OSError, ProcessLookupError):
+                # silent-ok: teardown — the process group exited between the alive
+                # check and the signal, which is the outcome close() wanted.
                 pass
             try:
                 self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
+                # silent-ok: teardown — the shell ignored SIGHUP, so escalate to
+                # SIGKILL; the pty is released either way.
                 self.proc.kill()
         try:
             os.close(self.master_fd)
         except OSError:
+            # silent-ok: teardown — the master fd is already closed, which is
+            # exactly the state this call is trying to reach.
             pass
