@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from loregarden.agents.cli_adapters import render_terminal_handoff_command
 from loregarden.core.workflow_loader import stage_display_name
@@ -89,9 +89,19 @@ from loregarden.services.triage_run_service import (
 )
 from loregarden.services.triage_service import set_triage_runtime, triage_snapshot
 from loregarden.services.workflow_reassignment import describe_reassignment
+from loregarden.services.workflow_service import (
+    prime_workflow_instances,
+    stage_resolution_memo,
+    workspace_for,
+)
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
+_ID_CHUNK = 400
 
 
 def _latest_run_code(session: Session, ticket_id: str) -> str:
@@ -101,12 +111,40 @@ def _latest_run_code(session: Session, ticket_id: str) -> str:
     return run.run_code if run else ""
 
 
+def _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]:
+    """Every ticket's latest run code, in one scan per chunk rather than per ticket.
+
+    `agent_runs` has no index behind `ORDER BY created_at DESC`, so asking
+    `_latest_run_code` once per row scanned the whole table once per row — 17s of
+    an 85s ticket list, and the single largest cost in it. Ascending order lets a
+    later run overwrite an earlier one, so what lands is the latest.
+
+    A ticket with no runs is absent from the result; callers pass `""`, which is
+    what `_latest_run_code` answers for the same case.
+    """
+    codes: dict[str, str] = {}
+    for start in range(0, len(ticket_ids), _ID_CHUNK):
+        chunk = ticket_ids[start : start + _ID_CHUNK]
+        rows = session.exec(
+            select(AgentRun.ticket_id, AgentRun.run_code)
+            .where(col(AgentRun.ticket_id).in_(chunk))
+            .order_by(col(AgentRun.created_at))
+        ).all()
+        for ticket_id, run_code in rows:
+            codes[ticket_id] = run_code
+    return codes
+
+
 def _ticket_summary(
-    session: Session, ticket: Ticket, activity: TicketActivity | None = None
+    session: Session,
+    ticket: Ticket,
+    activity: TicketActivity | None = None,
+    run_code: str | None = None,
 ) -> TicketSummary:
-    """``activity`` is passed in by list endpoints, which classify the whole page
-    in one batch; single-ticket callers let it resolve itself."""
-    ws = session.get(Workspace, ticket.workspace_id)
+    """``activity`` and ``run_code`` are passed in by list endpoints, which resolve
+    the whole page in one batch each; single-ticket callers let them resolve
+    themselves."""
+    ws = workspace_for(session, ticket.workspace_id)
     orch = OrchestrationService(session)
     template = orch.get_template_for_ticket(ticket)
     # Derived, not read off the row: the column is only authoritative once
@@ -128,7 +166,7 @@ def _ticket_summary(
         workflow_stage_key=stage_key,
         workflow_stage_status=stage_status,
         workflow_stage_name=stage_name,
-        run_code=_latest_run_code(session, ticket.id),
+        run_code=run_code if run_code is not None else _latest_run_code(session, ticket.id),
         work_item_type=ticket.work_item_type,
         parent_ticket_id=ticket.parent_ticket_id,
         milestone=ticket.milestone,
@@ -362,7 +400,9 @@ def ticket_tree(
 
     # Ancestors keep matching tickets anchored in the hierarchy even when the filter excludes them.
     all_tickets = tickets + _collect_ancestors(session, tickets)
-    stage_names = _build_stage_names(session, all_tickets)
+    with stage_resolution_memo():
+        prime_workflow_instances(session, [t.id for t in all_tickets])
+        stage_names = _build_stage_names(session, all_tickets)
     return build_tree(session, all_tickets, stage_names=stage_names)
 
 
@@ -376,8 +416,19 @@ def list_tickets(
     roots_only: bool = False,
     milestone: str | None = None,
     search: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    response: Response,
     session: Session = Depends(get_session),
 ) -> list[TicketSummary]:
+    """A page of tickets, ordered by priority then creation time.
+
+    ``limit`` is opt-in: every existing caller asks for the whole workspace and a
+    default page size would silently truncate the pickers and dashboards built on
+    that. ``X-Total-Count`` carries the size of the filtered set either way, so a
+    caller that does page knows what it is paging through.
+    """
+    response.headers["X-Total-Count"] = "0"
     ws = _workspace_filter(session, workspace)
     if ws is False:
         return []
@@ -396,9 +447,31 @@ def list_tickets(
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))
-    tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at)).all()
-    activity = classify_ticket_activity(session, [t.id for t in tickets])
-    return [_ticket_summary(session, t, activity.get(t.id, TicketActivity.IDLE)) for t in tickets]
+
+    total = session.exec(select(func.count()).select_from(query.subquery())).one()
+    response.headers["X-Total-Count"] = str(total)
+
+    query = query.order_by(Ticket.priority, Ticket.created_at)
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    tickets = session.exec(query).all()
+
+    ticket_ids = [t.id for t in tickets]
+    activity = classify_ticket_activity(session, ticket_ids)
+    run_codes = _latest_run_codes(session, ticket_ids)
+    with stage_resolution_memo():
+        prime_workflow_instances(session, ticket_ids)
+        return [
+            _ticket_summary(
+                session,
+                t,
+                activity.get(t.id, TicketActivity.IDLE),
+                run_code=run_codes.get(t.id, ""),
+            )
+            for t in tickets
+        ]
 
 
 @router.get("/status-summary", response_model=TicketStatusSummary)

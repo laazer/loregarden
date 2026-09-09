@@ -60,7 +60,11 @@ from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
 )
-from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
+from loregarden.services.workflow_service import (
+    resolve_ticket_stages,
+    resolve_workspace_stages,
+    workflow_instance_for,
+)
 from loregarden.services.workflow_state import (
     build_stage_views,
     derive_workflow,
@@ -210,9 +214,7 @@ class OrchestrationService:
         return template
 
     def get_workflow_instance(self, ticket_id: str) -> WorkflowInstance | None:
-        return self.session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket_id)
-        ).first()
+        return workflow_instance_for(self.session, ticket_id)
 
     def _resolve_stages(self, ticket: Ticket) -> tuple[WorkflowInstance | None, list]:
         instance = self.get_workflow_instance(ticket.id)
