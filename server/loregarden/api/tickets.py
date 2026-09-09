@@ -95,10 +95,15 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
 def _latest_run_code(session: Session, ticket_id: str) -> str:
-    run = session.exec(
-        select(AgentRun).where(AgentRun.ticket_id == ticket_id).order_by(AgentRun.created_at.desc())
+    # The column, not the row: `agent_runs.stdout` holds a run's whole
+    # transcript, and every ticket summary calls this — once per ticket on the
+    # list endpoint, which made a page of summaries fetch a page of transcripts.
+    run_code = session.exec(
+        select(AgentRun.run_code)
+        .where(AgentRun.ticket_id == ticket_id)
+        .order_by(AgentRun.created_at.desc())
     ).first()
-    return run.run_code if run else ""
+    return run_code or ""
 
 
 def _ticket_summary(
@@ -141,6 +146,16 @@ def _ticket_summary(
     )
 
 
+def _run_statuses(session: Session, run_ids: list[str | None]) -> dict[str, RunStatus]:
+    """Status of each named run, by id — the two columns, not the rows."""
+    wanted = {run_id for run_id in run_ids if run_id}
+    if not wanted:
+        return {}
+    return dict(
+        session.exec(select(AgentRun.id, AgentRun.status).where(col(AgentRun.id).in_(wanted))).all()
+    )
+
+
 def _apply_log_artifacts(
     session: Session,
     ticket_id: str,
@@ -155,7 +170,7 @@ def _apply_log_artifacts(
     original early return so the workspace diff/test backfill is skipped.
     """
     running_runs = session.exec(
-        select(AgentRun)
+        select(AgentRun.id, AgentRun.status)
         .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
         .order_by(AgentRun.created_at.desc())
     ).all()
@@ -163,7 +178,7 @@ def _apply_log_artifacts(
 
     if not active_run:
         active_run = session.exec(
-            select(AgentRun)
+            select(AgentRun.id, AgentRun.status)
             .where(
                 AgentRun.ticket_id == ticket_id,
                 AgentRun.status == RunStatus.AWAITING_PERMISSION,
@@ -173,23 +188,29 @@ def _apply_log_artifacts(
 
     best: Artifact | None = None
     if active_run:
-        best = next((art for art in log_artifacts if art.run_id == active_run.id), None)
+        active_run_id, active_run_status = active_run
+        best = next((art for art in log_artifacts if art.run_id == active_run_id), None)
         if not best:
             grouped["logs"] = []
             grouped["live"] = (
                 "Awaiting your approval in Triage or Inbox…"
-                if active_run.status == RunStatus.AWAITING_PERMISSION
+                if active_run_status == RunStatus.AWAITING_PERMISSION
                 else "Agent running…"
             )
             return True
 
+    active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
+    # One read for every run these artifacts name. This used to sit inside the
+    # sort comparator below, so choosing among N log artifacts fetched N whole
+    # runs — transcripts included — to read N statuses.
+    run_statuses = _run_statuses(session, [art.run_id for art in log_artifacts])
+
     if not best:
-        active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
 
         def _log_sort_key(item: Artifact) -> tuple:
             body = json.loads(item.content_json or "{}")
-            run = session.get(AgentRun, item.run_id) if item.run_id else None
-            is_live = bool(body.get("live")) and run and run.status in active_log_statuses
+            status = run_statuses.get(item.run_id or "")
+            is_live = bool(body.get("live")) and status in active_log_statuses
             live_rank = 0 if is_live else 1
             return (live_rank, -item.created_at.timestamp())
 
@@ -198,8 +219,8 @@ def _apply_log_artifacts(
     content = json.loads(best.content_json or "{}")
     grouped["logs"] = content.get("lines", [])
     live = content.get("live")
-    run = session.get(AgentRun, best.run_id) if best.run_id else None
-    if live and run and run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
+    status = run_statuses.get(best.run_id or "")
+    if live and status is not None and status not in active_log_statuses:
         live = None
     grouped["live"] = live
     return False
