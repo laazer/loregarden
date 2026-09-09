@@ -28,14 +28,19 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+/* The head badge crops the fetch row's row 2/col 4 tile (ball frame) down
+   to just the head/neck, with the body running off the frame edge —
+   avoids keeping a second static head asset in sync with the sheet. */
 .baxter-avatar--head::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: var(--baxter-head);
+  background-image: var(--baxter-sheet);
   background-repeat: no-repeat;
-  background-size: 86% 86%;
-  background-position: center;
+  background-size:
+    calc(var(--baxter-w) * 5.645) calc(var(--baxter-w) * 5.645);
+  background-position:
+    calc(var(--baxter-w) * -4.714) calc(var(--baxter-w) * -1.529);
   transform-origin: 50% 80%;
   pointer-events: none;
 }

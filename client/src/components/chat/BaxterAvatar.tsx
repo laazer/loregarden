@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-import baxterHead from "../../assets/chat/baxter-head.png";
 import baxterSheet from "../../assets/chat/baxter.png";
 import "./BaxterAvatar.css";
 
@@ -28,9 +27,7 @@ export function BaxterAvatar({
 }) {
   const isHead = variant === "head";
   const style = {
-    ...(isHead
-      ? { "--baxter-head": `url(${baxterHead})` }
-      : { "--baxter-sheet": `url(${baxterSheet})` }),
+    "--baxter-sheet": `url(${baxterSheet})`,
     ...(size != null
       ? {
           "--baxter-w": `${size}px`,
