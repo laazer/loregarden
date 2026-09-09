@@ -38,9 +38,9 @@
   background-image: var(--baxter-sheet);
   background-repeat: no-repeat;
   background-size:
-    calc(var(--baxter-w) * 5.645) calc(var(--baxter-w) * 5.645);
+    calc(var(--baxter-w) * 5.861) calc(var(--baxter-w) * 5.861);
   background-position:
-    calc(var(--baxter-w) * -4.714) calc(var(--baxter-w) * -1.529);
+    calc(var(--baxter-w) * -4.914) calc(var(--baxter-w) * -1.553);
   transform-origin: 50% 80%;
   pointer-events: none;
 }
