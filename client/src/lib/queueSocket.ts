@@ -142,6 +142,9 @@ export interface LaneEntry extends RunLabels, RunEstimates {
  * ticket looked exactly like an idle one. These stay on the lane card until
  * someone dismisses them — `outcome` is derived from the orchestration run, not
  * from the entry's own queue status, which is a trap (`started` is terminal).
+ *
+ * One per ticket per lane: repeated attempts collapse onto the newest, counted
+ * by `stopped_count`. A ticket that has since finished drops off on its own.
  */
 export interface LaneAttentionEntry {
   entry_id: string;
@@ -154,6 +157,8 @@ export interface LaneAttentionEntry {
   workspace_name: string;
   slot_number: number;
   outcome: "blocked" | "failed";
+  /** Attempts this ticket made in this lane that this card stands for (>= 1). */
+  stopped_count: number;
   run_code: string;
   last_stage_key: string;
   failure_reason: string;

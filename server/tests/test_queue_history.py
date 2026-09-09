@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     Ticket,
+    TicketState,
     Workspace,
 )
 from loregarden.services.queue_history import MAX_ATTENTION_PER_LANE, QueueHistoryService
@@ -49,15 +50,24 @@ def _entry(
     error_message: str = "",
     stage_key: str = "",
     minutes_ago: int = 0,
+    ticket: Ticket | None = None,
+    ticket_state: TicketState = TicketState.IN_PROGRESS,
 ) -> QueuedRun:
-    ticket = Ticket(external_id=code, workspace_id=workspace.id, title=f"Ticket {code}")
-    session.add(ticket)
-    session.commit()
+    """One finished lane entry. Pass `ticket` to give one ticket several attempts."""
+    if ticket is None:
+        ticket = Ticket(
+            external_id=code,
+            workspace_id=workspace.id,
+            title=f"Ticket {code}",
+            state=ticket_state,
+        )
+        session.add(ticket)
+        session.commit()
 
     orchestration = None
     if orchestration_status is not None:
         orchestration = OrchestrationRun(
-            run_code=f"orch_{code}",
+            run_code=f"orch_{code}_{minutes_ago}",
             ticket_id=ticket.id,
             workspace_id=workspace.id,
             status=orchestration_status,
@@ -379,6 +389,173 @@ def test_a_live_entry_cannot_be_dismissed(session, workspace):
     assert QueueHistoryService(session).dismiss_entry(entry.id) is False
     session.refresh(entry)
     assert entry.dismissed_at is None
+
+
+def test_lane_attention_collapses_repeat_stops_of_one_ticket(session, workspace):
+    """One card per ticket per lane — the same title four times said nothing new."""
+    ticket = Ticket(
+        external_id="t-repeat",
+        workspace_id=workspace.id,
+        title="Ticket t-repeat",
+        state=TicketState.IN_PROGRESS,
+    )
+    session.add(ticket)
+    session.commit()
+    older = _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+        minutes_ago=30,
+        ticket=ticket,
+    )
+    newest = _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.BLOCKED,
+        slot_number=1,
+        minutes_ago=1,
+        ticket=ticket,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+        minutes_ago=15,
+        ticket=ticket,
+    )
+    # A different lane stopping the same ticket is a fact about that lane.
+    _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=2,
+        minutes_ago=20,
+        ticket=ticket,
+    )
+
+    attention = QueueHistoryService(session).lane_attention()
+
+    cards, total = attention[1]
+    assert total == 1
+    assert [card.entry_id for card in cards] == [newest.id]
+    # The newest attempt is the card, and it accounts for the ones it replaced.
+    assert cards[0].outcome == "blocked"
+    assert cards[0].stopped_count == 3
+    assert older.id != newest.id
+
+    other_cards, other_total = attention[2]
+    assert other_total == 1
+    assert other_cards[0].stopped_count == 1
+
+
+def test_dismissing_a_card_clears_every_attempt_behind_it(session, workspace):
+    """Otherwise the card returns with an older reason and looks like a failed dismissal."""
+    ticket = Ticket(
+        external_id="t-repeat",
+        workspace_id=workspace.id,
+        title="Ticket t-repeat",
+        state=TicketState.IN_PROGRESS,
+    )
+    session.add(ticket)
+    session.commit()
+    for minutes_ago in (1, 12, 30):
+        entry = _entry(
+            session,
+            workspace,
+            code="t-repeat",
+            status=QueuePosition.STARTED,
+            orchestration_status=OrchestrationRunStatus.FAILED,
+            slot_number=1,
+            minutes_ago=minutes_ago,
+            ticket=ticket,
+        )
+        if minutes_ago == 1:
+            newest = entry
+    service = QueueHistoryService(session)
+
+    assert service.dismiss_entry(newest.id) is True
+
+    assert service.lane_attention() == {}
+    # Nothing was deleted; the rail still has all three.
+    _, total = service.list_history(workspace_id=workspace.id)
+    assert total == 3
+
+
+def test_dismissing_leaves_the_same_ticket_stopped_in_another_lane(session, workspace):
+    """Each lane's card is its own acknowledgement — one click must not clear both."""
+    ticket = Ticket(
+        external_id="t-repeat",
+        workspace_id=workspace.id,
+        title="Ticket t-repeat",
+        state=TicketState.IN_PROGRESS,
+    )
+    session.add(ticket)
+    session.commit()
+    lane_one = _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+        minutes_ago=1,
+        ticket=ticket,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-repeat",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=2,
+        minutes_ago=5,
+        ticket=ticket,
+    )
+    service = QueueHistoryService(session)
+
+    assert service.dismiss_entry(lane_one.id) is True
+
+    attention = service.lane_attention()
+    assert 1 not in attention
+    assert attention[2][1] == 1
+
+
+@pytest.mark.parametrize("state", [TicketState.DONE, TicketState.WONT_DO])
+def test_lane_attention_drops_tickets_that_are_already_resolved(session, workspace, state):
+    """A ticket finished since it stopped is asking for attention nobody owes it."""
+    _entry(
+        session,
+        workspace,
+        code="t-finished",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+        ticket_state=state,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-still-open",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.BLOCKED,
+        slot_number=1,
+        minutes_ago=2,
+    )
+
+    cards, total = QueueHistoryService(session).lane_attention()[1]
+
+    assert total == 1
+    assert [card.ticket_external_id for card in cards] == ["t-still-open"]
 
 
 def test_lane_attention_caps_cards_but_not_the_count(session, workspace):
