@@ -768,6 +768,31 @@ class Artifact(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class RunLogLine(SQLModel, table=True):
+    """One line of a run's live log, appended rather than rewritten.
+
+    The log used to live entirely in `artifacts.content_json` as a single JSON
+    blob rewritten IN FULL on every flush. A 78-minute run rewrote it ~11,700
+    times, the later writes carrying a 320KB payload each, and one of those
+    writes lost a "database is locked" race and took the orchestration with it
+    (lg-workflow-integrity-687). Appending a row costs one line's worth of
+    write no matter how long the run has been going.
+
+    `seq` is per-run and assigned by the writer, so ordering never depends on
+    timestamp collisions within a busy second.
+    """
+
+    __tablename__ = "run_log_lines"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    seq: int = Field(index=True)
+    time: str = ""
+    tag: str = ""
+    text: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class Approval(SQLModel, table=True):
     __tablename__ = "approvals"
 

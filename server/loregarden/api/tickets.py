@@ -57,6 +57,7 @@ from loregarden.services.cli_settings import (
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.external_harness import build_external_harness_prompt
 from loregarden.services.hierarchy_service import build_tree, child_count
+from loregarden.services.log_storage import read_log_lines
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.path_browser import read_import_files
@@ -255,7 +256,7 @@ def _apply_log_artifacts(
         best = sorted(log_artifacts, key=_log_sort_key)[0]
 
     content = json.loads(best.content_json or "{}")
-    grouped["logs"] = content.get("lines", [])
+    grouped["logs"] = read_log_lines(session, best.run_id or "", content)
     live = content.get("live")
     status = run_statuses.get(best.run_id or "")
     if live and status is not None and status not in active_log_statuses:

@@ -26,7 +26,20 @@ from loregarden.dot_line import (
     shell,
     size,
 )
-from loregarden.models.domain import AgentRun, Artifact, ArtifactKind, RunStatus, Ticket
+from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    ArtifactKind,
+    RunLogLine,
+    RunStatus,
+    Ticket,
+)
+from loregarden.services.log_storage import (
+    LOG_STORAGE_ROWS,
+    read_log_lines,
+    stored_as_rows,
+)
+from loregarden.services.sqlite_retry import sqlite_write_retry
 from loregarden.services.tool_body import command_outcome, with_tool_output
 from sqlmodel import Session, select
 
@@ -353,6 +366,19 @@ class RunLogStreamer:
         #: Serialized size of the last write, so the interval can scale without
         #: re-serializing the log just to measure it.
         self._last_persist_bytes = 0
+        #: Absolute sequence number of the last line written to `run_log_lines`.
+        #: Lines are appended, so a flush writes only what is past this mark.
+        self._persisted_seq = 0
+        #: How many lines the in-memory window has dropped off the front, so
+        #: `seq` keeps counting from the run's start after MAX_LINES trimming.
+        self._dropped_lines = 0
+        #: Per-line row bookkeeping, index-aligned with `_lines`: the `seq` each
+        #: line was written under (None until it is), and the text it was written
+        #: with. `start()` rewrites an existing CMD line in place when a run is
+        #: reattached, and an append-only store has to notice that and UPDATE the
+        #: row — the old full-rewrite shape got in-place edits for free.
+        self._line_seq: list[int | None] = []
+        self._line_written: list[str] = []
 
     def _persist_interval(self) -> float:
         """How long to wait before rewriting the log again.
@@ -370,16 +396,40 @@ class RunLogStreamer:
             artifact = session.exec(
                 select(Artifact).where(
                     Artifact.run_id == self.run_id,
-                    Artifact.kind == "log",
+                    Artifact.kind == ArtifactKind.LOG,
                 )
             ).first()
             if not artifact:
                 return
             self.artifact_id = artifact.id
             content = json.loads(artifact.content_json or "{}")
-            self._lines = list(content.get("lines") or [])
+            self._lines = list(read_log_lines(session, self.run_id, content))
             self._live = content.get("live") or ""
             self._stream_buffer = ""
+            if stored_as_rows(content):
+                # Resume the sequence where the rows end, so reattaching appends
+                # rather than rewriting lines that are already durable.
+                last = session.exec(
+                    select(RunLogLine.seq)
+                    .where(RunLogLine.run_id == self.run_id)
+                    .order_by(RunLogLine.seq.desc())
+                    .limit(1)
+                ).first()
+                self._persisted_seq = int(last or 0)
+                self._dropped_lines = max(0, self._persisted_seq - len(self._lines))
+                # The window read back is the tail of the sequence, so its seqs
+                # run contiguously up to the last row. Recording them is what
+                # lets an in-place edit find its row instead of appending a
+                # duplicate.
+                first_seq = self._persisted_seq - len(self._lines) + 1
+                self._line_seq = [first_seq + i for i in range(len(self._lines))]
+                self._line_written = [str(line.get("text") or "") for line in self._lines]
+            else:
+                # A pre-687 log: its lines are inline and have no rows behind
+                # them. Treat them as unwritten so the first flush migrates this
+                # run's window into `run_log_lines`.
+                self._line_seq = [None] * len(self._lines)
+                self._line_written = [""] * len(self._lines)
 
     def _append_chunks(self, tag: str, text: str, *, force: bool = False) -> None:
         text = text.strip()
@@ -390,8 +440,13 @@ class RunLogStreamer:
             chunk = text[offset : offset + self.MAX_LINE_CHARS]
             offset += self.MAX_LINE_CHARS
             self._lines.append({"time": self._timestamp(), "tag": tag, "text": chunk})
+            self._line_seq.append(None)
+            self._line_written.append("")
         if len(self._lines) > self.MAX_LINES:
+            self._dropped_lines += len(self._lines) - self.MAX_LINES
             self._lines = self._lines[-self.MAX_LINES :]
+            self._line_seq = self._line_seq[-self.MAX_LINES :]
+            self._line_written = self._line_written[-self.MAX_LINES :]
         now = time.time()
         # Time alone decides, plus an explicit force. The tag allow-list that used
         # to sit here made durability depend on *what kind* of line arrived: a
@@ -672,44 +727,97 @@ class RunLogStreamer:
         self._persist()
 
     def _persist(self) -> None:
-        content = {"lines": self._lines, "live": self._live or None}
-        payload = json.dumps(content)
-        with Session(engine) as session:
-            artifact = None
-            if self.artifact_id:
-                artifact = session.get(Artifact, self.artifact_id)
-            if not artifact:
-                artifact = session.exec(
-                    select(Artifact).where(
-                        Artifact.run_id == self.run_id,
-                        Artifact.kind == "log",
-                    )
-                ).first()
-            if artifact:
-                artifact.content_json = payload
-                artifact.title = f"Run {self.run_code}"
-                session.add(artifact)
-                self.artifact_id = artifact.id
-            else:
-                artifact = Artifact(
-                    ticket_id=self.ticket_id,
-                    run_id=self.run_id,
-                    kind=ArtifactKind.LOG,
-                    title=f"Run {self.run_code}",
-                    content_json=payload,
-                )
-                session.add(artifact)
-                session.flush()
-                self.artifact_id = artifact.id
+        """Append what is new and rewrite only the small tail.
 
-            ticket = session.get(Ticket, self.ticket_id)
-            if ticket:
-                ticket.revision += 1
-                ticket.updated_at = datetime.now(timezone.utc)
-                session.add(ticket)
-            session.commit()
+        The log body used to be one JSON blob rewritten in full on every flush,
+        so the cost of a write grew with the run: a 78-minute run rewrote a
+        320KB row thousands of times and one of those writes lost a "database is
+        locked" race, taking the orchestration with it
+        (lg-workflow-integrity-687). Now the lines are rows and a flush writes
+        only the ones added since the last, so write size tracks new output
+        rather than run length.
+        """
+        content = {"live": self._live or None, "storage": LOG_STORAGE_ROWS}
+        payload = json.dumps(content)
+
+        def write() -> None:
+            with Session(engine) as session:
+                artifact = None
+                if self.artifact_id:
+                    artifact = session.get(Artifact, self.artifact_id)
+                if not artifact:
+                    artifact = session.exec(
+                        select(Artifact).where(
+                            Artifact.run_id == self.run_id,
+                            Artifact.kind == ArtifactKind.LOG,
+                        )
+                    ).first()
+                if artifact:
+                    artifact.content_json = payload
+                    artifact.title = f"Run {self.run_code}"
+                    session.add(artifact)
+                    self.artifact_id = artifact.id
+                else:
+                    artifact = Artifact(
+                        ticket_id=self.ticket_id,
+                        run_id=self.run_id,
+                        kind=ArtifactKind.LOG,
+                        title=f"Run {self.run_code}",
+                        content_json=payload,
+                    )
+                    session.add(artifact)
+                    session.flush()
+                    self.artifact_id = artifact.id
+
+                seq = self._persisted_seq
+                written_bytes = 0
+                for index, line in enumerate(self._lines):
+                    text_now = str(line.get("text") or "")
+                    assigned = self._line_seq[index]
+                    if assigned is None:
+                        seq += 1
+                        session.add(
+                            RunLogLine(
+                                run_id=self.run_id,
+                                seq=seq,
+                                time=str(line.get("time") or ""),
+                                tag=str(line.get("tag") or ""),
+                                text=text_now,
+                            )
+                        )
+                        self._line_seq[index] = seq
+                        self._line_written[index] = text_now
+                        written_bytes += len(text_now)
+                    elif self._line_written[index] != text_now:
+                        # An in-place edit, which `start()` performs on the CMD
+                        # line when a queued run is reattached with its real
+                        # command. Rare and bounded — not a second write path for
+                        # ordinary output.
+                        row = session.exec(
+                            select(RunLogLine).where(
+                                RunLogLine.run_id == self.run_id,
+                                RunLogLine.seq == assigned,
+                            )
+                        ).first()
+                        if row:
+                            row.text = text_now
+                            session.add(row)
+                        self._line_written[index] = text_now
+                        written_bytes += len(text_now)
+
+                ticket = session.get(Ticket, self.ticket_id)
+                if ticket:
+                    ticket.revision += 1
+                    ticket.updated_at = datetime.now(timezone.utc)
+                    session.add(ticket)
+                session.commit()
+                self._persisted_seq = seq
+                self._written_bytes = written_bytes
+
+        self._written_bytes = 0
+        sqlite_write_retry(write, what="run log append")
         self._last_persist = time.time()
-        self._last_persist_bytes = len(payload)
+        self._last_persist_bytes = len(payload) + self._written_bytes
 
 
 def finalize_run_log_artifact(run: AgentRun, *, status: RunStatus, stderr: str = "") -> None:

@@ -1,6 +1,7 @@
 import json
 
 from loregarden.models.domain import Artifact, RunStatus, Ticket
+from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_log_stream import RunLogStreamer, format_stream_payload
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -119,7 +120,7 @@ def test_run_log_streamer_updates_cmd_after_bootstrap():
                 select(Artifact).where(Artifact.run_id == "run_cmd", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             cmd_lines = [line for line in content["lines"] if line["tag"] == "CMD"]
             assert cmd_lines
             assert cmd_lines[-1]["text"] == "claude -p execute tests"
@@ -178,7 +179,7 @@ def test_run_log_streamer_accumulates_stream_deltas():
                 select(Artifact).where(Artifact.run_id == "run_stream", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
             assert out_lines
             assert out_lines[-1]["text"] == "Hello world"
@@ -243,14 +244,14 @@ def test_run_log_streamer_coalesces_cursor_partial_assistant_tokens():
                 )
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
             assert [line["text"] for line in out_lines] == [first]
             assert content["live"] == remainder.strip()
 
             streamer.append_stream_line(json.dumps({"type": "result", "result": complete}))
             session.refresh(artifact)
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
             assert [line["text"] for line in out_lines] == [first, remainder.strip()]
             assert content["live"] is None
@@ -331,7 +332,7 @@ def test_run_log_streamer_coalesces_cursor_thinking_deltas():
                 )
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             think_texts = [line["text"] for line in content["lines"] if line["tag"] == "THINK"]
             assert think_texts == [title_chunk, body]
             assert not any(line["tag"] == "OUT" for line in content["lines"])
@@ -340,7 +341,7 @@ def test_run_log_streamer_coalesces_cursor_thinking_deltas():
 
             streamer.append_stream_line(json.dumps({"type": "thinking", "subtype": "completed"}))
             session.refresh(artifact)
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             think_texts = [line["text"] for line in content["lines"] if line["tag"] == "THINK"]
             assert think_texts == [title_chunk, body]
             assert content["live"] is None
@@ -407,7 +408,7 @@ def test_run_log_streamer_drops_repeated_cursor_message_snapshot():
                 select(Artifact).where(Artifact.run_id == "run_snapshot", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_text = "".join(line["text"] for line in content["lines"] if line["tag"] == "OUT")
             assert out_text.count("Plan attached as artifact") == 1
             assert out_text == message
@@ -475,7 +476,7 @@ def test_run_log_streamer_finalize_is_idempotent():
                 select(Artifact).where(Artifact.run_id == "run_finalize", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             tags = [line["tag"] for line in content["lines"]]
             assert tags.count("FAIL") == 1
             assert [line["text"] for line in content["lines"] if line["tag"] == "ERR"] == ["boom"]
@@ -523,7 +524,7 @@ def test_run_log_streamer_persists_live_log():
                 select(Artifact).where(Artifact.run_id == "run_test", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             assert content["live"] == "thinking…"
             assert any(line["text"] == "first line" for line in content["lines"])
     finally:
@@ -571,7 +572,7 @@ def test_run_log_streamer_keeps_buffer_on_non_json_line():
                 select(Artifact).where(Artifact.run_id == "run_mixed", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
             assert out_lines
             assert out_lines[0]["text"] == "Hello world."
@@ -630,7 +631,7 @@ def test_run_log_streamer_assistant_does_not_truncate_delta_buffer():
                 select(Artifact).where(Artifact.run_id == "run_assistant", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
             assert out_lines
             assert out_lines[-1]["text"] == long_text
@@ -680,7 +681,7 @@ def test_run_log_streamer_persists_long_output():
                 select(Artifact).where(Artifact.run_id == "run_long", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            content = json.loads(artifact.content_json)
+            content = load_run_log(session, artifact.run_id)
             out_text = "".join(line["text"] for line in content["lines"] if line["tag"] == "OUT")
             assert out_text == long_text
     finally:
@@ -776,7 +777,7 @@ def test_thinking_and_answer_in_one_message_land_on_their_own_channels():
                 select(Artifact).where(Artifact.run_id == "run_mixed", Artifact.kind == "log")
             ).first()
             assert artifact is not None
-            lines = json.loads(artifact.content_json)["lines"]
+            lines = load_run_log(session, artifact.run_id)["lines"]
             assert [line["text"] for line in lines if line["tag"] == "THINK"] == [
                 "Two options, and the second is cheaper."
             ]

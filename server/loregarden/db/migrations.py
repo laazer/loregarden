@@ -1265,6 +1265,32 @@ def _m_worktree_ticket_id(conn: Connection) -> None:
         conn.execute(text("CREATE INDEX ix_worktrees_ticket_id ON worktrees (ticket_id)"))
 
 
+def m_run_log_lines_table(conn: Connection) -> None:
+    """Append-only storage for run log lines.
+
+    Created empty and deliberately not backfilled: existing log artifacts keep
+    their lines in `content_json` and the reader still understands that shape,
+    so old runs render exactly as before. Backfilling would mean rewriting
+    every historical log row — the very write this ticket exists to stop.
+    """
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS run_log_lines ("
+            "id TEXT PRIMARY KEY, "
+            "run_id TEXT NOT NULL, "
+            "seq INTEGER NOT NULL, "
+            "time TEXT NOT NULL DEFAULT '', "
+            "tag TEXT NOT NULL DEFAULT '', "
+            "text TEXT NOT NULL DEFAULT '', "
+            "created_at TEXT NOT NULL"
+            ")"
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_run_log_lines_run_seq ON run_log_lines (run_id, seq)")
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1385,6 +1411,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0115_agent_run_read_paths", m_agent_run_read_paths),
     ("0116_human_verification_brief", m_human_verification_brief),
     ("0117_lane_repair_hold", m_lane_repair_hold),
+    ("0118_run_log_lines_table", m_run_log_lines_table),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
