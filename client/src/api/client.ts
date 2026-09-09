@@ -87,6 +87,8 @@ function ticketQuery(params?: {
   roots_only?: boolean;
   milestone?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.workspace) q.set("workspace", params.workspace);
@@ -106,6 +108,8 @@ function ticketQuery(params?: {
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
   if (params?.search) q.set("search", params.search);
+  if (params?.limit !== undefined) q.set("limit", String(params.limit));
+  if (params?.offset !== undefined) q.set("offset", String(params.offset));
   const suffix = q.toString() ? `?${q}` : "";
   return suffix;
 }
@@ -232,6 +236,10 @@ export const api = {
     parent_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
+    /** Opt-in page size. Unset returns the whole filtered set, as before. */
+    limit?: number;
+    /** Only meaningful with `limit`; the API rejects it on its own. */
+    offset?: number;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
   ticketStatusSummary: (workspace?: string) =>
     request<TicketStatusSummary>(

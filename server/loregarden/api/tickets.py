@@ -397,8 +397,21 @@ def list_tickets(
     roots_only: bool = False,
     milestone: str | None = None,
     search: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
 ) -> list[TicketSummary]:
+    """Ticket summaries matching the filters, cheapest state first.
+
+    `limit` is opt-in and unset by default. Callers here ask for a whole
+    filtered set and count it themselves — the children of a parent, every
+    dispatchable ticket — so a default page size would silently truncate them
+    into answering a different question. A caller that wants a page asks for
+    one; `offset` without `limit` is meaningless and rejected.
+    """
+    if limit is None and offset:
+        raise HTTPException(400, "offset requires limit")
+
     ws = _workspace_filter(session, workspace)
     if ws is False:
         return []
@@ -417,7 +430,13 @@ def list_tickets(
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))
-    tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at)).all()
+    query = query.order_by(Ticket.priority, Ticket.created_at)
+    if limit is not None:
+        # Paged in SQL, not after the fact: the cost this endpoint carries is
+        # building a summary per row, and slicing a materialised list would
+        # have paid it for every row before throwing most of them away.
+        query = query.offset(offset).limit(limit)
+    tickets = session.exec(query).all()
     activity = classify_ticket_activity(session, [t.id for t in tickets])
     return [_ticket_summary(session, t, activity.get(t.id, TicketActivity.IDLE)) for t in tickets]
 
