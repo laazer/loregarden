@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     RunStatus,
 )
+from sqlalchemy.orm import load_only
 from sqlmodel import Session, col, select
 
 #: How far back to look for completed runs. Matches the widest window the
@@ -71,6 +72,11 @@ def median_duration_by_agent(
 
     Returns an empty dict when there is no history — callers must treat that as
     "no estimate available", not as zero.
+
+    Loaded column-wise on purpose: `agent_runs.stdout` carries a run's whole
+    transcript, hundreds of KB a row, and selecting the whole entity fetched
+    every byte of it across the window to read two timestamps and a slug. This
+    read sits behind the queue snapshot, so that was paid on a timer.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
@@ -83,7 +89,11 @@ def median_duration_by_agent(
     if workspace_id is not None:
         conditions.append(AgentRun.workspace_id == workspace_id)
 
-    stmt = select(AgentRun).where(*conditions)
+    stmt = (
+        select(AgentRun)
+        .where(*conditions)
+        .options(load_only(AgentRun.agent_id, AgentRun.started_at, AgentRun.finished_at))
+    )
 
     samples: dict[str, list[float]] = defaultdict(list)
     for run in session.exec(stmt).all():
@@ -165,7 +175,22 @@ def load_duration_stats(
     attempts = 0
     stage_pairs: set[tuple[str, str]] = set()
 
-    for run in session.exec(select(AgentRun).where(*conditions)).all():
+    stmt = (
+        select(AgentRun)
+        .where(*conditions)
+        .options(
+            load_only(
+                AgentRun.orchestration_run_id,
+                AgentRun.stage_key,
+                AgentRun.status,
+                AgentRun.agent_id,
+                AgentRun.started_at,
+                AgentRun.finished_at,
+            )
+        )
+    )
+
+    for run in session.exec(stmt).all():
         if run.orchestration_run_id and run.stage_key:
             # Every attempt counts here, including the failures: a stage that
             # failed and ran again cost the pipeline both runs.

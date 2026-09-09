@@ -75,6 +75,20 @@ _TERMINAL_ORCHESTRATION = (
 
 
 @dataclass(frozen=True)
+class WorkspaceLabel:
+    """The two workspace fields a card shows.
+
+    `workspaces.permission_allowlist_json` is a six-figure JSON blob on a busy
+    workspace, and joining the entity onto history replayed it once per entry —
+    twenty megabytes fetched to render a slug. The label is read once per call
+    and looked up by id instead.
+    """
+
+    slug: str
+    name: str
+
+
+@dataclass(frozen=True)
 class QueueHistoryEntry:
     """One finished lane entry, as the card renders it."""
 
@@ -173,7 +187,7 @@ class QueueHistoryService:
         `outcome` filters on the derived value, which no column holds, so it is
         applied after the join rather than in SQL.
         """
-        stmt = select(QueuedRun, Ticket, OrchestrationRun, Workspace).where(
+        stmt = select(QueuedRun, Ticket, OrchestrationRun).where(
             col(QueuedRun.status).not_in(LIVE_STATUSES)
         )
         stmt = stmt.join(Ticket, col(QueuedRun.ticket_id) == col(Ticket.id))
@@ -195,9 +209,11 @@ class QueueHistoryService:
         )
 
         rows = self.session.exec(stmt).all()
+        workspaces = self._workspace_labels()
         entries = [
-            _to_entry(entry, ticket, orchestration, workspace)
-            for entry, ticket, orchestration, workspace in rows
+            _to_entry(entry, ticket, orchestration, workspaces[entry.workspace_id])
+            for entry, ticket, orchestration in rows
+            if entry.workspace_id in workspaces
         ]
         entries.extend(
             self._synthetic_direct_admissions(workspace_id=workspace_id, ticket_id=ticket_id)
@@ -222,7 +238,7 @@ class QueueHistoryService:
         undismissed entry for that lane, including any beyond the cap.
         """
         stmt = (
-            select(QueuedRun, Ticket, OrchestrationRun, Workspace)
+            select(QueuedRun, Ticket, OrchestrationRun)
             .where(col(QueuedRun.status).not_in(LIVE_STATUSES))
             .where(col(QueuedRun.dismissed_at).is_(None))
             .where(QueuedRun.slot_number > 0)
@@ -234,10 +250,12 @@ class QueueHistoryService:
                 isouter=True,
             )
         )
+        workspaces = self._workspace_labels()
         cards = [
-            _to_entry(entry, ticket, orchestration, workspace)
-            for entry, ticket, orchestration, workspace in self.session.exec(stmt).all()
-            if derive_outcome(entry, orchestration) in ATTENTION_OUTCOMES
+            _to_entry(entry, ticket, orchestration, workspaces[entry.workspace_id])
+            for entry, ticket, orchestration in self.session.exec(stmt).all()
+            if entry.workspace_id in workspaces
+            and derive_outcome(entry, orchestration) in ATTENTION_OUTCOMES
         ]
         cards.sort(key=_history_sort_key, reverse=True)
 
@@ -247,6 +265,15 @@ class QueueHistoryService:
         return {
             slot_number: (lane_cards[:MAX_ATTENTION_PER_LANE], len(lane_cards))
             for slot_number, lane_cards in by_lane.items()
+        }
+
+    def _workspace_labels(self) -> dict[str, WorkspaceLabel]:
+        """Every workspace's slug and name, by id."""
+        return {
+            workspace_id: WorkspaceLabel(slug=slug, name=name)
+            for workspace_id, slug, name in self.session.exec(
+                select(Workspace.id, Workspace.slug, Workspace.name)
+            ).all()
         }
 
     def dismiss_entry(self, entry_id: str) -> bool:
@@ -324,13 +351,7 @@ class QueueHistoryService:
             ).all():
                 parent_orchs.setdefault(orch.ticket_id, []).append(orch)
 
-        workspace_ids = {orch.workspace_id for orch in candidates}
-        workspaces = {
-            ws.id: ws
-            for ws in self.session.exec(
-                select(Workspace).where(col(Workspace.id).in_(workspace_ids))
-            ).all()
-        }
+        workspaces = self._workspace_labels()
 
         synthetic: list[QueueHistoryEntry] = []
         for orch in candidates:
@@ -370,7 +391,7 @@ def _to_entry(
     entry: QueuedRun,
     ticket: Ticket,
     orchestration: OrchestrationRun | None,
-    workspace: Workspace,
+    workspace: WorkspaceLabel,
 ) -> QueueHistoryEntry:
     finished_at = orchestration.finished_at if orchestration else entry.last_failed_at
     return QueueHistoryEntry(
@@ -404,7 +425,7 @@ def _to_entry(
 def _to_synthetic_entry(
     orchestration: OrchestrationRun,
     ticket: Ticket,
-    workspace: Workspace,
+    workspace: WorkspaceLabel,
 ) -> QueueHistoryEntry:
     """A history card for a finished orchestration that never had a lane entry."""
     return QueueHistoryEntry(
