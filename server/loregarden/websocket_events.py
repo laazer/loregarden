@@ -137,6 +137,26 @@ def emit_run_completed(
     )
 
 
+def build_error_event(
+    message: str,
+    code: str,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The error envelope, without publishing it.
+
+    A failure that only one socket can see has nobody to broadcast to — the
+    queue websocket reports its own failed snapshot on its own connection
+    rather than to every subscriber, most of which are failing identically —
+    but it must be the same shape the hub sends, because the client renders
+    one.
+    """
+    return {
+        "type": "error",
+        "timestamp": _now_iso(),
+        "data": {"message": message, "code": code, "context": context or {}},
+    }
+
+
 def emit_error(
     target_room: str,
     message: str,
@@ -144,11 +164,4 @@ def emit_error(
     context: dict[str, Any] | None = None,
 ) -> None:
     """A service-level failure, addressed to an already-formed topic."""
-    event_hub.publish(
-        target_room,
-        {
-            "type": "error",
-            "timestamp": _now_iso(),
-            "data": {"message": message, "code": code, "context": context or {}},
-        },
-    )
+    event_hub.publish(target_room, build_error_event(message, code, context))

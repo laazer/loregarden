@@ -604,6 +604,11 @@ class ParallelQueueService:
                 "assigned_at": "2026-07-06T10:00:00Z",
                 "elapsed_seconds": 300
             }
+
+        Raises:
+            Exception: whatever the read failed with. The callers turn it into
+                a 500 or a queue-error frame; none of them may show an empty
+                board instead.
         """
         try:
             slot_stmt = select(AgentSlot).where(AgentSlot.is_available == False)
@@ -645,9 +650,14 @@ class ParallelQueueService:
 
             return active_runs
 
-        except Exception as e:
-            logger.error(f"Error getting active runs: {e}", exc_info=True)
-            return []
+        except Exception:
+            # Re-raised, not absorbed: `[]` is also what a healthy idle pool
+            # returns, so swallowing here made a failing read indistinguishable
+            # from "nothing is running" and drew a calm, empty board over a
+            # broken query. Logged on the way past because `get_queue_info`
+            # calls both readers and its own handler cannot say which one died.
+            logger.exception("Error getting active runs")
+            raise
 
     def _occupant_card(self, slot: AgentSlot) -> dict | None:
         """What to show for an occupied slot, or None if nothing holds it."""
@@ -721,6 +731,9 @@ class ParallelQueueService:
                 "queued_at": "2026-07-06T10:00:00Z",
                 "wait_seconds": 180
             }
+
+        Raises:
+            Exception: whatever the read failed with. See get_active_runs.
         """
         try:
             queue_stmt = (
@@ -810,9 +823,11 @@ class ParallelQueueService:
 
             return queued_runs
 
-        except Exception as e:
-            logger.error(f"Error getting queued runs: {e}", exc_info=True)
-            return []
+        except Exception:
+            # See get_active_runs: an empty list is the success value for an
+            # empty queue, so a failure that returns one is invisible.
+            logger.exception("Error getting queued runs")
+            raise
 
     async def promote_from_queue(self, run_id: str | None = None) -> dict | None:
         """Async wrapper kept for the API layer; the work is sync."""
