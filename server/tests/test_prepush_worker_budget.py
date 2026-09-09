@@ -19,8 +19,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 WORKERS_SH = SCRIPTS / "test-workers.sh"
 
@@ -93,26 +91,72 @@ def test_the_test_run_yields_to_the_gateway():
         )
 
 
-@pytest.mark.parametrize(
-    "uptime_line",
-    [
-        "12:00  up 3 days, 20:15, 5 users, load averages: 158.00 120.00 90.00",
-        "12:00:00 up 3 days, 20:15,  5 users,  load average: 158.00, 120.00, 90.00",
-    ],
-)
-def test_a_saturated_box_collapses_to_the_floor(tmp_path: Path, uptime_line: str):
-    """The case that actually hurt: a sibling worktree's hook is already running.
-    Adding half a box of workers to a saturated box is how 158 happened.
+def test_a_loaded_box_does_not_throttle_the_run_into_never_finishing(tmp_path: Path):
+    """The regression this file exists to prevent, learned the expensive way.
 
-    Parametrised over both `uptime` spellings — macOS says "load averages" with
-    spaces, GNU says "load average" with commas — because a parser that silently
-    reads one of them as zero would restore the old behaviour on that platform
-    while every other assertion here still passed.
+    An earlier version collapsed to 2 workers whenever load exceeded the core
+    count. But the pre-push suite falls back to the FULL ~3,700 tests whenever a
+    change cannot be mapped through the import graph - which includes editing
+    these very scripts - and that run took 27:47 at one worker per core. At 2
+    workers on a loaded box it did not finish: two pushes were killed by their
+    own 30-minute bounds, and because lefthook buffers a command's output until
+    it exits, the symptom looked exactly like a deadlock.
+
+    Load must not change the worker count. `nice` is the instrument for not
+    starving the gateway; throttling throughput as well made a working hook
+    unusable.
+
+    NOTE the PATH: it keeps /usr/sbin. The test this replaced dropped it, so
+    `sysctl` was not found, core detection fell back to its default of 4, and
+    the budget came out 2 for that reason rather than the one asserted. It
+    passed while testing nothing, and would have kept passing after the feature
+    it named was deleted.
     """
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     uptime = fake_bin / "uptime"
-    uptime.write_text(f"#!/bin/sh\necho '{uptime_line}'\n")
+    uptime.write_text(
+        "#!/bin/sh\necho '12:00 up 3 days, 5 users, load averages: 158.00 120.00 90.00'\n"
+    )
     uptime.chmod(0o755)
 
-    assert _budget({"PATH": f"{fake_bin}:/usr/bin:/bin"}) == "2"
+    real_cores = int(
+        subprocess.run(
+            ["bash", "-c", "sysctl -n hw.ncpu 2>/dev/null || nproc"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+    loaded = int(_budget({"PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin"}))
+
+    # Asserted ABSOLUTELY, against this machine's cores — not by comparing a
+    # "loaded" reading to an "idle" one. The machine running these tests is
+    # itself usually loaded, so both readings collapse together and the
+    # comparison passes while the regression is present. The first version of
+    # this assertion did exactly that, and a mutation that reinstated the
+    # collapse slipped past it.
+    assert loaded == max(2, real_cores // 2), (
+        f"budget {loaded} on {real_cores} cores under simulated load 158 — "
+        "load must not change the worker count, or a full-suite fallback runs for hours"
+    )
+
+
+def test_core_detection_actually_works_here(tmp_path: Path):
+    """Guards the trap the replaced test fell into.
+
+    If `sysctl`/`nproc` cannot be reached, `_tw_cores` returns 4 and every budget
+    assertion silently becomes an assertion about that fallback instead of about
+    this machine. Pin that the real core count is being read.
+    """
+    real_cores = int(
+        subprocess.run(
+            ["bash", "-c", "sysctl -n hw.ncpu 2>/dev/null || nproc"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+    assert int(_budget({})) == max(2, real_cores // 2), (
+        "the budget is not being computed from this machine's real core count"
+    )

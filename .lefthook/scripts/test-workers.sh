@@ -32,30 +32,28 @@ _tw_cores() {
   echo 4
 }
 
-_tw_load() {
-  # 1-minute load average, integer part. Unavailable is treated as 0 rather than
-  # as "busy": refusing to parallelise because we could not measure would be a
-  # silent, permanent slowdown.
-  uptime 2>/dev/null | sed 's/.*load averages*: //' | awk '{printf "%d", $1}' || echo 0
-}
-
-#: Cores left for the gateway, the editor and the agent processes. Half the box
-#: is a deliberate over-allocation to everything else: the tests are the thing
-#: that can wait, and a hook that finishes slightly slower is invisible next to
-#: a control plane that stops answering.
+#: Half the cores, always. The other half is for the gateway, the editor and the
+#: agent processes.
+#:
+#: There WAS a rule here that collapsed to 2 workers when the box was already
+#: loaded, and it was a bad trade. The pre-push suite falls back to the full
+#: ~3,700 tests whenever a change cannot be mapped to an import graph - which
+#: includes editing these very scripts - and that full run took 27:47 at one
+#: worker per core. At 2 workers on a loaded box it does not finish: two pushes
+#: were killed by their own 30-minute bounds, and the symptom (a hook that
+#: prints nothing for an hour, because lefthook buffers a command's output until
+#: it exits) reads exactly like a deadlock.
+#:
+#: A cap that turns a 28-minute suite into an unbounded one is a worse failure
+#: than the contention it was preventing. `nice` is the right instrument for
+#: "do not starve the gateway": a niced run yields the CPU when something
+#: latency-sensitive wants it, and still uses the box when nothing does.
+#: Throttling throughput as well was belt, braces, and a rope round the ankles.
 TEST_WORKERS="${LOREGARDEN_TEST_WORKERS:-}"
 if [ -z "$TEST_WORKERS" ]; then
   _cores="$(_tw_cores)"
-  _load="$(_tw_load)"
   TEST_WORKERS=$(( _cores / 2 ))
   [ "$TEST_WORKERS" -lt 2 ] && TEST_WORKERS=2
-  if [ "$_load" -ge "$_cores" ]; then
-    # Already oversubscribed — usually a sibling worktree's hook, or a fleet of
-    # agents. Adding half a box of workers to a saturated box is how the 158
-    # happened. Take the floor and get out of the way.
-    TEST_WORKERS=2
-    echo "pre-push: load ${_load} on ${_cores} cores — capping tests at ${TEST_WORKERS} workers" >&2
-  fi
 fi
 export TEST_WORKERS
 
