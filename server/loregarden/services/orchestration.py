@@ -16,6 +16,7 @@ from loregarden.models.domain import (
     DispatchSurface,
     EventType,
     OrchestrationRun,
+    OrchestrationRunStatus,
     RunStatus,
     StageStatus,
     StudioAgent,
@@ -177,6 +178,15 @@ def _consume_next_agent_pin(ticket: Ticket, chosen_agent: str) -> None:
     """
     if ticket.next_agent and ticket.next_agent == chosen_agent:
         ticket.next_agent = ""
+
+
+#: An orchestration that still claims a lane. Children of anything else are
+#: residue — `run_service.settle_orphaned_agent_runs` sweeps them, and
+#: `start_run` refuses to create more (lg-workflow-integrity-688).
+LIVE_ORCHESTRATION_STATUSES: tuple[OrchestrationRunStatus, ...] = (
+    OrchestrationRunStatus.QUEUED,
+    OrchestrationRunStatus.RUNNING,
+)
 
 
 class OrchestrationService:
@@ -854,6 +864,20 @@ class OrchestrationService:
         # operator's blocking diagnosis and left the ticket started.
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
+
+        # The parent must still be claiming a lane. A stage was once dispatched
+        # 25 seconds after its orchestration had been reaped for an expired
+        # lease: nothing here looked, the run started, and a sweeper failed it
+        # 13 seconds later with a message about plumbing, leaving the ticket
+        # blocked as though the stage itself had failed
+        # (lg-workflow-integrity-688). Refusing costs nothing — the work could
+        # not have been recorded against a terminal parent anyway.
+        if orchestration_run_id:
+            parent = self.session.get(OrchestrationRun, orchestration_run_id)
+            if parent is not None and parent.status not in LIVE_ORCHESTRATION_STATUSES:
+                raise ValueError(
+                    f"Cannot start run: orchestration {parent.run_code} is {parent.status.value}"
+                )
 
         # Read before `_prepare_stage_start`, which erases the blocking text this
         # decision is partly read from.
