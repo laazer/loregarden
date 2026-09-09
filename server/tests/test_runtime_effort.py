@@ -456,3 +456,31 @@ def test_lmstudio_sends_no_effort_field_when_unpinned(monkeypatch):
     assert _run_lmstudio(transport, monkeypatch, "") == "answer"
     assert len(transport.bodies) == 1
     assert "reasoning_effort" not in transport.bodies[0]
+
+
+def test_runtime_options_holds_no_db_connection_while_discovery_runs(client, isolated_db):
+    """Discovery must not run on a checked-out connection.
+
+    ``opencode models`` can hang for its whole 45s budget, and the pool is
+    fifteen connections for the entire process — requests, ``/ws/queue``
+    snapshots, the reconciliation timer. Holding one across a probe is how every
+    endpoint, ``/health`` included, began failing with ``QueuePool limit of size
+    5 overflow 10 reached``.
+    """
+    checked_out: list[int] = []
+
+    def record_then_answer():
+        checked_out.append(isolated_db.pool.checkedout())
+        return [{"id": "", "label": "Default (OpenCode profile)"}]
+
+    with mock.patch(
+        "loregarden.services.opencode_discovery.opencode_model_options",
+        side_effect=record_then_answer,
+    ):
+        response = client.get("/api/workspaces/runtime-options?workspace=loregarden")
+
+    assert response.status_code == 200
+    assert checked_out == [0], (
+        f"discovery ran with {checked_out[0] if checked_out else '?'} connection(s) checked "
+        "out; the request must hand its connection back before probing"
+    )
