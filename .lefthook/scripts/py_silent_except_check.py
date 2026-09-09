@@ -312,20 +312,106 @@ def _handler_owners(tree: ast.AST) -> dict[int, ast.AST]:
     return owners
 
 
-def _quiet_only(handler: ast.ExceptHandler) -> bool:
-    """The handler's only account of the failure is a debug/info log line."""
-    quiet = False
-    for node in ast.walk(handler):
-        if isinstance(node, ast.Raise):  # py-org: allow-isinstance
-            return False
+_CONTROL_FLOW_STMTS = (ast.If, ast.Try, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)
+_SCOPE_STMTS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _statement_observes(stmt: ast.stmt) -> bool:
+    """Whether this one statement reports the failure at a level someone sees.
+
+    Nested defs are skipped: a logger call inside a closure declared in the
+    handler runs when that closure is called, which may be never.
+    """
+    if isinstance(stmt, _SCOPE_STMTS):  # py-org: allow-isinstance
+        return False
+    for node in ast.walk(stmt):
+        if isinstance(node, _SCOPE_STMTS) and node is not stmt:  # py-org: allow-isinstance
+            continue
         if not isinstance(node, ast.Call):  # py-org: allow-isinstance
             continue
         name = _call_name(node)
         if name in _OBSERVED_LOG_LEVELS or name in _SURFACING_CALLS:
-            return False
-        if name in _QUIET_LOG_LEVELS:
-            quiet = True
-    return quiet
+            return True
+    return False
+
+
+def _nested_blocks(stmt: ast.stmt) -> list[list[ast.stmt]]:
+    """The statement lists a compound statement can run, named explicitly.
+
+    Spelled out per node type rather than reached for with `getattr`: the shapes
+    are fixed by the grammar, and a typo'd attribute name would silently return
+    nothing — a path this analysis then reports as observed.
+    """
+    blocks: list[list[ast.stmt]] = []
+    if isinstance(stmt, ast.Try):  # py-org: allow-isinstance
+        blocks.extend([stmt.body, stmt.orelse, stmt.finalbody])
+        blocks.extend(nested.body for nested in stmt.handlers)
+    elif isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):  # py-org: allow-isinstance
+        blocks.extend([stmt.body, stmt.orelse])
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):  # py-org: allow-isinstance
+        blocks.append(stmt.body)
+    return [block for block in blocks if block]
+
+
+def _paths_through(body: list[ast.stmt], observed: bool) -> tuple[bool, set[bool]]:
+    """Walk a statement list. Returns (a quiet exit was found, states falling through).
+
+    `observed` is whether the failure has already been reported on this path. The
+    point of tracking it per-path rather than per-handler is that a conditional
+    `raise` only covers the branch that takes it: a handler that re-raises when
+    the error is fatal still returns quietly for every other error, and that
+    second path is the one nobody sees.
+    """
+    quiet = False
+    states = {observed}
+    for stmt in body:
+        if not states:
+            break  # everything before this terminated; the rest is unreachable
+        nxt: set[bool] = set()
+        for state in states:
+            if isinstance(stmt, ast.Raise):  # py-org: allow-isinstance
+                continue  # this path leaves loudly and never falls through
+            if isinstance(stmt, (ast.Return, ast.Break, ast.Continue)):  # py-org: allow-isinstance
+                quiet = quiet or not state
+                continue  # terminates the path either way
+            if isinstance(stmt, ast.If):  # py-org: allow-isinstance
+                for branch in (stmt.body, stmt.orelse):
+                    if branch:
+                        found, out = _paths_through(branch, state)
+                        quiet = quiet or found
+                        nxt |= out
+                    else:
+                        nxt.add(state)  # the missing else falls straight through
+                continue
+            if isinstance(stmt, _CONTROL_FLOW_STMTS):  # py-org: allow-isinstance
+                # Loops may not run and handlers may not fire, so the surrounding
+                # path survives alongside whatever the nested bodies do.
+                nxt.add(state)
+                for block in _nested_blocks(stmt):
+                    found, out = _paths_through(block, state)
+                    quiet = quiet or found
+                    nxt |= out
+                continue
+            nxt.add(state or _statement_observes(stmt))
+        states = nxt
+    return quiet, states
+
+
+def _has_quiet_exit(handler: ast.ExceptHandler) -> bool:
+    """Some way out of this handler reports nothing at warning level or above."""
+    quiet, falling = _paths_through(handler.body, False)
+    # Falling off the end of the handler is an exit too.
+    return quiet or (False in falling)
+
+
+def _quiet_only(handler: ast.ExceptHandler) -> bool:
+    """Some exit from this handler accounts for the failure only at debug/info."""
+    has_quiet_log = any(
+        _call_name(node) in _QUIET_LOG_LEVELS
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Call)  # py-org: allow-isinstance
+    )
+    return has_quiet_log and _has_quiet_exit(handler)
 
 
 def _is_success_shaped_value(value: ast.expr | None) -> bool:
@@ -360,19 +446,20 @@ def _returns_success_shape(handler: ast.ExceptHandler, owner: ast.AST | None) ->
     ]  # py-org: allow-isinstance
     if not returns:
         return False
-    for node in ast.walk(handler):
-        if isinstance(node, ast.Raise):  # py-org: allow-isinstance
-            return False
-        if isinstance(node, ast.Call) and (  # py-org: allow-isinstance
-            _call_name(node) in _OBSERVED_LOG_LEVELS or _call_name(node) in _SURFACING_CALLS
-        ):
-            return False
-        if (
-            handler.name
-            and isinstance(node, ast.Name)  # py-org: allow-isinstance
-            and node.id == handler.name  # py-org: allow-isinstance
-        ):  # py-org: allow-isinstance
-            return False  # the exception itself is carried into the result
+    # Path-aware for the same reason as _quiet_only: a `raise` on one branch
+    # says nothing about the branch that returns instead.
+    if not _has_quiet_exit(handler):
+        return False
+    # Only a reference inside the *returned value* means the error reached the
+    # caller. `if fatal(exc): raise` reads the exception to make a decision and
+    # then returns the empty answer anyway, which is the shape this catches.
+    if handler.name and any(
+        node.id == handler.name
+        for ret in returns
+        for node in ast.walk(ret)
+        if isinstance(node, ast.Name)  # py-org: allow-isinstance
+    ):
+        return False  # the exception itself is carried into the result
     inert = [n for n in returns if _is_success_shaped_value(n.value)]
     if len(inert) != len(returns):
         return False

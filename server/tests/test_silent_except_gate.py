@@ -40,6 +40,42 @@ def _write(tmp_path: Path, source: str, name: str = "service.py") -> Path:
 
 
 FLAGGED = {
+    # A conditional `raise` only covers the branch that takes it (658).
+    "conditional_raise_leaves_the_other_path_quiet": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if "not allowed" in str(exc):
+            raise
+        logger.debug("did not resolve; falling back: %s", exc)
+        return root
+""",
+    "conditional_raise_with_success_shaped_return": """
+def load(raw) -> list[str]:
+    try:
+        return parse(raw)
+    except ValueError as exc:
+        if fatal(exc):
+            raise
+        return []
+""",
+    "observation_inside_a_branch_does_not_cover_the_fallthrough": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if noisy:
+            logger.warning("did not resolve: %s", exc)
+        logger.debug("falling back")
+        return root
+""",
     # --- rules folded in from the silent-failure audit (658) ---
     "quiet_debug_only": """
 import logging
@@ -176,6 +212,51 @@ def f():
 }
 
 ALLOWED = {
+    # Path analysis must not over-fire: these all observe on every way out (658).
+    "unconditional_reraise_after_a_quiet_log": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        logger.debug("context: %s", exc)
+        raise
+""",
+    "warning_before_a_conditional_raise": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        logger.warning("did not resolve: %s", exc, exc_info=True)
+        if fatal(exc):
+            raise
+        return root
+""",
+    "every_branch_observes": """
+import logging
+logger = logging.getLogger(__name__)
+
+def f(raw, root):
+    try:
+        return resolve(raw)
+    except ValueError as exc:
+        if fatal(exc):
+            raise
+        logger.warning("did not resolve: %s", exc, exc_info=True)
+        return root
+""",
+    "closure_logging_does_not_count_but_the_raise_does": """
+def f(raw):
+    try:
+        return resolve(raw)
+    except ValueError:
+        raise
+""",
     # --- counterparts for the folded-in rules (658) ---
     "optional_contract_is_not_a_lie": """
 def try_parse(name: str) -> "Action | None":

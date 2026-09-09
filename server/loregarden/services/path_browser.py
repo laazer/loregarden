@@ -59,6 +59,10 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
     except ValueError as exc:
         if "outside the allowed browse scope" in str(exc):
             raise
+        # silent-ok: a browse path the user typed that does not resolve is ordinary
+        # input, not a fault — and the fallback is surfaced, because the response
+        # carries `current_path`, so the client shows the directory it landed on.
+        # debug keeps a mistyped path out of the operator's warnings.
         logger.debug("browse target %r did not resolve; falling back to root: %s", raw, exc)
         return root
 
