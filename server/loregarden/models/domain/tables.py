@@ -242,6 +242,14 @@ class OrchestrationRun(SQLModel, table=True):
         ),
     )
     profile_slug: str = ""
+    #: Caller-supplied, so a retry after an ambiguous failure finds the run its
+    #: first attempt may or may not have created. Empty means the caller did not
+    #: ask for the guarantee, and many rows share that — hence a partial unique
+    #: index rather than a plain one. Deliberately NOT derived from wall-clock
+    #: time or arguments: two legitimate sequential starts of the same ticket are
+    #: a real thing, and a derived key would silently collapse them into one
+    #: (lg-workflow-integrity-696).
+    idempotency_key: str = Field(default="", index=True)
     # Set when a harness outside this control plane drove the run from a pasted
     # prompt (see services/external_harness.py). Null means loregarden's own
     # agents ran it. Indexed because comparing harnesses is the point of the

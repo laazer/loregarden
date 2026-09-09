@@ -1291,6 +1291,38 @@ def m_run_log_lines_table(conn: Connection) -> None:
     )
 
 
+def m_orchestration_idempotency_key(conn: Connection) -> None:
+    """A caller-supplied key so an ambiguous start can be retried safely.
+
+    Partial unique index: the column is empty for every existing row and for
+    every caller that does not ask for the guarantee, so a plain UNIQUE would
+    reject the second such run. Scoped to (ticket_id, key) rather than the key
+    alone — a key is only meaningful about the ticket its caller was starting.
+    """
+    # Guarded, because a migration runs against schemas older than itself: a
+    # database built up to an earlier id has no `orchestration_runs` yet, and an
+    # unguarded index creation raises "no such table" and takes every
+    # schema-building test with it.
+    if not table_exists(conn, "orchestration_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "orchestration_runs",
+        {
+            "idempotency_key": (
+                "ALTER TABLE orchestration_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''"
+            )
+        },
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_orchestration_runs_idempotency "
+            "ON orchestration_runs (ticket_id, idempotency_key) "
+            "WHERE idempotency_key != ''"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1412,6 +1444,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0116_human_verification_brief", m_human_verification_brief),
     ("0117_lane_repair_hold", m_lane_repair_hold),
     ("0118_run_log_lines_table", m_run_log_lines_table),
+    ("0119_orchestration_idempotency_key", m_orchestration_idempotency_key),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

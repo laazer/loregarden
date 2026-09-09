@@ -137,6 +137,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0116_human_verification_brief",
     "0117_lane_repair_hold",
     "0118_run_log_lines_table",
+    "0119_orchestration_idempotency_key",
 )
 
 

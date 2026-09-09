@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
@@ -200,7 +201,45 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             ],
         },
     )
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
+    payload = ticket_state_payload(session, ticket.id)
+    payload["requeued"] = _requeue_outcome(session, svc, ticket, stage_key)
+    return json.dumps(payload, indent=2)
+
+
+def _requeue_outcome(session: Session, svc, ticket: Ticket, stage_key: str) -> dict[str, Any]:
+    """What a requeue actually arranged, said out loud.
+
+    A requeue makes a stage ELIGIBLE to run; it does not cause it to run. It
+    mints no orchestration and enqueues no dispatch. That is a defensible
+    design - clearing a breaker is usually the prelude to a HUMAN decision, and
+    auto-dispatching would spend an agent run on that decision's behalf - but it
+    was invisible, and "requeued" reads as "it will run again". At least one
+    recovery has been lost to the difference (lg-workflow-integrity-694).
+
+    `scheduled` is DERIVED, never asserted: it is read back from the same tables
+    a dispatcher would consult. A hardcoded "nothing is scheduled" would be a
+    claim that could drift out of agreement with the code that makes it true.
+    """
+    active = svc.get_active_orchestration_run(ticket.id)
+    in_flight = find_active_run(session, ticket.id)
+    scheduled = active is not None or in_flight is not None
+
+    outcome: dict[str, Any] = {
+        "stage_key": stage_key,
+        "scheduled": scheduled,
+    }
+    if scheduled:
+        outcome["note"] = (
+            f"Stage '{stage_key}' is pending and something is already running against "
+            "this ticket; it will be picked up."
+        )
+        return outcome
+    outcome["note"] = (
+        f"Stage '{stage_key}' is pending. Nothing is scheduled to run it - a requeue "
+        "clears the block, it does not dispatch."
+    )
+    outcome["start_with"] = McpTool.START_ORCHESTRATION.value
+    return outcome
 
 
 def _supersede_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:

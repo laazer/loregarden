@@ -365,3 +365,78 @@ def test_stage_status_enum_is_offered_whole(db_session):
     assert set(schema["properties"]["stage_status"]["enum"]) == {
         status.value for status in StageStatus
     }
+
+
+# --- requeue says what it did (lg-workflow-integrity-694) ---------------------
+
+
+def test_requeue_says_that_nothing_is_scheduled(db_session):
+    """A requeue makes a stage eligible to run; it does not run it.
+
+    It mints no orchestration and enqueues no dispatch. That is defensible -
+    clearing a breaker is usually the prelude to a human decision, and
+    dispatching would spend an agent run on that decision's behalf - but it was
+    invisible, and "requeued" reads as "it will run again". A recovery was lost
+    to the difference: the reporting agent requeued a ticket and waited for it
+    to move.
+    """
+    ticket = _task(db_session)
+    result = _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "Cleared to try a different approach."},
+    )
+
+    assert result["requeued"]["scheduled"] is False
+    assert "does not dispatch" in result["requeued"]["note"]
+    assert result["requeued"]["start_with"] == "loregarden_start_orchestration"
+
+
+def test_the_claim_matches_reality(db_session):
+    """The assertion that keeps the note honest.
+
+    `scheduled` is read back from the same tables a dispatcher consults, so it
+    cannot drift out of agreement with the code that makes it true. Hardcoding
+    "nothing is scheduled" would pass this test's sibling above forever, even
+    after somebody taught requeue to dispatch.
+    """
+    ticket = _task(db_session)
+    result = _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "Checking the claim."},
+    )
+
+    assert result["active_orchestration"] is None, "nothing was dispatched"
+    assert result["requeued"]["scheduled"] is False, "and the response says so"
+
+
+def test_requeue_reports_a_live_run_rather_than_denying_it(db_session):
+    """The other branch, which proves `scheduled` is derived and not a constant.
+
+    A ticket that already has something running against it gets a different
+    answer from the same code path.
+    """
+    from loregarden.models.domain import AgentRun, RunStatus
+
+    ticket = _task(db_session)
+    db_session.add(
+        AgentRun(
+            run_code="run_live_694",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="backend_implementer",
+            stage_key=ticket.workflow_stage_key,
+            status=RunStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+
+    result = _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "Something is already working."},
+    )
+
+    assert result["requeued"]["scheduled"] is True
+    assert "start_with" not in result["requeued"]
