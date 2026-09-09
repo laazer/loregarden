@@ -89,6 +89,11 @@ from loregarden.services.triage_run_service import (
 )
 from loregarden.services.triage_service import set_triage_runtime, triage_snapshot
 from loregarden.services.workflow_reassignment import describe_reassignment
+from loregarden.services.workflow_service import (
+    prime_workflow_instances,
+    stage_resolution_memo,
+    workspace_for,
+)
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -106,12 +111,45 @@ def _latest_run_code(session: Session, ticket_id: str) -> str:
     return run_code or ""
 
 
+#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
+_ID_CHUNK = 400
+
+
+def _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]:
+    """Every ticket's latest run code, in one scan per chunk rather than per ticket.
+
+    `agent_runs` has no index behind `ORDER BY created_at DESC`, so asking
+    `_latest_run_code` once per row scanned the table once per row — measured on
+    a copy of the live database, 837 queries and 17.5s of an 85s ticket list.
+    Ascending order lets a later run overwrite an earlier one, so what lands is
+    the latest.
+
+    A ticket with no runs is absent from the result; callers pass `""`, which is
+    what `_latest_run_code` answers for the same case.
+    """
+    codes: dict[str, str] = {}
+    for start in range(0, len(ticket_ids), _ID_CHUNK):
+        chunk = ticket_ids[start : start + _ID_CHUNK]
+        rows = session.exec(
+            select(AgentRun.ticket_id, AgentRun.run_code)
+            .where(col(AgentRun.ticket_id).in_(chunk))
+            .order_by(col(AgentRun.created_at))
+        ).all()
+        for ticket_id, run_code in rows:
+            codes[ticket_id] = run_code
+    return codes
+
+
 def _ticket_summary(
-    session: Session, ticket: Ticket, activity: TicketActivity | None = None
+    session: Session,
+    ticket: Ticket,
+    activity: TicketActivity | None = None,
+    run_code: str | None = None,
 ) -> TicketSummary:
-    """``activity`` is passed in by list endpoints, which classify the whole page
-    in one batch; single-ticket callers let it resolve itself."""
-    ws = session.get(Workspace, ticket.workspace_id)
+    """``activity`` and ``run_code`` are passed in by list endpoints, which resolve
+    the whole page in one batch each; single-ticket callers let them resolve
+    themselves."""
+    ws = workspace_for(session, ticket.workspace_id)
     orch = OrchestrationService(session)
     template = orch.get_template_for_ticket(ticket)
     # Derived, not read off the row: the column is only authoritative once
@@ -133,7 +171,7 @@ def _ticket_summary(
         workflow_stage_key=stage_key,
         workflow_stage_status=stage_status,
         workflow_stage_name=stage_name,
-        run_code=_latest_run_code(session, ticket.id),
+        run_code=run_code if run_code is not None else _latest_run_code(session, ticket.id),
         work_item_type=ticket.work_item_type,
         parent_ticket_id=ticket.parent_ticket_id,
         milestone=ticket.milestone,
@@ -383,7 +421,9 @@ def ticket_tree(
 
     # Ancestors keep matching tickets anchored in the hierarchy even when the filter excludes them.
     all_tickets = tickets + _collect_ancestors(session, tickets)
-    stage_names = _build_stage_names(session, all_tickets)
+    with stage_resolution_memo():
+        prime_workflow_instances(session, [t.id for t in all_tickets])
+        stage_names = _build_stage_names(session, all_tickets)
     return build_tree(session, all_tickets, stage_names=stage_names)
 
 
@@ -437,8 +477,21 @@ def list_tickets(
         # have paid it for every row before throwing most of them away.
         query = query.offset(offset).limit(limit)
     tickets = session.exec(query).all()
-    activity = classify_ticket_activity(session, [t.id for t in tickets])
-    return [_ticket_summary(session, t, activity.get(t.id, TicketActivity.IDLE)) for t in tickets]
+
+    ticket_ids = [t.id for t in tickets]
+    activity = classify_ticket_activity(session, ticket_ids)
+    run_codes = _latest_run_codes(session, ticket_ids)
+    with stage_resolution_memo():
+        prime_workflow_instances(session, ticket_ids)
+        return [
+            _ticket_summary(
+                session,
+                t,
+                activity.get(t.id, TicketActivity.IDLE),
+                run_code=run_codes.get(t.id, ""),
+            )
+            for t in tickets
+        ]
 
 
 @router.get("/status-summary", response_model=TicketStatusSummary)

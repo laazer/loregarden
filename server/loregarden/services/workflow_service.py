@@ -1,4 +1,7 @@
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 import yaml
@@ -19,7 +22,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.ticket_rollup import has_children
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def _overrides_dir() -> Path:
@@ -52,6 +55,107 @@ def apply_stage_overrides(stages: list[WorkflowStageDef], override: dict) -> lis
 #: Keys of the session-scoped memos, held in ``Session.info``.
 _STAGE_MEMO = "_resolved_stage_memo"
 _OVERRIDE_MEMO = "_workspace_override_memo"
+
+#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
+_ID_CHUNK = 400
+
+#: Memo buckets for the block a `stage_resolution_memo()` scope is open over;
+#: `None` outside one, which is what every writer and single-ticket reader sees.
+_READ_SCOPE_MEMO: ContextVar[dict[str, dict] | None] = ContextVar("_READ_SCOPE_MEMO", default=None)
+
+
+@contextmanager
+def stage_resolution_memo() -> Iterator[None]:
+    """Read each ticket's workflow instance, and each workspace row, once per block.
+
+    The stage memo above holds what a template resolves to; this holds the two
+    rows the resolution is keyed on. They are scoped differently on purpose. A
+    template is edited by a studio publish and its version is in the memo key, so
+    it is safe to hold for a whole session. A workflow instance is created and
+    advanced constantly — `ensure_workflow_instance` writes one mid-request — so
+    holding one for the session would serve a writer its own stale "no instance".
+
+    So this scope is opened deliberately, by a read that serializes many tickets
+    and writes nothing: a ticket list asks `resolve_ticket_stages` four times per
+    row, and each call re-queried the instance and re-fetched the workspace.
+    SQLAlchemy's identity map holds weak references, so a serializer that reads
+    `ws.slug` and drops the row re-queries the same four workspaces per ticket.
+    """
+    token = _READ_SCOPE_MEMO.set({"instances": {}, "workspaces": {}, "templates": {}})
+    try:
+        yield
+    finally:
+        _READ_SCOPE_MEMO.reset(token)
+
+
+def _memo_bucket(name: str) -> dict | None:
+    memo = _READ_SCOPE_MEMO.get()
+    return None if memo is None else memo[name]
+
+
+def workflow_instance_for(session: Session, ticket_id: str) -> WorkflowInstance | None:
+    """This ticket's workflow instance — the memo's copy inside a read scope.
+
+    Every reader of an instance goes through here, `OrchestrationService`
+    included, so a page that asks four times per ticket queries once.
+    """
+    bucket = _memo_bucket("instances")
+    if bucket is not None and ticket_id in bucket:
+        return bucket[ticket_id]
+    instance = session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket_id)
+    ).first()
+    if bucket is not None:
+        bucket[ticket_id] = instance
+    return instance
+
+
+def prime_workflow_instances(session: Session, ticket_ids: list[str]) -> None:
+    """Load a page's workflow instances in one query instead of one per ticket.
+
+    Outside a `stage_resolution_memo()` scope there is nothing to prime and this
+    does nothing — the caller is a single-ticket reader, which wants one query
+    either way.
+    """
+    bucket = _memo_bucket("instances")
+    if bucket is None or not ticket_ids:
+        return
+    for start in range(0, len(ticket_ids), _ID_CHUNK):
+        chunk = ticket_ids[start : start + _ID_CHUNK]
+        for instance in session.exec(
+            select(WorkflowInstance).where(col(WorkflowInstance.ticket_id).in_(chunk))
+        ).all():
+            bucket.setdefault(instance.ticket_id, instance)
+    for ticket_id in ticket_ids:
+        # An explicit "this ticket has none", so the miss is not re-queried per row.
+        bucket.setdefault(ticket_id, None)
+
+
+def workspace_for(session: Session, workspace_id: str) -> Workspace | None:
+    """A workspace row, held for the length of a read scope."""
+    bucket = _memo_bucket("workspaces")
+    if bucket is not None and workspace_id in bucket:
+        return bucket[workspace_id]
+    ws = session.get(Workspace, workspace_id)
+    if bucket is not None:
+        bucket[workspace_id] = ws
+    return ws
+
+
+def _template_for(session: Session, template_id: str) -> WorkflowTemplate | None:
+    """A template row, held for the length of a read scope.
+
+    The stage memo above is keyed on `template.version`, so it reads the row
+    before it can answer — and dropping it means the weak identity map re-fetches
+    the same template for every ticket on the page.
+    """
+    bucket = _memo_bucket("templates")
+    if bucket is not None and template_id in bucket:
+        return bucket[template_id]
+    template = session.get(WorkflowTemplate, template_id)
+    if bucket is not None:
+        bucket[template_id] = template
+    return template
 
 
 def _merged_override(session: Session, workspace: Workspace) -> dict:
@@ -103,20 +207,18 @@ def resolve_ticket_stages(
     if ticket.workflow_disabled:
         return None, []
 
-    ws = session.get(Workspace, ticket.workspace_id)
+    ws = workspace_for(session, ticket.workspace_id)
     if not ws:
         return None, []
 
-    instance = session.exec(
-        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
-    ).first()
+    instance = workflow_instance_for(session, ticket.id)
     template: WorkflowTemplate | None = None
     pinned_version: int | None = None
     if instance and instance.template_id:
-        template = session.get(WorkflowTemplate, instance.template_id)
+        template = _template_for(session, instance.template_id)
         pinned_version = instance.template_version
     if not template and ws.workflow_template_id:
-        template = session.get(WorkflowTemplate, ws.workflow_template_id)
+        template = _template_for(session, ws.workflow_template_id)
     if not template:
         return None, []
 
