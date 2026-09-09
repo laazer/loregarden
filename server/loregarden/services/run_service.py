@@ -21,7 +21,10 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
-from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration import (
+    LIVE_ORCHESTRATION_STATUSES,
+    OrchestrationService,
+)
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.run_concurrency import orchestration_lease_expired
@@ -434,13 +437,6 @@ def settle_expired_agent_runs(
     return settled
 
 
-#: An orchestration still claiming a lane. Children of anything else are residue.
-_LIVE_ORCHESTRATION_STATUSES = (
-    OrchestrationRunStatus.QUEUED,
-    OrchestrationRunStatus.RUNNING,
-)
-
-
 def settle_orphaned_agent_runs(
     session: Session, *, message: str = ORPHAN_OF_TERMINAL_ORCH_MESSAGE
 ) -> list[AgentRun]:
@@ -462,7 +458,7 @@ def settle_orphaned_agent_runs(
     settled: list[AgentRun] = []
     for run in candidates:
         parent = session.get(OrchestrationRun, run.orchestration_run_id)
-        if parent is None or parent.status in _LIVE_ORCHESTRATION_STATUSES:
+        if parent is None or parent.status in LIVE_ORCHESTRATION_STATUSES:
             continue
         logger.warning(
             "Settling agent run %s (ticket %s): parent orchestration %s is %s",

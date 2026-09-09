@@ -308,6 +308,21 @@ class RunLogStreamer:
     #: process can be.
     PERSIST_INTERVAL_SECONDS = 0.4
 
+    #: Rough ceiling on how many bytes a second this streamer rewrites.
+    #:
+    #: The log is one artifact row rewritten IN FULL on every flush, so the cost
+    #: of a write grows with the run while the rate stayed fixed at 2.5/second.
+    #: A 78-minute run persisted roughly 11,700 times, the later writes carrying
+    #: tens of kilobytes each, and one of them lost a "database is locked" race
+    #: and took the whole orchestration with it (lg-workflow-integrity-687).
+    #:
+    #: Scaling the interval by size keeps bytes-per-second roughly bounded. A
+    #: small log is unaffected — at 75KB the computed interval is below the 0.4s
+    #: floor — so early feedback, when a reader is actually watching, is exactly
+    #: as responsive as before. It is the 300KB tail that slows down, and there
+    #: nobody is reading each line as it lands.
+    PERSIST_BYTES_PER_SECOND = 200_000
+
     def __init__(
         self,
         *,
@@ -335,6 +350,17 @@ class RunLogStreamer:
         self._partial_output_text = ""
         self._partial_message_text = ""
         self._last_persist = 0.0
+        #: Serialized size of the last write, so the interval can scale without
+        #: re-serializing the log just to measure it.
+        self._last_persist_bytes = 0
+
+    def _persist_interval(self) -> float:
+        """How long to wait before rewriting the log again.
+
+        Never below the floor, so a short log behaves as it always did.
+        """
+        scaled = self._last_persist_bytes / self.PERSIST_BYTES_PER_SECOND
+        return max(self.PERSIST_INTERVAL_SECONDS, scaled)
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -374,7 +400,7 @@ class RunLogStreamer:
         # it at all. Every tag now shares one bound, which is what makes the
         # unpersisted window a known quantity rather than a property of the
         # output. The throttle itself stays — it is the write-rate control.
-        if force or now - self._last_persist >= self.PERSIST_INTERVAL_SECONDS:
+        if force or now - self._last_persist >= self._persist_interval():
             self._persist()
 
     def _switch_channel(self, tag: str) -> None:
@@ -647,6 +673,7 @@ class RunLogStreamer:
 
     def _persist(self) -> None:
         content = {"lines": self._lines, "live": self._live or None}
+        payload = json.dumps(content)
         with Session(engine) as session:
             artifact = None
             if self.artifact_id:
@@ -659,7 +686,7 @@ class RunLogStreamer:
                     )
                 ).first()
             if artifact:
-                artifact.content_json = json.dumps(content)
+                artifact.content_json = payload
                 artifact.title = f"Run {self.run_code}"
                 session.add(artifact)
                 self.artifact_id = artifact.id
@@ -669,7 +696,7 @@ class RunLogStreamer:
                     run_id=self.run_id,
                     kind=ArtifactKind.LOG,
                     title=f"Run {self.run_code}",
-                    content_json=json.dumps(content),
+                    content_json=payload,
                 )
                 session.add(artifact)
                 session.flush()
@@ -682,6 +709,7 @@ class RunLogStreamer:
                 session.add(ticket)
             session.commit()
         self._last_persist = time.time()
+        self._last_persist_bytes = len(payload)
 
 
 def finalize_run_log_artifact(run: AgentRun, *, status: RunStatus, stderr: str = "") -> None:
