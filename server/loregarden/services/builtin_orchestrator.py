@@ -58,6 +58,44 @@ from loregarden.services.workflow_state import (
 )
 from sqlmodel import Session, select
 
+STAGE_TIMEOUT_BUDGETS: dict[str, int] = {
+    "implement": 2400,
+    "backend-impl": 1200,
+    "frontend-impl": 1200,
+    "verify": 1800,
+    "test-design": 1500,
+    "test-break": 1200,
+    "review": 1200,
+    "gate": 1200,
+}
+
+
+def stage_timeout_seconds(stage_def: WorkflowStageDef, run_default: int | None) -> int | None:
+    """This stage's agent budget: its own if it declares one, else a floor for
+    the heavy stages, else the run's.
+
+    One budget for every stage is why `implement` timed out at 600s while still
+    producing output — 35% of `implement` runs that DID succeed ran longer than
+    that, against 6% for `triage` (lg-workflow-integrity-686). The spread is
+    structural: the stages differ in how much work they are, not in how lucky
+    they got.
+
+    Resolved at dispatch rather than written into templates by a migration.
+    Every template in this installation that a run actually uses is
+    operator-authored (`built_in=0`), so a migration wide enough to help them
+    would rewrite operator data and bump a version pins refer to — which is what
+    `test_skill_migration_preserves_existing_non_skill_data` exists to catch.
+    A default costs no rows and covers templates authored after it lands.
+
+    The budget resizes a bound, never introduces one: a run with no timeout
+    keeps none, and a run whose own default is already larger keeps that.
+    """
+    if stage_def.timeout_seconds:
+        return stage_def.timeout_seconds
+    if run_default is None:
+        return None
+    return max(run_default, STAGE_TIMEOUT_BUDGETS.get(stage_def.key, 0))
+
 
 class BuiltinOrchestrator:
     def __init__(self, session: Session) -> None:
@@ -188,7 +226,7 @@ class BuiltinOrchestrator:
                     stage_def,
                     target_key,
                     auto_approve=auto_approve,
-                    timeout_seconds=agent_timeout,
+                    timeout_seconds=stage_timeout_seconds(stage_def, agent_timeout),
                     stop_at_stage_key=stop_at_stage_key,
                     resuming=(target_key == recovered_stage_key),
                 )
