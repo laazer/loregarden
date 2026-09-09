@@ -678,6 +678,7 @@ describe('what stopped in a lane', () => {
     workspace_name: 'loregarden',
     slot_number: 2,
     outcome: 'blocked' as const,
+    stopped_count: 1,
     run_code: 'orch-9',
     last_stage_key: 'test_design',
     failure_reason: 'No workflow template for this ticket',
@@ -759,6 +760,25 @@ describe('what stopped in a lane', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
 
     expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-9');
+  });
+
+  test('a ticket that stopped repeatedly says so instead of repeating itself', () => {
+    // The server collapses the attempts onto the newest card; dropping the
+    // count with them would understate what the lane did to this ticket.
+    withAttention([{ ...stoppedCard, stopped_count: 3 }], 1);
+    render(<ParallelQueueVisualization />);
+
+    const section = screen.getByTestId('slot-2-attention');
+    expect(section).toHaveTextContent('Stopped in this lane (1)');
+    expect(section).toHaveTextContent('3 stops');
+    expect(screen.getAllByText('Persist the creature definition')).toHaveLength(1);
+  });
+
+  test('a single stop is not annotated with a count', () => {
+    withAttention();
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('slot-2-attention')).not.toHaveTextContent('stops');
   });
 
   test('the count is the true one, and the tail is admitted', () => {

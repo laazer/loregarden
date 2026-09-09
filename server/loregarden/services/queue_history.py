@@ -20,7 +20,7 @@ cards for those terminal orchestrations when no lane entry points at them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 
 from loregarden.models.domain import (
@@ -30,6 +30,7 @@ from loregarden.models.domain import (
     QueueEntryKind,
     QueuePosition,
     Ticket,
+    TicketState,
     Workspace,
 )
 from sqlmodel import Session, col, select
@@ -51,6 +52,12 @@ OUTCOMES = ("succeeded", "blocked", "failed", "cancelled", "running", "unknown")
 #: Outcomes a lane keeps on its own card until someone acknowledges them. A
 #: cancelled entry was a decision, not a surprise; these two were not.
 ATTENTION_OUTCOMES = ("blocked", "failed")
+
+#: Ticket states that retire a lane's card without anyone dismissing it. The
+#: attempt really did stop, but the ticket has since been finished or dropped —
+#: usually by the retry that succeeded in another lane — so the card is asking
+#: an operator to look at work that is already over.
+RESOLVED_TICKET_STATES = (TicketState.DONE, TicketState.WONT_DO)
 
 #: Cards carried per lane in the queue snapshot. The websocket pushes that
 #: snapshot every few seconds, so an unbounded list would ride along with it —
@@ -115,6 +122,15 @@ class QueueHistoryEntry:
     started_at: datetime | None
     finished_at: datetime | None
     duration_seconds: int | None
+
+
+@dataclass(frozen=True)
+class LaneAttentionCard(QueueHistoryEntry):
+    """A lane's needs-attention card: the newest stop, plus how many it stands for."""
+
+    #: Attempts this ticket made in this lane that are still undismissed. 1 for
+    #: a ticket that stopped once — the ordinary case.
+    stopped_count: int
 
 
 def derive_outcome(entry: QueuedRun, orchestration: OrchestrationRun | None) -> str:
@@ -227,15 +243,28 @@ class QueueHistoryService:
         total = len(entries)
         return entries[offset : offset + limit], total
 
-    def lane_attention(self) -> dict[int, tuple[list[QueueHistoryEntry], int]]:
-        """Per lane: what blocked or failed in it and has not been acknowledged.
+    def lane_attention(self) -> dict[int, tuple[list[LaneAttentionCard], int]]:
+        """Per lane: which tickets blocked or failed in it, unacknowledged.
 
         Only real lane entries — a synthetic card stands for an orchestration
         that never held a lane entry, so there is no lane to pin it to and
         nothing to dismiss it with. Those stay in the history rail.
 
+        A ticket that has since reached `done` or `wont_do` is dropped: the
+        stop was real, but nothing is left to look at, and holding the card
+        until someone clears it by hand makes a finished lane read as a stuck
+        one. History still has the entry.
+
+        **One card per ticket per lane.** A ticket that keeps stopping in the
+        same lane produces one entry per attempt, and the section filled with
+        the same title repeated — the fourth copy said nothing the first had
+        not. The newest attempt is the card; `stopped_count` says how many
+        attempts it stands for, so the collapsed ones are counted rather than
+        hidden. Two lanes that both stopped the same ticket still show it
+        twice: that is a fact about the lanes, not a duplicate.
+
         Returns ``{slot_number: (cards, total)}`` where ``total`` counts every
-        undismissed entry for that lane, including any beyond the cap.
+        distinct ticket stopped in that lane, including any beyond the cap.
         """
         stmt = (
             select(QueuedRun, Ticket, OrchestrationRun)
@@ -243,6 +272,7 @@ class QueueHistoryService:
             .where(col(QueuedRun.dismissed_at).is_(None))
             .where(QueuedRun.slot_number > 0)
             .join(Ticket, col(QueuedRun.ticket_id) == col(Ticket.id))
+            .where(col(Ticket.state).not_in(RESOLVED_TICKET_STATES))
             .join(Workspace, col(QueuedRun.workspace_id) == col(Workspace.id))
             .join(
                 OrchestrationRun,
@@ -259,8 +289,22 @@ class QueueHistoryService:
         ]
         cards.sort(key=_history_sort_key, reverse=True)
 
-        by_lane: dict[int, list[QueueHistoryEntry]] = {}
+        # Newest first, so the first card seen for a (lane, ticket) pair is the
+        # one that survives and the rest only raise its count.
+        by_ticket: dict[tuple[int, str], LaneAttentionCard] = {}
+        order: list[tuple[int, str]] = []
         for card in cards:
+            key = (card.slot_number, card.ticket_id)
+            existing = by_ticket.get(key)
+            if existing is None:
+                by_ticket[key] = LaneAttentionCard(**asdict(card), stopped_count=1)
+                order.append(key)
+            else:
+                by_ticket[key] = replace(existing, stopped_count=existing.stopped_count + 1)
+
+        by_lane: dict[int, list[LaneAttentionCard]] = {}
+        for key in order:
+            card = by_ticket[key]
             by_lane.setdefault(card.slot_number, []).append(card)
         return {
             slot_number: (lane_cards[:MAX_ATTENTION_PER_LANE], len(lane_cards))
@@ -277,18 +321,33 @@ class QueueHistoryService:
         }
 
     def dismiss_entry(self, entry_id: str) -> bool:
-        """Acknowledge one blocked/failed entry so its lane stops showing it.
+        """Acknowledge a blocked/failed card so its lane stops showing it.
 
         Only a finished entry can be dismissed: doing this to a live one would
         hide something the lane is still working on, and the card it belongs to
         is not this section at all.
+
+        A card stands for every attempt that ticket made in that lane (see
+        `lane_attention`), so this dismisses all of them. Clearing only the
+        entry the operator clicked would hand the lane straight back the
+        previous attempt — the card would blink and return, with an older
+        failure reason, looking like the dismissal had failed.
         """
         entry = self.session.get(QueuedRun, entry_id)
         if not entry or entry.status in LIVE_STATUSES:
             return False
-        if entry.dismissed_at is None:
-            entry.dismissed_at = datetime.now(timezone.utc)
-            self.session.add(entry)
+        now = datetime.now(timezone.utc)
+        siblings = self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.ticket_id == entry.ticket_id)
+            .where(QueuedRun.slot_number == entry.slot_number)
+            .where(col(QueuedRun.status).not_in(LIVE_STATUSES))
+            .where(col(QueuedRun.dismissed_at).is_(None))
+        ).all()
+        for sibling in siblings:
+            sibling.dismissed_at = now
+            self.session.add(sibling)
+        if siblings:
             self.session.commit()
         return True
 

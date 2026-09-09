@@ -23,7 +23,7 @@ from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     ParallelQueueService,
 )
-from loregarden.services.queue_history import QueueHistoryEntry, QueueHistoryService
+from loregarden.services.queue_history import LaneAttentionCard, QueueHistoryService
 from loregarden.services.run_duration_stats import (
     DurationStats,
     load_duration_stats,
@@ -190,7 +190,7 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         run["workspace_slug"] = workspace.slug if workspace else ""
 
 
-def _attention_payload(card: QueueHistoryEntry) -> dict[str, Any]:
+def _attention_payload(card: LaneAttentionCard) -> dict[str, Any]:
     """One casualty card, JSON-safe.
 
     The websocket sends the snapshot with `json.dumps`, which has no opinion

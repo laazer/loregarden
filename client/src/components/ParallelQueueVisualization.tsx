@@ -643,6 +643,9 @@ export function ParallelQueueVisualization() {
                             entry.workspace_slug || entry.workspace_name,
                             entry.last_stage_key,
                             formatWhen(entry),
+                            // Repeat attempts collapse onto the newest card, so
+                            // say how many stopped rather than dropping them.
+                            entry.stopped_count > 1 ? `${entry.stopped_count} stops` : '',
                           ]
                             .filter(Boolean)
                             .join(' · ')}
