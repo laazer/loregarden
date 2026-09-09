@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
+import time
 from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock, patch
@@ -31,6 +33,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.opencode_discovery import (
     DISCOVERY_TIMEOUT_SECONDS,
+    FAILURE_CACHE_TTL_SECONDS,
     _parse_models_output,
     list_opencode_models,
     opencode_model_options,
@@ -370,3 +373,51 @@ def test_claude_tool_events_still_use_their_own_shape():
     claude_event = {"type": "tool_use", "tool_name": "Bash"}
 
     assert format_stream_payload(claude_event)[1].endswith("Bash")
+
+
+def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe():
+    """The bug this pins: `opencode models` can hang for the whole 45s budget.
+
+    `runtime_options_payload` runs inside a request holding a database
+    connection, so callers that queue behind the probe hold one each. Fifteen of
+    them exhausted the pool and the API stopped answering anything — `/health`
+    included — with `QueuePool limit of size 5 overflow 10 reached`.
+    """
+    probing = threading.Event()
+    release = threading.Event()
+
+    def hanging_cli(*args, **kwargs):
+        probing.set()
+        assert release.wait(timeout=10), "the second caller never returned"
+        return MagicMock(stdout="opencode/a\n")
+
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch("loregarden.services.opencode_discovery.subprocess.run", side_effect=hanging_cli),
+    ):
+        prober = threading.Thread(target=list_opencode_models)
+        prober.start()
+        try:
+            assert probing.wait(timeout=10), "the probe never reached the CLI"
+
+            started = time.monotonic()
+            assert list_opencode_models() == []
+            waited = time.monotonic() - started
+        finally:
+            release.set()
+            prober.join(timeout=10)
+
+    # Serving the cached answer is the whole point: a second caller that blocks
+    # is a second connection held for the length of the subprocess.
+    assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+    assert list_opencode_models() == ["opencode/a"]
+
+
+def test_a_hung_cli_cannot_be_probed_back_to_back():
+    # A hang burns the full budget before it fails. Holding that failure for
+    # less time than the budget itself means the next request starts probing as
+    # the last one gives up, so a probe is always in flight.
+    assert FAILURE_CACHE_TTL_SECONDS > DISCOVERY_TIMEOUT_SECONDS
