@@ -62,10 +62,39 @@ def _enforce_foreign_keys(dbapi_connection, _connection_record) -> None:
     cursor.close()
 
 
-@event.listens_for(engine, "connect")
+def _connection_db_path(cursor) -> Path | None:
+    """The file THIS connection has open, from the connection itself.
+
+    Not from the module engine's URL, which is what this used to read: a second
+    engine — a script, a worker, a per-test database — would have been judged by
+    the singleton's path and configured for a file it had never opened.
+    """
+    cursor.execute("PRAGMA database_list")
+    for _seq, name, filename in cursor.fetchall():
+        # An in-memory database reports an empty filename, and has no path to
+        # judge — it falls through to the default journal mode, correctly.
+        if name == "main" and filename:
+            return Path(filename)
+    return None
+
+
+@event.listens_for(Engine, "connect")
 def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    """Journal mode and lock patience, on every connection in the process.
+
+    Registered on ``Engine`` for the same reason as the foreign-key listener
+    above, whose docstring says it plainly: a pragma only some connections set is
+    worse than none. This one was on the module's engine instance, so a script,
+    a worker or a per-test engine enforced foreign keys while silently falling
+    back to the driver's 5-second lock timeout instead of 30.
+
+    That matters here because several agents work in sibling worktrees of one
+    repository at once, so multi-writer contention on a single SQLite file is
+    the normal operating condition. A run has already been lost to it
+    (lg-workflow-integrity-687).
+    """
     cursor = dbapi_connection.cursor()
-    db_path = _db_path_from_engine_url(str(engine.url))
+    db_path = _connection_db_path(cursor)
     icloud_root = resolve_icloud_root(settings.icloud_root)
     if db_path and is_under_icloud(db_path, icloud_root):
         # iCloud Drive + WAL sidecars cause sync conflicts; prefer DELETE journal there.
