@@ -9,6 +9,7 @@ import {
   defaultChildType,
   workItemTypeLabel,
 } from "../lib/workItemHierarchy";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
@@ -129,6 +130,9 @@ export function CreateWorkItemModal({
   onCreate,
 }: CreateWorkItemModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const lockedParent =
     lockParent && parentTicketId && parentTicketType
       ? { id: parentTicketId, type: parentTicketType }

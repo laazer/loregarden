@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 
 import { api } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
@@ -7,6 +6,7 @@ import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
@@ -23,14 +23,10 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
       ACTIVE_STATUSES.has(query.state.data?.status?.toLowerCase() ?? "") ? 2000 : false,
   });
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(isOpen ? onClose : null);
 
   if (!isOpen) return null;
 

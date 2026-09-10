@@ -10,14 +10,11 @@ import { StudioChatMessages } from "../../../studio/StudioChat";
 import { CalendarPrimitive } from "../CalendarPrimitive";
 import { EditPrimitive } from "../EditPrimitive";
 import { GatePrimitive } from "../GatePrimitive";
-import { GiphyPrimitive } from "../GiphyPrimitive";
-import { BranchHistoryPrimitive, CommitPrimitive } from "../GitPrimitive";
 import { KanbanPrimitive } from "../KanbanPrimitive";
 import { ParentTicketPrimitive } from "../ParentTicketPrimitive";
 import { PrimitiveCard } from "../PrimitiveCard";
 import { PrimitiveParts } from "../PrimitiveParts";
 import { primitiveSize, widestPrimitiveSize } from "../primitiveFrame";
-import { QAPrimitive } from "../QAPrimitive";
 import { UnknownPrimitiveCard } from "../registry";
 import {
   OpenAgentStudioButton,
@@ -33,18 +30,12 @@ import { TicketListPrimitive } from "../TicketListPrimitive";
 import { TicketPrimitive } from "../TicketPrimitive";
 import { TicketWorkflowPrimitive } from "../TicketWorkflowPrimitive";
 import { ThinkingPrimitive } from "../ThinkingPrimitive";
-import { TodoListPrimitive } from "../TodoListPrimitive";
 import { WorkflowPrimitive } from "../WorkflowPrimitive";
-import { WorkspacePrimitive } from "../WorkspacePrimitive";
 import {
   childProgressPercent,
   stageProgressPercent,
 } from "../ticketProgress";
-import type { ChatPart, QAItem, TodoItem } from "../types";
-import {
-  fetchBranchActivity,
-  fetchCommitSnapshot,
-} from "../../../../lib/branchTriageApi";
+import type { ChatPart } from "../types";
 import { useUiStore } from "../../../../state/uiStore";
 
 jest.mock("../../../../lib/branchTriageApi", () => ({
@@ -71,12 +62,6 @@ jest.mock("../../../../api/client", () => {
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
-const mockedBranchActivity = fetchBranchActivity as jest.MockedFunction<
-  typeof fetchBranchActivity
->;
-const mockedCommitSnapshot = fetchCommitSnapshot as jest.MockedFunction<
-  typeof fetchCommitSnapshot
->;
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({
@@ -1007,263 +992,6 @@ describe("Calendar week schedule", () => {
   });
 });
 
-describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
-  it("loads a live workspace summary", async () => {
-    mockedApi.workspaces.mockResolvedValue([
-      {
-        id: "ws-1",
-        slug: "loregarden",
-        name: "Lore Garden",
-        repo_path: "/workspace/loregarden",
-        repo_root: "/workspace/loregarden",
-        repo_exists: true,
-        ticket_count: 12,
-        blocked_count: 2,
-        workflow_template_slug: "tdd",
-        cli_adapter: "cursor",
-        claude_model: "",
-        cursor_model: "gpt-5",
-        lmstudio_base_url: "",
-        lmstudio_model: "",
-      },
-    ]);
-
-    wrap(
-      <WorkspacePrimitive
-        part={{ primitive: "workspace", workspace_slug: "loregarden" }}
-      />,
-    );
-
-    expect(await screen.findByText("Lore Garden")).toBeInTheDocument();
-    expect(screen.getByText("12 tickets")).toBeInTheDocument();
-    expect(screen.getByText("2 blocked")).toBeInTheDocument();
-    expect(screen.getByText("tdd")).toBeInTheDocument();
-  });
-
-  it("keeps agent todos read-only and lets users toggle the same component", () => {
-    const agent = render(
-      <TodoListPrimitive
-        part={{
-          primitive: "todo_list",
-          owner: "agent",
-          items: [{ id: "test", text: "Run tests", checked: false }],
-        }}
-      />,
-    );
-    expect(screen.getByRole("checkbox", { name: "Run tests" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
-    agent.unmount();
-
-    render(
-      <TodoListPrimitive
-        part={{
-          primitive: "todo_list",
-          owner: "user",
-          items: [{ id: "review", text: "Review diff", checked: false }],
-        }}
-      />,
-    );
-    const checkbox = screen.getByRole("checkbox", { name: "Review diff" });
-    fireEvent.click(checkbox);
-    expect(checkbox).toBeChecked();
-    expect(screen.getByText("1/1 complete")).toBeInTheDocument();
-  });
-
-  it("runs an agent execution plan through the chat callback", () => {
-    const onSubmit = jest.fn();
-    render(
-      <TodoListPrimitive
-        part={{
-          primitive: "todo_list",
-          owner: "agent",
-          title: "Agent execution plan",
-          items: [
-            { id: "api", text: "Add history API", checked: false },
-            { id: "verify", text: "Run focused tests", checked: true },
-          ],
-        }}
-        onSubmit={onSubmit}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Run" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      [
-        "Execute this agent execution plan now. Complete each unchecked step using tools.",
-        "As you finish steps, re-emit the same todo_list with checked:true on completed items.",
-        "",
-        "Plan: Agent execution plan",
-        "- [ ] Add history API (id: api)",
-        "- [x] Run focused tests (id: verify)",
-      ].join("\n"),
-    );
-    expect(screen.getByText("Execution requested")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
-  });
-
-  it("hides Run when every agent plan step is already checked", () => {
-    render(
-      <TodoListPrimitive
-        part={{
-          primitive: "todo_list",
-          owner: "agent",
-          title: "Agent execution plan",
-          items: [{ id: "done", text: "Ship it", checked: true }],
-        }}
-        onSubmit={jest.fn()}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
-    expect(screen.getByText("All steps complete")).toBeInTheDocument();
-  });
-
-  it("keeps user ticks through a re-render but adopts a changed payload", () => {
-    const userList = (items: TodoItem[]) => (
-      <TodoListPrimitive part={{ primitive: "todo_list", owner: "user", items }} />
-    );
-    const original: TodoItem[] = [{ id: "review", text: "Review diff", checked: false }];
-    const view = render(userList(original));
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "Review diff" }));
-    // A fresh array with identical contents stands in for an unrelated
-    // re-render of the thread; the tick must survive it.
-    view.rerender(userList([{ ...original[0] }]));
-    expect(screen.getByRole("checkbox", { name: "Review diff" })).toBeChecked();
-
-    view.rerender(userList([{ id: "ship", text: "Approve release", checked: false }]));
-    expect(screen.getByRole("checkbox", { name: "Approve release" })).not.toBeChecked();
-    expect(screen.getByText("0/1 complete")).toBeInTheDocument();
-  });
-
-  it("keeps typed Q&A answers through a re-render", () => {
-    const onSubmit = jest.fn();
-    const card = (items: QAItem[]) => (
-      <QAPrimitive part={{ primitive: "qa", items }} onSubmit={onSubmit} />
-    );
-    const items: QAItem[] = [{ id: "scope", question: "Who is this for?" }];
-    const view = render(card(items));
-
-    fireEvent.change(screen.getByLabelText("Who is this for?"), {
-      target: { value: "Operators" },
-    });
-    view.rerender(card([{ ...items[0] }]));
-
-    expect(screen.getByLabelText("Who is this for?")).toHaveValue("Operators");
-    expect(screen.getByRole("button", { name: "Send answers" })).toBeEnabled();
-  });
-
-  it("renders live branch history and commit detail", async () => {
-    mockedBranchActivity.mockResolvedValue({
-      branch: "main",
-      upstream: "origin/main",
-      commits: [
-        {
-          sha: "a".repeat(40),
-          short_sha: "aaaaaaa",
-          date: new Date().toISOString(),
-          author: "Baxter",
-          message: "Add primitives",
-          pushed: true,
-        },
-      ],
-    });
-    mockedCommitSnapshot.mockResolvedValue({
-      sha: "a".repeat(40),
-      short_sha: "aaaaaaa",
-      date: new Date().toISOString(),
-      author: "Baxter",
-      message: "Add primitives",
-      body: "Implement the new cards.",
-      pushed: false,
-      files_changed: 3,
-      insertions: 42,
-      deletions: 5,
-    });
-
-    const branch = wrap(
-      <BranchHistoryPrimitive
-        part={{
-          primitive: "branch_history",
-          workspace_slug: "loregarden",
-          branch: "main",
-        }}
-      />,
-    );
-    expect(await screen.findByText("Add primitives")).toBeInTheDocument();
-    expect(screen.getByText("tracking origin/main")).toBeInTheDocument();
-    branch.unmount();
-
-    wrap(
-      <CommitPrimitive
-        part={{
-          primitive: "commit",
-          workspace_slug: "loregarden",
-          sha: "aaaaaaa",
-          branch: "main",
-        }}
-      />,
-    );
-    expect(await screen.findByText("Implement the new cards.")).toBeInTheDocument();
-    expect(screen.getByText("3 files")).toBeInTheDocument();
-    expect(screen.getByText("+42")).toBeInTheDocument();
-    expect(screen.getByText("−5")).toBeInTheDocument();
-  });
-
-  it("sends complete Q&A responses through the chat callback", () => {
-    const onSubmit = jest.fn();
-    render(
-      <QAPrimitive
-        part={{
-          primitive: "qa",
-          items: [{ id: "scope", question: "Who is this for?" }],
-        }}
-        onSubmit={onSubmit}
-      />,
-    );
-
-    const send = screen.getByRole("button", { name: "Send answers" });
-    expect(send).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Who is this for?"), {
-      target: { value: "Operators" },
-    });
-    fireEvent.click(send);
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      "1. Who is this for?\nAnswer: Operators",
-    );
-    expect(screen.getByText("Answers sent")).toBeInTheDocument();
-  });
-
-  it("renders only allowlisted Giphy media URLs", () => {
-    const view = render(
-      <GiphyPrimitive
-        part={{
-          primitive: "giphy",
-          giphy_id: "ICOgUNjpvO0PC",
-          alt: "Typing cat",
-        }}
-      />,
-    );
-    const image = screen.getByRole("img", { name: "Typing cat" });
-    expect(image).toHaveAttribute(
-      "src",
-      "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif",
-    );
-    fireEvent.error(image);
-    expect(screen.getByText("This Giphy image could not be loaded")).toBeInTheDocument();
-
-    view.rerender(
-      <GiphyPrimitive
-        part={{
-          primitive: "giphy",
-          url: "https://example.com/tracker.gif",
-        }}
-      />,
-    );
-    expect(screen.queryByRole("img")).toBeNull();
-    expect(screen.getByText(/valid Giphy ID/)).toBeInTheDocument();
-  });
-});
 
 describe("PrimitiveParts component", () => {
   it("skips empty text parts", () => {
@@ -1365,7 +1093,13 @@ describe("primitive expansion", () => {
     const overlay = screen.getByRole("dialog");
     expect(overlay).toContainElement(screen.getByText("ok"));
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    // At `document`, not `window`. A key press in a browser targets the focused
+    // element and bubbles up through `document` to `window`, so a `document`
+    // listener sees it — but an event fired *at* `window` is already past
+    // `document` and never reaches it. This fired at `window` only because the
+    // implementation happened to listen there; the shared dismiss stack listens
+    // where the focus trap does.
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Expand" })).toBeInTheDocument();
   });

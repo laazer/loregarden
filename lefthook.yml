@@ -112,6 +112,11 @@ pre-commit:
       priority: 1
       glob: "client/**/*.{ts,tsx}"
       run: bash .lefthook/scripts/ts-silent-failures.sh {staged_files}
+    ts-ux-states:
+      name: TypeScript user-experience check (naming, keyboard, empty states)
+      priority: 1
+      glob: "client/**/*.{ts,tsx}"
+      run: bash .lefthook/scripts/ts-ux-states.sh {staged_files}
 
 pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`

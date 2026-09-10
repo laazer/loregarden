@@ -113,6 +113,15 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 900,
     },
+    # Hyphenated because the agent already existed under this slug in live
+    # databases before it was registered. Renaming it here would seed a second,
+    # duplicate agent beside the one the templates point at.
+    "ui-design-decision": {
+        "name": "UI Design Decision Maker",
+        "role_file": "agents/misc_agents/ui_design_decision_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
     "debugger": {
         "name": "Debugger",
         "role_file": "agents/misc_agents/debugger_v1.md",

@@ -4,6 +4,7 @@ import { IconCloseButton } from "./IconCloseButton";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../lib/ticketStates";
 
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export const TICKET_STATES: TicketState[] = [
@@ -116,6 +117,9 @@ export function UpdateStateModal({
   const [draft, setDraft] = useState<StateUpdateDraft | null>(original);
   const [bulkStatus, setBulkStatus] = useState<StageStatus>("pending");
   const [selectedStageKeys, setSelectedStageKeys] = useState<Set<string>>(new Set());
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !ticket || !draft || !original ? null : onClose);
 
   useEffect(() => {
     if (open && ticket) {

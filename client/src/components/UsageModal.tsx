@@ -1,6 +1,7 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { UsageBreakdownItem, UsageMeter, UsageProviderSnapshot, UsageSnapshot } from "../api/client";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface UsageModalProps {
@@ -136,6 +137,9 @@ function ProviderSection({
 
 export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefresh }: UsageModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isLoading ? undefined : onClose);
   if (!open) return null;
 
   return (

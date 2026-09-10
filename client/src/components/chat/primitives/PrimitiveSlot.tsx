@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { PrimitiveFrameContext, primitiveSize } from "./primitiveFrame";
 import "./PrimitiveCard.css";
 import { useDialogFocusTrap } from "../../../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../../../hooks/useDialogDismiss";
 
 /** Wraps one primitive so it can claim more room than the chat measure allows,
  *  and — for breakout tiers — hoist itself into a full-viewport overlay. */
@@ -21,14 +22,9 @@ export function PrimitiveSlot({ kind, children }: { kind: string; children: Reac
     setExpanded(!expanded);
   }, [expanded]);
 
-  useEffect(() => {
-    if (!expanded) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [expanded]);
+  // Through the shared dismiss stack, so a dialog opened over an expanded slot
+  // takes the press instead of both collapsing at once.
+  useDialogDismiss(expanded ? () => setExpanded(false) : null);
 
   const frame = useMemo(
     () => ({ size, canExpand, expanded, toggleExpanded }),

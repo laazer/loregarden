@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { TicketState } from "../api/types";
 import { useQueueStatus } from "../state/QueueStatusContext";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 
 /**
  * States worth offering. Blocked work is blocked for a reason, and done /
@@ -73,20 +74,18 @@ export function QueueSlotTicketPicker({
     enabled: open,
   });
 
+  // Escape goes through the shared dismiss stack, so a dialog opened over this
+  // one takes the press instead. Outside-click stays here: it is decided by
+  // this element's own bounds, which nothing shared can know.
+  useDialogDismiss(open ? () => setOpen(false) : null);
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
   useEffect(() => {

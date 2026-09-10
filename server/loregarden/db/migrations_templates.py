@@ -2,7 +2,7 @@
 
 Split out of `migrations.py`, which had grown past the organization gate's
 limit. The division is by what a migration changes: DDL there, the content of
-`workflow_templates.stages_json` here. They share `_snapshot_template_version`,
+`workflow_templates.stages_json` here. They share `snapshot_template_version`,
 which is what made them a cluster rather than an arbitrary cut.
 
 Migration identity is the id string in the MIGRATIONS list, which is unchanged,
@@ -22,10 +22,15 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 
-def _snapshot_template_version(
+def snapshot_template_version(
     conn: Connection, template_id: str, version: int, change_note: str
 ) -> None:
     """Record a template version snapshot, matching what a Studio edit writes.
+
+    Public because template-reshaping migrations outside this module reuse it —
+    `migrations_ux_lanes` and `migrations_ux_coverage` both snapshot the edits
+    they make. Every migration that rewrites `stages_json` owes a snapshot, so
+    this is the shared contract rather than an internal detail.
 
     Columns are listed explicitly rather than relying on defaults: create_all
     builds these tables from the models, where a Python default renders as NOT
@@ -121,7 +126,7 @@ def m_require_verify_evidence(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
         {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Verify must record a verdict")
+    snapshot_template_version(conn, row["id"], new_version, "Verify must record a verdict")
 
 
 _IMPLEMENT_STAGE = "implement"
@@ -162,7 +167,7 @@ def m_require_implement_real_surface(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
         {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Implement must show it working")
+    snapshot_template_version(conn, row["id"], new_version, "Implement must show it working")
 
 
 _REVIEW_TEMPLATE = "studio-loregarden-tdd-v3"
@@ -216,7 +221,7 @@ def m_parallel_review_in_v3(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
         {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Parallel multi-angle review")
+    snapshot_template_version(conn, row["id"], new_version, "Parallel multi-angle review")
 
 
 _VERIFY_TEMPLATE = "studio-loregarden-tdd-v3"
@@ -302,7 +307,7 @@ def m_verify_stage_in_v3(conn: Connection) -> None:
             "id": row["id"],
         },
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Verify stage after implement")
+    snapshot_template_version(conn, row["id"], new_version, "Verify stage after implement")
     _backfill_verify_into_instances(
         conn, row["id"], {s["key"]: int(s.get("order") or 0) for s in stages}
     )
@@ -427,7 +432,7 @@ def m_light_heavy_rigor_triage(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:stages, version=:v WHERE id=:id"),
         {"stages": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(conn, row["id"], new_version, "LIGHT/HEAVY rigor triage")
+    snapshot_template_version(conn, row["id"], new_version, "LIGHT/HEAVY rigor triage")
 
 
 _REFACTOR_TEMPLATE = "studio-loregarden-tdd-v3"
@@ -501,9 +506,7 @@ def m_refactor_skill_routes(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
         {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(
-        conn, row["id"], new_version, "Route refactors to the refactor skill"
-    )
+    snapshot_template_version(conn, row["id"], new_version, "Route refactors to the refactor skill")
 
 
 _PLAN_TEMPLATE = "studio-loregarden-tdd-v3"
@@ -543,7 +546,7 @@ def m_plan_skill_on_plan_stage(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
         {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Plan stage attaches its plan")
+    snapshot_template_version(conn, row["id"], new_version, "Plan stage attaches its plan")
 
 
 _HYPERPLAN_TEMPLATE = "studio-loregarden-tdd-v3"
@@ -647,7 +650,7 @@ def m_adversarial_planning(conn: Connection) -> None:
             "id": row["id"],
         },
     )
-    _snapshot_template_version(conn, row["id"], new_version, "Adversarial planning")
+    snapshot_template_version(conn, row["id"], new_version, "Adversarial planning")
 
 
 def _has_terminal_stage(stages: list[dict]) -> bool:
@@ -717,7 +720,7 @@ def m_ensure_terminal_stage(conn: Connection) -> None:
                 "id": row["id"],
             },
         )
-        _snapshot_template_version(conn, row["id"], new_version, "Terminal done stage")
+        snapshot_template_version(conn, row["id"], new_version, "Terminal done stage")
 
 
 #: Skill names that were declared on templates/drafts but never existed as
@@ -791,7 +794,7 @@ def m_clear_phantom_skill_names(conn: Connection) -> None:
                 text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
                 {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
             )
-            _snapshot_template_version(conn, row["id"], new_version, "Clear phantom skill names")
+            snapshot_template_version(conn, row["id"], new_version, "Clear phantom skill names")
 
     if table_exists(conn, "studio_workflows"):
         rows = conn.execute(text("SELECT id, stages_json FROM studio_workflows")).mappings().all()
@@ -858,7 +861,7 @@ def m_playtest_scene_placeholder(conn: Connection) -> None:
             text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
-        _snapshot_template_version(conn, row["id"], new_version, "Playtest scene placeholder")
+        snapshot_template_version(conn, row["id"], new_version, "Playtest scene placeholder")
 
 
 #: Playtest items an agent stage already covers. The AC placeholder duplicates
@@ -935,7 +938,7 @@ def m_retire_agent_owned_gate_items(conn: Connection) -> None:
             text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
-        _snapshot_template_version(conn, row["id"], new_version, "Retire agent-owned gate items")
+        snapshot_template_version(conn, row["id"], new_version, "Retire agent-owned gate items")
 
 
 def _template_stages_by_version(conn: Connection, template_id: str) -> dict[int, list[dict]]:
@@ -1296,7 +1299,7 @@ def m_alternative_impl_group(conn: Connection) -> None:
             text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
-        _snapshot_template_version(conn, row["id"], new_version, "Alternative implementation group")
+        snapshot_template_version(conn, row["id"], new_version, "Alternative implementation group")
 
 
 #: The three stages that actually reach the routing-hint override today, keyed by
@@ -1348,7 +1351,7 @@ def m_agent_is_default_stages(conn: Connection) -> None:
             text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
             {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
         )
-        _snapshot_template_version(conn, row["id"], new_version, "Stage agent_is_default")
+        snapshot_template_version(conn, row["id"], new_version, "Stage agent_is_default")
 
 
 #: Per-stage agent budgets, in seconds, keyed by stage key.

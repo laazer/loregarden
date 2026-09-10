@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import './QueueOperationReview.css';
+import { useDialogDismiss } from '../hooks/useDialogDismiss';
 
 export interface OperationComment {
   id: string;
@@ -40,6 +41,10 @@ export function QueueOperationReview({
   const [newComment, setNewComment] = useState('');
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [showAgentSubmit, setShowAgentSubmit] = useState(false);
+  // Gated on the flag, not always registered: this component stays mounted with
+  // the confirm closed, and a live dismisser would swallow Escape from the
+  // surface underneath.
+  useDialogDismiss(showAgentSubmit ? () => setShowAgentSubmit(false) : null);
   const [agentId, setAgentId] = useState('default-orchestrator');
   const [agentInstructions, setAgentInstructions] = useState('');
 
@@ -257,8 +262,11 @@ export function QueueOperationReview({
               </button>
             </div>
           </div>
+          {/* Presentational, so it stays out of the tab order. Escape closes
+              this the same way a click on it does. */}
           <div
             className="modal-backdrop"
+            role="presentation"
             onClick={() => setShowAgentSubmit(false)}
           />
         </div>

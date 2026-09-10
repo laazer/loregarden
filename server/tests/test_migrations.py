@@ -996,10 +996,418 @@ def test_review_becomes_multi_angle(tmp_path):
 
     assert review["stage_type"] == "parallel"
     lanes = [a["agent_id"] for a in review["parallel_agents"]]
-    # Distinct lenses: structure, correctness, and exploitability.
-    assert lanes == ["architecture_reviewer", "static_qa", "security_reviewer"]
+    # Distinct lenses: structure, correctness, exploitability — and, since 0122,
+    # what the change looks like to the person using it. The fourth lane is the
+    # one none of the other three were ever looking at.
+    assert lanes == ["architecture_reviewer", "static_qa", "security_reviewer", "visual_qa"]
     # The old single route would be a second, contradictory answer to "who reviews".
     assert review["classify_routes"] == []
+
+    assert apply_migrations(engine) == []
+
+
+def test_ux_design_stage_is_pointed_at_the_agent_it_was_named_for(tmp_path):
+    """0122 gives the pipeline a UX voice with authority.
+
+    Before it, `ui-design` dispatched the *planner* under the `plan` skill and
+    was `optional`, so the one stage named for the user was a second planning
+    turn any run could prune — and `ui-design-decision`, built for exactly this,
+    appeared in no template and had never run.
+    """
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {
+            "key": "ui-design",
+            "name": "UI Design",
+            "agent_id": "planner",
+            "skill_name": "plan",
+            "optional": True,
+            "order": 4,
+            "stage_type": "agent",
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'ux.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-ux",
+                slug="studio-loregarden-tdd-v3",
+                name="V3",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-ux'")
+        ).scalar()
+    design = {s["key"]: s for s in json.loads(stages_json)}["ui-design"]
+
+    assert design["agent_id"] == "ui-design-decision"
+    # The `plan` skill came with the planner and would override the design
+    # agent's own role file.
+    assert design["skill_name"] == ""
+    # Required, or the stage the user's experience depends on is the one a run
+    # prunes when it is in a hurry.
+    assert design["optional"] is False
+    assert design["skip_when"] == "routed_as_light_work"
+    # The brief is what tells the agent where a decision goes in this repo.
+    assert "acceptance criteria" in design["stage_brief"]
+
+    assert apply_migrations(engine) == []
+
+
+def test_the_ux_design_agent_is_registered_so_a_fresh_install_can_dispatch_it():
+    """A required stage naming an agent nothing seeds is a stage nothing runs."""
+    from loregarden.agents.registry import get_agent
+
+    agent = get_agent("ui-design-decision")
+    assert agent is not None
+    assert agent["role_body"].strip()
+    # The sentinel the orchestrator routes on. A stage agent whose role body
+    # omits it exits cleanly and blocks the stage, which is indistinguishable
+    # from the agent being broken.
+    assert "LOREGARDEN_STAGE_REPORT" in agent["role_body"]
+
+
+def test_a_sentinel_less_design_agent_is_repaired(tmp_path):
+    """0122's second half: the live row was written without a stage outcome.
+
+    Wiring a required stage to an agent that cannot report an outcome would
+    block every ticket, so the migration refreshes the body from its seed file.
+    """
+    import json
+
+    from loregarden.models.domain import StudioAgent, StudioAgentVersion
+    from sqlmodel import Session
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'agent.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        agent = StudioAgent(
+            id="agent-ux",
+            slug="ui-design-decision",
+            name="UI Design Decision Maker",
+            description="",
+            role_body="You are a UI/UX design agent. Output a design document.",
+            adapter="claude",
+            timeout=600,
+            default_skill="autopilot",
+            mcp_enabled=True,
+            mcp_tools_json="[]",
+            gate_checks_json="[]",
+            handoff_checks_json="[]",
+            version=1,
+            built_in=False,
+        )
+        session.add(agent)
+        session.add(
+            StudioAgentVersion(
+                id="ver-ux",
+                agent_id="agent-ux",
+                version=1,
+                snapshot_json=json.dumps({"slug": "ui-design-decision"}),
+                created_by="migration",
+                change_note="seeded",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                text(
+                    "SELECT role_body, version, built_in, default_skill FROM studio_agents "
+                    "WHERE slug='ui-design-decision'"
+                )
+            )
+            .mappings()
+            .one()
+        )
+    assert "LOREGARDEN_STAGE_REPORT" in row["role_body"]
+    assert row["version"] == 2
+    assert row["built_in"] == 1
+    # `autopilot` came with the row and is not a design skill.
+    assert row["default_skill"] == ""
+
+    assert apply_migrations(engine) == []
+
+
+def test_an_operator_edited_design_agent_is_left_alone(tmp_path, caplog):
+    """Overwriting someone's text is worse than the defect it fixes.
+
+    The stage still cannot route without the sentinel, so the migration says so
+    at `warning` rather than repairing over the edit or passing quietly.
+    """
+    import json
+    import logging
+
+    from loregarden.models.domain import StudioAgent, StudioAgentVersion
+    from sqlmodel import Session
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'edited.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            StudioAgent(
+                id="agent-ux",
+                slug="ui-design-decision",
+                name="UI Design Decision Maker",
+                description="",
+                role_body="Hand-written by the operator.",
+                adapter="claude",
+                timeout=600,
+                default_skill="",
+                mcp_enabled=True,
+                mcp_tools_json="[]",
+                gate_checks_json="[]",
+                handoff_checks_json="[]",
+                version=3,
+                built_in=False,
+            )
+        )
+        for version, author in ((1, "migration"), (2, "studio-ui"), (3, "studio-ui")):
+            session.add(
+                StudioAgentVersion(
+                    id=f"ver-{version}",
+                    agent_id="agent-ux",
+                    version=version,
+                    snapshot_json=json.dumps({"slug": "ui-design-decision"}),
+                    created_by=author,
+                    change_note="edit",
+                )
+            )
+        session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.db.migrations_ux_lanes"):
+        apply_migrations(engine)
+
+    with engine.connect() as conn:
+        body = conn.execute(
+            text("SELECT role_body FROM studio_agents WHERE slug='ui-design-decision'")
+        ).scalar()
+    assert body == "Hand-written by the operator."
+    assert "leaving it alone" in caplog.text
+    assert "will block" in caplog.text
+
+
+def _seed_template(engine, *, slug: str, stages: list, transitions: list) -> None:
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id=f"tpl-{slug}",
+                slug=slug,
+                name=slug,
+                stages_json=json.dumps(stages),
+                transitions_json=json.dumps(transitions),
+                source_path=f"studio:{slug}",
+            )
+        )
+        session.commit()
+
+
+def test_the_design_stage_reaches_the_other_workspaces(tmp_path):
+    """0123: 0122 fixed the template one workspace in four actually runs.
+
+    blobert, lore-eden and loremaker run `blobert-tdd` and `loregarden-tdd`, and
+    neither had a design stage at all — so the fix read as done while covering a
+    quarter of the work.
+    """
+    import json
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'coverage.db'}")
+    SQLModel.metadata.create_all(engine)
+    _seed_template(
+        engine,
+        slug="loregarden-tdd",
+        stages=[
+            {"key": "context", "name": "Context", "agent_id": "retriever", "order": 2},
+            {"key": "spec", "name": "Spec", "agent_id": "spec", "order": 3},
+            {"key": "test-design", "name": "Tests", "agent_id": "test_designer", "order": 4},
+        ],
+        transitions=[{"from": "context", "to": "spec"}, {"from": "spec", "to": "test-design"}],
+    )
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                text(
+                    "SELECT stages_json, transitions_json FROM workflow_templates "
+                    "WHERE id='tpl-loregarden-tdd'"
+                )
+            )
+            .mappings()
+            .one()
+        )
+    stages = sorted(json.loads(row["stages_json"]), key=lambda s: s["order"])
+    # `done` is appended by 0045, which backfills a terminal stage into any
+    # template lacking one — this fixture is such a template.
+    assert [s["key"] for s in stages] == ["context", "ui-design", "spec", "test-design", "done"]
+
+    design = stages[1]
+    assert design["agent_id"] == "ui-design-decision"
+    assert design["optional"] is False
+    # v3's `routed_as_light_work` reads a classify route, and this template has no
+    # classify stage — the condition would never fire and would read as a skip
+    # that works.
+    assert design["skip_when"] == ""
+    assert "acceptance criteria" in design["stage_brief"]
+
+    transitions = json.loads(row["transitions_json"])
+    assert {"from": "context", "to": "ui-design"} in transitions
+    assert {"from": "ui-design", "to": "spec", "when": "pass"} in transitions
+
+    assert apply_migrations(engine) == []
+
+
+def test_rework_edges_still_return_to_the_spec(tmp_path):
+    """Only the *forward* edge into spec is repointed.
+
+    blobert-tdd routes `test-design -> spec` and `test-break -> spec` on
+    `reject`: rework, sending a failed test design back to the spec that produced
+    it. The first version of this migration repointed every edge whose `to` was
+    `spec`, which sent rework to the design stage — a stage that neither wrote
+    the spec nor can fix it. It looks like a wired pipeline and misroutes
+    silently, which is why it is pinned here.
+    """
+    import json
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'rework.db'}")
+    SQLModel.metadata.create_all(engine)
+    _seed_template(
+        engine,
+        slug="blobert-tdd",
+        stages=[
+            {"key": "domain_consultation", "name": "Domain", "agent_id": "retriever", "order": 2},
+            {"key": "spec", "name": "Spec", "agent_id": "spec", "order": 3},
+            {"key": "test-design", "name": "Tests", "agent_id": "test_designer", "order": 4},
+            {"key": "test-break", "name": "Break", "agent_id": "test_breaker", "order": 5},
+        ],
+        transitions=[
+            {"from": "domain_consultation", "to": "spec"},
+            {"from": "spec", "to": "test-design"},
+            {"from": "test-design", "to": "spec", "when": "reject"},
+            {"from": "test-break", "to": "spec", "when": "reject"},
+        ],
+    )
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        transitions = json.loads(
+            conn.execute(
+                text("SELECT transitions_json FROM workflow_templates WHERE id='tpl-blobert-tdd'")
+            ).scalar()
+        )
+
+    assert {"from": "test-design", "to": "spec", "when": "reject"} in transitions
+    assert {"from": "test-break", "to": "spec", "when": "reject"} in transitions
+    assert {"from": "domain_consultation", "to": "ui-design"} in transitions
+    assert not [t for t in transitions if t.get("to") == "ui-design" and t.get("when") == "reject"]
+
+
+def test_the_visual_lane_does_not_travel_with_the_design_stage(tmp_path):
+    """`visual_qa` runs a Playwright script that lives in loregarden's client.
+
+    lore-eden is a library with no app, loremaker's client has no such script,
+    and blobert is Godot. Adding the lane there would fail every ticket at review
+    on a missing npm script, which is breakage rather than enforcement.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'lane.db'}")
+    SQLModel.metadata.create_all(engine)
+    _seed_template(
+        engine,
+        slug="loregarden-tdd",
+        stages=[
+            {"key": "spec", "name": "Spec", "agent_id": "spec", "order": 3},
+            {
+                "key": "review",
+                "name": "Review",
+                "agent_id": "gatekeeper",
+                "order": 8,
+                "stage_type": "agent",
+            },
+        ],
+        transitions=[],
+    )
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-loregarden-tdd'")
+        ).scalar()
+    assert "ui-design" in stages_json
+    assert "visual_qa" not in stages_json
+
+
+def test_the_design_agent_can_use_the_tools_its_brief_names(tmp_path):
+    """A brief naming an ungranted tool is an instruction the agent cannot follow.
+
+    The failure looks like the agent ignoring the brief, which is the most
+    expensive kind of bug to read from the outside.
+    """
+    import json
+
+    from loregarden.models.domain import StudioAgent
+    from sqlmodel import Session
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'grants.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            StudioAgent(
+                id="agent-ux",
+                slug="ui-design-decision",
+                name="UI Design Decision Maker",
+                description="",
+                role_body="LOREGARDEN_STAGE_REPORT",
+                adapter="claude",
+                timeout=600,
+                default_skill="",
+                mcp_enabled=True,
+                mcp_tools_json=json.dumps(["loregarden_get_ticket"]),
+                gate_checks_json="[]",
+                handoff_checks_json="[]",
+                version=1,
+                built_in=False,
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        tools = json.loads(
+            conn.execute(
+                text("SELECT mcp_tools_json FROM studio_agents WHERE slug='ui-design-decision'")
+            ).scalar()
+        )
+    for tool in (
+        "loregarden_update_ticket",
+        "loregarden_attach_artifact",
+        "loregarden_append_checkpoint",
+    ):
+        assert tool in tools, tool
 
     assert apply_migrations(engine) == []
 

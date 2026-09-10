@@ -21,6 +21,7 @@ import { useId, useState, type FormEvent } from "react";
 
 import type { ViewKind } from "../lib/viewsApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const KIND_OPTIONS: { kind: ViewKind; label: string; hint: string }[] = [
@@ -41,6 +42,10 @@ export function NewViewModal({
   onCreate: (input: { title: string; kind: ViewKind }) => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click dismiss
+  // this dialog is what makes the key dismiss it. No `open` guard: unlike the
+  // other modals this one is mounted only while it is shown.
+  useDialogDismiss(isCreating ? undefined : onClose);
   const titleId = useId();
   const groupName = useId();
   const [title, setTitle] = useState("");

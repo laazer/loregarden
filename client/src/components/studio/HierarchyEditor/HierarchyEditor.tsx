@@ -6,7 +6,7 @@
  * visual validation feedback, and undo/redo with discard options.
  */
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, type KeyboardEvent } from "react";
 import {
   ProposalItem,
   ProposalFolder,
@@ -410,7 +410,33 @@ function HierarchyNodeEditor({
 
           <span className={styles.nodeType}>{node.type}</span>
 
-          <div className={styles.nodeContent} onClick={() => onSelect(node.id)}>
+          {/* Selecting a node was pointer-only: click to select, double-click to
+              rename, and no way to do either from the keyboard. The interactive
+              attributes are dropped while editing, because the input inside is
+              then the thing being operated and a button wrapping it would
+              swallow its keys. */}
+          <div
+            className={styles.nodeContent}
+            onClick={() => onSelect(node.id)}
+            {...(isEditing
+              ? {}
+              : {
+                  role: "button",
+                  tabIndex: 0,
+                  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(node.id);
+                    }
+                    // F2 is the platform convention for rename-in-place, and the
+                    // keyboard counterpart of the double-click below.
+                    if (event.key === "F2") {
+                      event.preventDefault();
+                      onStartEditing(node.id);
+                    }
+                  },
+                })}
+          >
             {isEditing ? (
               <input
                 autoFocus

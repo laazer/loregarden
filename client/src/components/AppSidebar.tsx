@@ -48,6 +48,7 @@ import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { SIDEBAR_PAGES } from "./appSidebarPages";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import {
   ControlIcon,
   ToolRow,
@@ -99,20 +100,18 @@ function PinTabMenu({
     if (!expanded) setOpen(false);
   }, [expanded]);
 
+  // Escape goes through the shared dismiss stack, so a dialog opened over this
+  // one takes the press instead. Outside-click stays here: it is decided by
+  // this element's own bounds, which nothing shared can know.
+  useDialogDismiss(open ? () => setOpen(false) : null);
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
     document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
   // `role="menu"` promises arrow-key movement between its items; the roles are

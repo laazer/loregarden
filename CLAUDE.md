@@ -110,6 +110,59 @@ Ruff carries the part it can see: `BLE` (blind-except), `TRY400`
 were switched on during this audit — 23 `# noqa: BLE001` comments were already in
 the tree suppressing a rule that had never been enabled.
 
+## The person using it
+
+A failure nobody sees is the section above. This one is its sibling: an *experience* nobody
+decided. It has the same shape — the code does what it was told, the tests are green, and what
+reaches the operator is a blank pane, a control no keyboard can reach, or a spinner that never
+resolves into an explanation.
+
+It is not a matter of anyone caring less. It is that nothing asked. Measured across every row
+of `agent_runs`: `ui-design-decision` and `visual_qa` — the two agents built for exactly this —
+had **never run**, and appeared in no workflow template. The `ui-design` stage dispatched the
+*planner*, and was `optional`. A ticket could cross plan → spec → test → implement → verify →
+three reviewers → gate without one agent looking at what a person would see. Migration
+`0122_ux_lanes_in_v3` closes that: the stage now runs the design agent and is required, and
+`visual_qa` is a fourth review lane beside architecture, static and security.
+
+### The five states
+
+A change to a user-facing surface is not specified until all five are decided. A ticket that
+names none of them is not vague — it is going to ship the default, and the default is a blank
+pane.
+
+1. **Loading** — what is on screen between the action and the data. A skeleton where the shape
+   is known; nothing at all where the wait is under ~200ms. A spinner is a last resort, not a
+   reflex.
+2. **Empty** — zero rows, legitimately. It must not look like the error state. Say what would
+   be here and how to get one.
+3. **Error** — `describeError(error, fallback)` → `pushToast`, in words naming what failed and
+   what to do next. The path already exists; see *No silent failures*.
+4. **Slow or in flight** — what is disabled, what is shown, and what stops a second click from
+   firing the action twice.
+5. **Keyboard and focus** — how the surface is reached, operated and left without a mouse.
+   `useDialogFocusTrap` holds focus; `useDialogDismiss` closes on Escape. Every control needs a
+   name a screen reader can read.
+
+### What is enforced
+
+`ts_ux_states_check.cjs` runs everywhere the other frontend gates run — pre-commit, every stage
+transition, and `loregarden_check_organization`. Diff-scoped, so inherited debt is not your
+commit's problem, and waived with `ux-ok:` plus a substantive reason on the line or in the
+comment block above it. It reports four things:
+
+- a `<button>`/`<a>` with no text, no `aria-label` and no `title`;
+- `onClick` on a non-interactive element with no `role`, `tabIndex` or key handler;
+- a dismiss backdrop in a file that never handles Escape;
+- a fetched list rendered with `.map()` where nothing handles the empty case.
+
+Three of the four are shapes a screenshot review passes without noticing, because the reviewer
+already knows what the icon does and already has a mouse.
+
+A gate can only see shape. It cannot tell you the empty state you wrote says the right thing,
+or that the loading state matches the wait. That judgment is the `ui-design` stage's before the
+work and `visual_qa`'s after it — and yours in between.
+
 ## Verify, don't infer
 
 This control plane observes itself, and several of its tables record only part of the story.
@@ -266,6 +319,15 @@ No inline `err instanceof Error ? err.message : "…"` ternary either — that n
 status line the ternary discards. The `ts-organization` gate enforces it on staged lines;
 `// ts-org: allow-instanceof` waives one. Type guards inside a helper stay legal.
 
+The `ts-ux-states` gate covers what the user meets — see *The person using it* above for the
+four checks and the `ux-ok:` waiver. As with `silent-ok:`, **a `ux-ok:` waiver on a changed
+line is a claim to verify**: the gate can only check that a reason exists, not that it is true.
+A waiver asserting a control is decorative, or that a parent renders the empty state, is a
+**High** finding when it is not.
+
+Beyond the gate, review what it cannot see: does the empty state say something useful, does the
+error name the thing that failed, does the loading state match the length of the wait.
+
 ## Knowing when a ticket is done
 
 A ticket is done when its **acceptance criteria** are met — not when reviewers stop finding
@@ -391,5 +453,7 @@ See `AGENTS.md` → *Anti-patterns* for the table with evidence. The short versi
 markdown, no ticket-file hunting, no editing v1 YAML expecting an effect, no ticket IDs in
 filenames, no defensive normalization, no hand-edits during an orchestration.
 
-Two more, from the sections above: **no retrying a failing push in place of diagnosing it**, and
-**no asking which gate to skip** — a gate your change trips is part of your change.
+Three more, from the sections above: **no retrying a failing push in place of diagnosing it**,
+**no asking which gate to skip** — a gate your change trips is part of your change — and **no
+user-facing change that names none of the five states**. The last one is the quietest: it looks
+finished, it passes review, and it ships a blank pane.

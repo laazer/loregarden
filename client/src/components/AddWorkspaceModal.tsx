@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { WorkflowTemplateSummary } from "../api/client";
 import { slugify } from "../lib/slugify";
 import { RepoPathExplorer } from "./RepoPathExplorer";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface AddWorkspaceDraft {
@@ -36,6 +37,9 @@ export function AddWorkspaceModal({
   onCreate,
 }: AddWorkspaceModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const [draft, setDraft] = useState<AddWorkspaceDraft>({
     name: "",
     slug: "",

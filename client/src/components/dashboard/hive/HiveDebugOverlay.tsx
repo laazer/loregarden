@@ -114,6 +114,10 @@ export function HiveDebugOverlay({ layout }: HiveDebugOverlayProps) {
           <span className="hive-debug__marker-label">{m.label}</span>
         </div>
       ))}
+      {/* ux-ok: a pointer-position probe in the Alt+G developer overlay — it
+          reports the tile under the cursor and copies its coordinates, so there
+          is no cursor and nothing to report without a pointer. The overlay is
+          not part of the product surface. */}
       <div
         className="hive-debug__capture"
         onMouseMove={onMove}

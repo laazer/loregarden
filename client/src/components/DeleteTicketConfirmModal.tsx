@@ -2,6 +2,7 @@ import { IconCloseButton } from "./IconCloseButton";
 
 import type { TicketDetail } from "../api/client";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface DeleteTicketConfirmModalProps {
@@ -22,6 +23,9 @@ export function DeleteTicketConfirmModal({
   onConfirm,
 }: DeleteTicketConfirmModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !ticket ? null : isDeleting ? undefined : onClose);
   if (!open || !ticket) return null;
 
   return (

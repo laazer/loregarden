@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { MemoryConfigResponse, MemoryConfigSettings } from "../api/client";
 import { RepoPathExplorer, sanitizeBrowsePath } from "./RepoPathExplorer";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface MemorySetupModalProps {
@@ -56,6 +57,9 @@ export function MemorySetupModal({
   onRefresh,
 }: MemorySetupModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const [draft, setDraft] = useState<MemoryConfigSettings>(() => data?.config ?? emptyConfig());
   const [icloudJump, setIcloudJump] = useState("");
   const [obsidianJump, setObsidianJump] = useState("");

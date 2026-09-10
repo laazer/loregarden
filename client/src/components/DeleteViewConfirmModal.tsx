@@ -8,6 +8,7 @@
 
 import type { ViewSummary } from "../lib/viewsApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export function DeleteViewConfirmModal({
@@ -23,6 +24,9 @@ export function DeleteViewConfirmModal({
   onConfirm: () => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!view ? null : isDeleting ? undefined : onClose);
   if (!view) return null;
 
   return (

@@ -1,9 +1,9 @@
-import { useEffect } from "react";
 
 import type { Approval } from "../api/client";
 import { ApprovalCard, type ApprovalResolvePayload } from "./ApprovalCard";
 import { IconCloseButton } from "./IconCloseButton";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 
 /**
  * The full approval — criteria, checklist, questions — outside the narrow rail
@@ -28,14 +28,10 @@ export function ApprovalDetailModal({
   onOpenApprovalsTab?: () => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(open ? onClose : null);
 
   if (!open || !approval) return null;
 
