@@ -5,6 +5,7 @@ Everything is re-exported here so ``from loregarden.models.domain import X``
 continues to work unchanged.
 """
 
+from loregarden.models.domain.docker_tables import *  # noqa: F401,F403
 from loregarden.models.domain.enums import *  # noqa: F401,F403
 from loregarden.models.domain.queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403

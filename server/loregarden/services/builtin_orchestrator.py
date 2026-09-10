@@ -36,6 +36,7 @@ from loregarden.services.review_relens import decide_lenses, record_relens_decis
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import lease_renewal
+from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -533,7 +534,7 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
         )
-        with lease_renewal(agent_run.id):
+        with stage_docker_capacity(self.session, agent_run), lease_renewal(agent_run.id):
             completed = self.executor.execute(agent_run, ticket)
         self.session.refresh(ticket)
 

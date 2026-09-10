@@ -51,6 +51,11 @@ class McpTool(StrEnum):
     DOCTOR = "loregarden_doctor"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
+    RESERVE_DOCKER_CAPACITY = "loregarden_reserve_docker_capacity"
+    RENEW_DOCKER_LEASE = "loregarden_renew_docker_lease"
+    RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
+    DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
+    FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -117,6 +122,7 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
+        McpTool.DOCKER_CAPACITY_STATUS,
     }
 )
 
@@ -142,6 +148,48 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     }
 )
 
+#: Reserve, renew and release on the docker capacity ledger. Auto-approved, and
+#: held beside `CONTROL_PLANE_WRITE_MCP_TOOLS` rather than folded into it for the
+#: same reason `NETWORK_EGRESS_MCP_TOOLS` is: that set promises its members
+#: cannot touch workflow state, and a scheduler ledger that decides whether
+#: another run may start is workflow state by any honest reading.
+#:
+#: Auto-approved anyway, and the argument is concrete. An agent that has to wait
+#: for a human click to *release* a lease will simply not release it, and
+#: capacity leaks until the reaper notices — so gating the release makes the
+#: ledger less accurate, not safer. A gated *reserve* is worse still: it turns a
+#: two-second wait into a wait bounded by how long somebody takes to look at an
+#: inbox, spent out of the run's own timeout budget. And every one of the three
+#: is undone by the reaper, which is what makes auto-approval cheap here.
+#:
+#: `FORCE_RELEASE_DOCKER_LEASE` is deliberately NOT in this set: it takes
+#: capacity away from something that may still be running, which is the one
+#: action here that can hurt a peer.
+CAPACITY_LEASE_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {
+        McpTool.RESERVE_DOCKER_CAPACITY,
+        McpTool.RENEW_DOCKER_LEASE,
+        McpTool.RELEASE_DOCKER_CAPACITY,
+    }
+)
+
+#: Offered to an agent that needs to book docker capacity itself. Deliberately
+#: NOT in `STAGE_DEFAULT_MCP_TOOLS`: a tool an agent is offered is a tool it will
+#: find a reason to call, and most stages never start a container.
+#:
+#: A stage that declares a `docker_footprint` does not need these — the
+#: orchestrator takes its lease around the whole run
+#: (`services/stage_docker_capacity.py`), so the capacity is already held before
+#: the agent's first turn. These are for the ad-hoc case: a human at the CLI, or
+#: an agent starting a stack outside a stage that declared one. Add them to a
+#: workspace's agent tool list to grant them.
+DOCKER_CAPACITY_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.RESERVE_DOCKER_CAPACITY,
+    McpTool.RENEW_DOCKER_LEASE,
+    McpTool.RELEASE_DOCKER_CAPACITY,
+    McpTool.DOCKER_CAPACITY_STATUS,
+)
+
 #: Tools that reach the network. Auto-approved, but kept out of the two sets
 #: above rather than folded into them: `CONTROL_PLANE_WRITE_MCP_TOOLS` promises
 #: its members "cannot touch the repo, the filesystem outside the vault, or
@@ -157,7 +205,10 @@ NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset(
 )
 
 AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
-    READ_ONLY_MCP_TOOLS | CONTROL_PLANE_WRITE_MCP_TOOLS | NETWORK_EGRESS_MCP_TOOLS
+    READ_ONLY_MCP_TOOLS
+    | CONTROL_PLANE_WRITE_MCP_TOOLS
+    | NETWORK_EGRESS_MCP_TOOLS
+    | CAPACITY_LEASE_MCP_TOOLS
 )
 
 #: Tools whose safety depends on *which* action was asked for, not just the tool
@@ -201,6 +252,10 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
 #: that decides to route around it, and it is not trying to.
 ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {
+        #: Force-releasing takes docker capacity away from something that may
+        #: still be running. An agent that finds the pool full has a legitimate
+        #: reason to want this and no way to know whose work it would break.
+        McpTool.FORCE_RELEASE_DOCKER_LEASE,
         #: Orchestrated agents may not spawn tickets mid-run
         #: (a9-create-ticket-mcp-tool).
         McpTool.CREATE_TICKET,

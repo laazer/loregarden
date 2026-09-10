@@ -42,6 +42,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     settle_expired_agent_runs,
@@ -91,6 +92,12 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_stranded_stages", settle_stranded_stages),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
+    # Periodic by the same rule as the steps above: it consults liveness
+    # predicates — a pid, the run behind the lease, and docker itself — rather
+    # than assuming everything in flight is an orphan. It also never frees a
+    # lease it could not verify, so a sweep during a docker restart is a no-op
+    # rather than a mass reclaim.
+    SweepStep("reap_docker_leases", reap_docker_leases),
     # Report-only: this one observes and writes findings, it repairs nothing.
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.

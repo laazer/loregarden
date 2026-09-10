@@ -47,6 +47,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.doctor_docker import check_docker_capacity
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_parking import park_stage
@@ -552,6 +553,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.GIT_WRITABLE: check_git_writable,
     DoctorCheck.GATE_COMMANDS_RESOLVE: check_gate_commands_resolve,
     DoctorCheck.STUDIO_DRAFT_DRIFT: check_studio_draft_drift,
+    DoctorCheck.DOCKER_CAPACITY: check_docker_capacity,
 }
 
 

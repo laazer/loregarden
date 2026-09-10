@@ -126,6 +126,35 @@ class Settings(BaseSettings):
     worktree_cleanup_delay_hours: int = 1  # Auto-cleanup after merge
     parallel_enabled: bool = True  # Feature flag for parallel execution
 
+    # Docker capacity ledger. The ceiling is derived from `docker info` unless
+    # both overrides below are set; `headroom` is the fraction of the machine
+    # this control plane is willing to book, and `reserved_*` is the standing
+    # baseline of containers that no lease accounts for (a personal Postgres,
+    # say). The ledger tracks leases only and must not pretend to attribute
+    # load it did not grant.
+    docker_capacity_enabled: bool = True
+    docker_capacity_headroom: float = 0.75
+    docker_capacity_cpus: float = 0.0  # override; 0 = derive from docker info
+    docker_capacity_memory_mb: int = 0  # override; 0 = derive
+    docker_capacity_max_leases: int = 4  # concurrency, the third dimension
+    docker_reserved_cpus: float = 1.0
+    docker_reserved_memory_mb: int = 2048
+    docker_binary: str = "docker"
+    docker_probe_timeout_seconds: float = 10.0
+    docker_info_cache_seconds: float = 300.0
+    docker_lease_ttl_seconds: int = 900
+    docker_lease_max_ttl_seconds: int = 7200
+    docker_lease_orphan_grace_seconds: int = 300
+    docker_waiting_ttl_seconds: int = 600
+    # An MCP reserve may wait inline this long before telling the caller to
+    # poll. Capped hard: the call runs inside an agent's turn and spends the
+    # run's wall-clock budget.
+    docker_lease_inline_wait_max_seconds: float = 10.0
+    # A stage that declared a footprint waits this long for capacity before its
+    # run fails. The orchestrator is a background thread, so it may block where
+    # an MCP handler may not.
+    docker_stage_wait_seconds: float = 300.0
+
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod
     def _strip_sqlite_url(cls, value: object) -> object:

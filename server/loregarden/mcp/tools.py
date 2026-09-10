@@ -18,6 +18,9 @@ from loregarden.mcp.admission import (
 )
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
+from loregarden.mcp.docker_capacity_tool import (
+    TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
+)
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
 from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
@@ -1078,6 +1081,7 @@ TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):
