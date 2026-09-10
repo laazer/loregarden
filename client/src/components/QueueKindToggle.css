@@ -1,0 +1,35 @@
+.queue-kind-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  background: var(--bg1);
+}
+
+.queue-kind-btn {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--txm);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.queue-kind-btn:hover {
+  color: var(--tx);
+}
+
+.queue-kind-btn.active {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+/* Focus has to stay visible on the unselected options too — the selected one is
+   already distinguishable, and the others are where keyboard users are. */
+.queue-kind-btn:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}

@@ -58,6 +58,10 @@ def _lease_payload(
         "poll_count": lease.poll_count,
         "expires_at": expires_at.isoformat() if expires_at else None,
         "expires_in_seconds": (int((expires_at - now).total_seconds()) if expires_at else None),
+        # What the last probe actually found. The attention panel needs the
+        # count, not just the status: "expired but 3 containers still up" is a
+        # different thing to act on than "expired, nothing running".
+        "running_container_count": lease.running_container_count,
         "last_probe_outcome": lease.last_probe_outcome,
         "last_probe_error": lease.last_probe_error,
     }
