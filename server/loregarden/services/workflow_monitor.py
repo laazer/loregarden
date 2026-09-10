@@ -29,6 +29,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from loregarden.core.stage_groups import emptied_groups, group_members
+from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_loader import get_template_stages_at_version
 from loregarden.models.domain import (
     AUTO_FIXABLE_CONDITIONS,
@@ -60,6 +61,10 @@ from loregarden.services.run_duration_stats import (
     DurationStats,
     load_duration_stats,
 )
+from loregarden.services.run_interruption import (
+    INTERRUPTION_MESSAGES,
+    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+)
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
@@ -84,6 +89,14 @@ FAILURE_CLUSTER_MIN_RUNS = 10
 #: a flat bound only when the stage has no history to be multiplied.
 STALL_MULTIPLE = 4.0
 STALL_FALLBACK = timedelta(hours=6)
+
+
+#: Blocking texts that this process wrote about ITSELF, so a stage carrying one
+#: is blocked by plumbing rather than by a verdict. `INTERRUPTION_MESSAGES`
+#: already curates the reload artifacts; the orphan sentinel is added because a
+#: parent going terminal underneath a live run is the same kind of event.
+#: Anything an agent wrote is deliberately excluded — see `_detect_unsettled_stages`.
+SETTLEABLE_BLOCKING_MESSAGES = frozenset(INTERRUPTION_MESSAGES | {ORPHAN_OF_TERMINAL_ORCH_MESSAGE})
 
 
 def _utcnow() -> datetime:
@@ -410,6 +423,75 @@ def _instance_stages(session: Session, instance: WorkflowInstance) -> list:
     return get_template_stages_at_version(session, template, instance.template_version)
 
 
+def _detect_unsettled_stages(session: Session, ticket_id: str | None) -> list[MonitorFinding]:
+    """A stage left blocked while its own agent run recorded success.
+
+    Observed live (lg-workflow-integrity-692): run_2a77c3 recorded `succeeded`
+    and the stage it ran still sat `blocked`, and a human reconciled the two by
+    hand. `complete_run` commits the run's terminal status before it touches the
+    ticket, so any failure in between leaves exactly this residue — and under a
+    starved gateway that gap is where write-backs die.
+
+    `settle_stranded_stages` does not cover it: that one selects stages stuck
+    RUNNING and settles them TO blocked. A stage already blocked is invisible to
+    it, and it never advances anything.
+
+    THE DISCRIMINATOR IS THE WHOLE DESIGN. "The run succeeded" and "the stage
+    should pass" are different claims: outcome lives on the stage transition, so
+    a reviewer that ran fine and rejected the work also produces a succeeded run
+    against a blocked stage. Reporting that as a lost write-back would invite
+    advancing a ticket past a rejection nobody overruled.
+
+    So only stages blocked by a message this process wrote about ITSELF are
+    reported — `INTERRUPTION_MESSAGES` plus the orphan sentinel. An agent's own
+    blocking reason is left alone, because it is a verdict rather than a
+    plumbing failure.
+    """
+    statement = select(Ticket).where(
+        col(Ticket.workflow_stage_status) == StageStatus.BLOCKED,
+        col(Ticket.state).not_in(list(StateMachine.TERMINAL_TICKET_STATES)),
+    )
+    if ticket_id:
+        statement = statement.where(col(Ticket.id) == ticket_id)
+
+    findings = []
+    for ticket in session.exec(statement).all():
+        if ticket.blocking_issues not in SETTLEABLE_BLOCKING_MESSAGES:
+            continue
+        stage_key = ticket.workflow_stage_key
+        if not stage_key:
+            continue
+        succeeded = session.exec(
+            select(AgentRun)
+            .where(
+                col(AgentRun.ticket_id) == ticket.id,
+                col(AgentRun.stage_key) == stage_key,
+                col(AgentRun.status) == RunStatus.SUCCEEDED,
+            )
+            .order_by(col(AgentRun.created_at).desc())
+        ).first()
+        if not succeeded:
+            continue
+        findings.append(
+            MonitorFinding(
+                condition=MonitorCondition.UNSETTLED_STAGE,
+                ticket_id=ticket.id,
+                stage_key=stage_key,
+                summary=(
+                    f"Stage '{stage_key}' is blocked, but run {succeeded.run_code} "
+                    "for that stage recorded success — the write-back was lost, "
+                    "not the work."
+                ),
+                evidence={
+                    "run_code": succeeded.run_code,
+                    "run_status": succeeded.status.value,
+                    "blocking_issues": ticket.blocking_issues,
+                },
+            )
+        )
+    return findings
+
+
 def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFinding]:
     """Every condition, read-only. Mutates nothing, decides nothing.
 
@@ -428,6 +510,7 @@ def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindi
         *_detect_stalled_runs(runs, stats),
         *_detect_stale_cursors(session, ticket_id),
         *_detect_emptied_groups(session, ticket_id),
+        *_detect_unsettled_stages(session, ticket_id),
     ]
     if ticket_id is None:
         findings.extend(_detect_failure_clusters(runs))

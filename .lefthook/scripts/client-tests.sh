@@ -16,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/hook-noninteractive.sh"
 # shellcheck source=ensure-node.sh
 source "$SCRIPT_DIR/ensure-node.sh"
+# shellcheck source=test-workers.sh
+source "$SCRIPT_DIR/test-workers.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CLIENT_ROOT="$ROOT/client"
@@ -56,19 +58,19 @@ fi
 
 if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
   echo "pre-push: full jest run — LOREGARDEN_FULL_TESTS is set"
-  npm test
+  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
 elif [ -z "$BASE" ]; then
   echo "pre-push: full jest run — no @{push} or origin/main to diff against"
-  npm test
+  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
 elif [ -n "$WIDE_CHANGE" ]; then
   echo "pre-push: full jest run — shared config changed:"
   printf '  %s\n' $WIDE_CHANGE
-  npm test
+  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
 else
-  echo "pre-push: jest --changedSince=$BASE ..."
+  echo "pre-push: jest --changedSince=$BASE --maxWorkers=$TEST_WORKERS ..."
   echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   # --passWithNoTests because "no test imports what you changed" is a real
   # answer here, not a misconfiguration. It is printed, never silent, and CI
   # still runs everything.
-  npm test -- --changedSince="$BASE" --passWithNoTests
+  "${TEST_NICE[@]}" npm test -- --changedSince="$BASE" --passWithNoTests --maxWorkers="$TEST_WORKERS"
 fi

@@ -16,9 +16,14 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
-from loregarden.models.domain import OrchestrationDriver, Ticket, Workspace
+from loregarden.models.domain import (
+    OrchestrationDriver,
+    OrchestrationRun,
+    Ticket,
+    Workspace,
+)
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.queue_admission import QueueAdmissionService, Reservation
@@ -91,6 +96,24 @@ def start_orchestration_admitted(
     result, which keeps this module from importing back into `tools`.
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+
+    # Before anything is spent: a caller retrying an ambiguous failure gets the
+    # run its first attempt may or may not have created. Two writes failed this
+    # way during one recovery, and both times the only safe move was to re-read
+    # the ticket by hand before retrying (lg-workflow-integrity-696).
+    idempotency_key = (arguments.get("idempotency_key") or "").strip()
+    if idempotency_key:
+        existing = session.exec(
+            select(OrchestrationRun).where(
+                col(OrchestrationRun.ticket_id) == ticket.id,
+                col(OrchestrationRun.idempotency_key) == idempotency_key,
+            )
+        ).first()
+        if existing is not None:
+            # No slot is taken: a replay spawns nothing, so reserving one
+            # would idle capacity for work that is already done or running.
+            return Reservation(admitted=True, message="Replayed by idempotency key"), existing
+
     ws = session.get(Workspace, ticket.workspace_id)
     if not ws:
         raise ValueError("Workspace not found")
@@ -117,4 +140,10 @@ def start_orchestration_admitted(
     )
     if reservation.admitted:
         reservation.bind(orchestration_run_id=run.id)
+        if idempotency_key and run is not None and not run.idempotency_key:
+            # Stamped after the run exists, so a start that raised leaves no key
+            # claiming a run that was never created.
+            run.idempotency_key = idempotency_key
+            session.add(run)
+            session.commit()
     return reservation, run

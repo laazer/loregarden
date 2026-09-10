@@ -494,6 +494,13 @@ class MonitorCondition(StrEnum):
     #: with none of that group's work performed. Auto-fixable: restore the
     #: earliest member to PENDING.
     EMPTIED_GROUP = "emptied_group"
+    #: A stage left blocked while its own agent run recorded success — the
+    #: residue of a write-back that was lost rather than of work that failed.
+    #: Report-only, and deliberately NOT auto-fixable: advancing a stage is a
+    #: judgement about whether the work passed, and the run's status does not
+    #: carry that. Outcome lives on the stage transition, so "the run succeeded"
+    #: and "the stage should pass" are different claims.
+    UNSETTLED_STAGE = "unsettled_stage"
 
 
 #: The only conditions an auto-fix may repair, and it should stay this small.

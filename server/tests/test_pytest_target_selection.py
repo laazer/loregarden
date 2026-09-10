@@ -197,12 +197,22 @@ def test_cli_runs_everything_on_an_empty_diff(git_repo: Path):
 
 
 def test_server_hook_falls_back_to_the_full_suite():
-    """Every path out of selection must reach a plain `pytest -q -n auto`."""
+    """Every path out of selection must reach a real pytest run.
+
+    The worker count used to be the literal `-n auto`, and this asserted that
+    string twice. It is now `-n "$TEST_WORKERS"`, a budget shared with the client
+    runner: `auto` takes one worker per core, which on a box that also serves the
+    MCP gateway produced load average 158 and a control plane that stopped
+    answering. The intent asserted here is unchanged — both paths out of
+    selection invoke pytest for real — and the *absence* of `-n auto` is pinned
+    in test_prepush_worker_budget, which owns the budget itself.
+    """
     script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
     assert "select_pytest_targets.py" in script
     assert "LOREGARDEN_FULL_TESTS" in script
-    assert 'pytest -q -n auto"' not in script  # the full run must stay unquoted/real
-    assert script.count("pytest -q -n auto") >= 2
+    assert "-n auto" not in script, "a worker per core is what the budget replaced"
+    # Two invocation sites: the full-suite fallback and the narrowed run.
+    assert script.count('pytest -q -n "$TEST_WORKERS"') >= 2
 
 
 def test_server_hook_gives_pytest_a_private_temp_root():
@@ -216,10 +226,11 @@ def test_server_hook_gives_pytest_a_private_temp_root():
     """
     script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
     assert "mktemp -d" in script
-    # Every real run, not just the fallback one.
-    assert script.count('--basetemp="$BASETEMP"') == script.count(
-        'LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest'
-    )
+    # Every real run, not just the fallback one. Counted against the pytest
+    # invocation itself rather than the prefix in front of it: the prefix gained
+    # `"${TEST_NICE[@]}"` when the worker budget landed, and a literal that long
+    # pins the command's spelling instead of the property being asserted.
+    assert script.count('--basetemp="$BASETEMP"') == script.count('pytest -q -n "$TEST_WORKERS"')
     # Cleanup that cannot itself fail the push.
     assert "trap 'rm -rf \"$BASETEMP\" 2>/dev/null || true' EXIT" in script
 

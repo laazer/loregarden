@@ -242,6 +242,14 @@ class OrchestrationRun(SQLModel, table=True):
         ),
     )
     profile_slug: str = ""
+    #: Caller-supplied, so a retry after an ambiguous failure finds the run its
+    #: first attempt may or may not have created. Empty means the caller did not
+    #: ask for the guarantee, and many rows share that — hence a partial unique
+    #: index rather than a plain one. Deliberately NOT derived from wall-clock
+    #: time or arguments: two legitimate sequential starts of the same ticket are
+    #: a real thing, and a derived key would silently collapse them into one
+    #: (lg-workflow-integrity-696).
+    idempotency_key: str = Field(default="", index=True)
     # Set when a harness outside this control plane drove the run from a pasted
     # prompt (see services/external_harness.py). Null means loregarden's own
     # agents ran it. Indexed because comparing harnesses is the point of the
@@ -765,6 +773,31 @@ class Artifact(SQLModel, table=True):
     # what lets a verifier tell proof from a leftover.
     evidence_kind: str = ""
     commit_sha: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class RunLogLine(SQLModel, table=True):
+    """One line of a run's live log, appended rather than rewritten.
+
+    The log used to live entirely in `artifacts.content_json` as a single JSON
+    blob rewritten IN FULL on every flush. A 78-minute run rewrote it ~11,700
+    times, the later writes carrying a 320KB payload each, and one of those
+    writes lost a "database is locked" race and took the orchestration with it
+    (lg-workflow-integrity-687). Appending a row costs one line's worth of
+    write no matter how long the run has been going.
+
+    `seq` is per-run and assigned by the writer, so ordering never depends on
+    timestamp collisions within a busy second.
+    """
+
+    __tablename__ = "run_log_lines"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    seq: int = Field(index=True)
+    time: str = ""
+    tag: str = ""
+    text: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 
 

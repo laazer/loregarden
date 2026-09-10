@@ -1265,6 +1265,64 @@ def _m_worktree_ticket_id(conn: Connection) -> None:
         conn.execute(text("CREATE INDEX ix_worktrees_ticket_id ON worktrees (ticket_id)"))
 
 
+def m_run_log_lines_table(conn: Connection) -> None:
+    """Append-only storage for run log lines.
+
+    Created empty and deliberately not backfilled: existing log artifacts keep
+    their lines in `content_json` and the reader still understands that shape,
+    so old runs render exactly as before. Backfilling would mean rewriting
+    every historical log row — the very write this ticket exists to stop.
+    """
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS run_log_lines ("
+            "id TEXT PRIMARY KEY, "
+            "run_id TEXT NOT NULL, "
+            "seq INTEGER NOT NULL, "
+            "time TEXT NOT NULL DEFAULT '', "
+            "tag TEXT NOT NULL DEFAULT '', "
+            "text TEXT NOT NULL DEFAULT '', "
+            "created_at TEXT NOT NULL"
+            ")"
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_run_log_lines_run_seq ON run_log_lines (run_id, seq)")
+    )
+
+
+def m_orchestration_idempotency_key(conn: Connection) -> None:
+    """A caller-supplied key so an ambiguous start can be retried safely.
+
+    Partial unique index: the column is empty for every existing row and for
+    every caller that does not ask for the guarantee, so a plain UNIQUE would
+    reject the second such run. Scoped to (ticket_id, key) rather than the key
+    alone — a key is only meaningful about the ticket its caller was starting.
+    """
+    # Guarded, because a migration runs against schemas older than itself: a
+    # database built up to an earlier id has no `orchestration_runs` yet, and an
+    # unguarded index creation raises "no such table" and takes every
+    # schema-building test with it.
+    if not table_exists(conn, "orchestration_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "orchestration_runs",
+        {
+            "idempotency_key": (
+                "ALTER TABLE orchestration_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''"
+            )
+        },
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_orchestration_runs_idempotency "
+            "ON orchestration_runs (ticket_id, idempotency_key) "
+            "WHERE idempotency_key != ''"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1385,6 +1443,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0115_agent_run_read_paths", m_agent_run_read_paths),
     ("0116_human_verification_brief", m_human_verification_brief),
     ("0117_lane_repair_hold", m_lane_repair_hold),
+    ("0118_run_log_lines_table", m_run_log_lines_table),
+    ("0119_orchestration_idempotency_key", m_orchestration_idempotency_key),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

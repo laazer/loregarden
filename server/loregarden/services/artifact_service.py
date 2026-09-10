@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.log_storage import read_log_lines
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -836,6 +837,9 @@ def load_run_log(session: Session, run_id: str) -> dict[str, Any] | None:
     body = json.loads(artifact.content_json or "{}")
     if not isinstance(body, dict):
         return None
+    # Lines live in `run_log_lines` for runs written after
+    # lg-workflow-integrity-687, and inline for everything before it.
+    body["lines"] = read_log_lines(session, run_id, body)
     return body
 
 

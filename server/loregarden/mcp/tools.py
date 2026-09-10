@@ -278,7 +278,7 @@ def _normalize_ticket_ops_args(name: str, args: dict[str, Any]) -> dict[str, Any
 def _normalize_start_orchestration(args: dict[str, Any]) -> dict[str, Any]:
     """Only ticket_id is required; the rest narrow how (and by whom) it runs."""
     payload = {"ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id")}
-    for field in ("driver", "external_harness"):
+    for field in ("driver", "external_harness", "idempotency_key"):
         if args.get(field) is not None:
             payload[field] = _coerce_string(args.get(field), field=field)
     max_stages = _coerce_optional_int(args.get("max_stages"))
@@ -529,6 +529,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     [h.value for h in ExternalHarness],
                 ),
                 "max_stages": _integer_prop("Optional cap on stages for builtin autopilot."),
+                "idempotency_key": _string_prop(
+                    "Optional caller-chosen key. If a start with this key already "
+                    "created a run for this ticket, that run is returned instead of a "
+                    "second one — so a call that failed ambiguously (socket closed, "
+                    "timed out) can be retried without re-reading the ticket first. "
+                    "Choose a new key for a genuinely new start; reusing one replays."
+                ),
             },
             required=["ticket_id"],
         ),

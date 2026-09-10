@@ -4,6 +4,7 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 from loregarden.api.tickets import _artifacts_grouped
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
+from loregarden.services.artifact_service import load_run_log
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -22,7 +23,7 @@ def test_start_run_bootstraps_live_log(isolated_db):
             select(Artifact).where(Artifact.run_id == run.id, Artifact.kind == "log")
         ).first()
         assert artifact is not None
-        content = json.loads(artifact.content_json)
+        content = load_run_log(session, artifact.run_id)
         assert content["live"] == "Agent running…"
         assert any(line["tag"] == "RUN" for line in content["lines"])
 
