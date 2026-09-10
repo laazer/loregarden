@@ -35,6 +35,8 @@ from loregarden.db.migrations_chat import (
     m_chat_turn_thinking,
 )
 from loregarden.db.migrations_composer import m_composer_commands
+from loregarden.db.migrations_docker import m_docker_capacity_ledger
+from loregarden.db.migrations_docker_polling import m_docker_lease_polling
 from loregarden.db.migrations_doctor import (
     m_agent_run_lease,
     m_agent_run_preflight,
@@ -1445,6 +1447,13 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0117_lane_repair_hold", m_lane_repair_hold),
     ("0118_run_log_lines_table", m_run_log_lines_table),
     ("0119_orchestration_idempotency_key", m_orchestration_idempotency_key),
+    # Renumbered twice while this branch was open: 0117, then 0118, were both
+    # claimed by migrations that reached main first. Identity is the id string
+    # and the list is append-only, so a branch that has not landed takes the
+    # next free number rather than contesting one — which is exactly what the
+    # ledger in `migration_ids` is for.
+    ("0120_docker_capacity_ledger", m_docker_capacity_ledger),
+    ("0121_docker_lease_polling", m_docker_lease_polling),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

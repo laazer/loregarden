@@ -188,6 +188,71 @@ def normalize_search_prior_work(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _coerce_float(value: Any, *, field: str) -> float:
+    """A number from an MCP client, which may send it as a string.
+
+    Zero for absent, which the service reads as "no explicit price given" — and
+    which it refuses rather than defaulting, so an unparseable value cannot
+    quietly become a small claim.
+    """
+    if value is None or value == "":
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        logger.warning("%s was not a number (%r); treating it as unset", field, value)
+        return 0.0
+
+
+def normalize_reserve_docker_capacity(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "holder_label": coerce_string(args.get("holder_label"), field="holder_label"),
+        "footprint": coerce_optional_string(args.get("footprint")),
+        "cpus": _coerce_float(args.get("cpus"), field="cpus"),
+        "memory_mb": coerce_optional_int(args.get("memory_mb"), field="memory_mb") or 0,
+        "ttl_seconds": coerce_optional_int(args.get("ttl_seconds"), field="ttl_seconds") or 0,
+        "wait_seconds": coerce_optional_int(args.get("wait_seconds"), field="wait_seconds") or 0,
+        "ticket_id": coerce_optional_string(args.get("ticket_id")),
+        "holder_pid": coerce_optional_int(args.get("holder_pid"), field="holder_pid") or 0,
+    }
+
+
+def normalize_renew_docker_lease(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lease_id": coerce_string(args.get("lease_id"), field="lease_id"),
+        "compose_project": coerce_optional_string(args.get("compose_project")),
+        "container_names": coerce_string_list(
+            args.get("container_names") or [], field="container_names"
+        ),
+        "ttl_seconds": coerce_optional_int(args.get("ttl_seconds"), field="ttl_seconds") or 0,
+    }
+
+
+def normalize_release_docker_capacity(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lease_id": coerce_string(args.get("lease_id"), field="lease_id"),
+        "note": coerce_optional_string(args.get("note")),
+    }
+
+
+def normalize_docker_capacity_status(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lease_id": coerce_optional_string(args.get("lease_id")),
+        "include_waiting": (
+            True
+            if args.get("include_waiting") is None
+            else coerce_optional_bool(args.get("include_waiting"))
+        ),
+    }
+
+
+def normalize_force_release_docker_lease(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lease_id": coerce_string(args.get("lease_id"), field="lease_id"),
+        "reason": coerce_string(args.get("reason"), field="reason"),
+    }
+
+
 #: Normalizers dispatched by table instead of another branch in the chain below.
 #:
 #: `execute_tool` got this seam first, as `EXTENDED_TOOLS` — the chain was past
@@ -200,4 +265,9 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.SEARCH_PRIOR_WORK.value: normalize_search_prior_work,
     McpTool.FETCH_REFERENCE.value: normalize_fetch_reference,
     McpTool.SEARCH_REFERENCE.value: normalize_search_reference,
+    McpTool.RESERVE_DOCKER_CAPACITY.value: normalize_reserve_docker_capacity,
+    McpTool.RENEW_DOCKER_LEASE.value: normalize_renew_docker_lease,
+    McpTool.RELEASE_DOCKER_CAPACITY.value: normalize_release_docker_capacity,
+    McpTool.DOCKER_CAPACITY_STATUS.value: normalize_docker_capacity_status,
+    McpTool.FORCE_RELEASE_DOCKER_LEASE.value: normalize_force_release_docker_lease,
 }

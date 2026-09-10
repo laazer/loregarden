@@ -221,6 +221,25 @@ def _args_for(
             "query": "smoke prior work",
             "workspace_slug": "loregarden",
         },
+        # A `light` claim, and a real grant: the pool is empty on a fresh test
+        # database, so this reserves and holds. Nothing releases it, which is
+        # fine — the database is thrown away with the test, and a lease left
+        # held is exactly the state the reaper is designed to survive.
+        "loregarden_reserve_docker_capacity": {
+            "holder_label": "mcp smoke test",
+            "footprint": "light",
+        },
+        # Both of these name a lease that does not exist, on purpose: the tools
+        # answer with a structured `unknown_lease` payload rather than raising,
+        # so this proves the wiring without depending on the reserve above
+        # having run first.
+        "loregarden_renew_docker_lease": {"lease_id": "smoke-no-such-lease"},
+        "loregarden_release_docker_capacity": {"lease_id": "smoke-no-such-lease"},
+        "loregarden_docker_capacity_status": {},
+        "loregarden_force_release_docker_lease": {
+            "lease_id": "smoke-no-such-lease",
+            "reason": "smoke",
+        },
         # hooks_status only reads: the smoke test must not rewrite a real repo's
         # lefthook.yml, and `check` would shell out to both checkers over the
         # whole workspace.
@@ -344,6 +363,11 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
         "loregarden_search_reference",
+        "loregarden_reserve_docker_capacity",
+        "loregarden_renew_docker_lease",
+        "loregarden_release_docker_capacity",
+        "loregarden_docker_capacity_status",
+        "loregarden_force_release_docker_lease",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)

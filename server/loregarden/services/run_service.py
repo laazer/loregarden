@@ -42,6 +42,7 @@ from loregarden.services.run_lease import (
 )
 from loregarden.services.run_reattach import surviving_runs
 from loregarden.services.scheduling import set_orchestration_scheduler
+from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
@@ -487,7 +488,9 @@ def execute_agent_run_background(run_id: str) -> None:
             if not ticket:
                 logger.error("Background run ticket not found: %s", run_id)
                 return
-            with lease_renewal(run.id):
+            # Capacity outside the renewal, so a stage that waits for docker
+            # is not renewing a lease on a run that has not started.
+            with stage_docker_capacity(session, run), lease_renewal(run.id):
                 run_svc.executor.execute(run, ticket)
     except Exception as exc:
         logger.exception("Background agent run failed: %s", run_id)
@@ -641,7 +644,7 @@ class RunService:
     ) -> tuple[AgentRun, Ticket]:
         run = self.orchestration.start_run(ticket, stage_key=stage_key)
         self.session.refresh(ticket)
-        with lease_renewal(run.id):
+        with stage_docker_capacity(self.session, run), lease_renewal(run.id):
             completed_run = self.executor.execute(run, ticket)
         self.session.refresh(ticket)
         return completed_run, ticket

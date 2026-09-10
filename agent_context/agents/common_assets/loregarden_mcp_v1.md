@@ -92,6 +92,65 @@ your output and continue read-only work where possible. Do not invent workflow s
 via checkpoint protocol or block the ticket with a clear message.
 <!-- /loregarden:transport -->
 
+## Docker capacity — reserve before you start containers
+
+This machine has one Docker daemon and several agents that may want it at once. If you are
+about to run `docker compose up`, `docker run`, or a test suite that starts containers,
+**book the capacity first**. Nothing enforces this at the daemon; the ledger is only as
+accurate as the callers using it.
+
+```
+loregarden_reserve_docker_capacity holder_label="<ticket>: e2e suite" footprint=stack
+```
+
+`footprint` is `light`, `service`, `stack` or `heavy` — or pass `cpus` and `memory_mb`
+together if you know your own numbers. The reply's `state` is one of three, and they need
+three different responses:
+
+| `state` | What it means | What to do |
+|---|---|---|
+| `granted` | The capacity is yours | Start your containers. Note `lease_id` and `expires_at`. |
+| `queued` | The machine is full | **Do not start anything.** Wait `poll_after_seconds`, then poll `loregarden_docker_capacity_status` with your `lease_id`. Your place in line is kept. |
+| `rejected` | It will never be granted | Read `error_kind`: `exceeds_capacity` means ask for less; `docker_unavailable` means Docker is down. |
+
+Being queued is not a failure and not a reason to proceed anyway.
+
+A queued reply carries `estimated_wait_seconds` — how long the claims ahead of
+yours are expected to take, based on what leases have actually cost on this
+machine. It is `null` when there is no history to judge from; that means unknown,
+not "soon". `poll_after_seconds` is scaled to it, so **use the number you were
+given** rather than a loop of your own: it is a few seconds when the queue is
+about to move and a couple of minutes when it is not.
+
+Polling faster than that is refused. You still get the real state back — if your
+lease was granted in the meantime the reply says so — but the response carries
+`poll.throttled: true` and a `retry_after_seconds`, and nothing else advances.
+Reserving again instead of polling does not help either: an identical claim
+returns the place in line you already hold (`reused: true`), not a second one.
+
+Once your containers are up, call `loregarden_renew_docker_lease` with what you started:
+
+```
+loregarden_renew_docker_lease lease_id=<id> compose_project=<project>
+```
+
+That matters more than it looks. A lease that names nothing can only be reclaimed by its
+clock — so if your stage runs long, capacity you are still using can be handed to somebody
+else. A lease that names its containers is checked against Docker before anything is taken
+back. Renew again before `expires_at` for as long as you need it.
+
+**Release as soon as your containers are down:**
+
+```
+loregarden_release_docker_capacity lease_id=<id>
+```
+
+A lease left to expire holds capacity nobody is using until the reaper notices.
+
+**You do not need any of this if your stage declared a `docker_footprint`** — the
+orchestrator takes the lease around your whole run, and it is already held before your first
+turn. This is for containers you start outside that.
+
 ## Reference docs (fetch-through cache)
 
 Two tools, and for framework or library docs they are a **two-step flow**: search for the page,

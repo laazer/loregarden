@@ -19,6 +19,13 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.devdocs_tool import search_reference_tool
+from loregarden.mcp.docker_capacity_tool import (
+    docker_capacity_status_tool,
+    force_release_docker_lease_tool,
+    release_docker_capacity_tool,
+    renew_docker_lease_tool,
+    reserve_docker_capacity_tool,
+)
 from loregarden.mcp.doctor_tool import doctor
 from loregarden.mcp.external_harness_tools import (
     begin_external_stage_tool,
@@ -54,4 +61,9 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
     McpTool.FETCH_REFERENCE.value: fetch_reference_tool,
     McpTool.SEARCH_REFERENCE.value: search_reference_tool,
+    McpTool.RESERVE_DOCKER_CAPACITY.value: reserve_docker_capacity_tool,
+    McpTool.RENEW_DOCKER_LEASE.value: renew_docker_lease_tool,
+    McpTool.RELEASE_DOCKER_CAPACITY.value: release_docker_capacity_tool,
+    McpTool.DOCKER_CAPACITY_STATUS.value: docker_capacity_status_tool,
+    McpTool.FORCE_RELEASE_DOCKER_LEASE.value: force_release_docker_lease_tool,
 }

@@ -5,6 +5,7 @@ from typing import Any
 
 from loregarden.models.domain.enums import (
     CliTool,
+    DockerFootprint,
     DoctorCheck,
     DoctorStatus,
     EventType,
@@ -64,6 +65,18 @@ class WorkflowStageDef(SQLModel):
     # Condition under which this stage is passed over; see SKIP_CONDITIONS.
     skip_when: str = ""
     model: str = ""
+    #: Docker capacity this stage books for the duration of its agent run.
+    #: `NONE` — the default, and what every stage authored before this field
+    #: existed decodes to — takes no lease at all and costs one enum comparison.
+    #: Leasing for every stage would make the ceiling meaningless: most stages
+    #: never start a container, and capacity held against nothing is capacity
+    #: taken from the stages that do.
+    docker_footprint: DockerFootprint = DockerFootprint.NONE
+    #: Explicit price, overriding the named size. Both must be set, or neither;
+    #: 0 means "use the footprint", the same "inherit" idiom `timeout_seconds`
+    #: uses above.
+    docker_cpus: float = 0.0
+    docker_memory_mb: int = 0
     checklist: list[str] = Field(default_factory=list)
     # Template-authored instruction handed to this stage's agent. What the
     # workflow wants from this stage specifically, beyond what its role file
@@ -991,6 +1004,13 @@ class StudioWorkflowStage(SQLModel):
     alternative_group: str = ""
     #: See `WorkflowStageDef.agent_is_default`.
     agent_is_default: bool = False
+    #: See `WorkflowStageDef.docker_footprint`. Here for the reason the comment
+    #: above says: a field this model lacks is dropped the first time a template
+    #: is published from Studio, and a stage that silently stops booking docker
+    #: capacity would over-subscribe the daemon without anything reporting it.
+    docker_footprint: DockerFootprint = DockerFootprint.NONE
+    docker_cpus: float = 0.0
+    docker_memory_mb: int = 0
 
 
 class StudioWorkflowCreate(SQLModel):
