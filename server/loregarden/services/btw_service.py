@@ -155,6 +155,9 @@ def build_btw_prompt(session: Session, ticket: Ticket, run: AgentRun | None, que
         "question to the running agent directly. A guess dressed as an observation is worse "
         "than no answer.",
         "- Do not modify anything. This channel is read-only by design.",
+        "- Do not restate who you are, that you are reading the log, or that the running "
+        "agent did not answer. The card carries that line already, and repeating it spends "
+        "an aside's whole length saying what the operator can already see.",
         "",
         f"Ticket: {ticket.external_id} — {ticket.title}",
         f"State: {ticket.state.value}",

@@ -393,3 +393,18 @@ def test_dismissing_an_aside_belonging_to_another_ticket_is_not_found(client, db
     assert client.delete(f"/api/tickets/{ticket.id}/btw/{exchange.id}").status_code == 404
     db_session.refresh(exchange)
     assert exchange.deleted_at is None
+
+
+def test_the_brief_tells_the_observer_not_to_repeat_the_card(db_session: Session):
+    """The card's attribution line and the answer were saying the same thing.
+
+    An aside is capped at a sentence or two, so an answer that opens by
+    re-explaining who is speaking has spent most of its length on what the
+    operator can already read directly above it.
+    """
+    ticket = _ticket(db_session)
+    run = _run(db_session, ticket)
+
+    prompt = btw_service.build_btw_prompt(db_session, ticket, run, "why?")
+
+    assert "Do not restate who you are" in prompt
