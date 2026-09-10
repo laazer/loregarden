@@ -36,6 +36,33 @@ else
   exit 1
 fi
 
+# A private temp root for this run, because pytest's own cleanup is not safe
+# against a concurrent session. `_pytest.tmpdir` garbage-collects the older
+# `pytest-of-<user>/pytest-N` directories it finds at session start — so two
+# pytest runs sharing the default root will delete each other's trees, and the
+# loser dies in `pytest_sessionfinish`:
+#
+#   shutil.py: if os.path.samestat(orig_st, os.fstat(dirfd)):
+#   FileNotFoundError: [Errno 2] No such file or directory
+#
+# `rmtree(basetemp, ignore_errors=True)` does not cover that `fstat`, so the
+# session exits non-zero *after* reporting every test passed — a green suite and
+# a rejected push, which reads as a flaky test and is not one. This machine runs
+# the control plane against its own tickets, so a second pytest is ordinary
+# rather than exotic. Observed twice on one branch before it was diagnosed.
+#
+# Naming a basetemp fixes it twice over. The root is unique per invocation, so
+# no other session can prune it — and `pytest_sessionfinish` skips that cleanup
+# entirely when `--basetemp` was given (`_given_basetemp is None` guards it), so
+# the crashing call is not reached at all.
+#
+# That also means pytest leaves the tree behind, and this trap is the only thing
+# that removes it — not a belt-and-braces extra. It must never fail the push on
+# its own: a temp dir that outlives a run costs disk, a cleanup that raises
+# costs the push.
+BASETEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
+trap 'rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
+
 echo "pre-push: ruff check ..."
 "${RUFF_CMD[@]}" check .
 
@@ -74,7 +101,7 @@ fi
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
   echo "pre-push: pytest -q -n auto ..."
-  LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto
+  LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto --basetemp="$BASETEMP"
   exit 0
 fi
 
@@ -95,4 +122,4 @@ done <<< "$TARGETS"
 echo "pre-push: pytest -q -n auto on ${#FILES[@]} test file(s) reaching the pushed changes:"
 printf '  %s\n' "${FILES[@]}"
 echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
-LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto "${FILES[@]}"
+LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto --basetemp="$BASETEMP" "${FILES[@]}"
