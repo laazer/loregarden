@@ -55,6 +55,8 @@ export interface DockerLeaseRow {
   estimated_wait_seconds: number | null;
   estimate_basis: EstimateBasis;
   poll_count: number;
+  /** How many of its containers the last probe found running. */
+  running_container_count: number | null;
   last_probe_outcome: string;
   last_probe_error: string;
 }

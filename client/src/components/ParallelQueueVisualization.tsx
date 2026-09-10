@@ -23,7 +23,7 @@
  * serial, so position 3 does not start when some other lane drains.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import { AddToTabItems } from './AddToTabMenu';
 import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
@@ -324,7 +324,12 @@ function formatWhen(entry: LaneAttentionEntry): string {
   });
 }
 
-export function ParallelQueueVisualization() {
+/**
+ * `headerSlot` carries the queue-kind toggle. Passed in rather than imported so
+ * this component keeps knowing nothing about the docker pool — it draws lanes,
+ * and which board is on screen is the dashboard's decision.
+ */
+export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactNode } = {}) {
   const { lanes, stats, estimatedClearSeconds, estimatedWaitSeconds, isWebSocket } =
     useQueueStatus();
   // Seconds, not the rounded minutes the server used to send: an entry that has
@@ -477,6 +482,7 @@ export function ParallelQueueVisualization() {
     <div className="queue-panel">
       <div className="queue-panel-head">
         <h2 className="queue-panel-title">Parallel Execution Queue</h2>
+        {headerSlot}
         <div className={`queue-conn${isWebSocket ? ' queue-conn--live' : ''}`}>
           <span className="queue-conn-dot" aria-hidden />
           {isWebSocket ? 'Connected' : 'Polling'}

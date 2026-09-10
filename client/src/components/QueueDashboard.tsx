@@ -8,10 +8,14 @@ import {
   type QueueOperationDetails,
   type QueueOperationSummary,
 } from "../lib/queueReviewApi";
+import { useDockerCapacity } from "../hooks/useDockerCapacity";
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { describeError, pushToast, toastActionFailed } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
+import { DockerAttentionRail } from "./DockerAttentionRail";
 import { DockerCapacityRail } from "./DockerCapacityRail";
+import { DockerQueueBoard } from "./DockerQueueBoard";
+import { QueueKindToggle, type QueueKind } from "./QueueKindToggle";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueGitAutomation } from "./QueueGitAutomation";
@@ -24,18 +28,37 @@ export interface QueueDashboardProps {
   showControls?: boolean;
 }
 
-type SidebarTab = "overview" | "docker" | "history" | "review" | "controls" | "analytics";
+type SidebarTab =
+  | "overview"
+  | "history"
+  | "review"
+  | "controls"
+  | "analytics"
+  | "capacity"
+  | "attention";
 
-const TABS: { key: SidebarTab; label: string }[] = [
-  { key: "overview", label: "Overview" },
-  // Beside Overview rather than at the end: it answers the same question about
-  // a second pool, and the lanes above are only half of what this machine runs.
-  { key: "docker", label: "Docker" },
-  { key: "history", label: "History" },
-  { key: "review", label: "Review" },
-  { key: "controls", label: "Controls" },
-  { key: "analytics", label: "Analytics" },
-];
+/**
+ * The rail's panels, per queue.
+ *
+ * They differ because the two pools genuinely have different questions behind
+ * them: an agent lane has a history, a review and controls; docker capacity has
+ * a ceiling and a short list of leases nobody could resolve automatically.
+ * Carrying one queue's tabs into the other would offer panels with nothing to
+ * put in them, which is worse than a shorter list.
+ */
+const TABS_BY_KIND: Record<QueueKind, { key: SidebarTab; label: string }[]> = {
+  agents: [
+    { key: "overview", label: "Overview" },
+    { key: "history", label: "History" },
+    { key: "review", label: "Review" },
+    { key: "controls", label: "Controls" },
+    { key: "analytics", label: "Analytics" },
+  ],
+  docker: [
+    { key: "capacity", label: "Capacity" },
+    { key: "attention", label: "Attention" },
+  ],
+};
 
 export function QueueDashboard({
   showAnalytics = true,
@@ -43,7 +66,21 @@ export function QueueDashboard({
 }: QueueDashboardProps) {
   const { activeRuns, queuedRuns, stats, workspaces } = useQueueStatus();
 
+  const [queueKind, setQueueKind] = useState<QueueKind>("agents");
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("overview");
+  // One read for both halves of the Docker view, so the rail summary and the
+  // board beside it cannot disagree about the same moment.
+  const docker = useDockerCapacity();
+
+  /**
+   * Switching queue also switches the rail, because the old tab does not exist
+   * in the new vocabulary. Landing on the first panel of the queue you asked
+   * for beats leaving a tablist with nothing selected.
+   */
+  const selectQueueKind = useCallback((kind: QueueKind) => {
+    setQueueKind(kind);
+    setActiveSidebarTab(TABS_BY_KIND[kind][0].key);
+  }, []);
 
   const [operations, setOperations] = useState<QueueOperationSummary[]>([]);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null);
@@ -143,7 +180,7 @@ export function QueueDashboard({
     };
   }, [activeRuns, queuedRuns, stats]);
 
-  const visibleTabs = TABS.filter(
+  const visibleTabs = TABS_BY_KIND[queueKind].filter(
     (tab) =>
       (tab.key !== "controls" || showControls) && (tab.key !== "analytics" || showAnalytics),
   );
@@ -175,8 +212,17 @@ export function QueueDashboard({
                 onRefresh={refreshOperationDetails}
               />
             </div>
+          ) : queueKind === "docker" ? (
+            <DockerQueueBoard
+              status={docker.status}
+              error={docker.error}
+              loading={docker.loading}
+              headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
+            />
           ) : (
-            <ParallelQueueVisualization />
+            <ParallelQueueVisualization
+              headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
+            />
           )}
         </main>
 
@@ -228,7 +274,17 @@ export function QueueDashboard({
 
               {/* Mounted only while selected, so its poll costs nothing on
                   the other tabs — the same reason Review fetches lazily. */}
-              {activeSidebarTab === "docker" ? <DockerCapacityRail /> : null}
+              {activeSidebarTab === "capacity" ? (
+                <DockerCapacityRail
+                  status={docker.status}
+                  error={docker.error}
+                  loading={docker.loading}
+                />
+              ) : null}
+
+              {activeSidebarTab === "attention" ? (
+                <DockerAttentionRail status={docker.status} />
+              ) : null}
 
               {activeSidebarTab === "history" ? <QueueHistoryRail /> : null}
 

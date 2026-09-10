@@ -1,0 +1,42 @@
+/* Leans on the lane board's own classes — queue-panel, queue-slot-grid,
+   queue-slot, queue-lane-item — so the two pools read as one system. Only what
+   docker adds is styled here. */
+
+.docker-board-summary {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.docker-board-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 20px;
+  margin: 12px 0 16px;
+}
+
+.docker-slot-expiry {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.docker-slot-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--rdl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The head of the line is the one anyone is actually asking about. */
+.docker-queue-list .queue-lane-item:first-child {
+  border-color: var(--bd2);
+}
