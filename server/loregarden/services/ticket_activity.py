@@ -21,6 +21,7 @@ from collections import Counter
 from collections.abc import Iterable
 
 from loregarden.models.domain import (
+    RUNNING_QUEUE_STATUSES,
     AgentRun,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -41,7 +42,9 @@ _AWAITING_RUN_STATUSES = (RunStatus.AWAITING_PERMISSION,)
 #: A lane entry that currently holds a slot. ``STARTED`` is *not* here — that
 #: is the terminal "lane released" state set by ``on_orchestration_complete``,
 #: and treating it as live made finished (even blocked) tickets read "running".
-_RUNNING_QUEUE_STATUSES = (QueuePosition.PROMOTED, QueuePosition.ACTIVE)
+#: Shared with every other reader of 'is this entry running' — see
+#: models.domain.enums.RUNNING_QUEUE_STATUSES for why STARTED is not here.
+_RUNNING_QUEUE_STATUSES = RUNNING_QUEUE_STATUSES
 #: Waiting its turn behind whatever holds the slot.
 _QUEUED_QUEUE_STATUSES = (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
 #: A parent orchestration still claiming a lane. QUEUED counts: a claim is a
