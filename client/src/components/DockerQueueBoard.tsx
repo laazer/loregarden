@@ -135,7 +135,7 @@ export function DockerQueueBoard({
   // indistinguishable if you only check whether the lists came back empty.
   if (!status) {
     return (
-      <div className="queue-panel docker-board">
+      <div className="queue-panel">
         <div className="queue-panel-head">
           <div className="queue-panel-title">Docker capacity</div>
           {headerSlot}
@@ -149,7 +149,7 @@ export function DockerQueueBoard({
 
   if (!status.enabled) {
     return (
-      <div className="queue-panel docker-board">
+      <div className="queue-panel">
         <div className="queue-panel-head">
           <div className="queue-panel-title">Docker capacity</div>
           {headerSlot}
@@ -169,7 +169,7 @@ export function DockerQueueBoard({
   const freeSlots = Math.max(0, ceiling.leases - holders.length);
 
   return (
-    <div className="queue-panel docker-board">
+    <div className="queue-panel">
       <div className="queue-panel-head">
         <div className="queue-panel-title">Docker capacity</div>
         {headerSlot}
