@@ -181,6 +181,9 @@ export const api = {
         ticket_title?: string;
         ticket_external_id?: string;
         status: string;
+        // Bounded to COMMAND_PREVIEW_CHARS server-side and ellipsised when cut:
+        // unbounded, it was 2.6 MB of this endpoint's 2.7 MB. `api.run(id)` has
+        // the full text.
         command: string;
         agent_id: string;
         stage_key: string;
@@ -678,7 +681,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ findings }),
     }),
-  usage: () => request<UsageSnapshot>("/api/usage"),
+  usage: (refresh = false) =>
+    request<UsageSnapshot>(`/api/usage${refresh ? "?refresh=true" : ""}`),
   memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
   setMemoryConfig: (body: MemoryConfigSettings) =>
     request<MemoryConfigResponse>("/api/memory/config", {

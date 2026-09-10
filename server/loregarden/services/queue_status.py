@@ -310,7 +310,7 @@ def _attach_estimates(
         entry["estimated_wait_seconds"] = wait
 
 
-async def build_queue_status(session: Session) -> dict[str, Any]:
+def build_queue_status(session: Session) -> dict[str, Any]:
     """Active runs, queued runs and slot statistics for the shared queue.
 
     A read, and only a read. This used to repair as well — settling expired
@@ -319,11 +319,16 @@ async def build_queue_status(session: Session) -> dict[str, Any]:
     every few seconds, so lanes healed continuously under observation and never
     otherwise, and the failure could only survive while nobody was looking.
     Both sweeps moved to the reconciliation timer, which runs regardless.
+
+    Synchronous on purpose: every line below is a blocking SQLite read. A sync
+    FastAPI handler gets the threadpool for free; an async caller — the queue
+    websocket — has to hop to a thread itself, or it stalls the event loop and
+    with it every other request in the process.
     """
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
 
-    active_runs = await queue_service.get_active_runs()
-    queued_runs = await queue_service.get_queued_runs()
+    active_runs = queue_service.get_active_runs()
+    queued_runs = queue_service.get_queued_runs()
     stats = queue_service.get_queue_stats()
 
     _label_runs(session, active_runs)

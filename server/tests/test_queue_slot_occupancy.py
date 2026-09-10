@@ -168,7 +168,7 @@ async def test_the_board_never_reports_a_finished_run_as_running(session, worksp
     run = _run(session, ticket, "run_done", status=RunStatus.SUCCEEDED)
     _occupy(session, 1, current_run_id=run.id)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
 
     assert status["active_runs"] == []
     assert [lane["running"] for lane in status["lanes"]] == [None, None, None]
@@ -183,7 +183,7 @@ async def test_a_lane_running_a_ticket_is_reported_as_busy(session, workspace):
     _run(session, ticket, "run_stage", status=RunStatus.RUNNING, orchestration_run_id=orch_run.id)
     _occupy(session, 1, current_orchestration_run_id=orch_run.id)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
 
     lane = next(lane for lane in status["lanes"] if lane["slot_number"] == 1)
     assert lane["running"] is not None
@@ -208,7 +208,7 @@ async def test_a_lane_between_stages_still_reads_as_running(session, workspace):
     )
     _occupy(session, 1, current_orchestration_run_id=orch_run.id)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
 
     lane = next(lane for lane in status["lanes"] if lane["slot_number"] == 1)
     assert lane["running"]["status"] == "running"

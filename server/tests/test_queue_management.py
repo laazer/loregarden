@@ -375,7 +375,7 @@ class TestQueueInfo:
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        result = await get_queue_info(db_session)
+        result = get_queue_info(db_session)
 
         assert result["queue_length"] == 2
         assert "active_runs_count" in result
@@ -390,7 +390,7 @@ class TestQueueInfo:
         db_session.add(ws)
         db_session.commit()
 
-        result = await get_queue_info(db_session)
+        result = get_queue_info(db_session)
 
         assert result["queue_length"] == 0
         assert result["max_position"] == 0
@@ -406,7 +406,7 @@ class TestQueueInfo:
         db_session.exec(text("DROP TABLE queued_runs"))
 
         with pytest.raises(HTTPException) as raised:
-            await get_queue_info(db_session)
+            get_queue_info(db_session)
 
         assert raised.value.status_code == 500
 
@@ -419,9 +419,9 @@ class TestQueueInfo:
         service = ParallelQueueService(db_session)
 
         with pytest.raises(OperationalError):
-            await service.get_queued_runs()
+            service.get_queued_runs()
         with pytest.raises(OperationalError):
-            await service.get_active_runs()
+            service.get_active_runs()
 
     async def test_get_queue_info_estimated_clear_time(self, db_session: Session):
         """Verify estimated clear time calculation."""
@@ -456,7 +456,7 @@ class TestQueueInfo:
             db_session.add(run)
         db_session.commit()
 
-        result = await get_queue_info(db_session)
+        result = get_queue_info(db_session)
 
         # 3 queued runs * 300s = 900s
         assert result["estimated_clear_time_seconds"] == 900
@@ -755,7 +755,7 @@ class TestQueueErrorHandling:
         db_session.commit()
 
         # Should return graceful response
-        result = await get_queue_info(db_session)
+        result = get_queue_info(db_session)
 
         assert isinstance(result["queue_length"], int)
         assert isinstance(result["runs"], list)
@@ -1045,7 +1045,7 @@ class TestOnRunCompleteFailureWiring:
         with p1, p2, p3, p4:
             await service.on_run_complete("run-fail-2")
 
-        failed = await get_failed_entries("ws-fail-2", db_session)
+        failed = get_failed_entries("ws-fail-2", db_session)
         assert len(failed) == 1
         # `entry_id` is the address now; `run_id` rides along for display and is
         # null on every lane entry, which is why it could never be the key.

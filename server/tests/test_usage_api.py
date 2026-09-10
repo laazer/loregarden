@@ -1,12 +1,14 @@
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from loregarden.services import usage_service
+from loregarden.services import transcript_token_index, usage_service, usage_snapshot_cache
 
 
 class _RefusingHttpx:
@@ -55,6 +57,34 @@ def no_live_provider_calls(monkeypatch):
             super().__init__(**kwargs)
 
     monkeypatch.setattr(usage_service, "httpx", _RefusingHttpx(real, _RefusingClient))
+
+
+@pytest.fixture(autouse=True)
+def clean_usage_caches(tmp_path, monkeypatch):
+    """Both usage caches are process-global, so a test must not inherit one.
+
+    `transcript_token_index` remembers how far into each transcript it counted and
+    `usage_snapshot_cache` holds the last snapshot; either one carried between
+    tests turns a real regression into a pass.
+
+    Also points the transcript walk and the on-disk provider cache at empty
+    paths. Two tests here reach `get_usage_snapshot` for real, and without the
+    first they scan the developer's own `~/.claude/projects` — 33s and 36s of
+    suite time reading files no assertion looks at. Without the second, a real
+    `data/usage-cache.json` makes `read_usage_snapshot` serve that stored reading
+    instead of the stub the test installed: the cache tests passed alone and
+    failed in the suite, which is the isolation bug and not a flake. Tests that
+    exercise either path point it somewhere of their own.
+    """
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "empty-claude-home"))
+    monkeypatch.setattr(
+        usage_service, "_usage_cache_path", lambda: tmp_path / "empty-data" / "usage-cache.json"
+    )
+    transcript_token_index.reset_index()
+    usage_snapshot_cache.reset_cache()
+    yield
+    transcript_token_index.reset_index()
+    usage_snapshot_cache.reset_cache()
 
 
 class _FakeResponse:
@@ -234,7 +264,7 @@ def test_usage_endpoint_returns_snapshot(client: TestClient):
         "warnings": [],
         "fetched_at": "2026-07-05T20:00:00+00:00",
     }
-    with patch("loregarden.api.usage.get_usage_snapshot", return_value=snapshot):
+    with patch("loregarden.api.usage.read_usage_snapshot", return_value=snapshot):
         res = client.get("/api/usage")
     assert res.status_code == 200
     assert res.json() == snapshot
@@ -1042,3 +1072,288 @@ def test_the_snapshot_builds_its_own_client_and_is_therefore_guarded():
         assert "client" in signature.parameters, (
             f"{name} does not take a client, so it may build its own and escape the transport guard"
         )
+
+
+# --- Incremental transcript scanning ----------------------------------------
+
+
+def test_scan_claude_logs_only_reads_the_appended_bytes(tmp_path):
+    """The whole point of the index: a second poll must not re-read the file.
+
+    Reading every in-window transcript per poll cost 68s warm / 95s cold against
+    757 MB here, and it ran on the `GET /api/usage` request thread.
+    """
+    _write_transcript(
+        tmp_path,
+        [_transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90)],
+    )
+    transcript = tmp_path / "projects" / "-Users-someone-repo" / "session.jsonl"
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        first = usage_service._scan_claude_logs()
+
+        reads: list[str] = []
+        real_open = Path.open
+
+        def counting_open(self, mode="r", *args, **kwargs):
+            if mode.startswith("r"):
+                reads.append(str(self))
+            return real_open(self, mode, *args, **kwargs)
+
+        with patch.object(Path, "open", counting_open):
+            unchanged = usage_service._scan_claude_logs()
+            assert reads == []
+
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    _transcript_line(
+                        timestamp=_recent(1), model="claude-sonnet-5", output_tokens=40
+                    )
+                    + "\n"
+                )
+            grown = usage_service._scan_claude_logs()
+
+    assert [(item.name, item.amount) for item in first] == [("claude-opus-5", 100.0)]
+    assert [(item.name, item.amount) for item in unchanged] == [("claude-opus-5", 100.0)]
+    # The opus row is counted once, not twice, and the appended row is picked up.
+    assert [(item.name, item.amount) for item in grown] == [
+        ("claude-opus-5", 100.0),
+        ("claude-sonnet-5", 50.0),
+    ]
+    assert reads == [str(transcript)]
+
+
+def test_scan_claude_logs_does_not_split_a_half_flushed_row(tmp_path):
+    """A live session can be mid-write. Consuming a partial row would lose it and
+    leave the next pass parsing the tail as a line of its own."""
+    project_dir = tmp_path / "projects" / "-Users-someone-repo"
+    project_dir.mkdir(parents=True)
+    transcript = project_dir / "session.jsonl"
+    whole = _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90)
+    partial = _transcript_line(timestamp=_recent(1), model="claude-sonnet-5", output_tokens=40)
+    transcript.write_text(whole + "\n" + partial[:20], encoding="utf-8")
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        mid_write = usage_service._scan_claude_logs()
+        with transcript.open("a", encoding="utf-8") as handle:
+            handle.write(partial[20:] + "\n")
+        completed = usage_service._scan_claude_logs()
+
+    assert [(item.name, item.amount) for item in mid_write] == [("claude-opus-5", 100.0)]
+    assert [(item.name, item.amount) for item in completed] == [
+        ("claude-opus-5", 100.0),
+        ("claude-sonnet-5", 50.0),
+    ]
+
+
+def test_scan_claude_logs_recounts_a_rewritten_transcript(tmp_path):
+    """Transcripts are append-only in practice, but a rewrite must not be read as
+    an append — the remembered offset no longer describes the file."""
+    _write_transcript(
+        tmp_path,
+        [_transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90)],
+    )
+    transcript = tmp_path / "projects" / "-Users-someone-repo" / "session.jsonl"
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        usage_service._scan_claude_logs()
+        # Same byte count, different content: only the mtime separates the two.
+        transcript.write_text(
+            _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90).replace(
+                "claude-opus-5", "claude-sonne5"
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        rewritten = usage_service._scan_claude_logs()
+
+    assert [(item.name, item.amount) for item in rewritten] == [("claude-sonne5", 100.0)]
+
+
+def test_scan_claude_logs_forgets_a_deleted_transcript(tmp_path):
+    """A deleted transcript's tokens must leave the breakdown, and its index entry
+    must not accumulate for the life of the process."""
+    project_dir = tmp_path / "projects" / "-Users-someone-repo"
+    project_dir.mkdir(parents=True)
+    kept = project_dir / "kept.jsonl"
+    kept.write_text(
+        _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90) + "\n",
+        encoding="utf-8",
+    )
+    removed = project_dir / "removed.jsonl"
+    removed.write_text(
+        _transcript_line(timestamp=_recent(1), model="claude-sonnet-5", output_tokens=40) + "\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        usage_service._scan_claude_logs()
+        removed.unlink()
+        after = usage_service._scan_claude_logs()
+
+    assert [(item.name, item.amount) for item in after] == [("claude-opus-5", 100.0)]
+    assert str(removed) not in transcript_token_index._state
+
+
+def test_scan_claude_logs_drops_rows_that_fall_out_of_the_window(tmp_path):
+    """Counted totals are bucketed by day so the rolling window can be re-applied
+    without re-reading; a bucket older than the window must stop counting."""
+    project_dir = tmp_path / "projects" / "-Users-someone-repo"
+    project_dir.mkdir(parents=True)
+    transcript = project_dir / "session.jsonl"
+    transcript.write_text(
+        _transcript_line(timestamp=_recent(24 * 6), model="claude-opus-5", output_tokens=90)
+        + "\n"
+        + _transcript_line(timestamp=_recent(1), model="claude-sonnet-5", output_tokens=40)
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        inside = usage_service._scan_claude_logs(days_back=7)
+        aged_out = usage_service._scan_claude_logs(days_back=2)
+
+    assert sorted(item.name for item in inside) == ["claude-opus-5", "claude-sonnet-5"]
+    assert [(item.name, item.amount) for item in aged_out] == [("claude-sonnet-5", 50.0)]
+
+
+# --- Snapshot cache ----------------------------------------------------------
+
+
+def _stub_snapshot(marker: str) -> dict:
+    return {
+        "providers": [
+            {
+                "provider": "claude",
+                "plan": marker,
+                "logged_in": True,
+                "error": None,
+                "meters": [
+                    {
+                        "key": "five_hour",
+                        "label": "Session (5h)",
+                        "used": 42.0,
+                        "limit": 100.0,
+                        "unit": "percent",
+                        "percent_used": 42.0,
+                        "resets_at": None,
+                        "status": "ok",
+                    }
+                ],
+                "breakdown": [],
+            }
+        ],
+        "near_limit": False,
+        "warnings": [],
+        "fetched_at": "2026-07-05T20:00:00+00:00",
+    }
+
+
+def test_snapshot_is_served_from_memory_within_the_ttl():
+    """Regression: the endpoint rebuilt the snapshot per poll — three provider
+    round-trips plus a transcript walk — and stalled every request behind it."""
+    calls = []
+
+    def build():
+        calls.append(1)
+        return _stub_snapshot("live")
+
+    with patch.object(usage_snapshot_cache, "get_usage_snapshot", side_effect=build):
+        first = usage_snapshot_cache.read_usage_snapshot()
+        second = usage_snapshot_cache.read_usage_snapshot()
+
+    assert len(calls) == 1
+    assert first is second
+
+
+def test_forced_read_always_fetches_live_numbers():
+    calls = []
+
+    def build():
+        calls.append(1)
+        return _stub_snapshot("live")
+
+    with patch.object(usage_snapshot_cache, "get_usage_snapshot", side_effect=build):
+        usage_snapshot_cache.read_usage_snapshot()
+        usage_snapshot_cache.read_usage_snapshot(force=True)
+
+    assert len(calls) == 2
+
+
+def test_first_poll_after_a_restart_serves_the_stored_reading():
+    """The refresh must run off the request thread, so the first poll answers from
+    the on-disk cache rather than waiting on the providers."""
+    stored = _stub_snapshot("stored")
+    started = []
+
+    with (
+        patch.object(usage_snapshot_cache, "snapshot_from_stored_cache", return_value=stored),
+        patch.object(usage_snapshot_cache, "_start_background_refresh", lambda: started.append(1)),
+        patch.object(usage_snapshot_cache, "get_usage_snapshot") as live,
+    ):
+        served = usage_snapshot_cache.read_usage_snapshot()
+
+    assert served is stored
+    assert started == [1]
+    live.assert_not_called()
+
+
+def test_stale_reading_is_served_while_the_refresh_runs():
+    started = []
+    with patch.object(usage_snapshot_cache, "get_usage_snapshot", return_value=_stub_snapshot("a")):
+        first = usage_snapshot_cache.read_usage_snapshot()
+
+    with (
+        patch.object(usage_snapshot_cache, "_start_background_refresh", lambda: started.append(1)),
+        patch.object(usage_snapshot_cache, "time") as clock,
+    ):
+        clock.monotonic.return_value = (
+            time.monotonic() + usage_snapshot_cache.SNAPSHOT_TTL_SECONDS + 1
+        )
+        stale = usage_snapshot_cache.read_usage_snapshot()
+
+    assert stale is first
+    assert started == [1]
+
+
+def test_stored_snapshot_reports_the_reading_age_not_now(tmp_path, monkeypatch):
+    """A cached reading served as if it were fresh would hide its own staleness."""
+    cache_path = tmp_path / "data" / usage_service.USAGE_CACHE_FILENAME
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "claude": {
+                    "provider": "claude",
+                    "plan": "Max 20x",
+                    "logged_in": True,
+                    "meters": [
+                        {
+                            "key": "five_hour",
+                            "label": "Session (5h)",
+                            "used": 42.0,
+                            "limit": 100.0,
+                            "unit": "percent",
+                            "percent_used": 42.0,
+                        }
+                    ],
+                    "breakdown": [],
+                    "cached_at": "2026-07-05T20:00:00+00:00",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(usage_service, "_usage_cache_path", lambda: cache_path)
+
+    snapshot = usage_service.snapshot_from_stored_cache()
+
+    assert snapshot is not None
+    assert snapshot["fetched_at"] == "2026-07-05T20:00:00+00:00"
+    assert snapshot["providers"][0]["from_cache"] is True
+
+
+def test_stored_snapshot_is_none_when_nothing_has_been_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(usage_service, "_usage_cache_path", lambda: tmp_path / "absent.json")
+
+    assert usage_service.snapshot_from_stored_cache() is None

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
@@ -28,9 +28,16 @@ export function AppTopbarActions() {
 
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  // The snapshot is served from a short server-side cache so a page load never
+  // blocks on the providers; the modal's Refresh button asks for live numbers.
+  const forceUsageRefresh = useRef(false);
   const usage = useQuery({
     queryKey: ["usage"],
-    queryFn: api.usage,
+    queryFn: () => {
+      const force = forceUsageRefresh.current;
+      forceUsageRefresh.current = false;
+      return api.usage(force);
+    },
     refetchInterval: USAGE_REFRESH_MS,
     staleTime: USAGE_REFRESH_MS,
     refetchOnWindowFocus: false,
@@ -180,7 +187,10 @@ export function AppTopbarActions() {
         isLoading={usage.isFetching}
         error={usage.error}
         onClose={() => setUsageOpen(false)}
-        onRefresh={() => void usage.refetch()}
+        onRefresh={() => {
+          forceUsageRefresh.current = true;
+          void usage.refetch();
+        }}
       />
 
       <ApprovalInboxPanel />

@@ -340,7 +340,6 @@ def test_the_reconciliation_pass_settles_expired_leases(session, workspace):
 
 def test_a_board_read_does_not_draw_a_lane_whose_lease_expired(session, workspace):
     """The read must be right between sweeps, without doing the repair itself."""
-    import asyncio
 
     from loregarden.services.queue_status import build_queue_status
 
@@ -348,6 +347,6 @@ def test_a_board_read_does_not_draw_a_lane_whose_lease_expired(session, workspac
     session.add(AgentSlot(slot_number=1, is_available=False, current_orchestration_run_id=run.id))
     session.commit()
 
-    snapshot = asyncio.run(build_queue_status(session))
+    snapshot = build_queue_status(session)
 
     assert snapshot["active_runs"] == []

@@ -147,7 +147,7 @@ async def test_a_lane_entry_is_visible_without_an_agent_run(session, workspace):
     ticket = _ticket(session, workspace, "T-1")
     _lane_entry(session, ticket, slot_number=1, position=1)
 
-    queued = await ParallelQueueService(session).get_queued_runs()
+    queued = ParallelQueueService(session).get_queued_runs()
 
     assert [entry["ticket_id"] for entry in queued] == [ticket.id]
     assert queued[0]["run_id"] == ""
@@ -160,7 +160,7 @@ async def test_the_queue_length_matches_what_the_lanes_show(session, workspace):
     for index in range(3):
         _lane_entry(session, _ticket(session, workspace, f"T-{index}"), 1, index + 1)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
 
     assert status["queue_length"] == 3
     assert sum(len(lane["waiting"]) for lane in status["lanes"]) == 3
@@ -173,7 +173,7 @@ async def test_a_queued_entry_is_priced_by_its_whole_pipeline(session, workspace
     ticket = _ticket(session, workspace, "T-2")
     _lane_entry(session, ticket, slot_number=1, position=1)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
     entry = status["lanes"][0]["waiting"][0]
 
     assert entry["estimated_duration_seconds"] == pytest.approx(300.0)
@@ -194,7 +194,7 @@ async def test_waiting_behind_a_lane_mate_is_not_waiting_for_nothing(session, wo
     _lane_entry(session, first, slot_number=1, position=1)
     _lane_entry(session, second, slot_number=1, position=2)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
     waiting = status["lanes"][0]["waiting"]
 
     assert waiting[0]["estimated_wait_seconds"] == pytest.approx(0.0)
@@ -209,7 +209,7 @@ async def test_no_history_still_reports_the_queue_it_can_count(session, workspac
     projection depends on history."""
     _lane_entry(session, _ticket(session, workspace, "T-5"), 1, 1)
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
 
     assert status["queue_length"] == 1
     assert status["estimated_clear_seconds"] is None
@@ -236,7 +236,7 @@ async def test_a_running_lane_reports_what_is_left_of_its_ticket(session, worksp
     session.add(slot)
     session.commit()
 
-    status = await build_queue_status(session)
+    status = build_queue_status(session)
     running = status["lanes"][0]["running"]
 
     assert running is not None

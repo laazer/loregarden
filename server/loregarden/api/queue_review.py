@@ -108,7 +108,7 @@ def generate_diff(before: list, after: list) -> list[dict]:
 
 
 @router.post("/workspace/{workspace_id}/queue/operations/create")
-async def create_queue_operation(
+def create_queue_operation(
     workspace_id: str,
     body: CreateOperationRequest,
     session: Session = Depends(get_session),
@@ -150,7 +150,7 @@ async def create_queue_operation(
 
 
 @router.get("/workspace/{workspace_id}/queue/operations/{operation_id}/diff")
-async def get_operation_diff(
+def get_operation_diff(
     workspace_id: str,
     operation_id: str,
     session: Session = Depends(get_session),
@@ -206,7 +206,7 @@ async def get_operation_diff(
 
 
 @router.post("/workspace/{workspace_id}/queue/operations/{operation_id}/comment")
-async def add_operation_comment(
+def add_operation_comment(
     workspace_id: str,
     operation_id: str,
     body: OperationCommentRequest,
@@ -245,7 +245,7 @@ async def add_operation_comment(
 
 
 @router.post("/workspace/{workspace_id}/queue/operations/{operation_id}/approve")
-async def approve_operation(
+def approve_operation(
     workspace_id: str,
     operation_id: str,
     body: ApproveOperationRequest = Body(default_factory=ApproveOperationRequest),
@@ -277,7 +277,7 @@ async def approve_operation(
 
 
 @router.post("/workspace/{workspace_id}/queue/operations/{operation_id}/submit-to-agent")
-async def submit_operation_to_agent(
+def submit_operation_to_agent(
     workspace_id: str,
     operation_id: str,
     body: SubmitOperationRequest = Body(default_factory=SubmitOperationRequest),
@@ -337,7 +337,7 @@ async def submit_operation_to_agent(
 
 
 @router.get("/queue/operations")
-async def list_operations_global(
+def list_operations_global(
     approved_only: bool = False,
     executed_only: bool = False,
     limit: int = 20,
@@ -381,7 +381,7 @@ async def list_operations_global(
 
 
 @router.get("/workspace/{workspace_id}/queue/operations")
-async def list_operations(
+def list_operations(
     workspace_id: str,
     approved_only: bool = False,
     executed_only: bool = False,
@@ -428,7 +428,7 @@ async def list_operations(
 
 
 @router.post("/workspace/{workspace_id}/runs/{run_id}/output-review")
-async def create_output_review(
+def create_output_review(
     workspace_id: str,
     run_id: str,
     body: OutputReviewRequest,
@@ -454,7 +454,7 @@ async def create_output_review(
 
 
 @router.post("/workspace/{workspace_id}/runs/{run_id}/output-review/{review_id}/comment")
-async def add_output_comment(
+def add_output_comment(
     workspace_id: str,
     run_id: str,
     review_id: str,
@@ -500,7 +500,7 @@ async def add_output_comment(
 
 
 @router.get("/workspace/{workspace_id}/runs/{run_id}/output-review/{review_id}")
-async def get_output_review(
+def get_output_review(
     workspace_id: str,
     run_id: str,
     review_id: str,

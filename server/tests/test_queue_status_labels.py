@@ -61,7 +61,7 @@ async def test_a_lane_card_carries_the_ticket_state_and_activity(db_session):
     ticket = _ticket(db_session, ws, "LANE-1", TicketState.IN_PROGRESS)
     _occupy_slot(db_session, ticket, RunStatus.RUNNING)
 
-    snapshot = await build_queue_status(db_session)
+    snapshot = build_queue_status(db_session)
     card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
 
     assert card["ticket_state"] == "in_progress"
@@ -103,7 +103,7 @@ async def test_a_lane_card_carries_ticket_ancestry_and_running_descendant(db_ses
     db_session.add(slot)
     db_session.commit()
 
-    snapshot = await build_queue_status(db_session)
+    snapshot = build_queue_status(db_session)
     card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == parent.id)
 
     assert [node["code"] for node in card["ticket_ancestry"]] == ["PARENT-1"]
@@ -134,7 +134,7 @@ async def test_a_slot_held_by_a_finished_run_is_reclaimed(db_session):
     ticket = _ticket(db_session, ws, "LANE-2", TicketState.IN_PROGRESS)
     _occupy_slot(db_session, ticket, RunStatus.SUCCEEDED)
 
-    snapshot = await build_queue_status(db_session)
+    snapshot = build_queue_status(db_session)
 
     assert not [run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id]
 
@@ -169,7 +169,7 @@ async def test_a_waiting_entry_carries_its_own_state(db_session):
     )
     db_session.commit()
 
-    snapshot = await build_queue_status(db_session)
+    snapshot = build_queue_status(db_session)
     entries = [entry for lane in snapshot["lanes"] for entry in lane["waiting"]]
     entry = next(e for e in entries if e["ticket_id"] == waiting.id)
 
@@ -209,7 +209,7 @@ async def test_a_lane_carries_what_blocked_or_failed_in_it(db_session):
     )
     db_session.commit()
 
-    snapshot = await build_queue_status(db_session)
+    snapshot = build_queue_status(db_session)
     lane = next(lane for lane in snapshot["lanes"] if lane["slot_number"] == 2)
 
     assert lane["attention_total"] == 1

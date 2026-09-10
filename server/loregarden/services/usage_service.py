@@ -16,6 +16,7 @@ import httpx
 from loregarden.config import settings
 from loregarden.services import claude_session_usage, codex_usage
 from loregarden.services.cli_settings import resolve_model_for_adapter, resolve_runtime_effective
+from loregarden.services.transcript_token_index import TranscriptRow, scan_tokens_by_model
 
 logger = logging.getLogger(__name__)
 
@@ -500,59 +501,49 @@ def _row_model(row: dict[str, Any]) -> str:
     return str(model or "unknown").strip() or "unknown"
 
 
+def _transcript_row(line: str) -> TranscriptRow | None:
+    """One transcript line as an accounted row, or ``None`` if it spends nothing."""
+    if '"usage"' not in line:
+        return None
+    try:
+        row = json.loads(line)
+    except json.JSONDecodeError:
+        # silent-ok: one half-flushed JSONL row out of millions; every
+        # other row in the transcript is still counted
+        return None
+    # A transcript row is a foreign payload written by another tool, and a line
+    # that is not an object is not ours to model.
+    if not isinstance(row, dict):  # py-org: allow-isinstance
+        return None
+    usage = _row_usage(row)
+    if usage is None:
+        return None
+    tokens = (
+        (_as_number(usage.get("input_tokens")) or 0)
+        + (_as_number(usage.get("output_tokens")) or 0)
+        + (_as_number(usage.get("cache_read_input_tokens")) or 0)
+        + (_as_number(usage.get("cache_creation_input_tokens")) or 0)
+    )
+    if tokens <= 0:
+        return None
+    return TranscriptRow(
+        timestamp=_row_timestamp(row),
+        model=_row_model(row),
+        tokens=tokens,
+    )
+
+
 def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
-    roots = [_claude_home() / "projects"]
-    since = datetime.now(tz=timezone.utc).timestamp() - days_back * 86400
-    totals: dict[str, float] = {}
-    for root in roots:
-        if not root.is_dir():
-            continue
-        for path in root.rglob("*.jsonl"):
-            # A transcript last written before the window can only hold rows
-            # outside it, so skip the read entirely. Without this every poll
-            # reads the whole history (~1.4 GB here) to discard nearly all of it.
-            try:
-                if path.stat().st_mtime < since:
-                    continue
-            except OSError:
-                # silent-ok: a live claude session can rotate or delete a transcript
-                # between the rglob and this stat; the next poll re-walks the tree
-                continue
-            try:
-                for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    if '"usage"' not in line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        # silent-ok: one half-flushed JSONL row out of millions; every
-                        # other row in the transcript is still counted
-                        continue
-                    if not isinstance(row, dict):
-                        continue
-                    ts = _row_timestamp(row)
-                    if ts is not None and ts < since:
-                        continue
-                    usage = _row_usage(row)
-                    if usage is None:
-                        continue
-                    model_name = _row_model(row)
-                    input_tokens = _as_number(usage.get("input_tokens")) or 0
-                    output_tokens = _as_number(usage.get("output_tokens")) or 0
-                    cache_read = _as_number(usage.get("cache_read_input_tokens")) or 0
-                    cache_create = _as_number(usage.get("cache_creation_input_tokens")) or 0
-                    tokens = input_tokens + output_tokens + cache_read + cache_create
-                    if tokens <= 0:
-                        continue
-                    totals[model_name] = totals.get(model_name, 0) + tokens
-            except OSError as exc:
-                logger.warning(
-                    "could not read claude transcript %s; its turns are missing from "
-                    "the usage breakdown: %s",
-                    path,
-                    exc,
-                )
-                continue
+    """Per-model token breakdown from the local Claude Code transcripts.
+
+    The walk is incremental (see ``transcript_token_index``), so a poll costs the
+    bytes appended since the last one rather than the whole in-window history.
+    """
+    totals = scan_tokens_by_model(
+        _claude_home() / "projects",
+        days_back=days_back,
+        read_row=_transcript_row,
+    )
     if not totals:
         return []
     grand_total = sum(totals.values())
@@ -1426,4 +1417,33 @@ def get_usage_snapshot() -> dict[str, Any]:
         "near_limit": near_limit,
         "warnings": warnings,
         "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+
+
+def snapshot_from_stored_cache() -> dict[str, Any] | None:
+    """A snapshot rebuilt from the on-disk cache, or ``None`` if it holds nothing.
+
+    Answers the first poll after a restart so a page load never waits on the
+    providers. Every provider is stamped ``from_cache`` and ``fetched_at`` is the
+    newest reading's own timestamp, so the UI reports the real age of the numbers
+    instead of "just now".
+    """
+    cache = _read_usage_cache()
+    entries = [cache[name] for name in ("claude", "cursor", "codex") if cache.get(name)]
+    providers = [
+        provider for provider in map(_provider_from_cache_entry, entries) if provider.meters
+    ]
+    if not providers:
+        return None
+    active_adapter = str(resolve_runtime_effective(None).get("cli_adapter") or "")
+    for provider in providers:
+        provider.from_cache = True
+        _apply_configured_model(provider, active_adapter)
+    warnings, near_limit = _snapshot_warnings(providers)
+    newest = max((provider.cached_at for provider in providers if provider.cached_at), default=None)
+    return {
+        "providers": [provider.as_dict() for provider in providers],
+        "near_limit": near_limit,
+        "warnings": warnings,
+        "fetched_at": newest,
     }

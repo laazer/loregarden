@@ -102,7 +102,7 @@ async def create_parallel_run(
 
 
 @router.get("/status")
-async def get_parallel_status(
+def get_parallel_status(
     session: Session = Depends(get_session),
 ):
     """
@@ -124,7 +124,9 @@ async def get_parallel_status(
     try:
         # Shared with the queue websocket, so a client that falls back to
         # polling sees the identical payload rather than a second dialect.
-        return await build_queue_status(session)
+        # Sync handler, so the blocking reads run in the threadpool: as an
+        # `async def` this stalled the event loop on every five-second poll.
+        return build_queue_status(session)
 
     except Exception as e:
         logger.error(f"Error getting parallel status: {e}", exc_info=True)
@@ -286,7 +288,7 @@ async def check_conflicts(
 
 
 @router.post("/worktree/{worktree_id}/merge")
-async def merge_worktree(
+def merge_worktree(
     worktree_id: str = Path(...),
     target_branch: str = Query("main"),
     auto_resolve: bool = Query(False),
@@ -394,7 +396,7 @@ async def merge_worktree(
 
 
 @router.post("/worktree/{worktree_id}/cleanup")
-async def cleanup_worktree(
+def cleanup_worktree(
     worktree_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
@@ -441,7 +443,7 @@ async def cleanup_worktree(
 
 
 @router.get("/worktree/{worktree_id}")
-async def get_worktree_details(
+def get_worktree_details(
     worktree_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
@@ -491,7 +493,7 @@ async def get_worktree_details(
 
 
 @router.get("/conflict-reports/{worktree_id}")
-async def get_conflict_reports(
+def get_conflict_reports(
     worktree_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
@@ -545,7 +547,7 @@ async def get_conflict_reports(
 
 
 @router.get("/active-runs")
-async def get_active_runs(
+def get_active_runs(
     session: Session = Depends(get_session),
 ):
     """
@@ -567,7 +569,7 @@ async def get_active_runs(
     """
     try:
         queue_service = ParallelQueueService(session)
-        active_runs = await queue_service.get_active_runs()
+        active_runs = queue_service.get_active_runs()
 
         return {"active_runs": active_runs}
 
@@ -577,7 +579,7 @@ async def get_active_runs(
 
 
 @router.get("/queued-runs")
-async def get_queued_runs(
+def get_queued_runs(
     session: Session = Depends(get_session),
 ):
     """
@@ -599,7 +601,7 @@ async def get_queued_runs(
     """
     try:
         queue_service = ParallelQueueService(session)
-        queued_runs = await queue_service.get_queued_runs()
+        queued_runs = queue_service.get_queued_runs()
 
         return {"queued_runs": queued_runs}
 

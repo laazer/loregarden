@@ -104,7 +104,7 @@ def _bulk_set_status(
 
 
 @router.post("/workspace/{workspace_id}/queue/bulk-cancel")
-async def bulk_cancel_entries(
+def bulk_cancel_entries(
     workspace_id: str,
     entry_ids: list[str],
     session: Session = Depends(get_session),
@@ -129,7 +129,7 @@ async def bulk_cancel_entries(
 
 
 @router.post("/workspace/{workspace_id}/queue/bulk-pause")
-async def bulk_pause_entries(
+def bulk_pause_entries(
     workspace_id: str,
     entry_ids: list[str],
     session: Session = Depends(get_session),
@@ -156,7 +156,7 @@ async def bulk_pause_entries(
 
 
 @router.post("/workspace/{workspace_id}/queue/bulk-resume")
-async def bulk_resume_entries(
+def bulk_resume_entries(
     workspace_id: str,
     entry_ids: list[str],
     session: Session = Depends(get_session),
@@ -179,7 +179,7 @@ async def bulk_resume_entries(
 
 
 @router.post("/workspace/{workspace_id}/queue/bulk-reorder")
-async def bulk_reorder_entries(
+def bulk_reorder_entries(
     workspace_id: str,
     entry_order: list[str],
     session: Session = Depends(get_session),
@@ -236,7 +236,7 @@ def _apply_retry(entry: QueuedRun) -> int:
 
 
 @router.post("/workspace/{workspace_id}/queue/{entry_id}/retry")
-async def retry_failed_entry(
+def retry_failed_entry(
     workspace_id: str,
     entry_id: str,
     session: Session = Depends(get_session),
@@ -280,7 +280,7 @@ def _failed_entries(session: Session, workspace_id: str) -> list[QueuedRun]:
 
 
 @router.post("/workspace/{workspace_id}/queue/retry-all-failed")
-async def retry_all_failed_entries(
+def retry_all_failed_entries(
     workspace_id: str,
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = None,
@@ -318,7 +318,7 @@ async def retry_all_failed_entries(
 
 
 @router.get("/workspace/{workspace_id}/queue/failed-entries")
-async def get_failed_entries(
+def get_failed_entries(
     workspace_id: str,
     session: Session = Depends(get_session),
 ) -> list[dict]:
@@ -339,7 +339,7 @@ async def get_failed_entries(
 
 
 @router.post("/workspace/{workspace_id}/queue/skip-failed")
-async def skip_all_failed_entries(
+def skip_all_failed_entries(
     workspace_id: str,
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = None,
