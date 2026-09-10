@@ -87,7 +87,7 @@ class TestAnalyticsFailsLoudly:
             side_effect=RuntimeError("no such column"),
         ):
             with pytest.raises(HTTPException) as caught:
-                await get_global_analytics(range="7d", session=MagicMock())
+                get_global_analytics(range="7d", session=MagicMock())
 
         assert caught.value.status_code == 500
         assert "no such column" in str(caught.value.detail)
@@ -99,7 +99,7 @@ class TestAnalyticsFailsLoudly:
             side_effect=RuntimeError("no such column"),
         ):
             with pytest.raises(HTTPException) as caught:
-                await get_analytics(workspace_id="ws-1", range="7d", session=MagicMock())
+                get_analytics(workspace_id="ws-1", range="7d", session=MagicMock())
 
         assert caught.value.status_code == 500
 

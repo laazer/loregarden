@@ -38,6 +38,27 @@ def _tickets_by_id(session: Session, ticket_ids: set[str]) -> dict[str, Ticket]:
     }
 
 
+#: How much of a run's command this list carries.
+#:
+#: The column is unbounded — a CLI adapter's command embeds the whole prompt, so
+#: it measured ~53 KB a row here: 2.6 MB of this endpoint's 2.7 MB, re-sent every
+#: 15 seconds to the home page, which renders it as a one-line label. Bounding it
+#: takes the payload to ~28 KB. The full text is on GET /runs/{id}.
+COMMAND_PREVIEW_CHARS = 300
+
+
+def _command_preview(command: str | None) -> str:
+    """The head of a command, marked when there is more of it.
+
+    The ellipsis is the point: without it a caller cannot tell a short command
+    from a truncated one, and would quote a prefix as the whole thing.
+    """
+    text = command or ""
+    if len(text) <= COMMAND_PREVIEW_CHARS:
+        return text
+    return text[:COMMAND_PREVIEW_CHARS] + "…"
+
+
 @router.get("")
 def list_runs(
     ticket_id: str | None = Query(default=None),
@@ -62,7 +83,7 @@ def list_runs(
                 "skill_name": r.skill_name,
                 "stage_key": r.stage_key,
                 "status": r.status.value,
-                "command": r.command,
+                "command": _command_preview(r.command),
                 # created_at is the only stamp a run that never started still has —
                 # the errors list must be able to say when a dispatch failed too.
                 "created_at": iso_utc(r.created_at),

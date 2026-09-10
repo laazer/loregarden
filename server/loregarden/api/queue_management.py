@@ -168,7 +168,7 @@ async def _reorder_queue_internal(
 
 
 @router.get("/info")
-async def get_queue_info(
+def get_queue_info(
     session: Session = Depends(get_session),
 ):
     """
@@ -194,8 +194,8 @@ async def get_queue_info(
         queue_service = ParallelQueueService(session)
 
         # Get queue data
-        queued_runs = await queue_service.get_queued_runs()
-        active_runs = await queue_service.get_active_runs()
+        queued_runs = queue_service.get_queued_runs()
+        active_runs = queue_service.get_active_runs()
 
         # Calculate estimated clear time
         # Assume 5 minutes per active run, 5 minutes per queued run

@@ -107,7 +107,7 @@ def _build_metrics(session: Session, *, workspace_id: str | None, range: str) ->
 
 
 @router.get("/analytics")
-async def get_global_analytics(
+def get_global_analytics(
     range: str = Query("7d", pattern="^(7d|30d|90d)$"),
     session: Session = Depends(get_session),
 ):
@@ -123,7 +123,7 @@ async def get_global_analytics(
 
 
 @router.get("/workspace/{workspace_id}/analytics")
-async def get_analytics(
+def get_analytics(
     workspace_id: str = Path(...),
     range: str = Query("7d", pattern="^(7d|30d|90d)$"),
     session: Session = Depends(get_session),

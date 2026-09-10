@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])
 
 
 @router.post("/workspace/{workspace_id}/queue/save-snapshot")
-async def save_queue_snapshot(
+def save_queue_snapshot(
     workspace_id: str,
     name: str,
     description: str | None = None,
@@ -82,7 +82,7 @@ async def save_queue_snapshot(
 
 
 @router.get("/workspace/{workspace_id}/queue/snapshots")
-async def list_queue_snapshots(
+def list_queue_snapshots(
     workspace_id: str,
     limit: int = 20,
     offset: int = 0,
@@ -119,7 +119,7 @@ async def list_queue_snapshots(
 
 
 @router.get("/workspace/{workspace_id}/queue/snapshot/{snapshot_id}")
-async def get_snapshot_details(
+def get_snapshot_details(
     workspace_id: str,
     snapshot_id: str,
     session: Session = Depends(get_session),
@@ -150,7 +150,7 @@ async def get_snapshot_details(
 
 
 @router.post("/workspace/{workspace_id}/queue/restore-snapshot/{snapshot_id}")
-async def restore_queue_from_snapshot(
+def restore_queue_from_snapshot(
     workspace_id: str,
     snapshot_id: str,
     clear_current: bool = True,
@@ -222,7 +222,7 @@ async def restore_queue_from_snapshot(
 
 
 @router.post("/workspace/{workspace_id}/queue/replay-last")
-async def replay_last_n_runs(
+def replay_last_n_runs(
     workspace_id: str,
     count: int = 5,
     session: Session = Depends(get_session),
@@ -263,7 +263,7 @@ async def replay_last_n_runs(
 
 
 @router.delete("/workspace/{workspace_id}/queue/snapshot/{snapshot_id}")
-async def delete_snapshot(
+def delete_snapshot(
     workspace_id: str,
     snapshot_id: str,
     session: Session = Depends(get_session),
@@ -285,7 +285,7 @@ async def delete_snapshot(
 
 
 @router.get("/workspace/{workspace_id}/queue/snapshots/search")
-async def search_snapshots(
+def search_snapshots(
     workspace_id: str,
     query: str = "",
     tag: str | None = None,

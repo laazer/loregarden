@@ -585,7 +585,7 @@ class ParallelQueueService:
             assigned_at = assigned_at.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) - assigned_at < RESERVATION_GRACE
 
-    async def get_active_runs(self) -> list[dict]:
+    def get_active_runs(self) -> list[dict]:
         """
         Get what is executing in each occupied slot, across all workspaces.
 
@@ -709,7 +709,7 @@ class ParallelQueueService:
             "status": run.status.value,
         }
 
-    async def get_queued_runs(self) -> list[dict]:
+    def get_queued_runs(self) -> list[dict]:
         """
         Get everything waiting to start, across all workspaces and lanes.
 

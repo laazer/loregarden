@@ -1,10 +1,13 @@
 """The websocket that replaced the queue dashboard's polling."""
 
+import inspect
+import threading
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS, _send_snapshot
+from loregarden.api import parallel, queue_management
+from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS, _send_snapshot, _snapshot
 from loregarden.services.event_hub import event_hub
 from loregarden.websocket_events import QUEUE_TOPIC
 from starlette.websockets import WebSocketDisconnect
@@ -253,7 +256,7 @@ def test_the_socket_does_not_close_when_the_first_snapshot_fails(ws_client):
     with (
         patch(
             "loregarden.api.queue_events.build_queue_status",
-            AsyncMock(side_effect=RuntimeError("no such table: queued_runs")),
+            Mock(side_effect=RuntimeError("no such table: queued_runs")),
         ),
         ws_client.websocket_connect("/ws/queue") as socket,
     ):
@@ -261,3 +264,42 @@ def test_the_socket_does_not_close_when_the_first_snapshot_fails(ws_client):
 
     assert message["type"] == "queue_event"
     assert message["data"]["data"]["code"] == "QUEUE_STATUS_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_the_snapshot_read_does_not_run_on_the_event_loop():
+    """The regression this pins: `build_queue_status` is a dozen blocking SQLite
+    reads, and this handler runs on the event loop.
+
+    Ticking one on the loop every REFRESH_INTERVAL_SECONDS, per open socket,
+    stalled every other request in the process — measured against the running
+    server, a bare 404 probe went from ~10ms to 39s while the queue snapshot was
+    under load. A board full of pending requests was that, not a slow network.
+    """
+    read_on: list[int] = []
+
+    def record(_session):
+        read_on.append(threading.get_ident())
+        return {"queue_length": 0}
+
+    with patch("loregarden.api.queue_events.build_queue_status", record):
+        await _snapshot()
+
+    assert read_on and read_on[0] != threading.get_ident()
+
+
+def test_the_polled_queue_endpoints_are_not_declared_async():
+    """Same invariant, on the HTTP side.
+
+    A sync FastAPI handler runs in the threadpool; an `async def` one runs on the
+    event loop. These handlers do nothing but blocking SQLite reads, so being
+    declared `async` is the whole defect — and `/parallel/status` is polled every
+    five seconds by every tab that falls back from the socket.
+    """
+    for handler in (
+        parallel.get_parallel_status,
+        parallel.get_active_runs,
+        parallel.get_queued_runs,
+        queue_management.get_queue_info,
+    ):
+        assert not inspect.iscoroutinefunction(handler), handler.__qualname__

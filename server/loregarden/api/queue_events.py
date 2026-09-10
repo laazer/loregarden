@@ -48,7 +48,7 @@ REFRESH_INTERVAL_SECONDS = 5.0
 NOTIFIABLE_EVENTS = frozenset({"queue_promoted", "run_completed", "error"})
 
 
-async def _snapshot() -> dict:
+def _read_snapshot() -> dict:
     """Read current queue state.
 
     A fresh session per snapshot on purpose: a session held for the life of the
@@ -57,7 +57,19 @@ async def _snapshot() -> dict:
     connected.
     """
     with Session(engine) as session:
-        return await build_queue_status(session)
+        return build_queue_status(session)
+
+
+async def _snapshot() -> dict:
+    """The snapshot, read in a worker thread.
+
+    `build_queue_status` is a dozen blocking SQLite reads. This handler runs on
+    the event loop, so doing them here stalled the whole process every
+    REFRESH_INTERVAL_SECONDS per open socket — measured against the live server,
+    a bare 404 probe went from ~10ms to 39s under that load, which is what a
+    board full of pending requests actually was.
+    """
+    return await asyncio.to_thread(_read_snapshot)
 
 
 def _notifiable(events: list[dict]) -> list[dict]:
