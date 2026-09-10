@@ -129,6 +129,15 @@
   max-width: min(620px, 100%);
 }
 
+/* A card-only reply takes the reply's slot in the avatar row, but none of its
+   chrome: the card draws its own surface, and a second one around it reads as a
+   card inside a bubble. Landing here rather than one row down is what keeps the
+   avatar level with the thing it labels. */
+.lg-chat-assistant-cards {
+  flex: 1;
+  min-width: 0;
+}
+
 .lg-chat-reply {
   flex: 1;
   min-width: 0;

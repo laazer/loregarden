@@ -158,6 +158,16 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                 .join("\n\n")
                 .trim() || ""
             : body;
+        // A turn that is only a card — an aside, a gate, a ticket — has no text
+        // part, so `textBody` is empty and the avatar row used to render a bare
+        // `flex: 1` spacer with the card stacked beneath it. That left the
+        // avatar hanging a whole row above the only thing it labels. With
+        // nothing to say, the card *is* the reply, so it goes in the row.
+        //
+        // Regular width only. A wide or full card is meant to spend the whole
+        // column, and the row is capped at the reading measure — inlining one
+        // there would take back the width it asked for.
+        const cardIsTheReply = !textBody && hasNonTextParts && partsSize === "regular";
 
         if (isUser) {
           // Pressing Run posts the full plan so the agent has the steps
@@ -222,11 +232,15 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                     <div className="lg-chat-reply">
                       <MarkdownContent content={textBody} />
                     </div>
+                  ) : cardIsTheReply ? (
+                    <div className="lg-chat-assistant-cards">
+                      <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+                    </div>
                   ) : (
                     <div style={{ flex: 1 }} />
                   )}
                 </div>
-                {hasNonTextParts ? (
+                {hasNonTextParts && !cardIsTheReply ? (
                   <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
                 ) : null}
               </div>
