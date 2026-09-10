@@ -37,6 +37,7 @@ const baseStatus: QueueStatusValue = {
   estimatedClearSeconds: null,
   estimatedWaitSeconds: null,
   isWebSocket: true,
+  error: null,
   loading: false,
   onQueueEvent: jest.fn(() => () => {}),
 };
