@@ -56,8 +56,12 @@ loregarden/
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
 | MCP tools | `mcp/tools.py` | Tool names and schemas |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
-| Migrations | `db/migrations.py` | Append with the next id; never reorder |
+| Migrations | `db/migrations.py` | Append with the next **free** id and mirror it into `db/migration_ids.py`; never reorder. Parallel branches contend for numbers — check the live DB, and expect to renumber an unlanded branch rather than contest one |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
+| Docker capacity | `services/docker_leases.py`, `services/docker_ledger.py` | `reserve` → bind → `release_lease`, shaped after queue admission. `drain_waiters` is the only granter: book capacity, then compare-and-set the row |
+| Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify — docker ps prints nothing both when nothing matched and when it could not ask |
+| Docker waits / throttling | `services/docker_wait_estimate.py`, `services/docker_poll_guard.py` | `estimate_waits` separates a forecast from a TTL bound; `note_poll` refuses a fast poll without stamping the clock |
+| Is the ledger being used? | `services/docker_unaccounted.py` | `unaccounted_containers` is the only signal distinguishing an adopted ledger from an ignored one — both otherwise read as capacity-free with nothing reaped |
 
 ## THE DATABASE IS THE SOURCE OF TRUTH
 

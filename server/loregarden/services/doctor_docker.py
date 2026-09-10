@@ -31,6 +31,7 @@ from loregarden.services.docker_board import capacity_status
 from loregarden.services.docker_capacity import DockerInvoke, resolve_ceiling
 from loregarden.services.docker_ledger import load_pool, pool_ceiling
 from loregarden.services.docker_subprocess import run_docker
+from loregarden.services.docker_unaccounted import unaccounted_containers
 from sqlmodel import Session
 
 
@@ -142,5 +143,72 @@ def check_docker_capacity(
             f"Docker capacity: {board['in_use']['cpus']}/{ceiling.cpus} cpus, "
             f"{in_use}/{ceiling.leases} leases, "
             f"{waiting} waiting."
+        ),
+    )
+
+
+def check_docker_unaccounted(
+    session: Session,
+    workspace: Workspace,
+    repo_root: Path,
+    *,
+    invoke: DockerInvoke = run_docker,
+) -> DoctorFinding:
+    """Whether anything is running that the ledger never booked.
+
+    The only check that can tell an adopted ledger from an ignored one. Every
+    other signal looks identical either way: capacity reads free and the reaper
+    reclaims nothing, whether that is because callers are booking correctly or
+    because none of them are booking at all.
+
+    WARN, never FAIL. An unaccounted container is usually somebody's database
+    rather than a fault, and this stops nothing and reclaims nothing — it names
+    what it found and lets a human decide whether it belongs in the baseline.
+    """
+    if not settings.docker_capacity_enabled:
+        return DoctorFinding(
+            check=DoctorCheck.DOCKER_UNACCOUNTED,
+            status=DoctorStatus.PASS,
+            finding="The docker capacity ledger is disabled; nothing is being tracked.",
+        )
+
+    report = unaccounted_containers(session, invoke=invoke)
+    if not report.ok:
+        return DoctorFinding(
+            check=DoctorCheck.DOCKER_UNACCOUNTED,
+            status=DoctorStatus.WARN,
+            finding=(
+                "Could not list running containers, so whether anything is "
+                f"unaccounted is unknown: {report.error}"
+            ),
+            remediation="Start Docker and re-run this check.",
+        )
+
+    if not report.containers:
+        return DoctorFinding(
+            check=DoctorCheck.DOCKER_UNACCOUNTED,
+            status=DoctorStatus.PASS,
+            finding="Every running container is booked by a lease or declared as baseline.",
+        )
+
+    named = ", ".join(c.Names for c in report.containers[:5])
+    projects = report.projects
+    return DoctorFinding(
+        check=DoctorCheck.DOCKER_UNACCOUNTED,
+        status=DoctorStatus.WARN,
+        finding=(
+            f"{len(report.containers)} running container(s) that no lease accounts for: {named}."
+            " Either something started them without reserving capacity, or they are yours."
+        ),
+        remediation=(
+            "If these are long-lived and yours, add them to "
+            + (
+                f"LOREGARDEN_DOCKER_BASELINE_PROJECTS ({', '.join(projects)})"
+                if projects
+                else "LOREGARDEN_DOCKER_BASELINE_CONTAINERS"
+            )
+            + " so they stop being reported. If an agent or stage started them, it "
+            "skipped loregarden_reserve_docker_capacity and the ceiling is being "
+            "enforced against an incomplete picture."
         ),
     )

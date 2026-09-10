@@ -275,6 +275,10 @@ class DoctorCheck(str, Enum):
     #: leases it is unable to reap because the probe itself failed. Both make the
     #: ceiling a claim rather than a measurement.
     DOCKER_CAPACITY = "docker_capacity"
+    #: Containers running that no lease and no configured baseline explains. The
+    #: ledger is advisory, so nothing else can tell a ledger everybody uses from
+    #: one everybody ignores — both report capacity free and reap nothing.
+    DOCKER_UNACCOUNTED = "docker_unaccounted"
 
 
 class PortabilityState(str, Enum):
