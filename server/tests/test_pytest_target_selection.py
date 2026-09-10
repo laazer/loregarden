@@ -226,10 +226,11 @@ def test_server_hook_gives_pytest_a_private_temp_root():
     """
     script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
     assert "mktemp -d" in script
-    # Every real run, not just the fallback one.
-    assert script.count('--basetemp="$BASETEMP"') == script.count(
-        'LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest'
-    )
+    # Every real run, not just the fallback one. Counted against the pytest
+    # invocation itself rather than the prefix in front of it: the prefix gained
+    # `"${TEST_NICE[@]}"` when the worker budget landed, and a literal that long
+    # pins the command's spelling instead of the property being asserted.
+    assert script.count('--basetemp="$BASETEMP"') == script.count('pytest -q -n "$TEST_WORKERS"')
     # Cleanup that cannot itself fail the push.
     assert "trap 'rm -rf \"$BASETEMP\" 2>/dev/null || true' EXIT" in script
 
