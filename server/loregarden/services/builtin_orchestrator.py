@@ -778,12 +778,20 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
             worker_ticket = session.get(Ticket, run.ticket_id)
             if not worker_ticket:
                 raise ValueError(f"Ticket not found for run: {run_id}")
-            completed = worker.execute(
-                run,
-                worker_ticket,
-                advance_workflow=False,
-                skip_git_branch=True,
-            )
+            # Renewed for the same reason the single-agent stage at
+            # `_run_sequential_stage` is: without it `last_seen_at` is never
+            # stamped, `agent_run_lease_expired` falls back to `started_at`,
+            # and the reconciliation sweep reaps a review lens that is still
+            # working the moment it outruns AGENT_RUN_LEASE. `run_has_renewer`
+            # is True for these runs (no external harness), so the fail-closed
+            # branch does not cover them.
+            with lease_renewal(run.id):
+                completed = worker.execute(
+                    run,
+                    worker_ticket,
+                    advance_workflow=False,
+                    skip_git_branch=True,
+                )
             return member_result_from_run(completed)
 
     from sqlmodel.pool import StaticPool
