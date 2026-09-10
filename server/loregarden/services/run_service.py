@@ -43,6 +43,7 @@ from loregarden.services.run_lease import (
 from loregarden.services.run_reattach import surviving_runs
 from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.stage_docker_capacity import stage_docker_capacity
+from loregarden.services.stage_retry_budget import refund_stage_dispatch_charged_before
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
@@ -471,6 +472,20 @@ def settle_orphaned_agent_runs(
         OrchestrationService(session).complete_run(
             run, status=RunStatus.FAILED, stderr=message, advance_workflow=False
         )
+        # The stage never got to attempt the work, so it must not have paid for
+        # one. The budget is charged pre-dispatch and is never reconciled against
+        # the outcome, so before this an orphan walked a healthy stage toward its
+        # breaker for a reason unrelated to the work — and clearing that breaker
+        # costs an operator a deliberate requeue and a reason string
+        # (lg-workflow-integrity-697).
+        #
+        # Once per run by construction: this sweep only selects runs still in
+        # flight, and the run is terminal by the line above, so a second pass
+        # cannot select it again.
+        if run.stage_key:
+            refund_stage_dispatch_charged_before(
+                session, run.ticket_id, run.stage_key, run.created_at
+            )
         settled.append(run)
     return settled
 

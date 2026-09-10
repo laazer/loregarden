@@ -269,6 +269,48 @@ def refund_stage_dispatch_budget(session: Session, ticket_id: str, stage_key: st
     _drop_markers(session, ticket_id, _RETRY_BLOCK_KIND, _block_title(stage_key))
 
 
+def refund_stage_dispatch_charged_before(
+    session: Session,
+    ticket_id: str,
+    stage_key: str,
+    cutoff: datetime,
+) -> int:
+    """Hand back the dispatch charged for a run that never got to attempt the work.
+
+    `refund_stage_dispatch_budget` drops the NEWEST marker, which its docstring
+    is careful to say is exact only for a caller refunding inside its own pass —
+    a park does that, so nothing later can have added a row yet. The orphan
+    sweeper is not that caller: it runs on the reconcile timer, potentially long
+    after, and by then a newer pass may have charged. Dropping the newest there
+    would credit the wrong attempt and quietly extend a budget that had been
+    legitimately spent.
+
+    So the marker is chosen by time instead: the newest one written at or before
+    the orphaned run started is the charge that run's pass made. Markers carry no
+    run id — the charge happens pre-dispatch, before an AgentRun exists — so this
+    is the closest attribution available, and it is exact whenever passes do not
+    overlap, which the single-active-orchestration guard already ensures.
+
+    The retry-BLOCK mark is deliberately left standing, unlike in the park
+    refund. A run orphaned by its parent going terminal did not set that mark,
+    and clearing something this pass did not cause would hand out a reset nobody
+    asked for.
+
+    Returns how many markers were dropped (0 or 1), so a caller can report it.
+    """
+    rows = [
+        row
+        for row in _markers(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key))
+        if row.created_at <= cutoff
+    ]
+    if not rows:
+        return 0
+    newest = max(rows, key=lambda row: (row.created_at, row.id))
+    session.delete(newest)
+    session.commit()
+    return 1
+
+
 def record_stage_retry_block(session: Session, ticket_id: str, stage_key: str) -> None:
     """Mark that this breaker is the reason the ticket is blocked."""
     if _markers(session, ticket_id, _RETRY_BLOCK_KIND, _block_title(stage_key)):
