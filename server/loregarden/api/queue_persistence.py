@@ -6,7 +6,13 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loregarden.api.queue_management import emit_execution_update
 from loregarden.db.session import get_session
-from loregarden.models.domain import QueuedRun, QueuePosition, QueueSnapshot, Workspace
+from loregarden.models.domain import (
+    RUNNING_QUEUE_STATUSES,
+    QueuedRun,
+    QueuePosition,
+    QueueSnapshot,
+    Workspace,
+)
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])
@@ -52,9 +58,16 @@ def save_queue_snapshot(
     # Calculate stats at snapshot time
     stats = {
         "total_runs": len(current_runs),
-        "active_count": sum(1 for r in current_runs if r.status == QueuePosition.STARTED),
+        # STARTED is the terminal "lane released" state, not a running one, so
+        # counting it here reported every lane the queue had ever released as
+        # live — 128 against zero running agents (lg-workflow-integrity-699).
+        # Derived from the shared definition so this cannot drift again.
+        "active_count": sum(1 for r in current_runs if r.status in RUNNING_QUEUE_STATUSES),
         "queued_count": sum(1 for r in current_runs if r.status == QueuePosition.QUEUED),
-        "failed_count": sum(1 for r in current_runs if r.status == "failed"),
+        # Compared against the enum member, not the bare string it happens to
+        # equal: a StrEnum makes the string form work by accident, which is the
+        # stringly-typed comparison the organization gate exists to stop.
+        "failed_count": sum(1 for r in current_runs if r.status == QueuePosition.FAILED),
         "retry_total": sum(r.retry_count for r in current_runs),
     }
 

@@ -833,6 +833,27 @@ class QueuePosition(str, Enum):
     REPAIRING = "repairing"
 
 
+#: Entry statuses that mean an agent is running for this entry RIGHT NOW.
+#:
+#: `STARTED` is deliberately absent, and it is the whole reason this lives here.
+#: In `QueuePosition`, `ACTIVE` is the running state and `STARTED` is the
+#: terminal "lane released" state — written by `on_orchestration_complete`, by
+#: the blocked release, and by `_settle_finished_entries` as the settled value.
+#: Its name reads like the opposite of what it means, and a reader that counts
+#: it as running reports every lane the queue has ever released as live
+#: (lg-workflow-integrity-699: a snapshot claimed 128 active against zero
+#: running agents).
+#:
+#: Defined beside the enum rather than in a service so every reader shares one
+#: answer. `services.queue_history.LIVE_STATUSES` answers a different question —
+#: "still on the board", which includes entries merely waiting — and the two
+#: must not be confused for each other either.
+RUNNING_QUEUE_STATUSES: tuple["QueuePosition", ...] = (
+    QueuePosition.PROMOTED,
+    QueuePosition.ACTIVE,
+)
+
+
 class RepairRoute(str, Enum):
     """Why a block is provisional — the mechanism that would make the next
     dispatch of this ticket different from the one that just blocked.
