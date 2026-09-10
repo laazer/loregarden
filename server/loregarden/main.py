@@ -20,6 +20,7 @@ from loregarden.api import (
     ci,
     composer_notes,
     diff_review,
+    docker_capacity,
     editor,
     events,
     inbox,
@@ -203,6 +204,7 @@ app.include_router(views.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
+app.include_router(docker_capacity.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")

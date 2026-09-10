@@ -1,0 +1,149 @@
+.docker-caveat {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--bd2);
+  background: var(--bg2);
+  color: var(--txm);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.docker-caveat--warn {
+  border-left-color: var(--amb);
+  color: var(--aml);
+}
+
+.docker-caveat--bad {
+  border-left-color: var(--red);
+  color: var(--rdl);
+}
+
+.docker-caveat--info {
+  border-left-color: var(--blue);
+}
+
+.docker-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.docker-headline-value {
+  font-family: var(--dp);
+  font-size: 24px;
+  color: var(--tx);
+  line-height: 1;
+}
+
+.docker-headline-label {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.docker-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.docker-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+}
+
+.docker-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.docker-lease-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.docker-lease {
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.docker-lease-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docker-lease-label {
+  font-size: 12px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-lease-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+  flex-shrink: 0;
+}
+
+.docker-lease-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.docker-lease-pos {
+  font-family: var(--mono);
+  color: var(--txm);
+}
+
+.docker-lease-wait {
+  font-family: var(--mono);
+}
+
+.docker-lease-project {
+  font-family: var(--mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--txm);
+}
+
+.docker-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.docker-badge--warn {
+  background: color-mix(in srgb, var(--amb) 18%, transparent);
+  color: var(--aml);
+}
+
+.docker-badge--bad {
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--rdl);
+}
