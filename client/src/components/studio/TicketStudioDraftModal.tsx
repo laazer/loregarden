@@ -10,6 +10,7 @@ import {
 } from "../../lib/importTicketPreview";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 
 const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone"] as const;
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
@@ -61,14 +62,10 @@ export function TicketStudioDraftModal({
     setAcceptanceText(formatAcceptanceCriteriaText(item.acceptance_criteria));
   }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(isOpen ? onClose : null);
 
   const parentOptions = useMemo(
     () => allItems.filter((candidate) => candidate.ref !== item?.ref),

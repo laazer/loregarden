@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { Approval } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface RejectApprovalPayload {
@@ -25,6 +26,9 @@ export function RejectApprovalModal({
   onConfirm,
 }: RejectApprovalModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !approval ? null : isSubmitting ? undefined : onClose);
   const [reason, setReason] = useState("");
   const [routeStageKey, setRouteStageKey] = useState("");
 

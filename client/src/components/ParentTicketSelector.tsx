@@ -11,6 +11,7 @@ import {
 } from "../lib/parentTicketTree";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "./TicketTree";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface ParentTicketSelection {
@@ -56,6 +57,11 @@ export function ParentTicketSelector({
 }: ParentTicketSelectorProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [open, setOpen] = useState(false);
+  // Escape and the backdrop agree on purpose: whatever makes a click dismiss
+  // this dialog is what makes the key dismiss it. Gated on `open` because this
+  // component stays mounted while the picker is closed, and a registered
+  // dismisser would swallow Escape from the dialog it was opened from.
+  useDialogDismiss(open ? () => setOpen(false) : null);
   const [search, setSearch] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(value);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());

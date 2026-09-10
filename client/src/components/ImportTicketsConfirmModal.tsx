@@ -16,6 +16,7 @@ import {
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { ImportQuickCreate } from "./ImportQuickCreate";
 import { ImportTicketPreviewCard } from "./ImportTicketPreviewCard";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface ImportTicketsConfirmModalProps {
@@ -47,6 +48,9 @@ export function ImportTicketsConfirmModal({
   onConfirm,
 }: ImportTicketsConfirmModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !preview ? null : isImporting ? undefined : onClose);
   const [draftTickets, setDraftTickets] = useState<TicketImportItem[]>([]);
   const [bulkMilestoneId, setBulkMilestoneId] = useState("");
 

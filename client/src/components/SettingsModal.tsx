@@ -8,6 +8,7 @@ import {
   runtimeFromWorkspace,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface SettingsModalProps {
@@ -32,6 +33,9 @@ export function SettingsModal({
   onSave,
 }: SettingsModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const workspace = workspaces.find((w) => w.slug === workspaceSlug);
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(() => runtimeFromWorkspace(workspace));
 

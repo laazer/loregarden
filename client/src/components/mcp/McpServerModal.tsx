@@ -1,9 +1,9 @@
-import { useEffect } from "react";
 
 import type { McpServerInput, McpServerView } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { McpServerForm } from "./McpServerForm";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 
 /**
  * Register or edit a server, over the gateway rather than instead of it.
@@ -29,14 +29,10 @@ export function McpServerModal({
   onClose: () => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(open ? onClose : null);
 
   if (!open) return null;
 

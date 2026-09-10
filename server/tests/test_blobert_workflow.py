@@ -19,7 +19,9 @@ def test_blobert_template_loaded(client: TestClient):
     assert "blobert-tdd" in templates
     blobert = templates["blobert-tdd"]
     assert blobert["name"] == "Blobert TDD"
-    assert blobert["stage_count"] == 11
+    # 12 since 0124 inserted `ui-design` before `spec`: blobert gets the design
+    # stage too, with a brief written for a game rather than a page.
+    assert blobert["stage_count"] == 12
 
 
 def test_blobert_template_stage_metadata(client: TestClient, db_session: Session):
@@ -34,6 +36,7 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
     assert keys == [
         "plan",
         "domain_consultation",
+        "ui-design",
         "spec",
         "test-design",
         "test-break",
@@ -118,5 +121,9 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
     assert by_key["playtest"]["agent_id"] == ""
 
     views = build_stage_views(ticket, instance, stages)
-    assert views[6].name == "Script Review"
-    assert views[6].stage_type == "parallel"
+    # By key, not by index. This read `views[6]` and broke when 0124 inserted a
+    # stage ahead of it — the assertion is about script_review's shape, and a
+    # position is not that.
+    script_review = next(view for view in views if view.key == "script_review")
+    assert script_review.name == "Script Review"
+    assert script_review.stage_type == "parallel"

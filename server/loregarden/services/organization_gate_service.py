@@ -151,6 +151,10 @@ def check_workspace(workspace: Workspace, scope: OrganizationScope) -> list[Chec
             "typescript-silent-failures",
             ["node", str(scripts / "ts_no_silent_failures_check.cjs"), *common],
         ),
+        _checker_result(
+            "typescript-user-experience",
+            ["node", str(scripts / "ts_ux_states_check.cjs"), *common],
+        ),
     ]
 
 

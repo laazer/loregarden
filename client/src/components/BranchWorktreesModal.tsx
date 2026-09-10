@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { removeBranchWorktree, type BranchTriageEntry } from "../lib/branchTriageApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export function BranchWorktreesModal({
@@ -16,6 +17,9 @@ export function BranchWorktreesModal({
   onClose: () => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !branch ? null : onClose);
   const qc = useQueryClient();
 
   const remove = useMutation({

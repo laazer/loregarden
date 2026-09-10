@@ -7,6 +7,7 @@ import {
   type SelectedImportFile,
 } from "./ImportTicketFileExplorer";
 import { selectedImportFileList } from "../lib/importTicketFiles";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export type ImportMode = "regular" | "smart";
@@ -40,6 +41,9 @@ export function ImportTicketsModal({
   lockMode = false,
 }: ImportTicketsModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isLoading ? undefined : () => onClose());
   const normalizedInitialMode = normalizeInitialMode(initialMode);
   const [selectedFiles, setSelectedFiles] = useState<Map<string, SelectedImportFile>>(new Map());
   const [mode, setMode] = useState<ImportMode>(normalizedInitialMode);

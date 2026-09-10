@@ -1,4 +1,5 @@
 import type { WorkflowReassignmentPreview } from "../api/client";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface WorkflowReassignWarningProps {
@@ -26,6 +27,9 @@ export function WorkflowReassignWarning({
   onCancel,
 }: WorkflowReassignWarningProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!preview?.destructive ? null : onCancel);
   if (!preview?.destructive) return null;
 
   const target = preview.target_template_name || preview.target_template_slug;

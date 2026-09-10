@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { StudioAgentPreview } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { AgentPreviewContent } from "./AgentPreviewContent";
+import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 
 export function AgentPreviewModal({
@@ -19,6 +20,9 @@ export function AgentPreviewModal({
   onClose: () => void;
 }) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : onClose);
   if (!open) return null;
 
   const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";

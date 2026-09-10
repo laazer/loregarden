@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../api/client";
 import { WorkspaceRuntimeFields, runtimeSettingsEqual } from "./WorkspaceRuntimeFields";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface TriageModelModalProps {
@@ -28,6 +29,9 @@ export function TriageModelModal({
   subtitle = "Choose a provider, then pick a model for this ticket",
 }: TriageModelModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(runtime);
 
   useEffect(() => {

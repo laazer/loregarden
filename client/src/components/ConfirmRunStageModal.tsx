@@ -15,6 +15,7 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface ConfirmRunStageModalProps {
@@ -53,6 +54,10 @@ export function ConfirmRunStageModal({
   onOpenPr,
 }: ConfirmRunStageModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const busy = isRunning || isSavingRuntime || isOpeningPr;
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !ticket || !stage ? null : busy ? undefined : onClose);
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [autoApprove, setAutoApprove] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
@@ -73,7 +78,6 @@ export function ConfirmRunStageModal({
   const doneStage = isDoneStage(stage);
   const parallelStage = isParallelStage(stage);
   const classifyStage = isClassifyStage(stage);
-  const busy = isRunning || isSavingRuntime || isOpeningPr;
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
   const showAutoApprove = !humanGate && !doneStage;
 

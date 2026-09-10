@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { api, type Approval } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
@@ -111,6 +112,11 @@ export function ApprovalInboxPanel() {
     [approvals.data],
   );
 
+  // Escape and the overlay agree: both close the inbox. Above the early
+  // return, because a hook that runs only while the panel is open changes
+  // the hook count between renders.
+  useDialogDismiss(inboxOpen ? () => setInboxOpen(false) : null);
+
   if (!inboxOpen) return null;
 
   const approvalCount = approvals.data?.length ?? 0;
@@ -120,7 +126,9 @@ export function ApprovalInboxPanel() {
 
   return (
     <>
-      <div className="inbox-overlay" onClick={() => setInboxOpen(false)} />
+      {/* Presentational, so it stays out of the tab order — the panel beside it
+          is what a keyboard operator lands on, and Escape is the way back out. */}
+      <div className="inbox-overlay" role="presentation" onClick={() => setInboxOpen(false)} />
       <aside className="inbox-panel" aria-label="Approvals and notifications">
         <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--bd)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

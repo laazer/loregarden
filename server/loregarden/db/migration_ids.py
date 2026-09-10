@@ -141,6 +141,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0120_docker_capacity_ledger",
     "0121_docker_lease_polling",
     "0122_btw_exchange_deleted_at",
+    "0123_ux_lanes_in_v3",
+    "0124_ux_design_everywhere",
 )
 
 

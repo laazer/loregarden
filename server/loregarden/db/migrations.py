@@ -113,6 +113,8 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
+from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
 from loregarden.db.migrations_views import (
     m_sidebar_entry_pinned,
@@ -1474,6 +1476,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0120_docker_capacity_ledger", m_docker_capacity_ledger),
     ("0121_docker_lease_polling", m_docker_lease_polling),
     ("0122_btw_exchange_deleted_at", _m_btw_exchange_deleted_at),
+    ("0123_ux_lanes_in_v3", m_ux_lanes_in_v3),
+    ("0124_ux_design_everywhere", m_ux_design_everywhere),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

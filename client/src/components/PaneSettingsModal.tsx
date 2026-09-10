@@ -28,13 +28,14 @@
  * `onDone` it already had is what closes the dialog.
  */
 
-import { useEffect, useId } from "react";
+import { useId } from "react";
 import { createPortal } from "react-dom";
 
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { IconCloseButton } from "./IconCloseButton";
 import { PaneSettingsEditor } from "./views/PaneSettingsEditor";
 import type { RegisteredPrimitive } from "./views/primitives/types";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 
 export interface PaneSettingsModalProps {
   containerId: string;
@@ -55,13 +56,10 @@ export function PaneSettingsModal({
   // is per instance rather than a constant.
   const titleId = useId();
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(onClose);
 
   return createPortal(
     <>

@@ -13,6 +13,7 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface AgentsAssembleOptions {
@@ -59,6 +60,10 @@ export function AgentsAssembleModal({
   onConfirm,
 }: AgentsAssembleModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const busy = isRunning || isSavingRuntime;
+  // Escape and the backdrop agree on purpose: whatever makes a click
+  // dismiss this dialog is what makes the key dismiss it.
+  useDialogDismiss(!open || !ticket ? null : busy ? undefined : onClose);
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -78,7 +83,6 @@ export function AgentsAssembleModal({
 
   if (!open || !ticket) return null;
 
-  const busy = isRunning || isSavingRuntime;
   const runnableStages = stages.filter((s) => s.key !== "done");
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
   // A parent ticket runs no stages of its own (its children carry the work), so it

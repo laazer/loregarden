@@ -32,7 +32,7 @@
  * primitive, and neither does the grid or the canvas.
  */
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { IconCloseButton } from "./IconCloseButton";
@@ -40,6 +40,7 @@ import { PrimitivePicker } from "./views/PrimitivePicker";
 import { CONTAINER_PRIMITIVES } from "./views/primitives/registry";
 import type { RegisteredPrimitive } from "./views/primitives/types";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 
 /** Whether `entry` answers `query`, matched against everything the row shows. */
 function matches(entry: RegisteredPrimitive, query: string): boolean {
@@ -94,13 +95,10 @@ export function PrimitivePickerModal({
   const searchId = useId();
   const titleId = useId();
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  // Through the shared stack rather than a listener of its own: two of these
+  // mounted at once both closed on a single press, because nothing decided
+  // whose press it was.
+  useDialogDismiss(onClose);
 
   const groups = useMemo(
     () =>
