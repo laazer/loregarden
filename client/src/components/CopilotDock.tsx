@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
 import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
@@ -87,6 +88,9 @@ export function CopilotDock() {
       style={edge === "bottom" && panelsVisible ? { height } : undefined}
       aria-hidden={!panelsVisible ? true : undefined}
     >
+      {/* Only with a panel open: there is nothing to resize when the dock is
+          just the action bar, and a grip on it would drag a hidden pane. */}
+      {panelsVisible ? <DockResizeHandle edge={edge} /> : null}
       <div className={`copilot-dock-body${showTerminal && !showChat ? " copilot-dock-body--bleed" : ""}`}>
         {showChat && session && (
           <div className="copilot-dock-chat">

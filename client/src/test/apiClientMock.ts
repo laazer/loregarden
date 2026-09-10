@@ -49,6 +49,7 @@ export const api = {
   ticketAsides: jest.fn().mockResolvedValue({ exchanges: [] }),
   askAside: jest.fn(),
   escalateAside: jest.fn(),
+  deleteAside: jest.fn(),
   triage: jest.fn().mockResolvedValue({
     pending_approvals: [],
     recent_approvals: [],

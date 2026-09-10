@@ -264,3 +264,147 @@ def test_an_aside_belonging_to_another_ticket_is_not_found(client, db_session: S
     response = client.post(f"/api/tickets/{ticket.id}/btw/{exchange.id}/escalate")
 
     assert response.status_code == 404
+
+
+def test_a_dismissed_aside_leaves_the_thread(db_session: Session):
+    """The card goes; the record of what was asked stays.
+
+    Also the guard on ``btw_service._MIRROR_PARTS``: the mirror is identified by
+    validating a message's parts against the shape ``record_answer`` writes, so
+    if that shape changes without this test changing, dismissal silently stops
+    removing the card and this goes red instead.
+    """
+    ticket = _ticket(db_session)
+    _run(db_session, ticket)
+    exchange = btw_service.ask(db_session, ticket, "why the subprocess path?")
+    btw_service.record_answer(db_session, exchange, "The log shows it shelling out to git.")
+
+    btw_service.delete(db_session, exchange)
+
+    mirrored = db_session.exec(
+        select(TriageMessage).where(TriageMessage.ticket_id == ticket.id)
+    ).all()
+    assert [m for m in mirrored if "shelling out" in m.content] == []
+    still_there = db_session.get(BtwExchange, exchange.id)
+    assert still_there is not None
+    assert still_there.deleted_at is not None
+    assert still_there.question == "why the subprocess path?"
+
+
+def test_a_dismissed_aside_leaves_every_other_message_alone(db_session: Session):
+    ticket = _ticket(db_session)
+    _run(db_session, ticket)
+    kept = btw_service.ask(db_session, ticket, "what is it doing?")
+    btw_service.record_answer(db_session, kept, "Running the gate.")
+    dropped = btw_service.ask(db_session, ticket, "why the subprocess path?")
+    btw_service.record_answer(db_session, dropped, "Shelling out to git.")
+    # A message that merely mentions the id in its prose is not the mirror.
+    db_session.add(
+        TriageMessage(ticket_id=ticket.id, role="user", content=f"see aside {dropped.id}")
+    )
+    db_session.commit()
+
+    btw_service.delete(db_session, dropped)
+
+    contents = [
+        m.content
+        for m in db_session.exec(
+            select(TriageMessage).where(TriageMessage.ticket_id == ticket.id)
+        ).all()
+    ]
+    assert "Running the gate." in contents
+    assert f"see aside {dropped.id}" in contents
+    assert "Shelling out to git." not in contents
+
+
+def test_a_dismissed_aside_is_off_every_listing(db_session: Session):
+    ticket = _ticket(db_session)
+    _run(db_session, ticket)
+    kept = btw_service.ask(db_session, ticket, "what is it doing?")
+    pending = btw_service.ask(db_session, ticket, "and now?")
+
+    btw_service.delete(db_session, pending)
+
+    assert [e.id for e in btw_service.list_exchanges(db_session, ticket.id)] == [kept.id]
+    assert [e.id for e in btw_service.pending_exchanges(db_session, ticket.id)] == [kept.id]
+
+
+def test_dismissing_twice_is_not_an_error(db_session: Session):
+    ticket = _ticket(db_session)
+    exchange = btw_service.ask(db_session, ticket, "why?")
+
+    btw_service.delete(db_session, exchange)
+    first = exchange.deleted_at
+    btw_service.delete(db_session, exchange)
+
+    assert exchange.deleted_at == first
+
+
+def test_an_answer_landing_after_a_dismissal_writes_no_card(db_session: Session):
+    """The row still settles — an aside stuck on "asking…" is the failure
+    ``status`` exists to prevent — but the card does not come back."""
+    ticket = _ticket(db_session)
+    _run(db_session, ticket)
+    exchange = btw_service.ask(db_session, ticket, "why?")
+    btw_service.delete(db_session, exchange)
+
+    message = btw_service.record_answer(db_session, exchange, "It looks like a retry.")
+
+    assert message is None
+    assert exchange.status == BtwStatus.ANSWERED
+    assert (
+        db_session.exec(select(TriageMessage).where(TriageMessage.ticket_id == ticket.id)).all()
+        == []
+    )
+
+
+def test_a_dismissed_aside_cannot_be_escalated(db_session: Session):
+    ticket = _ticket(db_session)
+    run = _run(db_session, ticket)
+    exchange = btw_service.ask(db_session, ticket, "why?")
+    btw_service.delete(db_session, exchange)
+
+    with pytest.raises(ValueError, match="dismissed"):
+        btw_service.escalate(db_session, exchange)
+    assert pending_messages(db_session, run.id) == []
+
+
+def test_dismissing_over_the_api(client, db_session: Session):
+    ticket = _ticket(db_session)
+    _run(db_session, ticket)
+    exchange = btw_service.ask(db_session, ticket, "what now?")
+
+    response = client.delete(f"/api/tickets/{ticket.id}/btw/{exchange.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": exchange.id, "deleted": True}
+    assert client.get(f"/api/tickets/{ticket.id}/btw").json()["exchanges"] == []
+    # A second click on a card that has not re-rendered yet is not a 404.
+    assert client.delete(f"/api/tickets/{ticket.id}/btw/{exchange.id}").status_code == 200
+
+
+def test_dismissing_an_aside_belonging_to_another_ticket_is_not_found(client, db_session: Session):
+    ticket = _ticket(db_session)
+    other = make_ticket(db_session, workspace_id=ticket.workspace_id, ticket_id="another-ticket")
+    exchange = BtwExchange(ticket_id=other.id, question="why?")
+    db_session.add(exchange)
+    db_session.commit()
+
+    assert client.delete(f"/api/tickets/{ticket.id}/btw/{exchange.id}").status_code == 404
+    db_session.refresh(exchange)
+    assert exchange.deleted_at is None
+
+
+def test_the_brief_tells_the_observer_not_to_repeat_the_card(db_session: Session):
+    """The card's attribution line and the answer were saying the same thing.
+
+    An aside is capped at a sentence or two, so an answer that opens by
+    re-explaining who is speaking has spent most of its length on what the
+    operator can already read directly above it.
+    """
+    ticket = _ticket(db_session)
+    run = _run(db_session, ticket)
+
+    prompt = btw_service.build_btw_prompt(db_session, ticket, run, "why?")
+
+    assert "Do not restate who you are" in prompt

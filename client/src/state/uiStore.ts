@@ -17,12 +17,22 @@ export type PaneVisibility = Record<PaneId, boolean>;
 export type UtilityDockEdge = "bottom" | "right";
 
 export const DEFAULT_COPILOT_HEIGHT = 340;
-const MIN_COPILOT_HEIGHT = 180;
-const MAX_COPILOT_HEIGHT = 720;
+export const MIN_COPILOT_HEIGHT = 180;
+export const MAX_COPILOT_HEIGHT = 720;
 
 export const DEFAULT_COPILOT_WIDTH = 380;
-const MIN_COPILOT_WIDTH = 280;
-const MAX_COPILOT_WIDTH = 640;
+export const MIN_COPILOT_WIDTH = 280;
+export const MAX_COPILOT_WIDTH = 640;
+
+/** How much of the window a bottom dock may cover.
+ *
+ * Mirrored as `max-height: 44vh` on `.copilot-dock--edge-bottom`, which is the
+ * last line of defence for a value restored onto a window that has since been
+ * made shorter. The drag applies it too, so the handle stops where the dock
+ * actually stops rather than running on into a range that renders identically.
+ * Change both or neither.
+ */
+export const MAX_COPILOT_HEIGHT_VIEWPORT_FRACTION = 0.44;
 
 /** Keep a restored or dragged height usable, whatever is in storage. */
 export function clampCopilotHeight(value: unknown): number {
