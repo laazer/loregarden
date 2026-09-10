@@ -91,6 +91,7 @@ from loregarden.db.migrations_templates import (
     m_alternative_impl_group,
     m_clear_phantom_skill_names,
     m_ensure_terminal_stage,
+    m_extended_tdd_reject_route,
     m_light_heavy_rigor_triage,
     m_parallel_review_in_v3,
     m_plan_skill_on_plan_stage,
@@ -1478,6 +1479,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0122_btw_exchange_deleted_at", _m_btw_exchange_deleted_at),
     ("0123_ux_lanes_in_v3", m_ux_lanes_in_v3),
     ("0124_ux_design_everywhere", m_ux_design_everywhere),
+    ("0125_extended_tdd_reject_route", m_extended_tdd_reject_route),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
