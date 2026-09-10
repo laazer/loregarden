@@ -1356,3 +1356,22 @@ class DockerGrantState(StrEnum):
     GRANTED = "granted"
     QUEUED = "queued"
     REJECTED = "rejected"
+
+
+class DockerWaitBasis(StrEnum):
+    """What kind of number an estimated wait is.
+
+    A prediction and an upper bound are both useful and they are not the same
+    claim, so the payload says which. A caller told "about 6 minutes, from
+    history" can sleep; one told "at most 15 minutes, because that is the TTL"
+    should check back sooner, since the real release is almost certainly earlier.
+    Collapsing the two would make the second look like the first.
+    """
+
+    #: Median of what leases of this footprint have actually cost here.
+    HISTORY = "history"
+    #: Nothing has been measured yet, so the holder's remaining TTL stands in.
+    #: An upper bound, not a forecast.
+    TTL_BOUND = "ttl_bound"
+    #: Neither is available. `seconds` is None and stays None.
+    UNKNOWN = "unknown"

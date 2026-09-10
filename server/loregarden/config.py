@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     # run fails. The orchestrator is a background thread, so it may block where
     # an MCP handler may not.
     docker_stage_wait_seconds: float = 300.0
+    # Wait estimation and poll back-pressure. The estimate is what makes the
+    # poll interval honest — a fixed interval wastes calls on a long wait and
+    # misses a short one — and the minimum interval is what stops a caller that
+    # ignores the advice from turning the ledger into its own bottleneck.
+    docker_wait_lookback_days: int = 30
+    docker_poll_min_interval_seconds: float = 5.0
+    docker_poll_max_interval_seconds: float = 120.0
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod

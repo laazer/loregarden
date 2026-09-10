@@ -110,10 +110,23 @@ three different responses:
 | `state` | What it means | What to do |
 |---|---|---|
 | `granted` | The capacity is yours | Start your containers. Note `lease_id` and `expires_at`. |
-| `queued` | The machine is full | **Do not start anything.** Wait `poll_after_seconds`, then poll `loregarden_docker_capacity_status`. Your place in line is kept. |
+| `queued` | The machine is full | **Do not start anything.** Wait `poll_after_seconds`, then poll `loregarden_docker_capacity_status` with your `lease_id`. Your place in line is kept. |
 | `rejected` | It will never be granted | Read `error_kind`: `exceeds_capacity` means ask for less; `docker_unavailable` means Docker is down. |
 
 Being queued is not a failure and not a reason to proceed anyway.
+
+A queued reply carries `estimated_wait_seconds` — how long the claims ahead of
+yours are expected to take, based on what leases have actually cost on this
+machine. It is `null` when there is no history to judge from; that means unknown,
+not "soon". `poll_after_seconds` is scaled to it, so **use the number you were
+given** rather than a loop of your own: it is a few seconds when the queue is
+about to move and a couple of minutes when it is not.
+
+Polling faster than that is refused. You still get the real state back — if your
+lease was granted in the meantime the reply says so — but the response carries
+`poll.throttled: true` and a `retry_after_seconds`, and nothing else advances.
+Reserving again instead of polling does not help either: an identical claim
+returns the place in line you already hold (`reused: true`), not a second one.
 
 Once your containers are up, call `loregarden_renew_docker_lease` with what you started:
 

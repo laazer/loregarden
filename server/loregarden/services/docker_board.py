@@ -20,19 +20,26 @@ from datetime import datetime, timezone
 
 from loregarden.models.domain import DockerLease, DockerLeaseStatus, DockerProbeOutcome
 from loregarden.services.docker_capacity import DockerInvoke
-from loregarden.services.docker_leases import (
+from loregarden.services.docker_leases import refresh_ceiling
+from loregarden.services.docker_ledger import (
     OCCUPYING,
     as_utc,
     container_names,
     load_pool,
     pool_ceiling,
-    refresh_ceiling,
 )
 from loregarden.services.docker_subprocess import run_docker
+from loregarden.services.docker_wait_estimate import (
+    UNKNOWN_WAIT,
+    WaitEstimate,
+    estimate_waits,
+)
 from sqlmodel import Session, select
 
 
-def _lease_payload(lease: DockerLease, *, now: datetime) -> dict:
+def _lease_payload(
+    lease: DockerLease, *, now: datetime, estimate: WaitEstimate | None = None
+) -> dict:
     expires_at = as_utc(lease.expires_at)
     return {
         "lease_id": lease.id,
@@ -47,6 +54,8 @@ def _lease_payload(lease: DockerLease, *, now: datetime) -> dict:
         "compose_project": lease.compose_project,
         "container_names": container_names(lease),
         "position": lease.position or None,
+        **(estimate or UNKNOWN_WAIT).as_dict(),
+        "poll_count": lease.poll_count,
         "expires_at": expires_at.isoformat() if expires_at else None,
         "expires_in_seconds": (int((expires_at - now).total_seconds()) if expires_at else None),
         "last_probe_outcome": lease.last_probe_outcome,
@@ -100,6 +109,12 @@ def capacity_status(
         if lease.last_probe_outcome and lease.last_probe_outcome != DockerProbeOutcome.OK.value
     ]
 
+    # Estimated once for the whole board rather than per entry: the projection
+    # is a single walk of the queue, and asking it per waiter would re-simulate
+    # the same queue N times and — worse — let two entries disagree about when
+    # the same holder releases.
+    estimates = estimate_waits(session, now=stamp)
+
     return {
         "enabled": True,
         "ceiling": ceiling.as_dict(),
@@ -114,7 +129,9 @@ def capacity_status(
             "leases": max(0, ceiling.leases - pool.held_count),
         },
         "holders": [_lease_payload(lease, now=stamp) for lease in holders],
-        "waiting": [_lease_payload(lease, now=stamp) for lease in waiting],
+        "waiting": [
+            _lease_payload(lease, now=stamp, estimate=estimates.get(lease.id)) for lease in waiting
+        ],
         "orphaned": [lease.id for lease in holders if lease.status is DockerLeaseStatus.ORPHANED],
         "unverifiable": [
             {

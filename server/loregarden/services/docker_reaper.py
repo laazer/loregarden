@@ -47,14 +47,12 @@ from loregarden.models.domain import (
 )
 from loregarden.services.docker_capacity import DockerInvoke
 from loregarden.services.docker_leases import (
-    OCCUPYING,
-    as_utc,
-    container_names,
     drain_waiters,
     refresh_ceiling,
     release_lease,
     repair_pool,
 )
+from loregarden.services.docker_ledger import OCCUPYING, as_utc, container_names
 from loregarden.services.docker_probe import DockerLiveness, probe_lease_liveness
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.parallel_queue import (

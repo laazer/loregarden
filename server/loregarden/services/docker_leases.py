@@ -46,6 +46,7 @@ from loregarden.models.domain import (
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
+    DockerWaitBasis,
     WorkflowStageDef,
 )
 from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID
@@ -55,10 +56,21 @@ from loregarden.services.docker_capacity import (
     resolve_ceiling,
     resolve_weights,
 )
+from loregarden.services.docker_ledger import (
+    OCCUPYING,
+    as_utc,
+    load_pool,
+    pool_ceiling,
+)
 from loregarden.services.docker_subprocess import run_docker
-from pydantic import TypeAdapter, ValidationError
+from loregarden.services.docker_wait_estimate import (
+    UNKNOWN_WAIT,
+    WaitEstimate,
+    estimate_waits,
+    poll_interval_for,
+)
 from sqlalchemy import bindparam, func, text, update
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +89,6 @@ REJECT_EXCEEDS_CAPACITY = "exceeds_capacity"
 REJECT_UNKNOWN_LEASE = "unknown_lease"
 REJECT_LEASE_NOT_HELD = "lease_not_held"
 
-#: Statuses that count against the ceiling. `ORPHANED` is included on purpose:
-#: its containers are confirmed to still be running, so the machine really is
-#: that busy, and freeing it would over-book a box that is genuinely loaded.
-OCCUPYING = (DockerLeaseStatus.HELD, DockerLeaseStatus.ORPHANED)
-
 
 class DockerCapacityUnavailable(RuntimeError):
     """A stage that declared a docker footprint could not get one.
@@ -95,46 +102,6 @@ class DockerCapacityUnavailable(RuntimeError):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-#: The stored `container_names_json` payload, validated rather than
-#: hand-inspected. It is written by this process, but it is still a blob coming
-#: back out of a text column, and `isinstance(parsed, list)` is a schema check
-#: written by hand — the thing the organization gate exists to stop.
-_CONTAINER_NAMES = TypeAdapter(list[str])
-
-
-def container_names(lease: DockerLease) -> list[str]:
-    """The container names a lease recorded, or none if the column is unreadable.
-
-    Unreadable is logged, not swallowed: a lease whose names cannot be parsed is
-    reaped on its clock as though it had bound nothing, and that is a decision
-    somebody should be able to find afterwards.
-    """
-    try:
-        return _CONTAINER_NAMES.validate_json(lease.container_names_json or "[]")
-    except ValidationError:
-        logger.warning(
-            "Lease %s has an unreadable container_names_json (%r); treating it as "
-            "naming no containers, which means it will be reaped on its TTL alone",
-            lease.id,
-            lease.container_names_json,
-        )
-        return []
-
-
-def as_utc(stamp: datetime | None) -> datetime | None:
-    """Read a stored timestamp as UTC.
-
-    SQLite gives back naive datetimes whatever went in, so a stored `expires_at`
-    compared against `datetime.now(timezone.utc)` raises rather than answering.
-    `run_lease.agent_run_lease_expired` normalises the same way, for the same
-    reason; the alternative is a TypeError in the reaper, at the exact moment
-    the reaper is the thing keeping the pool honest.
-    """
-    if stamp is None:
-        return None
-    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
 
 
 @dataclass
@@ -155,6 +122,14 @@ class DockerReservation:
     cpus: float = 0.0
     memory_mb: int = 0
     expires_at: datetime | None = None
+    #: Seconds until this claim is expected to start, or None when nothing
+    #: on record can predict it. Never a stand-in constant — see
+    #: `docker_wait_estimate`.
+    estimated_wait_seconds: int | None = None
+    #: Whether the estimate above is a forecast or an upper bound.
+    estimate_basis: DockerWaitBasis = DockerWaitBasis.UNKNOWN
+    #: When the caller should ask again, scaled to the wait above.
+    poll_after_seconds: int = 0
     message: str = ""
     error_kind: str = ""
     reused: bool = False
@@ -214,6 +189,9 @@ class DockerReservation:
             "cpus": self.cpus,
             "memory_mb": self.memory_mb,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "estimated_wait_seconds": self.estimated_wait_seconds,
+            "estimate_basis": self.estimate_basis.value,
+            "poll_after_seconds": self.poll_after_seconds or None,
             "renew_after_seconds": None,
             "message": self.message,
             "error_kind": self.error_kind,
@@ -222,44 +200,6 @@ class DockerReservation:
 
 
 # ---- pool primitives ---------------------------------------------------
-
-
-def load_pool(session: Session) -> DockerCapacityPool:
-    """The singleton, created on first use if the migration has not run yet.
-
-    Lazy creation here is safe in a way it was NOT for `agent_slots`, and the
-    difference is worth stating because the surface reads identically. That pool
-    was keyed by `slot_number` with no unique constraint, so two threads
-    initialising it each inserted a full set and the machine ran six agents
-    against a limit of three. This row's identity is a constant primary key: two
-    racers both inserting `'global'` means one insert and one integrity error,
-    never two pools.
-
-    The migration still seeds it, so a migrated database never reaches the
-    fallback. It exists for the schema paths that skip migrations — `create_all`
-    on a fresh database, and every test engine.
-    """
-    pool = session.get(DockerCapacityPool, GLOBAL_POOL_ID)
-    if pool is not None:
-        return pool
-
-    session.add(DockerCapacityPool(id=GLOBAL_POOL_ID))
-    session.commit()
-    pool = session.get(DockerCapacityPool, GLOBAL_POOL_ID)
-    if pool is None:  # pragma: no cover — the insert above either lands or raises
-        raise RuntimeError("could not create the docker_capacity_pool singleton")
-    return pool
-
-
-def pool_ceiling(pool: DockerCapacityPool) -> Ceiling:
-    return Ceiling(
-        cpus=pool.ceiling_cpus,
-        memory_mb=pool.ceiling_memory_mb,
-        leases=pool.ceiling_leases,
-        source=pool.ceiling_source,
-        probed_at=pool.probed_at,
-        error=pool.probe_error,
-    )
 
 
 def refresh_ceiling(
@@ -582,6 +522,23 @@ def reserve(
             ),
         )
 
+    pending = _pending_duplicate(
+        session,
+        holder_label=holder_label,
+        cpus=price_cpus,
+        memory_mb=price_memory,
+        agent_run_id=agent_run_id,
+        orchestration_run_id=orchestration_run_id,
+    )
+    if pending is not None:
+        # A caller that retries `reserve` must get its place in line back, not a
+        # second one. `queue_lanes.add_to_lane` learned this the expensive way:
+        # three retries produced three entries, and one of them dispatched an
+        # agent against a stage that had finished 26 minutes earlier. Here the
+        # damage is quieter and worse — duplicate waiters hold positions ahead
+        # of real work and, being head-of-line, block it.
+        return _queued_reservation(session, pending, reused=True)
+
     existing = _held_for_run(
         session, agent_run_id=agent_run_id, orchestration_run_id=orchestration_run_id
     )
@@ -635,7 +592,48 @@ def reserve(
             _session=session,
         )
 
+    return _queued_reservation(session, lease)
+
+
+def _pending_duplicate(
+    session: Session,
+    *,
+    holder_label: str,
+    cpus: float,
+    memory_mb: int,
+    agent_run_id: str | None,
+    orchestration_run_id: str | None,
+) -> DockerLease | None:
+    """A waiter this same request already put in the queue, if there is one.
+
+    Identity is the run when there is one, and otherwise the label together with
+    the exact price. Two genuinely separate ad-hoc stacks that want to queue at
+    once must therefore differ in label — which is the right way round, because
+    the label is what an operator reads off the board to decide what to go and
+    stop, and two indistinguishable entries are already a problem there.
+    """
+    statement = select(DockerLease).where(DockerLease.status == DockerLeaseStatus.WAITING)
+    if agent_run_id:
+        statement = statement.where(DockerLease.agent_run_id == agent_run_id)
+    elif orchestration_run_id:
+        statement = statement.where(DockerLease.orchestration_run_id == orchestration_run_id)
+    else:
+        statement = statement.where(
+            DockerLease.holder_label == holder_label,
+            DockerLease.cpus == cpus,
+            DockerLease.memory_mb == memory_mb,
+        )
+    return session.exec(statement.order_by(col(DockerLease.position))).first()
+
+
+def _queued_reservation(
+    session: Session, lease: DockerLease, *, reused: bool = False
+) -> DockerReservation:
+    """The reply for a claim that is waiting its turn, with what to do next."""
     ahead = sum(1 for other in _waiters(session) if other.position < lease.position)
+    estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
+    already = " already" if reused else ""
+    wait_note = _wait_note(estimate)
     return DockerReservation(
         state=DockerGrantState.QUEUED,
         lease_id=lease.id,
@@ -643,12 +641,36 @@ def reserve(
         ahead=ahead,
         cpus=lease.cpus,
         memory_mb=lease.memory_mb,
+        estimated_wait_seconds=estimate.seconds,
+        estimate_basis=estimate.basis,
+        poll_after_seconds=poll_interval_for(estimate),
         message=(
-            f"Docker capacity is full. Queued at position {lease.position} "
-            f"with {ahead} ahead. Waiting is not a failure — poll for this lease."
+            f"Docker capacity is full. This claim is{already} queued at position "
+            f"{lease.position} with {ahead} ahead.{wait_note} "
+            "Waiting is not a failure — poll for this lease rather than reserving again."
         ),
+        reused=reused,
         _session=session,
     )
+
+
+def _wait_note(estimate: WaitEstimate) -> str:
+    """One sentence saying how long, and how much the number is worth."""
+    if estimate.seconds is None:
+        return " Nothing on record can predict the wait yet."
+    if estimate.basis is DockerWaitBasis.TTL_BOUND:
+        return (
+            f" No history yet, so at most {_humanise(estimate.seconds)} — the holder's "
+            "remaining TTL, which it will probably beat."
+        )
+    return f" Expected to start in about {_humanise(estimate.seconds)}."
+
+
+def _humanise(seconds: int) -> str:
+    if seconds < 90:
+        return f"{seconds}s"
+    minutes = seconds / 60
+    return f"{minutes:.0f} minutes" if minutes < 90 else f"{minutes / 60:.1f} hours"
 
 
 def _clamp_ttl(ttl_seconds: int | None) -> int:

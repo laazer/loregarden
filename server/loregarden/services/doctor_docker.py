@@ -29,7 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.docker_board import capacity_status
 from loregarden.services.docker_capacity import DockerInvoke, resolve_ceiling
-from loregarden.services.docker_leases import load_pool, pool_ceiling
+from loregarden.services.docker_ledger import load_pool, pool_ceiling
 from loregarden.services.docker_subprocess import run_docker
 from sqlmodel import Session
 

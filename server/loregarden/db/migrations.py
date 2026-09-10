@@ -36,6 +36,7 @@ from loregarden.db.migrations_chat import (
 )
 from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_docker import m_docker_capacity_ledger
+from loregarden.db.migrations_docker_polling import m_docker_lease_polling
 from loregarden.db.migrations_doctor import (
     m_agent_run_lease,
     m_agent_run_preflight,
@@ -1452,6 +1453,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # next free number rather than contesting one — which is exactly what the
     # ledger in `migration_ids` is for.
     ("0120_docker_capacity_ledger", m_docker_capacity_ledger),
+    ("0121_docker_lease_polling", m_docker_lease_polling),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

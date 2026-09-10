@@ -159,5 +159,13 @@ class DockerLease(SQLModel, table=True):
     last_probe_error: str = ""
     running_container_count: int | None = None
 
+    #: Poll bookkeeping. `poll_count` is how often the caller asked, and
+    #: `throttled_poll_count` how often it asked too soon — the second is the
+    #: interesting one, because a caller that ignores `poll_after_seconds` shows
+    #: up here rather than only as load.
+    last_polled_at: datetime | None = None
+    poll_count: int = 0
+    throttled_poll_count: int = 0
+
     note: str = ""
     created_at: datetime = Field(default_factory=utcnow)
