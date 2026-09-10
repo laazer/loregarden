@@ -604,6 +604,12 @@
   color: var(--txm);
 }
 
+/* Why a lane is being held rather than released. Amber because it is neither a
+   failure nor progress — the lane is keeping a ticket it has not finished with. */
+.queue-slot-repair {
+  color: var(--amb);
+}
+
 .queue-slot-tree,
 .queue-lane-item-timing {
   font-family: var(--mono);

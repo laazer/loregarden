@@ -45,6 +45,7 @@ import type {
 import { describeError } from '../state/toastStore';
 import { navigateToTicket } from '../lib/useAppNavigation';
 import {
+  repairRouteLabel,
   runStatusLabel,
   ticketActivityColor,
   ticketActivityLabel,
@@ -430,6 +431,17 @@ export function ParallelQueueVisualization() {
             : // The slot is still occupied, but nothing is working. Saying
               // "elapsed" here is what made a stuck lane look like a busy one.
               `${runStatusLabel(run.status)} · slot held ${formatDuration(run.elapsed_seconds)}`}
+          {run.status === 'repairing' ? (
+            <span
+              className="queue-slot-repair"
+              data-testid={`slot-${lane.slot_number}-repair`}
+            >
+              {' · '}
+              {repairRouteLabel(run.repair_route)}
+              {' · attempt '}
+              {(run.repair_attempts ?? 0) + 1}
+            </span>
+          ) : null}
           {live && remaining ? (
             <span className="queue-slot-remaining" data-testid={`slot-${lane.slot_number}-remaining`}>
               {' · '}

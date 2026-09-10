@@ -70,6 +70,7 @@ from loregarden.db.migrations_queue import (
     m_lane_entry_force,
     m_lane_entry_kind,
     m_lane_entry_run_options,
+    m_lane_repair_hold,
     m_orchestration_monitor_mode,
     m_orchestration_timeout_override,
     m_per_slot_queues,
@@ -1383,6 +1384,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0114_canonical_stage_keys", m_canonical_stage_keys),
     ("0115_agent_run_read_paths", m_agent_run_read_paths),
     ("0116_human_verification_brief", m_human_verification_brief),
+    ("0117_lane_repair_hold", m_lane_repair_hold),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

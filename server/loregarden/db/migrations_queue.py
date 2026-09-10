@@ -360,3 +360,32 @@ def m_agent_run_read_paths(conn: Connection) -> None:
             ),
         },
     )
+
+
+def m_lane_repair_hold(conn: Connection) -> None:
+    """Let a lane entry hold its slot while a provisional block resolves.
+
+    A block used to end a lane occupancy outright: the orchestration finished
+    BLOCKED, the slot was released, and the next entry started. Some blocks are
+    not final at the moment they arrive — a reload artifact, an unconsumed
+    scope-denial pin, a stage with dispatch budget left — and repairing one
+    meant re-entering admission and queueing behind whatever had taken the lane.
+
+    These three columns are the hold's own record: which mechanism justified it,
+    how many re-dispatches this entry has spent on repairs, and when the current
+    hold began. NULL/0 is what every entry written before this meant — none of
+    them ever held a lane through a block, because nothing could.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "repair_route": "ALTER TABLE queued_runs ADD COLUMN repair_route VARCHAR",
+            "repair_attempts": (
+                "ALTER TABLE queued_runs ADD COLUMN repair_attempts INTEGER NOT NULL DEFAULT 0"
+            ),
+            "repairing_since": "ALTER TABLE queued_runs ADD COLUMN repairing_since DATETIME",
+        },
+    )
