@@ -70,6 +70,7 @@ const baseStatus: QueueStatusValue = {
   estimatedClearSeconds: 300,
   estimatedWaitSeconds: null,
   isWebSocket: true,
+  error: null,
   loading: false,
   // The whole dashboard is the shared slot pool — no per-workspace rail filter.
   workspaces: [{ id: 'ws-1', slug: 'loregarden', name: 'loregarden' }] as QueueStatusValue['workspaces'],

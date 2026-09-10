@@ -2564,12 +2564,29 @@ textarea::placeholder {
   align-items: center;
 }
 
+/* Three states, three looks: lit while agents run, dark while none do, amber
+   while the queue cannot be reached. The base rule carries no colour, so a dot
+   rendered without a state modifier is visibly wrong rather than falsely green. */
 .app-action-bar-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background: var(--txl);
+}
+
+.app-action-bar-live-dot.is-active {
   background: var(--grn);
   box-shadow: 0 0 6px var(--grn);
+}
+
+.app-action-bar-live-dot.is-idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--txl);
+}
+
+.app-action-bar-live-dot.is-unknown {
+  background: var(--amb);
+  box-shadow: 0 0 5px rgba(229, 167, 44, 0.45);
 }
 
 .app-action-bar-dock-edge {

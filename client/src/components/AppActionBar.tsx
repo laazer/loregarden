@@ -12,6 +12,7 @@ import {
   DOCK_QUICK_PROMPT_LIMIT,
   quickPrompts as promptsFor,
 } from "../lib/dockChatPrompts";
+import { useAgentPresence } from "../state/QueueStatusContext";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
 import { describeError } from "../state/toastStore";
@@ -516,13 +517,23 @@ function ActionBarScreenControls({
   setUtilityDockEdge: (edge: UtilityDockEdge) => void;
 }) {
   const nextEdge: UtilityDockEdge = utilityDockEdge === "bottom" ? "right" : "bottom";
+  const presence = useAgentPresence();
 
   return (
     <>
       <span className="app-action-bar-divider" aria-hidden />
 
-      <span className="app-action-bar-live" role="img" aria-label="agents online" title="agents online">
-        <span className="app-action-bar-live-dot" aria-hidden />
+      <span
+        className="app-action-bar-live"
+        role="img"
+        aria-label={presence.label}
+        title={presence.label}
+        data-presence={presence.state}
+      >
+        <span
+          className={`app-action-bar-live-dot is-${presence.state}`}
+          aria-hidden
+        />
       </span>
 
       <button
