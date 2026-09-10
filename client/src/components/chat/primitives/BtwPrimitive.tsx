@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
+import { navigateToTicketTab } from "../../../lib/useAppNavigation";
+import { describeError } from "../../../state/toastStore";
 import { MarkdownContent } from "../MarkdownContent";
 import { PrimitiveCard } from "./PrimitiveCard";
 import type { BtwPart } from "./types";
@@ -37,10 +39,15 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
   const live = asides.data?.exchanges.find((item) => item.id === part.exchange_id);
   const escalated = live?.escalated ?? part.escalated ?? false;
   // Absent live data, offer nothing: a button that turns out to be refused is
-  // worse than one that appears a moment late.
-  const refusal = interactive
-    ? (live?.escalation_refusal ?? "Checking whether the run can be asked…")
-    : "Preview — this card is not bound to a real aside.";
+  // worse than one that appears a moment late. A lookup that *failed*, though,
+  // must say so — "checking…" that never resolves is a dead card claiming to be
+  // a live one, and the operator would wait on it.
+  const lookupFailed = interactive && asides.isError;
+  const refusal = !interactive
+    ? "Preview — this card is not bound to a real aside."
+    : lookupFailed
+      ? describeError(asides.error, "Could not check whether the run can be asked")
+      : (live?.escalation_refusal ?? "Checking whether the run can be asked…");
 
   const escalate = useMutation({
     meta: { errorTitle: "Ask the running agent" },
@@ -50,8 +57,22 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
     },
   });
 
+  // Both keys, because an aside is rendered from two places: an answered one
+  // from the triage transcript the server mirrored it into, a pending or failed
+  // one synthesised from the aside list itself. Invalidating one would clear the
+  // card on some surfaces and leave it on others.
+  const dismiss = useMutation({
+    meta: { errorTitle: "Dismiss this aside" },
+    mutationFn: () => api.deleteAside(ticketId, part.exchange_id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ticket-asides", ticketId] });
+      qc.invalidateQueries({ queryKey: ["triage", ticketId] });
+    },
+  });
+
   const answer = live?.answer || part.answer || "";
   const status = live?.status ?? (answer ? "answered" : "pending");
+  const observedRun = live?.observed_run_id ?? part.observed_run_id ?? null;
   const observed = part.observed_agent_id
     ? `${part.observed_agent_id}${part.observed_stage_key ? ` · ${part.observed_stage_key}` : ""}`
     : "";
@@ -65,29 +86,73 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
       title={part.title ?? "Aside"}
       subtitle={part.question}
       tone={status === "failed" ? "warn" : "default"}
-      meta={<span>{attribution}</span>}
+      meta={
+        <span className="lg-btw-attribution">
+          {attribution}
+          {/* The card asserts what the log said; this is how that gets checked. */}
+          {interactive && observedRun && ticketId ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="lg-btw-log-link"
+                onClick={() => navigateToTicketTab(ticketId, "logs")}
+              >
+                Open the run log
+              </button>
+            </>
+          ) : null}
+        </span>
+      }
       error={status === "failed" ? live?.error || "This aside was never answered." : null}
       actions={
-        escalated ? (
-          <span className="lg-primitive-card-sub">
-            Also put to the running agent — its reply is in that run's log.
-          </span>
-        ) : refusal ? (
-          <span className="lg-primitive-card-sub">{refusal}</span>
-        ) : (
-          <button
-            type="button"
-            className="lg-primitive-run-btn"
-            disabled={escalate.isPending}
-            title={
-              "Writes this question into the running agent's input. It will enter " +
-              "that agent's context and can change what it does next."
-            }
-            onClick={() => escalate.mutate()}
-          >
-            {escalate.isPending ? "Asking…" : "Ask the running agent (affects its run)"}
-          </button>
-        )
+        <>
+          {escalated ? (
+            <span className="lg-primitive-card-sub">
+              Also put to the running agent — its reply is in that run's log.
+            </span>
+          ) : refusal ? (
+            <span className="lg-primitive-card-sub">{refusal}</span>
+          ) : (
+            // The cost lives beside the button, not inside its label: a control
+            // reads as a verb, and a caveat spliced into one is read as part of
+            // the name rather than as a warning.
+            <span className="lg-btw-escalate">
+              <button
+                type="button"
+                className="lg-primitive-run-btn"
+                disabled={escalate.isPending || dismiss.isPending}
+                title={
+                  "Writes this question into the running agent's input. It will enter " +
+                  "that agent's context and can change what it does next."
+                }
+                onClick={() => escalate.mutate()}
+              >
+                {escalate.isPending ? "Asking…" : "Ask the running agent"}
+              </button>
+              <span className="lg-primitive-card-sub">Affects its run</span>
+            </span>
+          )}
+          {/* Always offered, escalated or not. Dismissing is about this card, not
+              about the question: an aside that has already reached the run is
+              exactly the one an operator is most likely to be done with. */}
+          {interactive && ticketId ? (
+            <button
+              type="button"
+              className="lg-primitive-run-btn lg-btw-dismiss"
+              disabled={dismiss.isPending}
+              title={
+                escalated
+                  ? "Takes the card off this thread. The running agent has already been " +
+                    "asked and that cannot be taken back."
+                  : "Takes the card off this thread."
+              }
+              onClick={() => dismiss.mutate()}
+            >
+              {dismiss.isPending ? "Deleting…" : "Delete"}
+            </button>
+          ) : null}
+        </>
       }
     >
       {status === "pending" ? (

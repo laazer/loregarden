@@ -1792,3 +1792,51 @@
 .lg-primitive-calendar-event--one_time {
   border-left-color: var(--vio);
 }
+
+/* The aside card's attribution is a sentence, not a chip.
+   `.lg-primitive-card-meta` upper-cases and letter-spaces its contents, which is
+   right for "3 FILES · 2m AGO" and wrong for the one line that says who answered
+   and who did not — the card's most load-bearing sentence was being rendered in
+   the style reserved for its least. */
+.lg-btw-attribution {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.lg-btw-log-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ac);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.lg-btw-log-link:hover {
+  color: var(--ac2);
+}
+
+/* The caveat sits beside the control rather than inside its label. */
+.lg-btw-escalate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Away from the escalation: the two are opposite decisions and a mis-click on
+   this row is one the operator cannot undo on the other button. */
+.lg-btw-dismiss {
+  margin-left: auto;
+}
+
+.lg-btw-dismiss:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 18%, var(--bg3));
+  border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
+  color: var(--red);
+}

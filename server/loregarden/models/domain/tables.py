@@ -755,6 +755,11 @@ class BtwExchange(SQLModel, table=True):
     # Set when the question was also written into the live run's stdin. Nothing
     # here records what the run said back — that lands in its own log.
     escalated_at: datetime | None = None
+    # Set when the operator dismissed the card. Soft, because the question was
+    # really asked and — once escalated — really reached the run: the row is the
+    # record of that, and only the chat mirror is removed. Deleted rows are
+    # excluded from every listing, so nothing downstream has to remember to.
+    deleted_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow, index=True)
     answered_at: datetime | None = None
 

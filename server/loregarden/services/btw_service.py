@@ -21,6 +21,7 @@ perturbation of the work, so it is a separate, explicit act — never the defaul
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -38,6 +39,7 @@ from loregarden.services.triage_service import (
     TRIAGE_CLI_PROFILE,
     apply_triage_runtime_overrides,
 )
+from pydantic import TypeAdapter, ValidationError
 from sqlmodel import Session, col, select
 
 BTW_CLI_PROFILE = replace(
@@ -49,6 +51,8 @@ BTW_CLI_PROFILE = replace(
     # observer has started narrating the run rather than answering.
     reply_cap=2000,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_QUESTION_CHARS = 2000
 #: Log tail handed to the observer. Long runs produce megabytes; the last stretch
@@ -236,18 +240,30 @@ def _btw_part(session: Session, exchange: BtwExchange) -> BtwPart:
     )
 
 
-def record_answer(session: Session, exchange: BtwExchange, answer: str) -> TriageMessage:
+def record_answer(session: Session, exchange: BtwExchange, answer: str) -> TriageMessage | None:
     """Settle the exchange and mirror it into the ticket's transcript.
 
     One assistant message carrying one card, rather than the question-then-answer
     pair ``triage_question_log`` writes: an aside is a single exchange, and
     splitting it would put the operator's words in the thread twice — once as a
     message, once inside the card that answers them.
+
+    Returns ``None`` when the aside was dismissed mid-turn: settled, but with no
+    mirror to write.
     """
     exchange.answer = (answer or "").strip()[: BTW_CLI_PROFILE.reply_cap]
     exchange.status = BtwStatus.ANSWERED
     exchange.answered_at = datetime.now(timezone.utc)
     session.add(exchange)
+
+    if exchange.deleted_at is not None:
+        # Dismissed while the observer turn was still running. The row still
+        # settles — an aside stuck on "asking…" forever is the failure this
+        # status exists to prevent — but writing the mirror now would put the
+        # card back in the thread the operator just cleared it from.
+        session.commit()
+        session.refresh(exchange)
+        return None
 
     message = TriageMessage(
         ticket_id=exchange.ticket_id,
@@ -296,10 +312,83 @@ def escalate(session: Session, exchange: BtwExchange) -> None:
 
 def escalation_refusal(session: Session, exchange: BtwExchange) -> str:
     """Why this aside cannot be put to the running agent, or "" when it can."""
+    if exchange.deleted_at is not None:
+        return "This aside was dismissed."
     run = session.get(AgentRun, exchange.observed_run_id) if exchange.observed_run_id else None
     if run is None:
         return "There is no run to ask — this aside was answered from the record alone."
     return steer_refusal(run)
+
+
+def delete(session: Session, exchange: BtwExchange) -> None:
+    """Dismiss an aside: off the thread, still on the record.
+
+    Two different things have to happen because an aside lives in two places. The
+    row is the durable record and is only marked, so what was asked — and, if it
+    was escalated, what the run was really told — survives being tidied away. The
+    mirrored transcript message is the *rendering*, and is removed, because
+    leaving it is the one thing the operator asked us not to do.
+
+    Idempotent: dismissing twice is a double-click, not an error.
+    """
+    if exchange.deleted_at is not None:
+        return
+    exchange.deleted_at = datetime.now(timezone.utc)
+    session.add(exchange)
+    for message in _mirrored_messages(session, exchange):
+        session.delete(message)
+    session.commit()
+
+
+def _mirrored_messages(session: Session, exchange: BtwExchange) -> list[TriageMessage]:
+    """The transcript messages carrying this exchange's card.
+
+    Matched on the parsed part rather than on the ``LIKE`` alone: the id is
+    substring-matched to keep the scan off every message on the ticket, and then
+    confirmed, so a message that merely quotes the id in its text is not deleted.
+    """
+    candidates = session.exec(
+        select(TriageMessage).where(
+            TriageMessage.ticket_id == exchange.ticket_id,
+            col(TriageMessage.parts_json).contains(exchange.id),
+        )
+    ).all()
+    return [m for m in candidates if _carries_exchange(m.parts_json, exchange.id)]
+
+
+#: The mirror's shape, as ``record_answer`` writes it: one card and nothing else.
+#: Validating against it is what identifies a mirror — every other message on the
+#: ticket fails the discriminator — so the two must stay in step. The test
+#: ``test_a_dismissed_aside_leaves_the_thread`` is what holds them there: add a
+#: second part to the mirror and it goes red rather than the card quietly
+#: surviving dismissal.
+_MIRROR_PARTS = TypeAdapter(list[BtwPart])
+
+
+def _carries_exchange(parts_json: str, exchange_id: str) -> bool:
+    """True when this message's parts *are* the card for ``exchange_id``.
+
+    Decoding and validating are kept apart because the two failures mean
+    different things. Parts that are not a btw card are the ordinary case — most
+    messages on a ticket are something else — and answering "no" is the whole
+    job. Parts that are not JSON at all are a storage bug, and get said out loud.
+    """
+    try:
+        decoded = json.loads(parts_json or "[]")
+    except json.JSONDecodeError:
+        logger.warning(
+            "Message parts_json did not decode while dismissing aside %s; "
+            "treating it as not the mirror",
+            exchange_id,
+        )
+        return False
+    try:
+        parts = _MIRROR_PARTS.validate_python(decoded)
+    except ValidationError:
+        # py-silent: allow - not a failure: every non-btw message fails this
+        # discriminator, and "no" is this function's correct answer for them.
+        return False
+    return any(part.exchange_id == exchange_id for part in parts)
 
 
 def exchange_view(session: Session, exchange: BtwExchange) -> dict:
@@ -323,10 +412,14 @@ def exchange_view(session: Session, exchange: BtwExchange) -> dict:
 
 
 def list_exchanges(session: Session, ticket_id: str, *, limit: int = 50) -> list[BtwExchange]:
+    """This ticket's live asides, newest first. Dismissed ones are not live."""
     return list(
         session.exec(
             select(BtwExchange)
-            .where(BtwExchange.ticket_id == ticket_id)
+            .where(
+                BtwExchange.ticket_id == ticket_id,
+                col(BtwExchange.deleted_at).is_(None),
+            )
             .order_by(BtwExchange.created_at.desc())
             .limit(limit)
         ).all()
@@ -346,6 +439,7 @@ def pending_exchanges(session: Session, ticket_id: str) -> list[BtwExchange]:
             .where(
                 BtwExchange.ticket_id == ticket_id,
                 BtwExchange.status == BtwStatus.PENDING,
+                col(BtwExchange.deleted_at).is_(None),
             )
             .order_by(BtwExchange.created_at)
         ).all()

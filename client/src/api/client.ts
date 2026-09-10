@@ -459,6 +459,12 @@ export const api = {
     request<BtwExchange>(`/api/tickets/${ticketId}/btw/${exchangeId}/escalate`, {
       method: "POST",
     }),
+  /** Take a dismissed aside off the thread. The row stays, marked. */
+  deleteAside: (ticketId: string, exchangeId: string) =>
+    request<{ id: string; deleted: boolean }>(
+      `/api/tickets/${ticketId}/btw/${exchangeId}`,
+      { method: "DELETE" },
+    ),
   /** One turn's reasoning so far. Surface-agnostic — keyed by the active turn. */
   chatTurnThinking: (turnId: string) =>
     request<ChatThinkingFrame>(`/api/chat-turns/${encodeURIComponent(turnId)}/thinking`),

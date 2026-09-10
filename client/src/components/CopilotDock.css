@@ -124,6 +124,14 @@
   overflow-y: auto;
 }
 
+/* Short threads sit on the composer rather than floating at the top of an empty
+   dock. Done with auto margin on the first turn rather than
+   `justify-content: flex-end`, which on an overflowing scroll container puts the
+   first turn above the scrollable area and makes it unreachable. */
+.copilot-dock-messages > :first-child {
+  margin-top: auto;
+}
+
 .copilot-dock-rail {
   width: 248px;
   flex: none;
