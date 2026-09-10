@@ -1,0 +1,80 @@
+.capacity-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.capacity-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.capacity-meter-label {
+  font-size: 11px;
+  color: var(--txm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.capacity-meter-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tx);
+}
+
+/* Tone is carried by the text as well as the bar, so the state survives a
+   viewer who cannot separate the fill colours. */
+.capacity-meter-value--tight {
+  color: var(--aml);
+}
+
+.capacity-meter-value--full {
+  color: var(--rdl);
+}
+
+.capacity-meter-value--unknown {
+  color: var(--txl);
+  font-style: italic;
+}
+
+.capacity-meter-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+
+/* An unmeasured ceiling gets a hatched track rather than an empty one: empty
+   reads as "all free", which is the opposite of what it means. */
+.capacity-meter-track--unknown {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--bg3) 0 4px,
+    var(--bg2) 4px 8px
+  );
+}
+
+.capacity-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ac);
+  transition: width 240ms ease;
+}
+
+.capacity-meter-track--tight .capacity-meter-fill {
+  background: var(--amb);
+}
+
+.capacity-meter-track--full .capacity-meter-fill {
+  background: var(--red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capacity-meter-fill {
+    transition: none;
+  }
+}
