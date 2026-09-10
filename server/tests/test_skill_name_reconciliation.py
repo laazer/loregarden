@@ -200,7 +200,7 @@ def test_skill_reconciliation_migration_preserves_resolvable_v3_names(tmp_path):
     }
     assert stages["plan-synthesis"]["skill_name"] == "plan-synthesis"
     # ui-design carried the planner's `plan` skill because it dispatched the
-    # planner. 0122 pointed it at `ui-design-decision`, whose own role file is
+    # planner. 0123 pointed it at `ui-design-decision`, whose own role file is
     # the instruction, so the skill is cleared there on purpose — the claim this
     # test makes is that reconciliation does not strip a *resolvable* name, and
     # the stages above still carry theirs.

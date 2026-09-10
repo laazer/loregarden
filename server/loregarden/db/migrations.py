@@ -1327,6 +1327,25 @@ def m_orchestration_idempotency_key(conn: Connection) -> None:
     )
 
 
+def _m_btw_exchange_deleted_at(conn: Connection) -> None:
+    """Somewhere to record that the operator dismissed an aside.
+
+    A column rather than a fourth ``BtwStatus``: dismissal is orthogonal to
+    whether the observer answered, the same way ``escalated_at`` is, and folding
+    it into the status line would make "answered" and "dismissed" mutually
+    exclusive when an operator most often dismisses one *because* it was
+    answered.
+    """
+    # Guarded: a database built up to an earlier id has no `btw_exchanges` yet.
+    if not table_exists(conn, "btw_exchanges"):
+        return
+    add_columns_if_missing(
+        conn,
+        "btw_exchanges",
+        {"deleted_at": "ALTER TABLE btw_exchanges ADD COLUMN deleted_at TEXT"},
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1456,8 +1475,9 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # ledger in `migration_ids` is for.
     ("0120_docker_capacity_ledger", m_docker_capacity_ledger),
     ("0121_docker_lease_polling", m_docker_lease_polling),
-    ("0122_ux_lanes_in_v3", m_ux_lanes_in_v3),
-    ("0123_ux_design_everywhere", m_ux_design_everywhere),
+    ("0122_btw_exchange_deleted_at", _m_btw_exchange_deleted_at),
+    ("0123_ux_lanes_in_v3", m_ux_lanes_in_v3),
+    ("0124_ux_design_everywhere", m_ux_design_everywhere),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -122,7 +122,7 @@ of `agent_runs`: `ui-design-decision` and `visual_qa` — the two agents built f
 had **never run**, and appeared in no workflow template. The `ui-design` stage dispatched the
 *planner*, and was `optional`. A ticket could cross plan → spec → test → implement → verify →
 three reviewers → gate without one agent looking at what a person would see. Migration
-`0122_ux_lanes_in_v3` closes that: the stage now runs the design agent and is required, and
+`0123_ux_lanes_in_v3` closes that: the stage now runs the design agent and is required, and
 `visual_qa` is a fourth review lane beside architecture, static and security.
 
 ### The five states

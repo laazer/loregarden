@@ -11,6 +11,7 @@ import {
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { describeError, pushToast, toastActionFailed } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
+import { DockerCapacityRail } from "./DockerCapacityRail";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueGitAutomation } from "./QueueGitAutomation";
@@ -23,10 +24,13 @@ export interface QueueDashboardProps {
   showControls?: boolean;
 }
 
-type SidebarTab = "overview" | "history" | "review" | "controls" | "analytics";
+type SidebarTab = "overview" | "docker" | "history" | "review" | "controls" | "analytics";
 
 const TABS: { key: SidebarTab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  // Beside Overview rather than at the end: it answers the same question about
+  // a second pool, and the lanes above are only half of what this machine runs.
+  { key: "docker", label: "Docker" },
   { key: "history", label: "History" },
   { key: "review", label: "Review" },
   { key: "controls", label: "Controls" },
@@ -221,6 +225,10 @@ export function QueueDashboard({
                   </div>
                 </>
               ) : null}
+
+              {/* Mounted only while selected, so its poll costs nothing on
+                  the other tabs — the same reason Review fetches lazily. */}
+              {activeSidebarTab === "docker" ? <DockerCapacityRail /> : null}
 
               {activeSidebarTab === "history" ? <QueueHistoryRail /> : null}
 

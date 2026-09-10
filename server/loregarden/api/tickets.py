@@ -674,6 +674,25 @@ def post_aside_escalation(
     return btw_service.exchange_view(session, exchange)
 
 
+@router.delete("/{ticket_id}/btw/{exchange_id}")
+def delete_ticket_aside(
+    ticket_id: str,
+    exchange_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Dismiss an aside the operator no longer needs.
+
+    Takes the card off the thread; the row stays, marked, because the question
+    was really asked and an escalated one really reached the run. Idempotent, so
+    a second click on a card that has not re-rendered yet is not a 404.
+    """
+    exchange = session.get(BtwExchange, exchange_id)
+    if not exchange or exchange.ticket_id != ticket_id:
+        raise HTTPException(404, "Aside not found")
+    btw_service.delete(session, exchange)
+    return {"id": exchange.id, "deleted": True}
+
+
 @router.patch("/{ticket_id}/triage/runtime", response_model=WorkspaceRuntimeSettings)
 def patch_triage_runtime(
     ticket_id: str,

@@ -996,7 +996,7 @@ def test_review_becomes_multi_angle(tmp_path):
 
     assert review["stage_type"] == "parallel"
     lanes = [a["agent_id"] for a in review["parallel_agents"]]
-    # Distinct lenses: structure, correctness, exploitability — and, since 0122,
+    # Distinct lenses: structure, correctness, exploitability — and, since 0123,
     # what the change looks like to the person using it. The fourth lane is the
     # one none of the other three were ever looking at.
     assert lanes == ["architecture_reviewer", "static_qa", "security_reviewer", "visual_qa"]
@@ -1007,7 +1007,7 @@ def test_review_becomes_multi_angle(tmp_path):
 
 
 def test_ux_design_stage_is_pointed_at_the_agent_it_was_named_for(tmp_path):
-    """0122 gives the pipeline a UX voice with authority.
+    """0123 gives the pipeline a UX voice with authority.
 
     Before it, `ui-design` dispatched the *planner* under the `plan` skill and
     was `optional`, so the one stage named for the user was a second planning
@@ -1081,7 +1081,7 @@ def test_the_ux_design_agent_is_registered_so_a_fresh_install_can_dispatch_it():
 
 
 def test_a_sentinel_less_design_agent_is_repaired(tmp_path):
-    """0122's second half: the live row was written without a stage outcome.
+    """0123's second half: the live row was written without a stage outcome.
 
     Wiring a required stage to an agent that cannot report an outcome would
     block every ticket, so the migration refreshes the body from its seed file.
@@ -1224,7 +1224,7 @@ def _seed_template(engine, *, slug: str, stages: list, transitions: list) -> Non
 
 
 def test_the_design_stage_reaches_the_other_workspaces(tmp_path):
-    """0123: 0122 fixed the template one workspace in four actually runs.
+    """0124: 0123 fixed the template one workspace in four actually runs.
 
     blobert, lore-eden and loremaker run `blobert-tdd` and `loregarden-tdd`, and
     neither had a design stage at all — so the fix read as done while covering a

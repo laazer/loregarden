@@ -1,6 +1,6 @@
-"""Migration 0123: the design stage reaches the other workspaces.
+"""Migration 0124: the design stage reaches the other workspaces.
 
-0122 gave `studio-loregarden-tdd-v3` a UX voice, and only loregarden runs that
+0123 gave `studio-loregarden-tdd-v3` a UX voice, and only loregarden runs that
 template. blobert, lore-eden and loremaker run `blobert-tdd` and
 `loregarden-tdd`, neither of which had a design stage at all — so the fix looked
 done while covering one workspace in four, which is worse than not having
@@ -114,7 +114,7 @@ def _grant_design_tools(conn: Connection) -> None:
         text("UPDATE studio_agents SET mcp_tools_json=:t WHERE id=:id"),
         {"t": json.dumps(tools), "id": row["id"]},
     )
-    logger.info("0123: granted %s to %r", ", ".join(missing), _DESIGN_AGENT)
+    logger.info("0124: granted %s to %r", ", ".join(missing), _DESIGN_AGENT)
 
 
 def _insert_design_stage(conn: Connection, *, slug: str, brief: str) -> None:

@@ -1,4 +1,4 @@
-"""Migration 0122: give the pipeline a UX voice, and give it authority.
+"""Migration 0123: give the pipeline a UX voice, and give it authority.
 
 Two agents were built for this and wired to nothing. `ui-design-decision` and
 `visual_qa` appear in no workflow template and have never run — measured across
@@ -147,7 +147,7 @@ def _repair_design_agent(conn: Connection) -> None:
     )
     if row is None:
         # A fresh install has not seeded yet; the registry entry covers it.
-        logger.info("0122: no %r agent row yet; seeding will create it", _UX_DESIGN_AGENT)
+        logger.info("0123: no %r agent row yet; seeding will create it", _UX_DESIGN_AGENT)
         return
     if _STAGE_REPORT_SENTINEL in (row["role_body"] or ""):
         return
@@ -163,7 +163,7 @@ def _repair_design_agent(conn: Connection) -> None:
         # Not silent: a required stage is about to dispatch an agent that cannot
         # report an outcome, and the operator is the only one who can fix it.
         logger.warning(
-            "0122: %r has no %s section and has been edited by %s — leaving it alone. "
+            "0123: %r has no %s section and has been edited by %s — leaving it alone. "
             "The ui-design stage will block until that section is restored.",
             _UX_DESIGN_AGENT,
             _STAGE_REPORT_SENTINEL,
@@ -173,11 +173,11 @@ def _repair_design_agent(conn: Connection) -> None:
 
     path = settings.agent_context_dir / _UX_DESIGN_ROLE_FILE
     if not path.is_file():
-        logger.warning("0122: %s is missing; cannot refresh %r", path, _UX_DESIGN_AGENT)
+        logger.warning("0123: %s is missing; cannot refresh %r", path, _UX_DESIGN_AGENT)
         return
     role_body = path.read_text(encoding="utf-8")
     if not role_body.strip():
-        logger.warning("0122: empty seed body for %r; not refreshing", _UX_DESIGN_AGENT)
+        logger.warning("0123: empty seed body for %r; not refreshing", _UX_DESIGN_AGENT)
         return
 
     now = datetime.now(timezone.utc)
@@ -214,8 +214,8 @@ def _repair_design_agent(conn: Connection) -> None:
             "agent_id": row["id"],
             "v": new_version,
             "snapshot": json.dumps(dict(snapshot)),
-            "note": "0122_ux_lanes_in_v3: role body refreshed from seed",
+            "note": "0123_ux_lanes_in_v3: role body refreshed from seed",
             "now": now,
         },
     )
-    logger.info("0122: refreshed %r role body from %s", _UX_DESIGN_AGENT, path)
+    logger.info("0123: refreshed %r role body from %s", _UX_DESIGN_AGENT, path)

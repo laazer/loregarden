@@ -6,6 +6,7 @@ import * as apiClient from "../../api/client";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { useUiStore } from "../../state/uiStore";
+import { navigateToTicketTab } from "../../lib/useAppNavigation";
 import { AppActionBar } from "../AppActionBar";
 import { BtwPrimitive } from "../chat/primitives/BtwPrimitive";
 import type { BtwPart } from "../chat/primitives/types";
@@ -13,6 +14,10 @@ import type { BtwPart } from "../chat/primitives/types";
 jest.mock("../../hooks/useActiveChatSession");
 jest.mock("../../hooks/useTerminalTarget");
 jest.mock("../../api/client", () => jest.requireActual("../../test/apiClientMock"));
+jest.mock("../../lib/useAppNavigation", () => ({
+  ...jest.requireActual("../../lib/useAppNavigation"),
+  navigateToTicketTab: jest.fn(),
+}));
 
 const mockResolver = useActiveChatSession as jest.MockedFunction<typeof useActiveChatSession>;
 const mockTerminal = useTerminalTarget as jest.MockedFunction<typeof useTerminalTarget>;
@@ -21,6 +26,7 @@ const mockApi = apiClient.api as unknown as {
   ticketAsides: jest.Mock;
   askAside: jest.Mock;
   escalateAside: jest.Mock;
+  deleteAside: jest.Mock;
 };
 
 function renderWithClient(ui: ReactElement) {
@@ -215,9 +221,12 @@ describe("the aside card", () => {
 
     renderWithClient(<BtwPrimitive part={part()} />);
 
-    const button = await screen.findByRole("button", { name: /ask the running agent/i });
+    const button = await screen.findByRole("button", { name: /^ask the running agent$/i });
     // The cost is stated on the control itself, not left to be discovered.
     expect(button.getAttribute("title")).toMatch(/can change what it does next/i);
+    // …but beside the label rather than spliced into it: a control reads as a
+    // verb, and a caveat inside its name is read as part of the name.
+    expect(screen.getByText("Affects its run")).toBeTruthy();
   });
 
   it("states the reason instead of offering a button that would be refused", async () => {
@@ -271,5 +280,55 @@ describe("the aside card", () => {
     renderWithClient(<BtwPrimitive part={part({ answer: "" })} />);
 
     expect(await screen.findByText(/reading the run's log/i)).toBeTruthy();
+  });
+
+  it("offers a way out of a card the operator is done with", async () => {
+    // The whole point: the only control used to be one that perturbs the run,
+    // so a question you no longer wanted sat in the thread forever.
+    mockApi.ticketAsides.mockResolvedValue({ exchanges: [exchange()] });
+    mockApi.deleteAside.mockResolvedValue({ id: "bx1", deleted: true });
+
+    renderWithClient(<BtwPrimitive part={part()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(mockApi.deleteAside).toHaveBeenCalledWith("t1", "bx1"));
+  });
+
+  it("still offers the delete once the question has reached the run", async () => {
+    // An escalated aside is the one an operator is most likely to be finished
+    // with, and the tooltip is honest that the run cannot be un-asked.
+    mockApi.ticketAsides.mockResolvedValue({ exchanges: [exchange({ escalated: true })] });
+
+    renderWithClient(<BtwPrimitive part={part({ escalated: true })} />);
+
+    const button = await screen.findByRole("button", { name: "Delete" });
+    expect(button.getAttribute("title")).toMatch(/cannot be taken back/i);
+  });
+
+  it("offers the delete on a failed aside, which has nothing else to offer", async () => {
+    mockApi.ticketAsides.mockResolvedValue({
+      exchanges: [exchange({ status: "failed", error: "Baxter was interrupted." })],
+    });
+
+    renderWithClient(<BtwPrimitive part={part()} />);
+
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("links to the log the answer was read from, so the claim can be checked", async () => {
+    mockApi.ticketAsides.mockResolvedValue({ exchanges: [exchange()] });
+
+    renderWithClient(<BtwPrimitive part={part()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /open the run log/i }));
+
+    expect(navigateToTicketTab).toHaveBeenCalledWith("t1", "logs");
+  });
+
+  it("offers neither control on a preview bound to no real aside", async () => {
+    renderWithClient(<BtwPrimitive part={part({ interactive: false })} />);
+
+    expect(await screen.findByText(/preview — this card is not bound/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /open the run log/i })).toBeNull();
   });
 });

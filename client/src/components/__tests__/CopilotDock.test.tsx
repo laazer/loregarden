@@ -8,6 +8,7 @@ import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
+import { installPointerEvents } from "../../test/pointerEvents";
 
 jest.mock("../../hooks/useActiveChatSession");
 jest.mock("../../hooks/useTerminalTarget");
@@ -429,5 +430,111 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+  });
+});
+
+describe("resizing the dock", () => {
+  installPointerEvents();
+
+  // `copilotHeight`/`copilotWidth` were clamped, persisted and documented as
+  // holding "a restored or dragged" size, but nothing outside the store's own
+  // test ever called their setters — so the dock was pinned to its default and
+  // a long answer had to be read through a 340px slot.
+  function openDock() {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+    // A tall window, so the 44vh cap is only in play in the test that asserts
+    // it. jsdom's default 768px would cap at 338 and quietly swallow the rest.
+    window.innerHeight = 2000;
+  }
+
+  function drag(handle: Element, from: number, to: number, axis: "y" | "x" = "y") {
+    const at = (value: number) => (axis === "y" ? { clientY: value } : { clientX: value });
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, ...at(from) });
+    fireEvent.pointerMove(handle, { pointerId: 1, ...at(to) });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+  }
+
+  it("grows the dock when dragged away from the edge it sits on", () => {
+    openDock();
+    renderDock();
+
+    // Bottom dock: upwards is towards the page, so it adds.
+    drag(screen.getByRole("separator"), 500, 420);
+
+    expect(useUiStore.getState().copilotHeight).toBe(420);
+  });
+
+  it("shrinks it when dragged back", () => {
+    openDock();
+    renderDock();
+
+    drag(screen.getByRole("separator"), 500, 560);
+
+    expect(useUiStore.getState().copilotHeight).toBe(280);
+  });
+
+  it("stops where the dock stops rather than running into a dead range", () => {
+    // The dock is capped at 44vh, so on a short window most of the store's
+    // 720px range renders identically. Without this the grip would keep
+    // reporting progress the dock cannot show.
+    openDock();
+    window.innerHeight = 800; // 44vh = 352
+    renderDock();
+
+    drag(screen.getByRole("separator"), 500, 0);
+
+    expect(useUiStore.getState().copilotHeight).toBe(352);
+  });
+
+  it("holds the store's own floor", () => {
+    openDock();
+    renderDock();
+
+    drag(screen.getByRole("separator"), 500, 900);
+
+    expect(useUiStore.getState().copilotHeight).toBe(180);
+  });
+
+  it("nudges with the arrow keys, so it is not a mouse-only control", () => {
+    openDock();
+    renderDock();
+    const handle = screen.getByRole("separator");
+
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(useUiStore.getState().copilotHeight).toBe(364);
+
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    expect(useUiStore.getState().copilotHeight).toBe(340);
+  });
+
+  it("resets to the default on a double-click", () => {
+    openDock();
+    useUiStore.setState({ copilotHeight: 600 });
+    renderDock();
+
+    fireEvent.doubleClick(screen.getByRole("separator"));
+
+    expect(useUiStore.getState().copilotHeight).toBe(340);
+  });
+
+  it("resizes the width when the dock is on the right edge", () => {
+    openDock();
+    useUiStore.setState({ utilityDockEdge: "right", copilotWidth: 380 });
+    renderDock();
+
+    const handle = screen.getByRole("separator");
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    drag(handle, 900, 820, "x");
+
+    expect(useUiStore.getState().copilotWidth).toBe(460);
+  });
+
+  it("offers no grip while collapsed, when there is no panel to resize", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+
+    renderDock();
+
+    expect(screen.queryByRole("separator")).toBeNull();
   });
 });

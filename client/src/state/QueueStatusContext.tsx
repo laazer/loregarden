@@ -29,6 +29,7 @@ import {
 } from "react";
 
 import { api } from "../api/client";
+import { deriveAgentPresence, type AgentPresence } from "../lib/agentPresence";
 import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import type {
   ActiveRun,
@@ -54,6 +55,12 @@ export interface QueueStatusValue {
   estimatedWaitSeconds: number | null;
   isWebSocket: boolean;
   loading: boolean;
+  /**
+   * Last failure from the polling fallback, or null. Exposed because a light
+   * that says "no agents running" and one that says "we could not ask" must
+   * not be the same pixel — see `deriveAgentPresence`.
+   */
+  error: string | null;
 
   /** Subscribe to forwarded queue events; returns an unsubscribe. */
   onQueueEvent: (listener: (event: QueueEvent) => void) => () => void;
@@ -72,6 +79,7 @@ const EMPTY_VALUE: QueueStatusValue = {
   estimatedWaitSeconds: null,
   isWebSocket: false,
   loading: false,
+  error: null,
   onQueueEvent: () => () => {},
 };
 
@@ -84,6 +92,31 @@ const EMPTY_VALUE: QueueStatusValue = {
  */
 export function useQueueStatus(): QueueStatusValue {
   return useContext(QueueStatusContext) ?? EMPTY_VALUE;
+}
+
+/**
+ * Whether agents are running, nothing is running, or the answer is unknown.
+ *
+ * Reads the context directly rather than through `useQueueStatus`: that hook's
+ * empty stand-in is indistinguishable from a real idle queue, and reporting
+ * "no agents running" because nobody subscribed is the falsehood this exists to
+ * remove. No provider in scope means unknown.
+ */
+export function useAgentPresence(): AgentPresence {
+  const value = useContext(QueueStatusContext);
+  return useMemo(
+    () =>
+      deriveAgentPresence(
+        value
+          ? {
+              activeCount: value.activeRuns.length,
+              error: value.error,
+              loading: value.loading,
+            }
+          : null,
+      ),
+    [value],
+  );
 }
 
 export function QueueStatusProvider({ children }: { children: ReactNode }) {
@@ -121,6 +154,7 @@ export function QueueStatusProvider({ children }: { children: ReactNode }) {
       estimatedWaitSeconds: status.estimatedWaitSeconds,
       isWebSocket: status.isWebSocket,
       loading: status.loading,
+      error: status.error,
       onQueueEvent,
     }),
     [workspaces.data, workspaces.isLoading, status, onQueueEvent],
