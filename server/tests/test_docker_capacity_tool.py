@@ -31,6 +31,7 @@ from loregarden.mcp.tool_ids import (
     DOCKER_CAPACITY_MCP_TOOLS,
     ORCHESTRATED_DENIED_MCP_TOOLS,
     READ_ONLY_MCP_TOOLS,
+    STAGE_DEFAULT_MCP_TOOLS,
     McpTool,
 )
 from loregarden.models.domain import DockerCeilingSource, DockerGrantState
@@ -289,9 +290,30 @@ def test_force_release_is_gated_and_denied_to_orchestrated_agents() -> None:
 
 
 def test_the_grant_tuple_offers_everything_but_force_release() -> None:
-    """A workspace adding these to an agent's tool list is granting ad-hoc
-    capacity booking, not the ability to take a peer's lease away."""
+    """Granting ad-hoc capacity booking, not the ability to take a peer's lease
+    away. Force-release stays out however these are handed round."""
     assert set(DOCKER_CAPACITY_MCP_TOOLS) == set(CAPACITY_LEASE_MCP_TOOLS) | {
         McpTool.DOCKER_CAPACITY_STATUS
     }
     assert McpTool.FORCE_RELEASE_DOCKER_LEASE not in DOCKER_CAPACITY_MCP_TOOLS
+
+
+def test_every_stage_agent_is_offered_the_tools_the_prompt_documents() -> None:
+    """The mismatch this pins is the one the repo already learned once.
+
+    `agent_context/agents/common_assets/loregarden_mcp_v1.md` documents the
+    reserve/renew/release protocol to every agent unconditionally. Granting the
+    tools to no stage made that prompt a set of instructions the agent could not
+    follow — the same defect `mcp_context.resolve_control_plane_transport`
+    exists to prevent. Documented and granted must move together.
+    """
+    granted = set(STAGE_DEFAULT_MCP_TOOLS)
+    missing = [t.value for t in DOCKER_CAPACITY_MCP_TOOLS if t not in granted]
+    assert not missing, (
+        f"the shared prompt documents {missing} but no stage is offered them — "
+        "either grant them or stop documenting them"
+    )
+    assert McpTool.FORCE_RELEASE_DOCKER_LEASE not in granted, (
+        "force-release must not be handed to every stage; it can take capacity "
+        "from work that is still running"
+    )

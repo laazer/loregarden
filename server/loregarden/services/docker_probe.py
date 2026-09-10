@@ -46,8 +46,14 @@ class DockerLiveness:
     error: str = ""
 
 
-def _run(args: Sequence[str], *, invoke: DockerInvoke) -> tuple[str, DockerProbeOutcome, str]:
-    """`(stdout, outcome, error)` — every failure mode named rather than raised."""
+def run_probe(args: Sequence[str], *, invoke: DockerInvoke) -> tuple[str, DockerProbeOutcome, str]:
+    """`(stdout, outcome, error)` — every failure mode named rather than raised.
+
+    Public because two callers now need the same three-state reading of a docker
+    query: liveness here, and the unaccounted-container report. A second copy of
+    this would be a second place for "empty output" to quietly mean "nothing
+    running" when it meant "could not ask".
+    """
     try:
         result = invoke(list(args))
     except FileNotFoundError as exc:
@@ -70,7 +76,7 @@ def probe_compose_project(project: str, *, invoke: DockerInvoke = run_docker) ->
     container is not capacity being used, and counting it would hold a lease
     open against a stack that has already stopped.
     """
-    stdout, outcome, error = _run(
+    stdout, outcome, error = run_probe(
         ["ps", "--filter", f"label={COMPOSE_PROJECT_LABEL}={project}", "--format", "{{.ID}}"],
         invoke=invoke,
     )

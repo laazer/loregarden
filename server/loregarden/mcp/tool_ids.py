@@ -72,6 +72,37 @@ def mcp_tool_values(tools: Iterable[McpTool]) -> list[str]:
 
 # --- Grant defaults (what an agent is offered) --------------------------------
 
+#: Booking docker capacity. Folded into `STAGE_DEFAULT_MCP_TOOLS`, which
+#: reverses the first cut of this feature and is worth explaining, because the
+#: original argument was not wrong — it was incomplete.
+#:
+#: That argument was: a tool an agent is offered is a tool it will find a reason
+#: to call, and most stages never start a container. True. What it missed is
+#: that the shared prompt asset documents this protocol to *every* agent
+#: unconditionally, so withholding the tools did not stop agents reaching for
+#: them — it produced the precise failure `mcp_context.resolve_control_plane_transport`
+#: was written to prevent: a prompt telling an agent to call tools it does not
+#: have. Between a granted tool that is rarely needed and a documented tool that
+#: cannot be called, only the second is a defect.
+#:
+#: The cost of granting is genuinely small: all four are auto-approved, so none
+#: reaches the inbox; a spurious reserve books capacity the reaper hands back;
+#: and the ledger is advisory, so an unused grant changes nothing. The cost of
+#: withholding is an agent that needs capacity, is told how to ask for it, and
+#: cannot.
+#:
+#: A stage that declares a `docker_footprint` does not need these — the
+#: orchestrator takes its lease around the whole run
+#: (`services/stage_docker_capacity.py`), so capacity is held before the agent's
+#: first turn. These cover the ad-hoc case: a stack started outside a stage that
+#: declared one.
+DOCKER_CAPACITY_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.RESERVE_DOCKER_CAPACITY,
+    McpTool.RENEW_DOCKER_LEASE,
+    McpTool.RELEASE_DOCKER_CAPACITY,
+    McpTool.DOCKER_CAPACITY_STATUS,
+)
+
 STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.GET_TICKET,
     McpTool.LIST_TICKETS,
@@ -87,6 +118,9 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # Offered beside it, because the pair is a two-step flow: search finds the
     # exact page, fetch reads it. A stage given only the fetcher guesses URLs.
     McpTool.SEARCH_REFERENCE,
+    # Docker capacity, offered to every stage — see DOCKER_CAPACITY_MCP_TOOLS
+    # below for why this reverses the first cut.
+    *DOCKER_CAPACITY_MCP_TOOLS,
 )
 
 MEMORY_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
@@ -173,22 +207,6 @@ CAPACITY_LEASE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     }
 )
 
-#: Offered to an agent that needs to book docker capacity itself. Deliberately
-#: NOT in `STAGE_DEFAULT_MCP_TOOLS`: a tool an agent is offered is a tool it will
-#: find a reason to call, and most stages never start a container.
-#:
-#: A stage that declares a `docker_footprint` does not need these — the
-#: orchestrator takes its lease around the whole run
-#: (`services/stage_docker_capacity.py`), so the capacity is already held before
-#: the agent's first turn. These are for the ad-hoc case: a human at the CLI, or
-#: an agent starting a stack outside a stage that declared one. Add them to a
-#: workspace's agent tool list to grant them.
-DOCKER_CAPACITY_MCP_TOOLS: tuple[McpTool, ...] = (
-    McpTool.RESERVE_DOCKER_CAPACITY,
-    McpTool.RENEW_DOCKER_LEASE,
-    McpTool.RELEASE_DOCKER_CAPACITY,
-    McpTool.DOCKER_CAPACITY_STATUS,
-)
 
 #: Tools that reach the network. Auto-approved, but kept out of the two sets
 #: above rather than folded into them: `CONTROL_PLANE_WRITE_MCP_TOOLS` promises

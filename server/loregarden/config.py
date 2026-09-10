@@ -161,6 +161,13 @@ class Settings(BaseSettings):
     docker_wait_lookback_days: int = 30
     docker_poll_min_interval_seconds: float = 5.0
     docker_poll_max_interval_seconds: float = 120.0
+    # Containers this machine runs that no lease will ever account for — a
+    # personal database, a service left up on purpose. Named explicitly rather
+    # than guessed at by age or naming convention: a standing container reported
+    # as unaccounted on every sweep is noise, and noise is how a check stops
+    # being read. Comma-separated.
+    docker_baseline_projects: str = ""
+    docker_baseline_containers: str = ""
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod
