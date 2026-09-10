@@ -205,6 +205,25 @@ def test_server_hook_falls_back_to_the_full_suite():
     assert script.count("pytest -q -n auto") >= 2
 
 
+def test_server_hook_gives_pytest_a_private_temp_root():
+    """Both pytest invocations must name their own basetemp.
+
+    pytest garbage-collects the older `pytest-of-<user>/pytest-N` roots it finds
+    at session start, so two concurrent runs delete each other's trees and the
+    loser dies in `pytest_sessionfinish` — reporting every test passed and then
+    exiting non-zero. A push rejected that way looks like a flaky suite and is
+    not one, which is why this is pinned rather than left to a comment.
+    """
+    script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
+    assert "mktemp -d" in script
+    # Every real run, not just the fallback one.
+    assert script.count('--basetemp="$BASETEMP"') == script.count(
+        'LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest'
+    )
+    # Cleanup that cannot itself fail the push.
+    assert "trap 'rm -rf \"$BASETEMP\" 2>/dev/null || true' EXIT" in script
+
+
 def test_client_hook_narrows_jest_and_keeps_the_wide_checks():
     script = (_ROOT / ".lefthook" / "scripts" / "client-tests.sh").read_text(encoding="utf-8")
     assert "--changedSince=" in script
