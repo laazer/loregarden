@@ -377,6 +377,124 @@ def _write_agent_version(
     )
 
 
+def _seeded_mcp_tools(session: Session, agent: StudioAgent) -> list[str] | None:
+    """The tool list this row was seeded with, or ``None`` if that is unknowable.
+
+    Version 1 is always the seed entry — `seed_builtin_agents` writes it in the
+    same flush as the row — and its snapshot carries the `mcp_tools_json` column
+    verbatim, as a JSON *string*, because `_agent_snapshot` dumps columns rather
+    than fields.
+
+    ``None`` for a row whose seed entry is missing or unreadable: unknowable is
+    not the same as unchanged, and the caller must leave such a row alone.
+    """
+    entry = session.exec(
+        select(StudioAgentVersion)
+        .where(StudioAgentVersion.agent_id == agent.id)
+        .where(StudioAgentVersion.version == 1)
+    ).first()
+    if entry is None:
+        return None
+    try:
+        snapshot = json.loads(entry.snapshot_json or "{}")
+        tools = json.loads(snapshot.get("mcp_tools_json") or "null")
+    except json.JSONDecodeError:
+        logger.warning(
+            "reconcile_builtin_mcp_tools: agent %r has an unreadable seed snapshot; "
+            "leaving its tool list alone",
+            agent.slug,
+        )
+        return None
+    if not isinstance(tools, list):  # py-org: allow-isinstance
+        return None
+    return [str(name) for name in tools]
+
+
+def reconcile_builtin_mcp_tools(session: Session) -> list[str]:
+    """Offer built-in agents the MCP tools added since they were seeded.
+
+    `seed_builtin_agents` writes `tool_names()` into the row once, when it first
+    sees the slug, and no later tool ever reaches it. On this install that left
+    every built-in agent holding 21 of 42 tools — so `TRIAGE_OPS_MCP_TOOLS` was
+    documented as "offered to the ticket rail" while no rail could offer it, and
+    the reference cache and docker ledger that the shared prompt asset describes
+    to *every* agent were ungrantable. A tool an agent is told to call and cannot
+    is the failure `mcp_context.resolve_control_plane_transport` exists to
+    prevent, and `m_require_verify_evidence` already patched one instance of it
+    by hand, one tool at a time.
+
+    Runs on every boot rather than as a migration, so a tool added tomorrow needs
+    no data change. Idempotent: it writes only when tools are actually missing,
+    and each write records a version entry, because an operator who opens Studio
+    and finds new tools ticked deserves to see why.
+
+    **Appends; never removes.** The test for "an operator narrowed this agent" is
+    that a tool the seed snapshot had is gone from the row — the only shape a
+    narrowing can take, since `StudioAgentToolGrants` holds `CliTool` members and
+    cannot express a per-MCP-tool exclusion. Extra tools *added* since the seed
+    are not a narrowing: `m_require_verify_evidence` appended `attach_evidence`
+    to every row, so requiring an exact match against the seed would skip the
+    entire fleet — which is what the first version of this did.
+
+    Custom agents are out of scope entirely: their tool list is their author's
+    design, not a snapshot that went stale.
+
+    Returns the slugs it changed.
+    """
+    current = tool_names()
+    changed: list[str] = []
+    narrowed: list[str] = []
+    unknown: list[str] = []
+    for agent in session.exec(select(StudioAgent).where(StudioAgent.built_in)).all():
+        stored = [str(name) for name in json.loads(agent.mcp_tools_json or "[]")]
+        missing = [name for name in current if name not in stored]
+        if not missing:
+            continue
+        seeded = _seeded_mcp_tools(session, agent)
+        if seeded is None:
+            unknown.append(agent.slug)
+            continue
+        if set(seeded) - set(stored):
+            narrowed.append(agent.slug)
+            continue
+        agent.mcp_tools_json = json.dumps([*stored, *missing])
+        agent.version += 1
+        agent.updated_at = datetime.now(timezone.utc)
+        session.add(agent)
+        session.flush()
+        _write_agent_version(
+            session,
+            agent,
+            created_by="reconcile",
+            change_note=(
+                f"Offered the {len(missing)} MCP tools added since this agent was seeded: "
+                f"{', '.join(missing)}. Restore an earlier version to undo."
+            ),
+        )
+        changed.append(agent.slug)
+    if changed:
+        session.commit()
+        logger.info(
+            "reconcile_builtin_mcp_tools: re-offered the current tool set to %s", sorted(changed)
+        )
+    # Both skips are correct and invisible from the schema. Said out loud so
+    # "Baxter still cannot call X" has an answer that does not require reading
+    # this function.
+    if narrowed:
+        logger.info(
+            "reconcile_builtin_mcp_tools: left %s alone — each is missing a tool its seed "
+            "snapshot had, so its list is an operator narrowing, not staleness",
+            sorted(narrowed),
+        )
+    if unknown:
+        logger.warning(
+            "reconcile_builtin_mcp_tools: left %s alone — no readable seed snapshot, so "
+            "there is no evidence of what they were seeded with",
+            sorted(unknown),
+        )
+    return changed
+
+
 def seed_builtin_agents(session: Session) -> list[str]:
     """Idempotently seed the registry built-ins into ``studio_agents`` so the DB is
     the single source of truth. Seed-WHEN-MISSING by slug — an existing row (edited
