@@ -26,11 +26,13 @@ from loregarden.models.domain import (
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_monitor import (
     WORKSPACE_SCOPED,
+    _runs,
     list_findings,
     record_findings,
     scan,
     sweep,
 )
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
 
@@ -355,3 +357,44 @@ def test_a_failing_monitor_does_not_take_the_repair_sweeps_down(db_session: Sess
         failed = reconciliation.reconcile_once(db_session)
 
     assert failed == ["scan_workflow_monitor"]
+
+
+def test_the_sweep_does_not_load_run_output(db_session: Session):
+    """`agent_runs` stores `stdout`/`stderr` inline, and the sweep never reads them.
+
+    Loading the whole entity pulled every byte of every run's output into memory
+    on each pass — 277MB across 1224 rows on the installation where this was
+    found, at startup and then on the reconcile timer forever after. The sweep
+    needs seven small columns; this pins that it asks for no more.
+
+    Asserted against the SQL actually emitted rather than against attribute
+    access: what costs the memory is the columns in the SELECT, and that is true
+    of the statement regardless of what the identity map already happens to hold.
+    """
+    ticket = make_workspace_ticket(db_session, "monitor-payload")
+    run = _run(db_session, ticket, stage_key="implement")
+    run.stdout = "x" * 4096
+    db_session.add(run)
+    db_session.commit()
+
+    selects: list[str] = []
+
+    def record(_conn, _cursor, statement, _params, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        loaded = _runs(db_session, None)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert [r.id for r in loaded] == [run.id]
+    assert loaded[0].stage_key == "implement"
+
+    agent_run_selects = [sql for sql in selects if "agent_runs" in sql]
+    assert agent_run_selects, "the sweep issued no query against agent_runs"
+    for sql in agent_run_selects:
+        assert "agent_runs.stdout" not in sql, sql
+        assert "agent_runs.stderr" not in sql, sql
