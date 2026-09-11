@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -21,6 +22,45 @@ class NothingToCommitError(ValueError):
 
 
 logger = logging.getLogger(__name__)
+
+
+def _git_reading(
+    args: list[str], *, repo_root: Path, describing: str
+) -> subprocess.CompletedProcess | None:
+    """Run a read-only git command, or None if git could not answer.
+
+    The single place the "None means I could not look" contract of
+    `working_tree_paths` and `paths_committed_since` is honoured, because both
+    used to honour only HALF of it. They checked `returncode`, which covers a
+    git that ran and failed — and missed the case where git never ran at all.
+
+    `run_git` passes `cwd` straight to `subprocess.run`, which raises
+    FileNotFoundError when the directory is gone. That escaped both functions as
+    an exception rather than the None their callers are written to expect, and
+    `record_run_evidence` is called with no try/except immediately before
+    `complete_run` — so a removed worktree did not degrade to "changed paths not
+    recorded", it abandoned the run mid-completion and left it RUNNING with
+    nothing behind it (lg-workflow-integrity-713).
+
+    NotADirectoryError and PermissionError are caught for the same reason: each
+    is a way of not being able to look, and the caller cannot tell them apart
+    from an empty tree anyway.
+    """
+    try:
+        proc = run_git(args, cwd=repo_root, capture_output=True, text=True)
+    except OSError as exc:
+        logger.warning("could not run git %s in %s: %s", describing, repo_root, exc)
+        return None
+    if proc.returncode != 0:
+        logger.warning(
+            "git %s failed in %s (exit %s): %s",
+            describing,
+            repo_root,
+            proc.returncode,
+            (proc.stderr or "").strip()[:400],
+        )
+        return None
+    return proc
 
 
 def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
@@ -43,20 +83,12 @@ def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
     """
     if not base_sha:
         return set()
-    proc = run_git(
+    proc = _git_reading(
         ["diff", "--name-only", "-z", f"{base_sha}..HEAD"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
+        repo_root=repo_root,
+        describing=f"diff {base_sha}..HEAD",
     )
-    if proc.returncode != 0:
-        logger.warning(
-            "git diff %s..HEAD failed in %s (exit %s): %s",
-            base_sha,
-            repo_root,
-            proc.returncode,
-            (proc.stderr or "").strip()[:400],
-        )
+    if proc is None:
         return None
     return {path for path in proc.stdout.split("\0") if path}
 
@@ -81,19 +113,12 @@ def working_tree_paths(repo_root: Path) -> set[str] | None:
     `-z` because paths with spaces or non-ASCII are otherwise quoted and would
     not round-trip back into `git add`.
     """
-    proc = run_git(
+    proc = _git_reading(
         ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
+        repo_root=repo_root,
+        describing="status",
     )
-    if proc.returncode != 0:
-        logger.warning(
-            "git status failed in %s (exit %s): %s",
-            repo_root,
-            proc.returncode,
-            (proc.stderr or "").strip()[:400],
-        )
+    if proc is None:
         return None
 
     records = [record for record in proc.stdout.split("\0") if record]
