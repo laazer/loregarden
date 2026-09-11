@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    BlockOrigin,
     DispatchSurface,
     RunStatus,
     StageBudgetArtifactKind,
@@ -471,6 +472,8 @@ def enforce_stage_retry_budget(
         callbacks.block_ticket(
             orch_run,
             ticket,
+            # The breaker's own message about a budget it enforced.
+            origin=BlockOrigin.CONTROL_PLANE,
             stage_key=stage_key,
             message=stage_retry_block_message(
                 stage_key, state.attempts, config.max_attempts_per_stage

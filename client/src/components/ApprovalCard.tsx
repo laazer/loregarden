@@ -73,7 +73,11 @@ export function ApprovalCard({
 }) {
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
-  const isGate = approval.kind === "workflow_gate";
+  // A rework pause resolves through the same routing a gate does — approve to
+  // accept the stage, reject to send the work back to a stage you pick — so it
+  // gets the same Routing box. It is a separate kind on the server only so that
+  // an auto_approve run can never sign off its own pause.
+  const isGate = approval.kind === "workflow_gate" || approval.kind === "rework_pause";
   const isHumanAction = approval.kind === "human_action";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
@@ -180,6 +184,7 @@ export function ApprovalCard({
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
           {approval.stage_name}
           {approval.kind === "workflow_gate" && <span> · stage sign-off</span>}
+          {approval.kind === "rework_pause" && <span> · rework loop paused</span>}
           {approval.kind === "cli_permission" && approval.cli_adapter && (
             <span> · {approval.cli_adapter} permission</span>
           )}

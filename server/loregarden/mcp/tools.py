@@ -55,6 +55,7 @@ from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
 from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.models.domain import (
+    BlockOrigin,
     ExternalHarness,
     HumanActionTier,
     OrchestrationRunStatus,
@@ -1365,6 +1366,9 @@ def execute_tool(
         svc.block_ticket(
             run,
             ticket,
+            # The agent's own words, via `loregarden_block_ticket` — the one
+            # path where a block may legitimately be a handover of human work.
+            origin=BlockOrigin.AGENT,
             stage_key=arguments.get("stage_key", ""),
             message=arguments["message"],
             prepared_action=action,

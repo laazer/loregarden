@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     AgentRun,
+    BlockOrigin,
     OrchestrationRun,
     ParallelAgentSpec,
     ReworkStopReason,
@@ -68,6 +69,12 @@ class ParallelMemberResult:
     ``failure`` is empty for a member that passed. Fail-closed: a clean exit with
     no parseable stage report is a failure, because a stage nobody reported on
     cannot be said to have passed.
+
+    ``transient`` separates the two kinds of failure that are not rejections: the
+    infrastructure ones (an API limit, a CLI that could not authenticate) and the
+    protocol one (a clean exit carrying no readable report). Both mean the
+    member's verdict is unknown rather than negative, so both pause for a retry
+    instead of rerouting the work upstream and spending a round of the loop cap.
     """
 
     agent_id: str
@@ -95,6 +102,17 @@ def member_result(
         return ParallelMemberResult(
             agent_id=agent_id,
             failure=f"{agent_id}: missing <<<LOREGARDEN_STAGE_REPORT>>> block",
+            # A protocol failure, not a rejection. The member exited cleanly and
+            # said nothing this can read, so its verdict is *unknown* — and
+            # unknown is not "this work needs rework". Counting it as one used to
+            # send the ticket back to `implement` over an envelope the reviewer
+            # failed to print, and spend a round of the loop cap doing it: of the
+            # four rounds that paused blob-procedural-sdf-36, three were this and
+            # a locked database, while every reviewer that did report said pass.
+            # Transient routes it to the same retry pause an API limit gets, so
+            # the stage still does not pass (fail-closed is unchanged) and the
+            # dispatch budget still bounds a member that never reports.
+            transient=True,
         )
     if report.status in _REJECTING_REPORT_STATUSES:
         return ParallelMemberResult(
@@ -260,20 +278,22 @@ def _route_parallel_stage_failures(
 
     if transient and not rejecting:
         # The only failures were infrastructure (API/usage limit, overload, a CLI
-        # that could not authenticate), and no reviewer produced a genuine
-        # rejection. Rerouting to `implement` would waste a cycle and, via the
-        # rework loop cap, inch toward blocking for the wrong reason. Pause the
-        # stage for a human/resume instead — no reroute, no ledger entry, so the
-        # loop budget is untouched. A genuine rejection from another reviewer
-        # (rejecting non-empty) still takes precedence and is rerouted below with
-        # its real feedback.
+        # that could not authenticate) or protocol (a clean exit with no readable
+        # stage report), and no reviewer produced a genuine rejection. Rerouting
+        # to `implement` would waste a cycle and, via the rework loop cap, inch
+        # toward blocking for the wrong reason. Pause the stage for a
+        # human/resume instead — no reroute, no ledger entry, so the loop budget
+        # is untouched. A genuine rejection from another reviewer (rejecting
+        # non-empty) still takes precedence and is rerouted below with its real
+        # feedback.
         callbacks.block_ticket(
             orch_run,
             ticket,
+            origin=BlockOrigin.CONTROL_PLANE,
             stage_key=stage_key,
             message=(
-                f"'{stage_key}' stage hit a transient infrastructure/auth error, not a "
-                f"rework rejection. Paused — resume to retry once it clears. ({message[:300]})"
+                f"'{stage_key}' stage hit a transient infrastructure or protocol error, not "
+                f"a rework rejection. Paused — resume to retry once it clears. ({message[:300]})"
             ),
         )
         session.refresh(ticket)
@@ -315,10 +335,11 @@ def _route_parallel_stage_failures(
                     f"'{stage_key}' without passing. Paused for a human — see the "
                     f"accumulated rework feedback before re-running."
                 )
-            callbacks.block_ticket(
+            callbacks.pause_for_rework_decision(
                 orch_run,
                 ticket,
                 stage_key=stage_key,
+                target_stage=target_stage,
                 message=stop_message,
             )
             session.refresh(ticket)

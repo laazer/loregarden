@@ -65,6 +65,7 @@ from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool, normalize_tool_
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    BlockOrigin,
     DispatchSurface,
     ExternalHarness,
     ParallelAgentSpec,
@@ -1414,6 +1415,10 @@ def test_an_agent_blocking_itself_cannot_clear_the_counter_by_restarting(
     OrchestrationCallbackService(db_session).block_ticket(
         blocking_run,
         ticket,
+        # The agent's own words, and they name human work — so this still files
+        # the handover approval it always did. That is the behaviour under test:
+        # an agent blocking itself must not clear the breaker bounding it.
+        origin=BlockOrigin.AGENT,
         stage_key="review",
         message="I need a human to look at this.",
     )

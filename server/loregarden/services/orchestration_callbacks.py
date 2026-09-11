@@ -16,6 +16,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     Artifact,
+    BlockOrigin,
     DispatchSurface,
     EventType,
     ExternalHarness,
@@ -36,6 +37,7 @@ from loregarden.services.prepared_action import (
     assess_handover,
 )
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
 from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
 from loregarden.services.run_lease import SUPERVISED
@@ -616,10 +618,18 @@ class OrchestrationCallbackService:
         orch_run: OrchestrationRun,
         ticket: Ticket,
         *,
+        origin: BlockOrigin,
         stage_key: str = "",
         message: str,
         prepared_action: PreparedAction | None = None,
     ) -> Ticket:
+        """Stop this ticket, recording why.
+
+        ``origin`` says who wrote ``message``, and only an agent's words are
+        examined for a handover of human work — see `BlockOrigin`. It is required
+        rather than defaulted so a new blocking path cannot inherit the wrong
+        answer silently.
+        """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         key = stage_key or ticket.workflow_stage_key
@@ -643,7 +653,11 @@ class OrchestrationCallbackService:
             orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
         )
         self.record_human_action(
-            ticket, stage_key=key or "", message=message, prepared_action=prepared_action
+            ticket,
+            stage_key=key or "",
+            message=message,
+            prepared_action=prepared_action,
+            origin=origin,
         )
         return ticket
 
@@ -654,6 +668,7 @@ class OrchestrationCallbackService:
         stage_key: str,
         message: str,
         prepared_action: PreparedAction | None,
+        origin: BlockOrigin,
     ) -> Approval | None:
         """Put a human-gated block in the inbox as an action, not a paragraph.
 
@@ -663,7 +678,16 @@ class OrchestrationCallbackService:
         carrying `assess_handover`'s findings, so what it failed to prepare is
         stated rather than left for a person to notice
         (lg-workflow-integrity-460).
+
+        The marker scan applies to an agent's words only. When the control plane
+        writes the message it is reporting a run it stopped, not handing work
+        over: nothing prepared an action because nothing was asked to, and
+        `assess_handover`'s findings would be addressed to an agent that never
+        existed. A control-plane block that *does* carry a prepared action still
+        files one — the action is the evidence that this is a real handover.
         """
+        if prepared_action is None and origin is BlockOrigin.CONTROL_PLANE:
+            return None
         if prepared_action is None and not _looks_like_human_work(message):
             return None
 
@@ -692,6 +716,53 @@ class OrchestrationCallbackService:
             payload={"approval_id": approval.id, "stage_key": stage_key},
         )
         return approval
+
+    def pause_for_rework_decision(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        target_stage: str,
+        message: str,
+    ) -> Approval:
+        """Stop a rework loop and put the decision in the inbox as a decision.
+
+        The cap and the convergence check both stop a loop that is not getting
+        anywhere, which is right — but stopping was all they did. The ticket went
+        BLOCKED, the accumulated feedback stayed in artifacts nobody was pointed
+        at, and the inbox item this produced was a HUMAN_ACTION handover with
+        nothing handed over: an empty `PreparedAction` and `assess_handover`
+        findings addressed to an agent that had never been asked to prepare
+        anything. Neither of its buttons touched the ticket, because
+        `ApprovalService.resolve` only applies a resolution for gate kinds.
+
+        So the pause files a REWORK_PAUSE, which resolves through the same
+        routing machinery a workflow gate does. Approve accepts the stage and
+        carries on; reject sends the work back, to the template's reject target
+        or to a stage the operator names. The rounds that led here are rendered
+        into `impact`, so the decision is made against the feedback rather than
+        against a pointer to it.
+
+        REWORK_PAUSE and not WORKFLOW_GATE because `auto_resolve_awaiting_gate`
+        would find a pending gate on this stage and auto-approve it: an
+        unattended run would sign off its own pause and walk straight through the
+        cap that exists to stop it looping.
+        """
+        self.block_ticket(
+            orch_run,
+            ticket,
+            origin=BlockOrigin.CONTROL_PLANE,
+            stage_key=stage_key,
+            message=message,
+        )
+        return file_rework_pause(
+            self.session,
+            ticket,
+            stage_key=stage_key,
+            target_stage=target_stage,
+            message=message,
+        )
 
     def attach_artifact(
         self,

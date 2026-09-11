@@ -210,6 +210,7 @@ def _blocked_with(db_session, tmp_path, action: PreparedAction | None, message: 
     from loregarden.models.domain import (
         Approval,
         ApprovalKind,
+        BlockOrigin,
         OrchestrationRun,
         Ticket,
         TicketState,
@@ -242,7 +243,14 @@ def _blocked_with(db_session, tmp_path, action: PreparedAction | None, message: 
     db_session.refresh(orch_run)
 
     OrchestrationCallbackService(db_session).block_ticket(
-        orch_run, ticket, stage_key="implement", message=message, prepared_action=action
+        orch_run,
+        ticket,
+        # These all model an agent blocking with its own words, which is the only
+        # origin whose message may describe a handover of human work.
+        origin=BlockOrigin.AGENT,
+        stage_key="implement",
+        message=message,
+        prepared_action=action,
     )
     db_session.refresh(ticket)
     approval = db_session.exec(

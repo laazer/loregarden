@@ -5,6 +5,8 @@ function approvalKindLabel(kind: Approval["kind"]) {
   switch (kind) {
     case "workflow_gate":
       return "Stage sign-off";
+    case "rework_pause":
+      return "Rework paused";
     case "cli_permission":
       return "Agent permission";
     case "cli_question":

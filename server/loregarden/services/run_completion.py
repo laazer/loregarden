@@ -39,6 +39,7 @@ from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
 )
+from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_log_stream import finalize_run_log_artifact
 from loregarden.services.stage_report import (
     StageReport,
@@ -154,6 +155,19 @@ def _reroute_or_block_for_rework(
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, reason)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+        # The pause is a decision to put in front of a person, not just a stop:
+        # file it as a REWORK_PAUSE carrying the rounds that led here, so
+        # approving accepts the stage and rejecting sends the work back. Without
+        # this the standalone path blocked the ticket and produced no inbox item
+        # at all, leaving the accumulated feedback in artifacts nobody was
+        # pointed at.
+        file_rework_pause(
+            orch.session,
+            ticket,
+            stage_key=run.stage_key,
+            target_stage=target_stage,
+            message=reason,
+        )
         return
 
     try:

@@ -32,6 +32,8 @@ from loregarden.models.domain import (
 from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
+from loregarden.services.rework_feedback import reset_rework_budget
+from loregarden.services.rework_pause import rework_pause_target
 from loregarden.services.run_completion import (
     complete_run_tail,
     release_execution_slot,
@@ -1114,6 +1116,16 @@ class OrchestrationService:
         return approval
 
 
+#: Approval kinds whose resolution moves the workflow, and so may name a stage to
+#: route to. A rework pause asks the same question a gate does — accept this
+#: stage, or send the work back and where to — so it resolves the same way.
+#:
+#: `auto_resolve` deliberately does NOT accept this set: it stays WORKFLOW_GATE
+#: only, so an unattended run cannot sign off the pause raised to stop it looping
+#: (see `services.rework_pause`).
+_ROUTABLE_APPROVAL_KINDS = frozenset({ApprovalKind.WORKFLOW_GATE, ApprovalKind.REWORK_PAUSE})
+
+
 class ApprovalService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1210,7 +1222,7 @@ class ApprovalService:
         self.session.commit()
 
         ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
-        if ticket and approval.kind == ApprovalKind.WORKFLOW_GATE:
+        if ticket and approval.kind in _ROUTABLE_APPROVAL_KINDS:
             self._apply_gate_resolution(
                 ticket,
                 approval,
@@ -1279,8 +1291,10 @@ class ApprovalService:
         for approve-with-rework (send a passing gate back for formalization)
         and reject-with-explicit-target (override the template's default
         reject route/previous-stage fallback with an operator's choice)."""
-        if approval.kind != ApprovalKind.WORKFLOW_GATE:
-            raise ValueError("route_to_stage_key only applies to workflow-gate sign-offs")
+        if approval.kind not in _ROUTABLE_APPROVAL_KINDS:
+            raise ValueError(
+                "route_to_stage_key only applies to workflow-gate sign-offs and rework pauses"
+            )
         gate_ticket = self.session.get(Ticket, approval.ticket_id)
         _, gate_stages = (
             self.orchestration._resolve_stages(gate_ticket) if gate_ticket else (None, [])
@@ -1292,6 +1306,43 @@ class ApprovalService:
                 f"Rework stage '{rework_route_key}' must come before "
                 f"gate stage '{approval.stage_key}'"
             )
+
+    def _settle_rework_pause(self, ticket: Ticket, approval: Approval, *, approved: bool) -> None:
+        """Give a resolved rework pause its loop budget back.
+
+        The cap counts reroutes to one target stage and does not forget them, so
+        a pause resolved without this buys exactly one more round before the
+        identical cap fires again — the operator is asked the same question after
+        every round, which is noise rather than a safeguard. Resolving the pause
+        *is* the deliberate decision the budget persists to require, on both
+        answers: approving says the loop is over, rejecting says it may have one
+        more real go.
+
+        A reset marker, not a deletion — the feedback rows are what the re-run
+        agent reads (`services.rework_feedback`).
+        """
+        target_stage = rework_pause_target(approval.tool_input_json)
+        if not target_stage:
+            return
+        verdict = "accepted the stage" if approved else "sent the work back"
+        forgiven = reset_rework_budget(
+            self.session,
+            ticket,
+            target_stage=target_stage,
+            reason=(
+                f"Rework pause on '{approval.stage_key}' resolved by a person who "
+                f"{verdict} (approval {approval.id})."
+            ),
+        )
+        # Said out loud because it changes what the cap will do next: the counter
+        # a reader might go looking for is now zero on purpose.
+        logger.info(
+            "Rework pause on %s resolved (%s); '%s' loop budget reset, forgiving %d round(s)",
+            ticket.external_id,
+            verdict,
+            target_stage,
+            forgiven,
+        )
 
     def _apply_gate_resolution(
         self,
@@ -1308,6 +1359,9 @@ class ApprovalService:
             return
 
         from loregarden.services.workflow_routing import apply_stage_route
+
+        if approval.kind is ApprovalKind.REWORK_PAUSE:
+            self._settle_rework_pause(ticket, approval, approved=approved)
 
         if approved and rework_route_key:
             note = response_text.strip() or (
@@ -1326,6 +1380,16 @@ class ApprovalService:
                 blocking_issues=f"'{approval.stage_key}' gate approved with rework: {note}",
             )
         elif approved:
+            if approval.kind is ApprovalKind.REWORK_PAUSE:
+                # Cleared BEFORE the status write, not after: `set_stage_status`
+                # reconciles ticket.state on the way out, and
+                # `_derive_ticket_state` returns BLOCKED for any ticket whose
+                # `blocking_issues` is set while the cursor sits on a
+                # BLOCKED/RUNNING/AWAITING stage. Clearing afterwards leaves the
+                # state derived from a pause the operator has just resolved —
+                # invisible when the next stage happens to be PENDING, and wrong
+                # the moment it is a gate.
+                ticket.blocking_issues = ""
             set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
         else:
             reject_message = response_text.strip() or "Human rejected approval"

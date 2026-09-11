@@ -15,6 +15,7 @@ from loregarden.core.workflow_loader import get_template_stages, sync_workflow_t
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    BlockOrigin,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -134,6 +135,7 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
     callbacks.block_ticket(
         orch_run,
         ticket,
+        origin=BlockOrigin.AGENT,
         stage_key="implement",
         message=_RAW_DUMP,
     )

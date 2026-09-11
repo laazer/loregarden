@@ -10,6 +10,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
+    BlockOrigin,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -257,6 +258,8 @@ class BuiltinOrchestrator:
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,
+                # An exception this driver caught at the run boundary.
+                origin=BlockOrigin.CONTROL_PLANE,
                 message=str(exc),
             )
         self.session.refresh(orch_run)
@@ -508,6 +511,9 @@ class BuiltinOrchestrator:
         self.callbacks.block_ticket(
             orch_run,
             ticket,
+            # The members' own failure text, joined — a reviewer asking for a
+            # person is an agent asking, so the handover check still applies.
+            origin=BlockOrigin.AGENT,
             stage_key=target_key,
             message=message or "Parallel stage failed",
         )
@@ -565,6 +571,8 @@ class BuiltinOrchestrator:
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,
+                # The stage sub-agent's own stderr.
+                origin=BlockOrigin.AGENT,
                 stage_key=target_key,
                 message=completed.stderr or "Stage sub-agent failed",
             )

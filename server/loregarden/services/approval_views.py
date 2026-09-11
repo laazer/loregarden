@@ -22,6 +22,13 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 
+#: Kinds whose resolution routes the workflow, and so need somewhere to route
+#: to. Mirrors `orchestration._ROUTABLE_APPROVAL_KINDS`; a rework pause offers
+#: the same upstream targets a gate does, because it is asking the same
+#: question — accept this stage, or send the work back and where to.
+_ROUTABLE_KINDS = frozenset({ApprovalKind.WORKFLOW_GATE, ApprovalKind.REWORK_PAUSE})
+
+
 def _gate_route_options(session: Session, ticket: Ticket | None, gate_stage_key: str) -> list[dict]:
     """Stages upstream of a workflow gate, offered as approve-and-rework targets."""
     from loregarden.services.workflow_service import resolve_ticket_stages
@@ -118,7 +125,7 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
     prepared_action = _parsed_prepared_action(approval)
 
     route_options: list[dict] = []
-    if approval.kind == ApprovalKind.WORKFLOW_GATE and approval.status == ApprovalStatus.PENDING:
+    if approval.kind in _ROUTABLE_KINDS and approval.status == ApprovalStatus.PENDING:
         route_options = _gate_route_options(session, ticket, approval.stage_key)
 
     return {
