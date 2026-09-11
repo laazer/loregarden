@@ -77,7 +77,7 @@ def validate_stage_route_targets(stages: list[StudioWorkflowStage]) -> None:
 def validate_classify_routes_are_selectable(stages: list[StudioWorkflowStage]) -> None:
     """Reject a classify route nothing can choose on purpose.
 
-    `_select_classify_route` picks a route one of three ways: content scoring on
+    `classify_decision` picks a route one of three ways: content scoring on
     `specialties`/`languages`, the pin when it names exactly one route, or the
     route marked `default`. A route with no specialties, no languages and no
     default flag is reachable by none of them — it can only be reached by being
@@ -94,7 +94,7 @@ def validate_classify_routes_are_selectable(stages: list[StudioWorkflowStage]) -
     branches. `studio-loregarden-tdd-v3`'s triage stage does exactly that — the
     scoper triages everything, and typo/docs work skips ahead to `test-design` —
     and it is a reasonable thing to express. The pin cannot disambiguate it, so
-    `_select_classify_route` declines to let the pin steer there at all; the
+    `classify_decision` declines to let the pin steer there at all; the
     template is fine, and forbidding it would remove a working shortcut.
     """
     unreachable = sorted(

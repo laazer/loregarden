@@ -192,8 +192,19 @@ class QAItem(BaseModel):
 
 
 class QAPart(BaseModel):
+    """A question the agent needs answered before it can continue.
+
+    `items` must be non-empty, because an empty one is not a question — it is a
+    malformed fence, and it used to halt the run anyway: `_agent_plan_reply_complete`
+    treats any qa part as "needs the operator", so a zero-item card parked plan
+    execution behind a card that asked nothing and offered a Send button that
+    could never enable. Failing validation instead degrades the fence to visible
+    text (see `chat_primitives.parser`), which the operator can read and the
+    plan loop treats as an incomplete attempt to continue from.
+    """
+
     primitive: Literal["qa"] = "qa"
-    items: list[QAItem] = Field(default_factory=list)
+    items: list[QAItem] = Field(min_length=1)
     title: str | None = None
     prompt: str | None = None
     interactive: bool = True

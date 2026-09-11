@@ -191,6 +191,28 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     expect(screen.getByRole("button", { name: "Send answers" })).toBeEnabled();
   });
 
+  it("does not offer to answer a Q&A card that carries no questions", () => {
+    // The empty card used to read "Answer these before continuing" over a Send
+    // button nothing could enable, and it halted plan execution waiting for an
+    // answer to nothing.
+    render(<QAPrimitive part={{ primitive: "qa", items: [] }} onSubmit={jest.fn()} />);
+
+    expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+    expect(screen.getByText(/carried no questions/)).toBeInTheDocument();
+    expect(screen.queryByText("Answer these before continuing")).toBeNull();
+  });
+
+  it("counts a single question in the singular", () => {
+    render(
+      <QAPrimitive
+        part={{ primitive: "qa", items: [{ id: "scope", question: "Who is this for?" }] }}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("1 question")).toBeInTheDocument();
+  });
+
   it("renders live branch history and commit detail", async () => {
     mockedBranchActivity.mockResolvedValue({
       branch: "main",

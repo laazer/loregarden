@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass
 
 from loregarden.agents.registry import get_agent
 from loregarden.core.stage_groups import (  # noqa: F401 — re-exported for existing import sites
@@ -18,6 +19,7 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
     is_terminal_stage,
 )
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.models.domain.enums import ClassifyBasis
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
 
@@ -89,8 +91,42 @@ def _word_in_haystack(word: str, haystack: str) -> bool:
     return re.search(pattern, haystack) is not None
 
 
-def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
-    """Returns the keyword hit count if the route is eligible, else None.
+#: Specialties whose synonyms are as good as the word itself.
+#:
+#: `refactor`'s list is curated to exactly that standard — see the comment on
+#: `_SPECIALTY_SYNONYMS`, which left out every generic structural verb for this
+#: reason. Nobody titles a refactor "Refactor…"; they title it "Extract the
+#: retry loop out of the orchestration service", and that verb is the whole
+#: signal. The `frontend`/`backend` lists are the opposite: broad by necessity,
+#: because tickets say "button" and not "frontend", and breadth is where an
+#: incidental hit comes from.
+_PRECISE_SYNONYMS = frozenset({"refactor"})
+
+#: A word the route itself declares is direct evidence about the domain. A
+#: synonym from a broad list is weaker: weighting the two the same is what let
+#: ONE incidental synonym decide a stage.
+_DIRECT_HIT = 2
+_SYNONYM_HIT = 1
+#: What a route must score to take the choice away from the template's declared
+#: default. One direct hit clears it; one synonym on its own does not.
+_OVERRIDE_DEFAULT_SCORE = 2
+#: Matching terms an unowned specialty needs before the stage refuses to
+#: dispatch at all. Refusing is the stronger claim of the two, so it takes at
+#: least as much evidence as overriding a default: a single domain word in a
+#: title ("Needs a server change") is a passing mention, not a specialty.
+_UNROUTEABLE_MIN_HITS = 2
+
+
+@dataclass(frozen=True)
+class _RouteMatch:
+    """Weighted evidence for one route, and how much of it was direct."""
+
+    score: int
+    direct: int
+
+
+def _route_match_score(route: ClassifyRoute, haystack: str) -> _RouteMatch | None:
+    """Returns the route's weighted evidence if it is eligible, else None.
 
     Specialty is the hard gate: tickets rarely spell out an implementation
     language, but they do describe the domain (buttons, endpoints, etc.), so
@@ -98,17 +134,104 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
     only contributes bonus score to break ties between otherwise-eligible
     routes — requiring it outright meant tickets that never mention
     "typescript"/"python"/etc. could never match any language-scoped route.
+
+    Direct and synonym hits are counted separately because they are not equally
+    good evidence — see `_DIRECT_HIT` and `ClassifyBasis`.
     """
-    spec_words: list[str] = []
-    for spec in route.specialties:
-        spec_words.append(spec)
-        spec_words.extend(_SPECIALTY_SYNONYMS.get(spec.lower(), []))
-    spec_hits = [word for word in spec_words if _word_in_haystack(word, haystack)]
-    if route.specialties and not spec_hits:
+    direct_specs = [spec for spec in route.specialties if _word_in_haystack(spec, haystack)]
+    precise_specs = [
+        word
+        for spec in route.specialties
+        if spec.lower() in _PRECISE_SYNONYMS
+        for word in _SPECIALTY_SYNONYMS.get(spec.lower(), [])
+        if _word_in_haystack(word, haystack)
+    ]
+    broad_specs = [
+        word
+        for spec in route.specialties
+        if spec.lower() not in _PRECISE_SYNONYMS
+        for word in _SPECIALTY_SYNONYMS.get(spec.lower(), [])
+        if _word_in_haystack(word, haystack)
+    ]
+    if route.specialties and not (direct_specs or precise_specs or broad_specs):
         return None
 
     lang_hits = [lang for lang in route.languages if _word_in_haystack(lang, haystack)]
-    return len(spec_hits) + len(lang_hits)
+    direct = len(direct_specs) + len(precise_specs) + len(lang_hits)
+    return _RouteMatch(
+        score=_DIRECT_HIT * direct + _SYNONYM_HIT * len(broad_specs),
+        direct=direct,
+    )
+
+
+def _specialty_evidence(haystack: str) -> dict[str, int]:
+    """Hits in *haystack* for each specialty vocabulary this module knows.
+
+    Roster-independent on purpose: it answers "what is this ticket about",
+    which is the question a stage whose routes all miss cannot answer for
+    itself.
+    """
+    evidence: dict[str, int] = {}
+    for spec, synonyms in _SPECIALTY_SYNONYMS.items():
+        words = [spec, *synonyms]
+        evidence[spec] = sum(1 for word in words if _word_in_haystack(word, haystack))
+    return evidence
+
+
+def _routes_by_specialist(stage: WorkflowStageDef) -> bool:
+    """Whether this stage's routes partition work between different specialists.
+
+    `studio-loregarden-tdd-v3`'s `triage` does not: both its routes name
+    `ticket_scoper`, and they split on ticket *size* (typo/docs work jumps
+    ahead) rather than on domain. A stage like that has no specialty to be
+    missing, and treating one as unowned would have called 217 live tickets
+    unrouteable for wanting a backend specialist from a stage that never
+    dispatches one.
+    """
+    return len({route.agent_id for route in stage.classify_routes if not route.default}) > 1
+
+
+def _specialty_is_owned(stage: WorkflowStageDef, specialty: str) -> bool:
+    """Whether any route here covers *specialty*.
+
+    Declared specialties are the real answer. The agent id is the fallback for
+    the route that declares none — which is every `default` route in the live
+    templates, and `spike`'s default is `backend_implementer`, an agent that
+    plainly owns backend work while saying nothing about it in routing data.
+    Reading the id is a heuristic, and it is the conservative direction: it can
+    only ever suppress an unrouteable verdict, never invent one.
+    """
+    for route in stage.classify_routes:
+        if any(spec.lower() == specialty for spec in route.specialties):
+            return True
+        if specialty in (route.agent_id or "").lower():
+            return True
+    return False
+
+
+def _unowned_specialty(stage: WorkflowStageDef, haystack: str) -> tuple[str, int]:
+    """The specialty this ticket argues for that no route here covers.
+
+    Returns ("", 0) whenever the stage has a candidate — including when the
+    evidence is silent, which is ambiguity rather than a template defect and is
+    what the declared default exists for. A specialty only counts as unowned if
+    it outscores every specialty the roster does cover: a tie means the stage
+    can field someone.
+    """
+    if not _routes_by_specialist(stage):
+        return "", 0
+    evidence = {spec: hits for spec, hits in _specialty_evidence(haystack).items() if hits}
+    if not evidence:
+        return "", 0
+    owned = {spec for spec in evidence if _specialty_is_owned(stage, spec)}
+    top, top_hits = max(evidence.items(), key=lambda item: item[1])
+    if top in owned:
+        return "", 0
+    if top_hits < _UNROUTEABLE_MIN_HITS:
+        return "", 0
+    if any(hits >= top_hits for spec, hits in evidence.items() if spec in owned):
+        return "", 0
+    return top, top_hits
 
 
 def _classify_haystack(ticket: Ticket) -> str:
@@ -139,8 +262,23 @@ def _classify_haystack(ticket: Ticket) -> str:
     ).lower()
 
 
-def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyRoute | None:
-    """Pick the winning route, or None when the stage isn't classify-routed.
+@dataclass(frozen=True)
+class ClassifyDecision:
+    """Which route a classify stage picked for a ticket, and on what evidence.
+
+    `route` is None only for `UNROUTEABLE`, where the honest answer is that the
+    stage has nobody to send this to. Every other basis names a route the stage
+    can actually dispatch — `detail` says why it won, for the reader who has to
+    trust it.
+    """
+
+    route: ClassifyRoute | None
+    basis: ClassifyBasis
+    detail: str = ""
+
+
+def classify_decision(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyDecision | None:
+    """Resolve `stage`'s route for `ticket`, or None when it isn't classify-routed.
 
     Shared by the agent and branch resolvers so a stage's agent and its branch
     always come from the same route.
@@ -152,24 +290,51 @@ def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyR
 
     default_route: ClassifyRoute | None = None
     best_route: ClassifyRoute | None = None
-    best_score = -1
+    best_match: _RouteMatch | None = None
     for route in stage.classify_routes:
         if route.default:
             default_route = route
-        score = _route_match_score(route, haystack)
-        if score is not None and score > best_score:
+        match = _route_match_score(route, haystack)
+        if match is not None and (best_match is None or match.score > best_match.score):
             best_route = route
-            best_score = score
+            best_match = match
 
     # Content classification wins whenever the ticket's current text gives a
-    # real keyword signal (best_score > 0). Only fall back to the sticky
-    # next_agent hint when the text is ambiguous — otherwise a stale hint
-    # left over from an earlier, unrelated stage (e.g. next_agent stuck on
-    # "frontend_implementer" from a prior route) permanently overrides a
-    # ticket that has since been correctly reclassified to a different
-    # specialist. See loregarden #164 / stale-next_agent classify loop.
-    if best_route is not None and best_score > 0:
-        return best_route
+    # real keyword signal. Only fall back to the sticky next_agent hint when the
+    # text is ambiguous — otherwise a stale hint left over from an earlier,
+    # unrelated stage (e.g. next_agent stuck on "frontend_implementer" from a
+    # prior route) permanently overrides a ticket that has since been correctly
+    # reclassified to a different specialist. See loregarden #164 /
+    # stale-next_agent classify loop.
+    #
+    # "Real" is the part that was missing. A lone synonym used to clear this bar
+    # and beat a route the template had declared `default` — see ClassifyBasis.
+    # A stage with no declared default has nothing better than its best match,
+    # so one hit still decides there.
+    threshold = _OVERRIDE_DEFAULT_SCORE if default_route is not None else 1
+    if best_route is not None and best_match is not None and best_match.score >= threshold:
+        return ClassifyDecision(
+            best_route,
+            ClassifyBasis.CONTENT,
+            f"matched on {best_match.direct} declared term(s), score {best_match.score}",
+        )
+
+    # Checked before the pin, deliberately. The pin is written from the previous
+    # dispatch, so on a ticket no route owns it is the wrong answer replaying
+    # itself — which is how blob-procedural-sdf-25 ran five identical times.
+    unowned, unowned_hits = _unowned_specialty(stage, haystack)
+    if unowned:
+        declared = sorted({spec for route in stage.classify_routes for spec in route.specialties})
+        return ClassifyDecision(
+            None,
+            ClassifyBasis.UNROUTEABLE,
+            f"this ticket reads as {unowned!r} work ({unowned_hits} matching terms) and no "
+            f"route on stage {stage.key!r} covers that specialty — the routes cover "
+            f"{', '.join(declared) or '(nothing)'} across agents "
+            f"{', '.join(sorted({r.agent_id for r in stage.classify_routes if r.agent_id}))}. "
+            f"Add a route for {unowned!r} to the workflow template, "
+            f"or re-scope the ticket",
+        )
 
     # The pin steers only when it names exactly ONE route. It carries an agent,
     # and an agent does not identify a route: `studio-loregarden-tdd-v3`'s triage
@@ -193,22 +358,51 @@ def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyR
     if next_agent and get_agent(next_agent):
         matches = [route for route in stage.classify_routes if route.agent_id == next_agent]
         if len(matches) == 1:
-            return matches[0]
+            return ClassifyDecision(matches[0], ClassifyBasis.PIN, f"next_agent {next_agent!r}")
 
-    return best_route or default_route or stage.classify_routes[0]
+    # `default_route` first: a best match that failed the threshold above is
+    # evidence too weak to override the default, and must not win by falling
+    # through here instead.
+    fallback = default_route or best_route or stage.classify_routes[0]
+    return ClassifyDecision(fallback, ClassifyBasis.DEFAULT, "no route earned the choice")
 
 
 def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
-    route = _select_classify_route(ticket, stage)
-    if route is None:
+    """The agent and skill `stage` dispatches for `ticket`.
+
+    ("", "") when no route owns the work. Readers render that as a gap
+    (`resolve_display_agent`); dispatch refuses it with the reason
+    (`unrouteable_classify_detail`), rather than sending the ticket to an agent
+    that will decline it and exit `succeeded`.
+    """
+    decision = classify_decision(ticket, stage)
+    if decision is None:
         return stage.agent_id, stage.skill_name
-    return route.agent_id, route.skill_name or stage.skill_name
+    if decision.route is None:
+        logger.warning(
+            "Classify stage %r cannot route ticket %s: %s",
+            stage.key,
+            ticket.external_id or ticket.id,
+            decision.detail,
+        )
+        return "", ""
+    return decision.route.agent_id, decision.route.skill_name or stage.skill_name
+
+
+def unrouteable_classify_detail(ticket: Ticket, stage: WorkflowStageDef) -> str:
+    """Why `stage` has no route for `ticket`, or "" when it has one."""
+    decision = classify_decision(ticket, stage)
+    if decision is None or decision.basis is not ClassifyBasis.UNROUTEABLE:
+        return ""
+    return decision.detail
 
 
 def resolve_classify_branch(ticket: Ticket, stage: WorkflowStageDef) -> str:
     """Stage key this ticket's classify route branches to, or "" for linear flow."""
-    route = _select_classify_route(ticket, stage)
-    return route.to_stage if route else ""
+    decision = classify_decision(ticket, stage)
+    if decision is None or decision.route is None:
+        return ""
+    return decision.route.to_stage
 
 
 def _resolve_next_agent_from_routes(
@@ -332,7 +526,8 @@ def took_light_route(ticket: Ticket, stages: list[WorkflowStageDef]) -> bool:
     for stage in stages:
         if stage.stage_type != "classify":
             continue
-        route = _select_classify_route(ticket, stage)
+        decision = classify_decision(ticket, stage)
+        route = decision.route if decision else None
         if route is not None and (route.to_stage or "").strip():
             return True
     return False

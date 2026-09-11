@@ -29,7 +29,13 @@ export function QAPrimitive({
   const { answers, submitted } = state;
   const setAnswers = (next: (current: string[]) => string[]) =>
     setState((current) => ({ ...current, answers: next(current.answers) }));
-  const canAnswer = part.interactive !== false && Boolean(onSubmit) && !submitted;
+  // A card with no questions is unanswerable, so it must not present itself as
+  // something to answer: it used to render "Answer these before continuing"
+  // over a Send button that could never enable, with nothing to type into.
+  // The server now rejects an empty `items` at parse time; this covers the rows
+  // stored before it did.
+  const canAnswer =
+    items.length > 0 && part.interactive !== false && Boolean(onSubmit) && !submitted;
   const complete = items.length > 0 && items.every((_, index) => answers[index]?.trim());
 
   const submit = () => {
@@ -52,10 +58,12 @@ export function QAPrimitive({
           ? "Answers sent"
           : canAnswer
             ? part.prompt ?? "Answer these before continuing"
-            : "Question and answer review"
+            : items.length
+              ? "Question and answer review"
+              : "Nothing to answer"
       }
-      tone={submitted ? "ok" : canAnswer ? "accent" : "default"}
-      meta={<span>{items.length} questions</span>}
+      tone={submitted ? "ok" : canAnswer ? "accent" : items.length ? "default" : "warn"}
+      meta={<span>{items.length === 1 ? "1 question" : `${items.length} questions`}</span>}
       actions={
         canAnswer ? (
           <button
@@ -100,7 +108,11 @@ export function QAPrimitive({
           ))}
         </div>
       ) : (
-        <p className="lg-primitive-card-sub">No questions supplied.</p>
+        <p className="lg-primitive-card-sub">
+          This card carried no questions, so there is nothing to answer — the
+          agent emitted a malformed question card. Its reply text is unchanged
+          above; reply in the thread to keep going.
+        </p>
       )}
     </PrimitiveCard>
   );
