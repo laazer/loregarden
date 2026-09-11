@@ -37,6 +37,7 @@ function entry(overrides: Partial<BranchTriageEntry> = {}): BranchTriageEntry {
     name: "feature/x",
     is_current: false,
     is_base: false,
+    squash_merged: false,
     ahead: 2,
     behind: 0,
     dirty: false,
