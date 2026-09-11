@@ -52,6 +52,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
+from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
     MonitorConfig,
@@ -60,10 +61,6 @@ from loregarden.services.orchestration_profile import (
 from loregarden.services.run_duration_stats import (
     DurationStats,
     load_duration_stats,
-)
-from loregarden.services.run_interruption import (
-    INTERRUPTION_MESSAGES,
-    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
 )
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
@@ -97,7 +94,7 @@ STALL_FALLBACK = timedelta(hours=6)
 #: already curates the reload artifacts; the orphan sentinel is added because a
 #: parent going terminal underneath a live run is the same kind of event.
 #: Anything an agent wrote is deliberately excluded — see `_detect_unsettled_stages`.
-SETTLEABLE_BLOCKING_MESSAGES = frozenset(INTERRUPTION_MESSAGES | {ORPHAN_OF_TERMINAL_ORCH_MESSAGE})
+SETTLEABLE_BLOCKING_MESSAGES = CONTROL_PLANE_DEATH_MESSAGES
 
 
 def _utcnow() -> datetime:

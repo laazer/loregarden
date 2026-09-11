@@ -6,6 +6,14 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.rework_feedback import MAX_REWORK_REROUTES
+from loregarden.services.stage_attempt_stats import (
+    DEFAULT_LOOKBACK_DAYS,
+    RetryCounter,
+    cap_pressure,
+    load_stage_attempt_stats,
+)
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -147,3 +155,67 @@ def get_analytics(
         # it must never double as the error channel.
         logger.exception("Error retrieving analytics for %s", workspace_id)
         raise HTTPException(status_code=500, detail=f"Could not retrieve analytics: {e}") from e
+
+
+@router.get("/stage-attempts")
+def get_stage_attempt_stats(
+    workspace_id: str = Query("", description="Limit to one workspace; empty means all"),
+    lookback_days: int = Query(DEFAULT_LOOKBACK_DAYS, ge=1, le=365),
+    session: Session = Depends(get_session),
+):
+    """How many attempts each stage needs, and whether the retry caps bound it.
+
+    Exists because four separate ceilings on re-running a stage were set by
+    judgement and nothing measured them. Returns the per-stage attempt profiles
+    alongside a `caps` block comparing each configured ceiling against the worst
+    case actually observed — see `services.stage_attempt_stats` for what the
+    `pass`-verdict oracle does and does not tell you.
+    """
+    try:
+        stats = load_stage_attempt_stats(
+            session,
+            workspace_id=workspace_id or None,
+            lookback_days=lookback_days,
+        )
+    except Exception as e:  # noqa: BLE001 - endpoint boundary
+        # Same reasoning as the analytics endpoints above: a 200 carrying empty
+        # profiles is shaped exactly like "nothing has run yet", so a broken
+        # query would read as a quiet, plausible answer.
+        logger.exception("Error computing stage attempt stats")
+        raise HTTPException(status_code=500, detail=f"Could not compute attempts: {e}") from e
+
+    # The default profile's numbers, not a resolved workspace's: this endpoint
+    # spans workspaces by default, and a per-workspace override is visible in
+    # that workspace's own profile. Each cap is read against its own counter —
+    # see `RetryCounter` for why comparing them all to one metric was wrong.
+    profile = OrchestrationProfile(slug="default")
+    measured = [
+        (
+            "retry_budget.max_attempts_per_stage",
+            profile.retry_budget.max_attempts_per_stage,
+            RetryCounter.DISPATCH,
+        ),
+        (
+            "gates.autofix_max_agent_attempts",
+            profile.gates.autofix_max_agent_attempts,
+            RetryCounter.GATE_FIX,
+        ),
+        ("rework_feedback.MAX_REWORK_REROUTES", MAX_REWORK_REROUTES, RetryCounter.REWORK),
+        (
+            "retry_budget.max_transient_retries",
+            profile.retry_budget.max_transient_retries,
+            RetryCounter.TRANSIENT,
+        ),
+    ]
+    caps = [
+        cap_pressure(
+            session,
+            name=name,
+            cap=cap,
+            counter=counter,
+            workspace_id=workspace_id or None,
+            lookback_days=lookback_days,
+        )
+        for name, cap, counter in measured
+    ]
+    return {"stats": stats.model_dump(mode="json"), "caps": [cap.model_dump() for cap in caps]}

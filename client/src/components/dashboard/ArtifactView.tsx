@@ -1,10 +1,70 @@
 import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
-import type { ContextSection } from "../../api/types";
+import type { ContextSection, TransientRetryNotice } from "../../api/types";
 import { formatLocalTimestamp, formatRelativeAge, runTimestamp } from "../../lib/timestamps";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 import { RunLedgerPanel } from "../RunLedgerPanel";
 import { StageFanoutPanel } from "../StageFanoutPanel";
+
+/**
+ * Stages the control plane re-ran by itself. Not styled as an error, because it
+ * is not one: the run died of infrastructure — a lost CLI login, a reaped lease
+ * — and the stage was re-armed rather than blocked, so the work is in progress.
+ *
+ * It lives on the Errors tab all the same, since that is where an operator looks
+ * when asking "why is this taking so long", and the honest answer is "it has
+ * attempted this twice". Without this panel a retry is invisible: the ticket is
+ * deliberately unblocked, `blocking_issues` is empty by design, and a stage that
+ * quietly ran five times looked exactly like one that ran once.
+ */
+function TransientRetryPanel({ notices }: { notices: TransientRetryNotice[] }) {
+  // Grouped by stage: five retries of `implement` is one fact about one stage,
+  // not five things to read.
+  const byStage = new Map<string, TransientRetryNotice[]>();
+  for (const notice of notices) {
+    const bucket = byStage.get(notice.stage_key);
+    if (bucket) bucket.push(notice);
+    else byStage.set(notice.stage_key, [notice]);
+  }
+
+  return (
+    <div
+      className="list-btn"
+      style={{
+        padding: "11px 16px",
+        borderColor: "rgba(240,176,63,.35)",
+        background: "rgba(240,176,63,.08)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          color: "var(--txl)",
+        }}
+      >
+        Automatic retries
+      </div>
+      {[...byStage.entries()].map(([stageKey, forStage]) => {
+        const latest = forStage[forStage.length - 1];
+        return (
+          <div key={stageKey} style={{ marginTop: 8 }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)" }}>
+              {stageKey} · {forStage.length}
+              {forStage.length === 1 ? " retry" : " retries"}
+              {latest.at ? ` · last ${formatLocalTimestamp(latest.at)}` : ""}
+            </div>
+            <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--tx)", marginTop: 4 }}>
+              {latest.message || "Re-dispatched after an infrastructure failure."}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ArtifactView({
   tab,
@@ -83,7 +143,13 @@ export function ArtifactView({
   if (tab === "errors") {
     const errorArt = art.error;
     const failedRuns = runs.filter((r) => r.status === "failed");
-    const hasContent = Boolean(ticket.blocking_issues || errorArt || failedRuns.length);
+    const retries = art.transient_retries ?? [];
+    // Retries count as content: a ticket whose only history is "the machine
+    // failed under it twice and it carried on" must not report "No errors
+    // recorded", which reads as nothing having happened.
+    const hasContent = Boolean(
+      ticket.blocking_issues || errorArt || failedRuns.length || retries.length,
+    );
     if (!hasContent) return <EmptyArtifacts label="No errors recorded" />;
     // The error artifact records a run_code, not an id — the log fetch needs an
     // id, and the run row is also where that failure's timestamps live.
@@ -92,6 +158,7 @@ export function ArtifactView({
 
     return (
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 6, minHeight: 0 }}>
+        {retries.length > 0 && <TransientRetryPanel notices={retries} />}
         {(ticket.blocking_issues || errorArt?.message) && (
           <div
             className="list-btn"

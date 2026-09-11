@@ -35,6 +35,7 @@ from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
 )
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
@@ -45,6 +46,14 @@ from loregarden.services.stage_report import (
     StageReport,
     parse_stage_report,
     stage_report_artifact_content,
+)
+from loregarden.services.stage_transient_retry import (
+    clear_transient_retries,
+    count_transient_retries,
+    record_transient_retry,
+    retry_exhausted_message,
+    retrying_message,
+    transient_failure_reason,
 )
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.usage_limits import (
@@ -375,6 +384,11 @@ def _advance_clean_exit(
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         return None
 
+    # The stage produced a verdict, so whatever infrastructure trouble it had on
+    # the way is behind it. A rework round or a re-run months later must not
+    # inherit retries spent on a server reload that had nothing to do with it.
+    clear_transient_retries(orch.session, ticket.id, run.stage_key)
+
     gate_approval: Approval | None = None
     stage_status = StageStatus.DONE
     stage_def = next((s for s in stages if s.key == run.stage_key), None)
@@ -389,6 +403,93 @@ def _advance_clean_exit(
     set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
     ticket.blocking_issues = ""
     return gate_approval
+
+
+def _rearmed_for_transient_retry(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance,
+    stages,
+    status: RunStatus,
+    stderr: str,
+    *,
+    stdout: str,
+) -> bool:
+    """Settle a run that never got to attempt the work; True if it did settle it.
+
+    Returns False when the failure is not an infrastructure death, so the
+    caller's chain carries on to the branches that judge the work — including a
+    clean exit with no stage report, which keeps its fail-closed block. When it
+    does own the failure, both outcomes are terminal here: the stage is re-armed
+    to PENDING for the driver still holding it, or — with the retries spent —
+    blocked with a reason that names the environment rather than the agent.
+
+    The stage is re-armed by clearing `blocking_issues` as well as setting
+    PENDING: `reconcile_workflow_state` reads that text to decide a ticket is
+    blocked, so a stage left PENDING with stale blocking prose is reported as
+    BLOCKED by the very next reconcile and the retry never happens.
+    """
+    reason = transient_failure_reason(status, stdout=stdout, stderr=stderr)
+    if not reason:
+        return False
+
+    workspace = orch.session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        # No workspace, no profile, no budget to read. Fall through to the
+        # ordinary failure branches rather than retrying against a guess.
+        logger.warning(
+            "Ticket %s has no workspace; not retrying the transient failure on stage %r",
+            ticket.id,
+            run.stage_key,
+        )
+        return False
+    config = resolve_orchestration_profile(workspace).retry_budget
+    if config.max_transient_retries <= 0:
+        # Turned off for this workspace. Hand the failure back to the branches
+        # that existed before this feature, so a disabled retry reads as the old
+        # behaviour — the provider's own stderr in front of a human — and not as
+        # "exhausted 0 retries", which would bury the actual error under prose
+        # about a budget nobody was spending.
+        return False
+    detail = stderr[:2000] or stdout[-500:] or "Agent run failed"
+    spent = count_transient_retries(orch.session, ticket.id, run.stage_key)
+
+    if spent >= config.max_transient_retries:
+        message = retry_exhausted_message(run.stage_key, spent, detail)
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+        logger.warning(
+            "Stage %r on ticket %s exhausted %d transient retries (%s)",
+            run.stage_key,
+            ticket.external_id,
+            spent,
+            reason,
+        )
+        return True
+
+    # The marker is both the charge and the record: see `record_transient_retry`
+    # for why the note does not go to `blocking_issues` or an error artifact.
+    record_transient_retry(
+        orch.session,
+        ticket.id,
+        run.stage_key,
+        run_id=run.id,
+        reason=reason,
+        message=retrying_message(run.stage_key, spent + 1, config, detail),
+    )
+    ticket.blocking_issues = ""
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.PENDING)
+    logger.warning(
+        "Stage %r on ticket %s re-armed for transient retry %d of %d (%s)",
+        run.stage_key,
+        ticket.external_id,
+        spent + 1,
+        config.max_transient_retries,
+        reason,
+    )
+    return True
 
 
 def advance_stage_after_run(
@@ -423,7 +524,18 @@ def advance_stage_after_run(
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     elif report and report.status in ("fail", "needs_rework"):
+        clear_transient_retries(orch.session, ticket.id, run.stage_key)
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
+    elif report is None and _rearmed_for_transient_retry(
+        orch, ticket, run, instance, stages, status, stderr, stdout=stdout
+    ):
+        # The run died of infrastructure, so it said nothing about the work. The
+        # helper has already re-armed the stage or blocked it for having spent
+        # its retries, so there is nothing left here to advance or block. A
+        # clean exit with no stage report deliberately does NOT come through
+        # here — see `stage_transient_retry`'s docstring — it falls to
+        # `_advance_clean_exit` below and keeps its fail-closed block.
+        pass
     elif status == RunStatus.SUCCEEDED:
         gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)
     elif status == RunStatus.CANCELLED:

@@ -10,6 +10,7 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    utcnow,
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -161,7 +162,10 @@ def test_startup_resume_ignores_genuine_terminal_and_external_blocks(isolated_db
         assert resume_interrupted_orchestrations(session) == []
 
 
-def test_startup_resume_skips_manual_and_already_active_tickets(isolated_db):
+def test_startup_resume_skips_an_unidentifiable_stage_and_already_active_tickets(isolated_db):
+    """A ticket wearing the interruption message with no run behind it names no
+    stage to re-run, so there is nothing to recover — distinct from a manual
+    interruption that does name one, which `_resume_plan` now re-runs."""
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = _ticket(session)
@@ -243,3 +247,57 @@ def test_lifespan_scans_for_resumes_after_reconciliation(isolated_db):
         asyncio.run(run_lifespan())
 
     assert order == ["agent-runs", "orchestration-runs", "stranded-stages", "resume"]
+
+
+# --------------------------------------------------------------------------- #
+# Who was driving decides how the ticket is recovered                          #
+# --------------------------------------------------------------------------- #
+
+
+def _interrupt_manual(session: Session) -> Ticket:
+    """A ticket whose single stage was started by hand — no orchestration run at
+    all, which is how 52 of the 82 interrupted runs measured were dispatched."""
+    seed_database(session)
+    ticket = _ticket(session)
+    agent_run = OrchestrationService(session).start_run(ticket, stage_key="testing")
+    agent_run.status = RunStatus.RUNNING
+    session.add(agent_run)
+    session.commit()
+
+    fail_interrupted_runs(session, ticket_id=ticket.id)
+    session.refresh(ticket)
+    return ticket
+
+
+def test_a_manual_interruption_re_runs_only_the_interrupted_stage(isolated_db):
+    """Resuming a full autopilot drive here would run a ticket somebody started
+    one stage of to completion. `stop_at_stage_key` re-runs exactly that stage."""
+    with Session(isolated_db) as session:
+        ticket = _interrupt_manual(session)
+
+        with patch(
+            "loregarden.services.orchestration_recovery.schedule_interrupted_resumes"
+        ) as schedule:
+            assert resume_interrupted_orchestrations(session) == [ticket.id]
+
+        schedule.assert_called_once_with(
+            [
+                InterruptionResume(
+                    ticket_id=ticket.id,
+                    auto_approve=False,
+                    stop_at_stage_key="testing",
+                    timeout_seconds=None,
+                )
+            ]
+        )
+
+
+def test_a_cancelled_orchestration_is_never_resumed(isolated_db):
+    """A human stopped it. Restarting would fight the stop."""
+    with Session(isolated_db) as session:
+        ticket, previous = _interrupt_builtin(session)
+        previous.cancel_requested_at = utcnow()
+        session.add(previous)
+        session.commit()
+
+        assert resume_interrupted_orchestrations(session) == []

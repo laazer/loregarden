@@ -20,11 +20,8 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.doctor import park_for_environment
-from loregarden.services.orchestration import (
-    ApprovalService,
-    OrchestrationService,
-    _consume_dispatch_waiver,
-)
+from loregarden.services.orchestration import ApprovalService, OrchestrationService
+from loregarden.services.stage_dispatch_prep import consume_dispatch_waiver
 from loregarden.services.subtree_auto_run import auto_resolve_awaiting_gate
 from loregarden.services.workflow_state import reconcile_workflow_state
 from sqlmodel import Session, select
@@ -151,9 +148,9 @@ def test_the_waiver_is_spent_by_the_stage_it_names_and_only_once(db_session, par
     ticket.dispatch_waiver_stage_key = stage_key
     ticket.dispatch_waiver_approval_id = approval.id
 
-    assert _consume_dispatch_waiver(ticket, stage_key) == approval.id
+    assert consume_dispatch_waiver(ticket, stage_key) == approval.id
     assert ticket.dispatch_waiver_stage_key == ""
-    assert _consume_dispatch_waiver(ticket, stage_key) == ""
+    assert consume_dispatch_waiver(ticket, stage_key) == ""
 
 
 def test_another_stage_does_not_spend_a_waiver_meant_for_this_one(db_session, parked):
@@ -163,7 +160,7 @@ def test_another_stage_does_not_spend_a_waiver_meant_for_this_one(db_session, pa
     ticket.dispatch_waiver_stage_key = stage_key
     ticket.dispatch_waiver_approval_id = approval.id
 
-    assert _consume_dispatch_waiver(ticket, "some-other-stage") == ""
+    assert consume_dispatch_waiver(ticket, "some-other-stage") == ""
     assert ticket.dispatch_waiver_stage_key == stage_key
 
 

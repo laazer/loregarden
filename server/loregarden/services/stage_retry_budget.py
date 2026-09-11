@@ -136,7 +136,10 @@ class StageDispatchDecision(BaseModel):
 NO_RENEWER_DISPATCH_CEILING = timedelta(hours=6)
 
 
-def _dispatch_title(stage_key: str) -> str:
+def stage_dispatch_artifact_title(stage_key: str) -> str:
+    """Public alongside `gate_failure_artifact_title`, and for the same reason:
+    `stage_attempt_stats` counts these rows to report how close real work comes
+    to the budget, and it must count exactly what the budget is enforced on."""
     return f"stage-dispatch:{stage_key}"
 
 
@@ -215,7 +218,7 @@ def record_stage_dispatch(session: Session, ticket_id: str, stage_key: str) -> N
         Artifact(
             ticket_id=ticket_id,
             kind=_DISPATCH_KIND,
-            title=_dispatch_title(stage_key),
+            title=stage_dispatch_artifact_title(stage_key),
         )
     )
     session.commit()
@@ -224,7 +227,9 @@ def record_stage_dispatch(session: Session, ticket_id: str, stage_key: str) -> N
 def count_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> int:
     """How many times ``record_stage_dispatch`` has run for this (ticket, stage)
     pair, ever — across every orchestration run against the ticket."""
-    return len(_markers(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key)))
+    return len(
+        _markers(session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key))
+    )
 
 
 def clear_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> int:
@@ -240,7 +245,9 @@ def clear_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> 
     to hand the stage to.
     """
     _drop_markers(session, ticket_id, _DISPATCH_REROUTE_KIND, _reroute_title(stage_key))
-    return _drop_markers(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key))
+    return _drop_markers(
+        session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key)
+    )
 
 
 def refund_stage_dispatch_budget(session: Session, ticket_id: str, stage_key: str) -> None:
@@ -266,7 +273,9 @@ def refund_stage_dispatch_budget(session: Session, ticket_id: str, stage_key: st
     `blocked_on_stage_retry_budget` as *this breaker's* block the next time the
     stage is blocked for anything at all, and earns a reset nobody asked for.
     """
-    _drop_latest_marker(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key))
+    _drop_latest_marker(
+        session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key)
+    )
     _drop_markers(session, ticket_id, _RETRY_BLOCK_KIND, _block_title(stage_key))
 
 
@@ -301,7 +310,9 @@ def refund_stage_dispatch_charged_before(
     """
     rows = [
         row
-        for row in _markers(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key))
+        for row in _markers(
+            session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key)
+        )
         if row.created_at <= cutoff
     ]
     if not rows:

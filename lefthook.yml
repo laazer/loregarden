@@ -21,6 +21,10 @@
 #   - server-tests: ruff check, ruff format --check (full), then pytest on the
 #     test files that reach the pushed changes through the import graph
 #   - client-tests: oxlint, tsc -b (full), then jest --changedSince
+#   - Both test runners stop at the first failure (pytest -x / jest --bail). The
+#     first failure is the one worth reading — a cascade dominates the output and
+#     picks the wrong suspect — and it bounds what a broken push costs on a
+#     loaded box. CI runs to completion, so the full count is never lost.
 #   - Both fall back to the full suite for any change they cannot map, and CI
 #     still runs everything on every PR — a green push predicts CI, it no longer
 #     proves it. LOREGARDEN_FULL_TESTS=1 runs the full suites here.

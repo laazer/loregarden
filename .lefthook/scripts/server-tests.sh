@@ -65,6 +65,20 @@ fi
 BASETEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
 trap 'rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
 
+# Fail fast. `-x` stops at the first failure instead of collecting every one,
+# because the first failure is the only one worth reading: a cascade dominates
+# the output and picks the wrong suspect. One recorded run here showed 54
+# "unable to find an element" errors downstream of 4 real timeouts, and counting
+# symptoms sent the diagnosis to the wrong file.
+#
+# It also bounds the cost of a bad push on a loaded box. The full-suite fallback
+# is ~45 minutes idle and over 90 under load; stopping at the first red returns
+# the answer in the time it takes to reach it.
+#
+# CI still runs to completion without `-x`, so the total count is never lost —
+# this only changes which report arrives first, and how long a broken push waits
+# to be told.
+
 echo "pre-push: ruff check ..."
 "${RUFF_CMD[@]}" check .
 
@@ -102,9 +116,9 @@ fi
 
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
-  echo "pre-push: pytest -q -n $TEST_WORKERS ..."
+  echo "pre-push: pytest -x -q -n $TEST_WORKERS ..."
   LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -q -n "$TEST_WORKERS" --basetemp="$BASETEMP"
+    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP"
   exit 0
 fi
 
@@ -122,8 +136,8 @@ while IFS= read -r target; do
   FILES+=("$rel")
 done <<< "$TARGETS"
 
-echo "pre-push: pytest -q -n $TEST_WORKERS on ${#FILES[@]} test file(s) reaching the pushed changes:"
+echo "pre-push: pytest -x -q -n $TEST_WORKERS on ${#FILES[@]} test file(s) reaching the pushed changes:"
 printf '  %s\n' "${FILES[@]}"
 echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
 LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-  pytest -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" "${FILES[@]}"
+  pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" "${FILES[@]}"

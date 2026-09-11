@@ -64,7 +64,9 @@ def test_neither_runner_asks_for_every_core():
     client = (SCRIPTS / "client-tests.sh").read_text()
 
     assert "-n auto" not in server, "pytest is back to a worker per core"
-    assert 'pytest -q -n "$TEST_WORKERS"' in server
+    # The budget, not the whole command: this line broke once when `-x` was added
+    # ahead of `-q`, which says nothing about whether the run claims every core.
+    assert '-n "$TEST_WORKERS"' in server
 
     for line in client.splitlines():
         stripped = line.strip()

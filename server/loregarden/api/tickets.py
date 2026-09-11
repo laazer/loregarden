@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -19,6 +20,7 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     RouteWorkflowRequest,
     RunStatus,
+    StageBudgetArtifactKind,
     StageStatus,
     StartOrchestrationRequest,
     StartRunRequest,
@@ -97,6 +99,8 @@ from loregarden.services.workflow_service import (
     workspace_for,
 )
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -266,6 +270,24 @@ def _apply_log_artifacts(
     return False
 
 
+def _retry_payload(art: Artifact) -> dict:
+    """A transient-retry marker's payload, or {} if it will not parse.
+
+    Its own reader because `_artifacts_grouped` parses every artifact's
+    `content_json` in one pass and these are collected in a separate filter —
+    see there for why. An unparseable marker yields an empty message rather than
+    breaking the whole ticket payload: the row's existence is the load-bearing
+    part, since the count is what says the stage ran more than once.
+    """
+    try:
+        return json.loads(art.content_json or "{}")
+    except json.JSONDecodeError:
+        logger.warning(
+            "Transient-retry marker %s does not parse; rendering it without a message", art.id
+        )
+        return {}
+
+
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     from loregarden.models.domain import Workspace
     from loregarden.services.artifact_service import (
@@ -284,6 +306,12 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         "live": None,
         "error": None,
         "pr": None,
+        # Stages re-dispatched automatically after an infrastructure death. A
+        # list, not a latest-wins single value like `error`: the count IS the
+        # information, and the ticket is deliberately NOT blocked while these
+        # accumulate, so nothing else on this payload reveals that a stage ran
+        # more than once.
+        "transient_retries": [],
     }
     artifacts = session.exec(select(Artifact).where(Artifact.ticket_id == ticket_id)).all()
     log_artifacts: list[Artifact] = []
@@ -308,6 +336,24 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
                 grouped["context"].append(content)
         elif art.kind == "pr":
             grouped["pr"] = content
+    # A filter rather than another `elif` in the fold above. That chain is at
+    # McCabe 16 — grandfathered, since the gate only fails growth on touched
+    # lines — and one more branch tipped it to 17. Collecting these separately is
+    # also the better shape: they are selected, not folded, and unlike `error`
+    # every row is kept because the count is the information.
+    grouped["transient_retries"] = sorted(
+        (
+            {
+                "stage_key": art.title.removeprefix("stage-transient-retry:"),
+                "message": _retry_payload(art).get("message", ""),
+                "reason": _retry_payload(art).get("reason", ""),
+                "at": art.created_at.isoformat() if art.created_at else "",
+            }
+            for art in artifacts
+            if art.kind == StageBudgetArtifactKind.TRANSIENT_RETRY
+        ),
+        key=lambda row: row["at"],
+    )
     if error_artifacts:
         latest_error = sorted(
             error_artifacts, key=lambda a: comparable_utc(a.created_at), reverse=True

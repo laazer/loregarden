@@ -44,7 +44,7 @@ class GatesConfig(BaseModel):
     # falling back to blocking for a human.
     autofix_commands: list[str] = Field(default_factory=list)
     autofix_agent_fallback: bool = True
-    autofix_max_agent_attempts: int = 2
+    autofix_max_agent_attempts: int = 3
 
 
 class GitAutomationConfig(BaseModel):
@@ -92,8 +92,35 @@ class BoundaryConfig(BaseModel):
 
 
 class RetryBudgetConfig(BaseModel):
+    """Two bounds on re-running one stage, counting different things.
+
+    ``max_attempts_per_stage`` is the runaway backstop — the last thing standing
+    between a stage that can never pass and an unbounded spend. It is deliberately
+    wide, because every narrower cap in the pipeline sits inside it: gate recovery
+    re-dispatches the stage up to ``GatesConfig.autofix_max_agent_attempts`` times
+    and the rework loop up to ``MAX_REWORK_REROUTES``, and each of those
+    re-dispatches charges here. A backstop set at either of their scales would fire
+    first and take the blame for a loop it was not measuring — so it is set above
+    their sum plus headroom, and only a stage genuinely cycling reaches it. It was
+    5 until the counting was fixed, where it could not fire: measured across every
+    dispatch marker ever written, the breaker blocked nothing while stages ran 28
+    and 46 times.
+
+    ``max_transient_retries`` counts the opposite thing: re-dispatches after a run
+    that never got to attempt the work — a server reload, a CLI that could not
+    authenticate, a clean exit with no stage report. Those are not charged to the
+    backstop above (they are not attempts) and have their own, separate counter per
+    (ticket, stage). Before it existed nothing retried them at all: 82 of 179
+    failed runs died with "interrupted before completion (server reload or worker
+    stopped)" and each one parked its ticket for a human, under a message that
+    said to re-run the stage. See `services.stage_transient_retry`.
+    """
+
     enabled: bool = True
-    max_attempts_per_stage: int = 5
+    max_attempts_per_stage: int = 12
+    #: Automatic re-dispatches allowed per (ticket, stage) after an
+    #: infrastructure or protocol failure. 0 disables them.
+    max_transient_retries: int = 5
 
 
 class MonitorConfig(BaseModel):

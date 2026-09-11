@@ -206,13 +206,56 @@ def test_server_hook_falls_back_to_the_full_suite():
     answering. The intent asserted here is unchanged — both paths out of
     selection invoke pytest for real — and the *absence* of `-n auto` is pinned
     in test_prepush_worker_budget, which owns the budget itself.
+
+    Matched on the invocation's stable tail rather than on the whole command.
+    This assertion has now broken twice for a reason it does not care about: once
+    when the worker count changed, and once when `-x` was added in front of `-q`.
+    Both times the property it names — every path out of selection reaches a real
+    pytest run — was still true. `-n "$TEST_WORKERS" --basetemp=` identifies the
+    two real call sites exactly (the echo lines interpolate the variable
+    unquoted), and survives a flag being added ahead of it.
     """
     script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
     assert "select_pytest_targets.py" in script
     assert "LOREGARDEN_FULL_TESTS" in script
     assert "-n auto" not in script, "a worker per core is what the budget replaced"
     # Two invocation sites: the full-suite fallback and the narrowed run.
-    assert script.count('pytest -q -n "$TEST_WORKERS"') >= 2
+    assert script.count('-n "$TEST_WORKERS" --basetemp=') >= 2
+
+
+def test_both_pre_push_runners_stop_at_the_first_failure():
+    """Fail fast, on purpose.
+
+    The first failure is the only one worth reading: a cascade dominates the
+    output and picks the wrong suspect — one recorded run here showed 54 "unable
+    to find an element" errors downstream of 4 real timeouts. It also bounds what
+    a broken push costs, which is not academic on this box: the full-suite
+    fallback ran 1:40 under load, and the push that added these flags came back
+    in 7:23 because `-x` stopped it.
+
+    Pinned because removing a flag for "one full local run" is a one-character
+    diff that reads as harmless, and nothing else would notice. CI runs to
+    completion without either flag, so the total count is never lost.
+    """
+    scripts = _ROOT / ".lefthook" / "scripts"
+    server = (scripts / "server-tests.sh").read_text(encoding="utf-8")
+    client = (scripts / "client-tests.sh").read_text(encoding="utf-8")
+
+    # The invocation lines, not the whole file. The first version of this
+    # counted "pytest -x " across the script and was satisfied by the two `echo`
+    # lines that merely print the command — it passed with `-x` stripped from a
+    # real call site, which a mutation check caught and nothing else would have.
+    pytest_calls = [
+        line.strip() for line in server.splitlines() if line.strip().startswith("pytest ")
+    ]
+    assert len(pytest_calls) >= 2, f"expected both invocation sites, found {pytest_calls}"
+    for call in pytest_calls:
+        assert call.startswith("pytest -x "), f"call site is no longer fail-fast: {call}"
+
+    for line in client.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('"${TEST_NICE[@]}" npm test'):
+            assert "--bail" in stripped, f"jest run does not stop at the first failure: {stripped}"
 
 
 def test_server_hook_gives_pytest_a_private_temp_root():
@@ -230,7 +273,17 @@ def test_server_hook_gives_pytest_a_private_temp_root():
     # invocation itself rather than the prefix in front of it: the prefix gained
     # `"${TEST_NICE[@]}"` when the worker budget landed, and a literal that long
     # pins the command's spelling instead of the property being asserted.
-    assert script.count('--basetemp="$BASETEMP"') == script.count('pytest -q -n "$TEST_WORKERS"')
+    # Per invocation line, not by comparing counts of two long literals. That
+    # comparison broke when `-x` was added ahead of `-q` — one side went to zero
+    # and the assertion read `2 == 0`, which says nothing about basetemps. The
+    # property is that no pytest call can be started without its own temp root,
+    # and asking each call line directly is what actually states it.
+    pytest_calls = [
+        line.strip() for line in script.splitlines() if line.strip().startswith("pytest ")
+    ]
+    assert len(pytest_calls) >= 2, f"expected both invocation sites, found {pytest_calls}"
+    for call in pytest_calls:
+        assert '--basetemp="$BASETEMP"' in call, f"pytest call without its own temp root: {call}"
     # Cleanup that cannot itself fail the push.
     assert "trap 'rm -rf \"$BASETEMP\" 2>/dev/null || true' EXIT" in script
 

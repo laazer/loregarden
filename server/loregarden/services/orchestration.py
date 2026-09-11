@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     ApprovalStatus,
     DispatchSurface,
     EventType,
+    OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -40,8 +41,15 @@ from loregarden.services.run_completion import (
     settle_stage_after_failed_completion,
 )
 from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.run_errors import failure_reason
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
+from loregarden.services.stage_dispatch_prep import (
+    consume_dispatch_waiver,
+    consume_next_agent_pin,
+    consume_scope_reroute_pin,
+    resolve_run_agent,
+)
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
     blocked_on_stage_retry_budget,
@@ -50,12 +58,12 @@ from loregarden.services.stage_retry_budget import (
     commit_standalone_stage_dispatch,
     evaluate_standalone_stage_dispatch,
 )
+from loregarden.services.stage_transient_retry import clear_transient_retries
 from loregarden.services.studio_routing import (
     find_terminal_stage,
     is_agentless_stage,
     is_terminal_stage,
     resolve_stage_execution,
-    unrouteable_classify_detail,
 )
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
@@ -99,50 +107,6 @@ class _RunTarget:
     stage_map: dict[str, StageStatus]
 
 
-def _resolve_run_agent(
-    ticket: Ticket,
-    stage_def: WorkflowStageDef,
-    *,
-    agent_id: str | None,
-    skill_name: str | None,
-) -> tuple[str, str | None]:
-    """Which agent (and skill) runs this stage, or why nothing can.
-
-    Explicit ``agent_id``/``skill_name`` win over what the stage resolves to —
-    that is how a driver fans a parallel stage out one member at a time.
-    """
-    resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
-    chosen_agent = agent_id or resolved_agent_id
-    chosen_skill = skill_name or resolved_skill or stage_def.skill_name
-    if is_agentless_stage(stage_def):
-        raise ValueError(
-            f"Stage '{stage_def.key}' is a human approval gate — it does not run an agent CLI."
-        )
-    if not chosen_agent:
-        # A classify stage whose roster has nobody for this ticket says so in
-        # its own words. The generic message below sent readers looking for a
-        # fan-out bug when the fault was a template missing a specialty — and
-        # before this refused at all, the stage dispatched the least-wrong
-        # agent, which declined the work and exited `succeeded` (ClassifyBasis).
-        unrouteable = unrouteable_classify_detail(ticket, stage_def)
-        if unrouteable:
-            raise ValueError(
-                f"Stage '{stage_def.key}' has no route for this ticket: {unrouteable}."
-            )
-        # Two different faults used to share the gate message above, which
-        # sent every reader looking for a gate that was not there. A stage
-        # that *should* run an agent but resolved none is a routing defect —
-        # most often a parallel stage started without naming which member
-        # this run is (`agent_id`), since its agents live in
-        # `parallel_agents` and only a driver can fan them out.
-        raise ValueError(
-            f"Stage '{stage_def.key}' resolved no agent to run it. A "
-            f"'{stage_def.stage_type}' stage must either name an agent or be "
-            "started per member with an explicit agent_id."
-        )
-    return chosen_agent, chosen_skill
-
-
 def _blocking_issue_for_stage(
     session: Session, ticket: Ticket, stage_key: str, message: str
 ) -> str:
@@ -168,61 +132,6 @@ def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
         lines.append("Acceptance criteria:")
         lines.extend(f"- {item}" for item in criteria)
     return "\n".join(lines)
-
-
-def _consume_scope_reroute_pin(ticket: Ticket, chosen_agent: str) -> None:
-    """Clear the scope-denial reroute pin once its dispatch is committed.
-
-    The pin exists to steer this one dispatch to the sibling implementer; clearing
-    it here means a *fresh* denial in this run sets a new pin, but a satisfied one
-    can never linger into a later stage as a stale hint.
-    """
-    if ticket.scope_reroute_agent and ticket.scope_reroute_agent == chosen_agent:
-        ticket.scope_reroute_agent = ""
-
-
-def _consume_dispatch_waiver(ticket: Ticket, stage_key: str) -> str:
-    """Take the one-shot pre-dispatch waiver for `stage_key`, or "" if none.
-
-    Armed by approving a parked stage (`ApprovalService._apply_park_resolution`)
-    and cleared here, so a person's "run it anyway" covers exactly the dispatch
-    it was clicked for. Without the clear, the waiver would follow the ticket
-    into every later stage; without the waiver, the re-dispatched stage would
-    trip the same check and park again, which is the loop that makes "approve"
-    useless rather than merely wrong.
-
-    Stage-scoped for the same reason `_consume_scope_reroute_pin` is agent-scoped:
-    a waiver the dispatch did not match is a request that has not been satisfied,
-    so it stands rather than being silently spent on the wrong stage.
-    """
-    if not ticket.dispatch_waiver_stage_key or ticket.dispatch_waiver_stage_key != stage_key:
-        return ""
-    approval_id = ticket.dispatch_waiver_approval_id
-    ticket.dispatch_waiver_stage_key = ""
-    ticket.dispatch_waiver_approval_id = ""
-    return approval_id
-
-
-def _consume_next_agent_pin(ticket: Ticket, chosen_agent: str) -> None:
-    """Clear the routing hint once the dispatch it asked for has happened.
-
-    `next_agent` is written by a reject to send work back to a named agent
-    (`workflow_routing.apply_stage_route`). It is a request about ONE dispatch,
-    and it was persisted as though it were a standing fact — so a hint set at
-    `verify` was still steering three stages later, which is the stale-pin loop
-    #164 documented.
-
-    Cleared only when the dispatch actually went to the pinned agent, matching
-    `_consume_scope_reroute_pin` above. A dispatch that resolved somewhere else
-    did not satisfy the request, so the request stands.
-
-    This only works because the read path stopped rewriting the field. It used
-    to be restored by `reconcile_workflow_state` on the next
-    `GET /api/tickets/{id}`, so clearing here would have been undone before the
-    stage after it ran.
-    """
-    if ticket.next_agent and ticket.next_agent == chosen_agent:
-        ticket.next_agent = ""
 
 
 #: An orchestration that still claims a lane. Children of anything else are
@@ -516,6 +425,10 @@ class OrchestrationService:
             return
         if clear_dispatches:
             clear_stage_dispatches(self.session, ticket.id, stage_key)
+            # A human resetting the stage is resetting both counters. Leaving the
+            # transient one spent would hand the re-run a stage that blocks on
+            # the first server reload, which is the reset failing to reset.
+            clear_transient_retries(self.session, ticket.id, stage_key)
         if blocked_on_stage_retry_budget(self.session, ticket, stage_key):
             ticket.blocking_issues = ""
             clear_stage_retry_block(self.session, ticket.id, stage_key)
@@ -745,7 +658,6 @@ class OrchestrationService:
         stage_key: str | None = None,
     ) -> Ticket:
         """Open a human approval gate for agentless workflow stages (e.g. approval)."""
-        from loregarden.services.studio_routing import is_agentless_stage, resolve_stage_execution
 
         self.ensure_workflow_instance(ticket, commit=True)
         instance, stages = self._resolve_stages(ticket)
@@ -915,6 +827,7 @@ class OrchestrationService:
         # blocked as though the stage itself had failed
         # (lg-workflow-integrity-688). Refusing costs nothing — the work could
         # not have been recorded against a terminal parent anyway.
+        parent: OrchestrationRun | None = None
         if orchestration_run_id:
             parent = self.session.get(OrchestrationRun, orchestration_run_id)
             if parent is not None and parent.status not in LIVE_ORCHESTRATION_STATUSES:
@@ -926,13 +839,21 @@ class OrchestrationService:
         # decision is partly read from.
         budget_reset_pending = self._stage_start_clears_budget(ticket, target_key, target.stage_map)
 
-        # A dispatch with no orchestration run behind it was counted by nobody:
-        # the orchestrator loop records its own pass through
-        # `enforce_stage_retry_budget` before it ever calls here, so recording
-        # again for an orchestrated run would cost every pass two attempts and
-        # halve the budget.
+        # Charge the dispatch counter unless somebody already charged this pass.
+        # Exactly one caller does: the builtin autopilot loop, which runs
+        # `enforce_stage_retry_budget` before it reaches here — recording again
+        # for one of its passes would cost every pass two attempts and halve the
+        # budget.
+        #
+        # The test used to be "does this run have an orchestration run at all",
+        # and every other driver opens one. So a stage driven over MCP by a
+        # terminal agent (`OrchestrationDriver.EXTERNAL_MCP`) was neither checked
+        # nor counted, on any path: 165 of 194 such runs measured since August
+        # landed on tickets with no dispatch marker at all, and one stage ran 12
+        # times against a budget that read zero. The breaker has never once
+        # fired in the life of this database, and this is the larger half of why.
         decision = None
-        if not orchestration_run_id:
+        if parent is None or parent.driver is not OrchestrationDriver.BUILTIN_AUTOPILOT:
             decision = evaluate_standalone_stage_dispatch(
                 self.session,
                 ticket,
@@ -963,7 +884,7 @@ class OrchestrationService:
         # Safe to move because `_prepare_stage_start` above does not touch
         # `next_agent`, so nothing between the old and new position changes what
         # this resolves to.
-        chosen_agent, chosen_skill = _resolve_run_agent(
+        chosen_agent, chosen_skill = resolve_run_agent(
             ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
         )
 
@@ -985,9 +906,9 @@ class OrchestrationService:
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
 
-        _consume_scope_reroute_pin(ticket, chosen_agent)
-        _consume_next_agent_pin(ticket, chosen_agent)
-        waiver_approval_id = _consume_dispatch_waiver(ticket, target_key)
+        consume_scope_reroute_pin(ticket, chosen_agent)
+        consume_next_agent_pin(ticket, chosen_agent)
+        waiver_approval_id = consume_dispatch_waiver(ticket, target_key)
 
         ticket.workflow_stage_key = target_key
         if target.stage_map.get(target_key) != StageStatus.RUNNING:
@@ -1048,7 +969,20 @@ class OrchestrationService:
         run = stored
         run.status = status
         run.stdout = stdout
-        run.stderr = stderr
+        # A failure with nothing written against it is indistinguishable from a
+        # failure nobody looked at. `failure_reason` never returns "", so the
+        # stage that blocks on this has something to say — see its docstring for
+        # the 19 runs that had nothing.
+        if status is RunStatus.FAILED:
+            recovered = failure_reason(stderr=stderr, stdout=stdout)
+            if recovered != stderr:
+                logger.warning(
+                    "Run %s failed with an empty stderr; recorded the recovered reason instead",
+                    run.run_code,
+                )
+            run.stderr = recovered
+        else:
+            run.stderr = stderr
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()

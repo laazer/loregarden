@@ -17,10 +17,8 @@ is not obvious:
 """
 
 from loregarden.models.domain import Ticket
-from loregarden.services.orchestration import (
-    OrchestrationService,
-    _consume_next_agent_pin,
-)
+from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.stage_dispatch_prep import consume_next_agent_pin
 from sqlmodel import Session, select
 
 
@@ -53,7 +51,7 @@ def test_reading_a_ticket_no_longer_rewrites_its_routing(client, isolated_db):
 def test_the_pin_is_cleared_by_the_dispatch_it_asked_for():
     ticket = Ticket(external_id="x", workspace_id="ws", title="t", next_agent="backend_implementer")
 
-    _consume_next_agent_pin(ticket, "backend_implementer")
+    consume_next_agent_pin(ticket, "backend_implementer")
 
     assert ticket.next_agent == ""
 
@@ -63,7 +61,7 @@ def test_a_dispatch_somewhere_else_leaves_the_request_standing():
     satisfy it, so the hint survives to steer the dispatch it meant."""
     ticket = Ticket(external_id="x", workspace_id="ws", title="t", next_agent="backend_implementer")
 
-    _consume_next_agent_pin(ticket, "frontend_implementer")
+    consume_next_agent_pin(ticket, "frontend_implementer")
 
     assert ticket.next_agent == "backend_implementer"
 
@@ -71,6 +69,6 @@ def test_a_dispatch_somewhere_else_leaves_the_request_standing():
 def test_an_empty_pin_is_not_disturbed_by_a_dispatch():
     ticket = Ticket(external_id="x", workspace_id="ws", title="t", next_agent="")
 
-    _consume_next_agent_pin(ticket, "backend_implementer")
+    consume_next_agent_pin(ticket, "backend_implementer")
 
     assert ticket.next_agent == ""

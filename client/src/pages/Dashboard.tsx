@@ -7,12 +7,8 @@ import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
-import { ApprovalsView } from "../components/dashboard/ApprovalsView";
+import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
 import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
-import { ArtifactView } from "../components/dashboard/ArtifactView";
-import { ArtifactsHub } from "../components/dashboard/ArtifactsHub";
-import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
-import { LogsPanel } from "../components/LogsPanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
@@ -42,7 +38,7 @@ import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from 
 import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
-import { isArtifactTab, isArtifactsSubTab } from "../lib/appNavigation";
+import { isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
@@ -1566,36 +1562,21 @@ export function Dashboard() {
             </div>
           </div>
           <div className="artifact-tab-body">
-            {artifactTab === "logs" && sel ? (
-              <LogsPanel ticket={sel} />
-            ) : isArtifactsSubTab(artifactTab) && sel ? (
-              <ArtifactsHub
-                ticket={sel}
-                subTab={artifactTab}
-                runs={ticketRuns.data ?? []}
-                isActive={hasActiveRun || sel.workflow_stage_status === "running"}
-                hasRunErrors={hasRunErrors}
-                onOpenRunLog={setLogRunId}
-              />
-            ) : artifactTab === "hive" && sel ? (
-              <HiveSimulationPanel ticket={sel} />
-            ) : artifactTab === "approvals" ? (
-              <ApprovalsView ticket={sel} />
-            ) : (
-              <ArtifactView
-                tab={artifactTab}
-                ticket={sel}
-                runs={ticketRuns.data ?? []}
-                onOpenEditorFile={(filePath) =>
-                  openEditorFile(sel?.workspace_slug ?? activeWorkspaceSlug, filePath)
-                }
-                onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
-                isOpeningPr={openPr.isPending}
-                onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}
-                isCommittingPush={commitPush.isPending}
-                onOpenRunLog={setLogRunId}
-              />
-            )}
+            <ArtifactPaneBody
+              artifactTab={artifactTab}
+              ticket={sel}
+              runs={ticketRuns.data ?? []}
+              hasActiveRun={hasActiveRun}
+              hasRunErrors={hasRunErrors}
+              selectedId={selectedId}
+              activeWorkspaceSlug={activeWorkspaceSlug}
+              isOpeningPr={openPr.isPending}
+              isCommittingPush={commitPush.isPending}
+              onOpenRunLog={setLogRunId}
+              onOpenEditorFile={openEditorFile}
+              onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
+              onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}
+            />
           </div>
         </section>
         )}

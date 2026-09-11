@@ -12,7 +12,15 @@ export type ArtifactTab =
   | "errors"
   | "pr"
   | "approvals"
-  | "artifacts";
+  | "artifacts"
+  /**
+   * The only pane that is not about the selected ticket: every workflow-monitor
+   * finding across every ticket. It lives here rather than in its own page
+   * because it answers the question the artifact pane is already for — "what is
+   * wrong with this pipeline" — and because a finding is *about* a ticket the
+   * reader has no reason to have opened.
+   */
+  | "monitor";
 
 /** Nested under the Artifacts top tab (URL segment still matches ArtifactTab). */
 export type ArtifactsSubTab = "artifacts" | "errors" | "context" | "ledger";
@@ -31,6 +39,7 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
   "ledger",
   "pr",
   "approvals",
+  "monitor",
 ];
 
 /** Top tab bar only — errors/context/ledger live under Artifacts. */
@@ -42,6 +51,7 @@ export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = [
   "hive",
   "pr",
   "approvals",
+  "monitor",
 ];
 
 export const ARTIFACTS_SUB_TABS: ArtifactsSubTab[] = ["artifacts", "errors", "context", "ledger"];

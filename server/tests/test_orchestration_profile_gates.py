@@ -44,7 +44,7 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         "transition_script": "ci/gate.py",
         "autofix_commands": [],
         "autofix_agent_fallback": True,
-        "autofix_max_agent_attempts": 2,
+        "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
     }
 
 
@@ -74,7 +74,7 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         "transition_script": "",
         "autofix_commands": [],
         "autofix_agent_fallback": True,
-        "autofix_max_agent_attempts": 2,
+        "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
     }
 
     profile = resolve_orchestration_profile(ws)
