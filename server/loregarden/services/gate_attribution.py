@@ -201,6 +201,26 @@ def gate_command(output: str) -> str:
     return found[-1].strip() if found else ""
 
 
+#: Every diff-scoped gate in `.lefthook/scripts/` funnels an unresolvable scope
+#: and an unreadable file through one handler, which prints this and exits 1 —
+#: see `py_organization_check.main`. One marker, one shared emitter: a gate that
+#: says this graded nothing at all.
+GATE_UNEXAMINABLE_MARKER = "cannot determine what to examine"
+
+
+def gate_could_not_examine(output: str) -> bool:
+    """Whether the gate failed because it never graded anything.
+
+    A distinct thing from a gate that ran and found violations, and the two must
+    not share a recovery. Routing this to the stage's agent asks it to fix
+    findings the run never produced — the text says "fix these issues" and then
+    names none — and spends a bounded retry doing it. The causes are
+    environmental (a worktree left `core.bare`, an unborn HEAD, a base ref that
+    no longer resolves), so no agent turn can converge on them.
+    """
+    return GATE_UNEXAMINABLE_MARKER in (output or "")
+
+
 @dataclass(frozen=True)
 class GatePartition:
     """A gate failure split by whose files it names.

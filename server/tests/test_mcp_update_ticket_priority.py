@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
+from loregarden.mcp.tool_args import coerce_optional_bool
 from loregarden.mcp.tools import TOOL_DEFINITIONS
 
 
@@ -43,6 +44,7 @@ def test_the_normalizer_passes_priority_through() -> None:
         coerce_string=_coerce_string,
         coerce_string_list=_coerce_string_list,
         coerce_int=_coerce_int,
+        coerce_bool=coerce_optional_bool,
     )
     assert payload["priority"] == 1
 
@@ -54,6 +56,7 @@ def test_priority_is_omitted_when_not_supplied() -> None:
         coerce_string=_coerce_string,
         coerce_string_list=_coerce_string_list,
         coerce_int=_coerce_int,
+        coerce_bool=coerce_optional_bool,
     )
     assert "priority" not in payload
 

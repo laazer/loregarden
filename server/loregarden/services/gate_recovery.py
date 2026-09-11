@@ -35,7 +35,11 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import looks_like_test_output
 from loregarden.services.evidence import has_evidence, resolve_head_sha
-from loregarden.services.gate_attribution import GatePartition, partition_gate_output
+from loregarden.services.gate_attribution import (
+    GatePartition,
+    gate_could_not_examine,
+    partition_gate_output,
+)
 from loregarden.services.gate_observability import (
     clean_gate_detail,
     record_gate_evaluation,
@@ -250,10 +254,33 @@ class GateRecovery:
     ) -> GateDecision:
         """Who should look at a gate failure the fixers could not clear.
 
-        Three answers, in order of how much they cost: nobody on this ticket
-        (the failure is not its work), the stage's own agent (bounded retries),
-        or a human.
+        Four answers, in order of how much they cost: nobody on this ticket
+        (the failure is not its work), a human immediately (the gate could not
+        run), the stage's own agent (bounded retries), or a human at the end.
         """
+        # A gate that graded nothing has not found a defect, so there is nothing
+        # for an agent to fix. Rerouting one spends a bounded retry handing the
+        # stage's agent a message that says "fix these issues" and then names
+        # none, and no turn can converge on the causes — they are environmental
+        # (a worktree left `core.bare`, an unborn HEAD, a base ref that no
+        # longer resolves). Straight to a human, before the attribution split
+        # below, which reads paths this output does not carry.
+        if gate_could_not_examine(detail):
+            self._block_after_gate_failure(
+                ticket,
+                instance,
+                stages,
+                orch_run,
+                from_stage,
+                detail,
+                blocking_summary=(
+                    f"The transition gate at '{from_stage}' could not run, so nothing was "
+                    "checked — this is not a finding in the ticket's code. Repair the "
+                    "environment it reported (see the Errors tab), then requeue the stage."
+                ),
+            )
+            return GateDecision.BLOCKED
+
         # A worktree-scoped gate reads the whole tree, so it can fail on a file
         # another ticket left uncommitted beside this one — and rerouting for
         # that asks an agent to fix code it never wrote. Only a confident
@@ -470,11 +497,17 @@ class GateRecovery:
         orch_run: OrchestrationRun,
         from_stage: str,
         detail: str,
+        blocking_summary: str = "",
     ) -> None:
         """Automatic fixes are exhausted. Reroute back to the stage (self-redo)
         and pause for a human — the pre-existing gate-failure behaviour. The raw
         gate output goes to the Errors tab; blocking_issues, rendered directly in
         the workflow pane, stays a short pointer rather than a wall of text.
+
+        `blocking_summary` overrides that pointer for a caller whose failure is
+        not the one this text describes. The gate that could not run is the case
+        it was added for: "the gate failed" reads as "your code is wrong", and
+        the operator would go looking for a violation that was never found.
         """
         self.callbacks.attach_artifact(
             ticket,
@@ -497,7 +530,8 @@ class GateRecovery:
             outcome="reject",
             next_stage_key=from_stage,
             blocking_issues=(
-                f"Transition gate failed at '{from_stage}' — see the Errors tab for details."
+                blocking_summary
+                or f"Transition gate failed at '{from_stage}' — see the Errors tab for details."
             ),
             orch_run=orch_run,
         )

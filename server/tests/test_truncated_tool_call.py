@@ -19,6 +19,7 @@ import pytest
 from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.tool_args import (
     TRUNCATION_MARKERS,
+    coerce_optional_bool,
     coerce_optional_int,
     coerce_string,
     coerce_string_list,
@@ -40,6 +41,7 @@ def _update(**args):
         coerce_string=coerce_string,
         coerce_string_list=coerce_string_list,
         coerce_int=coerce_optional_int,
+        coerce_bool=coerce_optional_bool,
     )
 
 
