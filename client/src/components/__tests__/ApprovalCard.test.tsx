@@ -112,3 +112,47 @@ describe("ApprovalCard reject flow", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+// A rework pause is a separate `kind` on the server purely so an auto_approve
+// run cannot sign off the pause raised to stop it looping. On the card it must
+// behave like a gate — the routing box is the whole reason the pause is
+// actionable, and losing it puts the operator back at the dead-end card this
+// replaced: two buttons, neither of which moved the ticket.
+describe("ApprovalCard rework pause", () => {
+  const PAUSE_APPROVAL: Approval = {
+    ...GATE_APPROVAL,
+    id: "appr_pause",
+    kind: "rework_pause",
+    title: "Rework paused — Procedural locomotion drivers",
+    stage_key: "script_review",
+    stage_name: "Script Review",
+    impact: "Rework loop: 'implement' has been rerouted 4×.",
+    route_options: [{ key: "implement", name: "Implementation" }],
+  };
+
+  it("offers the routing box, so a reject can name where the work goes", () => {
+    renderWithRouter(
+      <ApprovalCard approval={PAUSE_APPROVAL} onApprove={() => {}} onReject={() => {}} />,
+    );
+
+    expect(screen.getByText(/Routing · changes what Approve does/)).toBeInTheDocument();
+    expect(screen.getByText(/rework loop paused/)).toBeInTheDocument();
+  });
+
+  it("routes an approval to a named stage the same way a gate does", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={PAUSE_APPROVAL} onApprove={onApprove} onReject={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /send back through the workflow/i }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "implement" } });
+    // The label changes once routing is on, which is itself the signal that
+    // Approve now does something different.
+    fireEvent.click(screen.getByRole("button", { name: "Approve & route back" }));
+
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ route_to_stage_key: "implement" }),
+    );
+  });
+});

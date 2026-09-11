@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AttachArtifactRequest,
+    BlockOrigin,
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
@@ -306,7 +307,11 @@ def callback_block(
     svc = OrchestrationCallbackService(session)
     run = _get_run(session, run_id)
     ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    svc.block_ticket(run, ticket, stage_key=body.stage_key, message=body.message)
+    # Relayed from an agent over the callback API, so it carries the agent's
+    # words and may describe work for a person.
+    svc.block_ticket(
+        run, ticket, origin=BlockOrigin.AGENT, stage_key=body.stage_key, message=body.message
+    )
     return {"ok": True, "ticket_state": ticket.state.value}
 
 

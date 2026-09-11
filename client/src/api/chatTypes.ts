@@ -48,7 +48,7 @@ export interface Approval {
   route_options?: { key: string; name: string }[];
   ticket_id: string;
   ticket_external_id: string;
-  kind: "workflow_gate" | "cli_permission" | "cli_question" | "human_action";
+  kind: "workflow_gate" | "cli_permission" | "cli_question" | "human_action" | "rework_pause";
   /** Present on `human_action`: what the agent prepared before handing over. */
   prepared_action?: PreparedAction | null;
   status?: string;

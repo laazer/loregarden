@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 
 from loregarden.models.domain import (
     AgentRun,
@@ -51,6 +52,12 @@ logger = logging.getLogger(__name__)
 # 0103 backfilled these rows. Both readers below filter on it, so it is the one
 # seam between what this module writes and what it counts.
 REWORK_FEEDBACK_KIND = ReworkArtifactKind.FEEDBACK
+
+# The marker a deliberate operator decision writes to give a target stage its
+# reroute budget back. Its own kind so the FEEDBACK rows survive: those are what
+# the re-run agent reads, and a reset that deleted them would clear the budget by
+# throwing away the findings the next round is supposed to act on.
+REWORK_BUDGET_RESET_KIND = ReworkArtifactKind.BUDGET_RESET
 
 # Reroute a single target stage this many times without the work sticking, and
 # the next rejection blocks for a human instead of bouncing again. Mirrors the
@@ -140,9 +147,67 @@ def _entries(session: Session, ticket: Ticket, target_stage: str) -> list[Artifa
     )
 
 
+def _newest_reset_at(session: Session, ticket: Ticket, target_stage: str) -> datetime | None:
+    """When this target's reroute budget was last given back, if it ever was."""
+    marker = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket.id)
+        .where(Artifact.kind == REWORK_BUDGET_RESET_KIND)
+        .where(Artifact.title == _ledger_title(target_stage))
+        .order_by(Artifact.created_at.desc())
+    ).first()
+    return marker.created_at if marker else None
+
+
+def reset_rework_budget(session: Session, ticket: Ticket, *, target_stage: str, reason: str) -> int:
+    """Give ``target_stage`` its reroute budget back, and say why.
+
+    For the one case that earns it: a person read the accumulated feedback at the
+    loop cap and decided the work should go back anyway. Without this, resolving
+    that pause buys exactly one more round before the same cap fires again, so
+    the operator is asked the identical question after every round — which is
+    noise, not a safeguard. The same principle `loregarden_requeue_ticket`
+    already states for the dispatch budget: it persists so that only a deliberate
+    decision clears it, and the reason is recorded next to the decision.
+
+    Resets the COUNT only. `rework_is_stuck` still compares the two most recent
+    rounds and is deliberately untouched: it answers "can re-running differ from
+    last time", which a person's decision does not change. An implement round
+    that produced nothing should re-pause immediately, reset or no reset.
+
+    Returns the number of rounds the reset forgives, so a caller can say what it
+    did rather than asserting it did something.
+    """
+    if not target_stage:
+        return 0
+    forgiven = rework_reroute_count(session, ticket, target_stage)
+    session.add(
+        Artifact(
+            ticket_id=ticket.id,
+            kind=REWORK_BUDGET_RESET_KIND,
+            title=_ledger_title(target_stage),
+            content_json=json.dumps(
+                {"target_stage": target_stage, "reason": reason, "rounds_forgiven": forgiven}
+            ),
+        )
+    )
+    session.commit()
+    return forgiven
+
+
 def rework_reroute_count(session: Session, ticket: Ticket, target_stage: str) -> int:
-    """How many times ``target_stage`` has already been rerouted to (durable)."""
-    return len(_entries(session, ticket, target_stage))
+    """How many times ``target_stage`` has been rerouted to since its budget was
+    last reset (durable).
+
+    Counts forward from the newest `BUDGET_RESET` marker rather than over the
+    whole ledger, so a deliberate reset is visible to the cap without deleting
+    the feedback rows the re-run agent reads.
+    """
+    entries = _entries(session, ticket, target_stage)
+    reset_at = _newest_reset_at(session, ticket, target_stage)
+    if reset_at is None:
+        return len(entries)
+    return len([entry for entry in entries if entry.created_at > reset_at])
 
 
 def rework_is_stuck(session: Session, ticket: Ticket, target_stage: str) -> bool:

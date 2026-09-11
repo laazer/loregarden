@@ -2,6 +2,7 @@ from unittest import mock
 
 from loregarden.models.domain import (
     AgentRun,
+    BlockOrigin,
     OrchestrationDriver,
     OrchestrationRunStatus,
     RunStatus,
@@ -367,7 +368,11 @@ def test_recover_interrupted_stage_ignores_genuine_block(isolated_db):
             ticket, driver=OrchestrationDriver.BUILTIN_AUTOPILOT, profile_slug="default"
         )
         callbacks.block_ticket(
-            orch_run, ticket, stage_key="testing", message="Real test failure: assertion error"
+            orch_run,
+            ticket,
+            origin=BlockOrigin.AGENT,
+            stage_key="testing",
+            message="Real test failure: assertion error",
         )
         session.refresh(ticket)
         assert ticket.workflow_stage_status == StageStatus.BLOCKED

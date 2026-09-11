@@ -35,6 +35,7 @@ from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.workflow_state import parse_stage_map
 
 
 def _workspace_by_slug(session: Session, slug: str) -> Workspace:
@@ -178,6 +179,20 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
         ),
     )
+    if ticket.workflow_stage_key != stage_key:
+        # `stage_key` + `stage_status` lands on the branch of
+        # `_apply_manual_stage_edits` that sets ONE stage's status and returns —
+        # it never moves the cursor. Requeuing a stage other than the current one
+        # therefore reported success having left the ticket pointing at the stage
+        # it was stuck on, so the next start resumed exactly where it had
+        # blocked. "Requeue stage X" can only mean the workflow is now at X.
+        orch.update_ticket_manual(
+            ticket,
+            UpdateTicketRequest(
+                workflow_stage_key=stage_key,
+                workflow_stage_status=StageStatus.PENDING,
+            ),
+        )
     # `refresh_stage_retry_budget` only clears blocking text when this breaker's
     # own structural mark is on the stage; a requeue clears the block whatever
     # wrote it, and says who did it.
@@ -219,15 +234,42 @@ def _requeue_outcome(session: Session, svc, ticket: Ticket, stage_key: str) -> d
     `scheduled` is DERIVED, never asserted: it is read back from the same tables
     a dispatcher would consult. A hardcoded "nothing is scheduled" would be a
     claim that could drift out of agreement with the code that makes it true.
+
+    `blocked_stages` is read back the same way, and for the same reason: a
+    requeue clears the block on the stage it was asked about, and a stage
+    *elsewhere* in the workflow can still hold the ticket BLOCKED. Reporting the
+    requeue without them reads as "the block is gone" when it is not.
     """
     active = svc.get_active_orchestration_run(ticket.id)
     in_flight = find_active_run(session, ticket.id)
     scheduled = active is not None or in_flight is not None
 
+    instance, stages = svc.orch._resolve_stages(ticket)
+    blocked_stages = (
+        [
+            key
+            for key, status in parse_stage_map(instance, stages).items()
+            if status is StageStatus.BLOCKED
+        ]
+        if instance and stages
+        else []
+    )
+
     outcome: dict[str, Any] = {
         "stage_key": stage_key,
+        "cursor_stage_key": ticket.workflow_stage_key,
+        "ticket_state": ticket.state.value,
         "scheduled": scheduled,
     }
+    if blocked_stages:
+        outcome["blocked_stages"] = blocked_stages
+        listed = ", ".join(repr(key) for key in blocked_stages)
+        subject = "stage" if len(blocked_stages) == 1 else "stages"
+        outcome["note"] = (
+            f"Stage '{stage_key}' is pending, but {subject} {listed} still blocked, so the "
+            "ticket is not clear to run. Resolve those too."
+        )
+        return outcome
     if scheduled:
         outcome["note"] = (
             f"Stage '{stage_key}' is pending and something is already running against "

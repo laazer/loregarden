@@ -546,6 +546,14 @@ class ReworkArtifactKind(StrEnum):
     #: One row per reroute, carrying that round's full fix direction.
     FEEDBACK = "rework_feedback"
 
+    #: A deliberate decision to give a target stage its reroute budget back,
+    #: written when a person resolves the pause the cap raised. A marker rather
+    #: than a deletion: the FEEDBACK rows are what the re-run agent reads, so
+    #: clearing the budget by removing them would throw away the findings the
+    #: rework is supposed to act on. `rework_reroute_count` counts forward from
+    #: the newest marker; `render_rework_feedback` still renders every round.
+    BUDGET_RESET = "rework_budget_reset"
+
 
 class DispatchSurface(StrEnum):
     """Where a stage dispatch was asked for.
@@ -644,6 +652,34 @@ class ApprovalKind(str, Enum):
     #: Work only a person can finish, handed over with whatever the agent
     #: managed to prepare for them (lg-workflow-integrity-460).
     HUMAN_ACTION = "human_action"
+    #: The rework loop hit its cap or stopped converging, and the control plane
+    #: is asking a person which way the work should go. Resolved through the
+    #: same routing machinery as WORKFLOW_GATE — approve to accept the stage and
+    #: carry on, reject (optionally naming a stage) to send the work back — but
+    #: deliberately a kind of its own, because `auto_resolve` must never touch
+    #: it: an auto_approve run that could approve its own pause would walk
+    #: straight through the cap that exists to stop it looping unattended.
+    REWORK_PAUSE = "rework_pause"
+
+
+class BlockOrigin(str, Enum):
+    """Who wrote the message a block carries.
+
+    `record_human_action` decides whether a block is *also* a handover of human
+    work by looking for phrases like "a human" in its message. That question
+    only makes sense for text an agent wrote. The control plane writes block
+    messages too — "Paused for a human — see the accumulated rework feedback" —
+    and matching its own prose filed the pause as a handover with nothing to
+    hand over, then told the reader to prepare an action that no agent had been
+    asked for. Required at every call site rather than defaulted, so a new
+    blocking path has to say which kind of message it carries.
+    """
+
+    #: An agent's own words, via `loregarden_block_ticket` or a stage's stderr.
+    #: May describe work for a person, so the handover check applies.
+    AGENT = "agent"
+    #: Loregarden's own words about a run it stopped. Never a handover.
+    CONTROL_PLANE = "control_plane"
 
 
 class HumanActionTier(str, Enum):

@@ -9,7 +9,11 @@ import type { Approval } from "../api/client";
  * deserve the full-width Approvals tab — a permission prompt does not.
  */
 export function hasHumanCriteria(approval: Approval): boolean {
-  return approval.kind === "workflow_gate" || Boolean(approval.checklist?.length);
+  return (
+    approval.kind === "workflow_gate" ||
+    approval.kind === "rework_pause" ||
+    Boolean(approval.checklist?.length)
+  );
 }
 
 /** The gate brief's own heading for the criteria it restates from the ticket. */

@@ -12,6 +12,7 @@ import sys
 import pytest
 from loregarden.models.domain import (
     AgentSlot,
+    BlockOrigin,
     OrchestrationRun,
     OrchestrationRunStatus,
     QueuePosition,
@@ -359,7 +360,7 @@ def test_blocking_a_ticket_releases_the_lane(session, workspace):
     orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
 
     OrchestrationCallbackService(session).block_ticket(
-        orch_run, blocked, message="Tests failed after 3 attempts"
+        orch_run, blocked, origin=BlockOrigin.AGENT, message="Tests failed after 3 attempts"
     )
 
     entry = session.exec(
