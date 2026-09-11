@@ -21,11 +21,11 @@ def _workspace(slug="retry-budget-test") -> Workspace:
     return Workspace(slug=slug, name="Retry Budget Test", repo_path=".")
 
 
-def test_default_profile_has_a_five_attempt_budget_enabled():
+def test_default_profile_has_a_twelve_attempt_budget_enabled():
     """AC4.1: loading with no `retry_budget` key at all."""
     profile = OrchestrationProfile(slug="default")
     assert profile.retry_budget.enabled is True
-    assert profile.retry_budget.max_attempts_per_stage == 5
+    assert profile.retry_budget.max_attempts_per_stage == 12
 
 
 def test_profile_yaml_without_retry_budget_key_keeps_the_default(tmp_path, monkeypatch):
@@ -41,7 +41,7 @@ def test_profile_yaml_without_retry_budget_key_keeps_the_default(tmp_path, monke
 
     profile = resolve_orchestration_profile(ws)
     assert profile.retry_budget.enabled is True
-    assert profile.retry_budget.max_attempts_per_stage == 5
+    assert profile.retry_budget.max_attempts_per_stage == 12
 
 
 def test_profile_yaml_overrides_only_the_declared_retry_budget_field(tmp_path, monkeypatch):
@@ -74,13 +74,14 @@ def test_retry_budget_enabled_false_is_an_escape_hatch(tmp_path, monkeypatch):
     profile = resolve_orchestration_profile(ws)
     assert profile.retry_budget.enabled is False
     # Disabling must not silently reset the threshold too.
-    assert profile.retry_budget.max_attempts_per_stage == 5
+    assert profile.retry_budget.max_attempts_per_stage == 12
 
 
 def test_retry_budget_config_model_validates_standalone():
     cfg = RetryBudgetConfig()
     assert cfg.enabled is True
-    assert cfg.max_attempts_per_stage == 5
+    assert cfg.max_attempts_per_stage == 12
+    assert cfg.max_transient_retries == 5
 
     overridden = RetryBudgetConfig(max_attempts_per_stage=2, enabled=False)
     assert overridden.max_attempts_per_stage == 2

@@ -10,6 +10,12 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from loregarden.services.interruption_messages import (
+    INTERRUPTED_RUN_MESSAGE,
+    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+    RESTART_INTERRUPTION_MARKER,
+    STRANDED_STAGE_MESSAGE,
+)
 from loregarden.services.usage_limits import detect_usage_limit
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -182,13 +188,84 @@ _AUTH_FAILURE_SIGNATURES = (
     "invalid api key",
     "not logged in",
 )
+# The control plane killing its own agent. The largest single cause of failed
+# runs by a wide margin — 82 of 179, against 28 for every provider-side limit
+# combined — and the one this classifier missed for longest, so a reload during
+# `implement` was rerouted for rework as though the implementer had reported bad
+# work, or blocked a ticket under a message telling a human to re-run the stage.
+#
+# The canonical strings are `run_interruption`'s, imported rather than copied:
+# they are matched exactly elsewhere (`blocked_by_interruption` reads
+# `blocking_issues` against that frozenset), and a second, drifting copy here
+# would classify a message the other half of the system no longer writes.
+_CONTROL_PLANE_DEATH_SIGNATURES = tuple(
+    message.lower()
+    for message in (
+        INTERRUPTED_RUN_MESSAGE,
+        STRANDED_STAGE_MESSAGE,
+        ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+    )
+) + (
+    # `run_lease`'s wording for a run nothing renewed. Not in that frozenset,
+    # because a reaped lease is not resumable the way a reload is — but it is
+    # equally not the agent reporting on the work.
+    "agent run lease expired",
+    # Every chat surface's and the scoper's own phrasing for the same event. Five
+    # modules wrote one and this classifier knew none of them until the real
+    # `stderr` values in `agent_runs` were run past it — see
+    # `RESTART_INTERRUPTION_MARKER`.
+    RESTART_INTERRUPTION_MARKER,
+)
 
 logger = logging.getLogger(__name__)
 
 
+class _CliResultLine(BaseModel):
+    """The one field this module wants off a CLI stream envelope.
+
+    A model rather than a `dict` read with `.get`, because that is what the
+    boundary rule asks for and because it does the type check for free: a JSON
+    line that is a list, a number, or an object whose `terminal_reason` is not a
+    string fails validation instead of needing an `isinstance` to notice.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    terminal_reason: str = ""
+
+
+def structured_terminal_reason(stdout: str) -> str | None:
+    """The CLI's own ``terminal_reason``, read as a field, or None if it said none.
+
+    Preferred over searching the transcript, because the transcript contains the
+    agent's writing as well as the harness's. `is_transient_failure` used to ask
+    whether the words "terminal_reason" and "api_error" both appeared anywhere in
+    stdout+stderr — a condition an agent editing this very module satisfies.
+
+    Read from the last JSON line carrying the field, because the result envelope
+    is written last and a long run streams many events before it. A line that is
+    not JSON, or JSON this model rejects, is skipped rather than treated as an
+    answer: the CLIs interleave plain text with their stream, and a parse failure
+    is not a verdict.
+    """
+    for raw in reversed(stdout.splitlines()):
+        line = raw.strip()
+        if not line.startswith("{") or "terminal_reason" not in line:
+            continue
+        try:
+            parsed = _CliResultLine.model_validate_json(line)
+        except ValidationError:
+            continue
+        if parsed.terminal_reason:
+            return parsed.terminal_reason.lower()
+    return None
+
+
 def is_transient_failure(stdout: str, stderr: str) -> bool:
-    """True when a *failed* agent run died from infrastructure (API/usage limit,
-    overload, or a CLI that could not authenticate) rather than reporting bad work.
+    """True when a *failed* agent run died from infrastructure rather than
+    reporting bad work: an API/usage limit, an overload, a CLI that could not
+    authenticate, or this control plane stopping its own agent (a server reload,
+    a stranded stage, an expired lease).
 
     Such a failure is not a rework signal: the stage should pause for a
     human/resume, not reroute upstream (which wastes a cycle and, with the rework
@@ -196,10 +273,25 @@ def is_transient_failure(stdout: str, stderr: str) -> bool:
     run whose status is FAILED — a clean run that merely mentions these words in
     its output is not a transient failure, so callers must gate on status first.
     """
+    reason = structured_terminal_reason(stdout)
+    if reason is not None:
+        # The CLI said, in a field, why it stopped, and that answer is final —
+        # both ways. A harness that reports `completed` did not die of
+        # infrastructure however much the transcript talks about keychains.
+        #
+        # This replaces, rather than fronts, the test that used to live here:
+        # `"terminal_reason" in blob and any(r in blob ...)` over lowercased
+        # stdout+stderr. That condition is satisfied by an agent *writing about*
+        # classification — including the agent that edited this module — and
+        # keeping it as a fallback kept the false positive alive, which is how
+        # `test_an_agent_writing_about_api_errors_is_not_an_api_error` failed
+        # when the structured read was added in front of it.
+        return reason in _TRANSIENT_TERMINAL_REASONS
+
     blob = f"{stdout}\n{stderr}".lower()
-    if "terminal_reason" in blob and any(r in blob for r in _TRANSIENT_TERMINAL_REASONS):
-        return True
     if any(sig in blob for sig in _AUTH_FAILURE_SIGNATURES):
+        return True
+    if any(sig in blob for sig in _CONTROL_PLANE_DEATH_SIGNATURES):
         return True
     if any(sig in blob for sig in _TRANSIENT_SIGNATURES):
         return True

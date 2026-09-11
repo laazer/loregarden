@@ -30,6 +30,9 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-xdist>=3.6.0",
+    # Per-test wall-clock ceiling; see [tool.pytest.ini_options] for the value
+    # and why a hang needs catching rather than waiting out.
+    "pytest-timeout>=2.3.0",
     "ruff>=0.9.0",
     # Pre-commit: function size (too-many-statements / R0915); see [tool.pylint].
     "pylint>=3.3",
@@ -42,6 +45,7 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-xdist>=3.6.0",
+    "pytest-timeout>=2.3.0",
     "ruff>=0.9.0",
     "pylint>=3.3",
     "mypy>=1.14",
@@ -76,6 +80,26 @@ tmp_path_retention_policy = "failed"
 markers = [
     "real_shell_command: opt out of the plain-shell patch and see the real argv",
 ]
+# A hung test used to be indistinguishable from a slow suite. Nothing capped a
+# test's wall clock, so a deadlock presented as a full run that never returned —
+# and this suite legitimately takes ~44 minutes for ~4,770 tests, which is long
+# enough that "it is still going" was never evidence either way. On 2026-09-11 a
+# healthy run was suspected hung for 25 minutes before `ps` settled it.
+#
+# 120s is ~12x the slowest test measured on that run (9.55s, the top 20 all
+# between 5s and 10s). That margin is deliberate: load moves these numbers, and
+# a ceiling tight enough to flake under contention is worse than no ceiling,
+# since it teaches everyone to re-run. A hang is unbounded, so detecting it in
+# two minutes rather than one costs nothing worth having.
+#
+# `signal` over the default `thread`: SIGALRM fails the one test, dumps its
+# stack, and lets the remaining suite run, where the thread method kills the
+# whole process and loses every result after the hang. The trade is that a test
+# blocked inside a C call that holds the GIL will not be interrupted — in this
+# suite the realistic hangs are socket reads, subprocess waits and lock
+# acquisitions, all of which SIGALRM does interrupt.
+timeout = 120
+timeout_method = "signal"
 
 [tool.ruff]
 target-version = "py310"

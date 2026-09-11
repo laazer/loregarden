@@ -56,21 +56,24 @@ if [ -n "$BASE" ]; then
     client/src/test || true)"
 fi
 
+# `--bail` is jest's `-x`: stop at the first failing suite. Same reasoning as
+# the server runner — the first failure is the one to read, and a client suite
+# that has already gone red does not get more informative by finishing.
 if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
   echo "pre-push: full jest run — LOREGARDEN_FULL_TESTS is set"
-  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
 elif [ -z "$BASE" ]; then
   echo "pre-push: full jest run — no @{push} or origin/main to diff against"
-  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
 elif [ -n "$WIDE_CHANGE" ]; then
   echo "pre-push: full jest run — shared config changed:"
   printf '  %s\n' $WIDE_CHANGE
-  "${TEST_NICE[@]}" npm test -- --maxWorkers="$TEST_WORKERS"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
 else
   echo "pre-push: jest --changedSince=$BASE --maxWorkers=$TEST_WORKERS ..."
   echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   # --passWithNoTests because "no test imports what you changed" is a real
   # answer here, not a misconfiguration. It is printed, never silent, and CI
   # still runs everything.
-  "${TEST_NICE[@]}" npm test -- --changedSince="$BASE" --passWithNoTests --maxWorkers="$TEST_WORKERS"
+  "${TEST_NICE[@]}" npm test -- --bail --changedSince="$BASE" --passWithNoTests --maxWorkers="$TEST_WORKERS"
 fi

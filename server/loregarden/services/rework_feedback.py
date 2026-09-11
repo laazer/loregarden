@@ -66,9 +66,16 @@ REWORK_BUDGET_RESET_KIND = ReworkArtifactKind.BUDGET_RESET
 MAX_REWORK_REROUTES = 3
 
 
-def _ledger_title(target_stage: str) -> str:
+def rework_feedback_artifact_title(target_stage: str) -> str:
     """Deterministic title so the ledger for one target is countable and
-    distinct from unrelated ``context`` artifacts."""
+    distinct from unrelated ``context`` artifacts.
+
+    Public because counting these rows is not only this module's business:
+    `stage_attempt_stats` reports how close real work comes to
+    `MAX_REWORK_REROUTES`, and it must count the same rows the cap is enforced
+    against. Retyping the string there instead got the artifact *kind* wrong and
+    undercounted by an order of magnitude.
+    """
     return f"Rework feedback — {target_stage}"
 
 
@@ -125,7 +132,7 @@ def record_rework_feedback(
             ticket_id=ticket.id,
             run_id=run_id,
             kind=REWORK_FEEDBACK_KIND,
-            title=_ledger_title(target_stage),
+            title=rework_feedback_artifact_title(target_stage),
             commit_sha=_tree_sha(session, ticket, run_id),
             content_json=json.dumps(
                 {"from_stage": from_stage, "target_stage": target_stage, "context": context}
@@ -141,7 +148,7 @@ def _entries(session: Session, ticket: Ticket, target_stage: str) -> list[Artifa
             select(Artifact)
             .where(Artifact.ticket_id == ticket.id)
             .where(Artifact.kind == REWORK_FEEDBACK_KIND)
-            .where(Artifact.title == _ledger_title(target_stage))
+            .where(Artifact.title == rework_feedback_artifact_title(target_stage))
             .order_by(Artifact.created_at)
         ).all()
     )
@@ -153,7 +160,7 @@ def _newest_reset_at(session: Session, ticket: Ticket, target_stage: str) -> dat
         select(Artifact)
         .where(Artifact.ticket_id == ticket.id)
         .where(Artifact.kind == REWORK_BUDGET_RESET_KIND)
-        .where(Artifact.title == _ledger_title(target_stage))
+        .where(Artifact.title == rework_feedback_artifact_title(target_stage))
         .order_by(Artifact.created_at.desc())
     ).first()
     return marker.created_at if marker else None
@@ -185,7 +192,7 @@ def reset_rework_budget(session: Session, ticket: Ticket, *, target_stage: str, 
         Artifact(
             ticket_id=ticket.id,
             kind=REWORK_BUDGET_RESET_KIND,
-            title=_ledger_title(target_stage),
+            title=rework_feedback_artifact_title(target_stage),
             content_json=json.dumps(
                 {"target_stage": target_stage, "reason": reason, "rounds_forgiven": forgiven}
             ),

@@ -316,6 +316,41 @@ def test_record_findings_ignores_findings_with_no_ticket(db_session: Session):
     assert _finding_rows(db_session) == []
 
 
+def test_an_empty_ticket_id_reads_as_every_ticket_not_as_a_half_answer(db_session: Session):
+    """`list_findings` branches on `if ticket_id:` for the row filter and on
+    `if ticket_id is None:` for the workspace-scoped half, so an empty string
+    fell between them: every ticket's persisted findings, none of the recomputed
+    workspace ones. A half-answer shaped exactly like a whole one.
+
+    The client built that URL whenever its ticket id was empty, which is the
+    state the workspace-wide view is *for*. The endpoint now normalises it.
+    """
+    from fastapi.testclient import TestClient
+    from loregarden.db.session import get_session
+    from loregarden.main import app
+
+    ticket = make_workspace_ticket(db_session, "monitor-empty-id")
+    for _ in range(12):
+        _run(db_session, ticket, stage_key="testing", status=RunStatus.FAILED)
+    for _ in range(40):
+        _run(db_session, ticket, stage_key="implement", status=RunStatus.SUCCEEDED)
+    sweep(db_session)
+
+    app.dependency_overrides[get_session] = lambda: db_session
+    try:
+        client = TestClient(app)
+        blank = client.get("/api/monitor/findings?ticket_id=").json()
+        omitted = client.get("/api/monitor/findings").json()
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    conditions = {row["condition"] for row in blank}
+    assert MonitorCondition.FAILURE_CLUSTER.value in conditions, (
+        "a workspace-scoped condition must survive an empty ticket_id"
+    )
+    assert blank == omitted
+
+
 def test_list_findings_narrows_to_one_ticket(db_session: Session):
     first = make_workspace_ticket(db_session, "monitor-list-a")
     second = make_workspace_ticket(db_session, "monitor-list-b")

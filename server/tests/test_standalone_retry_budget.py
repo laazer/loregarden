@@ -111,7 +111,10 @@ from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_orchestration_run
 from tests.worktree_helpers import make_repo
 
-BUDGET = 5
+# Read from the config rather than pinned, so these tests assert the *shape* of
+# the breaker — the (BUDGET + 1)th dispatch is refused — and not the number,
+# which `test_retry_budget_config` owns.
+BUDGET = RetryBudgetConfig().max_attempts_per_stage
 REVIEW_MEMBERS = ("gdscript_reviewer", "static_qa", "architecture_reviewer")
 
 # The kind the forced-dispatch record is expected to use. Dedicated, like

@@ -20,13 +20,14 @@ from loregarden.models.domain import BtwStatus, Ticket
 from loregarden.models.domain.tables import BtwExchange
 from loregarden.services.btw_service import answer_text, record_answer, record_failure
 from loregarden.services.cli_auth_errors import format_agent_unavailable
+from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-INTERRUPTED_ASIDE_MESSAGE = (
-    f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and never answered this. Ask again."
+INTERRUPTED_ASIDE_MESSAGE = restart_interruption_message(
+    TRIAGE_AGENT_NAME, "never answered this. Ask again."
 )
 
 

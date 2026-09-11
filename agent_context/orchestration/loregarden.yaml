@@ -38,12 +38,25 @@ gates:
     - bash -c "cd client && npx --no-install oxlint --fix ."
   autofix_agent_fallback: true
   # Every gate here is static analysis whose mechanical fixer (ruff --fix /
-  # oxlint --fix) already ran best-effort before an agent is ever spawned. What
-  # the fixer cannot auto-resolve is almost always a real code issue a single
-  # agent pass either fixes or can't — a second full agent respawn rarely
-  # converts a still-failing lint gate and just re-pays a whole CLI run's usage,
-  # so cap it at one.
-  autofix_max_agent_attempts: 1
+  # oxlint --fix) already ran best-effort before an agent is ever spawned, so
+  # what reaches an agent is a real code issue rather than formatting. That was
+  # the argument for capping this at one: a second full agent respawn rarely
+  # converts a still-failing lint gate, and re-pays a whole CLI run's usage.
+  #
+  # Measured against it: this is the cap that actually stops tickets here. Of 20
+  # (ticket, stage) pairs that ever failed a transition gate, 15 reached two or
+  # more failures — every one of those blocked for a human under a cap of one,
+  # while the runaway backstop that was supposed to be the thing giving up had
+  # never fired once in the life of the database. The organization and
+  # silent-failure gates this workspace added since are also not lint: naming a
+  # vocabulary or deciding how a failure surfaces is exactly the kind of thing a
+  # second pass, holding the first pass's gate output, does convert.
+  #
+  # So three, matching the other bounded loops (MAX_REWORK_REROUTES, the CI
+  # auto-fix limit). If the usage cost of the third pass turns out not to earn
+  # its keep, the evidence for lowering it is the XPASS/fix rate of attempt 3,
+  # not the argument above.
+  autofix_max_agent_attempts: 3
 subagents:
   spawn_via: cli
 callbacks:

@@ -41,6 +41,7 @@ from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
+from loregarden.services.stage_transient_retry import stage_rearmed_for_latest_run
 from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
@@ -60,15 +61,47 @@ from loregarden.services.workflow_state import (
 )
 from sqlmodel import Session, select
 
+#: Per-stage floors, calibrated 2026-09-11 against the 95th percentile of every
+#: SUCCEEDED run's wall clock, per stage, with the sample size beside each. The
+#: first version of this map (686) was sized by judgement; these are measured.
+#:
+#: Read the numbers with one caveat, which is why each floor sits *above* its
+#: p95 rather than at it: the sample is right-censored. Every run in it completed
+#: under the ceiling in force at the time — mostly 600s — so runs that needed
+#: longer are absent by construction, and the true distribution has a heavier
+#: tail than this one can show. A floor set exactly at a censored p95 would be
+#: too small by an unknown amount. Rounding up to the next 300s step is the
+#: margin for that, not padding.
+#:
+#: Raising a floor costs something real: `TIMEOUT_HARD_CAP_MULTIPLIER` is 4, so a
+#: genuinely hung stage now burns four times the number below before it is
+#: killed. That is the trade this map makes deliberately — a hang is rare and
+#: visible, while a stage killed mid-work parks a ticket and looks like a defect
+#: in the agent.
 STAGE_TIMEOUT_BUDGETS: dict[str, int] = {
-    "implement": 2400,
-    "backend-impl": 1200,
-    "frontend-impl": 1200,
-    "verify": 1800,
-    "test-design": 1500,
-    "test-break": 1200,
-    "review": 1200,
-    "gate": 1200,
+    # p95 2559s over 149 runs — the heaviest stage by a wide margin, and the one
+    # whose old 600s ceiling produced most of the recorded timeout deaths.
+    "implement": 2700,
+    # No measured sample of their own (the split implementers are newer than the
+    # runs here); they inherit `implement`'s shape, one scope narrower.
+    "backend-impl": 1800,
+    "frontend-impl": 1800,
+    # p95 1968s over 15 runs. Small sample, wide spread — a consultation reads
+    # far more than it writes.
+    "domain_consultation": 2100,
+    # p95 1811s over 8 runs. The smallest sample in this map; treat as
+    # provisional and re-measure once it has run more.
+    "branch-triage": 2100,
+    "verify": 1800,  # p95 1633s over 46 runs
+    "test-design": 1800,  # p95 1660s over 70 runs
+    "gate": 1800,  # p95 1622s over 23 runs
+    "test-break": 1500,  # p95 1343s over 75 runs
+    "review": 1200,  # p95 1159s over 114 runs
+    "plan": 1200,  # p95 997s over 113 runs
+    "script_review": 900,  # p95 859s over 125 runs
+    "learning": 900,  # p95 687s over 12 runs
+    "spec": 900,  # p95 641s over 59 runs
+    "triage": 900,  # p95 627s over 136 runs — p50 is 88s; the tail is the cost
 }
 
 
@@ -238,13 +271,7 @@ class BuiltinOrchestrator:
                     self.session.refresh(orch_run)
                     return orch_run
 
-                # A scope-denial reroute re-armed this stage to PENDING for the
-                # sibling implementer (permission_bridge._try_scope_reroute), and
-                # _run_sequential_stage already refreshed the ticket. Re-dispatch it
-                # rather than advancing past it as if it passed: running the exit
-                # gate here would block on work the sibling hasn't done yet. (A
-                # parallel stage never sets this pin, so its flow is untouched.)
-                if ticket.scope_reroute_agent:
+                if self._stage_wants_another_attempt(ticket, target_key):
                     continue
 
                 advanced = self._advance_after_stage(
@@ -264,6 +291,32 @@ class BuiltinOrchestrator:
             )
         self.session.refresh(orch_run)
         return orch_run
+
+    def _stage_wants_another_attempt(self, ticket: Ticket, target_key: str) -> bool:
+        """Whether this pass should re-dispatch the stage it just ran.
+
+        Two things re-arm a stage mid-pass, and both mean the same thing to this
+        loop: the stage is PENDING again and the work it stands for has not been
+        judged, so advancing past it — or running its exit gate — would decide an
+        outcome nobody produced.
+
+        **A scope-denial reroute** pinned the sibling implementer
+        (`permission_bridge._try_scope_reroute`); the run "failed" only because
+        the wrong specialist ran. A parallel stage never sets the pin, so its
+        flow is untouched.
+
+        **A transient retry** (`run_completion`, via `stage_transient_retry`):
+        the run died of infrastructure, so the exit gate would judge a stage that
+        never attempted its work and could block the ticket on the very failure
+        the retry is about to clear. Bounded by
+        `retry_budget.max_transient_retries`, so this cannot spin.
+
+        One predicate rather than two adjacent guards because `execute` is at its
+        statement cap, and because the answer they compute is one question.
+        """
+        if ticket.scope_reroute_agent:
+            return True
+        return stage_rearmed_for_latest_run(self.session, ticket, target_key)
 
     def _complete_run(self, orch_run: OrchestrationRun, ticket: Ticket) -> OrchestrationRun:
         """Close an orchestration run, deriving its status from the ticket's own
@@ -568,6 +621,13 @@ class BuiltinOrchestrator:
             if ticket.workflow_stage_status == StageStatus.AWAITING:
                 self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
                 return True
+            # `run_completion` judged this failure transient and re-armed the
+            # stage. Blocking here would overwrite a PENDING stage with the
+            # stderr of a run that never reached the work — the ticket parked on
+            # a server reload, which is what the retry exists to stop. Let the
+            # pass continue; the loop re-dispatches.
+            if stage_rearmed_for_latest_run(self.session, ticket, target_key):
+                return False
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,

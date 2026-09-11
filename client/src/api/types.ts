@@ -167,6 +167,13 @@ export interface TicketDetail extends TicketSummary {
     tests?: TestArtifact | null;
     context?: ContextSection[];
     error?: RunErrorArtifact | null;
+    /**
+     * Stages the control plane re-dispatched by itself after a run died of
+     * infrastructure. Present so a stage that silently ran twice cannot: the
+     * ticket is deliberately NOT blocked while these accumulate, so no other
+     * field on this payload says the work was attempted more than once.
+     */
+    transient_retries?: TransientRetryNotice[];
     pr?: {
       url: string;
       number: string;
@@ -176,6 +183,16 @@ export interface TicketDetail extends TicketSummary {
     } | null;
   };
   orchestration_runtime?: WorkspaceRuntimeSettings;
+}
+
+export interface TransientRetryNotice {
+  stage_key: string;
+  /** Operator-facing sentence, written by the backend with the cause in it. */
+  message: string;
+  /** Why it was retryable, e.g. "infrastructure". */
+  reason: string;
+  /** ISO timestamp, "" when the row carried none. */
+  at: string;
 }
 
 export interface RunErrorArtifact {

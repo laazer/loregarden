@@ -23,6 +23,7 @@ from loregarden.models.domain import TicketStudioMessage, TicketStudioSession
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
+from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.ticket_studio_service import (
     STUDIO_PROMPT_MODES,
     STUDIO_TURN_BOOTSTRAP_CLARIFY,
@@ -37,8 +38,8 @@ from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-INTERRUPTED_TURN_MESSAGE = (
-    "The scoper was interrupted by a server restart and did not finish this turn. Run it again."
+INTERRUPTED_TURN_MESSAGE = restart_interruption_message(
+    "The scoper", "did not finish this turn. Run it again."
 )
 
 CANCELLED_TURN_MESSAGE = "Stopped before the scoper finished this turn."

@@ -12,8 +12,22 @@ router = APIRouter(prefix="/monitor", tags=["monitor"])
 def monitor_findings(
     ticket_id: str | None = None, session: Session = Depends(get_session)
 ) -> list[dict]:
-    """Persisted findings, plus workspace-scoped conditions recomputed now."""
-    return [item.model_dump(mode="json") for item in list_findings(session, ticket_id=ticket_id)]
+    """Persisted findings, plus workspace-scoped conditions recomputed now.
+
+    Omit `ticket_id` for every current finding — which is how a person scanning
+    for problems finds one, since a finding is *about* a ticket they have no
+    reason to have opened yet.
+
+    An empty `ticket_id` is normalised to None rather than passed through.
+    `list_findings` branches on `if ticket_id:` for the row filter and on
+    `if ticket_id is None:` for the workspace-scoped half, so `?ticket_id=`
+    returned every ticket's persisted findings while silently dropping the
+    recomputed ones — a half-answer shaped exactly like a whole one. The client
+    built that URL whenever its ticket id was empty.
+    """
+    return [
+        item.model_dump(mode="json") for item in list_findings(session, ticket_id=ticket_id or None)
+    ]
 
 
 @router.get("/scan")

@@ -596,8 +596,18 @@ export const api = {
     ),
   ticketHistory: (ticketId: string) =>
     request<TicketHistoryEvent[]>(`/api/events/ticket/${ticketId}/history`),
-  monitorFindings: (ticketId: string) =>
-    request<MonitorFinding[]>(`/api/monitor/findings?ticket_id=${ticketId}`),
+  /**
+   * Every current finding when `ticketId` is omitted, that ticket's when it is
+   * not. The param is left off entirely rather than sent empty: the endpoint
+   * treats a present-but-empty `ticket_id` as a filter it cannot apply and
+   * returns a half-answer.
+   */
+  monitorFindings: (ticketId?: string) =>
+    request<MonitorFinding[]>(
+      ticketId
+        ? `/api/monitor/findings?ticket_id=${encodeURIComponent(ticketId)}`
+        : "/api/monitor/findings",
+    ),
   studioWorkflowDrift: (slug: string) =>
     request<StudioWorkflowDrift>(`/api/studio/workflows/${slug}/drift`),
   studioWorkflowVersions: (slug: string) =>

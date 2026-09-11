@@ -24,8 +24,19 @@ from loregarden.services.builtin_orchestrator import (
 
 
 def test_an_unbudgeted_stage_inherits_the_runs():
-    """A stage with no entry in the table behaves exactly as it did."""
-    stage = WorkflowStageDef(key="triage", name="Triage")
+    """A stage with no entry in the table behaves exactly as it did.
+
+    Uses a key the table does not name, read from the table rather than
+    hardcoded: `triage` used to sit here and stopped being unbudgeted when the
+    floors were calibrated against measured run durations, which made this test
+    assert the opposite of its own docstring.
+    """
+    unbudgeted = next(
+        key
+        for key in ("ui-design", "ac_gate", "plan-synthesis", "context")
+        if key not in STAGE_TIMEOUT_BUDGETS
+    )
+    stage = WorkflowStageDef(key=unbudgeted, name="Unbudgeted")
     assert stage_timeout_seconds(stage, 600) == 600
     assert stage_timeout_seconds(stage, None) is None
 
@@ -55,12 +66,21 @@ def test_both_stage_models_carry_the_field():
 
 def test_a_heavy_stage_gets_its_floor_without_declaring_one():
     """The point of the ticket: `implement` under a 600s run no longer inherits
-    a budget sized for `triage`."""
+    a budget sized for the lightest stage.
+
+    Asserts against the table, not a literal, so recalibrating a floor from new
+    run data is not also a test edit — the property is that the heaviest stage
+    is floored well above a light run budget, not that the number is 2700.
+    """
     stage = WorkflowStageDef(key="implement", name="Implement")
-    assert stage_timeout_seconds(stage, 600) == 2400
+    assert stage_timeout_seconds(stage, 600) == STAGE_TIMEOUT_BUDGETS["implement"]
+    assert STAGE_TIMEOUT_BUDGETS["implement"] > 600
 
 
 def test_a_light_stage_is_left_alone():
+    assert "ui-design" not in STAGE_TIMEOUT_BUDGETS, (
+        "ui-design gained a floor; pick another light stage for this test"
+    )
     stage = WorkflowStageDef(key="ui-design", name="UI")
     assert stage_timeout_seconds(stage, 600) == 600
 

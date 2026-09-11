@@ -412,6 +412,11 @@ class StageBudgetArtifactKind(StrEnum):
     DISPATCH_REROUTE = "stage_dispatch_reroute"
     #: The structural mark that this breaker is why the ticket is blocked.
     RETRY_BLOCK = "stage_retry_block"
+    #: One row per bounded automatic re-dispatch of a stage whose run died of
+    #: infrastructure rather than of the work. Its own kind, not DISPATCH,
+    #: because a transient retry is not an attempt at the work and must not
+    #: spend the runaway backstop. See `services.stage_transient_retry`.
+    TRANSIENT_RETRY = "stage_transient_retry"
 
 
 class GateFaultAttribution(StrEnum):
