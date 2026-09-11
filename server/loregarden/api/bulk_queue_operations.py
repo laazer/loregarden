@@ -22,6 +22,7 @@ from loregarden.api.queue_management import emit_execution_update
 from loregarden.db.session import get_session
 from loregarden.models.domain import QueuedRun, QueuePosition
 from loregarden.services.parallel_queue import WAITING_STATUSES
+from loregarden.services.queue_lanes import QueueLaneService
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/api/parallel", tags=["bulk-operations"])
@@ -225,13 +226,29 @@ def bulk_reorder_entries(
     )
 
 
-def _apply_retry(entry: QueuedRun) -> int:
-    """Re-queue a failed entry with exponential backoff. Returns the backoff."""
+def _apply_retry(session: Session, entry: QueuedRun) -> int:
+    """Re-queue a failed entry in its own lane. Returns the backoff.
+
+    The entry keeps `slot_number`: a lane is the operator's ordering, and a
+    retry is the same work, so it goes back where it was put. What it must not
+    keep is `position` — the lane went on running while this entry sat FAILED,
+    so the position it failed at now sits on top of an entry that has been
+    waiting since, and `waiting_in_lane` orders by exactly that column. Left
+    alone, a retried entry jumped the lane it was supposed to rejoin, and the
+    lane read 1, 1, 2 on the board.
+
+    `estimated_start_at` is advisory and always has been: nothing gates a
+    dispatch on it, and `reconcile_lanes` starts an idle lane's head on every
+    status read regardless. It is reported, not enforced.
+    """
     backoff_seconds = 2**entry.retry_count
     entry.retry_count += 1
     entry.estimated_start_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
     entry.failure_reason = ""
     entry.status = QueuePosition.QUEUED
+    session.add(entry)
+    session.commit()
+    QueueLaneService(session).place_at_lane_tail(entry)
     return backoff_seconds
 
 
@@ -252,9 +269,11 @@ def retry_failed_entry(
             detail=f"Max retries ({entry.max_retries}) exceeded",
         )
 
-    backoff_seconds = _apply_retry(entry)
-    session.add(entry)
-    session.commit()
+    backoff_seconds = _apply_retry(session, entry)
+    # No dispatch here on purpose: this endpoint puts an entry back in line, and
+    # `reconcile_lanes` starts an idle lane's head on every status read. Starting
+    # it from here would turn "retry" into "run now" and would run it *during*
+    # the backoff this call just reported.
 
     if background_tasks:
         background_tasks.add_task(emit_execution_update)
@@ -300,14 +319,12 @@ def retry_all_failed_entries(
                 }
             )
             continue
-        _apply_retry(entry)
-        session.add(entry)
+        _apply_retry(session, entry)
         retried += 1
         results.append(
             {"entry_id": entry.id, "status": "retrying", "retry_count": entry.retry_count}
         )
 
-    session.commit()
     if background_tasks and retried:
         background_tasks.add_task(emit_execution_update)
 

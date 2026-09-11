@@ -266,6 +266,26 @@ class QueueLaneService:
             "message": f"Queued at position {entry.position} in slot {slot_number}",
         }
 
+    def place_at_lane_tail(self, entry: QueuedRun) -> int:
+        """Put a re-queued entry back at the end of the lane it was already in.
+
+        A retried entry keeps its lane — that lane is the operator's ordering,
+        not presentation — but must not keep the position it held before it
+        failed. The lane moved on while the entry was out of the waiting list,
+        so a stale position puts it ahead of entries that have been waiting
+        since, and leaves the lane numbered with holes and duplicates.
+
+        Returns the position it now holds. The caller commits the entry's status
+        first: this reads the waiting list, and an entry still marked FAILED is
+        not in it.
+        """
+        entry.position = len(self.waiting_in_lane(entry.slot_number)) + 1
+        self.session.add(entry)
+        self.session.commit()
+        self._renumber(entry.slot_number)
+        self.session.refresh(entry)
+        return entry.position
+
     def start_lane_head(self, slot_number: int) -> QueuedRun | None:
         """Dispatch the front of a lane, if the lane is free and has one.
 
