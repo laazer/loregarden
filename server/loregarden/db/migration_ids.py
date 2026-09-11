@@ -143,6 +143,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0122_btw_exchange_deleted_at",
     "0123_ux_lanes_in_v3",
     "0124_ux_design_everywhere",
+    "0125_extended_tdd_reject_route",
 )
 
 

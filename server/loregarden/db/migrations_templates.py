@@ -1380,3 +1380,79 @@ def m_agent_is_default_stages(conn: Connection) -> None:
 #: Stages absent from this table keep 0 and inherit the run-wide budget: triage,
 #: spec, plan, ui-design, ac_gate, testing and the rest sit far below 600s at p90
 #: and gain nothing from a bigger one.
+
+#: The only stage in `extended-tdd` that can produce a reject verdict, and where
+#: its rework belongs. `review` sits after `static_qa`, and the fallback route
+#: sends an unmatched reject to the PREVIOUS stage — so a rejected review
+#: re-ran static analysis and flowed straight back to review, without the
+#: implementer ever being asked to fix anything.
+_EXTENDED_TDD_REVIEW = "review"
+_EXTENDED_TDD_REWORK = "implement"
+
+
+def m_extended_tdd_reject_route(conn: Connection) -> None:
+    """Give `extended-tdd`'s review stage somewhere to send a rejection.
+
+    lg-workflow-integrity-94 added reject transitions to the studio templates so
+    a typed reject verdict (lg-workflow-integrity-95) had somewhere to route.
+    `extended-tdd` was outside that ticket's scope and kept transitions carrying
+    only from/to (lg-workflow-integrity-677).
+
+    `resolve_transition_target` matches `when == "reject"` and NOTHING else on a
+    rejection — an unconditioned edge is never a fallback for it. So the reject
+    fell through to `apply_stage_route`'s previous-stage fallback and landed on
+    `static_qa`: a loop that re-runs static analysis and returns to review with
+    the code unchanged.
+
+    Shaped exactly like `loregarden-tdd`, which already carries
+    `review -> approval when=pass` and `review -> implement when=reject`, rather
+    than inventing a third arrangement.
+
+    Guarded and idempotent: a migration runs against schemas older than itself,
+    and re-running must not add the edge twice.
+    """
+    if not table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text(
+                "SELECT id, version, transitions_json FROM workflow_templates "
+                "WHERE slug='extended-tdd'"
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        return
+
+    transitions = json.loads(row["transitions_json"] or "[]")
+    already = any(
+        item.get("from") == _EXTENDED_TDD_REVIEW and item.get("when") == "reject"
+        for item in transitions
+    )
+    if already:
+        return
+
+    changed = False
+    for item in transitions:
+        # The existing forward edge becomes explicitly the PASS edge. Left
+        # unconditioned it still works, but the pair reads as a decision only
+        # when both halves say which verdict they carry.
+        if item.get("from") == _EXTENDED_TDD_REVIEW and item.get("when", "") in {
+            "",
+            "default",
+        }:
+            item["when"] = "pass"
+            changed = True
+    transitions.append({"from": _EXTENDED_TDD_REVIEW, "to": _EXTENDED_TDD_REWORK, "when": "reject"})
+    changed = True
+
+    if not changed:
+        return
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET transitions_json=:tr, version=:v WHERE id=:id"),
+        {"tr": json.dumps(transitions), "v": new_version, "id": row["id"]},
+    )
+    snapshot_template_version(conn, row["id"], new_version, "Reject route for the review stage")
