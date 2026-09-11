@@ -1400,3 +1400,28 @@ class DockerWaitBasis(StrEnum):
     TTL_BOUND = "ttl_bound"
     #: Neither is available. `seconds` is None and stays None.
     UNKNOWN = "unknown"
+
+
+class ClassifyBasis(StrEnum):
+    """What a classify stage's agent choice actually rested on.
+
+    Recorded because the weakest answer used to be indistinguishable from the
+    strongest. `blob-procedural-sdf-25` — a FastAPI ticket whose criteria say
+    "backend" eight times — was routed to `implementation_frontend` on a score
+    of 1: the single word "layout", from AC-02's "the route-first backend
+    layout". One incidental synonym beat the route the template had declared
+    `default`, the frontend agent correctly declined the work, committed
+    nothing, exited `succeeded`, and the transition gate failed a stage that had
+    never run. Five identical runs (`run_d186a8` … `run_cba3fc`) before a human
+    read the checkpoints.
+    """
+
+    #: A route matched one of its own declared specialties or languages.
+    CONTENT = "content"
+    #: `next_agent` named exactly one route; the ticket's text was ambiguous.
+    PIN = "pin"
+    #: No route earned the choice, so the template's declared default answered.
+    DEFAULT = "default"
+    #: The ticket's text argues for a specialty no route in this stage owns. A
+    #: template defect, not a routing outcome — nothing here can be dispatched.
+    UNROUTEABLE = "unrouteable"

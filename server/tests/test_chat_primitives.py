@@ -250,3 +250,20 @@ def test_ticket_triage_reply_persists_parts(client, monkeypatch):
     snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
     assistant = [m for m in snapshot["messages"] if m["role"] == "assistant"][-1]
     assert any(p.get("primitive") == "thinking" for p in assistant["parts"])
+
+
+def test_qa_fence_with_no_questions_stays_visible_text():
+    """An empty `items` is a malformed fence, not a question.
+
+    It used to parse, and `_agent_plan_reply_complete` treats any qa part as
+    "needs the operator" — so a zero-item card parked plan execution behind a
+    card that asked nothing, under a Send button that could never enable.
+    Degrading to text keeps the reply readable and lets the plan loop continue.
+    """
+    raw = '```loregarden\n{"primitive":"qa","items":[]}\n```'
+
+    parts = parse_primitive_parts(raw)
+
+    assert len(parts) == 1
+    assert isinstance(parts[0], TextPart)
+    assert parts[0].content == raw

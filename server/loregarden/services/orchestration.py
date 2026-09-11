@@ -53,6 +53,7 @@ from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
     resolve_stage_execution,
+    unrouteable_classify_detail,
 )
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
@@ -116,6 +117,16 @@ def _resolve_run_agent(
             f"Stage '{stage_def.key}' is a human approval gate — it does not run an agent CLI."
         )
     if not chosen_agent:
+        # A classify stage whose roster has nobody for this ticket says so in
+        # its own words. The generic message below sent readers looking for a
+        # fan-out bug when the fault was a template missing a specialty — and
+        # before this refused at all, the stage dispatched the least-wrong
+        # agent, which declined the work and exited `succeeded` (ClassifyBasis).
+        unrouteable = unrouteable_classify_detail(ticket, stage_def)
+        if unrouteable:
+            raise ValueError(
+                f"Stage '{stage_def.key}' has no route for this ticket: {unrouteable}."
+            )
         # Two different faults used to share the gate message above, which
         # sent every reader looking for a gate that was not there. A stage
         # that *should* run an agent but resolved none is a routing defect —
