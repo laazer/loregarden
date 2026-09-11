@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from loregarden.services.stage_report import parse_stage_report, stage_report_artifact_content
 
 
@@ -244,3 +245,65 @@ def test_the_contract_schema_shows_the_field_it_asks_for():
     text = module.read_text(encoding="utf-8")
     schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
     assert "unmet_criteria" in schema_line, "the schema omits a field the prose demands"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["status", "confidence", "reroute_to_stage", "reroute_context", "unmet_criteria"],
+)
+def test_a_null_optional_field_does_not_cost_the_report_its_verdict(field_name):
+    """An agent that fills the block symmetrically must still be heard.
+
+    A pydantic rewrite of this parser typed `status`, `confidence` and
+    `reroute_context` as non-optional, so a report carrying
+    `"reroute_context": null` — the shape the contract's own `null` examples
+    invite — failed validation whole. The verdict was discarded, the stage
+    failed closed as "the agent emitted no parseable block", and the operator
+    was told nothing was reported when a `pass` at 0.88 was sitting in the
+    buffer.
+    """
+    payload = {
+        "status": "pass",
+        "confidence": 0.88,
+        "reroute_to_stage": None,
+        "reroute_context": None,
+        "blocked_kind": None,
+        "human_task": None,
+        "unmet_criteria": [],
+    }
+    payload[field_name] = None
+    report = parse_stage_report(_wrap(json.dumps(payload)))
+
+    if field_name == "status":
+        # The verdict itself is the one thing a null cannot stand in for.
+        assert report is None
+        return
+    assert report is not None
+    assert report.status == "pass"
+    assert report.confidence == (0.0 if field_name == "confidence" else 0.88)
+    assert report.reroute_to_stage is None
+    assert report.reroute_context == ""
+    assert report.unmet_criteria == []
+
+
+def test_a_null_confidence_keeps_a_rejection_routable():
+    """`needs_rework` with a null confidence stalls rework rather than merely
+    blocking a pass, so it is worth pinning on its own."""
+    report = parse_stage_report(
+        _wrap(
+            json.dumps(
+                {
+                    "status": "needs_rework",
+                    "confidence": None,
+                    "reroute_to_stage": "implement",
+                    "reroute_context": None,
+                    "unmet_criteria": ["The endpoint returns 404."],
+                }
+            )
+        )
+    )
+    assert report is not None
+    assert report.status == "needs_rework"
+    assert report.confidence == 0.0
+    assert report.reroute_to_stage == "implement"
+    assert report.unmet_criteria == ["The endpoint returns 404."]
