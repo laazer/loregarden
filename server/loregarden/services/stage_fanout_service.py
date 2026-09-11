@@ -266,6 +266,10 @@ def _commit_attempt_work(session: Session, run: AgentRun, attempt_id: str) -> No
     root = Path(worktree.worktree_path)
     if not root.is_dir():
         return
+    # `or set()` is safe here only because the `is_dir()` guard above has
+    # already excluded the common way git cannot answer, and because None
+    # and empty lead to the same place: the early return below. Nothing is
+    # attributed on a reading this could not make.
     paths = working_tree_paths(root) or set()
     if not paths:
         return
