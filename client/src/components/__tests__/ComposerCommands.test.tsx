@@ -51,6 +51,8 @@ function session(overrides = {}) {
     error: null,
     loadError: false,
     send: jest.fn().mockResolvedValue({}),
+    stop: jest.fn().mockResolvedValue({}),
+    isStopping: false,
     ...overrides,
   };
 }

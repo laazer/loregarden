@@ -7,6 +7,7 @@ import { isRunStatusBusy } from "../lib/chatSession";
 import {
   fetchBranchChat,
   sendBranchChatMessage,
+  stopBranchChatTurn,
   type BranchTriageChatSnapshot,
 } from "../lib/branchTriageApi";
 
@@ -88,6 +89,22 @@ export function useBranchChatSession(
     },
   });
 
+  const stopTurn = useMutation({
+    meta: { errorTitle: "Stop turn" },
+    mutationFn: () => stopBranchChatTurn(workspaceSlug, branch),
+    onSuccess: (snapshot) => {
+      qc.setQueryData(chatQueryKey, snapshot);
+    },
+    // The composer keys on the snapshot, so resync it however the stop went.
+    onSettled: () => {
+      // `isBusy` is an or: a send whose POST never returns locks the composer
+      // just as durably as a pending row does, and settling the row server-side
+      // would not have cleared it.
+      sendMessage.reset();
+      qc.invalidateQueries({ queryKey: chatQueryKey });
+    },
+  });
+
   return {
     kind: "branch-triage",
     id: `${workspaceSlug}#${branch}`,
@@ -104,6 +121,11 @@ export function useBranchChatSession(
       ? (sendMessage.error as Error)?.message || "Failed to send message"
       : null,
     send: (content) => sendMessage.mutateAsync(content),
+    // Without this the only exit from a turn whose CLI hangs is a server
+    // restart: `isBusy` is server-derived, and the restart reaper that
+    // settles orphaned turns runs at startup and nowhere else.
+    stop: () => stopTurn.mutateAsync(),
+    isStopping: stopTurn.isPending,
     snapshot: chat.data,
     isFetching: chat.isFetching,
   };

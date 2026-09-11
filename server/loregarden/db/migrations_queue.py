@@ -389,3 +389,26 @@ def m_lane_repair_hold(conn: Connection) -> None:
             "repairing_since": "ALTER TABLE queued_runs ADD COLUMN repairing_since DATETIME",
         },
     )
+
+
+def m_agent_run_status_index(conn: Connection) -> None:
+    """Index the column the boot sweep selects on.
+
+    `agent_runs` stores `stdout`/`stderr` inline — 277MB across 1224 rows on the
+    installation this was found on, 285MB of the database's 336MB total. Every
+    reaper in the startup lifespan runs `select(AgentRun).where(status.in_(...))`,
+    which SQLModel emits as `SELECT *`; with no index on `status` each one is a
+    full scan that faults in every row's overflow pages. Eight such passes run
+    serially before the app yields, so a restart ran for over two hours during
+    which nothing was served and every chat surface looked stuck with no way to
+    recover — the reason this migration exists.
+
+    The column is highly selective for exactly the queries that matter: one row
+    at RUNNING against 1045 SUCCEEDED and 172 FAILED.
+
+    `IF NOT EXISTS` because a database created from current metadata already has
+    the index — the model declares it — and this must be a no-op there.
+    """
+    if not table_exists(conn, "agent_runs"):
+        return
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_agent_runs_status ON agent_runs (status)"))

@@ -1989,3 +1989,55 @@ def test_agent_owned_playtest_items_move_to_the_stages_that_own_them(tmp_path):
             ).scalar()
         )
     assert {s["key"]: s for s in again}["playtest"]["checklist"].count("{{ticket_intent}}") == 1
+
+
+def test_agent_run_status_is_indexed_in_fresh_metadata():
+    """The model declares the index, so a new database never lacks it."""
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    assert ("status",) in _index_columns(engine, "agent_runs")
+
+
+def test_migration_indexes_agent_run_status_on_an_existing_database(tmp_path):
+    """An installation created before 0116 gets the index without a rebuild."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'runs.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE agent_runs ("
+                "id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'queued', "
+                "stdout TEXT NOT NULL DEFAULT '')"
+            )
+        )
+    assert ("status",) not in _index_columns(engine, "agent_runs")
+
+    apply_migrations(engine)
+
+    assert ("status",) in _index_columns(engine, "agent_runs")
+
+
+def test_the_boot_reapers_status_filter_stops_scanning_the_table(tmp_path):
+    """The point of the index: `SELECT *` by status must not read every row.
+
+    `agent_runs` carries `stdout`/`stderr` inline, so a scan here faults in the
+    overflow pages of every run ever recorded. The startup sweep issues this
+    query shape repeatedly before the app serves anything, which is how a
+    restart came to take twenty minutes.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'plan.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    with engine.connect() as conn:
+        plan = " ".join(
+            str(row)
+            for row in conn.execute(
+                text(
+                    "EXPLAIN QUERY PLAN SELECT * FROM agent_runs "
+                    "WHERE status IN ('running', 'awaiting_permission')"
+                )
+            ).fetchall()
+        )
+
+    assert "ix_agent_runs_status" in plan
+    assert "SCAN agent_runs" not in plan

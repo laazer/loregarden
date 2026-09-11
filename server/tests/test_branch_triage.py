@@ -19,7 +19,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.branch_triage_chat_service import invoke_branch_triage_model
-from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
+from loregarden.services.branch_triage_run_service import (
+    CANCELLED_TURN_MESSAGE,
+    fail_interrupted_branch_triage_turns,
+)
 from loregarden.services.branch_triage_service import (
     PR_STATUS_TERMINAL_TTL_SECONDS,
     PR_STATUS_TTL_SECONDS,
@@ -945,6 +948,71 @@ def test_interrupted_branch_chat_turn_is_settled_so_the_composer_recovers(
     ).json()
     assert snapshot["run_status"] == "idle"
     assert len(snapshot["messages"]) == 1
+
+
+def test_stopping_a_branch_chat_turn_unlocks_the_composer(
+    client: TestClient, triage_repo, db_session: Session
+):
+    """A turn whose CLI hangs outlives the restart reaper — the operator needs an exit."""
+    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert ws is not None
+    subprocess.run(
+        ["git", "branch", "feature/hung"], cwd=triage_repo, check=True, capture_output=True
+    )
+    run = AgentRun(
+        run_code="run_stop01",
+        ticket_id=None,
+        workspace_id=ws.id,
+        agent_id="triage",
+        stage_key=BRANCH_TRIAGE_STAGE_KEY,
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.add(
+        BranchTriageMessage(
+            workspace_id=ws.id,
+            branch="feature/hung",
+            role="assistant",
+            content="",
+            status="pending",
+            run_id=run.id,
+        )
+    )
+    db_session.commit()
+
+    res = client.post(
+        "/api/workspaces/loregarden/branch-triage/chat/stop",
+        params={"branch": "feature/hung"},
+    )
+    assert res.status_code == 200
+    snapshot = res.json()
+    assert snapshot["run_status"] == "idle"
+    assert snapshot["active_turn_id"] is None
+    assert [msg["content"] for msg in snapshot["messages"]] == [CANCELLED_TURN_MESSAGE]
+
+    # The composer is only genuinely unlocked if the next send is accepted.
+    db_session.expire_all()
+    stopped_run = db_session.get(AgentRun, run.id)
+    assert stopped_run is not None
+    assert stopped_run.status == RunStatus.FAILED
+    assert stopped_run.cancel_requested_at is not None
+
+
+def test_stopping_an_idle_branch_chat_is_a_no_op(
+    client: TestClient, triage_repo, db_session: Session
+):
+    """The recovery path has to answer from whatever state the operator is looking at."""
+    subprocess.run(
+        ["git", "branch", "feature/quiet"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    res = client.post(
+        "/api/workspaces/loregarden/branch-triage/chat/stop",
+        params={"branch": "feature/quiet"},
+    )
+    assert res.status_code == 200
+    assert res.json()["run_status"] == "idle"
+    assert res.json()["messages"] == []
 
 
 def test_branch_activity_marks_unpushed_commits_as_local(triage_workspace, triage_repo, tmp_path):

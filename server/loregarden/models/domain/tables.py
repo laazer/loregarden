@@ -315,9 +315,14 @@ class AgentRun(SQLModel, table=True):
     )
     skill_name: str = ""
     stage_key: str = ""
+    #: Indexed because every reaper and the whole boot sweep select on it, and
+    #: this table carries `stdout`/`stderr` inline: an unindexed
+    #: `status IN (...)` is a full scan that drags every row's overflow pages
+    #: off disk. At 1224 rows that was 277MB of I/O per pass, ~8 passes per
+    #: boot, and the app serves nothing until they finish (0127).
     status: RunStatus = Field(
         default=RunStatus.QUEUED,
-        sa_column=str_enum_column(RunStatus, RunStatus.QUEUED),
+        sa_column=str_enum_column(RunStatus, RunStatus.QUEUED, index=True),
     )
     command: str = ""
     # Paths this run left dirty, so its commit can be scoped to its own work

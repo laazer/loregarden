@@ -8,6 +8,7 @@ from loregarden.models.domain import BranchDiffComment, Ticket, Workspace
 from loregarden.services.branch_triage_chat_service import branch_chat_snapshot
 from loregarden.services.branch_triage_run_service import (
     BranchTriageConflictError,
+    cancel_branch_triage_turn,
     schedule_branch_triage_turn,
     start_branch_triage_run,
 )
@@ -235,6 +236,23 @@ def post_branch_chat_message(
         "active_turn_id": assistant_message.id,
         "status": "queued",
     }
+
+
+@router.post("/{slug}/branch-triage/chat/stop")
+def stop_branch_chat_turn(
+    slug: str,
+    branch: str = Query(..., min_length=1),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Stop the in-flight turn so the composer unlocks immediately.
+
+    Answers on an idle branch too: the composer is locked by whatever the
+    snapshot last said, so the recovery path has to be reachable from the state
+    the operator is actually looking at.
+    """
+    ws = _workspace_or_404(session, slug)
+    cancel_branch_triage_turn(session, ws, branch)
+    return branch_chat_snapshot(session, ws, branch)
 
 
 @router.get("/{slug}/branch-triage/diff-comments")

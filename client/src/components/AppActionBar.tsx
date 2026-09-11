@@ -126,9 +126,10 @@ export function AppActionBar() {
 
   const expanded = chatOpen && Boolean(session);
   const sendable = Boolean(session) && !session?.loadError;
-  // Home Baxter (and any surface that exposes stop) — not ticket aside mode,
-  // which routes a busy composer to a read-only question instead.
-  const canStop = Boolean(session?.isBusy && session.stop && !asideMode);
+  // Every surface exposes stop now, so the only question left is whether this
+  // one is busy — and aside mode, which routes a busy composer to a read-only
+  // question instead of a turn to stop.
+  const canStop = Boolean(session?.isBusy && !asideMode);
   const quickPrompts = session
     ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
@@ -470,7 +471,9 @@ export function AppActionBar() {
             : !sendable || !draft.trim() || asides.isAsking
         }
         onClick={() => {
-          if (canStop && session?.stop) {
+          // `stop` is required on ChatSession now, so the only question left
+          // is whether there is a session at all.
+          if (canStop && session) {
             void session.stop().catch(() => {
               // silent-ok: stop is a mutation with meta.errorTitle, so the
               // global MutationCache toast reports a stop that did not take.

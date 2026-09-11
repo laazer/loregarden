@@ -69,6 +69,7 @@ from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from sqlalchemy.orm import load_only
 from sqlmodel import Session, col, select
 
 #: A stage is thrashing at twice the observed re-run rate, but never below four
@@ -123,9 +124,33 @@ def _runs(session: Session, ticket_id: str | None) -> list[AgentRun]:
     Rows with no `ticket_id` are workspace-scoped chat runs with no workflow to
     report a finding against.
     """
-    statement = select(AgentRun).where(
-        col(AgentRun.agent_id) != TRIAGE_AGENT_ID,
-        col(AgentRun.ticket_id).is_not(None),
+    statement = (
+        select(AgentRun)
+        .where(
+            col(AgentRun.agent_id) != TRIAGE_AGENT_ID,
+            col(AgentRun.ticket_id).is_not(None),
+        )
+        # The sweep reads seven small columns, and `agent_runs` stores
+        # `stdout`/`stderr` inline — 277MB across 1224 rows on the installation
+        # this was measured on. Loading the whole entity pulled every byte of it
+        # into memory on each pass, at startup and then on the reconcile timer
+        # forever after; unscoped, that read alone kept the app from serving.
+        #
+        # `raiseload` rather than plain deferral: a future reader who reaches for
+        # `run.stdout` here should get an error naming the problem, not 1224
+        # silent follow-up queries that reintroduce the cost invisibly.
+        .options(
+            load_only(
+                AgentRun.id,
+                AgentRun.agent_id,
+                AgentRun.ticket_id,
+                AgentRun.orchestration_run_id,
+                AgentRun.stage_key,
+                AgentRun.started_at,
+                AgentRun.status,
+                raiseload=True,
+            )
+        )
     )
     if ticket_id:
         statement = statement.where(col(AgentRun.ticket_id) == ticket_id)

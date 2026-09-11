@@ -38,6 +38,7 @@ from loregarden.services.chat_thinking import (
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import resolve_chat_adapter
+from loregarden.services.run_cancellation import request_cancel
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
@@ -58,6 +59,9 @@ INTERRUPTED_TURN_MESSAGE = (
     f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and did not finish this turn. "
     "Send the message again."
 )
+
+
+CANCELLED_TURN_MESSAGE = f"Stopped before {TRIAGE_AGENT_NAME} finished this turn."
 
 
 class TriageConflictError(ValueError):
@@ -320,3 +324,52 @@ def schedule_triage_turn(run_id: str) -> None:
         daemon=True,
     )
     thread.start()
+
+
+def cancel_triage_turn(
+    session: Session,
+    ticket_id: str,
+    *,
+    message: str = CANCELLED_TURN_MESSAGE,
+) -> AgentRun | None:
+    """Stop this ticket's in-flight triage turn and reply in the chat.
+
+    The fourth surface to get a stop, and the last: ``ChatSession.stop`` is
+    required now, so a chat that cannot be stopped no longer type-checks.
+
+    Settles the run by hand rather than through ``OrchestrationService`` for the
+    reason this module exists (see the module docstring, and
+    ``fail_interrupted_triage_turns``): a triage turn is a side channel, and
+    completing it through the orchestrator would advance the ticket's workflow
+    stage off a chat message.
+
+    ``request_cancel`` is still safe to ask first — ``find_active_run`` only
+    returns RUNNING and AWAITING_PERMISSION runs, and neither of those branches
+    calls ``complete_run``. It is what reaches a live CLI subprocess, so without
+    it the row settles while the agent keeps burning tokens.
+    """
+    run = find_active_run(session, ticket_id, only_agent_id=TRIAGE_AGENT_ID)
+    if not run:
+        return None
+
+    try:
+        request_cancel(session, run)
+    except ValueError:
+        # Past the point a request helps. The message below is what the operator
+        # is waiting on, so this is not a failure of the stop.
+        logger.warning("Triage run %s would not take a cancel request", run.id)
+
+    run.status = RunStatus.FAILED
+    run.stderr = message[:4000]
+    run.finished_at = datetime.now(timezone.utc)
+    session.add(run)
+    session.add(
+        TriageMessage(
+            ticket_id=ticket_id,
+            role="assistant",
+            content=message,
+            run_id=run.id,
+        )
+    )
+    session.commit()
+    return run

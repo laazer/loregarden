@@ -284,6 +284,13 @@ export async function sendBranchChatMessage(
   });
 }
 
+export async function stopBranchChatTurn(
+  slug: string,
+  branch: string,
+): Promise<BranchTriageChatSnapshot> {
+  return branchTriageRequest(branchQueryPath(slug, branch, "/chat/stop"), { method: "POST" });
+}
+
 export async function listBranchDiffComments(
   slug: string,
   branch: string,
