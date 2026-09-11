@@ -164,3 +164,27 @@ def test_skip_failed_is_a_post_not_a_get(client, db_session, workspace):
     assert body["skipped_count"] == 1
     db_session.refresh(entry)
     assert entry.status == QueuePosition.SKIPPED
+
+
+def test_a_retried_entry_rejoins_the_back_of_its_own_lane(client, db_session, workspace):
+    """It keeps its lane and loses its stale position.
+
+    The lane kept running while this entry sat FAILED, so the position it failed
+    at is now held by someone else. `waiting_in_lane` orders by that column, so
+    the retried entry jumped ahead of an entry that had been waiting since — and
+    the lane read 1, 1 on the board.
+    """
+    from loregarden.services.queue_lanes import QueueLaneService
+
+    failed = _entry(db_session, workspace, "boom", status=QueuePosition.FAILED)
+    waiting = _entry(db_session, workspace, "next")
+    lanes = QueueLaneService(db_session)
+    assert [e.id for e in lanes.waiting_in_lane(1)] == [waiting.id]
+
+    assert _post(client, workspace, f"{failed.id}/retry", None).status_code == 200
+
+    db_session.refresh(failed)
+    db_session.refresh(waiting)
+    assert failed.slot_number == 1
+    assert [e.id for e in lanes.waiting_in_lane(1)] == [waiting.id, failed.id]
+    assert [e.position for e in lanes.waiting_in_lane(1)] == [1, 2]

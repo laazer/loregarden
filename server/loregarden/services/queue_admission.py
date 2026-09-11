@@ -37,7 +37,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from loregarden.models.domain import AgentSlot, QueueEntryKind, Ticket
+from loregarden.models.domain import AgentSlot, QueuedRun, QueueEntryKind, Ticket
 
 # Imported for its install side effect as much as for anything: admission is the
 # gate every externally-started run passes through, so installing the lane
@@ -46,7 +46,7 @@ from loregarden.services import queue_dispatch  # noqa: F401
 from loregarden.services.parallel_queue import claim_free_slot
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.websocket_events import emit_execution_update
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -254,13 +254,23 @@ class QueueAdmissionService:
                 reused=True,
             )
 
+        # A caller that named no lane still gets one: the lane this ticket last
+        # occupied. A lane is an operator's ordering — "run this after that" —
+        # and a ticket that runs again after its lane was released (a repair
+        # that settled, a failed run restarted, a stage re-dispatched) is the
+        # same work, so it belongs back where it was put rather than wherever
+        # the pool happens to be shortest.
+        preference = preferred_slot
+        if preference is None:
+            preference = self._lane_last_used(ticket.id)
+
         # Claimed before the caller starts anything, and claimed atomically: the
         # select-then-mutate this replaced let two requests arriving together
         # both read the same row as free and both write it. `preferred_slot` is
         # a preference, not a demand — an operator whose chosen lane filled
         # between opening the dialog and confirming wants the ticket to run, and
         # the slot number is presentation.
-        free = claim_free_slot(self.session, preferred=preferred_slot)
+        free = claim_free_slot(self.session, preferred=preference)
 
         if free:
             return Reservation(
@@ -270,8 +280,9 @@ class QueueAdmissionService:
                 _session=self.session,
             )
 
-        # Full: wait in the lane the operator chose, or the shortest.
-        lane = preferred_slot if preferred_slot in self.lanes.lane_numbers() else None
+        # Full: wait in the lane the operator chose, or this ticket's own lane,
+        # or the shortest.
+        lane = preference if preference in self.lanes.lane_numbers() else None
         if lane is None:
             lane = self._shortest_lane()
         result = self.lanes.add_to_lane(
@@ -312,6 +323,24 @@ class QueueAdmissionService:
         return self.session.exec(
             select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
         ).first()
+
+    def _lane_last_used(self, ticket_id: str) -> int | None:
+        """The lane this ticket most recently sat in, or None because it never has.
+
+        Read from `queued_runs` rather than from the ticket, because the entry
+        is the only record that survives the run: a lane is released the moment
+        its orchestration ends, and the ticket keeps nothing pointing at it.
+        A lane that has since been removed from the pool is not returned — the
+        caller treats None as "no preference", which is what it is.
+        """
+        last = self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.ticket_id == ticket_id)
+            .order_by(col(QueuedRun.created_at).desc())
+        ).first()
+        if last is None:
+            return None
+        return last.slot_number if last.slot_number in self.lanes.lane_numbers() else None
 
     def _shortest_lane(self) -> int:
         """The lane with the least waiting behind it, ties going to the lowest.

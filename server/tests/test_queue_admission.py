@@ -10,7 +10,7 @@ the caller is told which.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from loregarden.models.domain import AgentSlot, QueuedRun, Ticket, Workspace
+from loregarden.models.domain import AgentSlot, QueuedRun, QueuePosition, Ticket, Workspace
 from loregarden.services.queue_admission import QueueAdmissionService
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_orchestration_run
@@ -437,3 +437,81 @@ def test_a_reservation_that_never_binds_is_collected_after_the_grace(session, wo
     assert admission.lanes.slots.reconcile_slots() == [reservation.slot_number]
     session.refresh(slot)
     assert slot.is_available is True
+
+
+# ---- a retry keeps the lane the ticket was in --------------------------
+
+
+def test_a_retried_ticket_returns_to_the_lane_it_was_in(session, workspace):
+    """A lane is an ordering, and a re-run is the same work.
+
+    Re-admission named no lane, so `_shortest_lane` placed the ticket wherever
+    the pool happened to be emptiest — a ticket an operator had put in lane 3
+    came back in lane 1 the moment its run failed and restarted. Measured on the
+    live database, one ticket's nine entries read 2,1,1,1,1,1,1,1,2.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    ticket = _ticket(session, workspace.id, "T-again")
+    first = admission.reserve_orchestration(ticket, preferred_slot=3)
+    assert first.slot_number == 3
+    orch = make_orchestration_run(
+        session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="orch-again"
+    )
+    first.bind(orchestration_run_id=orch.id)
+    first.release()
+
+    again = admission.reserve_orchestration(ticket)
+
+    assert again.admitted
+    assert again.slot_number == 3
+
+
+def test_a_retried_ticket_parks_in_its_own_lane_when_the_pool_is_full(session, workspace):
+    """Same rule on the waiting side: it waits where it ran, not where it is quickest."""
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    ticket = _ticket(session, workspace.id, "T-park-again")
+    _fill_pool(session, admission, workspace, 3)
+    # Lane 3 now has this ticket behind it and lanes 1-2 have nothing, so the
+    # shortest-lane default would move it.
+    admission.lanes.add_to_lane(ticket_id=ticket.id, slot_number=3)
+    entry = session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).one()
+    assert entry.slot_number == 3
+    entry.status = QueuePosition.STARTED
+    session.add(entry)
+    session.commit()
+
+    reservation = admission.reserve_stage(ticket, stage_key="implement")
+
+    assert not reservation.admitted
+    assert reservation.slot_number == 3
+
+
+def test_a_named_lane_still_beats_the_ticket_s_last_one(session, workspace):
+    """The operator moving a ticket is a decision; the remembered lane is a default."""
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    ticket = _ticket(session, workspace.id, "T-moved")
+    ran = admission.reserve_orchestration(ticket, preferred_slot=3)
+    orch = make_orchestration_run(
+        session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="orch-moved"
+    )
+    ran.bind(orchestration_run_id=orch.id)
+    ran.release()
+
+    reservation = admission.reserve_orchestration(ticket, preferred_slot=2)
+
+    assert reservation.slot_number == 2
+
+
+def test_a_ticket_that_never_ran_still_takes_the_shortest_lane(session, workspace):
+    """The remembered lane is read from the ticket's own entries, and a ticket
+    with none has no preference to honour."""
+    admission = QueueAdmissionService(session, max_concurrent=2)
+    _fill_pool(session, admission, workspace, 2)
+    for code in ("A", "B"):
+        admission.lanes.add_to_lane(
+            ticket_id=_ticket(session, workspace.id, code).id, slot_number=1
+        )
+
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-new"))
+
+    assert reservation.slot_number == 2
