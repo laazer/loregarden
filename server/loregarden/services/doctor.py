@@ -37,6 +37,8 @@ from loregarden.agents.mcp_context import (
     load_stage_report_contract_doc,
 )
 from loregarden.config import resolved_database_path, settings
+from loregarden.db.migration_ledger import ledger_orphans
+from loregarden.db.migrations import MIGRATIONS
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -540,6 +542,50 @@ def check_studio_draft_drift(
     )
 
 
+def check_migration_ledger(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """Migrations this database applied under ids the build no longer registers.
+
+    `assert_migration_ids_are_sound` guards the REGISTERED list and never reads
+    what was APPLIED, so the renumber its own docstring warns about is invisible
+    to it. Branches claim a number when written and main moves before they merge,
+    so renumbering on rebase is routine — five collisions on 2026-09-10.
+
+    WARN rather than FAIL: every orphan currently in this database is benign,
+    because the migrations involved happen to be idempotent. It is a standing
+    risk rather than a broken state, and failing the doctor on it would train
+    people to ignore the doctor.
+    """
+    orphans = ledger_orphans(session, [migration_id for migration_id, _ in MIGRATIONS])
+    if not orphans:
+        return _ok(DoctorCheck.MIGRATION_LEDGER, "Every applied migration is registered.")
+
+    renumbered = [item for item in orphans if item.was_renumbered]
+    deleted = [item for item in orphans if not item.was_renumbered]
+
+    parts = []
+    if renumbered:
+        parts.append(
+            "ran twice under two ids: "
+            + ", ".join(f"{item.applied_id} -> {item.renumbered_to}" for item in renumbered)
+        )
+    if deleted:
+        parts.append(
+            "applied but no longer in the build: " + ", ".join(item.applied_id for item in deleted)
+        )
+    return DoctorFinding(
+        check=DoctorCheck.MIGRATION_LEDGER,
+        status=DoctorStatus.WARN,
+        finding="; ".join(parts) + ".",
+        remediation=(
+            "Safe while those migrations are idempotent, which the suite now asserts. "
+            "A renumbered one has already run twice here; a deleted one left changes "
+            "nothing will undo. Check both before relying on this schema."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -555,6 +601,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.STUDIO_DRAFT_DRIFT: check_studio_draft_drift,
     DoctorCheck.DOCKER_CAPACITY: check_docker_capacity,
     DoctorCheck.DOCKER_UNACCOUNTED: check_docker_unaccounted,
+    DoctorCheck.MIGRATION_LEDGER: check_migration_ledger,
 }
 
 

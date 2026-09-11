@@ -244,6 +244,14 @@ class DoctorCheck(str, Enum):
     #: The database resolved relative to a worktree, which answers every ticket
     #: query with a silent zero instead of an error.
     DB_RESOLUTION = "db_resolution"
+    #: A migration applied under an id the build no longer registers. Branches
+    #: claim the next free number when they are WRITTEN and main moves before
+    #: they MERGE, so renumbering on rebase is routine here — five collisions in
+    #: one day, 2026-09-10. The renumbered migration then runs a SECOND time
+    #: under its new id, which is survivable only while every migration happens
+    #: to be idempotent, and nothing enforces that (lg-workflow-integrity-712).
+    MIGRATION_LEDGER = "migration_ledger"
+
     #: Backend `.py` edits newer than the reload sentinel, so a running dev
     #: server is still serving the code the fix replaced.
     BACKEND_RELOAD_SENTINEL = "backend_reload_sentinel"
