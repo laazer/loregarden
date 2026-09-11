@@ -1370,3 +1370,29 @@ def test_subtree_bound_zero_means_unlimited(db_session: Session, tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# AC: a builtin_autopilot run renews its own lease, so the sweep cannot
+# reclaim a run that is doing work
+# ---------------------------------------------------------------------------
+
+
+def test_builtin_run_records_a_lease_stamp(db_session: Session, tmp_path):
+    """`touch_lease` was reachable only through the MCP callbacks and the
+    external harness — paths this driver never crosses, because it advances its
+    own stages in-process. Every builtin run therefore carried a null
+    `last_seen_at` and was judged on `started_at`: permanently "expired" 30
+    minutes in, and reclaimable in any gap between stages. That is how
+    `orch_749069` was failed out from under a ticket whose stages all passed.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-lease")
+    ticket = _make_ticket(db_session, ws, external_id="lease-1", title="Solo")
+
+    orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
+
+    db_session.refresh(orch_run)
+    assert orch_run.last_seen_at is not None, (
+        "a builtin run must renew its own lease; without a stamp the sweep judges "
+        "it on started_at and reclaims a healthy run mid-handoff"
+    )

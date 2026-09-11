@@ -81,8 +81,9 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
 
 #: How long an orchestration may go without a single control-plane write before
 #: its lane is reclaimable. Renewed by `OrchestrationCallbackService.touch_lease`
-#: on every stage start, completion, skip and block, so a session doing real work
-#: renews many times over; only one that has stopped talking to us expires.
+#: on every stage start, completion, skip and block — reached by the MCP callbacks,
+#: the external harness, and `BuiltinOrchestrator._renew_lease` — so a session doing
+#: real work renews many times over; only one that has stopped talking to us expires.
 ORCHESTRATION_LEASE = timedelta(minutes=30)
 
 
@@ -117,9 +118,41 @@ def orchestration_lease_expired(
     if live_agent_run:
         return False
 
-    stamp = run.last_seen_at or run.started_at or run.created_at
+    stamp = _latest_activity(session, run)
     if stamp is None:
         return False
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - stamp > lease
+
+
+def _latest_activity(session: Session, run: OrchestrationRun) -> datetime | None:
+    """The most recent moment this orchestration is known to have been alive.
+
+    The lease stamp alone answers for the driver's own writes. A child agent
+    run that finished seconds ago answers for the handoff *between* stages: the
+    in-flight veto above lapses the instant the last agent of a stage exits, and
+    the gate evaluation and next dispatch that follow take seconds during which
+    nothing holds the run up. A sweep landing in that window kills a healthy
+    orchestration mid-stride — which is how orch_749069 died 345ms after its
+    last reviewer passed, with every stage green. A just-finished child is
+    activity, so it counts as one.
+    """
+    latest_child_finish = session.exec(
+        select(AgentRun.finished_at)
+        .where(AgentRun.orchestration_run_id == run.id)
+        .where(col(AgentRun.finished_at).is_not(None))
+        .order_by(col(AgentRun.finished_at).desc())
+        .limit(1)
+    ).first()
+    candidates = [
+        _as_utc(run.last_seen_at or run.started_at or run.created_at),
+        _as_utc(latest_child_finish),
+    ]
+    known = [stamp for stamp in candidates if stamp is not None]
+    return max(known) if known else None
+
+
+def _as_utc(stamp: datetime | None) -> datetime | None:
+    """Naive timestamps are stored as UTC; compare them as such."""
+    if stamp is None:
+        return None
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=timezone.utc)

@@ -350,3 +350,60 @@ def test_a_board_read_does_not_draw_a_lane_whose_lease_expired(session, workspac
     snapshot = build_queue_status(session)
 
     assert snapshot["active_runs"] == []
+
+
+# ---- the handoff between stages is not a quiet run ---------------------
+
+
+def test_a_just_finished_child_run_holds_the_lease(session, workspace):
+    """The gap the in-flight veto cannot cover.
+
+    `orch_749069` had every stage green — three script_review reviewers passing
+    — and was swept 345ms after the last of them exited, in the seconds between
+    that stage ending and its exit gate dispatching. The veto above only sees
+    RUNNING/QUEUED children, so it lapses the instant a stage's last agent
+    finishes; the run then has nothing holding it up until the next dispatch.
+    A child that finished seconds ago is activity.
+    """
+    from loregarden.models.domain import AgentRun, RunStatus
+
+    ticket = _ticket(session, workspace)
+    run = _orch(session, ticket, age=EXPIRED, last_seen=EXPIRED)
+    session.add(
+        AgentRun(
+            run_code="run_done",
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            agent_id="architecture_reviewer",
+            status=RunStatus.SUCCEEDED,
+            orchestration_run_id=run.id,
+            started_at=datetime.now(timezone.utc) - EXPIRED,
+            finished_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+    )
+    session.commit()
+
+    assert orchestration_lease_expired(session, run) is False
+
+
+def test_a_run_whose_last_child_finished_long_ago_still_expires(session, workspace):
+    """The stamp must widen the window, not remove it."""
+    from loregarden.models.domain import AgentRun, RunStatus
+
+    ticket = _ticket(session, workspace)
+    run = _orch(session, ticket, age=EXPIRED, last_seen=EXPIRED)
+    session.add(
+        AgentRun(
+            run_code="run_stale",
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            agent_id="architecture_reviewer",
+            status=RunStatus.SUCCEEDED,
+            orchestration_run_id=run.id,
+            started_at=datetime.now(timezone.utc) - EXPIRED,
+            finished_at=datetime.now(timezone.utc) - EXPIRED,
+        )
+    )
+    session.commit()
+
+    assert orchestration_lease_expired(session, run) is True
