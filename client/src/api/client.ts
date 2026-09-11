@@ -483,6 +483,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content, auto_approve: options?.auto_approve ?? false }),
     }),
+  /**
+   * Settle the in-flight triage turn so the composer unlocks.
+   *
+   * Not `stopTicket`: that stops the ticket's workflow stage. A triage turn is a
+   * side channel on the same ticket, and stopping one must not advance the other.
+   */
+  stopTriageTurn: (ticketId: string) =>
+    request<TriageSnapshot>(`/api/tickets/${ticketId}/triage/stop`, { method: "POST" }),
   baxterChatSessions: (slug: string) =>
     request<BaxterChatSessionSummary[]>(
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions`,
@@ -658,6 +666,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ answers }),
     }),
+  /**
+   * Settle the in-flight scoper turn so the panel unlocks.
+   *
+   * A pending turn blocks every later one on the session, and the restart
+   * reaper that would clear it only runs at boot — so without this a hung
+   * model call makes the session unusable until the server is restarted.
+   */
+  stopTicketStudioTurn: (id: string) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/stop`, { method: "POST" }),
   generateTicketStudioScope: (id: string) =>
     request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/scope`, { method: "POST" }),
   commitTicketStudioSession: (id: string) =>

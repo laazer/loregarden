@@ -34,6 +34,8 @@ export function TicketStudioComposer({
   onSubmit,
   placeholder,
   isSending,
+  onStop,
+  isStopping,
   disabled,
   modelLabel,
   onModelClick,
@@ -50,6 +52,17 @@ export function TicketStudioComposer({
   onSubmit: () => void;
   placeholder?: string;
   isSending?: boolean;
+  /** Settle the in-flight turn. Without it the composer offers no way out. */
+  onStop?: () => void;
+  isStopping?: boolean;
+  /**
+   * The toolbar actions are unavailable.
+   *
+   * Deliberately not forwarded to the composer itself: `StudioChatComposer`
+   * gates its Stop control on `!disabled`, so passing the busy state here
+   * disabled the one control that exists for the busy state. Sending is already
+   * held off by `isSending`.
+   */
   disabled?: boolean;
   modelLabel: string;
   onModelClick: () => void;
@@ -68,7 +81,8 @@ export function TicketStudioComposer({
       onSubmit={onSubmit}
       placeholder={placeholder}
       isSending={isSending}
-      disabled={disabled}
+      onStop={onStop}
+      isStopping={isStopping}
       toolbar={
         <>
           <button

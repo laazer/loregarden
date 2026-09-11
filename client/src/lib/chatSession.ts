@@ -70,14 +70,20 @@ export interface ChatSession {
   /** Resolves once the turn is accepted; rejects if the send failed. */
   send: (content: string, options?: ChatSendOptions) => Promise<unknown>;
   /**
-   * Stop the in-flight turn, when this surface supports it.
+   * Stop the in-flight turn. Settles the pending row so the composer unlocks.
    *
-   * Home Baxter settles the pending assistant row immediately so the composer
-   * unlocks. Surfaces without a cancel path omit this — the bar then keeps
-   * its ordinary Send control while busy.
+   * Required, and that is the point. This was optional, and the two surfaces
+   * that quietly declined to implement it — branch triage and ticket triage —
+   * spent months with no way out of a hung turn: `AppActionBar` simply renders
+   * no control when a session omits one, so nothing ever failed and nothing
+   * ever said so. A required field means the next surface cannot ship without
+   * answering the question.
+   *
+   * Every surface settles its own pending row; what differs is only where that
+   * row lives, and whether there is an `AgentRun` behind it to cancel as well.
    */
-  stop?: () => Promise<unknown>;
-  isStopping?: boolean;
+  stop: () => Promise<unknown>;
+  isStopping: boolean;
 }
 
 export interface ChatSendOptions {

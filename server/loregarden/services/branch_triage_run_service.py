@@ -27,6 +27,7 @@ from loregarden.services.branch_triage_chat_service import (
     latest_pending_turn,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.run_concurrency import new_run_code
@@ -39,6 +40,8 @@ INTERRUPTED_TURN_MESSAGE = (
     f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and did not finish this turn. "
     "Send the message again."
 )
+
+CANCELLED_TURN_MESSAGE = f"{TRIAGE_AGENT_NAME} stopped this turn at your request."
 
 
 class BranchTriageConflictError(ValueError):
@@ -247,3 +250,30 @@ def fail_interrupted_branch_triage_turns(
     if settled:
         session.commit()
     return settled
+
+
+def cancel_branch_triage_turn(
+    session: Session,
+    workspace: Workspace,
+    branch: str,
+    *,
+    message: str = CANCELLED_TURN_MESSAGE,
+) -> BranchTriageMessage | None:
+    """Stop the branch's in-flight turn and unlock the composer immediately.
+
+    Mirrors ``baxter_chat_run_service.cancel_baxter_chat_turn``, and for the
+    reason that surface has one: the restart reaper only runs at startup, so a
+    turn whose CLI hangs while the server keeps serving leaves ``run_status``
+    at ``running`` with nothing an operator can do about it.
+
+    Settles the pending assistant row first — that is what ``run_status`` and
+    the composer's busy flag key on. Then asks any matching workspace
+    ``AgentRun`` to stop cooperatively so the turn stops burning tokens.
+    """
+    request_chat_run_cancel(session, workspace.id, stage_key=BRANCH_TRIAGE_STAGE_KEY)
+
+    pending = latest_pending_turn(session, workspace.id, branch)
+    if not pending:
+        return None
+
+    return _settle(session, pending.id, content=message, status="failed")

@@ -41,6 +41,8 @@ INTERRUPTED_TURN_MESSAGE = (
     "The scoper was interrupted by a server restart and did not finish this turn. Run it again."
 )
 
+CANCELLED_TURN_MESSAGE = "Stopped before the scoper finished this turn."
+
 
 def _latest_user_content(session: Session, session_id: str) -> str:
     latest_user = session.exec(
@@ -107,6 +109,21 @@ def execute_studio_turn_background(assistant_id: str) -> None:
                     assistant,
                     content=f"Ticket studio assistant unavailable: {exc}",
                     status="failed",
+                )
+                return
+
+            # The model call is in-process and uninterruptible, so a stop lands
+            # while it is still running: the row is already settled by the time
+            # the reply arrives. Settling again would resurrect a turn the
+            # operator explicitly ended — and `apply_settled_turn` would rewrite
+            # the session's summary, questions and draft from it, which is the
+            # half that is not merely cosmetic.
+            session.refresh(assistant)
+            if assistant.status != "pending":
+                logger.info(
+                    "Discarding reply for studio turn %s: already settled as %s",
+                    assistant_id,
+                    assistant.status,
                 )
                 return
 
@@ -201,3 +218,29 @@ def fail_interrupted_studio_turns(
     if settled:
         session.commit()
     return settled
+
+
+def cancel_studio_turn(
+    session: Session,
+    session_id: str,
+    *,
+    message: str = CANCELLED_TURN_MESSAGE,
+) -> TicketStudioMessage | None:
+    """Stop the session's in-flight scoper turn and unlock the composer.
+
+    The fourth surface to need this, for the reason the other three did: the
+    reaper above only runs at startup, so a turn whose model call hangs while
+    the server keeps serving leaves the row `pending` forever — and a pending
+    row blocks every later turn on the session, so the panel is not merely
+    showing a spinner, it is unusable.
+
+    Unlike branch triage there is no ``AgentRun`` to cancel: a scoper turn is an
+    in-process model call. Settling the row is therefore the whole mechanism,
+    and ``execute_studio_turn_background`` is what keeps a late reply from
+    undoing it.
+    """
+    pending = latest_pending_studio_turn(session, session_id)
+    if not pending:
+        return None
+    _settle(session, pending, content=message, status="failed")
+    return pending

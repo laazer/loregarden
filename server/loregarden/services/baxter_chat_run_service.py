@@ -27,11 +27,10 @@ from loregarden.services.baxter_chat_service import (
     touch_chat_session,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import apply_runtime_overrides
-from loregarden.services.run_cancellation import request_cancel
-from loregarden.services.run_concurrency import find_active_workspace_chat_run
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, col, select
@@ -249,16 +248,7 @@ def cancel_baxter_chat_turn(
     composer busy flag key on). Then asks any matching workspace ``AgentRun`` to
     stop cooperatively so an interactive Claude turn does not keep burning tokens.
     """
-    run = find_active_workspace_chat_run(
-        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
-    )
-    if run:
-        try:
-            request_cancel(session, run)
-        except ValueError:
-            # silent-ok: already cancelling or finished; the settled pending row is
-            # what unlocks the composer and it is returned to the caller either way.
-            pass
+    request_chat_run_cancel(session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY)
 
     pending = latest_pending_turn(session, chat_session.id)
     if not pending:

@@ -596,3 +596,57 @@ def test_advisory_triage_prompt_forbids_narrating_tool_work(
     assert "Do not announce work you are about to do" in prompt
     assert "The selected lmstudio adapter cannot execute turns." in prompt
     assert "real tool access" not in prompt
+
+
+def test_stopping_a_triage_turn_replies_and_unlocks(client: TestClient, db_session: Session):
+    """A hung triage turn outlives the restart reaper — the operator needs an exit.
+
+    Ticket triage was the last surface without one, which is why `ChatSession.stop`
+    is required now rather than optional.
+    """
+    ticket_id = _ticket_id(client, external_id="01-bootstrap-fastapi-control-plane")
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket is not None
+    stage_before = ticket.workflow_stage_status
+
+    run = AgentRun(
+        run_code="run_triagestop",
+        ticket_id=ticket_id,
+        workspace_id=ticket.workspace_id,
+        agent_id="triage",
+        stage_key="triage",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    res = client.post(f"/api/tickets/{ticket_id}/triage/stop")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["run_status"] == "idle"
+    assert body["messages"][-1]["role"] == "assistant"
+    assert "stopped" in body["messages"][-1]["content"].lower()
+
+    db_session.expire_all()
+    stopped = db_session.get(AgentRun, run.id)
+    assert stopped is not None
+    assert stopped.status == RunStatus.FAILED
+    assert stopped.cancel_requested_at is not None
+
+    # The load-bearing half: a triage turn is a side channel, so stopping one
+    # must not advance the ticket's workflow stage.
+    assert db_session.get(Ticket, ticket_id).workflow_stage_status == stage_before
+
+
+def test_stopping_an_idle_triage_chat_is_a_no_op(client: TestClient):
+    """The recovery path must answer from whatever state the panel is showing."""
+    ticket_id = _ticket_id(client, external_id="01-bootstrap-fastapi-control-plane")
+
+    res = client.post(f"/api/tickets/{ticket_id}/triage/stop")
+    assert res.status_code == 200
+    assert res.json()["run_status"] == "idle"
+    assert res.json()["messages"] == []
+
+
+def test_stopping_triage_on_an_unknown_ticket_is_a_404(client: TestClient):
+    assert client.post("/api/tickets/nope/triage/stop").status_code == 404

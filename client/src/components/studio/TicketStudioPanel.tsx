@@ -351,6 +351,17 @@ export function TicketStudioPanel({
     qc.setQueryData(["ticket-studio-session", updated.id], updated);
   };
 
+  // The scoper turn is an in-process model call with no run behind it, so the
+  // only thing that unlocks a hung session is settling its pending row — and
+  // until this existed, nothing but a server restart could.
+  const stopTurn = useMutation({
+    meta: { errorTitle: "Stop turn" },
+    mutationFn: () => api.stopTicketStudioTurn(selectedSessionId!),
+    onSuccess: (updated) => {
+      cacheSession(updated);
+    },
+  });
+
   const generateScope = useMutation({
     meta: { errorTitle: "Generate scope" },
     mutationFn: () => api.generateTicketStudioScope(selectedSessionId!),
@@ -868,7 +879,9 @@ export function TicketStudioPanel({
                     onChange={setChatDraft}
                     onSubmit={() => sendMessage.mutate(chatDraft.trim())}
                     placeholder="Ask to refine scope, split work, or tighten acceptance criteria…"
-                    isSending={sendMessage.isPending}
+                    isSending={isAssistantThinking}
+                    onStop={() => stopTurn.mutate()}
+                    isStopping={stopTurn.isPending}
                     disabled={isAssistantThinking}
                     modelLabel={`Model · ${modelLabel}`}
                     modelDisabled={!runtimeOptions}

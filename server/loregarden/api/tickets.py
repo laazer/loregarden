@@ -85,6 +85,7 @@ from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.triage_run_service import (
     TriageConflictError,
+    cancel_triage_turn,
     schedule_triage_turn,
     start_triage_run,
 )
@@ -583,6 +584,21 @@ def get_ticket_triage(ticket_id: str, session: Session = Depends(get_session)) -
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
+    return triage_snapshot(session, ticket)
+
+
+@router.post("/{ticket_id}/triage/stop")
+def stop_triage_turn(ticket_id: str, session: Session = Depends(get_session)) -> dict:
+    """Stop the in-flight triage turn so the composer unlocks immediately.
+
+    Answers on an idle ticket too: the composer is locked by whatever the last
+    snapshot said, so the recovery path has to be reachable from the state the
+    operator is actually looking at.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    cancel_triage_turn(session, ticket_id)
     return triage_snapshot(session, ticket)
 
 

@@ -733,3 +733,77 @@ def test_ticket_studio_prompt_and_turn_grant_ticket_mcp(client: TestClient, monk
     expected = mcp_tool_values(TICKET_STUDIO_MCP_TOOLS)
     assert captured["granted_tools"] == expected
     assert "loregarden_create_ticket" in captured["granted_tools"]
+
+
+def test_stopping_a_studio_turn_unlocks_the_session(client: TestClient, monkeypatch):
+    """A hung model call outlives the restart reaper — the panel needs an exit.
+
+    Until this endpoint existed the only way out was restarting the server,
+    because a `pending` row blocks every later turn on the session.
+    """
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Hung session")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn"):
+        assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 202
+    assert client.get(f"/api/ticket-studio/sessions/{session_id}").json()["run_status"] != "idle"
+
+    res = client.post(f"/api/ticket-studio/sessions/{session_id}/stop")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["run_status"] == "idle"
+
+    # Unlocked only if the session takes work again — the 409 above is the proof
+    # that a pending row would still be refusing it.
+    assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 202
+
+
+def test_stopping_an_idle_studio_session_is_a_no_op(client: TestClient):
+    """The recovery path must answer from whatever state the panel is showing."""
+    session_id = _draft_session(client, "Quiet session")
+
+    res = client.post(f"/api/ticket-studio/sessions/{session_id}/stop")
+    assert res.status_code == 200
+    assert res.json()["run_status"] == "idle"
+
+
+def test_stopping_an_unknown_studio_session_is_a_404(client: TestClient):
+    res = client.post("/api/ticket-studio/sessions/does-not-exist/stop")
+    assert res.status_code == 404
+
+
+def test_a_late_reply_does_not_resurrect_a_stopped_turn(client: TestClient, monkeypatch):
+    """The model call is in-process and uninterruptible, so the reply lands late.
+
+    Settling it then would undo the stop — and `apply_settled_turn` would rewrite
+    the session's summary, questions and draft from a turn the operator ended.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services import ticket_studio_run_service
+    from loregarden.services.ticket_studio_run_service import execute_studio_turn_background
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Stopped mid-flight")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn"):
+        client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    turn_id = client.get(f"/api/ticket-studio/sessions/{session_id}").json()["active_turn_id"]
+    assert turn_id
+
+    # The operator stops while the model is still working...
+    client.post(f"/api/ticket-studio/sessions/{session_id}/stop")
+    stopped = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
+    assert stopped["run_status"] == "idle"
+    assert stopped["draft"] == []
+
+    # ...and the reply arrives afterwards.
+    execute_studio_turn_background(turn_id)
+
+    after = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
+    assert after["run_status"] == "idle"
+    assert after["messages"][-1]["content"] == ticket_studio_run_service.CANCELLED_TURN_MESSAGE
+    # The half that is not cosmetic: the scope was never applied.
+    assert after["draft"] == []

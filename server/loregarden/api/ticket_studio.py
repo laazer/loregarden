@@ -11,7 +11,7 @@ from loregarden.models.domain import (
     TicketStudioSurveyUpdate,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.services.ticket_studio_run_service import schedule_studio_turn
+from loregarden.services.ticket_studio_run_service import cancel_studio_turn, schedule_studio_turn
 from loregarden.services.ticket_studio_service import (
     TicketStudioConflictError,
     TicketStudioService,
@@ -142,6 +142,24 @@ def send_ticket_studio_message(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/stop")
+def stop_ticket_studio_turn(
+    session_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Stop the in-flight scoper turn so the panel unlocks immediately.
+
+    Answers on an idle session too: the composer is locked by whatever the last
+    poll said, so the recovery path has to be reachable from the state the
+    operator is actually looking at.
+    """
+    cancel_studio_turn(session, session_id)
+    view = TicketStudioService(session).get_session(session_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="Ticket studio session not found")
+    return view.model_dump(mode="json")
 
 
 @router.post("/sessions/{session_id}/clarify", status_code=202)

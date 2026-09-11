@@ -22,6 +22,16 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
   const { triage, isBusy } = useTriageSession(ticketId);
   const { asideMessages } = useTicketAsides(ticketId);
 
+  // Required by `ChatSession` — a chat surface that cannot be stopped is how
+  // ticket triage went without a recovery path indefinitely.
+  const stopTurn = useMutation({
+    meta: { errorTitle: "Stop turn" },
+    mutationFn: () => api.stopTriageTurn(ticketId!),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["triage", ticketId] });
+    },
+  });
+
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },
     mutationFn: ({ content, options }: { content: string; options?: ChatSendOptions }) =>
@@ -50,6 +60,8 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
       ? (sendMessage.error as Error)?.message || "Failed to send message"
       : null,
     send: (content, options) => sendMessage.mutateAsync({ content, options }),
+    stop: () => stopTurn.mutateAsync(),
+    isStopping: stopTurn.isPending,
   };
 }
 
