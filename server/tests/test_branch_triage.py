@@ -154,6 +154,12 @@ def test_branch_triage_treats_squash_merged_branch_as_not_ahead(
     snapshot = branch_triage_snapshot(triage_session, triage_workspace)
     squashed = next(b for b in snapshot["branches"] if b["name"] == "feature/squashed")
     assert squashed["ahead"] == 0
+    # Zeroed `ahead` cannot say *why*. Branch cleanup offers to delete this
+    # branch, so it has to be able to tell "squashed onto the base" from "never
+    # had a commit of its own".
+    assert squashed["squash_merged"] is True
+    base = next(b for b in snapshot["branches"] if b["is_base"])
+    assert base["squash_merged"] is False
     codes = {issue["code"] for issue in squashed["issues"]}
     assert "diverged" not in codes
 

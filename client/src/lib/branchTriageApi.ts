@@ -57,6 +57,8 @@ export interface BranchTriageEntry {
   name: string;
   is_current: boolean;
   is_base: boolean;
+  /** Landed on the base branch as a squash, so `ahead` reads 0 despite the commits. */
+  squash_merged: boolean;
   ahead: number;
   behind: number;
   dirty: boolean;

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { BranchTriageDiffPanel } from "../components/BranchTriageDiffPanel";
 import { BranchTriageOverviewPanel } from "../components/BranchTriageOverviewPanel";
 import { BranchTriageList } from "../components/BranchTriageList";
+import { BranchCleanupModal } from "../components/BranchCleanupModal";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { useUiStore } from "../state/uiStore";
@@ -21,6 +22,7 @@ export function BranchTriagePage() {
   const setBranchTriageWorkspaceSlug = useUiStore((s) => s.setBranchTriageWorkspaceSlug);
 
   const [activeTab, setActiveTab] = useState<BranchTriageTab>("triage");
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   // Held in the store rather than locally so the copilot dock — which mounts
   // above the routes — can bind to this branch's conversation.
   const selectedBranch = useUiStore((s) => s.branchTriageBranch) || null;
@@ -105,6 +107,19 @@ export function BranchTriagePage() {
           disabled={!activeSlug || triage.isFetching}
         >
           {triage.isFetching ? "Scanning…" : "Rescan"}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => setCleanupOpen(true)}
+          disabled={!triage.data?.branches.length}
+          title={
+            triage.data?.branches.length
+              ? undefined
+              : "Scan a workspace repo before cleaning up branches"
+          }
+        >
+          Clean up merged
         </button>
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
@@ -209,6 +224,18 @@ export function BranchTriagePage() {
           </>
         )}
       </div>
+
+      {cleanupOpen ? (
+        <BranchCleanupModal
+          workspaceSlug={activeSlug}
+          baseBranch={triage.data?.base_branch ?? "main"}
+          branches={triage.data?.branches ?? []}
+          onClose={() => setCleanupOpen(false)}
+          onBranchesDeleted={(deleted) => {
+            if (selectedBranch && deleted.includes(selectedBranch)) setSelectedBranch("");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
