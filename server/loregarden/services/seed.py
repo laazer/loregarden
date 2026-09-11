@@ -287,9 +287,15 @@ def _reconcile_task_workflows(session: Session, ws: Workspace) -> None:
 
 def seed_database(session: Session) -> None:
     from loregarden.services.skill_service import seed_builtin_skills
-    from loregarden.services.studio_service import seed_builtin_agents
+    from loregarden.services.studio_service import (
+        reconcile_builtin_mcp_tools,
+        seed_builtin_agents,
+    )
 
     seed_builtin_agents(session)
+    # Seeding writes a row's tool list once; this re-offers the tools added
+    # since, to built-in agents nobody has narrowed. See its docstring.
+    reconcile_builtin_mcp_tools(session)
     seed_builtin_skills(session)
     templates = sync_workflow_templates(session)
     loregarden_tpl = session.exec(
