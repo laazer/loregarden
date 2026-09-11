@@ -200,3 +200,29 @@ def test_a_single_passing_mention_is_not_a_specialty():
     assert decision.basis is not ClassifyBasis.UNROUTEABLE
     assert decision.route is not None
     assert decision.route.agent_id == "core_simulation"
+
+
+def test_a_curated_synonym_is_as_good_as_the_word_itself():
+    """Nobody titles a refactor "Refactor…".
+
+    `refactor`'s synonyms were curated to exclude every generic structural verb,
+    so a hit on one is real evidence — unlike a hit on the broad frontend and
+    backend lists, which exist because tickets say "button", not "frontend".
+    Treating both as weak sent "Extract the retry loop out of the orchestration
+    service" to the default route and dropped the refactor skill with it.
+    """
+    routes = [
+        ClassifyRoute(
+            specialties=["refactor"], agent_id="backend_implementer", skill_name="refactor"
+        ),
+        ClassifyRoute(specialties=["backend"], agent_id="backend_implementer", default=True),
+    ]
+
+    decision = classify_decision(
+        _ticket("Extract the retry loop out of the orchestration service", []), _stage(routes)
+    )
+
+    assert decision is not None
+    assert decision.basis is ClassifyBasis.CONTENT
+    assert decision.route is not None
+    assert decision.route.skill_name == "refactor"

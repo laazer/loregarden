@@ -91,10 +91,20 @@ def _word_in_haystack(word: str, haystack: str) -> bool:
     return re.search(pattern, haystack) is not None
 
 
+#: Specialties whose synonyms are as good as the word itself.
+#:
+#: `refactor`'s list is curated to exactly that standard — see the comment on
+#: `_SPECIALTY_SYNONYMS`, which left out every generic structural verb for this
+#: reason. Nobody titles a refactor "Refactor…"; they title it "Extract the
+#: retry loop out of the orchestration service", and that verb is the whole
+#: signal. The `frontend`/`backend` lists are the opposite: broad by necessity,
+#: because tickets say "button" and not "frontend", and breadth is where an
+#: incidental hit comes from.
+_PRECISE_SYNONYMS = frozenset({"refactor"})
+
 #: A word the route itself declares is direct evidence about the domain. A
-#: synonym is weaker by construction: the lists above have to be broad, because
-#: tickets say "button" and not "frontend", and breadth is how an incidental hit
-#: happens. Weighting them the same is what let ONE synonym decide a stage.
+#: synonym from a broad list is weaker: weighting the two the same is what let
+#: ONE incidental synonym decide a stage.
 _DIRECT_HIT = 2
 _SYNONYM_HIT = 1
 #: What a route must score to take the choice away from the template's declared
@@ -129,19 +139,27 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> _RouteMatch | Non
     good evidence — see `_DIRECT_HIT` and `ClassifyBasis`.
     """
     direct_specs = [spec for spec in route.specialties if _word_in_haystack(spec, haystack)]
-    synonym_specs = [
+    precise_specs = [
         word
         for spec in route.specialties
+        if spec.lower() in _PRECISE_SYNONYMS
         for word in _SPECIALTY_SYNONYMS.get(spec.lower(), [])
         if _word_in_haystack(word, haystack)
     ]
-    if route.specialties and not (direct_specs or synonym_specs):
+    broad_specs = [
+        word
+        for spec in route.specialties
+        if spec.lower() not in _PRECISE_SYNONYMS
+        for word in _SPECIALTY_SYNONYMS.get(spec.lower(), [])
+        if _word_in_haystack(word, haystack)
+    ]
+    if route.specialties and not (direct_specs or precise_specs or broad_specs):
         return None
 
     lang_hits = [lang for lang in route.languages if _word_in_haystack(lang, haystack)]
-    direct = len(direct_specs) + len(lang_hits)
+    direct = len(direct_specs) + len(precise_specs) + len(lang_hits)
     return _RouteMatch(
-        score=_DIRECT_HIT * direct + _SYNONYM_HIT * len(synonym_specs),
+        score=_DIRECT_HIT * direct + _SYNONYM_HIT * len(broad_specs),
         direct=direct,
     )
 
