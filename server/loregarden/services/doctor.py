@@ -604,8 +604,9 @@ def preflight_summary(findings: list[DoctorFinding]) -> str:
         lines.append(f"  {finding.check.value}: {finding.finding}")
         lines.append(f"    fix: {finding.remediation}")
     lines.append(
-        "Approving lets the stage run anyway. It does not fix any of the above, and "
-        "the run will most likely fail the same way."
+        "Approving re-runs this stage once with the checks above waived. It does not "
+        "fix them, and the stage may still fail on the same cause. Rejecting leaves "
+        "the stage blocked here until the environment is fixed."
     )
     return "\n".join(lines)
 

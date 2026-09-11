@@ -13,6 +13,7 @@ function kindLabel(approval: Approval): string {
   if (approval.kind === "workflow_gate") return "Stage sign-off";
   if (approval.kind === "rework_pause") return "Rework paused";
   if (approval.kind === "cli_permission") return "Agent permission";
+  if (approval.kind === "stage_park") return "Environment override";
   return "Agent question";
 }
 

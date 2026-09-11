@@ -145,8 +145,9 @@ def describe(verdict: BoundaryVerdict, *, receiver: GitBoundary, sender: GitBoun
     if receiver.dirty_paths:
         lines.append(f"  uncommitted here: {len(receiver.dirty_paths)} path(s)")
     lines.append(
-        "Approving lets the stage run against the tree as it is now. It does not "
-        "commit, push, merge, or resolve anything."
+        "Approving re-runs this stage once against the tree as it is now. It does "
+        "not commit, push, merge, or resolve anything. Rejecting leaves the stage "
+        "blocked here."
     )
     return "\n".join(lines)
 

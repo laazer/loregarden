@@ -1,19 +1,15 @@
 """SQLModel table definitions (the persisted schema)."""
 
-import json
 import logging
 from datetime import datetime
-from typing import Any
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
     DEFAULT_COMPATIBILITY_POSTURE,
     ApprovalKind,
     ApprovalStatus,
-    AutoFixStatus,
     BoundaryVerdict,
     BtwStatus,
-    CIStatus,
     CycleStatus,
     EventType,
     ExternalHarness,
@@ -36,11 +32,9 @@ from loregarden.models.domain.enums import (
     TicketStudioSessionStatus,
     ViewKind,
     WorkItemType,
-    WorktreeState,
     str_enum_column,
     utcnow,
 )
-from pydantic import model_validator
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
@@ -190,6 +184,14 @@ class Ticket(SQLModel, table=True):
     # resolve_stage_execution and is cleared the moment it is consumed at dispatch,
     # so it steers exactly one re-run and cannot become a sticky stale hint.
     scope_reroute_agent: str = ""
+    # One-shot waiver armed when a person approves a parked stage (see
+    # services.stage_parking): the stage the waiver covers, and the approval that
+    # granted it. Both cleared the moment the matching stage dispatches, so a
+    # human's "run it anyway" waives the pre-dispatch checks for exactly that one
+    # run — without it the re-dispatched stage trips the same check and parks
+    # again, forever. Stage-scoped so waiving `implement` cannot waive `verify`.
+    dispatch_waiver_stage_key: str = ""
+    dispatch_waiver_approval_id: str = ""
     # A synthesized "review that the parent's children integrate" work item. It is
     # childless (so it runs its own workflow, unlike an aggregator parent) and is
     # ordered to run last among its siblings (see child_sort_key). Added under
@@ -379,6 +381,12 @@ class AgentRun(SQLModel, table=True):
     # and storing seven "fine"s per dispatch to record the one case anyone
     # queries is not worth the rows.
     start_preflight_failures_json: str = "[]"
+    # The approval that let this run start despite a failing pre-dispatch check,
+    # or "" for the ordinary case. Non-empty means a person was asked and said
+    # run it anyway — read at dispatch to skip parking, and kept afterwards so a
+    # run that failed in a knowingly broken environment can be told apart from
+    # one that failed on its own merits.
+    dispatch_waiver_approval_id: str = ""
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)
@@ -1267,141 +1275,6 @@ class TicketStudioMessage(SQLModel, table=True):
     # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
     parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
-
-
-class CIRunResult(SQLModel, table=True):
-    __tablename__ = "ci_run_results"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    status: CIStatus = Field(
-        default=CIStatus.PENDING,
-        sa_column=str_enum_column(CIStatus, CIStatus.PENDING, index=True),
-    )
-    provider: str = ""
-    external_run_id: str | None = None
-    logs_url: str | None = None
-    failure_summary: str | None = None
-    full_logs: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    updated_at: datetime = Field(default_factory=utcnow)
-
-
-class AutoFixAttempt(SQLModel, table=True):
-    __tablename__ = "auto_fix_attempts"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    ci_run_result_id: str = Field(foreign_key="ci_run_results.id", index=True)
-    attempt_number: int = 1
-    run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
-    status: AutoFixStatus = Field(
-        default=AutoFixStatus.PENDING,
-        sa_column=str_enum_column(AutoFixStatus, AutoFixStatus.PENDING, index=True),
-    )
-    result_summary: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    completed_at: datetime | None = None
-
-
-class Worktree(SQLModel, table=True):
-    __tablename__ = "worktrees"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    agent_run_id: str = Field(foreign_key="agent_runs.id", index=True)
-    #: Set when the worktree belongs to a ticket rather than to one run. A
-    #: ticket's stages share one tree, so reuse is a lookup on this column;
-    #: `agent_run_id` stays as provenance for whichever run cut it. Null for
-    #: the fan-out and parallel-queue paths, where a run really does want its
-    #: own tree.
-    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
-    parent_branch: str = "main"
-    worktree_path: str = ""
-    state: WorktreeState = Field(
-        default=WorktreeState.ACTIVE,
-        sa_column=str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
-    )
-    #: The branch checked out in this worktree, as opposed to `parent_branch`
-    #: (what it was cut from) or the directory name. Merging needs this: the
-    #: directory is named after the run, which is not a ref.
-    branch: str = ""
-    merge_base: str | None = None
-    has_conflicts: bool = False
-    conflict_files_json: str = "[]"
-    conflict_summary: str | None = None
-    created_at: datetime = Field(default_factory=utcnow)
-    merged_at: datetime | None = None
-    cleaned_at: datetime | None = None
-
-    @property
-    def conflict_files(self) -> list[str]:
-        try:
-            return json.loads(self.conflict_files_json or "[]")
-        except json.JSONDecodeError:
-            # An unreadable blob reads as "no conflicts", which is the one answer
-            # a merge gate must never be given by accident.
-            logger.warning(
-                "Unreadable conflict_files_json on worktree %s; reporting no files",
-                self.id,
-                exc_info=True,
-            )
-            return []
-
-    @conflict_files.setter
-    def conflict_files(self, value: list[str]) -> None:
-        self.conflict_files_json = json.dumps(value)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_conflict_files(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "conflict_files" in data:
-            data = dict(data)
-            files = data.pop("conflict_files")
-            data["conflict_files_json"] = json.dumps(files)
-        return data
-
-
-class ConflictReport(SQLModel, table=True):
-    __tablename__ = "conflict_reports"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    worktree_id: str = Field(foreign_key="worktrees.id", index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    merge_attempt_number: int = 1
-    conflict_type: str = "merge_conflict"
-    conflicting_files_json: str = "[]"
-    conflict_details: str = ""
-    resolution_attempted: bool = False
-    resolution_successful: bool = False
-    created_at: datetime = Field(default_factory=utcnow)
-
-    @property
-    def conflicting_files(self) -> list[str]:
-        try:
-            return json.loads(self.conflicting_files_json or "[]")
-        except json.JSONDecodeError:
-            # Same trap as Worktree.conflict_files: empty must mean empty, not
-            # "the column could not be read".
-            logger.warning(
-                "Unreadable conflicting_files_json on conflict report %s; reporting no files",
-                self.id,
-                exc_info=True,
-            )
-            return []
-
-    @conflicting_files.setter
-    def conflicting_files(self, value: list[str]) -> None:
-        self.conflicting_files_json = json.dumps(value)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_conflicting_files(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "conflicting_files" in data:
-            data = dict(data)
-            files = data.pop("conflicting_files")
-            data["conflicting_files_json"] = json.dumps(files)
-        return data
 
 
 class View(SQLModel, table=True):

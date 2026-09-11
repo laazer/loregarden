@@ -79,6 +79,11 @@ export function ApprovalCard({
   // an auto_approve run can never sign off its own pause.
   const isGate = approval.kind === "workflow_gate" || approval.kind === "rework_pause";
   const isHumanAction = approval.kind === "human_action";
+  // A pre-dispatch check refused to let this stage start. Approving does not
+  // sign off on anything — it re-runs the stage with the check waived — so it
+  // must not wear the gate's "Approve", and none of the gate's affordances
+  // (route back, bring in changes, acceptance checklist) mean anything here.
+  const isPark = approval.kind === "stage_park";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
@@ -96,7 +101,7 @@ export function ApprovalCard({
   // On a human action the checklist carries the handover findings, which the
   // prepared-action panel renders under its own heading — showing them here
   // too would label them a testing checklist, which they are not.
-  const checklist = isHumanAction ? [] : approval.checklist ?? [];
+  const checklist = isHumanAction || isPark ? [] : approval.checklist ?? [];
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [bodyOverflows, setBodyOverflows] = useState(false);
@@ -511,7 +516,13 @@ export function ApprovalCard({
             disabled={!canSubmit || isSubmitting}
             onClick={submitApproval}
           >
-            {isPermission ? "Allow" : reworkActive ? "Approve & route back" : "Approve"}
+            {isPermission
+              ? "Allow"
+              : isPark
+                ? "Run anyway"
+                : reworkActive
+                  ? "Approve & route back"
+                  : "Approve"}
           </button>
         )}
         <button
@@ -521,7 +532,7 @@ export function ApprovalCard({
           disabled={isSubmitting}
           onClick={isGate ? () => setRejectModalOpen(true) : () => onReject()}
         >
-          {isQuestion ? "Decline" : isPermission ? "Deny" : "Reject"}
+          {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? "Leave parked" : "Reject"}
         </button>
         {!compact && onInspect && (
           <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
