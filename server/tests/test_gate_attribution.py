@@ -21,6 +21,7 @@ from loregarden.models.domain import Artifact, GateFaultAttribution, Ticket, Wor
 from loregarden.services.gate_attribution import (
     attribute_gate_failure,
     gate_command,
+    gate_could_not_examine,
     gate_output_paths,
     partition_gate_output,
 )
@@ -309,3 +310,108 @@ def test_a_foreign_gate_failure_leaves_the_ticket_running(db_session):
     body = artifacts[0].content_json
     assert "store.py" in body
     assert "py_organization_check.py" in body
+
+
+# -- a gate that never graded anything -----------------------------------------
+
+
+def test_a_gate_that_resolved_no_scope_says_so():
+    """The marker every diff-scoped gate prints through one shared handler."""
+    detail = (
+        "gate: cannot determine what to examine: `git diff abc123 --name-only` failed in "
+        "/tmp/wt: fatal: this operation must be run in a work tree"
+    )
+    assert gate_could_not_examine(detail) is True
+
+
+def test_a_gate_that_found_violations_is_not_unexaminable():
+    """The control: an ordinary finding must still take the reroute path."""
+    detail = (
+        "Python organization check failed:\n"
+        " - server/loregarden/services/store.py:320: `isinstance(..., dict)`"
+    )
+    assert gate_could_not_examine(detail) is False
+
+
+def test_a_gate_that_could_not_run_is_not_the_agent_s_to_fix(db_session):
+    """blob-procedural-sdf-30's shape, from the live database.
+
+    A worktree left in a state git refused to diff meant the gate graded
+    nothing. Recovery had no category for that, so it took the reroute path and
+    handed the planner text reading "Fix these issues and report `pass`"
+    followed by no issues — there were none to find. The stage's bounded retry
+    budget pays for a turn that cannot converge, because the cause is the
+    environment rather than the code.
+    """
+    from loregarden.models.domain import OrchestrationRun, TicketState, Workspace
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.services.gate_recovery import GateDecision
+    from loregarden.services.orchestration import OrchestrationService
+    from loregarden.services.orchestration_profile import OrchestrationProfile
+
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    ticket = db_session.exec(
+        select(Ticket).where(
+            Ticket.workspace_id == workspace.id,
+            Ticket.work_item_type == WorkItemType.TASK,
+        )
+    ).first()
+    orch = OrchestrationService(db_session)
+    instance, stages = orch._resolve_stages(ticket)
+    assert instance and stages, "the seeded task carries a workflow"
+    from_stage = ticket.workflow_stage_key
+
+    orch_run = OrchestrationRun(
+        ticket_id=ticket.id, workspace_id=workspace.id, run_code="unexaminable"
+    )
+    db_session.add(orch_run)
+    db_session.commit()
+    db_session.refresh(orch_run)
+
+    detail = (
+        "gate: cannot determine what to examine: `git diff 71e5632e --name-only "
+        "--diff-filter=ACMR --` failed in /tmp/wt: fatal: this operation must be run in a "
+        "work tree (command: bash py_organization_check.py --repo /tmp/wt --scope worktree)"
+    )
+    decision = BuiltinOrchestrator(db_session).gates._decide_unfixed_gate_failure(
+        ticket,
+        instance,
+        stages,
+        orch_run,
+        OrchestrationProfile(slug="loregarden"),
+        from_stage,
+        detail,
+    )
+    db_session.refresh(ticket)
+
+    # A human, not the stage's agent. The budget is counted off the error
+    # artifact that both paths attach, so the decision — not the counter — is
+    # what separates them.
+    assert decision is GateDecision.BLOCKED
+    assert ticket.state is not TicketState.DONE
+
+    artifacts = db_session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "error")
+    ).all()
+    assert len(artifacts) == 1, "the raw gate output is still recorded for the operator"
+    assert "must be run in a work tree" in artifacts[0].content_json
+
+    # The control, through the same call with the same budget: a gate that did
+    # grade something still buys its agent a turn. Without it this test would
+    # pass on a recovery that had stopped rerouting anything at all.
+    ordinary = (
+        "Python organization check failed:\n"
+        " - server/loregarden/services/store.py:320: `isinstance(..., dict)`"
+    )
+    assert (
+        BuiltinOrchestrator(db_session).gates._decide_unfixed_gate_failure(
+            ticket,
+            instance,
+            stages,
+            orch_run,
+            OrchestrationProfile(slug="loregarden"),
+            from_stage,
+            ordinary,
+        )
+        is GateDecision.REROUTED
+    )

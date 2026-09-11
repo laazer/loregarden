@@ -379,6 +379,7 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             coerce_string=_coerce_string,
             coerce_string_list=_coerce_string_list,
             coerce_int=_coerce_optional_int,
+            coerce_bool=_coerce_optional_bool,
         )
 
     if name == "loregarden_create_ticket":
@@ -714,7 +715,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "Update ticket state or content (state, title, description, priority, "
             "acceptance criteria, tags, parent). Supply at least one field besides ticket_id. "
-            "Acceptance criteria belong here — never append them to the description."
+            "Acceptance criteria belong here — never append them to the description. "
+            "Naming a state pins it; pass auto_state to hand it back to the workflow."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -725,6 +727,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "run stopped and someone should look, and holds the parent up.",
                     ["backlog", "in_progress", "blocked", "parked", "done", "wont_do"],
                 ),
+                "auto_state": {
+                    "type": "boolean",
+                    "description": (
+                        "Whether the workflow may recompute this ticket's state. Naming a "
+                        "'state' pins it, and nothing unpins it on its own — a pinned ticket "
+                        "is skipped by the workflow's own derivation, by the parent rollup, "
+                        "and by queue repair, so it can resolve every stage and never "
+                        "settle. Send true to release the pin (on its own, or beside a "
+                        "state that is where the ticket waits rather than where it ends up); "
+                        "false pins it without naming a new state."
+                    ),
+                },
                 "title": _string_prop("New ticket title."),
                 "parent": _string_prop(
                     "Move this work item under a different parent, by UUID or external id. "

@@ -185,3 +185,42 @@ def test_mcp_update_ticket_rejects_mode_without_criteria(client: TestClient):
     )
 
     assert body.get("error") or body["result"].get("isError"), body
+
+
+def test_mcp_update_ticket_can_release_a_pinned_state(client: TestClient):
+    """Naming a state pins it, and MCP had no way to unpin it again.
+
+    `state_locked` is how an operator says "I decided this", and three readers
+    honour it: the workflow's own derivation, the parent rollup, and queue
+    repair. It was write-only from MCP — reachable, never releasable — so an
+    agent that set a state took the ticket out of all three permanently.
+    """
+    ticket = _make_ticket(client, ["Unchanged"])
+
+    call_mcp(
+        client,
+        "loregarden_update_ticket",
+        {"ticket_id": ticket["id"], "state": "in_progress"},
+    )
+    assert client.get(f"/api/tickets/{ticket['id']}").json()["state_locked"] is True
+
+    call_mcp(
+        client,
+        "loregarden_update_ticket",
+        {"ticket_id": ticket["id"], "auto_state": True},
+    )
+
+    assert client.get(f"/api/tickets/{ticket['id']}").json()["state_locked"] is False
+
+
+def test_mcp_update_ticket_accepts_auto_state_on_its_own(client: TestClient):
+    """`auto_state` alone is a change, so it must not trip the "nothing to update" guard."""
+    ticket = _make_ticket(client, ["Untouched"])
+
+    body = call_mcp(
+        client,
+        "loregarden_update_ticket",
+        {"ticket_id": ticket["id"], "auto_state": True},
+    )
+
+    assert not body.get("error") and not body["result"].get("isError"), body

@@ -138,6 +138,31 @@ def resolve_ticket_payload(
     return ticket_state_payload(session, ticket.id) | ticket_body(ticket)
 
 
+def _collect_criteria_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[str, Any]:
+    """The acceptance-criteria half of an update: the merge and its `mode`.
+
+    One concern rather than three branches inside the field sweep — `mode` is
+    meaningless without the criteria it combines, and saying so here keeps both
+    halves of that rule in one place. Returns {} when the call names neither.
+    """
+    mode = arguments.get("mode", "replace")
+    if mode not in CRITERIA_MODES:
+        raise ValueError(f"mode must be one of {', '.join(CRITERIA_MODES)} (got {mode!r})")
+
+    if "acceptance_criteria" not in arguments:
+        if "mode" in arguments:
+            raise ValueError("mode was given without acceptance_criteria")
+        return {}
+
+    return {
+        "acceptance_criteria": merge_criteria(
+            load_criteria(ticket.acceptance_criteria_json),
+            arguments["acceptance_criteria"],
+            mode,
+        )
+    }
+
+
 def _collect_update_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[str, Any]:
     """Turn the tool's arguments into UpdateTicketRequest fields.
 
@@ -147,23 +172,17 @@ def _collect_update_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[st
     fields: dict[str, Any] = {}
     if "state" in arguments:
         fields["state"] = TicketState(arguments["state"])
+    # The only way to clear `state_locked` from MCP. Without it the flag was
+    # write-only here: naming a state set it, and nothing in the tool surface
+    # could release it, so a pinned ticket could be reached but never freed.
+    if "auto_state" in arguments:
+        fields["auto_state"] = arguments["auto_state"]
     if "title" in arguments:
         fields["title"] = arguments["title"]
     if "description" in arguments:
         fields["description"] = arguments["description"]
 
-    mode = arguments.get("mode", "replace")
-    if mode not in CRITERIA_MODES:
-        raise ValueError(f"mode must be one of {', '.join(CRITERIA_MODES)} (got {mode!r})")
-
-    if "acceptance_criteria" in arguments:
-        fields["acceptance_criteria"] = merge_criteria(
-            load_criteria(ticket.acceptance_criteria_json),
-            arguments["acceptance_criteria"],
-            mode,
-        )
-    elif "mode" in arguments:
-        raise ValueError("mode was given without acceptance_criteria")
+    fields.update(_collect_criteria_fields(ticket, arguments))
 
     if "tags" in arguments:
         fields["tags"] = normalize_tags(arguments["tags"])
@@ -194,7 +213,7 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         fields["parent_ticket_id"] = svc.resolve_ticket(ticket_id=parent).id if parent else ""
     if not fields:
         raise ValueError(
-            "Nothing to update — supply at least one of: state, title, "
+            "Nothing to update — supply at least one of: state, auto_state, title, "
             "description, priority, acceptance_criteria, tags, parent."
         )
 
@@ -258,7 +277,7 @@ def execute_ticket_edit_tool(
 
 
 def normalize_update_ticket_args(
-    args: dict[str, Any], *, coerce_string, coerce_string_list, coerce_int
+    args: dict[str, Any], *, coerce_string, coerce_string_list, coerce_int, coerce_bool
 ) -> dict:
     """Whitelist for loregarden_update_ticket.
 
@@ -282,4 +301,6 @@ def normalize_update_ticket_args(
             payload[field] = coerce_string_list(args.get(field), field=field)
     if args.get("priority") is not None:
         payload["priority"] = coerce_int(args.get("priority"), field="priority")
+    if args.get("auto_state") is not None:
+        payload["auto_state"] = coerce_bool(args.get("auto_state"))
     return payload
