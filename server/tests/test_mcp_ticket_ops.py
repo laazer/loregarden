@@ -12,7 +12,9 @@ import json
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import StageStatus, Ticket, TicketState, WorkItemType, Workspace
+from loregarden.models.domain.schemas import UpdateTicketRequest
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.stage_retry_budget import (
     count_stage_dispatches,
     record_stage_dispatch,
@@ -268,6 +270,59 @@ def test_requeue_records_why_the_budget_was_reset(db_session):
         )
     ).all()
     assert any("Dependency landed on main." in (note.content_json or "") for note in notes)
+
+
+def test_requeue_does_not_pin_the_ticket_state(db_session):
+    """A requeue clears a block; it does not decide where the ticket ends up.
+
+    `state` is required by `update_ticket_manual`'s state edit, and naming one
+    there sets `state_locked` — an operator saying "I decided this". A requeue
+    is not that decision: the states it offers are `backlog` and `in_progress`,
+    neither of which is anywhere a ticket ends.
+    """
+    ticket = _task(db_session)
+
+    _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {
+            "ticket_id": ticket.id,
+            "reason": "The dependency landed.",
+            "state": "in_progress",
+        },
+    )
+
+    db_session.refresh(ticket)
+    assert ticket.state == TicketState.IN_PROGRESS
+    assert ticket.state_locked is False
+
+
+def test_a_requeued_ticket_can_still_finish(db_session):
+    """The trap: every required stage resolved, and the state stuck anyway.
+
+    `derive` refuses a `state_locked` ticket, so a requeue that pinned the
+    state left the workflow unable to settle it. The ticket reached the `done`
+    stage and stayed `in_progress` — the first requeued ticket to get that far
+    was the one that found it.
+    """
+    ticket = _task(db_session)
+    _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "The dependency landed."},
+    )
+
+    orch = OrchestrationService(db_session)
+    instance, stages = orch._resolve_stages(ticket)
+    assert instance and stages, "the seeded task carries a workflow"
+
+    orch.update_ticket_manual(
+        ticket,
+        UpdateTicketRequest(stage_updates={stage.key: StageStatus.DONE for stage in stages}),
+    )
+
+    db_session.refresh(ticket)
+    assert ticket.state == TicketState.DONE
 
 
 def test_requeue_demands_a_reason(db_session):

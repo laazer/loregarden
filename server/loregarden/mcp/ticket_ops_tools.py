@@ -176,6 +176,14 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             stage_key=stage_key,
             stage_status=StageStatus.PENDING,
             state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
+            # Naming a state ordinarily pins it (`state_locked`), which is right
+            # for an operator settling a ticket and wrong here: a requeue says
+            # "run this stage again", not "this is where the ticket ends up".
+            # Pinned, `derive` refused every later recomputation, so a requeued
+            # ticket could finish every required stage and never leave
+            # `in_progress`. The state below is where the ticket *waits*; the
+            # workflow still settles where it lands.
+            auto_state=True,
         ),
     )
     # `refresh_stage_retry_budget` only clears blocking text when this breaker's
@@ -368,7 +376,9 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Stage to requeue. Defaults to the ticket's current workflow stage."
                 ),
                 "state": enum_string_prop(
-                    "Ticket state to leave it in. Defaults to 'backlog'.",
+                    "Ticket state to leave it in while it waits to run again. "
+                    "Defaults to 'backlog'. Not pinned — the workflow still "
+                    "settles where the ticket ends up.",
                     ["backlog", "in_progress"],
                 ),
             },
