@@ -194,6 +194,16 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         # therefore reported success having left the ticket pointing at the stage
         # it was stuck on, so the next start resumed exactly where it had
         # blocked. "Requeue stage X" can only mean the workflow is now at X.
+        # No `auto_state` of its own, deliberately. This call reaches the
+        # branch that reconciles only `if body.auto_state is True or not
+        # ticket.state_locked`, so it looks like a pinned ticket would skip the
+        # reconcile — but the call above already cleared `state_locked` via
+        # `auto_state=True` (`_apply_state_edit`), for the whole function.
+        # Repeating the flag here would read as though this call were
+        # independently responsible for releasing the pin, which it is not.
+        # `test_requeue_to_another_stage_still_reconciles_a_pinned_ticket`
+        # pins the coupling, since the two calls agree only through that side
+        # effect.
         orch.update_ticket_manual(
             ticket,
             UpdateTicketRequest(
