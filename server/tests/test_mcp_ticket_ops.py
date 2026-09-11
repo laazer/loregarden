@@ -495,3 +495,40 @@ def test_requeue_reports_a_live_run_rather_than_denying_it(db_session):
 
     assert result["requeued"]["scheduled"] is True
     assert "start_with" not in result["requeued"]
+
+
+def test_requeue_to_another_stage_still_reconciles_a_pinned_ticket(db_session):
+    """The second route through the same invariant #351 established.
+
+    Requeuing a stage other than the current one moves the cursor with a
+    *second* `update_ticket_manual` call, and that call names no `auto_state` of
+    its own — so on the face of it a pinned ticket would take the
+    `not ticket.state_locked` branch and skip reconciliation, leaving the state
+    derived from where the cursor used to be.
+
+    It does not, because the first call's `auto_state=True` clears
+    `state_locked` for the whole function (`_apply_state_edit`). That is worth
+    pinning rather than re-deriving: the two calls disagree in their arguments
+    and agree only through a side effect one of them has on the other, so
+    anything that reorders them, splits them, or drops the flag from the first
+    breaks this silently.
+    """
+    ticket = _task(db_session)
+    ticket.state_locked = True
+    db_session.add(ticket)
+    db_session.commit()
+
+    stages = _call(db_session, "loregarden_get_ticket", {"ticket_id": ticket.id})["stages"]
+    elsewhere = next(s["key"] for s in stages if s["key"] != ticket.workflow_stage_key)
+
+    _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "stage_key": elsewhere, "reason": "Operator moved it on."},
+    )
+
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == elsewhere, "the cursor must move"
+    assert ticket.state_locked is False, (
+        "the pin must be released, or the workflow can never settle this ticket"
+    )
