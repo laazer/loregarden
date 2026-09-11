@@ -357,7 +357,7 @@ def cancel_triage_turn(
     except ValueError:
         # Past the point a request helps. The message below is what the operator
         # is waiting on, so this is not a failure of the stop.
-        logger.info("Triage run %s would not take a cancel request", run.id)
+        logger.warning("Triage run %s would not take a cancel request", run.id)
 
     run.status = RunStatus.FAILED
     run.stderr = message[:4000]

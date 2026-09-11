@@ -43,5 +43,5 @@ def request_chat_run_cancel(
     try:
         return request_cancel(session, run)
     except ValueError:
-        logger.info("Chat run %s (stage %s) would not take a cancel request", run.id, stage_key)
+        logger.warning("Chat run %s (stage %s) would not take a cancel request", run.id, stage_key)
         return run
