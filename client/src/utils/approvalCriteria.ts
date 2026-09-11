@@ -12,6 +12,10 @@ export function hasHumanCriteria(approval: Approval): boolean {
   return (
     approval.kind === "workflow_gate" ||
     approval.kind === "rework_pause" ||
+    // A parked stage is the same ask — read this, decide, and only a person can.
+    // Filed with the permission prompts it would get a narrow card, and the
+    // diagnosis it exists to show is the whole content.
+    approval.kind === "stage_park" ||
     Boolean(approval.checklist?.length)
   );
 }

@@ -43,6 +43,7 @@ from loregarden.db.migrations_doctor import (
     m_agent_run_process_identity,
     m_agent_slot_number_unique,
     m_orchestration_run_lease,
+    m_stage_park_approvals,
 )
 from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_fk_repair import m_repair_dangling_references
@@ -1480,6 +1481,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0123_ux_lanes_in_v3", m_ux_lanes_in_v3),
     ("0124_ux_design_everywhere", m_ux_design_everywhere),
     ("0125_extended_tdd_reject_route", m_extended_tdd_reject_route),
+    ("0126_stage_park_approvals", m_stage_park_approvals),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

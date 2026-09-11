@@ -170,6 +170,28 @@ def _consume_scope_reroute_pin(ticket: Ticket, chosen_agent: str) -> None:
         ticket.scope_reroute_agent = ""
 
 
+def _consume_dispatch_waiver(ticket: Ticket, stage_key: str) -> str:
+    """Take the one-shot pre-dispatch waiver for `stage_key`, or "" if none.
+
+    Armed by approving a parked stage (`ApprovalService._apply_park_resolution`)
+    and cleared here, so a person's "run it anyway" covers exactly the dispatch
+    it was clicked for. Without the clear, the waiver would follow the ticket
+    into every later stage; without the waiver, the re-dispatched stage would
+    trip the same check and park again, which is the loop that makes "approve"
+    useless rather than merely wrong.
+
+    Stage-scoped for the same reason `_consume_scope_reroute_pin` is agent-scoped:
+    a waiver the dispatch did not match is a request that has not been satisfied,
+    so it stands rather than being silently spent on the wrong stage.
+    """
+    if not ticket.dispatch_waiver_stage_key or ticket.dispatch_waiver_stage_key != stage_key:
+        return ""
+    approval_id = ticket.dispatch_waiver_approval_id
+    ticket.dispatch_waiver_stage_key = ""
+    ticket.dispatch_waiver_approval_id = ""
+    return approval_id
+
+
 def _consume_next_agent_pin(ticket: Ticket, chosen_agent: str) -> None:
     """Clear the routing hint once the dispatch it asked for has happened.
 
@@ -954,6 +976,7 @@ class OrchestrationService:
 
         _consume_scope_reroute_pin(ticket, chosen_agent)
         _consume_next_agent_pin(ticket, chosen_agent)
+        waiver_approval_id = _consume_dispatch_waiver(ticket, target_key)
 
         ticket.workflow_stage_key = target_key
         if target.stage_map.get(target_key) != StageStatus.RUNNING:
@@ -980,6 +1003,7 @@ class OrchestrationService:
             status=RunStatus.RUNNING,
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_override_seconds,
+            dispatch_waiver_approval_id=waiver_approval_id,
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)
@@ -1222,8 +1246,8 @@ class ApprovalService:
         self.session.commit()
 
         ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
-        if ticket and approval.kind in _ROUTABLE_APPROVAL_KINDS:
-            self._apply_gate_resolution(
+        if ticket:
+            self._apply_ticket_resolution(
                 ticket,
                 approval,
                 approved=approved,
@@ -1343,6 +1367,85 @@ class ApprovalService:
             target_stage,
             forgiven,
         )
+
+    def _apply_ticket_resolution(
+        self,
+        ticket: Ticket,
+        approval: Approval,
+        *,
+        approved: bool,
+        rework_route_key: str,
+        response_text: str,
+    ) -> None:
+        """Send a resolved approval to the handler for its kind.
+
+        The routable kinds — a gate, and the rework pause that asks a gate's
+        question — accept the stage and may name a stage to route back to. A park
+        asks the opposite question, about whether the stage should start at all,
+        and answering yes must *run* it rather than complete it. CLI permissions
+        and questions reach a waiting agent instead and move no stage here.
+        """
+        if approval.kind in _ROUTABLE_APPROVAL_KINDS:
+            self._apply_gate_resolution(
+                ticket,
+                approval,
+                approved=approved,
+                rework_route_key=rework_route_key,
+                response_text=response_text,
+            )
+        elif approval.kind == ApprovalKind.STAGE_PARK:
+            self._apply_park_resolution(
+                ticket,
+                approval,
+                approved=approved,
+                response_text=response_text,
+            )
+
+    def _apply_park_resolution(
+        self,
+        ticket: Ticket,
+        approval: Approval,
+        *,
+        approved: bool,
+        response_text: str,
+    ) -> None:
+        """Resolve a parked stage — the opposite of resolving a gate.
+
+        A gate asks "is this stage's work good?", so approving marks it DONE. A
+        park asks "should this stage start at all, given the machine it would run
+        on?", so approving must send it back to PENDING to actually run. Routed
+        through `_apply_gate_resolution` — as it was until this was fixed — a
+        click meant to unstick a broken checkout marked the stage complete
+        without it ever running, and the workflow advanced past it.
+
+        Approving arms the one-shot waiver `_consume_dispatch_waiver` spends at
+        the next dispatch. Without it the stage re-dispatches, meets the same
+        failing check, and parks again.
+
+        Rejecting blocks in place and does NOT reroute. The reject route exists
+        to send unsatisfactory *work* back to an earlier stage; a `core.bare`
+        checkout is not a defect in the plan, and re-running the planner would
+        fix nothing while consuming a rework round.
+        """
+        instance, stages = self.orchestration._resolve_stages(ticket)
+        if not instance or not stages or not approval.stage_key:
+            return
+
+        if approved:
+            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.PENDING)
+            ticket.dispatch_waiver_stage_key = approval.stage_key
+            ticket.dispatch_waiver_approval_id = approval.id
+            ticket.blocking_issues = ""
+        else:
+            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
+            ticket.blocking_issues = response_text.strip() or approval.impact
+
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+
+        if approved:
+            self._resume_orchestration(ticket)
 
     def _apply_gate_resolution(
         self,

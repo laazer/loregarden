@@ -661,6 +661,13 @@ class ApprovalKind(str, Enum):
     #: straight through the cap that exists to stop it looping unattended.
     REWORK_PAUSE = "rework_pause"
 
+    #: A pre-dispatch check refused to let a stage start — see
+    #: `services.stage_parking`. Not a sign-off on work: approving one re-runs
+    #: the stage with the check waived, where approving a WORKFLOW_GATE marks
+    #: the stage done. Separate kinds because the two resolutions are opposites,
+    #: and because auto-approve must reach the gate and never the park.
+    STAGE_PARK = "stage_park"
+
 
 class BlockOrigin(str, Enum):
     """Who wrote the message a block carries.

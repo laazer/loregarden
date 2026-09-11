@@ -805,11 +805,12 @@ class OrchestrationCallbackService:
         title: str = "",
         impact: str = "",
         level: str = "medium",
+        kind: ApprovalKind = ApprovalKind.WORKFLOW_GATE,
     ) -> Approval:
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
-            kind=ApprovalKind.WORKFLOW_GATE,
+            kind=kind,
             title=title or f"Approve {ticket.title}",
             level=level,
             stage_key=stage_key,

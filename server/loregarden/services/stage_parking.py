@@ -15,7 +15,7 @@ human touched the tree.
 
 from __future__ import annotations
 
-from loregarden.models.domain import AgentRun, Approval, Ticket
+from loregarden.models.domain import AgentRun, Approval, ApprovalKind, Ticket
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.stage_retry_budget import refund_stage_dispatch_budget
 from sqlmodel import Session
@@ -34,6 +34,13 @@ def park_stage(
     The stage moves to AWAITING, which is what the orchestrator reads to pause
     rather than block. `impact` is what the person opening the inbox will have to
     act on, so it should name the remediation and not only the diagnosis.
+
+    The approval is a STAGE_PARK, not a WORKFLOW_GATE. Approving a gate means
+    "this stage's work is signed off" and marks it DONE; approving a park means
+    "run it anyway" and must re-dispatch the same stage. Raised as a gate — as it
+    was until this was fixed — a click meant to unstick a broken checkout instead
+    marked `implement` complete without it ever running, and an auto_approve run
+    did the same to itself with no human in the loop at all.
     """
     approval = OrchestrationCallbackService(session).request_approval(
         ticket,
@@ -41,6 +48,7 @@ def park_stage(
         title=title,
         impact=impact,
         level="high",
+        kind=ApprovalKind.STAGE_PARK,
     )
     refund_stage_dispatch_budget(session, ticket.id, run.stage_key)
     return approval

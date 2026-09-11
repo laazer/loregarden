@@ -142,3 +142,60 @@ def m_agent_slot_number_unique(conn: Connection) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_slots_slot_number ON agent_slots(slot_number)"
         )
     )
+
+
+def m_stage_park_approvals(conn: Connection) -> None:
+    """Columns for the one-shot waiver, and a re-kind of the parks already parked.
+
+    A stage whose pre-dispatch check fails is parked on an approval
+    (``services.stage_parking``). That approval was raised as a WORKFLOW_GATE, so
+    approving it ran the gate resolution and marked the stage DONE *without
+    running it* — the ticket then advanced past a skipped ``implement``. The fix
+    gives parks their own ApprovalKind; these columns carry the waiver that lets
+    the re-dispatched stage past the check that parked it, exactly once.
+
+    The backfill matters because the rows that provoked the fix are sitting in
+    someone's inbox right now: left as gates, approving them would still skip the
+    stage. Matched on the two titles ``park_for_environment`` and
+    ``park_for_boundary`` write (``services/doctor.py``,
+    ``services/handoff_boundary.py``) — the same title-prefix approach
+    ``m_rework_feedback_kind`` uses, and the only signal a park left on the row
+    before the kind existed.
+
+    Pending only. A resolved park is history: it recorded what the operator was
+    shown and what the code did at the time, and rewriting that would make the
+    skipped stages harder to find, not easier.
+    """
+    add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "dispatch_waiver_stage_key": (
+                "ALTER TABLE tickets ADD COLUMN dispatch_waiver_stage_key TEXT NOT NULL DEFAULT ''"
+            ),
+            "dispatch_waiver_approval_id": (
+                "ALTER TABLE tickets ADD COLUMN dispatch_waiver_approval_id TEXT NOT NULL "
+                "DEFAULT ''"
+            ),
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "dispatch_waiver_approval_id": (
+                "ALTER TABLE agent_runs ADD COLUMN dispatch_waiver_approval_id TEXT NOT NULL "
+                "DEFAULT ''"
+            ),
+        },
+    )
+    if not table_exists(conn, "approvals"):
+        return
+    conn.execute(
+        text(
+            "UPDATE approvals SET kind = 'stage_park' "
+            " WHERE status = 'pending' AND kind = 'workflow_gate'"
+            "   AND (title LIKE 'Environment preflight failed on%'"
+            "        OR title LIKE 'Boundary check on%')"
+        )
+    )

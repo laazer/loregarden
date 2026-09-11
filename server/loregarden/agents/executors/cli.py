@@ -260,6 +260,7 @@ class CliAgentExecutor:
                 partial_output="--stream-partial-output" in invocation.argv,
             )
             streamer.start(run.command)
+            self._maybe_warn_dispatch_waiver(streamer=streamer, run=run)
             self._maybe_warn_weak_mcp_model(
                 streamer=streamer,
                 run=run,
@@ -500,6 +501,36 @@ class CliAgentExecutor:
         logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
         streamer.append("WARN", model_warning, force=True)
 
+    def _maybe_warn_dispatch_waiver(self, *, streamer, run: AgentRun) -> None:
+        """Say, in the run's own log, that a person waived a failing check.
+
+        The alternative is a run that starts in a checkout already known to be
+        broken and whose log opens exactly like a healthy one — so whoever reads
+        the failure later hunts the agent's output for a cause that is sitting in
+        an approval row. `_record_and_check_boundary` keeps the failing check ids
+        on the run; this is the part a human actually sees.
+
+        Both the checks and the waiver are read back off the run rather than
+        threaded in, so this reports what was persisted, not what was intended.
+        """
+        if not run.dispatch_waiver_approval_id:
+            return
+        try:
+            waived_checks = json.loads(run.start_preflight_failures_json or "[]")
+        except json.JSONDecodeError:
+            # silent-ok: the column is ours and written by json.dumps, so this is
+            # unreachable short of hand-editing; degrade to naming the waiver
+            # rather than losing the warning that a check was waived at all.
+            waived_checks = []
+        detail = ", ".join(waived_checks) or "a failing pre-dispatch check"
+        message = (
+            f"Dispatched with {detail} waived by approval "
+            f"{run.dispatch_waiver_approval_id}. The environment was NOT fixed — "
+            "a failure here may be that, not the work."
+        )
+        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, message)
+        streamer.append("WARN", message, force=True)
+
     def _spawn_print_process(self, invocation, repo_root: Path):
         """Open the CLI subprocess in its own session, and feed it any stdin prompt.
 
@@ -723,14 +754,22 @@ class CliAgentExecutor:
         earlier would name the shared checkout for a run that goes on to execute
         in a worktree. Every dispatch path in the app converges on `execute`,
         which is why this lives in the executor rather than beside any one caller.
+
+        A run carrying `dispatch_waiver_approval_id` was dispatched by a person
+        who saw these checks fail and said run it anyway (see
+        `services.stage_parking`). It skips the *parking*, never the checking:
+        the checks still run and their failures are still recorded on the run,
+        because "a human waived it" and "the environment was fine" must not read
+        the same afterwards. `_maybe_warn_dispatch_waiver` puts it in the log.
         """
         stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=dirty_paths))
+        waived = bool(run.dispatch_waiver_approval_id)
 
         # The environment first: a stage started in a checkout with core.bare set,
         # or under a leaked GIT_DIR, fails in ways that point at anything but the
         # cause. Recorded on the run whatever happens next.
         preflight = preflight_run(self.session, run, workspace, repo_root)
-        if any(finding.status is DoctorStatus.FAIL for finding in preflight):
+        if any(finding.status is DoctorStatus.FAIL for finding in preflight) and not waived:
             park_for_environment(
                 self.session, run=run, ticket=ticket, summary=preflight_summary(preflight)
             )
@@ -742,7 +781,7 @@ class CliAgentExecutor:
             )
 
         verdict = verify_run_boundary(self.session, run, ticket)
-        if verdict_proceeds(verdict) or not boundary_enforced(workspace):
+        if verdict_proceeds(verdict) or not boundary_enforced(workspace) or waived:
             return None
 
         park_for_boundary(self.session, run=run, ticket=ticket, verdict=verdict)

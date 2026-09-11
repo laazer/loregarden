@@ -44,6 +44,11 @@ CANONICAL_STAGE_RENAMES: dict[str, str] = {
 #: this migration has no authority over.
 STAGE_KEY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("tickets", "workflow_stage_key"),
+    # The stage a human waived the pre-dispatch checks for (0126). Added after
+    # this migration shipped, so on an existing database the column-existence
+    # guard below skips it and nothing re-runs; it is listed because it holds a
+    # bare stage key, and a pin left on a legacy spelling would dispatch nothing.
+    ("tickets", "dispatch_waiver_stage_key"),
     ("workflow_instances", "current_stage_key"),
     ("orchestration_runs", "current_stage_key"),
     ("orchestration_runs", "stop_at_stage_key"),
