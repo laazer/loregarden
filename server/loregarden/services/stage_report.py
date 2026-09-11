@@ -103,10 +103,16 @@ class _ReportPayload(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    status: str = ""
-    confidence: float = 0.0
+    #: Every field is nullable because agents fill the block symmetrically —
+    #: `"reroute_context": null` on a pass is the contract's own shape written
+    #: out in full, not a malformed report. A non-optional annotation here does
+    #: not reject one field, it discards the whole verdict and fails the stage
+    #: closed as "no report", which is the opposite of what the operator needs
+    #: to see. `_build_report` supplies the empty value each null stands for.
+    status: str | None = ""
+    confidence: float | None = 0.0
     reroute_to_stage: str | None = None
-    reroute_context: str = ""
+    reroute_context: str | None = ""
 
 
 class _CriteriaPayload(BaseModel):
@@ -121,7 +127,7 @@ class _CriteriaPayload(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    unmet_criteria: list[str] = Field(default_factory=list)
+    unmet_criteria: list[str] | None = Field(default=None)
 
 
 def _criteria_of(payload: str) -> list[str]:
@@ -133,7 +139,7 @@ def _criteria_of(payload: str) -> list[str]:
         # payload would otherwise report the work as meeting every criterion.
         logger.warning("stage report criteria could not be parsed", exc_info=True)
         return []
-    return [item.strip() for item in parsed.unmet_criteria if item.strip()]
+    return [item.strip() for item in (parsed.unmet_criteria or []) if item.strip()]
 
 
 def _build_report(payload: str) -> StageReport | None:
@@ -148,7 +154,7 @@ def _build_report(payload: str) -> StageReport | None:
         return None
     return StageReport(
         status=parsed.status,
-        confidence=max(0.0, min(1.0, parsed.confidence)),
+        confidence=max(0.0, min(1.0, parsed.confidence or 0.0)),
         reroute_to_stage=parsed.reroute_to_stage or None,
         reroute_context=parsed.reroute_context or "",
         unmet_criteria=_criteria_of(payload),
