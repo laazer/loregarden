@@ -32,6 +32,21 @@
  * string, keeps a value the list does not contain, and falls back to the text
  * box whenever the list cannot be fetched. See `PaneSettingsChoiceInput`.
  *
+ * ## Which workspace a list is drawn from
+ *
+ * A ticket, a conversation and a branch each exist inside one workspace, and
+ * the list for them was scoped to the sidebar's. That is the chrome's opinion,
+ * not the pane's, and it made a view single-workspace by accident — every pane
+ * in a tab was offered the same workspace's tickets no matter what slug it
+ * stored.
+ *
+ * `workspaceFrom` on the field names the sibling field holding the slug, and it
+ * is read out of `draft` rather than out of `stored`: a field is being edited
+ * next to the one that scopes it, and a ticket list that only caught up after a
+ * save would offer the previous workspace's tickets for the whole edit. An
+ * unset `workspaceFrom`, or one naming a field the operator has left empty,
+ * falls back to the sidebar slug — the behaviour every field had before.
+ *
  * The one exception is a number that does not parse, and it is not an exception
  * to that rule. `NaN` serialises to `null`, which 444 established the server
  * accepts silently; sending it would discard the field with no feedback at all.
@@ -50,7 +65,7 @@ import { paneSettings } from "./paneChrome";
 import "./paneChrome.css";
 import { PaneSettingsChoiceInput } from "./PaneSettingsChoiceInput";
 import { initialDraft, readDraft, type DraftValue } from "./paneSettingsDraft";
-import type { RegisteredPrimitive } from "./primitives/types";
+import type { RegisteredPrimitive, SettingsField } from "./primitives/types";
 
 export function PaneSettingsEditor({
   containerId,
@@ -93,6 +108,20 @@ export function PaneSettingsEditor({
       next.delete(key);
       return next;
     });
+  }
+
+  /**
+   * The workspace a `choice` field's list is drawn from.
+   *
+   * The draft value wins, the sidebar is the fallback. Only a non-empty draft
+   * value counts: a pane whose workspace field is still blank has not chosen
+   * anything, and offering it nothing at all would be a worse answer than
+   * offering the workspace the operator is currently looking at.
+   */
+  function choiceWorkspace(field: Extract<SettingsField, { kind: "choice" }>): string {
+    if (field.workspaceFrom === undefined) return slug;
+    const scoped = draft.get(field.workspaceFrom);
+    return typeof scoped === "string" && scoped !== "" ? scoped : slug;
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -186,6 +215,7 @@ export function PaneSettingsEditor({
             {field.kind === "choice" ? (
               <PaneSettingsChoiceInput
                 field={field}
+                workspaceSlug={choiceWorkspace(field)}
                 inputId={inputId}
                 value={typeof value === "string" ? value : ""}
                 describedBy={describedBy}

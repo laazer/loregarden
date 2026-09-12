@@ -93,7 +93,33 @@ export type SettingsField =
    * anything. It is not a constraint: an unlisted value is still storable, on
    * the same reasoning that keeps the editor from validating slugs.
    */
-  | (SettingsFieldBase & { kind: "choice"; default: string; source: ChoiceSource });
+  | (SettingsFieldBase & {
+      kind: "choice";
+      default: string;
+      source: ChoiceSource;
+      /**
+       * The field key holding the workspace this list should be drawn from.
+       *
+       * Three sources — `ticket`, `chat_session`, `branch` — name something that
+       * only exists inside one workspace, and the list for them was scoped to
+       * whichever workspace the *sidebar* happened to be showing. That made a
+       * view a single-workspace surface by accident: a pane could store any
+       * slug, but the operator could only ever be offered loregarden's tickets,
+       * so "two panes about two workspaces in one tab" was unreachable through
+       * the form.
+       *
+       * Naming the field instead of reading the chrome is what makes the pane
+       * the authority on its own scope. The editor resolves this key out of the
+       * *draft*, not the stored settings, so switching the workspace select
+       * re-offers the ticket list in the same open form rather than after a
+       * save-and-reopen.
+       *
+       * Absent, or naming a field the operator has left empty, falls back to the
+       * sidebar workspace — which is exactly the previous behaviour, so a
+       * primitive that has no workspace of its own loses nothing.
+       */
+      workspaceFrom?: string;
+    });
 
 /**
  * A primitive's parsed settings: an open, JSON-shaped map.

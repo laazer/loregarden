@@ -10,6 +10,11 @@
 import { RunLedgerPanel } from "../../RunLedgerPanel";
 import { definePrimitive } from "./definePrimitive";
 import { Unconfigured } from "./Unconfigured";
+import {
+  PICKER_SCOPE_HELP,
+  WORKSPACE_SCOPE_KEY,
+  workspaceScopeField,
+} from "./workspaceScope";
 
 type RunLedgerSettings = {
   ticketId: string;
@@ -23,10 +28,12 @@ export const runLedgerPrimitive = definePrimitive<RunLedgerSettings>({
   category: "Tickets",
   containerKind: "panel",
   settingsFields: [
+    workspaceScopeField(PICKER_SCOPE_HELP),
     {
       key: "ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Ticket",
       default: "",
       help: "The ticket whose stage visits this pane lists.",

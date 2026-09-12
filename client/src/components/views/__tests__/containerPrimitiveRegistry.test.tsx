@@ -326,10 +326,20 @@ describe("AC5 — panels ruled out are recorded with a reason and absent from th
    * Ruled out at triage. Each either reads page-level state directly
    * (`uiStore` / `QueueStatusContext`), or needs a caller-held domain object a
    * container's JSON `settings` cannot produce.
+   *
+   * `LogsPanel` and `ApprovalInboxPanel` were on this list and are not any
+   * more, because their recorded reasons named missing work rather than a wall.
+   * The logs panel wanted "a ticket-id-driven wrapper": that is
+   * `ticketLogsPrimitive`, one `api.ticket` call, and the panel itself is
+   * unchanged. The inbox reason was true of the *drawer* and not of the
+   * approvals inside it, so `inbox/ApprovalsList` carries the list and the
+   * drawer keeps the open flag, the overlay and the notification log.
+   *
+   * Which is why this list is asserted rather than merely written down: the two
+   * that moved had to be deleted from here in the same change that registered
+   * them, or the suite would have gone on asserting they were absent.
    */
   const RULED_OUT = [
-    "LogsPanel",
-    "ApprovalInboxPanel",
     "CopilotDock",
     "HiveSimulationPanel",
     "FailedRunsPanel",
