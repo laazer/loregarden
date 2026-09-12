@@ -44,7 +44,9 @@ class EnumIntegrityIssue:
             f"{self.table}.{self.column} holds {self.value!r}, which is not a valid "
             f"{self.column} value (expected one of: {', '.join(self.expected)}). "
             f"Affected rows: {rows}. Every query that selects {self.table} will fail "
-            f"until this row is corrected."
+            f"until the code and the data agree. Check that this checkout is current "
+            f"before touching the row: an enum that has lost a member the data still "
+            f"uses looks identical to a row that was written wrong."
         )
 
 
