@@ -1,0 +1,7 @@
+# Backstop. data/ holds the live SQLite DB and real credentials
+# (.claude-oauth-token, .cursor-api-key). The root .gitignore's `/data/` rule
+# normally prunes this directory before git ever reads this file — but if that
+# one line is ever edited away, this catches everything in here instead of
+# nothing. Force-added, since the parent rule hides it: git add -f data/.gitignore
+*
+!.gitignore
