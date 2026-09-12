@@ -86,6 +86,14 @@ class Worktree(SQLModel, table=True):
     #: the fan-out and parallel-queue paths, where a run really does want its
     #: own tree.
     ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    #: Set when the worktree belongs to a Home chat thread. Same role as
+    #: `ticket_id` one field up — the reuse key for a conversation whose acting
+    #: turns must see each other's work — for the surface that has no ticket to
+    #: hang one off. Exactly one of the two is set, or neither for a run that
+    #: owns its tree outright.
+    chat_session_id: str | None = Field(
+        default=None, foreign_key="baxter_chat_sessions.id", index=True
+    )
     parent_branch: str = "main"
     worktree_path: str = ""
     state: WorktreeState = Field(

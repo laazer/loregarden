@@ -166,6 +166,7 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                     session,
                     effective_workspace,
                     content=latest_user.content if latest_user else "",
+                    chat_session=chat_session,
                     history=history,
                     turn_id=assistant_id,
                     skill_name=latest_user.skill_name if latest_user else "",

@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from loregarden.models.domain import Ticket
+from loregarden.models.domain import BaxterChatSession, Ticket
 from loregarden.services.git_subprocess import run_git
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,19 @@ def default_ticket_branch(ticket: Ticket) -> str:
     slug = ticket.external_id.strip() or ticket.id[:8]
     prefix = _slugify(ticket.milestone) or "loregarden"
     return f"{prefix}/{slug}"
+
+
+def chat_session_branch(chat_session: BaxterChatSession) -> str:
+    """The branch a Home chat thread's acting turns commit to.
+
+    Derived from the thread's own id rather than its title: a title is derived
+    from the first message and the operator can rename it, and a branch that
+    moves when a conversation is renamed is a branch that loses its commits.
+    The title only decorates, so a thread is recognisable in `git branch`.
+    """
+    slug = _slugify(chat_session.title)
+    stem = f"{slug}-{chat_session.id[:8]}" if slug else chat_session.id[:8]
+    return f"chat/{stem}"
 
 
 def resolve_ticket_branch(ticket: Ticket) -> str:
