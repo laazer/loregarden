@@ -23,9 +23,8 @@ from loregarden.models.domain import (
     BaxterChatSession,
     TriageMessage,
 )
+from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY
 from sqlmodel import Session, col, select
-
-TRIAGE_STAGE_KEY = "triage"
 
 
 def _question_texts(tool_input: dict[str, Any]) -> list[tuple[str, str]]:

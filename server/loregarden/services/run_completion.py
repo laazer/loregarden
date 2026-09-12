@@ -430,7 +430,9 @@ def _rearmed_for_transient_retry(
     blocked, so a stage left PENDING with stale blocking prose is reported as
     BLOCKED by the very next reconcile and the retry never happens.
     """
-    reason = transient_failure_reason(status, stdout=stdout, stderr=stderr)
+    reason = transient_failure_reason(
+        status, stdout=stdout, stderr=stderr, usage_status=run.usage_status
+    )
     if not reason:
         return False
 
@@ -532,9 +534,11 @@ def advance_stage_after_run(
         # The run died of infrastructure, so it said nothing about the work. The
         # helper has already re-armed the stage or blocked it for having spent
         # its retries, so there is nothing left here to advance or block. A
-        # clean exit with no stage report deliberately does NOT come through
-        # here — see `stage_transient_retry`'s docstring — it falls to
-        # `_advance_clean_exit` below and keeps its fail-closed block.
+        # clean exit that *finished its turn* and printed no stage report
+        # deliberately does NOT come through here — see `stage_transient_retry`'s
+        # docstring — it falls to `_advance_clean_exit` below and keeps its
+        # fail-closed block. One that exited part-way through its turn does come
+        # through here: there is no prose verdict on it to fail closed over.
         pass
     elif status == RunStatus.SUCCEEDED:
         gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)

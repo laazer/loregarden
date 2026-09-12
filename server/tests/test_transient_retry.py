@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     AgentRun,
     Artifact,
     RunStatus,
+    RunUsageStatus,
     StageStatus,
     Ticket,
     TicketState,
@@ -104,7 +105,12 @@ def _ticket_on_stage(db_session: Session, stage_key: str = "testing") -> Ticket:
     return ticket
 
 
-def _run(db_session: Session, ticket: Ticket, stage_key: str = "testing") -> AgentRun:
+def _run(
+    db_session: Session,
+    ticket: Ticket,
+    stage_key: str = "testing",
+    usage_status: RunUsageStatus = RunUsageStatus.UNKNOWN,
+) -> AgentRun:
     run = AgentRun(
         run_code=f"run-{ticket.id[:6]}-{count_transient_retries(db_session, ticket.id, stage_key)}",
         ticket_id=ticket.id,
@@ -112,6 +118,7 @@ def _run(db_session: Session, ticket: Ticket, stage_key: str = "testing") -> Age
         agent_id="test_designer",
         stage_key=stage_key,
         status=RunStatus.RUNNING,
+        usage_status=usage_status,
     )
     db_session.add(run)
     db_session.commit()
@@ -119,9 +126,22 @@ def _run(db_session: Session, ticket: Ticket, stage_key: str = "testing") -> Age
     return run
 
 
-def _die(db_session: Session, ticket: Ticket, *, stdout="", stderr="", status=RunStatus.FAILED):
-    """Finish one run of `testing` the way the executor would, and settle it."""
-    run = _run(db_session, ticket)
+def _die(
+    db_session: Session,
+    ticket: Ticket,
+    *,
+    stdout="",
+    stderr="",
+    status=RunStatus.FAILED,
+    usage_status: RunUsageStatus = RunUsageStatus.UNKNOWN,
+):
+    """Finish one run of `testing` the way the executor would, and settle it.
+
+    `usage_status` is written the way `record_run_evidence` writes it, before
+    completion reads it: UNAVAILABLE is an adapter that has a usage surface and
+    printed no terminal event, which is how a half-finished turn shows up.
+    """
+    run = _run(db_session, ticket, usage_status=usage_status)
     OrchestrationService(db_session).complete_run(run, status=status, stdout=stdout, stderr=stderr)
     db_session.refresh(ticket)
     return run
@@ -202,6 +222,78 @@ def test_a_clean_exit_with_no_stage_report_keeps_its_fail_closed_block(db_sessio
     assert count_transient_retries(db_session, ticket.id, "testing") == 0
     assert ticket.workflow_stage_status is StageStatus.BLOCKED
     assert "LOREGARDEN_STAGE_REPORT" in ticket.blocking_issues
+
+
+TRUNCATED_STDOUT = (
+    '{"type":"system","subtype":"init","model":"gpt-5"}\n'
+    '{"type":"assistant","message":{"role":"assistant","content":'
+    '[{"type":"text","text":"TAGS"}]}}\n'
+    '{"type":"assistant","message":{"role":"assistant","content":'
+    '[{"type":"text","text":"`"}]}}'
+)
+FINISHED_STDOUT = (
+    TRUNCATED_STDOUT + '\n{"type":"result","usage":{"inputTokens":85378,"outputTokens":9715}}'
+)
+
+
+def test_a_cli_that_exits_part_way_through_its_turn_is_retried(db_session: Session):
+    """The shape three `script_review` runs died in over 30 days: exit 0, an
+    NDJSON stream that stops mid-sentence, and no terminal usage event. The
+    fail-closed block above protects a prose verdict, and this run has none —
+    the agent never finished reaching one — so there is nothing to re-roll.
+    """
+    ticket = _ticket_on_stage(db_session)
+
+    _die(
+        db_session,
+        ticket,
+        status=RunStatus.SUCCEEDED,
+        stdout=TRUNCATED_STDOUT,
+        usage_status=RunUsageStatus.UNAVAILABLE,
+    )
+
+    assert count_transient_retries(db_session, ticket.id, "testing") == 1
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    assert ticket.blocking_issues == ""
+
+
+def test_a_finished_turn_with_no_stage_report_still_blocks(db_session: Session):
+    """The carve-out is the *unfinished* turn, not the missing report. A stream
+    that reached its terminal event and printed no sentinel is the gatekeeper
+    case, and keeps its block — otherwise the retry swallows the exclusion the
+    test above it exists to defend.
+    """
+    ticket = _ticket_on_stage(db_session)
+
+    _die(
+        db_session,
+        ticket,
+        status=RunStatus.SUCCEEDED,
+        stdout=FINISHED_STDOUT,
+        usage_status=RunUsageStatus.MEASURED,
+    )
+
+    assert count_transient_retries(db_session, ticket.id, "testing") == 0
+    assert ticket.workflow_stage_status is StageStatus.BLOCKED
+
+
+def test_plain_text_output_is_not_read_as_a_truncated_stream(db_session: Session):
+    """An adapter can report UNAVAILABLE for reasons other than a cut stream. A
+    run that never spoke NDJSON at all has no terminal event to be missing, so it
+    is not evidence of a half-finished turn.
+    """
+    ticket = _ticket_on_stage(db_session)
+
+    _die(
+        db_session,
+        ticket,
+        status=RunStatus.SUCCEEDED,
+        stdout="AC Gate decision: **REJECT**. I attempted complete_stage but it was cancelled.",
+        usage_status=RunUsageStatus.UNAVAILABLE,
+    )
+
+    assert count_transient_retries(db_session, ticket.id, "testing") == 0
+    assert ticket.workflow_stage_status is StageStatus.BLOCKED
 
 
 def test_a_transient_retry_does_not_spend_the_runaway_backstop(db_session: Session):

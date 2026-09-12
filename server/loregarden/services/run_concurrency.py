@@ -10,6 +10,14 @@ from sqlmodel import Session, col, select
 
 IN_FLIGHT_STATUSES = [RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
 
+#: Stage key recorded on a ticket triage turn. Not a workflow stage: Baxter is
+#: the operator's conversation about a ticket, and no gate waits on it. It is
+#: the only conversational channel whose runs carry a ticket_id — Home chat and
+#: branch triage are workspace-scoped and have none — so it is the only one a
+#: ticket-keyed lookup can see. Canonical here because this module is the lowest
+#: one that has to tell conversation apart from work.
+TRIAGE_STAGE_KEY = "triage"
+
 
 def new_run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
@@ -55,6 +63,31 @@ def find_active_run(
     return session.exec(query).first()
 
 
+def find_active_stage_run(session: Session, ticket_id: str) -> AgentRun | None:
+    """An in-flight run that will actually advance this ticket's workflow.
+
+    Narrower than ``find_active_run`` on purpose, because it answers a different
+    question. ``find_active_run`` asks "is a live CLI holding this workspace's
+    checkout" — a triage turn does, so it counts there, and excluding it would
+    let an orchestration start on top of an operator's session.
+
+    This asks "will anything pick this stage up". A triage turn never will: it
+    runs no stage and completes none. Answering that question with the broad
+    lookup made a requeue report ``scheduled: true`` and withhold its
+    ``start_with`` hint whenever an operator happened to be *talking about* the
+    ticket in Baxter — which is exactly when a human requeues one. The ticket
+    then sat pending with nothing driving it, and the response said it had been
+    picked up.
+    """
+    return session.exec(
+        select(AgentRun).where(
+            AgentRun.ticket_id == ticket_id,
+            AgentRun.stage_key != TRIAGE_STAGE_KEY,
+            col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
+        )
+    ).first()
+
+
 def find_active_orchestration_run(session: Session, ticket_id: str) -> OrchestrationRun | None:
     """The orchestration in flight for this ticket, claimed or executing.
 
@@ -81,8 +114,9 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
 
 #: How long an orchestration may go without a single control-plane write before
 #: its lane is reclaimable. Renewed by `OrchestrationCallbackService.touch_lease`
-#: on every stage start, completion, skip and block, so a session doing real work
-#: renews many times over; only one that has stopped talking to us expires.
+#: on every stage start, completion, skip and block — reached by the MCP callbacks,
+#: the external harness, and `BuiltinOrchestrator._renew_lease` — so a session doing
+#: real work renews many times over; only one that has stopped talking to us expires.
 ORCHESTRATION_LEASE = timedelta(minutes=30)
 
 
@@ -117,9 +151,41 @@ def orchestration_lease_expired(
     if live_agent_run:
         return False
 
-    stamp = run.last_seen_at or run.started_at or run.created_at
+    stamp = _latest_activity(session, run)
     if stamp is None:
         return False
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - stamp > lease
+
+
+def _latest_activity(session: Session, run: OrchestrationRun) -> datetime | None:
+    """The most recent moment this orchestration is known to have been alive.
+
+    The lease stamp alone answers for the driver's own writes. A child agent
+    run that finished seconds ago answers for the handoff *between* stages: the
+    in-flight veto above lapses the instant the last agent of a stage exits, and
+    the gate evaluation and next dispatch that follow take seconds during which
+    nothing holds the run up. A sweep landing in that window kills a healthy
+    orchestration mid-stride — which is how orch_749069 died 345ms after its
+    last reviewer passed, with every stage green. A just-finished child is
+    activity, so it counts as one.
+    """
+    latest_child_finish = session.exec(
+        select(AgentRun.finished_at)
+        .where(AgentRun.orchestration_run_id == run.id)
+        .where(col(AgentRun.finished_at).is_not(None))
+        .order_by(col(AgentRun.finished_at).desc())
+        .limit(1)
+    ).first()
+    candidates = [
+        _as_utc(run.last_seen_at or run.started_at or run.created_at),
+        _as_utc(latest_child_finish),
+    ]
+    known = [stamp for stamp in candidates if stamp is not None]
+    return max(known) if known else None
+
+
+def _as_utc(stamp: datetime | None) -> datetime | None:
+    """Naive timestamps are stored as UTC; compare them as such."""
+    if stamp is None:
+        return None
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=timezone.utc)

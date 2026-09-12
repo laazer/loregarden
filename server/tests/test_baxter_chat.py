@@ -145,6 +145,54 @@ def test_baxter_chat_fork_copies_settled_messages_and_leaves_source(
     assert {m["id"] for m in source["messages"]}.isdisjoint({m["id"] for m in body["messages"]})
 
 
+def test_baxter_chat_fork_through_message_drops_the_turns_after_it(client: TestClient, monkeypatch):
+    """The per-turn Fork action: branch from here, not from the end."""
+    monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "First answer.")
+    session_id = _new_session(client)
+    client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "First question"},
+    )
+    monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "Second answer.")
+    client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "Second question"},
+    )
+
+    source = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert len(source["messages"]) == 4
+    cut_at = source["messages"][1]["id"]
+
+    forked = client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/fork",
+        json={"through_message_id": cut_at},
+    )
+    assert forked.status_code == 201
+    body = forked.json()
+    assert [m["content"] for m in body["messages"]] == ["First question", "First answer."]
+
+    # The source keeps everything — a fork is a copy, not a truncation.
+    after = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert len(after["messages"]) == 4
+
+
+def test_baxter_chat_fork_through_foreign_message_is_rejected(client: TestClient, monkeypatch):
+    """A cut point from another conversation must not silently copy everything."""
+    monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "ok")
+    session_id = _new_session(client)
+    client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "Only turn"},
+    )
+
+    res = client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/fork",
+        json={"through_message_id": "not-a-message-in-here"},
+    )
+    assert res.status_code == 400
+    assert "not-a-message-in-here" in res.json()["detail"]
+
+
 def test_baxter_chat_fork_unknown_session(client: TestClient):
     res = client.post("/api/workspaces/loregarden/baxter-chat/sessions/no-such-session/fork")
     assert res.status_code == 404

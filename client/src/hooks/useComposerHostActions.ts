@@ -7,6 +7,7 @@ import { navigateToTicket } from "../lib/useAppNavigation";
 import { describeError, pushToast } from "../state/toastStore";
 import type { ChatArchive } from "./useActiveChatSession";
 import type { ComposerCommandActions } from "./useComposerCommands";
+import { useCreateChatTicket } from "./useCreateChatTicket";
 
 /**
  * Wire the control-plane `/` builtins to the APIs and navigation the current
@@ -45,24 +46,7 @@ export function useComposerHostActions({
     },
   });
 
-  const createTicket = useMutation({
-    meta: { errorTitle: "Create ticket" },
-    mutationFn: (title: string) =>
-      api.createTicket({
-        workspace_slug: workspaceSlug,
-        title,
-        work_item_type: "task",
-      }),
-    onSuccess: (ticket) => {
-      qc.invalidateQueries({ queryKey: ["tickets"] });
-      navigateToTicket(ticket.id);
-      pushToast({
-        title: "Ticket created",
-        message: ticket.external_id || ticket.title,
-        tone: "success",
-      });
-    },
-  });
+  const createTicket = useCreateChatTicket(workspaceSlug);
 
   const resolveApproval = useMutation({
     meta: { errorTitle: "Resolve approval" },
@@ -171,7 +155,7 @@ export function useComposerHostActions({
 
   const onCreateTicket = useCallback(
     (title: string) => {
-      void createTicket.mutateAsync(title).catch(() => {
+      void createTicket.mutateAsync({ title }).catch(() => {
         // silent-ok: createTicket has meta.errorTitle and its own onError
         // toast; the failure is reported before this handler runs.
       });

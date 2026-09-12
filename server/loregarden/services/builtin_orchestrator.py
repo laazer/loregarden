@@ -177,6 +177,7 @@ class BuiltinOrchestrator:
         stages_run = 0
         try:
             while True:
+                self._renew_lease(orch_run)
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
 
@@ -249,8 +250,9 @@ class BuiltinOrchestrator:
                     handled = self._handle_agentless_stage(
                         ticket, orch_run, stage_def, target_key, auto_approve=auto_approve
                     )
-                    stages_run += 1
-                    budget.consume(terminal=target_is_terminal)
+                    stages_run = self._settle_finished_stage(
+                        orch_run, budget, stages_run, terminal=target_is_terminal
+                    )
                     if handled is None:
                         continue
                     return handled
@@ -265,8 +267,9 @@ class BuiltinOrchestrator:
                     stop_at_stage_key=stop_at_stage_key,
                     resuming=(target_key == recovered_stage_key),
                 )
-                stages_run += 1
-                budget.consume(terminal=target_is_terminal)
+                stages_run = self._settle_finished_stage(
+                    orch_run, budget, stages_run, terminal=target_is_terminal
+                )
                 if stopped:
                     self.session.refresh(orch_run)
                     return orch_run
@@ -291,6 +294,38 @@ class BuiltinOrchestrator:
             )
         self.session.refresh(orch_run)
         return orch_run
+
+    def _settle_finished_stage(
+        self,
+        orch_run: OrchestrationRun,
+        budget: SubtreeBudget,
+        stages_run: int,
+        *,
+        terminal: bool,
+    ) -> int:
+        """Book a stage whose work has returned, before the gate and the next dispatch.
+
+        The lease renewal is the point: the in-flight-child veto lapses the
+        instant a stage's last agent exits, and the gate/handoff that follows is
+        the window the sweeper used to reclaim a healthy run in.
+        """
+        self._renew_lease(orch_run)
+        budget.consume(terminal=terminal)
+        return stages_run + 1
+
+    def _renew_lease(self, orch_run: OrchestrationRun) -> None:
+        """Stamp this run as alive, and commit so the sweeper's session sees it.
+
+        `touch_lease` is otherwise reachable only through the MCP callback
+        service and the external harness, which this driver never crosses: it
+        advances its own stages in-process. So every builtin_autopilot run kept
+        a null `last_seen_at` and was judged on `started_at` alone — permanently
+        "expired" 30 minutes in, held up only by the in-flight-child veto, and
+        reclaimable in any gap between stages. Renewing here is what makes the
+        lease mean what its name says for this driver too.
+        """
+        self.callbacks.touch_lease(orch_run)
+        self.session.commit()
 
     def _stage_wants_another_attempt(self, ticket: Ticket, target_key: str) -> bool:
         """Whether this pass should re-dispatch the stage it just ran.

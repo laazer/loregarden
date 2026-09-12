@@ -326,12 +326,23 @@ def create_chat_session(
     return row
 
 
-def fork_chat_session(session: Session, source: BaxterChatSession) -> BaxterChatSession:
+def fork_chat_session(
+    session: Session,
+    source: BaxterChatSession,
+    *,
+    through_message_id: str = "",
+) -> BaxterChatSession:
     """Branch a conversation: new session, same settled history, source untouched.
 
     Pending assistant rows are left behind on purpose — a fork is a place to
     continue from what has already been said, not from a turn still in flight.
     Runtime pins copy with the thread so the branch keeps the same model.
+
+    ``through_message_id`` cuts the copy off after that message, which is what
+    the per-message Fork action in the thread wants: branch from *here*, not
+    from the end. An id that is not in this conversation is an error rather
+    than a silent full copy — a fork that quietly carried the turns the
+    operator meant to drop is the failure this argument exists to prevent.
     """
     source_title = (source.title or "").strip() or UNTITLED_SESSION_TITLE
     fork_title = _clip(f"Fork of {source_title}", MAX_TITLE_CHARS)
@@ -340,10 +351,19 @@ def fork_chat_session(session: Session, source: BaxterChatSession) -> BaxterChat
         title=fork_title,
         runtime_json=source.runtime_json or "{}",
     )
+
+    history = list_chat_messages(session, source.id)
+    cut = (through_message_id or "").strip()
+    if cut:
+        index = next((i for i, m in enumerate(history) if m.id == cut), None)
+        if index is None:
+            raise ValueError(f"Message {cut} is not in this conversation")
+        history = history[: index + 1]
+
     session.add(row)
     session.flush()
 
-    for message in list_chat_messages(session, source.id):
+    for message in history:
         session.add(
             BaxterChatMessage(
                 session_id=row.id,

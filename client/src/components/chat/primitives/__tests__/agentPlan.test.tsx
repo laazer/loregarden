@@ -1,8 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { StudioChatMessages } from "../../../studio/StudioChat";
-import { agentPlanRunSummary, supersededAgentPlanKeys } from "../agentPlan";
-import { TodoListPrimitive } from "../TodoListPrimitive";
+import {
+  AGENT_PLAN_REQUEST_PREFIX,
+  agentPlanRequestMessage,
+  agentPlanRequestTask,
+  agentPlanRunSummary,
+  supersededAgentPlanKeys,
+} from "../agentPlan";
+import { TodoListPrimitive, agentPlanExecuteMessage } from "../TodoListPrimitive";
 import type { ChatPart, TodoListPart } from "../types";
 
 const plan = (planId: string | null, checked: boolean): TodoListPart => ({
@@ -90,5 +96,40 @@ describe("agent execution plan Run message", () => {
     );
     expect(screen.getByText("Ran Fix chat plans · 1 step")).toBeInTheDocument();
     expect(screen.queryByText(/Add history API/)).toBeNull();
+  });
+});
+
+describe("one-shot plan requests", () => {
+  it("round-trips the task through the message the composer sends", () => {
+    const message = agentPlanRequestMessage("Add a history API");
+    expect(message.startsWith(AGENT_PLAN_REQUEST_PREFIX)).toBe(true);
+    expect(agentPlanRequestTask(message)).toBe("Add a history API");
+  });
+
+  it("leaves ordinary user text alone", () => {
+    expect(agentPlanRequestTask("Add a history API")).toBeNull();
+    expect(agentPlanRequestTask("Task: not a one-shot")).toBeNull();
+  });
+
+  it("does not mistake a Run message for a plan request", () => {
+    const run = agentPlanExecuteMessage("Ship it", [{ id: "a", text: "Do it", checked: false }]);
+    expect(agentPlanRequestTask(run)).toBeNull();
+  });
+
+  it("shows the task in the thread, not the instructions wrapped round it", () => {
+    render(
+      <StudioChatMessages
+        messages={[
+          {
+            id: "m1",
+            role: "user",
+            content: agentPlanRequestMessage("Add a history API"),
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Asked for a plan")).toBeInTheDocument();
+    expect(screen.getByText("Add a history API")).toBeInTheDocument();
+    expect(screen.queryByText(/Emit a `todo_list` primitive/)).not.toBeInTheDocument();
   });
 });
