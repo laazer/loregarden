@@ -232,6 +232,10 @@ describe("AC1/AC3 — the editor is reached from the pane and generated from the
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
     expect(settingsOf(lastLayout(), "c-seed")).toEqual({
       primitive_id: "run_ledger",
+      // Every declared field is written, including the workspace that scopes
+      // the ticket picker and that this test never touched — which is the
+      // clause being asserted.
+      workspace_slug: "",
       ticket_id: "t-1",
       live: false,
     });
@@ -254,6 +258,7 @@ describe("AC1/AC3 — the editor is reached from the pane and generated from the
     assertServerAcceptableLayout(layout);
     expect(settingsOf(layout, "c-seed")).toEqual({
       primitive_id: "run_ledger",
+      workspace_slug: "",
       ticket_id: "lg-flex-views-554",
       live: true,
     });
@@ -677,7 +682,12 @@ describe("containerWithSettings — the one place a container is composed", () =
   it("falls back to the schema's default for a field the caller did not supply", () => {
     expect(containerWithSettings("run_ledger", new Map([["ticket_id", "t-1"]]))).toEqual({
       kind: "panel",
-      settings: { primitive_id: "run_ledger", ticket_id: "t-1", live: false },
+      settings: {
+        primitive_id: "run_ledger",
+        workspace_slug: "",
+        ticket_id: "t-1",
+        live: false,
+      },
     });
   });
 

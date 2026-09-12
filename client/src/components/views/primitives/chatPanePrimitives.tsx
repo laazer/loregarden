@@ -53,6 +53,11 @@ import {
   settingString,
 } from "./chatPanePrimitive";
 import { TICKET_STATE_LABELS } from "../../../lib/ticketStates";
+import {
+  PICKER_SCOPE_HELP,
+  WORKSPACE_SCOPE_KEY,
+  workspaceScopeField,
+} from "./workspaceScope";
 import type { RegisteredPrimitive } from "./types";
 
 /**
@@ -85,6 +90,17 @@ const LIST_HELP = "Comma-separated. Leave empty for the default.";
 const STATE_LIST_HELP = `One or more of ${Object.keys(TICKET_STATE_LABELS).join(", ")}. ${LIST_HELP}`;
 
 /**
+ * The help line the three boards' workspace field carries.
+ *
+ * Deliberately not `PICKER_SCOPE_HELP`: on a ticket card the workspace narrows
+ * a *list of suggestions* and the card renders the same either way, while here
+ * it decides which tickets the board is made of. Same field key, different
+ * consequence, so it says a different thing.
+ */
+const BOARD_SCOPE_HELP =
+  "Draw only this workspace's tickets. Leave empty for every workspace. Ignored when ticket ids are given below.";
+
+/**
  * The stored value of `key`, or `fallback` when it is blank.
  *
  * For a string setting whose empty value is not "wait for the operator" but "we
@@ -105,10 +121,12 @@ const ticketPanePrimitive = defineChatPanePrimitive({
   icon: "◆",
   category: "Tickets",
   settingsFields: [
+    workspaceScopeField(PICKER_SCOPE_HELP),
     {
       key: "ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Ticket",
       default: "",
       help: "The ticket this card shows, by id or external id.",
@@ -126,10 +144,12 @@ const ticketWorkflowPanePrimitive = defineChatPanePrimitive({
   icon: "⇢",
   category: "Tickets",
   settingsFields: [
+    workspaceScopeField(PICKER_SCOPE_HELP),
     {
       key: "ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Ticket",
       default: "",
       help: "The ticket whose stage timeline this pane draws.",
@@ -150,10 +170,12 @@ const parentTicketPanePrimitive = defineChatPanePrimitive({
   icon: "⌸",
   category: "Tickets",
   settingsFields: [
+    workspaceScopeField(PICKER_SCOPE_HELP),
     {
       key: "ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Parent ticket",
       default: "",
       help: "The parent whose children this pane lists beneath it.",
@@ -174,10 +196,17 @@ const ticketListPanePrimitive = defineChatPanePrimitive({
   icon: "☰",
   category: "Tickets",
   settingsFields: [
+    // Both jobs at once here, which is why it does not use either shared help
+    // line: it narrows the parent picker below *and* the whole-tree fallback
+    // the list falls back to when no parent is chosen.
+    workspaceScopeField(
+      "Scope the parent picker below, and the whole-tree list when no parent is chosen. Leave empty for every workspace.",
+    ),
     {
       key: "parent_ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Parent ticket",
       default: "",
       help: "List this parent's children. Leave empty for the whole ticket tree.",
@@ -192,6 +221,7 @@ const ticketListPanePrimitive = defineChatPanePrimitive({
   ],
   parseSettings: (raw) => ({
     parentTicketId: settingString(raw, "parent_ticket_id"),
+    workspaceSlug: settingString(raw, WORKSPACE_SCOPE_KEY),
     ticketIds: settingList(raw, "ticket_ids"),
   }),
   Chat: TicketListPrimitive,
@@ -200,6 +230,7 @@ const ticketListPanePrimitive = defineChatPanePrimitive({
     // `null` rather than `""`: the component branches on truthiness, and an
     // empty string read as a parent id would fetch that parent's children.
     parent_ticket_id: blank(settings.parentTicketId) ? null : settings.parentTicketId,
+    workspace_slug: blank(settings.workspaceSlug) ? null : settings.workspaceSlug,
     ticket_ids: settings.ticketIds,
   }),
   // Both fields are optional here: with neither, the card lists the whole
@@ -213,10 +244,12 @@ const gatePanePrimitive = defineChatPanePrimitive({
   icon: "⛊",
   category: "Tickets",
   settingsFields: [
+    workspaceScopeField(PICKER_SCOPE_HELP),
     {
       key: "ticket_id",
       kind: "choice",
       source: "ticket",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Ticket",
       default: "",
       help: "The ticket whose gate this pane watches.",
@@ -250,6 +283,7 @@ const statusColumnPanePrimitive = defineChatPanePrimitive({
   icon: "▮",
   category: "Boards",
   settingsFields: [
+    workspaceScopeField(BOARD_SCOPE_HELP),
     {
       key: "status",
       kind: "choice",
@@ -270,12 +304,16 @@ const statusColumnPanePrimitive = defineChatPanePrimitive({
     // The declared default is a real state rather than "", so a freshly dropped
     // column shows something, and a cleared field falls back to the same one.
     status: settingOr(raw, "status", "in_progress"),
+    workspaceSlug: settingString(raw, WORKSPACE_SCOPE_KEY),
     ticketIds: settingList(raw, "ticket_ids"),
   }),
   Chat: StatusColumnPrimitive,
   toPart: (settings) => ({
     primitive: "status_column",
     status: settings.status,
+    // `null` rather than `""`, matching the rest of this file: the part's field
+    // is `string | null`, and the component reads both as "every workspace".
+    workspace_slug: blank(settings.workspaceSlug) ? null : settings.workspaceSlug,
     ticket_ids: settings.ticketIds,
   }),
   missing: () => null,
@@ -287,6 +325,7 @@ const kanbanPanePrimitive = defineChatPanePrimitive({
   icon: "▤",
   category: "Boards",
   settingsFields: [
+    workspaceScopeField(BOARD_SCOPE_HELP),
     {
       key: "statuses",
       kind: "string",
@@ -304,12 +343,14 @@ const kanbanPanePrimitive = defineChatPanePrimitive({
   ],
   parseSettings: (raw) => ({
     statuses: settingList(raw, "statuses"),
+    workspaceSlug: settingString(raw, WORKSPACE_SCOPE_KEY),
     ticketIds: settingList(raw, "ticket_ids"),
   }),
   Chat: KanbanPrimitive,
   toPart: (settings) => ({
     primitive: "kanban",
     statuses: settings.statuses,
+    workspace_slug: blank(settings.workspaceSlug) ? null : settings.workspaceSlug,
     ticket_ids: settings.ticketIds,
   }),
   missing: () => null,
@@ -321,6 +362,7 @@ const filterableKanbanPanePrimitive = defineChatPanePrimitive({
   icon: "▦",
   category: "Boards",
   settingsFields: [
+    workspaceScopeField(BOARD_SCOPE_HELP),
     {
       key: "statuses",
       kind: "string",
@@ -346,6 +388,7 @@ const filterableKanbanPanePrimitive = defineChatPanePrimitive({
   parseSettings: (raw) => ({
     statuses: settingList(raw, "statuses"),
     filters: settingList(raw, "filters"),
+    workspaceSlug: settingString(raw, WORKSPACE_SCOPE_KEY),
     ticketIds: settingList(raw, "ticket_ids"),
   }),
   Chat: KanbanPrimitive,
@@ -353,6 +396,7 @@ const filterableKanbanPanePrimitive = defineChatPanePrimitive({
     primitive: "filterable_kanban",
     statuses: settings.statuses,
     filters: settings.filters,
+    workspace_slug: blank(settings.workspaceSlug) ? null : settings.workspaceSlug,
     ticket_ids: settings.ticketIds,
   }),
   missing: () => null,
@@ -450,6 +494,7 @@ const branchHistoryPanePrimitive = defineChatPanePrimitive({
       key: "branch",
       kind: "choice",
       source: "branch",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Branch",
       default: "",
       help: "The branch whose recent commits this pane lists.",
@@ -507,6 +552,7 @@ const commitPanePrimitive = defineChatPanePrimitive({
       key: "branch",
       kind: "choice",
       source: "branch",
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Branch",
       default: "",
       help: "Optional — shown beside the commit.",

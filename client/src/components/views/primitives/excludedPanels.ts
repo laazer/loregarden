@@ -3,9 +3,21 @@
  * the reason each one is not embeddable as it stands.
  *
  * Recorded rather than dropped: without this list the next person to look at
- * the registry re-derives the same eight conclusions, and "it is missing"
- * reads as an oversight instead of a decision. Each entry names what would have
- * to change for the panel to become a primitive.
+ * the registry re-derives the same conclusions, and "it is missing" reads as an
+ * oversight instead of a decision. Each entry names what would have to change
+ * for the panel to become a primitive.
+ *
+ * ## Two entries left, and what that cost
+ *
+ * `LogsPanel` and `ApprovalInboxPanel` were here, and both reasons were true as
+ * written — and both named the work rather than a wall. The logs panel wanted "a
+ * ticket-id-driven wrapper", which is `ticketLogsPrimitive`: one `api.ticket`
+ * call. The inbox "reads the singleton uiStore and renders into a fixed drawer",
+ * which was true of the *drawer* and not of the approvals inside it; splitting
+ * `inbox/ApprovalsList` out left the drawer with what is genuinely singular.
+ *
+ * The lesson for the entries below: a reason that names a missing seam is a
+ * to-do, not a verdict. Re-read them before assuming they still hold.
  */
 
 export interface ExcludedPanel {
@@ -16,16 +28,6 @@ export interface ExcludedPanel {
 }
 
 export const EXCLUDED_PANELS: ExcludedPanel[] = [
-  {
-    component: "LogsPanel",
-    reason:
-      "Takes a whole TicketDetail plus its run list; a container's JSON settings cannot produce that object, only an id. Needs a ticket-id-driven wrapper first.",
-  },
-  {
-    component: "ApprovalInboxPanel",
-    reason:
-      "Reads the singleton uiStore and renders into a fixed drawer, so two instances would fight over one open/closed flag and one drawer position.",
-  },
   {
     component: "CopilotDock",
     reason:

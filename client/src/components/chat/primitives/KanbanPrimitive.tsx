@@ -18,13 +18,28 @@ const DEFAULT_STATUSES: TicketState[] = [
 ];
 
 /** Resolving the listed ids costs one small request each; the unfiltered ticket list is
- *  megabytes and seconds, so only fall back to it when the card names no ids. */
-function useTicketBucket(ticketIds: string[] | undefined) {
+ *  megabytes and seconds, so only fall back to it when the card names no ids.
+ *
+ *  `workspaceSlug` narrows that fallback. Without it a board is every
+ *  workspace's tickets and cannot be told otherwise — which is fine on a chat
+ *  card answering "show me the board" and wrong in a view pane, where the point
+ *  is two boards about two workspaces side by side. It applies only to the
+ *  fallback: an id the caller named is fetched whatever workspace it is in,
+ *  because dropping it would make the board disagree with the card that asked
+ *  for it. */
+function useTicketBucket(ticketIds: string[] | undefined, workspaceSlug: string | null | undefined) {
   const ids = ticketIds ?? [];
+  // Normalised once, here: `undefined` (a chat card that predates the field),
+  // `null` (the wire's explicit nothing) and `""` (a pane whose select is
+  // cleared) all mean "every workspace", and three spellings of one answer in
+  // the query key would be three cache entries holding identical rows.
+  const scope = workspaceSlug ?? "";
   return useQuery({
-    queryKey: ["tickets", "kanban", ids],
+    // `scope` is in the key: two panes asking for two workspaces must not share
+    // one cached answer, and the first one to land would otherwise win both.
+    queryKey: ["tickets", "kanban", ids, scope],
     queryFn: async () => {
-      if (!ids.length) return api.tickets({});
+      if (!ids.length) return api.tickets(scope === "" ? {} : { workspace: scope });
       const settled = await Promise.allSettled(ids.map((id) => api.ticket(id)));
       return settled.flatMap<TicketSummary>((r) =>
         r.status === "fulfilled" ? [r.value] : [],
@@ -60,7 +75,7 @@ function TicketMini({ ticket }: { ticket: TicketSummary }) {
 }
 
 export function StatusColumnPrimitive({ part }: { part: StatusColumnPart }) {
-  const { data, isLoading, error } = useTicketBucket(part.ticket_ids);
+  const { data, isLoading, error } = useTicketBucket(part.ticket_ids, part.workspace_slug);
   const tickets = (data ?? []).filter((t) => t.state === part.status);
 
   return (
@@ -93,7 +108,7 @@ export function KanbanPrimitive({
   const [active, setActive] = useState<Set<string>>(
     () => new Set(filterable ? filters : statuses),
   );
-  const { data, isLoading, error } = useTicketBucket(part.ticket_ids);
+  const { data, isLoading, error } = useTicketBucket(part.ticket_ids, part.workspace_slug);
 
   const columns = useMemo(() => {
     const tickets = data ?? [];

@@ -33,14 +33,22 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
     retry: ticketQueryRetry,
     refetchInterval: ticketRefetchInterval,
   });
+  // `undefined`, `null` and `""` all mean "every workspace"; normalised once so
+  // three spellings of one answer do not become three cache entries.
+  const scope = part.workspace_slug ?? "";
   const treeQuery = useQuery({
-    queryKey: ["ticket-tree", parentId ?? "all", part.ticket_ids ?? []],
+    // `scope` is in the key: two panes on two workspaces must not share one
+    // cached tree, or whichever landed first would be shown to both.
+    queryKey: ["ticket-tree", parentId ?? "all", part.ticket_ids ?? [], scope],
     queryFn: async () => {
       if (parentId) {
+        // No workspace filter here: a parent already names exactly which
+        // children belong to this list, and narrowing them further could only
+        // remove rows the caller explicitly asked for.
         const children = await api.tickets({ parent_ticket_id: parentId });
         return children.map(toTicketTreeNode);
       }
-      return api.ticketTree({});
+      return api.ticketTree(scope === "" ? {} : { workspace: scope });
     },
     enabled: !parentId || !parentQuery.isError,
     refetchInterval: parentQuery.isError ? false : 5000,

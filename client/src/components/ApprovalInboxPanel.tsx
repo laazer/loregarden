@@ -1,16 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { api, type Approval } from "../api/client";
+import { type Approval } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
 import { hasHumanCriteria } from "../utils/approvalCriteria";
-import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { IconCloseButton } from "./IconCloseButton";
-import { ApprovalCard, type ApprovalResolvePayload } from "./ApprovalCard";
-import { ApprovalDetailModal } from "./ApprovalDetailModal";
+import { ApprovalsList, usePendingApprovalCount } from "./inbox/ApprovalsList";
 
 function toneAccent(tone: string): string {
   if (tone === "error") return "var(--rdl)";
@@ -35,59 +30,22 @@ function formatWhen(iso: string): string {
  *
  * Approvals need action; notifications are a durable log of run events that
  * survive toast dismiss and clear individually or all at once.
+ *
+ * The approvals half now lives in `inbox/ApprovalsList`, because a view pane
+ * wants exactly that half and none of what makes this a drawer. What stays here
+ * is what is genuinely singular: the open flag, the overlay, the notification
+ * log, and the navigation out of a card into the ticket it is blocking.
  */
 export function ApprovalInboxPanel() {
-  const qc = useQueryClient();
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
-  const [expandedApproval, setExpandedApproval] = useState<Approval | null>(null);
   const notifications = useNotificationStore((s) => s.notifications);
   const dismissNotification = useNotificationStore((s) => s.dismiss);
   const clearNotifications = useNotificationStore((s) => s.clear);
 
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.approvals(),
-    refetchInterval: 5000,
-    enabled: inboxOpen,
-  });
-
-  const resolveApproval = useMutation({
-    meta: { errorTitle: "Resolve approval" },
-    mutationFn: ({
-      id,
-      action,
-      answers,
-      response,
-      always_allow,
-      allow_for_ticket,
-      allow_for_stage,
-      route_to_stage_key,
-    }: {
-      id: string;
-      action: "approve" | "reject";
-      answers?: Record<string, string | string[]>;
-      response?: string;
-      always_allow?: boolean;
-      allow_for_ticket?: boolean;
-      allow_for_stage?: boolean;
-      route_to_stage_key?: string;
-    }) =>
-      api.resolveApproval(id, {
-        action,
-        answers,
-        response,
-        always_allow,
-        allow_for_ticket,
-        allow_for_stage,
-        route_to_stage_key,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["approvals"] });
-      qc.invalidateQueries({ queryKey: ["ticket"] });
-      setExpandedApproval(null);
-    },
-  });
+  // Every workspace: an approval is blocking a run, and hiding one because the
+  // sidebar is pointed elsewhere is how a run sits parked for an afternoon.
+  const approvalCount = usePendingApprovalCount("", inboxOpen);
 
   /** Inspect lands on the criteria for a human gate, on the diff otherwise. */
   const inspectApproval = (approval: Approval) => {
@@ -95,22 +53,8 @@ export function ApprovalInboxPanel() {
     navigateToTicket(approval.ticket_id, {
       tab: hasHumanCriteria(approval) ? "approvals" : "diff",
     });
-    setExpandedApproval(null);
     setInboxOpen(false);
   };
-
-  // Gates first. The rail rendered whatever order the API returned, so a stage
-  // sign-off could sit below a stack of permission prompts — and the inbox data
-  // says which deserves the top: permission prompts are rejected 0.4% of the
-  // time, gates 13.3% (lg-workflow-integrity-107). Stable, so ordering within
-  // each group is unchanged.
-  const orderedApprovals = useMemo(
-    () =>
-      [...(approvals.data ?? [])].sort(
-        (a, b) => Number(hasHumanCriteria(b)) - Number(hasHumanCriteria(a)),
-      ),
-    [approvals.data],
-  );
 
   // Escape and the overlay agree: both close the inbox. Above the early
   // return, because a hook that runs only while the panel is open changes
@@ -119,7 +63,6 @@ export function ApprovalInboxPanel() {
 
   if (!inboxOpen) return null;
 
-  const approvalCount = approvals.data?.length ?? 0;
   const notificationCount = notifications.length;
   const totalCount = approvalCount + notificationCount;
   const empty = approvalCount === 0 && notificationCount === 0;
@@ -139,109 +82,72 @@ export function ApprovalInboxPanel() {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-          {resolveApproval.isError && (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: "var(--rdl)",
-                marginBottom: 12,
-                padding: "8px 10px",
-                borderRadius: 8,
-                background: "rgba(240,96,63,.08)",
-                border: "1px solid rgba(240,96,63,.25)",
-              }}
-            >
-              {formatApprovalResolveError(resolveApproval.error)}
-            </div>
-          )}
-
-  );
-
           {!empty ? (
             <>
-          <section className="inbox-section" aria-label="Pending approvals">
-            <div className="inbox-section-header">
-              <span className="inbox-section-title">Approvals</span>
-              <span className="count-pill">{approvalCount}</span>
-            </div>
-            {orderedApprovals.map((a) => (
-              <ApprovalCard
-                key={a.id}
-                approval={a}
-                onApprove={(payload) =>
-                  resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
-                }
-                onReject={(payload) =>
-                  resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
-                }
-                onInspect={a.ticket_id ? () => inspectApproval(a) : undefined}
-                inspectLabel={hasHumanCriteria(a) ? "Approvals tab" : "Inspect"}
-                collapsible
-                onExpand={() => setExpandedApproval(a)}
-                isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
-              />
-            ))}
-            {!approvalCount ? (
-              <div className="inbox-empty-hint">No pending approvals</div>
-            ) : null}
-          </section>
-
-          <section className="inbox-section" aria-label="Run notifications">
-            <div className="inbox-section-header">
-              <span className="inbox-section-title">Notifications</span>
-              <span className="count-pill">{notificationCount}</span>
-              <div style={{ flex: 1 }} />
-              {notificationCount > 0 ? (
-                <button
-                  type="button"
-                  className="btn-secondary inbox-clear-btn"
-                  onClick={() => clearNotifications()}
-                >
-                  Clear all
-                </button>
-              ) : null}
-            </div>
-            {notifications.map((n) => (
-              <article
-                key={n.id}
-                className="inbox-notification-card"
-                style={{ borderLeftColor: toneAccent(n.tone) }}
-              >
-                <div className="inbox-notification-top">
-                  <div>
-                    <div className="inbox-notification-title">{n.title}</div>
-                    {n.message ? (
-                      <div className="inbox-notification-message">{n.message}</div>
-                    ) : null}
-                    <div className="inbox-notification-meta">{formatWhen(n.createdAt)}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-secondary inbox-clear-btn"
-                    aria-label="Dismiss notification"
-                    onClick={() => dismissNotification(n.id)}
-                  >
-                    Clear
-                  </button>
+              <section className="inbox-section" aria-label="Pending approvals">
+                <div className="inbox-section-header">
+                  <span className="inbox-section-title">Approvals</span>
+                  <span className="count-pill">{approvalCount}</span>
                 </div>
-                {n.ticketId ? (
-                  <button
-                    type="button"
-                    className="btn-secondary inbox-notification-link"
-                    onClick={() => {
-                      navigateToTicket(n.ticketId!, { tab: "diff" });
-                      setInboxOpen(false);
-                    }}
+                <ApprovalsList workspaceSlug="" isActive={inboxOpen} onInspect={inspectApproval} />
+              </section>
+
+              <section className="inbox-section" aria-label="Run notifications">
+                <div className="inbox-section-header">
+                  <span className="inbox-section-title">Notifications</span>
+                  <span className="count-pill">{notificationCount}</span>
+                  <div style={{ flex: 1 }} />
+                  {notificationCount > 0 ? (
+                    <button
+                      type="button"
+                      className="btn-secondary inbox-clear-btn"
+                      onClick={() => clearNotifications()}
+                    >
+                      Clear all
+                    </button>
+                  ) : null}
+                </div>
+                {notifications.map((n) => (
+                  <article
+                    key={n.id}
+                    className="inbox-notification-card"
+                    style={{ borderLeftColor: toneAccent(n.tone) }}
                   >
-                    Open ticket
-                  </button>
+                    <div className="inbox-notification-top">
+                      <div>
+                        <div className="inbox-notification-title">{n.title}</div>
+                        {n.message ? (
+                          <div className="inbox-notification-message">{n.message}</div>
+                        ) : null}
+                        <div className="inbox-notification-meta">{formatWhen(n.createdAt)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary inbox-clear-btn"
+                        aria-label="Dismiss notification"
+                        onClick={() => dismissNotification(n.id)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {n.ticketId ? (
+                      <button
+                        type="button"
+                        className="btn-secondary inbox-notification-link"
+                        onClick={() => {
+                          navigateToTicket(n.ticketId!, { tab: "diff" });
+                          setInboxOpen(false);
+                        }}
+                      >
+                        Open ticket
+                      </button>
+                    ) : null}
+                  </article>
+                ))}
+                {notifications.length === 0 ? (
+                  <div className="inbox-empty-hint">No notifications yet</div>
                 ) : null}
-              </article>
-            ))}
-            {!notificationCount ? (
-              <div className="inbox-empty-hint">No notifications yet</div>
-            ) : null}
-          </section>
+              </section>
             </>
           ) : (
             <div style={{ textAlign: "center", color: "var(--txm)", padding: 40 }}>
@@ -250,25 +156,6 @@ export function ApprovalInboxPanel() {
           )}
         </div>
       </aside>
-      <ApprovalDetailModal
-        open={!!expandedApproval}
-        approval={expandedApproval}
-        isSubmitting={
-          resolveApproval.isPending && resolveApproval.variables?.id === expandedApproval?.id
-        }
-        onClose={() => setExpandedApproval(null)}
-        onApprove={(payload?: ApprovalResolvePayload) => {
-          if (!expandedApproval) return;
-          resolveApproval.mutate({ id: expandedApproval.id, action: "approve", ...payload });
-        }}
-        onReject={(payload?: ApprovalResolvePayload) => {
-          if (!expandedApproval) return;
-          resolveApproval.mutate({ id: expandedApproval.id, action: "reject", ...payload });
-        }}
-        onOpenApprovalsTab={
-          expandedApproval?.ticket_id ? () => inspectApproval(expandedApproval) : undefined
-        }
-      />
     </>
   );
 }
