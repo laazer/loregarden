@@ -85,3 +85,9 @@ git:
   # calls `git_automation` at all, so ordinary ticket stages are unaffected.
   commit: true
   push: true
+  # A branch per acting turn, pushed, is a branch per conversation accumulating
+  # forever. The sweep removes one only once its content is in the base branch —
+  # the bar at which the ref was keeping nothing reachable — and leaves anything
+  # dirty or unlanded for a person in branch triage. Startup only; see
+  # `chat_branch_sweep`.
+  prune_landed_chat_branches: true

@@ -53,6 +53,7 @@ from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.btw_run_service import fail_interrupted_asides
+from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
@@ -111,6 +112,12 @@ async def lifespan(app: FastAPI):
         # worktree for the resume below. Startup only: it is the one sweep that
         # deletes, and boot is the only moment nothing is in flight.
         reconcile_worktrees(session)
+        # The chat rail's equivalent, and startup-only for the same reason. It
+        # walks the trees `reconcile_worktrees` cannot judge — a chat thread has
+        # no ticket whose state could say it is finished — and removes only the
+        # branches whose content is already in base, where the ref was keeping
+        # nothing reachable. Opt-in per workspace; see `chat_branch_sweep`.
+        sweep_all_chat_branches(session)
         # Lanes and parents, from the same pass the timer runs. After the reaps,
         # so the runs they just failed count as finished and the slots they held
         # come back rather than staying claimed by a run this process will never

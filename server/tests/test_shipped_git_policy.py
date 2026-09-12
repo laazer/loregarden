@@ -192,3 +192,28 @@ def test_the_summary_for_a_commit_only_policy_does_not_claim_a_push():
     assert "Committed to `chat/rename-the-pane-editor-abcd1234`" in summary
     assert "Not pushed" in summary
     assert "Published" not in summary
+
+
+def test_loregarden_prunes_its_landed_chat_branches():
+    """The switch behind the startup sweep actually being on.
+
+    Without it `sweep_chat_branches` returns before it looks at anything, and a
+    rail that pushes on every acting turn accumulates a branch per conversation
+    on the remote with nothing to clear them.
+    """
+    config = resolve_git_automation(_workspace("loregarden"))
+
+    assert config.prune_landed_chat_branches is True
+
+
+@pytest.mark.parametrize(
+    "slug", ["blobert", "lore-eden", "loremaker", "a-workspace-with-no-profile"]
+)
+def test_no_other_workspace_has_its_branches_pruned(slug: str):
+    """Deleting refs from another repository's remote stays opt-in.
+
+    `push` must not imply it, and neither must the default profile: these three
+    are separate repositories on this machine, and a sweep that widened to them
+    by inheritance would be removing branches nobody asked it to touch.
+    """
+    assert resolve_git_automation(_workspace(slug)).prune_landed_chat_branches is False

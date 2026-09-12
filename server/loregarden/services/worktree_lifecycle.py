@@ -113,7 +113,16 @@ def _service_for(session: Session, workspace_id: str) -> WorktreeService | None:
     return WorktreeService(session, repo_path=str(resolve_workspace_root(workspace)))
 
 
-def _retire(session: Session, service: WorktreeService, worktree: Worktree) -> bool:
+def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> bool:
+    """Remove a worktree's checkout, unless doing so would lose something.
+
+    Public because `chat_branch_sweep` deletes on the strength of it unattended,
+    and the two refusals below are the whole safety argument for that: a tree
+    with uncommitted changes, or a branch carrying no commits of its own, keeps
+    its checkout no matter how finished it looks from outside. A sweep reaching
+    in through an underscore is how a safety bar gets relaxed by someone who
+    never saw the caller relying on it.
+    """
     path = Path(worktree.worktree_path) if worktree.worktree_path else None
     if path and path.is_dir():
         if _is_dirty(path):
@@ -141,7 +150,7 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
 
     The ticket's branch survives — its commits live in the shared repository's
     object store, so a PR opened later still has them. Only the checkout goes.
-    That holds exactly as far as `_retire` proves it does: a tree with local
+    That holds exactly as far as `retire_worktree` proves it does: a tree with local
     changes, or a branch carrying no commits of its own, is kept instead.
     """
     if ticket.state not in StateMachine.TERMINAL_TICKET_STATES:
@@ -154,7 +163,7 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
     worktree = service.active_worktree_for_ticket(ticket.id)
     if not worktree:
         return False
-    return _retire(session, service, worktree)
+    return retire_worktree(session, service, worktree)
 
 
 def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> Worktree | None:
@@ -165,7 +174,7 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
     caller can say which branch and which directory rather than "no".
 
     The conversational counterpart of :func:`release_ticket_worktree`, and
-    subject to the same refusal: `_retire` keeps a tree with uncommitted changes
+    subject to the same refusal: `retire_worktree` keeps a tree with uncommitted changes
     or a branch carrying no commits of its own, because removing either
     preserves nothing.
     """
@@ -189,7 +198,7 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
             worktree.worktree_path,
         )
         return worktree
-    return None if _retire(session, service, worktree) else worktree
+    return None if retire_worktree(session, service, worktree) else worktree
 
 
 def reconcile_worktrees(session: Session) -> int:
@@ -217,7 +226,7 @@ def reconcile_worktrees(session: Session) -> int:
 
         ticket = session.get(Ticket, worktree.ticket_id) if worktree.ticket_id else None
         if ticket and ticket.state in StateMachine.TERMINAL_TICKET_STATES:
-            if _retire(session, service, worktree):
+            if retire_worktree(session, service, worktree):
                 settled += 1
 
     if settled:
