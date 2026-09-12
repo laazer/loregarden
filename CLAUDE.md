@@ -66,6 +66,24 @@ Concretely, and these are the mistakes agents actually make here:
 Writing real source code and real test files is, of course, still the job. The rule is about
 *reports about* the work.
 
+### Setting up another workspace
+
+Two installers, both idempotent, both marker-delimited, both `--check` for a read-only report:
+
+    task workspace:hooks -- [--check] <workspace-root>
+    task workspace:docs  -- [--check] [--slug <slug>] <workspace-root>
+    task workspace:check -- <workspace-root>          # both blocks, writes nothing
+
+wrapping `scripts/install-workspace-hooks.sh` and `scripts/install-workspace-docs.sh`.
+
+The first carries loregarden's rules into that repo's pre-commit. The second carries the
+*tools* into that repo's `AGENTS.md` — the half that was missing. Everything above is true in
+blobert and lore-eden too, and an agent working there reads their AGENTS.md, not this file: it
+has no way to learn that the ticket it was handed lives in a database rather than a file it can
+grep for. Both bake absolute paths back into this checkout, so run them from the **primary**
+checkout — the docs installer resolves that itself and says so; the hooks installer does not,
+and installing it from a worktree strands every workspace when the branch merges.
+
 ## No silent failures
 
 A failure nobody sees is worse than a crash. This control plane runs agents
