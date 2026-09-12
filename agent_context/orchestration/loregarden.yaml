@@ -62,3 +62,20 @@ subagents:
 callbacks:
   mode: api
 max_stages_per_run: 0
+git:
+  # Commit, and stop there. `enabled_steps` runs these as a chain and halts at
+  # the first switch that is off, so leaving `push` off disables `open_pr` and
+  # `auto_merge` regardless of their own flags — which is the intent, not an
+  # oversight. This repository has no branch protection, so `gh pr merge --auto`
+  # lands a PR immediately rather than on green; nothing here should publish
+  # outward without a person deciding to.
+  #
+  # Without this, an acting chat turn wrote to its thread's worktree and stopped:
+  # the work sat on `chat/<thread>` uncommitted, and the reply said so. Better
+  # than the loose edits on `main` it replaced, but still a branch whose contents
+  # only exist in a working tree. A commit is what makes it survivable.
+  #
+  # Reaches two callers, and only two — `chat_publish.publish_chat_turn` and
+  # `parallel_run_service._publish_run_work`. The builtin orchestrator never
+  # calls `git_automation` at all, so ordinary ticket stages are unaffected.
+  commit: true

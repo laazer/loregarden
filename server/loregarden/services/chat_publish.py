@@ -95,7 +95,14 @@ class TurnPublishOutcome:
                 f"`{failure.step}`:** {failure.detail}"
             )
 
-        done = ", ".join(f"`{step.step}`" for step in self.automation.steps)
+        steps = [step.step for step in self.automation.steps]
+        if steps == ["commit"]:
+            # The common case under a commit-only policy, and "published" would
+            # overstate it: the branch is local, and a reader who believed
+            # otherwise would go looking for a pull request that is not there.
+            return f"\n\n---\n**Committed to {where}.** Not pushed."
+
+        done = ", ".join(f"`{step}`" for step in steps)
         line = f"\n\n---\n**Published from {where}:** {done}."
         if self.automation.pr_url:
             line += f" {self.automation.pr_url}"

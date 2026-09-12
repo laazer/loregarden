@@ -315,7 +315,12 @@ def test_work_is_committed_to_the_thread_branch_when_the_policy_commits(
     assert git(root, "status", "--porcelain").stdout.strip() == ""
     subject = subject_for_chat_session(session, session.get(AgentRun, run.id), chat_session)
     assert git(root, "log", "-1", "--format=%s").stdout.strip() == subject.commit_message
-    assert "`commit`" in outcome.as_note()
+    note = outcome.as_note()
+    assert "Committed to" in note
+    assert chat_session_branch(chat_session) in note
+    # Not "published": push is off, the branch is local, and a reader who
+    # believed otherwise would go looking for a pull request that is not there.
+    assert "Published" not in note
 
 
 def test_a_failed_publish_step_reaches_the_reply(session, workspace, chat_session, monkeypatch):
