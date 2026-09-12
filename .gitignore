@@ -36,3 +36,20 @@ client/.visual-qa/
 
 # Design explorations — kept locally, not part of the repo
 docs/design/
+
+# Local agent state — was ignored only by ~/.git/.gitignore or .git/info/exclude,
+# neither of which travels with a clone. Kept here so a fresh checkout is safe.
+.claude/settings.local.json
+.claude/worktrees/
+scratch/
+tmp/
+temp/
+draft/
+
+# Tool caches
+.ruff_cache/
+.uv-cache/
+.venv/
+
+# Stray test/run output
+*.log

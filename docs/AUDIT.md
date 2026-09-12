@@ -1,46 +1,92 @@
 # Loregarden — Codebase Audit
 
-**Date:** 2026-07-06
+**Audited:** 2026-07-06 · **Status reviewed:** 2026-09-12
 **Scope:** Full codebase — `server/` (FastAPI control plane), `client/` (React IDE), `agent_context/`, scripts, config.
 **Type:** Findings & recommendations. No code changed by this audit.
+
+> **Read this first.** This is a *point-in-time* audit, kept in the repo as a record rather than
+> as a description of the code today. Sections 3–5 are the original July text and are preserved
+> unedited; several findings have since been fixed. The tables in §1 carry a **Status** column
+> reviewed on the date above — trust that column, not the prose beneath it.
+
+---
+
+## 0. Security posture — read before running this
+
+Loregarden is a **single-user local developer tool** that binds to `127.0.0.1:8000`. Because its
+job is to spawn coding agents with filesystem access, the API writes files and starts subprocesses
+— so "who may call it" is the security question that matters.
+
+It is **secure by configuration, open by default.** Two settings close the gap, and both ship
+disabled to preserve the zero-config local flow:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `LOREGARDEN_API_TOKEN` | *(empty — auth off)* | When set, every `/api` and `/mcp` request must present the token as `Authorization: Bearer <token>` or `X-Loregarden-Token`. Constant-time compare (`hmac.compare_digest`); only `/health` and CORS preflight are exempt. All three websocket endpoints check it too. |
+| `LOREGARDEN_BROWSE_ROOT` | *(empty — your home directory)* | Ceiling for the path browser and importer. Point it at your projects folder to shrink what the browse/import endpoints can read. |
+
+**Set both if anyone else can run processes on the machine.** With `LOREGARDEN_API_TOKEN` empty,
+any local process can drive the control plane; with `LOREGARDEN_BROWSE_ROOT` empty, the browser
+can enumerate and read under `~`.
+
+Regardless of those settings: **do not bind this to a non-loopback interface** and do not expose
+it through a reverse proxy. If you need it from another machine, use an SSH tunnel. Making auth
+the default rather than the opt-in is the open half of **H-1**.
 
 ---
 
 ## 1. Executive summary
 
-Loregarden is an "Agent SDLC IDE": a local control plane (FastAPI + SQLModel/SQLite) that orchestrates multi-agent coding workflows by spawning agent CLIs (Claude, Cursor, Codex, LM Studio, or a local stub) against git workspaces, driven by a React 19 + TypeScript IDE. It is roughly **29K LOC of application code** — ~14.7K Python (server), ~14.4K TS/TSX (client) — plus a strong ~9.5K-LOC Python test suite and a rich YAML/markdown agent-orchestration layer.
+Loregarden is an "Agent SDLC IDE": a local control plane (FastAPI + SQLModel/SQLite) that
+orchestrates multi-agent coding workflows by spawning agent CLIs (Claude, Cursor, Codex, LM Studio,
+or a local stub) against git workspaces, driven by a React 19 + TypeScript IDE. At the time of the
+audit it was roughly **29K LOC of application code** — ~14.7K Python (server), ~14.4K TS/TSX
+(client) — plus a ~9.5K-LOC Python test suite and a YAML/markdown agent-orchestration layer.
 
-The project is well-organized, feature-complete (no half-built stubs or `TODO` debt), cleanly configured, and commits no secrets. Its backend test suite is a genuine strength, including adversarial suites. The weaknesses are **cross-cutting infrastructure and a broad, unauthenticated local attack surface** rather than scattered bugs.
+The project is well-organized, feature-complete, cleanly configured, and **commits no secrets**
+(re-verified 2026-09-12: a content scan of all 8,430 blobs across all 895 commits found no
+credential material — the sole `sk-ant-` match in history is a deliberate test sentinel in
+`server/tests/test_usage_api.py`). Its backend test suite is a genuine strength. The weaknesses
+were **cross-cutting infrastructure and a broad local attack surface** rather than scattered bugs.
 
-**Top 5 findings:**
+**Top 5 findings, with current status:**
 
-| # | Finding | Severity |
-|---|---------|----------|
-| 1 | No authentication on any endpoint, over an API that writes files and executes local agent processes | High |
-| 2 | Browse/import ceiling is the entire home directory (`~`), far wider than the "workspace" framing implies | High |
-| 3 | No CI/CD at all; no Python lint/type gates; TypeScript strict mode off | Medium |
-| 4 | God files (`Dashboard.tsx` 2100 lines, `StudioPage.tsx`, `client.ts`, `domain.py`) and hand-rolled unversioned DB migrations | Medium |
-| 5 | No committed backend lockfile (`uv.lock` gitignored) → non-reproducible installs | Medium |
+| # | Finding | Severity | Status (2026-09-12) |
+|---|---------|----------|---------------------|
+| 1 | No authentication on any endpoint, over an API that writes files and executes local agent processes | High | **Mitigated, opt-in** — `LOREGARDEN_API_TOKEN` now enforces a bearer token across `/api`, `/mcp` and all websockets (`core/auth.py`). Still **off by default**; see §0 |
+| 2 | Browse/import ceiling is the entire home directory (`~`), far wider than the "workspace" framing implies | High | **Mitigated, opt-in** — `LOREGARDEN_BROWSE_ROOT` narrows the ceiling; `browse_ceiling()` still falls back to `Path.home()` when unset |
+| 3 | No CI/CD at all; no Python lint/type gates; TypeScript strict mode off | Medium | **Fixed** — `.github/workflows/ci.yml`; Ruff + diff-scoped Pylint in `server/pyproject.toml`; `"strict": true` in `tsconfig.app.json`; lefthook gates on every commit |
+| 4 | God files (`Dashboard.tsx` 2100 lines, `StudioPage.tsx`, `client.ts`, `domain.py`) and hand-rolled unversioned DB migrations | Medium | **Partly fixed** — migrations are now 126 ordered, id-guarded entries, and `models/domain.py` has been split into a package. The god files remain: `Dashboard.tsx` is 1750 lines (down from 2100, still over the 1200-line gate cap), `StudioPage.tsx` 1134, `client.ts` 767 |
+| 5 | No committed backend lockfile (`uv.lock` gitignored) → non-reproducible installs | Medium | **Fixed** — `server/uv.lock` is tracked |
+
+Of the medium findings in §3, **M-3 (OAuth token reachable through the unauthenticated usage API)**
+is now covered by a regression test — `test_usage_snapshot_never_leaks_access_token` asserts a
+sentinel token never appears in the usage payload. The unauthenticated-endpoint half of it is H-1.
 
 ---
 
 ## 2. Scorecard
 
-| Dimension | Rating | One-line rationale |
-|-----------|--------|--------------------|
-| Security | ⚠️ Needs work | No auth; home-dir-wide file access; permission-bypass modes. No injection surface, no committed secrets. |
-| Architecture | 🟡 Adequate | Clean layering and service split, but several 800–2100-line god files and ad-hoc migrations. |
-| Backend testing | ✅ Strong | ~43 test files incl. adversarial suites, broad coverage across services/API/workflows. |
-| Frontend testing | ⚠️ Needs work | ~11 test files for ~51 sources; only 2–3 of ~28 components tested. |
-| CI/CD | ⚠️ Needs work | None. Nothing gates merges; all checks are manual local scripts. |
-| Tooling (lint/types) | ⚠️ Needs work | No Python linter/formatter/type-checker; TS strict off; oxlint minimal. |
-| Dependencies | 🟡 Adequate | Client lockfile committed; backend lockfile gitignored; unbounded `>=` floors. |
-| Documentation | 🟡 Adequate | Strong README + agent docs; no CONTRIBUTING/ARCHITECTURE/CHANGELOG. |
-| Error handling | 🟡 Adequate | Consistent API error mapping; several silently-swallowed errors in security-sensitive paths. |
+Ratings as-audited in July, with the September re-read in the right-hand column.
+
+| Dimension | Rating (Jul) | One-line rationale | Now |
+|-----------|--------------|--------------------|-----|
+| Security | ⚠️ Needs work | No auth; home-dir-wide file access; permission-bypass modes. No injection surface, no committed secrets. | 🟡 Improved — opt-in token auth and a configurable browse root exist; both default off (§0) |
+| Architecture | 🟡 Adequate | Clean layering and service split, but several 800–2100-line god files and ad-hoc migrations. | 🟡 Partly improved — migrations versioned, `domain.py` split; the large frontend files remain |
+| Backend testing | ✅ Strong | ~43 test files incl. adversarial suites, broad coverage across services/API/workflows. | ✅ Strong |
+| Frontend testing | ⚠️ Needs work | ~11 test files for ~51 sources; only 2–3 of ~28 components tested. | 🟡 Improved — coverage materially wider |
+| CI/CD | ⚠️ Needs work | None. Nothing gates merges; all checks are manual local scripts. | ✅ Fixed — CI + pre-commit + per-stage gates |
+| Tooling (lint/types) | ⚠️ Needs work | No Python linter/formatter/type-checker; TS strict off; oxlint minimal. | ✅ Fixed — Ruff, Pylint, TS strict, oxlint |
+| Dependencies | 🟡 Adequate | Client lockfile committed; backend lockfile gitignored; unbounded `>=` floors. | 🟡 Improved — `uv.lock` committed |
+| Documentation | 🟡 Adequate | Strong README + agent docs; no CONTRIBUTING/ARCHITECTURE/CHANGELOG. | 🟡 Adequate |
+| Error handling | 🟡 Adequate | Consistent API error mapping; several silently-swallowed errors in security-sensitive paths. | ✅ Improved — `py-silent-except` / `ts-no-silent-failures` gates now enforce this |
 
 ---
 
 ## 3. Findings by dimension
+
+*Original July 2026 text, preserved unedited. See the Status column in §1 for what has since
+changed; line numbers and file paths cited below are as-of the audit date.*
 
 ### 3.1 Security  *(highest priority)*
 
