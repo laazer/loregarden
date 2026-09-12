@@ -26,6 +26,10 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services.agent_turn_runner import AgentTurnRequest, _resolve_turn_root
+from loregarden.services.baxter_chat_service import (
+    ChatSessionHasUnpublishedWork,
+    delete_chat_session,
+)
 from loregarden.services.chat_publish import TurnPublishOutcome, publish_chat_turn
 from loregarden.services.chat_worktree import (
     resolve_chat_execution_root,
@@ -358,3 +362,97 @@ def test_a_shared_checkout_fallback_says_so(tmp_path):
 
     assert str(tmp_path) in note
     assert "shared checkout" in note
+
+
+# --------------------------------------------------------------------------
+# Deleting the thread has to deal with the tree it owns
+# --------------------------------------------------------------------------
+
+
+def test_deleting_a_thread_removes_its_published_worktree(session, workspace, chat_session):
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+
+    delete_chat_session(session, chat_session)
+
+    assert not root.is_dir()
+    assert session.get(BaxterChatSession, chat_session.id) is None
+
+
+def test_deleting_a_thread_with_uncommitted_work_refuses_and_says_where(
+    session, workspace, chat_session
+):
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work nobody has seen\n")
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    assert chat_session_branch(chat_session) in str(caught.value)
+    assert str(root) in str(caught.value)
+    # And the thread survives, so the operator can still open it and publish.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+
+
+def test_deleting_a_thread_that_never_acted_is_unchanged(session, workspace, chat_session):
+    delete_chat_session(session, chat_session)
+
+    assert session.get(BaxterChatSession, chat_session.id) is None
+
+
+def test_a_bridge_turn_that_cannot_resolve_a_checkout_settles_its_run(
+    session, workspace, chat_session, tmp_path, monkeypatch
+):
+    """A raise after the run exists must not leave it RUNNING.
+
+    `_start_run` moved ahead of the checkout resolution so the worktree has a
+    run to hang off. That put a raise between "the run exists" and the try block
+    that settles it — and a run stuck RUNNING both shows as live in the UI and
+    blocks the thread's next turn on the already-running check.
+    """
+    from loregarden.services.agent_turn_runner import _run_permission_bridge
+
+    missing = tmp_path / "not-a-directory"
+    request = _request(
+        session,
+        workspace,
+        chat_session_id=chat_session.id,
+        workspace_root=missing,
+        stage_key="home-chat",
+        agent_id="triage",
+        manage_run=True,
+    )
+
+    with pytest.raises(ValueError, match="does not exist"):
+        _run_permission_bridge(request)
+
+    run = session.exec(select(AgentRun).where(AgentRun.workspace_id == workspace.id)).one()
+    assert run.status == RunStatus.FAILED
+    assert str(missing) in (run.stderr or "")
+
+
+def test_an_unresolvable_workspace_reports_the_tree_it_leaves_behind(
+    session, workspace, chat_session, monkeypatch
+):
+    """The degenerate case must not read as "nothing to release".
+
+    Deriving the worktree from the service made a chat session whose workspace
+    could not be resolved return None — so the delete went through, the foreign
+    key set the column NULL, and the checkout was left on disk owned by nothing
+    and reaped by no sweeper.
+    """
+    from loregarden.services import worktree_lifecycle
+
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    monkeypatch.setattr(worktree_lifecycle, "_service_for", lambda *_args: None)
+
+    held = worktree_lifecycle.release_chat_worktree(session, chat_session)
+
+    assert held is not None
+    assert held.worktree_path == str(root)

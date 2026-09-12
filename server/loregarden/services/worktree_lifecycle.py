@@ -23,7 +23,13 @@ import logging
 from pathlib import Path
 
 from loregarden.core.state_machine import StateMachine
-from loregarden.models.domain import Ticket, Workspace, Worktree, WorktreeState
+from loregarden.models.domain import (
+    BaxterChatSession,
+    Ticket,
+    Workspace,
+    Worktree,
+    WorktreeState,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -149,6 +155,41 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
     if not worktree:
         return False
     return _retire(session, service, worktree)
+
+
+def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> Worktree | None:
+    """Remove the worktree a chat thread was using.
+
+    Returns None when nothing is left holding the thread, and otherwise the
+    worktree it *could not* release — a failure that carries its subject, so a
+    caller can say which branch and which directory rather than "no".
+
+    The conversational counterpart of :func:`release_ticket_worktree`, and
+    subject to the same refusal: `_retire` keeps a tree with uncommitted changes
+    or a branch carrying no commits of its own, because removing either
+    preserves nothing.
+    """
+    # Read the row before the service, so a workspace that cannot be resolved
+    # still reports the tree it is leaving behind. Deriving it from the service
+    # instead made that case return "nothing to release", and the checkout was
+    # then orphaned on disk with the column set to NULL by the delete.
+    worktree = session.exec(
+        select(Worktree)
+        .where(Worktree.chat_session_id == chat_session.id)
+        .where(Worktree.state == WorktreeState.ACTIVE)
+    ).first()
+    if worktree is None:
+        return None
+
+    service = _service_for(session, chat_session.workspace_id)
+    if service is None:
+        logger.warning(
+            "Chat session %s has no resolvable workspace; its worktree at %s stays put",
+            chat_session.id,
+            worktree.worktree_path,
+        )
+        return worktree
+    return None if _retire(session, service, worktree) else worktree
 
 
 def reconcile_worktrees(session: Session) -> int:

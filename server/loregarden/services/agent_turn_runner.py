@@ -338,6 +338,37 @@ def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str
     session.commit()
 
 
+def _settle(request: AgentTurnRequest, run: AgentRun, *, status: RunStatus, stderr: str) -> None:
+    """Close out the run, when this call is the one responsible for it.
+
+    Five copies of the `manage_run` guard lived inline. Collapsing them is not
+    only tidiness: each copy was a branch, and the gate counts them — adding the
+    sixth for the checkout-resolution failure is what put this function over the
+    complexity cap.
+    """
+    if request.manage_run:
+        _finish_run(request.session, run.id, status=status, stderr=stderr)
+
+
+def _resolve_checkout(request: AgentTurnRequest, run: AgentRun) -> Path:
+    """The turn's checkout, settling the run rather than leaving it RUNNING.
+
+    Resolution happens after `_start_run` because cutting this turn's worktree
+    needs a run to attribute it to — so a raise here lands between "the run
+    exists" and the block that would settle it. An un-settled run stays live in
+    the UI forever and blocks the thread's next turn on the already-running
+    check.
+    """
+    try:
+        root = _resolve_turn_root(request, run)
+        if not root.is_dir():
+            raise ValueError(f"Workspace repo path does not exist: {root}")
+    except Exception as exc:
+        _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
+        raise
+    return root
+
+
 def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
     model_env = request.claude_model_env.strip()
     claude_model = (
@@ -346,12 +377,8 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
         or "haiku"
     )
     timeout = resolve_agent_timeout(request.agent, request.profile.timeout_env)
-    # Before the checkout is resolved, because cutting this turn's worktree
-    # needs the run to attribute it to.
     run = _start_run(request)
-    root = _resolve_turn_root(request, run)
-    if not root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {root}")
+    root = _resolve_checkout(request, run)
     thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
     try:
         with TemporaryDirectory(prefix=request.profile.tmp_prefix) as tmp:
@@ -390,8 +417,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 request.session, track_workflow_stage=request.track_workflow_stage
             ).run(**bridge_kwargs)
     except Exception as exc:
-        if request.manage_run:
-            _finish_run(request.session, run.id, status=RunStatus.FAILED, stderr=str(exc))
+        _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise
     finally:
         if thinking:
@@ -399,20 +425,12 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
 
     reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
     if result.status != RunStatus.SUCCEEDED:
-        if request.manage_run:
-            _finish_run(request.session, run.id, status=result.status, stderr=result.stderr)
+        _settle(request, run, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
     if not reply:
-        if request.manage_run:
-            _finish_run(
-                request.session,
-                run.id,
-                status=RunStatus.FAILED,
-                stderr=result.stderr or "empty response",
-            )
+        _settle(request, run, status=RunStatus.FAILED, stderr=result.stderr or "empty response")
         raise RuntimeError("Agent returned an empty response")
-    if request.manage_run:
-        _finish_run(request.session, run.id, status=RunStatus.SUCCEEDED, stderr="")
+    _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
     return reply, run.id
 
 
@@ -449,13 +467,13 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             surface=request.surface,
         )
     except Exception as exc:
-        if run is not None and request.manage_run:
-            _finish_run(request.session, run.id, status=RunStatus.FAILED, stderr=str(exc))
+        if run is not None:
+            _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise
     finally:
         if thinking:
             thinking.close()
 
-    if run is not None and request.manage_run:
-        _finish_run(request.session, run.id, status=RunStatus.SUCCEEDED, stderr="")
+    if run is not None:
+        _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
     return reply, run_id or ""

@@ -173,7 +173,7 @@ def m_chat_session_worktrees(conn: Connection) -> None:
         {
             "chat_session_id": (
                 "ALTER TABLE worktrees ADD COLUMN chat_session_id TEXT "
-                "REFERENCES baxter_chat_sessions(id)"
+                "REFERENCES baxter_chat_sessions(id) ON DELETE SET NULL"
             ),
         },
     )

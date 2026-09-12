@@ -75,6 +75,7 @@ from loregarden.services.triage_service import (
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
+from loregarden.services.worktree_lifecycle import release_chat_worktree
 from loregarden.skills.registry import get_skill, skill_prompt_block
 from sqlmodel import Session, col, or_, select
 
@@ -396,7 +397,27 @@ def get_chat_session(
     return row
 
 
+class ChatSessionHasUnpublishedWork(ValueError):
+    """Deleting this thread would strand the work sitting in its worktree."""
+
+
 def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> None:
+    """Delete a thread, once its worktree has been released.
+
+    A thread that has acted owns a checkout and a branch, and `worktrees`
+    references it, so this cannot simply drop the row. `release_chat_worktree`
+    keeps a tree holding uncommitted changes rather than deleting work nobody
+    has seen — and when it does, this refuses too, naming where the work is.
+    Silently detaching the row instead would leave a checkout on disk that
+    nothing owns and no sweeper reaps.
+    """
+    held = release_chat_worktree(session, chat_session)
+    if held is not None:
+        raise ChatSessionHasUnpublishedWork(
+            f"This chat still has unpublished work on `{held.branch}` at "
+            f"{held.worktree_path}. Commit or discard it, then delete the chat."
+        )
+
     for message in session.exec(
         select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
     ).all():

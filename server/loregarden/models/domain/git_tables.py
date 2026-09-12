@@ -91,8 +91,15 @@ class Worktree(SQLModel, table=True):
     #: turns must see each other's work — for the surface that has no ticket to
     #: hang one off. Exactly one of the two is set, or neither for a run that
     #: owns its tree outright.
+    #: `SET NULL` on delete, unlike `ticket_id` above: a deleted thread's tree is
+    #: released first (`worktree_lifecycle.release_chat_worktree`), and what is
+    #: left is a retired row kept for provenance. Without this the foreign key
+    #: refuses the delete over a row nothing is using any more.
     chat_session_id: str | None = Field(
-        default=None, foreign_key="baxter_chat_sessions.id", index=True
+        default=None,
+        foreign_key="baxter_chat_sessions.id",
+        ondelete="SET NULL",
+        index=True,
     )
     parent_branch: str = "main"
     worktree_path: str = ""
