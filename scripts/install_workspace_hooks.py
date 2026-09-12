@@ -50,12 +50,14 @@ def render_block(loregarden_root: Path, indent: str) -> list[str]:
         "  name: Python organization guardrails (loregarden)",
         "  priority: 1",
         f'  glob: "{PY_GLOB}"',
-        f"  run: python3 {scripts / 'py_organization_check.py'} {{staged_files}}",
+        f"  run: bash {scripts / 'server_python.sh'} "
+        f"{scripts / 'py_organization_check.py'} {{staged_files}}",
         f"{silent_name}:",
         "  name: Python silently-caught exceptions (loregarden)",
         "  priority: 1",
         f'  glob: "{PY_GLOB}"',
-        f"  run: python3 {scripts / 'py_silent_except_check.py'} {{staged_files}}",
+        f"  run: bash {scripts / 'server_python.sh'} "
+        f"{scripts / 'py_silent_except_check.py'} {{staged_files}}",
         f"{ts_name}:",
         "  name: TypeScript organization guardrails (loregarden)",
         "  priority: 1",
