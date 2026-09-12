@@ -34,6 +34,11 @@ export interface ChatArchive {
    * new turn on the fork. No-op when there is no session id yet.
    */
   forkSession: (body?: string) => Promise<unknown>;
+  /**
+   * Branch from one turn, dropping everything after it. The per-turn Fork
+   * action in the thread; `/fork` still copies the whole conversation.
+   */
+  forkFromMessage: (messageId: string) => Promise<unknown>;
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
@@ -125,6 +130,7 @@ export function useActiveChatSession(): ActiveChatSession {
         startNewChat: baxterSession.startNewChat,
         sendInNewChat: baxterSession.sendInNewChat,
         forkSession: baxterSession.forkSession,
+        forkFromMessage: baxterSession.forkFromMessage,
         runtime: baxterSession.runtime,
         setRuntime: baxterSession.setRuntime,
         isSavingRuntime: baxterSession.isSavingRuntime,

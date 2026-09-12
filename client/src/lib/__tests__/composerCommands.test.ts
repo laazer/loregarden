@@ -145,7 +145,7 @@ describe("resolveCommand", () => {
 });
 
 describe("BUILTIN_COMMANDS", () => {
-  it("ships the b12 vocabulary", () => {
+  it("ships the builtin vocabulary", () => {
     expect(BUILTIN_COMMANDS.map((command) => command.name)).toEqual([
       "help",
       "queue",
@@ -159,6 +159,7 @@ describe("BUILTIN_COMMANDS", () => {
       "reject",
       "btw",
       "ticket",
+      "oneshot",
       "create",
     ]);
   });

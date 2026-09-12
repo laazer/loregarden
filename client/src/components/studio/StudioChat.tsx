@@ -4,6 +4,10 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useChatTurnThinking } from "../../hooks/useChatTurnThinking";
 import type { ComposerCommandsBinding } from "../../hooks/useComposerCommands";
 import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
+import {
+  ChatMessageActions,
+  type ChatMessageActionHandlers,
+} from "../chat/ChatMessageActions";
 import { ComposerCommandMenu } from "../chat/ComposerCommandMenu";
 import { ComposerNotes } from "../chat/ComposerNotes";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
@@ -11,12 +15,14 @@ import { MarkdownContent } from "../chat/MarkdownContent";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
 import {
   agentPlanPartKey,
+  agentPlanRequestTask,
   agentPlanRunSummary,
   supersededAgentPlanKeys,
 } from "../chat/primitives/agentPlan";
 import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
+import { useStickToBottom } from "../chat/useStickToBottom";
 import "../chat/ChatLook.css";
 
 export type StudioAssistantActivity = "thinking" | "typing";
@@ -64,6 +70,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   activeTurnId,
   autoScroll = true,
   className,
+  messageActions,
   renderAfterMessage,
   trailingAsk,
   showAssistantAvatar = true,
@@ -85,6 +92,12 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   activeTurnId?: string | null;
   autoScroll?: boolean;
   className?: string;
+  /**
+   * Per-reply actions (fork, file as a ticket). Copy is offered whenever this
+   * is passed at all; the rest appear only for the handlers the host supplies.
+   * Omit entirely on a surface where a reply is not actionable.
+   */
+  messageActions?: ChatMessageActionHandlers;
   renderAfterMessage?: (message: ChatMessageView) => ReactNode;
   /**
    * Live decisions waiting on the operator (AskUserQuestion, permissions).
@@ -97,6 +110,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   /** Lets interactive primitives, such as Q&A, send a user reply. */
   onPrimitiveSubmit?: (content: string) => void;
 }) {
+  const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const responding = useRespondingFlash(messages, Boolean(isThinking));
   const latestAssistantId = latestAssistantMessageId(messages);
@@ -111,17 +125,25 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   // another one, so only the newest copy stays live in the thread.
   const supersededPlans = useMemo(() => supersededAgentPlanKeys(messages), [messages]);
 
-  useEffect(() => {
-    if (!autoScroll) return;
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
-  }, [autoScroll, messages.length, isThinking, hasTrailingAsk]);
+  // Message *count* is the wrong trigger on its own: a reply streams in, a
+  // thinking card unfolds, a primitive finishes loading and grows — the thread
+  // gets taller with no new message, and the bottom slides out of view. The
+  // list's own height is what has to be watched.
+  useStickToBottom(listRef, bottomRef, autoScroll, [
+    messages.length,
+    isThinking,
+    hasTrailingAsk,
+  ]);
 
   const busyState: BaxterAvatarState = thinkingActivity === "typing" ? "typing" : "thinking";
   const activeState: BaxterAvatarState = isThinking ? busyState : responding ? "responding" : "idle";
 
   if (messages.length === 0 && !isThinking && !hasTrailingAsk) {
     return (
-      <div className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}>
+      <div
+        ref={listRef}
+        className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}
+      >
         <p className="lg-chat-messages-empty ticket-studio-messages-empty">
           {emptyMessage ?? "No messages yet."}
         </p>
@@ -131,7 +153,10 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   }
 
   return (
-    <div className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}>
+    <div
+      ref={listRef}
+      className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}
+    >
       {messages.map((message) => {
         const isUser = isUserChatRole(message.role);
         const body = chatMessageBody(message);
@@ -173,6 +198,11 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           // Pressing Run posts the full plan so the agent has the steps
           // verbatim; the operator did not type it, so it reads as an action.
           const runSummary = agentPlanRunSummary(body);
+          // `/oneshot` wraps the task in instructions for the agent. The
+          // operator typed the task, so that is what the thread shows — the
+          // chip says the turn asked for a plan, and `title` keeps the real
+          // payload one hover away.
+          const oneShotTask = runSummary ? null : agentPlanRequestTask(body);
           return (
             <div key={message.id} className="lg-chat-turn lg-chat-turn--user">
               {runSummary ? (
@@ -187,6 +217,18 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                       : ""}
                   </span>
                 </div>
+              ) : oneShotTask ? (
+                <div className="lg-chat-user-stack">
+                  <div className="lg-chat-action-chip" title={body}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                      <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                    <span>Asked for a plan</span>
+                  </div>
+                  <div className="lg-chat-user-bubble">
+                    <MarkdownContent content={oneShotTask} />
+                  </div>
+                </div>
               ) : (
                 <div className="lg-chat-user-bubble">
                   <MarkdownContent content={body} />
@@ -199,6 +241,17 @@ export const StudioChatMessages = memo(function StudioChatMessages({
 
         const state =
           !isThinking && message.id === latestAssistantId ? activeState : "idle";
+        // Inside the assistant column, not beside it: the turn itself is a flex
+        // row, so a sibling here would sit to the right of the reply rather
+        // than under it — and the column's avatar gutter is what lines the row
+        // up with the prose it acts on.
+        const actionsRow = messageActions ? (
+          <ChatMessageActions
+            message={message}
+            body={textBody || body}
+            handlers={messageActions}
+          />
+        ) : null;
         const reply = (
           <>
             {leadingReasoning}
@@ -243,9 +296,13 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                 {hasNonTextParts && !cardIsTheReply ? (
                   <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
                 ) : null}
+                {actionsRow}
               </div>
             ) : (
-              <div className="lg-chat-assistant-col">{reply}</div>
+              <div className="lg-chat-assistant-col">
+                {reply}
+                {actionsRow}
+              </div>
             )}
             {renderAfterMessage?.(message)}
           </div>

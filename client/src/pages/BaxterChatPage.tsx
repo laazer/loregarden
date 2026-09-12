@@ -16,6 +16,7 @@ import {
   type UseComposerCommandsOptions,
 } from "../hooks/useComposerCommands";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
+import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -310,6 +311,7 @@ export function BaxterChatPage() {
       startNewChat: chat.startNewChat,
       sendInNewChat: chat.sendInNewChat,
       forkSession: chat.forkSession,
+      forkFromMessage: chat.forkFromMessage,
       runtime: chat.runtime,
       setRuntime: chat.setRuntime,
       isSavingRuntime: chat.isSavingRuntime,
@@ -321,10 +323,19 @@ export function BaxterChatPage() {
     chat.startNewChat,
     chat.sendInNewChat,
     chat.forkSession,
+    chat.forkFromMessage,
     chat.runtime,
     chat.setRuntime,
     chat.isSavingRuntime,
   ]);
+
+  // Copy always; fork and "start as ticket" only on the real conversation —
+  // the primitive gallery is a canned reference with no server side to branch.
+  const messageActions = useChatMessageActions({
+    workspaceSlug,
+    archive,
+    enabled: !inGallery,
+  });
 
   const onAfterNewChat = useCallback(() => {
     setGalleryTurns(null);
@@ -480,6 +491,7 @@ export function BaxterChatPage() {
               thinkingActivity="typing"
               assistantLabel="Baxter"
               showAssistantAvatar={false}
+              messageActions={messageActions}
               onPrimitiveSubmit={(content) => void respond(content)}
               // AskUserQuestion / permissions arrive as approvals, not messages.
               // Render them as the agent's ask at the end of the thread — not a

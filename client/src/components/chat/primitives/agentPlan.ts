@@ -19,6 +19,21 @@ export const AGENT_PLAN_EXECUTE_PREFIX = "Execute this agent execution plan now.
 
 export const DEFAULT_AGENT_PLAN_TITLE = "Agent execution plan";
 
+/**
+ * Prefix of the user message `/oneshot` posts — a plan request, not a question.
+ *
+ * The chat prompt already tells the agent when a plan card is warranted, and it
+ * is deliberately conservative: never for a question, an explanation or a
+ * single step. `/oneshot` is the operator overriding that judgement for one
+ * turn — "whatever this is, give me a plan card I can press Run on" — so the
+ * instruction travels with the message rather than living in the system prompt,
+ * where it would apply to every turn.
+ *
+ * The prefix is also how the thread renders this turn as the task the operator
+ * typed instead of the scaffolding around it.
+ */
+export const AGENT_PLAN_REQUEST_PREFIX = "Draft an agent execution plan for this, and stop.";
+
 function isAgentTodoList(part: ChatPart | UnknownPart): part is TodoListPart {
   return part.primitive === "todo_list" && (part as TodoListPart).owner !== "user";
 }
@@ -77,4 +92,31 @@ export function agentPlanRunSummary(content: string): { title: string; steps: nu
   const title = planLine?.trimStart().slice("Plan: ".length).trim() || DEFAULT_AGENT_PLAN_TITLE;
   const steps = lines.filter((line) => /^\s*-\s*\[ \]\s+/.test(line)).length;
   return { title, steps };
+}
+
+
+/** The user message `/oneshot <task>` sends. */
+export function agentPlanRequestMessage(task: string): string {
+  return [
+    AGENT_PLAN_REQUEST_PREFIX,
+    'Emit a `todo_list` primitive with owner "agent", a stable `plan_id`, and one',
+    "item per step — even if you would normally answer this in prose.",
+    "Do not start the work and do not use tools on this turn: the operator runs",
+    "the plan by pressing Run on the card.",
+    "",
+    `Task: ${task}`,
+  ].join("\n");
+}
+
+/**
+ * The task out of a `/oneshot` message, or null for ordinary user text.
+ *
+ * Mirrors `agentPlanRunSummary`: the thread shows what the operator asked for,
+ * not the instructions the composer wrapped around it.
+ */
+export function agentPlanRequestTask(content: string): string | null {
+  const text = (content ?? "").trimStart();
+  if (!text.startsWith(AGENT_PLAN_REQUEST_PREFIX)) return null;
+  const line = text.split("\n").find((candidate) => candidate.trimStart().startsWith("Task: "));
+  return line?.trimStart().slice("Task: ".length).trim() || null;
 }

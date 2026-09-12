@@ -7,6 +7,7 @@ import {
   type EditorPathMatch,
 } from "../api/composerApi";
 import { api } from "../api/client";
+import { agentPlanRequestMessage } from "../components/chat/primitives/agentPlan";
 import {
   BUILTIN_COMMANDS,
   activeTrigger,
@@ -179,6 +180,9 @@ export function useComposerCommands({
       btw: Boolean(actions.onBtw),
       ticket: Boolean(actions.onOpenTicket),
       create: Boolean(actions.onCreateTicket),
+      // No host callback: a one-shot is an ordinary send with a plan request
+      // wrapped round it, so any surface that can send can offer it.
+      oneshot: true,
     };
     return BUILTIN_COMMANDS.filter((command) => supported[command.name] ?? true);
   }, [
@@ -408,6 +412,13 @@ export function useComposerCommands({
       case "create":
         if (!text) return true;
         actions.onCreateTicket?.(text);
+        reset();
+        return true;
+      case "oneshot":
+        // A bare `/oneshot` has nothing to plan. Left in the draft rather than
+        // sent, so the operator can finish the sentence.
+        if (!text) return true;
+        onSend(agentPlanRequestMessage(text), "");
         reset();
         return true;
       default:
