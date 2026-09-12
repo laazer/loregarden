@@ -58,7 +58,6 @@ from loregarden.services.agent_turn_runner import (
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json, parse_primitive_parts
-from loregarden.services.chat_publish import publish_chat_turn
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
@@ -716,6 +715,26 @@ def build_baxter_chat_prompt(
     return "\n".join(sections)
 
 
+@dataclass(frozen=True)
+class ChatTurnOutcome:
+    """A finished turn, and what still has to happen to the work it did.
+
+    The reply used to carry the publish note inline, which meant the turn could
+    not settle until the commit and the push had finished. A push runs lefthook's
+    pre-push suite — measured at 37 minutes for a change reaching a
+    widely-imported backend module — and the assistant row stays `pending` that
+    whole time, which disables the composer. So the run id travels out instead
+    and publishing follows the reply; see `baxter_chat_run_service`.
+    """
+
+    reply: str
+    #: The run whose worktree holds the work, or "" when the turn opened none.
+    run_id: str
+    #: Whether this turn could write at all. An advisory turn has nothing to
+    #: publish, and must not be handed a publish job that would find an empty tree.
+    acting: bool
+
+
 class BaxterChatConflictError(ValueError):
     """Raised when a Home chat turn can't start because one is already running."""
 
@@ -729,7 +748,7 @@ def invoke_baxter_chat_model(
     history: list[BaxterChatMessage] | None = None,
     turn_id: str = "",
     skill_name: str = "",
-) -> str:
+) -> ChatTurnOutcome:
     """Run one Home chat turn against the workspace's current CLI/model runtime.
 
     ``turn_id`` is the pending assistant row this turn will settle onto. Passing
@@ -751,7 +770,7 @@ def invoke_baxter_chat_model(
 
     stub = stub_response(BAXTER_CHAT_CLI_PROFILE)
     if stub is not None:
-        return stub
+        return ChatTurnOutcome(reply=stub, run_id="", acting=False)
 
     agent = get_agent(TRIAGE_AGENT_ID) or {}
     selected = resolve_effective_adapter(
@@ -801,15 +820,19 @@ def invoke_baxter_chat_model(
         ),
         track_workflow_stage=False,
     )
+
+    def outcome(turn: AgentTurnResult) -> ChatTurnOutcome:
+        return ChatTurnOutcome(reply=turn.reply, run_id=turn.run_id, acting=interactive)
+
     result = run_agent_turn(request)
     if not interactive or not is_agent_plan_execute_message(message):
-        return _with_publish_note(session, result, chat_session, workspace, interactive=interactive)
+        return outcome(result)
 
     plan_id = _agent_plan_id(message)
     for _attempt in range(1, MAX_AGENT_PLAN_ATTEMPTS):
         completion = _agent_plan_reply_complete(result.reply, plan_id)
         if completion is True or completion is None:
-            return _with_publish_note(session, result, chat_session, workspace, interactive=True)
+            return outcome(result)
         request = replace(
             request,
             prompt=_agent_plan_continuation_prompt(prompt, result.reply, plan_id),
@@ -817,36 +840,7 @@ def invoke_baxter_chat_model(
         result = run_agent_turn(request)
 
     if _agent_plan_reply_complete(result.reply, plan_id) is not False:
-        return _with_publish_note(session, result, chat_session, workspace, interactive=True)
+        return outcome(result)
     raise RuntimeError(
         f"Agent execution plan did not reach completion after {MAX_AGENT_PLAN_ATTEMPTS} attempts"
     )
-
-
-def _with_publish_note(
-    session: Session,
-    result: AgentTurnResult,
-    chat_session: BaxterChatSession | None,
-    workspace: Workspace,
-    *,
-    interactive: bool,
-) -> str:
-    """Append what happened to the turn's edits, when there were any.
-
-    An advisory turn changes nothing and gets nothing appended. An acting turn
-    that changed nothing likewise. Everything else is told where its work is,
-    whether or not the workspace's policy published it — see `chat_publish`.
-    """
-    if not interactive or chat_session is None:
-        return result.reply
-    try:
-        outcome = publish_chat_turn(session, result.run_id, chat_session, workspace)
-    except Exception as exc:  # noqa: BLE001 - the reply must still carry the failure
-        logger.exception("Publishing chat thread %s failed", chat_session.id)
-        return (
-            f"{result.reply}\n\n---\n**This turn's work could not be published:** {exc}\n"
-            "Its edits are still in the thread's checkout."
-        )
-    if outcome is None:
-        return result.reply
-    return f"{result.reply}{outcome.as_note()}"

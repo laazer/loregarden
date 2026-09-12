@@ -68,21 +68,29 @@ class TurnPublishOutcome:
     deferred_to: str = ""
 
     def as_note(self) -> str:
-        """A short markdown block appended to the turn's reply, or "" if silent.
+        """:meth:`summary` as a block to append to a reply, or "" if silent."""
+        summary = self.summary()
+        return f"\n\n---\n{summary}" if summary else ""
+
+    def summary(self) -> str:
+        """One sentence on where the work is, or "" when there is nothing to say.
 
         Empty only when the turn changed nothing — the one case where there is
-        genuinely nothing to tell anyone.
+        genuinely nothing to tell anyone. Separate from :meth:`as_note` because
+        the Home rail delivers this as a message of its own rather than appended
+        to a reply, and a leading `---` in a standalone message is a rule across
+        an empty bubble.
         """
         if not self.dirty:
             return ""
 
         where = f"`{self.branch}`" if self.branch else f"`{self.repo_root}` (shared checkout)"
         if self.deferred_to:
-            return f"\n\n---\n**Work left on {where}**, for {self.deferred_to} to commit."
+            return f"**Work left on {where}**, for {self.deferred_to} to commit."
 
         if self.automation is None or not self.automation.steps:
             return (
-                f"\n\n---\n**Work left on {where}, uncommitted.** "
+                f"**Work left on {where}, uncommitted.** "
                 "This workspace's git automation has `commit` off, so nothing was "
                 "published. Commit it yourself, or turn the step on in the "
                 "workspace's orchestration profile."
@@ -91,7 +99,7 @@ class TurnPublishOutcome:
         failure = self.automation.failure
         if failure:
             return (
-                f"\n\n---\n**Work is on {where}, but publishing stopped at "
+                f"**Work is on {where}, but publishing stopped at "
                 f"`{failure.step}`:** {failure.detail}"
             )
 
@@ -100,10 +108,10 @@ class TurnPublishOutcome:
             # The common case under a commit-only policy, and "published" would
             # overstate it: the branch is local, and a reader who believed
             # otherwise would go looking for a pull request that is not there.
-            return f"\n\n---\n**Committed to {where}.** Not pushed."
+            return f"**Committed to {where}.** Not pushed."
 
         done = ", ".join(f"`{step}`" for step in steps)
-        line = f"\n\n---\n**Published from {where}:** {done}."
+        line = f"**Published from {where}:** {done}."
         if self.automation.pr_url:
             line += f" {self.automation.pr_url}"
         return line

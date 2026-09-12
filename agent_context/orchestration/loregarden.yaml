@@ -63,12 +63,17 @@ callbacks:
   mode: api
 max_stages_per_run: 0
 git:
-  # Commit, and stop there. `enabled_steps` runs these as a chain and halts at
-  # the first switch that is off, so leaving `push` off disables `open_pr` and
-  # `auto_merge` regardless of their own flags — which is the intent, not an
-  # oversight. This repository has no branch protection, so `gh pr merge --auto`
-  # lands a PR immediately rather than on green; nothing here should publish
-  # outward without a person deciding to.
+  # Commit and push, and stop there. `enabled_steps` runs these as a chain and
+  # halts at the first switch that is off, so leaving `open_pr` off disables
+  # `auto_merge` too — which is the intent, not an oversight. This repository has
+  # no branch protection, so `gh pr merge --auto` lands a PR immediately rather
+  # than on green; opening one stays a person's decision.
+  #
+  # `push` runs lefthook's pre-push suite, measured at 37 minutes for a change
+  # reaching a widely-imported backend module. That is why publishing happens
+  # after the reply settles rather than inside the turn — see
+  # `baxter_chat_run_service.schedule_chat_publish`. Enabling it here without
+  # that ordering leaves the composer disabled for the duration.
   #
   # Without this, an acting chat turn wrote to its thread's worktree and stopped:
   # the work sat on `chat/<thread>` uncommitted, and the reply said so. Better
@@ -79,3 +84,4 @@ git:
   # `parallel_run_service._publish_run_work`. The builtin orchestrator never
   # calls `git_automation` at all, so ordinary ticket stages are unaffected.
   commit: true
+  push: true
