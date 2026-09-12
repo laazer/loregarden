@@ -182,3 +182,36 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash .lefthook/scripts/format-staged.sh {{.CLI_ARGS}}
+
+  workspace:docs:
+    desc: >-
+      Install/refresh loregarden's control-plane section in a workspace's
+      AGENTS.md — `task workspace:docs -- [--check] [--slug <slug>] <workspace-root>`
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash scripts/install-workspace-docs.sh {{.CLI_ARGS}}
+
+  workspace:hooks:
+    desc: >-
+      Install/refresh loregarden's organization guardrails in a workspace's
+      pre-commit — `task workspace:hooks -- [--check] <workspace-root>`
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash scripts/install-workspace-hooks.sh {{.CLI_ARGS}}
+
+  workspace:check:
+    desc: >-
+      Report whether a workspace carries both managed blocks, writing nothing —
+      `task workspace:check -- <workspace-root>` (a path only; no other flags)
+    dir: "{{.ROOT_DIR}}"
+    silent: true
+    cmds:
+      # One shell, not two `cmds:` and not `deps:`. Task stops at the first
+      # failing command, so a missing hook block would hide a missing docs block;
+      # and a non-zero exit has to survive both, or "check passed" means only
+      # that the last one did.
+      - |
+        rc=0
+        bash scripts/install-workspace-hooks.sh --check {{.CLI_ARGS}} || rc=1
+        bash scripts/install-workspace-docs.sh --check {{.CLI_ARGS}} || rc=1
+        exit "$rc"
