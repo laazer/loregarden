@@ -50,12 +50,16 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
 
     implementation = next(stage for stage in stages if stage.key == "implement")
     assert implementation.stage_type == "classify"
+    # `implementation_backend` since 0128: the roster fielded every Godot lane
+    # and none for `asset_generation/web/backend/**`, so a FastAPI ticket had
+    # nobody to be dispatched to and scored onto the frontend lane instead.
     assert {route.agent_id for route in implementation.classify_routes} == {
         "core_simulation",
         "gameplay_systems",
         "presentation",
         "engine_integration",
         "implementation_frontend",
+        "implementation_backend",
     }
 
     script_review = next(stage for stage in stages if stage.key == "script_review")
@@ -116,7 +120,7 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
         "architecture_reviewer",
     ]
     assert by_key["implement"]["stage_type"] == "classify"
-    assert len(by_key["implement"]["agents"]) == 5
+    assert len(by_key["implement"]["agents"]) == 6  # 6 since 0128 added the backend lane
     assert by_key["playtest"]["stage_type"] == "agent"
     assert by_key["playtest"]["agent_id"] == ""
 
