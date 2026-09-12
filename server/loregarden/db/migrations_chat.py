@@ -177,7 +177,11 @@ def m_chat_session_worktrees(conn: Connection) -> None:
             ),
         },
     )
-    if not index_exists(conn, "ix_worktrees_chat_session_id"):
+    # Guarded on the table, not only on the index: `add_columns_if_missing`
+    # returns quietly when the table is absent, so on a database that predates
+    # `worktrees` the column is skipped and an unguarded CREATE INDEX is the
+    # only statement left to run — against a table that is not there.
+    if table_exists(conn, "worktrees") and not index_exists(conn, "ix_worktrees_chat_session_id"):
         conn.execute(
             text("CREATE INDEX ix_worktrees_chat_session_id ON worktrees (chat_session_id)")
         )
