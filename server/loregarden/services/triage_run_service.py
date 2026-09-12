@@ -40,7 +40,7 @@ from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import resolve_chat_adapter
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_cancellation import request_cancel
-from loregarden.services.run_concurrency import find_active_run
+from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
@@ -54,7 +54,6 @@ from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-TRIAGE_STAGE_KEY = "triage"
 
 INTERRUPTED_TURN_MESSAGE = restart_interruption_message(
     TRIAGE_AGENT_NAME, "did not finish this turn. Send the message again."

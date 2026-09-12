@@ -10,6 +10,14 @@ from sqlmodel import Session, col, select
 
 IN_FLIGHT_STATUSES = [RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
 
+#: Stage key recorded on a ticket triage turn. Not a workflow stage: Baxter is
+#: the operator's conversation about a ticket, and no gate waits on it. It is
+#: the only conversational channel whose runs carry a ticket_id — Home chat and
+#: branch triage are workspace-scoped and have none — so it is the only one a
+#: ticket-keyed lookup can see. Canonical here because this module is the lowest
+#: one that has to tell conversation apart from work.
+TRIAGE_STAGE_KEY = "triage"
+
 
 def new_run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
@@ -53,6 +61,31 @@ def find_active_run(
     if only_agent_id is not None:
         query = query.where(AgentRun.agent_id == only_agent_id)
     return session.exec(query).first()
+
+
+def find_active_stage_run(session: Session, ticket_id: str) -> AgentRun | None:
+    """An in-flight run that will actually advance this ticket's workflow.
+
+    Narrower than ``find_active_run`` on purpose, because it answers a different
+    question. ``find_active_run`` asks "is a live CLI holding this workspace's
+    checkout" — a triage turn does, so it counts there, and excluding it would
+    let an orchestration start on top of an operator's session.
+
+    This asks "will anything pick this stage up". A triage turn never will: it
+    runs no stage and completes none. Answering that question with the broad
+    lookup made a requeue report ``scheduled: true`` and withhold its
+    ``start_with`` hint whenever an operator happened to be *talking about* the
+    ticket in Baxter — which is exactly when a human requeues one. The ticket
+    then sat pending with nothing driving it, and the response said it had been
+    picked up.
+    """
+    return session.exec(
+        select(AgentRun).where(
+            AgentRun.ticket_id == ticket_id,
+            AgentRun.stage_key != TRIAGE_STAGE_KEY,
+            col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
+        )
+    ).first()
 
 
 def find_active_orchestration_run(session: Session, ticket_id: str) -> OrchestrationRun | None:

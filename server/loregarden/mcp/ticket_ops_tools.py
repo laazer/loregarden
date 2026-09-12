@@ -31,7 +31,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.run_concurrency import find_active_run
+from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
@@ -259,7 +259,7 @@ def _requeue_outcome(session: Session, svc, ticket: Ticket, stage_key: str) -> d
     requeue without them reads as "the block is gone" when it is not.
     """
     active = svc.get_active_orchestration_run(ticket.id)
-    in_flight = find_active_run(session, ticket.id)
+    in_flight = find_active_stage_run(session, ticket.id)
     scheduled = active is not None or in_flight is not None
 
     instance, stages = svc.orch._resolve_stages(ticket)

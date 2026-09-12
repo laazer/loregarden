@@ -497,6 +497,80 @@ def test_requeue_reports_a_live_run_rather_than_denying_it(db_session):
     assert "start_with" not in result["requeued"]
 
 
+def test_an_operator_talking_about_the_ticket_is_not_something_that_will_run_it(db_session):
+    """The triage turn that made a requeue lie about being picked up.
+
+    A ticket triage run is in-flight against the ticket, so the broad
+    ``find_active_run`` saw it and `scheduled` came back true — "something is
+    already running against this ticket; it will be picked up". Nothing was.
+    Baxter runs no stage and completes none, so the stage stayed pending with no
+    dispatcher behind it, and the response withheld the one useful next step by
+    dropping `start_with`.
+
+    The trigger is the common case, not an edge: an operator requeues a ticket
+    while looking at it in triage, which means a triage run is in-flight almost
+    every time a human does this by hand.
+    """
+    from loregarden.models.domain import AgentRun, RunStatus
+    from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY
+
+    ticket = _task(db_session)
+    db_session.add(
+        AgentRun(
+            run_code="run_triage_talk",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="triage",
+            stage_key=TRIAGE_STAGE_KEY,
+            status=RunStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+
+    result = _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "Requeued from the triage channel."},
+    )
+
+    assert result["requeued"]["scheduled"] is False, "a conversation is not a dispatcher"
+    assert "does not dispatch" in result["requeued"]["note"]
+    assert result["requeued"]["start_with"] == "loregarden_start_orchestration"
+
+
+def test_a_triage_run_still_blocks_a_concurrent_start(db_session):
+    """The half of the old behaviour that was right, kept.
+
+    Narrowing the requeue's question must not narrow the concurrency guard.
+    A triage turn holds a live CLI against the workspace checkout, which is not
+    worktree-isolated on the default path, so ``find_active_run`` must keep
+    counting it — otherwise an orchestration starts on top of an operator's
+    session and they fight over the same working tree.
+    """
+    from loregarden.models.domain import AgentRun, RunStatus
+    from loregarden.services.run_concurrency import (
+        TRIAGE_STAGE_KEY,
+        find_active_run,
+        find_active_stage_run,
+    )
+
+    ticket = _task(db_session)
+    db_session.add(
+        AgentRun(
+            run_code="run_triage_guard",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="triage",
+            stage_key=TRIAGE_STAGE_KEY,
+            status=RunStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+
+    assert find_active_run(db_session, ticket.id) is not None, "still guards the checkout"
+    assert find_active_stage_run(db_session, ticket.id) is None, "but will not advance a stage"
+
+
 def test_requeue_to_another_stage_still_reconciles_a_pinned_ticket(db_session):
     """The second route through the same invariant #351 established.
 
