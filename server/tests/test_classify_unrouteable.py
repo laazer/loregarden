@@ -76,6 +76,57 @@ def test_backend_ticket_on_a_godot_roster_is_unrouteable():
     assert "implement" in decision.detail
 
 
+#: `GODOT_ROSTER` plus the lane migration 0129 adds. Kept beside the roster it
+#: fixes so the pair reads as before/after rather than two unrelated fixtures.
+ROSTER_WITH_BACKEND_LANE = [
+    *GODOT_ROSTER[:-1],
+    ClassifyRoute(
+        specialties=["backend", "pipeline", "tooling"],
+        languages=["python"],
+        agent_id="implementation_backend",
+    ),
+    GODOT_ROSTER[-1],
+]
+
+
+def test_backend_lane_routes_the_ticket_the_godot_roster_could_not():
+    """0129's lane closes the gap UNROUTEABLE could only name.
+
+    Naming the defect is not dispatching the work: a stage that reports
+    `UNROUTEABLE` still has nobody to send the ticket to. This is the assertion
+    that the roster now does.
+    """
+    decision = classify_decision(
+        _ticket("FastAPI CRUD routes for jailed creature definitions", BACKEND_TICKET_CRITERIA),
+        _stage(ROSTER_WITH_BACKEND_LANE),
+    )
+
+    assert decision is not None
+    assert decision.basis is ClassifyBasis.CONTENT
+    assert decision.route is not None
+    assert decision.route.agent_id == "implementation_backend"
+
+
+def test_the_backend_lane_does_not_capture_a_ticket_on_one_passing_mention():
+    """The frontend lane's failure, pointed the other way, must not reappear.
+
+    `api` and `route` are already `backend` SYNONYMS, so the lane deliberately
+    does not declare them as specialties — declaring one promotes it to a direct
+    hit, and a single incidental mention would then outrank both the declared
+    default and an operator's pin. That is exactly how `implementation_frontend`
+    took this ticket on the word "layout".
+    """
+    decision = classify_decision(
+        _ticket("Tune the spawn curve", ["AC-01: The api call stays as it is."]),
+        _stage(ROSTER_WITH_BACKEND_LANE),
+    )
+
+    assert decision is not None
+    assert decision.basis is ClassifyBasis.DEFAULT
+    assert decision.route is not None
+    assert decision.route.agent_id == "core_simulation"
+
+
 def test_unrouteable_stage_resolves_no_agent_rather_than_the_least_wrong_one():
     ticket = _ticket("FastAPI CRUD routes for jailed creature definitions", BACKEND_TICKET_CRITERIA)
 
