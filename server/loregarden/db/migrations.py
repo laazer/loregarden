@@ -26,7 +26,12 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
+from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
 from loregarden.db.migrations_blocked_run_reason import m_blocked_run_reason
+from loregarden.db.migrations_btw import (
+    m_btw_exchange_deleted_at,
+    m_btw_exchanges,
+)
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
@@ -1052,40 +1057,6 @@ def _m_run_cancel_requested(conn: Connection) -> None:
     )
 
 
-def _m_btw_exchanges(conn: Connection) -> None:
-    """Somewhere to keep a question asked while a run is still working.
-
-    Not a column on ``run_messages``: that channel is imperative, one-way, and
-    keyed to a run that must exist and be steerable. An aside expects an answer,
-    is answered by a different agent than the one it is about, and stays valid
-    when nothing is running at all.
-    """
-    if table_exists(conn, "btw_exchanges"):
-        return
-    conn.execute(
-        text(
-            """
-            CREATE TABLE btw_exchanges (
-                id TEXT PRIMARY KEY,
-                ticket_id TEXT NOT NULL,
-                observed_run_id TEXT,
-                question TEXT NOT NULL DEFAULT '',
-                answer TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'pending',
-                error TEXT NOT NULL DEFAULT '',
-                escalated_at TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                answered_at TEXT
-            )
-            """
-        )
-    )
-    conn.execute(text("CREATE INDEX ix_btw_exchanges_ticket ON btw_exchanges (ticket_id)"))
-    conn.execute(text("CREATE INDEX ix_btw_exchanges_status ON btw_exchanges (status)"))
-    conn.execute(text("CREATE INDEX ix_btw_exchanges_run ON btw_exchanges (observed_run_id)"))
-    conn.execute(text("CREATE INDEX ix_btw_exchanges_created ON btw_exchanges (created_at)"))
-
-
 def _m_git_automation(conn: Connection) -> None:
     """Columns for running a queued ticket in a worktree and landing its work.
 
@@ -1265,25 +1236,6 @@ def m_orchestration_idempotency_key(conn: Connection) -> None:
     )
 
 
-def _m_btw_exchange_deleted_at(conn: Connection) -> None:
-    """Somewhere to record that the operator dismissed an aside.
-
-    A column rather than a fourth ``BtwStatus``: dismissal is orthogonal to
-    whether the observer answered, the same way ``escalated_at`` is, and folding
-    it into the status line would make "answered" and "dismissed" mutually
-    exclusive when an operator most often dismisses one *because* it was
-    answered.
-    """
-    # Guarded: a database built up to an earlier id has no `btw_exchanges` yet.
-    if not table_exists(conn, "btw_exchanges"):
-        return
-    add_columns_if_missing(
-        conn,
-        "btw_exchanges",
-        {"deleted_at": "ALTER TABLE btw_exchanges ADD COLUMN deleted_at TEXT"},
-    )
-
-
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1347,7 +1299,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0060_chat_turn_thinking", m_chat_turn_thinking),
     ("0061_chat_turn_answer", m_chat_turn_answer),
     ("0062_lane_entry_kind", m_lane_entry_kind),
-    ("0063_btw_exchanges", _m_btw_exchanges),
+    ("0063_btw_exchanges", m_btw_exchanges),
     ("0064_lane_entry_run_options", m_lane_entry_run_options),
     ("0065_workspace_codex_model", _m_workspace_codex_model),
     ("0066_baxter_chat_runtime", m_baxter_chat_runtime),
@@ -1413,13 +1365,14 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # ledger in `migration_ids` is for.
     ("0120_docker_capacity_ledger", m_docker_capacity_ledger),
     ("0121_docker_lease_polling", m_docker_lease_polling),
-    ("0122_btw_exchange_deleted_at", _m_btw_exchange_deleted_at),
+    ("0122_btw_exchange_deleted_at", m_btw_exchange_deleted_at),
     ("0123_ux_lanes_in_v3", m_ux_lanes_in_v3),
     ("0124_ux_design_everywhere", m_ux_design_everywhere),
     ("0125_extended_tdd_reject_route", m_extended_tdd_reject_route),
     ("0126_stage_park_approvals", m_stage_park_approvals),
     ("0127_agent_run_status_index", m_agent_run_status_index),
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
+    ("0129_blobert_backend_lane", m_blobert_backend_lane),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

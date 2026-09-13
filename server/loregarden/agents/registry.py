@@ -89,6 +89,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "cursor",
         "timeout": 1800,
     },
+    "implementation_backend": {
+        "name": "Implementation Backend Agent",
+        "role_file": "agents/misc_agents/implementation_backend_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
     "gdscript_reviewer": {
         "name": "GDScript Reviewer",
         "role_file": "agents/common_assets/gdscript_reviewer_v1.md",
