@@ -38,6 +38,18 @@ MANAGED_COMMAND_NAMES = (
 PY_GLOB = "{*.py,**/*.py}"
 TS_GLOB = "{*.ts,*.tsx,**/*.ts,**/*.tsx}"
 
+#: The Python gates run through server_python.sh rather than a bare `python3`.
+#: Both checkers require >=3.11, but `python3` resolves against the *target*
+#: workspace's PATH, which this script does not control — pyenv handed blobert
+#: 3.10, where both gates exited 69 "unavailable" and blocked the commit without
+#: examining a single file. That failure mode is worse than a missing gate: it
+#: reads as a hard block with nothing to fix, and the checkers' own message says
+#: to run them through this wrapper. server_python.sh resolves loregarden's
+#: interpreter, so the gates behave identically in every workspace regardless of
+#: what that workspace's `python3` points at, and it deliberately does not change
+#: cwd, so the repo-relative {staged_files} below still resolve.
+PY_RUNNER = "server_python.sh"
+
 
 def render_block(loregarden_root: Path, indent: str) -> list[str]:
     scripts = loregarden_root / ".lefthook" / "scripts"
@@ -50,12 +62,12 @@ def render_block(loregarden_root: Path, indent: str) -> list[str]:
         "  name: Python organization guardrails (loregarden)",
         "  priority: 1",
         f'  glob: "{PY_GLOB}"',
-        f"  run: python3 {scripts / 'py_organization_check.py'} {{staged_files}}",
+        f"  run: bash {scripts / PY_RUNNER} {scripts / 'py_organization_check.py'} {{staged_files}}",
         f"{silent_name}:",
         "  name: Python silently-caught exceptions (loregarden)",
         "  priority: 1",
         f'  glob: "{PY_GLOB}"',
-        f"  run: python3 {scripts / 'py_silent_except_check.py'} {{staged_files}}",
+        f"  run: bash {scripts / PY_RUNNER} {scripts / 'py_silent_except_check.py'} {{staged_files}}",
         f"{ts_name}:",
         "  name: TypeScript organization guardrails (loregarden)",
         "  priority: 1",
