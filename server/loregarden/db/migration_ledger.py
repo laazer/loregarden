@@ -15,10 +15,14 @@ under its new id against any database that applied the old one.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 
 def _suffix(migration_id: str) -> str:
@@ -45,7 +49,7 @@ class LedgerOrphan:
         return bool(self.renumbered_to)
 
 
-def ledger_orphans(session: Session, registered: list[str]) -> list[LedgerOrphan]:
+def classify_orphans(applied: list[str], registered: list[str]) -> list[LedgerOrphan]:
     """Applied ids absent from `registered`, classified by why.
 
     The two need different responses and must not be reported as one thing:
@@ -56,18 +60,10 @@ def ledger_orphans(session: Session, registered: list[str]) -> list[LedgerOrphan
     - DELETED: nothing registered shares its suffix. The migration was removed
       from the build, and whatever it did to this database is still there.
 
-    Returns [] when the table does not exist — a database that has never run a
-    migration has no ledger to be inconsistent with.
+    Pure, so the runner (which holds a Connection) and the doctor (which holds a
+    Session) classify the same way rather than each keeping its own copy of the
+    suffix rule.
     """
-    # `execute`, not `exec`: SQLModel's `exec` is typed for its own select
-    # constructs and has no overload for a TextClause.
-    rows = session.execute(
-        text("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
-    ).all()
-    if not rows:
-        return []
-
-    applied = [row[0] for row in session.execute(text("SELECT id FROM schema_migrations")).all()]
     known = set(registered)
     by_suffix = {_suffix(item): item for item in registered}
 
@@ -82,3 +78,58 @@ def ledger_orphans(session: Session, registered: list[str]) -> list[LedgerOrphan
             )
         )
     return orphans
+
+
+def ledger_orphans(session: Session, registered: list[str]) -> list[LedgerOrphan]:
+    """:func:`classify_orphans` over what this session's database has applied.
+
+    Returns [] when the table does not exist — a database that has never run a
+    migration has no ledger to be inconsistent with.
+    """
+    # `execute`, not `exec`: SQLModel's `exec` is typed for its own select
+    # constructs and has no overload for a TextClause.
+    rows = session.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
+    ).all()
+    if not rows:
+        return []
+
+    applied = [row[0] for row in session.execute(text("SELECT id FROM schema_migrations")).all()]
+    return classify_orphans(applied, registered)
+
+
+def prune_renumbered(conn: Connection, registered: list[str]) -> list[LedgerOrphan]:
+    """Delete the ledger rows of renumbered migrations whose new id has applied.
+
+    A renumbered migration's old row is not a record of anything the new row
+    does not already record: both name one body, and the new id is the one the
+    build registers. Left in place, the old row is what makes every
+    main-based build refuse to write — `unknown_migration_ids` is a plain set
+    difference and cannot tell a renumber from a deletion. Thirteen such rows
+    blocked every CLI write on 2026-09-13, eleven of them renumbers.
+
+    Prunes only when the new id is itself applied, so a database that somehow
+    carries the old id but not the new one keeps its evidence. DELETED orphans
+    are never touched here: nothing registered records what they did, so their
+    row is the only trace, and removing it is a decision a migration must make
+    by name.
+
+    Returns what was pruned, so the caller can say so.
+    """
+    applied = [row[0] for row in conn.execute(text("SELECT id FROM schema_migrations")).all()]
+    applied_set = set(applied)
+    pruned = [
+        orphan
+        for orphan in classify_orphans(applied, registered)
+        if orphan.was_renumbered and orphan.renumbered_to in applied_set
+    ]
+    for orphan in pruned:
+        conn.execute(
+            text("DELETE FROM schema_migrations WHERE id = :id"), {"id": orphan.applied_id}
+        )
+        logger.warning(
+            "Pruned stale migration ledger row %s: renumbered to %s, which has applied.",
+            orphan.applied_id,
+            orphan.renumbered_to,
+        )
+    return pruned
