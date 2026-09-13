@@ -66,7 +66,7 @@ def test_route_workflow_api_moves_cursor_upstream(client: TestClient, db_session
     # fix for a stale pin replaying itself forever. This fixture's own title,
     # "Route workflow API", carries two `backend` synonyms (`route`, `api`),
     # which is exactly `_OVERRIDE_DEFAULT_SCORE`. It resolved to the pin only
-    # while the stage had no backend lane for that text to match; 0128 added
+    # while the stage had no backend lane for that text to match; 0129 added
     # one. Pin-honouring on ambiguous text is covered by the test below.
     assert body["current_stage_agent"] == "implementation_backend"
     assert "Needs more tests" in body["blocking_issues"]

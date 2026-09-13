@@ -1436,7 +1436,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0125_extended_tdd_reject_route", m_extended_tdd_reject_route),
     ("0126_stage_park_approvals", m_stage_park_approvals),
     ("0127_agent_run_status_index", m_agent_run_status_index),
-    ("0128_blobert_backend_lane", m_blobert_backend_lane),
+    ("0129_blobert_backend_lane", m_blobert_backend_lane),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -76,7 +76,7 @@ def test_backend_ticket_on_a_godot_roster_is_unrouteable():
     assert "implement" in decision.detail
 
 
-#: `GODOT_ROSTER` plus the lane migration 0128 adds. Kept beside the roster it
+#: `GODOT_ROSTER` plus the lane migration 0129 adds. Kept beside the roster it
 #: fixes so the pair reads as before/after rather than two unrelated fixtures.
 ROSTER_WITH_BACKEND_LANE = [
     *GODOT_ROSTER[:-1],
@@ -90,7 +90,7 @@ ROSTER_WITH_BACKEND_LANE = [
 
 
 def test_backend_lane_routes_the_ticket_the_godot_roster_could_not():
-    """0128's lane closes the gap UNROUTEABLE could only name.
+    """0129's lane closes the gap UNROUTEABLE could only name.
 
     Naming the defect is not dispatching the work: a stage that reports
     `UNROUTEABLE` still has nobody to send the ticket to. This is the assertion
