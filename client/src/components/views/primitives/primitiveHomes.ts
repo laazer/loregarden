@@ -36,6 +36,8 @@ export interface PrimitiveHome {
 export const PRIMITIVE_HOME_IDS = [
   "terminal",
   "run_ledger",
+  "ticket_logs",
+  "approvals",
   "queue_lane",
   "chat_ticket",
   "chat_ticket_workflow",
@@ -59,6 +61,16 @@ export type HomedPrimitiveId = (typeof PRIMITIVE_HOME_IDS)[number];
 export const PRIMITIVE_HOMES: Record<HomedPrimitiveId, PrimitiveHome | null> = {
   terminal: { path: "/console", surface: "Console" },
   run_ledger: { path: "/", surface: "Ticket details" },
+  // Recorded, but no surface offers it yet: `AddToTabMenu` is one menu per
+  // primitive, and the ticket modal's `⋯` already holds `chat_ticket`. A second
+  // trigger beside it is the exact "one thing, two menus" the queue page hit.
+  // The pane picker reaches both today; the shortcut from the ticket needs the
+  // menu to take more than one primitive first.
+  ticket_logs: { path: "/", surface: "Ticket logs" },
+  // The drawer, not a page: the inbox opens over whatever is on screen, and "/"
+  // is where its button lives. A pane is the first place these are reachable
+  // without covering the thing they are blocking.
+  approvals: { path: "/", surface: "Inbox" },
   queue_lane: { path: "/queue", surface: "Parallel Execution" },
 
   chat_ticket: { path: "/", surface: "Ticket details" },

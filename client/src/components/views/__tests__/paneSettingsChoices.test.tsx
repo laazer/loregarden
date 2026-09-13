@@ -168,13 +168,20 @@ describe("a field that names something the app can list", () => {
     renderEditor("chat_status_column", {
       primitive_id: "chat_status_column",
       status: "in_progress",
+      workspace_slug: "",
       ticket_ids: "",
     });
 
     const select = await screen.findByRole("combobox", { name: "Status" });
     expect(within(select).getByRole("option", { name: "In Progress" })).toHaveValue("in_progress");
     expect(select).toHaveValue("in_progress");
-    expect(mockApi.workspaces).not.toHaveBeenCalled();
+    // The claim is about the *states*: they come from `TICKET_STATE_LABELS`,
+    // not from an endpoint, so no ticket read happens to populate them. It used
+    // to assert `workspaces` was never fetched either, which stopped being a
+    // statement about states the moment this board grew a Workspace field
+    // beside the status — an oracle wider than the thing it was checking.
+    expect(mockApi.tickets).not.toHaveBeenCalled();
+    expect(mockApi.ticketTree).not.toHaveBeenCalled();
   });
 
   it("suggests tickets rather than listing hundreds in a dropdown", async () => {
@@ -229,6 +236,79 @@ describe("a field that names something the app can list", () => {
   it("scopes the ticket suggestions to the workspace the view belongs to", async () => {
     renderEditor("chat_ticket", { primitive_id: "chat_ticket", ticket_id: "" }, "blobert");
     await waitFor(() => expect(mockApi.tickets).toHaveBeenCalledWith({ workspace: "blobert" }));
+  });
+});
+
+/**
+ * The bug this suite was extended for: a view could hold a pane about any
+ * workspace, and the operator could only ever be *offered* the sidebar's.
+ *
+ * The sidebar is the chrome's opinion about what the user is looking at. A pane
+ * is a separate claim about what it is showing, and a tab holding two panes
+ * about two workspaces was unreachable through the form — not because the wire
+ * refused it, but because every list was fetched for one slug.
+ */
+describe("a pane's own workspace scopes its pickers, not the sidebar's", () => {
+  it("draws the ticket list from the pane's stored workspace", async () => {
+    // The sidebar says loregarden; the pane says blobert. The pane wins, or the
+    // operator cannot reach a blobert ticket from a loregarden sidebar — which
+    // is the whole defect.
+    renderEditor(
+      "chat_ticket",
+      { primitive_id: "chat_ticket", workspace_slug: "blobert", ticket_id: "" },
+      "loregarden",
+    );
+    await waitFor(() => expect(mockApi.tickets).toHaveBeenCalledWith({ workspace: "blobert" }));
+    expect(mockApi.tickets).not.toHaveBeenCalledWith({ workspace: "loregarden" });
+  });
+
+  it("re-offers the list when the workspace is changed in the same open form", async () => {
+    // Read from the draft, not from the stored record. Reading the record would
+    // leave the ticket field offering the previous workspace's tickets for the
+    // rest of the edit — a form that is wrong precisely while it is being used.
+    const user = userEvent.setup();
+    renderEditor(
+      "chat_ticket",
+      { primitive_id: "chat_ticket", workspace_slug: "loregarden", ticket_id: "" },
+      "loregarden",
+    );
+
+    await waitFor(() => expect(mockApi.tickets).toHaveBeenCalledWith({ workspace: "loregarden" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Workspace" }),
+      "blobert",
+    );
+    await waitFor(() => expect(mockApi.tickets).toHaveBeenCalledWith({ workspace: "blobert" }));
+  });
+
+  it("falls back to the sidebar when the pane has named no workspace", async () => {
+    // Every view stored before the field existed has `""` here, and must keep
+    // offering exactly the list it offered before. An empty scope is "not
+    // decided", not "no workspace".
+    renderEditor(
+      "chat_ticket",
+      { primitive_id: "chat_ticket", workspace_slug: "", ticket_id: "" },
+      "blobert",
+    );
+    await waitFor(() => expect(mockApi.tickets).toHaveBeenCalledWith({ workspace: "blobert" }));
+  });
+
+  it("scopes a conversation list to the pane's workspace too", async () => {
+    // Not just tickets: `chat_session` already stored its own workspace — the
+    // component needs one — and was still offered the sidebar's threads, so the
+    // pane could be saved pointing at a workspace whose conversations it had
+    // never been shown.
+    mockApi.baxterChatSessions.mockResolvedValue([
+      { id: "s-1", title: "Blobert triage", updated_at: "2026-09-01T00:00:00Z" },
+    ] as never);
+    renderEditor(
+      "chat_session",
+      { primitive_id: "chat_session", workspace_slug: "blobert", session_id: "" },
+      "loregarden",
+    );
+
+    await waitFor(() => expect(mockApi.baxterChatSessions).toHaveBeenCalledWith("blobert"));
+    expect(mockApi.baxterChatSessions).not.toHaveBeenCalledWith("loregarden");
   });
 });
 

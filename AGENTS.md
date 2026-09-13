@@ -109,6 +109,8 @@ node .lefthook/scripts/ts_organization_check.cjs --repo <workspace-root> --scope
 python3 .lefthook/scripts/py_silent_except_check.py --repo <workspace-root> --scope worktree
 node .lefthook/scripts/ts_no_silent_failures_check.cjs --repo <workspace-root> --scope worktree
 scripts/install-workspace-hooks.sh [--check] <workspace-root>   # same checks, their pre-commit
+scripts/install-workspace-docs.sh [--check] [--slug <slug>] <workspace-root>  # control-plane section in their AGENTS.md
+task workspace:hooks|docs|check -- <workspace-root>             # the same two, plus a both-blocks report
 ./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check
 
 # DB

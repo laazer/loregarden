@@ -47,6 +47,10 @@ class TicketListPart(BaseModel):
     primitive: Literal["ticket_list"] = "ticket_list"
     ticket_ids: list[str] = Field(default_factory=list)
     parent_ticket_id: str | None = None
+    #: Narrow the whole-tree fallback to one workspace; ``None`` means every
+    #: workspace, which is what these cards have always shown. Ignored when a
+    #: parent or an explicit id list already names the rows.
+    workspace_slug: str | None = None
     title: str | None = None
 
 
@@ -54,6 +58,8 @@ class StatusColumnPart(BaseModel):
     primitive: Literal["status_column"] = "status_column"
     status: str
     ticket_ids: list[str] = Field(default_factory=list)
+    #: See :attr:`TicketListPart.workspace_slug`.
+    workspace_slug: str | None = None
     title: str | None = None
 
 
@@ -61,6 +67,8 @@ class KanbanPart(BaseModel):
     primitive: Literal["kanban"] = "kanban"
     ticket_ids: list[str] = Field(default_factory=list)
     statuses: list[str] = Field(default_factory=list)
+    #: See :attr:`TicketListPart.workspace_slug`.
+    workspace_slug: str | None = None
     title: str | None = None
 
 
@@ -69,6 +77,8 @@ class FilterableKanbanPart(BaseModel):
     ticket_ids: list[str] = Field(default_factory=list)
     statuses: list[str] = Field(default_factory=list)
     filters: list[str] = Field(default_factory=list)
+    #: See :attr:`TicketListPart.workspace_slug`.
+    workspace_slug: str | None = None
     title: str | None = None
 
 

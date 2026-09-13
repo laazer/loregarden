@@ -16,6 +16,7 @@ adapters act on every turn — file writes and ordinary git included.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -48,6 +49,7 @@ from loregarden.models.domain.chat_primitives import TodoListPart
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
+    AgentTurnResult,
     adapter_capabilities,
     capabilities_for_workspace,
     resolve_chat_intent,
@@ -72,8 +74,11 @@ from loregarden.services.triage_service import (
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
+from loregarden.services.worktree_lifecycle import release_chat_worktree
 from loregarden.skills.registry import get_skill, skill_prompt_block
 from sqlmodel import Session, col, or_, select
+
+logger = logging.getLogger(__name__)
 
 BAXTER_CHAT_CLI_PROFILE = replace(
     TRIAGE_CLI_PROFILE,
@@ -326,12 +331,23 @@ def create_chat_session(
     return row
 
 
-def fork_chat_session(session: Session, source: BaxterChatSession) -> BaxterChatSession:
+def fork_chat_session(
+    session: Session,
+    source: BaxterChatSession,
+    *,
+    through_message_id: str = "",
+) -> BaxterChatSession:
     """Branch a conversation: new session, same settled history, source untouched.
 
     Pending assistant rows are left behind on purpose — a fork is a place to
     continue from what has already been said, not from a turn still in flight.
     Runtime pins copy with the thread so the branch keeps the same model.
+
+    ``through_message_id`` cuts the copy off after that message, which is what
+    the per-message Fork action in the thread wants: branch from *here*, not
+    from the end. An id that is not in this conversation is an error rather
+    than a silent full copy — a fork that quietly carried the turns the
+    operator meant to drop is the failure this argument exists to prevent.
     """
     source_title = (source.title or "").strip() or UNTITLED_SESSION_TITLE
     fork_title = _clip(f"Fork of {source_title}", MAX_TITLE_CHARS)
@@ -340,10 +356,19 @@ def fork_chat_session(session: Session, source: BaxterChatSession) -> BaxterChat
         title=fork_title,
         runtime_json=source.runtime_json or "{}",
     )
+
+    history = list_chat_messages(session, source.id)
+    cut = (through_message_id or "").strip()
+    if cut:
+        index = next((i for i, m in enumerate(history) if m.id == cut), None)
+        if index is None:
+            raise ValueError(f"Message {cut} is not in this conversation")
+        history = history[: index + 1]
+
     session.add(row)
     session.flush()
 
-    for message in list_chat_messages(session, source.id):
+    for message in history:
         session.add(
             BaxterChatMessage(
                 session_id=row.id,
@@ -371,7 +396,27 @@ def get_chat_session(
     return row
 
 
+class ChatSessionHasUnpublishedWork(ValueError):
+    """Deleting this thread would strand the work sitting in its worktree."""
+
+
 def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> None:
+    """Delete a thread, once its worktree has been released.
+
+    A thread that has acted owns a checkout and a branch, and `worktrees`
+    references it, so this cannot simply drop the row. `release_chat_worktree`
+    keeps a tree holding uncommitted changes rather than deleting work nobody
+    has seen — and when it does, this refuses too, naming where the work is.
+    Silently detaching the row instead would leave a checkout on disk that
+    nothing owns and no sweeper reaps.
+    """
+    held = release_chat_worktree(session, chat_session)
+    if held is not None:
+        raise ChatSessionHasUnpublishedWork(
+            f"This chat still has unpublished work on `{held.branch}` at "
+            f"{held.worktree_path}. Commit or discard it, then delete the chat."
+        )
+
     for message in session.exec(
         select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
     ).all():
@@ -670,6 +715,26 @@ def build_baxter_chat_prompt(
     return "\n".join(sections)
 
 
+@dataclass(frozen=True)
+class ChatTurnOutcome:
+    """A finished turn, and what still has to happen to the work it did.
+
+    The reply used to carry the publish note inline, which meant the turn could
+    not settle until the commit and the push had finished. A push runs lefthook's
+    pre-push suite — measured at 37 minutes for a change reaching a
+    widely-imported backend module — and the assistant row stays `pending` that
+    whole time, which disables the composer. So the run id travels out instead
+    and publishing follows the reply; see `baxter_chat_run_service`.
+    """
+
+    reply: str
+    #: The run whose worktree holds the work, or "" when the turn opened none.
+    run_id: str
+    #: Whether this turn could write at all. An advisory turn has nothing to
+    #: publish, and must not be handed a publish job that would find an empty tree.
+    acting: bool
+
+
 class BaxterChatConflictError(ValueError):
     """Raised when a Home chat turn can't start because one is already running."""
 
@@ -679,10 +744,11 @@ def invoke_baxter_chat_model(
     workspace: Workspace,
     *,
     content: str,
+    chat_session: BaxterChatSession | None = None,
     history: list[BaxterChatMessage] | None = None,
     turn_id: str = "",
     skill_name: str = "",
-) -> str:
+) -> ChatTurnOutcome:
     """Run one Home chat turn against the workspace's current CLI/model runtime.
 
     ``turn_id`` is the pending assistant row this turn will settle onto. Passing
@@ -692,6 +758,11 @@ def invoke_baxter_chat_model(
     ``skill_name`` is the skill the operator picked from the composer's `/` menu
     for this turn; its body is rendered into the prompt the same way a stage
     run's skill is.
+
+    ``chat_session`` is the thread this turn belongs to. Passing it is what gives
+    an acting turn its own worktree and a branch to publish from; without it the
+    turn falls back to writing in the shared workspace checkout, which is what
+    every Home chat turn used to do.
     """
     message = (content or "").strip()
     if not message:
@@ -699,7 +770,7 @@ def invoke_baxter_chat_model(
 
     stub = stub_response(BAXTER_CHAT_CLI_PROFILE)
     if stub is not None:
-        return stub
+        return ChatTurnOutcome(reply=stub, run_id="", acting=False)
 
     agent = get_agent(TRIAGE_AGENT_ID) or {}
     selected = resolve_effective_adapter(
@@ -742,21 +813,26 @@ def invoke_baxter_chat_model(
         manage_run=interactive,
         workspace_stage_key=HOME_CHAT_STAGE_KEY,
         claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
+        chat_session_id=chat_session.id if chat_session else "",
         surface=ChatSurface.HOME,
         conflict_error=lambda msg: BaxterChatConflictError(
             f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
         ),
         track_workflow_stage=False,
     )
+
+    def outcome(turn: AgentTurnResult) -> ChatTurnOutcome:
+        return ChatTurnOutcome(reply=turn.reply, run_id=turn.run_id, acting=interactive)
+
     result = run_agent_turn(request)
     if not interactive or not is_agent_plan_execute_message(message):
-        return result.reply
+        return outcome(result)
 
     plan_id = _agent_plan_id(message)
     for _attempt in range(1, MAX_AGENT_PLAN_ATTEMPTS):
         completion = _agent_plan_reply_complete(result.reply, plan_id)
         if completion is True or completion is None:
-            return result.reply
+            return outcome(result)
         request = replace(
             request,
             prompt=_agent_plan_continuation_prompt(prompt, result.reply, plan_id),
@@ -764,7 +840,7 @@ def invoke_baxter_chat_model(
         result = run_agent_turn(request)
 
     if _agent_plan_reply_complete(result.reply, plan_id) is not False:
-        return result.reply
+        return outcome(result)
     raise RuntimeError(
         f"Agent execution plan did not reach completion after {MAX_AGENT_PLAN_ATTEMPTS} attempts"
     )

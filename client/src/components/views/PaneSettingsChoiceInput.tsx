@@ -18,8 +18,23 @@
  *   the list is scoped to has not resolved. The text box again, unchanged from
  *   what the field was before this file existed. A settings form that breaks
  *   because a list endpoint is down is worse than one with no list.
+ *
+ *   "Returned nothing" now includes an answer it could not reach before: a
+ *   workspace that genuinely has no tickets. Still the text box, still correct
+ *   — there is nothing to offer — but arrived at by picking a workspace rather
+ *   than only by a broken fetch.
  * - **available** — a `select` for a short closed set, or a `datalist`-backed
  *   text input for tickets, which run to hundreds.
+ *
+ * ## The workspace comes from the pane, not from the chrome
+ *
+ * This used to read `useSidebarWorkspaceSlug()` itself, which quietly made
+ * every view a single-workspace surface: a pane could *store* any slug, but the
+ * only tickets, conversations and branches on offer were the sidebar's. The
+ * slug now arrives as a prop, resolved by `PaneSettingsEditor` from the field's
+ * own `workspaceFrom` key in the open draft — so a Workspace select and a
+ * Ticket field in the same form stay in step, and two panes in one tab can be
+ * about two different workspaces.
  *
  * ## A stored value the list does not contain is kept
  *
@@ -34,13 +49,19 @@
 import { useId } from "react";
 
 import { useChoiceOptions } from "../../hooks/usePaneSettingsChoices";
-import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import type { SettingsField } from "./primitives/types";
 
 type ChoiceField = Extract<SettingsField, { kind: "choice" }>;
 
 export interface PaneSettingsChoiceInputProps {
   field: ChoiceField;
+  /**
+   * The workspace this list is drawn from, already resolved by the editor.
+   *
+   * `""` means "no workspace decided", which the workspace-scoped sources read
+   * as unavailable rather than as a fetch worth making.
+   */
+  workspaceSlug: string;
   inputId: string;
   value: string;
   describedBy: string | undefined;
@@ -52,6 +73,7 @@ export interface PaneSettingsChoiceInputProps {
 
 export function PaneSettingsChoiceInput({
   field,
+  workspaceSlug,
   inputId,
   value,
   describedBy,
@@ -59,7 +81,6 @@ export function PaneSettingsChoiceInput({
   onChange,
   renderHelp,
 }: PaneSettingsChoiceInputProps) {
-  const workspaceSlug = useSidebarWorkspaceSlug();
   const choices = useChoiceOptions(field.source, workspaceSlug);
   const listId = useId();
 

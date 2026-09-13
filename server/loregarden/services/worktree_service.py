@@ -8,12 +8,17 @@ from uuid import uuid4
 
 from loregarden.models.domain import (
     AgentRun,
+    BaxterChatSession,
     Ticket,
     Workspace,
     Worktree,
     WorktreeState,
 )
-from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
+from loregarden.services.git_branch import (
+    chat_session_branch,
+    resolve_ticket_branch,
+    validate_branch_name,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -219,6 +224,53 @@ class WorktreeService:
             name=f"ticket-{slug}-{str(uuid4())[:8]}",
         )
 
+    def get_or_create_for_chat_session(
+        self,
+        chat_session: BaxterChatSession,
+        agent_run_id: str,
+        parent_branch: str = "main",
+    ) -> Worktree | None:
+        """The one worktree a chat thread's acting turns share.
+
+        The conversational counterpart of :meth:`get_or_create_for_ticket`, and
+        for the same reason: a follow-up message that says "no, rename it back"
+        has to land in the tree the previous turn wrote to, so the thread is the
+        unit of reuse rather than the turn.
+        """
+        existing = self.active_worktree_for_chat_session(chat_session.id)
+        if existing:
+            if Path(existing.worktree_path).is_dir():
+                return existing
+            logger.warning(
+                "Worktree %s for chat session %s is missing at %s; cutting a replacement",
+                existing.id,
+                chat_session.id,
+                existing.worktree_path,
+            )
+            self._retire_missing(existing)
+
+        branch = chat_session_branch(chat_session)
+        validate_branch_name(branch)
+        slug = branch.replace("/", "-")[:32]
+        return self._add_worktree(
+            workspace_id=chat_session.workspace_id,
+            agent_run_id=agent_run_id,
+            chat_session_id=chat_session.id,
+            branch=branch,
+            parent_branch=parent_branch,
+            name=f"chat-{slug}-{str(uuid4())[:8]}",
+        )
+
+    def active_worktree_for_chat_session(self, chat_session_id: str) -> Worktree | None:
+        """The tree this conversation's acting turns are sharing, if it has one."""
+        stmt = (
+            select(Worktree)
+            .where(Worktree.chat_session_id == chat_session_id)
+            .where(Worktree.state == WorktreeState.ACTIVE)
+            .order_by(Worktree.created_at.desc())
+        )
+        return self.session.exec(stmt).first()
+
     def active_worktree_for_ticket(self, ticket_id: str) -> Worktree | None:
         """The tree this ticket's stages are sharing, if it has one."""
         stmt = (
@@ -261,10 +313,11 @@ class WorktreeService:
         self,
         workspace_id: str,
         agent_run_id: str,
-        ticket_id: str,
         branch: str,
         parent_branch: str,
         name: str,
+        ticket_id: str | None = None,
+        chat_session_id: str | None = None,
     ) -> Worktree | None:
         """Check `branch` out in a new directory without ever resetting it."""
         try:
@@ -293,6 +346,7 @@ class WorktreeService:
                 workspace_id=workspace_id,
                 agent_run_id=agent_run_id,
                 ticket_id=ticket_id,
+                chat_session_id=chat_session_id,
                 parent_branch=parent_branch,
                 branch=branch,
                 worktree_path=str(worktree_path),

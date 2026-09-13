@@ -36,6 +36,7 @@ import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat"
 import { usePaneSize } from "../paneSize";
 import { definePrimitive } from "./definePrimitive";
 import { Unconfigured } from "./Unconfigured";
+import { WORKSPACE_SCOPE_KEY } from "./workspaceScope";
 import "./chatSession.css";
 
 type ChatSessionSettings = {
@@ -122,6 +123,10 @@ export const chatSessionPrimitive = definePrimitive<ChatSessionSettings>({
       key: "session_id",
       kind: "choice",
       source: "chat_session",
+      // The thread list belongs to the workspace above it, not to the sidebar.
+      // Without this the pane could store any workspace and still only ever be
+      // offered the chrome's conversations — the exact shape of the bug.
+      workspaceFrom: WORKSPACE_SCOPE_KEY,
       label: "Conversation",
       default: "",
       help: "Which thread this pane shows. Start one from Home or the chat page.",

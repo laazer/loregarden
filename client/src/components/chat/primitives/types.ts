@@ -60,6 +60,14 @@ export interface TicketListPart {
   primitive: "ticket_list";
   ticket_ids?: string[];
   parent_ticket_id?: string | null;
+  /**
+   * Narrow the whole-tree fallback to one workspace.
+   *
+   * Only the fallback: a parent names its own children, so a parent and a
+   * workspace together would be a filter that can only remove rows the parent
+   * already chose. See `StatusColumnPart.workspace_slug`.
+   */
+  workspace_slug?: string | null;
   title?: string | null;
 }
 
@@ -67,6 +75,15 @@ export interface StatusColumnPart {
   primitive: "status_column";
   status: string;
   ticket_ids?: string[];
+  /**
+   * Draw only this workspace's tickets. Absent or empty means every workspace,
+   * which is what a board with no ids has always shown.
+   *
+   * Ignored when `ticket_ids` names tickets: an explicit list is explicit, and
+   * silently dropping a named ticket because it lives elsewhere would be a
+   * board that disagrees with the card that asked for it.
+   */
+  workspace_slug?: string | null;
   title?: string | null;
 }
 
@@ -74,6 +91,8 @@ export interface KanbanPart {
   primitive: "kanban";
   ticket_ids?: string[];
   statuses?: string[];
+  /** See `StatusColumnPart.workspace_slug`. */
+  workspace_slug?: string | null;
   title?: string | null;
 }
 
@@ -82,6 +101,8 @@ export interface FilterableKanbanPart {
   ticket_ids?: string[];
   statuses?: string[];
   filters?: string[];
+  /** See `StatusColumnPart.workspace_slug`. */
+  workspace_slug?: string | null;
   title?: string | null;
 }
 

@@ -15,12 +15,14 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { PaneSizeContext, paneTierFor, type PaneSize } from "../paneSize";
+import { approvalsPrimitive } from "./approvalsPrimitive";
 import { CHAT_PANE_PRIMITIVES } from "./chatPanePrimitives";
 import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
 import { chatSessionPrimitive } from "./chatSessionPrimitive";
 import { queueLanePrimitive } from "./queueLanePrimitive";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
+import { ticketLogsPrimitive } from "./ticketLogsPrimitive";
 import type {
   ContainerKind,
   RegisteredPrimitive,
@@ -32,6 +34,8 @@ import { webEmbedPrimitive } from "./webEmbedPrimitive";
 export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
   terminalPrimitive,
   runLedgerPrimitive,
+  ticketLogsPrimitive,
+  approvalsPrimitive,
   queueLanePrimitive,
   chatSessionPrimitive,
   ...CHAT_PANE_PRIMITIVES,

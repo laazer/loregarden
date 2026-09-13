@@ -15,6 +15,7 @@ from loregarden.services.baxter_chat_run_service import (
     start_baxter_chat_turn,
 )
 from loregarden.services.baxter_chat_service import (
+    ChatSessionHasUnpublishedWork,
     chat_session_snapshot,
     chat_session_summary,
     create_chat_session,
@@ -36,6 +37,12 @@ class BaxterChatSessionCreate(BaseModel):
 
 class BaxterChatSessionUpdate(BaseModel):
     title: str = Field(min_length=1)
+
+
+class BaxterChatForkRequest(BaseModel):
+    #: Cut the copied history off after this message. "" forks the whole thread,
+    #: which is what the `/fork` command and the history rail still ask for.
+    through_message_id: str = ""
 
 
 class BaxterChatMessageCreate(BaseModel):
@@ -111,18 +118,38 @@ def remove_baxter_chat_session(
 ) -> dict:
     workspace = _workspace(session, slug)
     chat_session = _chat_session(session, workspace.id, session_id)
-    delete_chat_session(session, chat_session)
+    try:
+        delete_chat_session(session, chat_session)
+    except ChatSessionHasUnpublishedWork as exc:
+        # 409, not 500: the thread is deletable once the operator has dealt with
+        # the work, and the message says where it is.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"deleted": session_id}
 
 
 @router.post("/{slug}/baxter-chat/sessions/{session_id}/fork", status_code=201)
 def fork_baxter_chat_session(
-    slug: str, session_id: str, session: Session = Depends(get_session)
+    slug: str,
+    session_id: str,
+    body: BaxterChatForkRequest | None = None,
+    session: Session = Depends(get_session),
 ) -> dict:
-    """Copy settled messages into a new session; leave the source alone."""
+    """Copy settled messages into a new session; leave the source alone.
+
+    ``through_message_id`` branches from a point in the thread rather than its
+    end — the per-message Fork action. An id from another conversation is a
+    400, not a full copy.
+    """
     workspace = _workspace(session, slug)
     chat_session = _chat_session(session, workspace.id, session_id)
-    forked = fork_chat_session(session, chat_session)
+    try:
+        forked = fork_chat_session(
+            session,
+            chat_session,
+            through_message_id=(body.through_message_id if body else ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return chat_session_snapshot(session, forked)
 
 

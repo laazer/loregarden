@@ -461,3 +461,85 @@
 .lg-chat-turn--ask {
   box-shadow: inset 2px 0 0 var(--ac);
 }
+
+/* A `/oneshot` turn: the chip saying what was asked for, above the task itself.
+   The turn is a flex row aligned right, so the two need their own column. */
+.lg-chat-user-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(520px, 92%);
+}
+
+.lg-chat-user-stack > .lg-chat-user-bubble,
+.lg-chat-user-stack > .lg-chat-action-chip {
+  max-width: 100%;
+}
+
+/* Per-reply actions: copy, fork, and the overflow. Present in the DOM at all
+   times — a control that only exists on hover is a control no keyboard can
+   reach — and faded until the turn is hovered or something in the row has
+   focus. */
+.lg-chat-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.lg-chat-turn:hover .lg-chat-message-actions,
+.lg-chat-message-actions:focus-within {
+  opacity: 1;
+}
+
+/* Coarse pointers have no hover, so there is nothing to reveal the row with. */
+@media (hover: none) {
+  .lg-chat-message-actions {
+    opacity: 1;
+  }
+}
+
+.lg-chat-message-action {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--txm);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.lg-chat-message-action:hover:not(:disabled),
+.lg-chat-message-action:focus-visible {
+  border-color: var(--bd2);
+  background: var(--bg4);
+  color: var(--tx);
+}
+
+.lg-chat-message-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The shared overflow trigger is a full secondary button; in a row of quiet
+   text actions it reads as the loudest thing on the turn. */
+.lg-chat-message-actions .overflow-menu-trigger {
+  padding: 3px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--txm);
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 0;
+}
+
+.lg-chat-message-actions .overflow-menu-trigger:hover:not(:disabled),
+.lg-chat-message-actions .overflow-menu-trigger:focus-visible {
+  border-color: var(--bd2);
+  background: var(--bg4);
+  color: var(--tx);
+}

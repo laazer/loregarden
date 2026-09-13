@@ -96,6 +96,12 @@ export const BUILTIN_COMMANDS: readonly ComposerCommand[] = [
     kind: "builtin",
   },
   {
+    name: "oneshot",
+    aliases: ["plan"],
+    summary: "Turn this into a runnable plan card instead of an answer",
+    kind: "builtin",
+  },
+  {
     name: "create",
     aliases: [],
     summary: "Create a ticket from this title",

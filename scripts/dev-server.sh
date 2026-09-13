@@ -71,5 +71,9 @@ uv sync
 RELOAD_TRIGGER="$ROOT/server/.self-improve-restart"
 touch "$RELOAD_TRIGGER"
 
-exec uv run uvicorn loregarden.main:app --reload --host 127.0.0.1 --port 8000 \
+# Loopback unless asked otherwise. LOREGARDEN_DEV_HOST=0.0.0.0 serves the whole
+# local network — do that only on a network you trust, because the API writes
+# files and spawns agent processes, and LOREGARDEN_API_TOKEN is off by default.
+exec uv run uvicorn loregarden.main:app --reload \
+  --host "${LOREGARDEN_DEV_HOST:-127.0.0.1}" --port "${LOREGARDEN_DEV_PORT:-8000}" \
   --reload-exclude '*.py' --reload-include '.self-improve-restart'

@@ -76,6 +76,15 @@ class GitAutomationConfig(BaseModel):
     max_conflict_resolve_attempts: int = 2
     #: Branch PRs target, and the branch a worktree is cut from.
     base_branch: str = "main"
+    #: Delete a chat thread's branch — its worktree, its local ref, and the
+    #: remote ref it was pushed to — once its content is in `base_branch`.
+    #:
+    #: Separate from the publish chain above rather than another link in it,
+    #: because it is not a further step in landing work: it is the reverse, and
+    #: it runs long afterwards. Off by default, and deliberately not implied by
+    #: `push`: a workspace can want its threads published without wanting this
+    #: control plane deleting refs from its remote unattended.
+    prune_landed_chat_branches: bool = False
 
 
 class BoundaryConfig(BaseModel):

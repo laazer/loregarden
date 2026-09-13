@@ -213,6 +213,19 @@ def _branch_squash_merged(repo_root: Path, base: str, branch: str) -> bool:
     return diff_proc.returncode == 0
 
 
+def branch_work_has_landed(repo_root: Path, base: str, branch: str) -> bool:
+    """Public name for :func:`_branch_squash_merged`, for callers that delete.
+
+    The same predicate the cleanup dialog pre-selects on, and the only bar at
+    which removing a ref destroys nothing: the branch's content is already in
+    `base`, so what the ref was keeping reachable is reachable without it.
+    Exported because `chat_branch_sweep` deletes on it unattended, and a sweep
+    reaching into another module's underscore is how a safety bar gets changed
+    by someone who never saw the caller.
+    """
+    return _branch_squash_merged(repo_root, base, branch)
+
+
 def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:
     proc = _git(repo_root, "log", "-1", "--format=%cI|%s", branch)
     if proc.returncode != 0 or not (proc.stdout or "").strip():

@@ -271,6 +271,33 @@ def test_glob_matches_root_level_and_nested_files():
         assert "**/" in glob, f"{glob} would skip nested files"
 
 
+def test_python_gates_do_not_run_under_a_bare_python3():
+    """A bare `python3` resolves against the target workspace's PATH, not ours.
+
+    Both checkers require >=3.11. In blobert, pyenv resolved 3.10 and each gate
+    exited 69 "unavailable" -- blocking the commit without examining a single
+    file, which reads as a hard block with nothing to fix rather than as a gate
+    that could not run. server_python.sh resolves this repo's interpreter, so the
+    gates behave the same wherever they are installed.
+    """
+    block = [line.strip() for line in installer.render_block(_ROOT, "")]
+    python_runs = [line for line in block if line.startswith("run:") and "_check.py" in line]
+    assert len(python_runs) == 2, f"expected both Python gates, got {python_runs}"
+
+    for line in python_runs:
+        assert not line.startswith("run: python3 "), (
+            f"{line!r} uses the workspace's python3; route it through {installer.PY_RUNNER}"
+        )
+        assert installer.PY_RUNNER in line, f"{line!r} does not go through {installer.PY_RUNNER}"
+
+
+def test_python_gate_runner_exists_and_is_executable():
+    """The rendered command is only as good as the wrapper it names."""
+    runner = _ROOT / ".lefthook" / "scripts" / installer.PY_RUNNER
+    assert runner.is_file(), f"{runner} is referenced by every installed workspace"
+    assert os.access(runner, os.X_OK) or runner.suffix == ".sh"
+
+
 def test_installer_nests_entries_under_precommit_commands(tmp_path: Path):
     yaml = pytest.importorskip("yaml")
     config = tmp_path / "lefthook.yml"

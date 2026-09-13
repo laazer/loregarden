@@ -23,8 +23,19 @@ from typing import Literal
 from loregarden.agents.cli_adapters import build_interactive_invocation, permission_bypass_enabled
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.tool_grants import agent_tool_grants
-from loregarden.models.domain import AgentRun, ChatSurface, RunStatus, Ticket, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    BaxterChatSession,
+    ChatSurface,
+    RunStatus,
+    Ticket,
+    Workspace,
+)
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
+from loregarden.services.chat_worktree import (
+    resolve_chat_execution_root,
+    resolve_chat_thread_root,
+)
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     resolve_agent_timeout,
@@ -40,6 +51,7 @@ from loregarden.services.run_concurrency import (
     find_active_workspace_chat_run,
     new_run_code,
 )
+from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -210,7 +222,13 @@ class AgentTurnRequest:
     run_id: str = ""
     manage_run: bool = False
     ticket: Ticket | None = None
+    chat_session_id: str = ""
+    """The Home chat thread this turn belongs to, when it has one. Its acting
+    turns share one worktree the way a ticket's stages do; see
+    `services.chat_worktree`."""
     workspace_root: Path | None = None
+    """An explicit checkout, overriding the owner-derived one. Branch triage
+    resolves its own and must keep it."""
     workspace_stage_key: str = ""
     claude_model_env: str = ""
     conflict_error: Callable[[str], Exception] | None = None
@@ -278,6 +296,37 @@ def _start_run(request: AgentTurnRequest) -> AgentRun:
     return run
 
 
+def _resolve_turn_root(request: AgentTurnRequest, run: AgentRun | None) -> Path:
+    """The checkout this turn executes in.
+
+    An explicit ``workspace_root`` wins: branch triage resolves its own and must
+    keep it. Otherwise a turn that belongs to a ticket or to a chat thread runs
+    in that owner's worktree — reused whenever one already exists, and cut on an
+    acting turn, which is the only kind with a run to attribute the tree to.
+    Everything else answers from the shared workspace checkout, which is what
+    every turn used to do unconditionally.
+    """
+    if request.workspace_root:
+        return request.workspace_root
+
+    if request.ticket is not None:
+        if run is None:
+            return resolve_ticket_root(request.session, request.ticket, request.workspace)
+        return resolve_execution_root(request.session, run, request.ticket, request.workspace)
+
+    chat_session = (
+        request.session.get(BaxterChatSession, request.chat_session_id)
+        if request.chat_session_id
+        else None
+    )
+    if chat_session is not None:
+        if run is None:
+            return resolve_chat_thread_root(request.session, chat_session, request.workspace)
+        return resolve_chat_execution_root(request.session, run, chat_session, request.workspace)
+
+    return resolve_workspace_root(request.workspace)
+
+
 def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str) -> None:
     run = session.get(AgentRun, run_id)
     if not run:
@@ -289,11 +338,38 @@ def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str
     session.commit()
 
 
-def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
-    root = request.workspace_root or resolve_workspace_root(request.workspace)
-    if not root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {root}")
+def _settle(request: AgentTurnRequest, run: AgentRun, *, status: RunStatus, stderr: str) -> None:
+    """Close out the run, when this call is the one responsible for it.
 
+    Five copies of the `manage_run` guard lived inline. Collapsing them is not
+    only tidiness: each copy was a branch, and the gate counts them — adding the
+    sixth for the checkout-resolution failure is what put this function over the
+    complexity cap.
+    """
+    if request.manage_run:
+        _finish_run(request.session, run.id, status=status, stderr=stderr)
+
+
+def _resolve_checkout(request: AgentTurnRequest, run: AgentRun) -> Path:
+    """The turn's checkout, settling the run rather than leaving it RUNNING.
+
+    Resolution happens after `_start_run` because cutting this turn's worktree
+    needs a run to attribute it to — so a raise here lands between "the run
+    exists" and the block that would settle it. An un-settled run stays live in
+    the UI forever and blocks the thread's next turn on the already-running
+    check.
+    """
+    try:
+        root = _resolve_turn_root(request, run)
+        if not root.is_dir():
+            raise ValueError(f"Workspace repo path does not exist: {root}")
+    except Exception as exc:
+        _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
+        raise
+    return root
+
+
+def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
     model_env = request.claude_model_env.strip()
     claude_model = (
         (os.environ.get(model_env, "").strip() if model_env else "")
@@ -302,6 +378,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
     )
     timeout = resolve_agent_timeout(request.agent, request.profile.timeout_env)
     run = _start_run(request)
+    root = _resolve_checkout(request, run)
     thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
     try:
         with TemporaryDirectory(prefix=request.profile.tmp_prefix) as tmp:
@@ -340,8 +417,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 request.session, track_workflow_stage=request.track_workflow_stage
             ).run(**bridge_kwargs)
     except Exception as exc:
-        if request.manage_run:
-            _finish_run(request.session, run.id, status=RunStatus.FAILED, stderr=str(exc))
+        _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise
     finally:
         if thinking:
@@ -349,20 +425,12 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
 
     reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
     if result.status != RunStatus.SUCCEEDED:
-        if request.manage_run:
-            _finish_run(request.session, run.id, status=result.status, stderr=result.stderr)
+        _settle(request, run, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
     if not reply:
-        if request.manage_run:
-            _finish_run(
-                request.session,
-                run.id,
-                status=RunStatus.FAILED,
-                stderr=result.stderr or "empty response",
-            )
+        _settle(request, run, status=RunStatus.FAILED, stderr=result.stderr or "empty response")
         raise RuntimeError("Agent returned an empty response")
-    if request.manage_run:
-        _finish_run(request.session, run.id, status=RunStatus.SUCCEEDED, stderr="")
+    _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
     return reply, run.id
 
 
@@ -373,6 +441,16 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
         run = _start_run(request)
         run_id = run.id
 
+    # Separate from `run`, which is only the run this call is responsible for
+    # finishing. A surface that opens its own run (ticket triage) passes one in,
+    # and that run is still what a worktree has to be attributed to — reading it
+    # here is what lets an acting turn cut a tree instead of falling back to
+    # reuse-only and writing into the shared checkout.
+    owner_run = run
+    if owner_run is None and run_id and not read_only:
+        owner_run = request.session.get(AgentRun, run_id)
+
+    root = _resolve_turn_root(request, owner_run)
     thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
     try:
         reply = run_cli_agent_turn(
@@ -385,17 +463,17 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             granted_tools=(None if read_only else list(request.agent.get("mcp_tools") or [])),
             read_only=read_only,
             thinking_sink=thinking,
-            workspace_root=request.workspace_root,
+            workspace_root=root,
             surface=request.surface,
         )
     except Exception as exc:
-        if run is not None and request.manage_run:
-            _finish_run(request.session, run.id, status=RunStatus.FAILED, stderr=str(exc))
+        if run is not None:
+            _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise
     finally:
         if thinking:
             thinking.close()
 
-    if run is not None and request.manage_run:
-        _finish_run(request.session, run.id, status=RunStatus.SUCCEEDED, stderr="")
+    if run is not None:
+        _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
     return reply, run_id or ""

@@ -24,6 +24,12 @@ export interface BaxterChatSessionBinding extends ChatSession {
    * it, and optionally send `body` as the first new turn.
    */
   forkSession: (body?: string) => Promise<unknown>;
+  /**
+   * Branch from one turn: copy history up to and including `messageId` and
+   * switch to the branch. Everything after that turn is left behind, which is
+   * the point — this is "try again from here".
+   */
+  forkFromMessage: (messageId: string) => Promise<unknown>;
   renameSession: (id: string, title: string) => Promise<unknown>;
   deleteSession: (id: string) => Promise<unknown>;
   /** Stop the in-flight turn and unlock the composer. */
@@ -32,6 +38,12 @@ export interface BaxterChatSessionBinding extends ChatSession {
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
+}
+
+/** What one fork asks for: where to cut, and an optional first turn on the branch. */
+interface ForkRequest {
+  body?: string;
+  throughMessageId?: string;
 }
 
 export function baxterChatSessionsKey(slug: string) {
@@ -160,9 +172,13 @@ export function useBaxterChatSessionAt(
 
   const forkSession = useMutation({
     meta: { errorTitle: "Fork chat" },
-    mutationFn: async (body: string = "") => {
+    mutationFn: async ({ body = "", throughMessageId = "" }: ForkRequest = {}) => {
       if (!sessionId) throw new Error("No chat session to fork");
-      const forked = await baxterChatApi.forkSession(workspaceSlug, sessionId);
+      const forked = await baxterChatApi.forkSession(
+        workspaceSlug,
+        sessionId,
+        throughMessageId,
+      );
       setSessionId(forked.id);
       qc.setQueryData(baxterChatSessionKey(workspaceSlug, forked.id), forked);
       invalidateArchive();
@@ -266,7 +282,9 @@ export function useBaxterChatSessionAt(
     send: (content: string, options) =>
       sendMessage.mutateAsync({ content, skill: options?.skill }),
     sendInNewChat: (content: string) => sendInNewChat.mutateAsync(content),
-    forkSession: (body = "") => forkSession.mutateAsync(body),
+    forkSession: (body = "") => forkSession.mutateAsync({ body }),
+    forkFromMessage: (messageId: string) =>
+      forkSession.mutateAsync({ throughMessageId: messageId }),
     stop: () => stopTurn.mutateAsync(),
     isStopping: stopTurn.isPending,
     snapshot: snapshot.data,
