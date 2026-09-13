@@ -7,7 +7,7 @@ thinking/answer stream a turn publishes while it is still running.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import add_columns_if_missing, table_exists
+from loregarden.db.migration_utils import add_columns_if_missing, index_exists, table_exists
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -154,3 +154,34 @@ def m_baxter_chat_runtime(conn: Connection) -> None:
             ),
         },
     )
+
+
+def m_chat_session_worktrees(conn: Connection) -> None:
+    """Give a chat thread somewhere of its own to write.
+
+    Acting turns on the Home rail executed in the shared workspace checkout —
+    there was no column to hang a thread's worktree off, so `resolve_workspace_root`
+    was the only answer the runner could give. The result was uncommitted edits
+    on the operator's main branch, belonging to no run and no branch.
+
+    Mirrors `worktrees.ticket_id`: the lookup key for reuse, with `agent_run_id`
+    left as provenance for whichever run cut the tree.
+    """
+    add_columns_if_missing(
+        conn,
+        "worktrees",
+        {
+            "chat_session_id": (
+                "ALTER TABLE worktrees ADD COLUMN chat_session_id TEXT "
+                "REFERENCES baxter_chat_sessions(id) ON DELETE SET NULL"
+            ),
+        },
+    )
+    # Guarded on the table, not only on the index: `add_columns_if_missing`
+    # returns quietly when the table is absent, so on a database that predates
+    # `worktrees` the column is skipped and an unguarded CREATE INDEX is the
+    # only statement left to run — against a table that is not there.
+    if table_exists(conn, "worktrees") and not index_exists(conn, "ix_worktrees_chat_session_id"):
+        conn.execute(
+            text("CREATE INDEX ix_worktrees_chat_session_id ON worktrees (chat_session_id)")
+        )

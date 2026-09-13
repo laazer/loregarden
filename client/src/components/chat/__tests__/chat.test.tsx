@@ -10,6 +10,14 @@ describe("chatUtils", () => {
     expect(chatRoleLabel("assistant", "Scoper")).toBe("Scoper");
   });
 
+  it("does not attribute a system message to the assistant", () => {
+    // A publish note ("Committed to chat/... and pushed") is the control plane
+    // reporting on itself. Falling through to the assistant label would put
+    // words in the agent's mouth that it never said.
+    expect(chatRoleLabel("system", "Scoper")).toBe("Loregarden");
+    expect(chatRoleLabel("system")).toBe("Loregarden");
+  });
+
   it("prefers display_content for message body", () => {
     expect(
       chatMessageBody({

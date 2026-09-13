@@ -27,6 +27,7 @@ from loregarden.services.baxter_chat_service import (
     touch_chat_session,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_publish import publish_chat_turn
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
@@ -162,10 +163,11 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
             # Settled rows only, so the pending assistant row is not fed back as history.
             history = list_chat_messages(session, chat_session.id)
             try:
-                reply = invoke_baxter_chat_model(
+                outcome = invoke_baxter_chat_model(
                     session,
                     effective_workspace,
                     content=latest_user.content if latest_user else "",
+                    chat_session=chat_session,
                     history=history,
                     turn_id=assistant_id,
                     skill_name=latest_user.skill_name if latest_user else "",
@@ -182,10 +184,15 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
             _settle(
                 session,
                 assistant_id,
-                content=reply,
+                content=outcome.reply,
                 status="complete",
-                parts_json=parts_json_for_reply(session, reply, workspace_id=workspace.id),
+                parts_json=parts_json_for_reply(session, outcome.reply, workspace_id=workspace.id),
             )
+            # After the row settles, never before: publishing runs `git push`,
+            # which runs lefthook's pre-push suite, and a `pending` assistant row
+            # disables the composer for however long that takes.
+            if outcome.acting and outcome.run_id:
+                schedule_chat_publish(chat_session.id, outcome.run_id)
     except Exception:
         # Never leave the row pending: a stuck `pending` disables the composer, which is
         # exactly the deadlock this design exists to prevent.
@@ -256,3 +263,85 @@ def cancel_baxter_chat_turn(
 
     settled = _settle(session, pending.id, content=message, status="failed")
     return settled
+
+
+#: One lock per chat thread, so two acting turns cannot run `git add`/`commit`/
+#: `push` in the same worktree at once. The second waits rather than skipping:
+#: `_commit` stages the whole tree, so a later publish subsumes an earlier one
+#: and running twice costs a "nothing to commit". Skipping would not be safe —
+#: the publish that is already in flight may have started before the second
+#: turn's edits existed, and then nothing would ever pick them up.
+_PUBLISH_LOCKS: dict[str, threading.Lock] = {}
+_PUBLISH_LOCKS_GUARD = threading.Lock()
+
+
+def _publish_lock(chat_session_id: str) -> threading.Lock:
+    with _PUBLISH_LOCKS_GUARD:
+        return _PUBLISH_LOCKS.setdefault(chat_session_id, threading.Lock())
+
+
+def _record_publish_outcome(session: Session, chat_session_id: str, summary: str) -> None:
+    """Put the publish result in the thread, as a message of its own.
+
+    It cannot ride on the reply any more — the reply settled before publishing
+    started, which is the point. A `system` row rather than an `assistant` one
+    because Baxter did not say this; the control plane did.
+    """
+    if not summary:
+        return
+    session.add(
+        BaxterChatMessage(
+            session_id=chat_session_id,
+            role="system",
+            content=summary,
+            status="complete",
+        )
+    )
+    session.commit()
+
+
+def execute_chat_publish_background(chat_session_id: str, run_id: str) -> None:
+    """Commit and push a finished turn's work, then say so in the thread."""
+    try:
+        with _publish_lock(chat_session_id), Session(engine) as session:
+            chat_session = session.get(BaxterChatSession, chat_session_id)
+            workspace = session.get(Workspace, chat_session.workspace_id) if chat_session else None
+            if not chat_session or not workspace:
+                logger.error(
+                    "Cannot publish chat turn: session %s or its workspace is gone",
+                    chat_session_id,
+                )
+                return
+
+            try:
+                outcome = publish_chat_turn(session, run_id, chat_session, workspace)
+            except Exception as exc:  # noqa: BLE001 - the thread must still be told
+                logger.exception("Publishing chat thread %s failed", chat_session_id)
+                _record_publish_outcome(
+                    session,
+                    chat_session_id,
+                    f"**This turn's work could not be published:** {exc}\n"
+                    "Its edits are still in the thread's checkout.",
+                )
+                return
+            if outcome is not None:
+                _record_publish_outcome(session, chat_session_id, outcome.summary())
+    except Exception:
+        # The reply has already settled, so nothing here can wedge the composer.
+        # It can still lose the only record of where an operator's work went,
+        # which is why it is logged rather than passed over.
+        logger.exception("Background publish crashed for chat session %s", chat_session_id)
+
+
+def schedule_chat_publish(chat_session_id: str, run_id: str) -> None:
+    """Queue publishing without holding up the turn that produced the work."""
+    if os.environ.get("LOREGARDEN_SYNC_RUNS") == "1":
+        execute_chat_publish_background(chat_session_id, run_id)
+        return
+    thread = threading.Thread(
+        target=execute_chat_publish_background,
+        args=(chat_session_id, run_id),
+        name=f"loregarden-chat-publish-{chat_session_id[:8]}",
+        daemon=True,
+    )
+    thread.start()

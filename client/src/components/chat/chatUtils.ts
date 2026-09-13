@@ -19,7 +19,12 @@ export function formatChatTime(iso?: string): string {
 }
 
 export function chatRoleLabel(role: string, assistantLabel = "Assistant"): string {
-  return role === "user" ? "You" : assistantLabel;
+  if (role === "user") return "You";
+  // `system` is the control plane reporting on itself — where a chat turn's work
+  // was committed and pushed, for instance. Labelling it with the assistant's
+  // name would put words in the agent's mouth that it never said.
+  if (role === "system") return "Loregarden";
+  return assistantLabel;
 }
 
 export function chatMessageBody(message: ChatMessageView): string {

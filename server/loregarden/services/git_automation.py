@@ -24,9 +24,19 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
+from loregarden.models.domain import (
+    AgentRun,
+    BaxterChatSession,
+    Ticket,
+    Workspace,
+    Worktree,
+)
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
-from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
+from loregarden.services.git_branch import (
+    chat_session_branch,
+    resolve_ticket_branch,
+    validate_branch_name,
+)
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
@@ -65,6 +75,69 @@ class AutomationResult:
         }
 
 
+@dataclass(frozen=True)
+class PublishSubject:
+    """What a run's work is published *as*.
+
+    The pipeline used to read these four strings off a ``Ticket``, which made
+    "has a ticket" a precondition for publishing at all — so a Home chat thread,
+    which does real work and has no ticket, had no way to commit and left its
+    edits loose in the operator's checkout. Naming the fields the steps actually
+    need is what lets both owners through the same chain.
+    """
+
+    branch: str
+    commit_message: str
+    pr_title: str
+    pr_body: str
+
+
+def subject_for_ticket(session: Session, run: AgentRun, ticket: Ticket) -> PublishSubject:
+    """How a ticket's work is published — unchanged from when this was inline."""
+    return PublishSubject(
+        branch=_branch_for_run(session, run, ticket),
+        commit_message=f"{ticket.external_id}: {ticket.title}",
+        pr_title=f"{ticket.external_id}: {ticket.title}",
+        pr_body="\n".join(
+            [
+                ticket.description.strip() or "_No description._",
+                "",
+                f"- Ticket: `{ticket.external_id}`",
+                f"- Workflow stage: `{ticket.workflow_stage_key or '—'}`",
+                "",
+                "_Opened automatically by the Loregarden queue._",
+            ]
+        ),
+    )
+
+
+def subject_for_chat_session(
+    session: Session, run: AgentRun, chat_session: BaxterChatSession
+) -> PublishSubject:
+    """How a Home chat thread's work is published.
+
+    The commit message names the conversation rather than the turn: a thread
+    commits once per acting turn onto one branch, and a message that repeated
+    the turn's text would make `git log` a transcript.
+    """
+    title = chat_session.title.strip() or "Home chat"
+    return PublishSubject(
+        branch=_branch_for_chat_run(session, run, chat_session),
+        commit_message=f"chat: {title}",
+        pr_title=f"chat: {title}",
+        pr_body="\n".join(
+            [
+                f"Work from the Home chat thread **{title}**.",
+                "",
+                f"- Chat session: `{chat_session.id}`",
+                f"- Run: `{run.run_code}`",
+                "",
+                "_Opened automatically by the Loregarden chat rail._",
+            ]
+        ),
+    )
+
+
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return run_git(args, cwd=cwd, capture_output=True, text=True)
 
@@ -73,12 +146,12 @@ def _fail_text(result: subprocess.CompletedProcess, fallback: str) -> str:
     return ((result.stderr or result.stdout) or fallback).strip()
 
 
-def _commit(repo_root: Path, ticket: Ticket) -> StepResult:
+def _commit(repo_root: Path, subject: PublishSubject) -> StepResult:
     add = _git(["add", "-A"], repo_root)
     if add.returncode != 0:
         return StepResult("commit", False, _fail_text(add, "git add failed"))
 
-    message = f"{ticket.external_id}: {ticket.title}"
+    message = subject.commit_message
     commit = _git(["commit", "-m", message], repo_root)
     if commit.returncode != 0:
         combined = f"{commit.stdout}\n{commit.stderr}".lower()
@@ -118,24 +191,23 @@ def _existing_pr_url(repo_root: Path, branch: str) -> str:
     return url if url.startswith("http") else ""
 
 
-def _open_pr(repo_root: Path, ticket: Ticket, branch: str, base: str) -> tuple[StepResult, str]:
+def _open_pr(repo_root: Path, subject: PublishSubject, base: str) -> tuple[StepResult, str]:
     # A rerun of a stage on the same branch must not fail the pipeline just
     # because the PR it would open is already open.
-    existing = _existing_pr_url(repo_root, branch)
+    existing = _existing_pr_url(repo_root, subject.branch)
     if existing:
         return StepResult("open_pr", True, f"already open: {existing}"), existing
 
-    title = f"{ticket.external_id}: {ticket.title}"
     result = _gh(
         [
             "pr",
             "create",
             "--title",
-            title,
+            subject.pr_title,
             "--body",
-            _automation_pr_body(ticket),
+            subject.pr_body,
             "--head",
-            branch,
+            subject.branch,
             "--base",
             base,
         ],
@@ -148,19 +220,6 @@ def _open_pr(repo_root: Path, ticket: Ticket, branch: str, base: str) -> tuple[S
     if not url.startswith("http"):
         return StepResult("open_pr", False, f"unexpected gh output: {result.stdout!r}"), ""
     return StepResult("open_pr", True, url), url
-
-
-def _automation_pr_body(ticket: Ticket) -> str:
-    return "\n".join(
-        [
-            ticket.description.strip() or "_No description._",
-            "",
-            f"- Ticket: `{ticket.external_id}`",
-            f"- Workflow stage: `{ticket.workflow_stage_key or '—'}`",
-            "",
-            "_Opened automatically by the Loregarden queue._",
-        ]
-    )
 
 
 def _auto_merge(repo_root: Path, pr_url: str) -> StepResult:
@@ -177,21 +236,20 @@ def _auto_merge(repo_root: Path, pr_url: str) -> StepResult:
     return StepResult("auto_merge", True, "auto-merge enabled")
 
 
-def run_git_automation(
+def publish_run(
     session: Session,
     run: AgentRun,
-    ticket: Ticket,
-    config: GitAutomationConfig | None = None,
+    workspace: Workspace,
+    subject: PublishSubject,
+    config: GitAutomationConfig,
 ) -> AutomationResult:
-    """Run the configured publish steps for a finished run."""
+    """Run the configured publish steps for a finished run's checkout.
+
+    Owner-agnostic: everything owner-specific is already decided in ``subject``.
+    :func:`run_git_automation` is the ticket entry point and
+    ``chat_publish.publish_chat_turn`` the conversational one.
+    """
     result = AutomationResult()
-
-    workspace = session.get(Workspace, ticket.workspace_id)
-    if not workspace:
-        result.steps.append(StepResult("resolve", False, "workspace not found"))
-        return result
-
-    config = config or resolve_git_automation(workspace, ticket)
     if not config.commit:
         return result
 
@@ -201,9 +259,8 @@ def run_git_automation(
         result.steps.append(StepResult("resolve", False, f"not a git repository: {repo_root}"))
         return result
 
-    branch = _branch_for_run(session, run, ticket)
     try:
-        validate_branch_name(branch)
+        validate_branch_name(subject.branch)
     except ValueError as exc:
         result.steps.append(StepResult("resolve", False, str(exc)))
         return result
@@ -212,11 +269,11 @@ def run_git_automation(
     # `if not config.x: return` is how the two drift apart.
     for step in enabled_steps(config):
         if step == "commit":
-            result.steps.append(_commit(repo_root, ticket))
+            result.steps.append(_commit(repo_root, subject))
         elif step == "push":
-            result.steps.append(_push(repo_root, branch))
+            result.steps.append(_push(repo_root, subject.branch))
         elif step == "open_pr":
-            pr_step, pr_url = _open_pr(repo_root, ticket, branch, config.base_branch)
+            pr_step, pr_url = _open_pr(repo_root, subject, config.base_branch)
             result.steps.append(pr_step)
             result.pr_url = pr_url
         elif step == "auto_merge":
@@ -228,6 +285,28 @@ def run_git_automation(
             return result
 
     return result
+
+
+def run_git_automation(
+    session: Session,
+    run: AgentRun,
+    ticket: Ticket,
+    config: GitAutomationConfig | None = None,
+) -> AutomationResult:
+    """Run the configured publish steps for a finished ticket run."""
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if not workspace:
+        result = AutomationResult()
+        result.steps.append(StepResult("resolve", False, "workspace not found"))
+        return result
+
+    return publish_run(
+        session,
+        run,
+        workspace,
+        subject_for_ticket(session, run, ticket),
+        config or resolve_git_automation(workspace, ticket),
+    )
 
 
 def _branch_for_run(session: Session, run: AgentRun, ticket: Ticket) -> str:
@@ -243,3 +322,17 @@ def _branch_for_run(session: Session, run: AgentRun, ticket: Ticket) -> str:
         if worktree and worktree.branch:
             return worktree.branch
     return resolve_ticket_branch(ticket)
+
+
+def _branch_for_chat_run(session: Session, run: AgentRun, chat_session: BaxterChatSession) -> str:
+    """Same, for a chat thread: the tree's branch beats the derived name.
+
+    A thread renamed after its first acting turn derives a different branch than
+    the one its worktree is checked out on, and pushing the derived name from
+    that tree pushes commits that are not there.
+    """
+    if run.worktree_id:
+        worktree = session.get(Worktree, run.worktree_id)
+        if worktree and worktree.branch:
+            return worktree.branch
+    return chat_session_branch(chat_session)

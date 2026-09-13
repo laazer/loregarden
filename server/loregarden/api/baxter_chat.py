@@ -15,6 +15,7 @@ from loregarden.services.baxter_chat_run_service import (
     start_baxter_chat_turn,
 )
 from loregarden.services.baxter_chat_service import (
+    ChatSessionHasUnpublishedWork,
     chat_session_snapshot,
     chat_session_summary,
     create_chat_session,
@@ -117,7 +118,12 @@ def remove_baxter_chat_session(
 ) -> dict:
     workspace = _workspace(session, slug)
     chat_session = _chat_session(session, workspace.id, session_id)
-    delete_chat_session(session, chat_session)
+    try:
+        delete_chat_session(session, chat_session)
+    except ChatSessionHasUnpublishedWork as exc:
+        # 409, not 500: the thread is deletable once the operator has dealt with
+        # the work, and the message says where it is.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"deleted": session_id}
 
 

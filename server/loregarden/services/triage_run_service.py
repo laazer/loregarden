@@ -31,6 +31,7 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.chat_primitives import parts_json_for_reply
+from loregarden.services.chat_publish import report_ticket_turn
 from loregarden.services.chat_thinking import (
     finish_chat_turn_thinking,
     with_thinking_part,
@@ -151,13 +152,17 @@ class TriageTurnExecutor:
         intent = resolve_chat_intent(selected)
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
+        # Bound once: three sites downstream turn on it, and the third was
+        # enough for the string-vocabulary gate to call it an untyped vocabulary
+        # — which it is, until `TurnIntent` stops being a Literal alias.
+        acting = intent == "execute"
         prompt = build_triage_prompt(
             ticket,
             history,
             latest_user_message,
             session=self.session,
             agent=agent,
-            interactive=intent == "execute",
+            interactive=acting,
             advisory_reason=chat_advisory_reason(selected),
         )
         try:
@@ -173,15 +178,16 @@ class TriageTurnExecutor:
                     turn_id=run.id,
                     run_id=run.id,
                     manage_run=False,
-                    ticket=ticket if intent == "execute" else None,
+                    ticket=ticket if acting else None,
                     claude_model_env="LOREGARDEN_TRIAGE_CLAUDE_MODEL",
                     track_workflow_stage=False,
                     surface=ChatSurface.TICKET_TRIAGE,
                 )
             )
-            self._finish(
-                run, ticket, status=RunStatus.SUCCEEDED, reply=turn.reply[:8000], stderr=""
-            )
+            reply = turn.reply[:8000]
+            if acting:
+                reply += self._work_note(turn.run_id, ticket, effective_workspace)
+            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")
         except Exception as exc:  # noqa: BLE001 - any provider error is recorded as a FAILED run
             self._finish(
                 run,
@@ -190,6 +196,20 @@ class TriageTurnExecutor:
                 reply=format_agent_unavailable(TRIAGE_AGENT_NAME, exc),
                 stderr=str(exc)[:4000],
             )
+
+    def _work_note(self, run_id: str, ticket: Ticket, workspace: Workspace) -> str:
+        """Where this turn's edits are, appended to the reply.
+
+        An acting turn now writes into the ticket's worktree rather than the
+        shared checkout, which is the fix — but a branch the operator is never
+        told about is only a quieter version of the same problem.
+        """
+        try:
+            outcome = report_ticket_turn(self.session, run_id, ticket, workspace)
+        except Exception as exc:  # noqa: BLE001 - the reply must still carry the failure
+            logger.exception("Could not report where triage run %s wrote", run_id)
+            return f"\n\n---\n**Could not determine where this turn's work landed:** {exc}"
+        return outcome.as_note() if outcome else ""
 
     def _finish(
         self, run: AgentRun, ticket: Ticket, *, status: RunStatus, reply: str, stderr: str
