@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from loregarden.db.migration_ledger import prune_renumbered
 from sqlalchemy import Connection, Engine, text
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,11 @@ def _warn_if_database_is_ahead(applied_ids: set[str], known_ids: set[str]) -> li
     read — check out an older commit, or revert one, and every query over the
     rewritten table fails with a LookupError that says nothing about the real cause.
     The recorded ids say so directly, so name it at startup instead.
+
+    Called after :func:`prune_renumbered`, so what it names is what remains once
+    the benign case is gone: an id applied under a number the build reused for
+    something else, or a migration deleted from the build outright. Either is a
+    real divergence and worth the error level.
     """
     unknown = sorted(applied_ids - known_ids)
     if unknown:
@@ -98,7 +104,7 @@ def apply_pending(engine: Engine, migrations: list[tuple[str, object]]) -> list[
             with conn.begin():
                 _ensure_migrations_table(conn)
                 already = _applied_ids(conn)
-                _warn_if_database_is_ahead(already, {mid for mid, _ in migrations})
+                registered = [mid for mid, _ in migrations]
                 for migration_id, migrate in migrations:
                     if migration_id in already:
                         continue
@@ -108,6 +114,12 @@ def apply_pending(engine: Engine, migrations: list[tuple[str, object]]) -> list[
                         {"id": migration_id},
                     )
                     applied.append(migration_id)
+                # After the loop, so a renumbered migration whose NEW id applied
+                # just now is pruned in the same run rather than one startup
+                # later — and so the warning below describes the ledger as it is
+                # once the benign rows are gone, not as it was.
+                prune_renumbered(conn, registered)
+                _warn_if_database_is_ahead(_applied_ids(conn), set(registered))
         finally:
             conn.exec_driver_sql("PRAGMA foreign_keys=ON")
             conn.rollback()

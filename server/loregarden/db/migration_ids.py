@@ -148,6 +148,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0127_agent_run_status_index",
     "0128_chat_session_worktrees",
     "0129_blobert_backend_lane",
+    "0130_retire_unmerged_branch_ledger_ids",
 )
 
 

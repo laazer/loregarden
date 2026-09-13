@@ -63,6 +63,7 @@ from loregarden.db.migrations_git_boundary import (
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
+from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
@@ -1373,6 +1374,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0127_agent_run_status_index", m_agent_run_status_index),
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
     ("0129_blobert_backend_lane", m_blobert_backend_lane),
+    ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
