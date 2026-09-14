@@ -30,8 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from loregarden.models.domain import Artifact, ArtifactKind, GitBoundary, Ticket, Workspace
-from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.models.domain import Artifact, ArtifactKind, GitBoundary, Ticket
 from sqlmodel import Session, select
 
 #: Kept as a name because this module's callers read it; the value is the
@@ -151,15 +150,19 @@ def scratch_root(repo_root: Path) -> Path:
     return repo_root / HANDOFF_SCRATCH_SUBDIR
 
 
-def export_for_gate(session: Session, workspace: Workspace, ticket: Ticket) -> Path:
+def export_for_gate(session: Session, ticket: Ticket, *, repo_root: Path) -> Path:
     """Build the checkpoints tree the workspace gates should read, and return its root.
+
+    *repo_root* is the tree the gate will run in — the ticket's worktree when it has
+    one — and is the caller's to name, not derived here: the gate reads
+    ``--checkpoints-dir`` relative to its cwd, so an export written under the shared
+    checkout is one the gate never sees, and the transition passes on nothing (737).
 
     The ticket's scratch directory is rebuilt from scratch each call so a handoff from an
     earlier transition can never be read as this one's. Absence is meaningful and is
     preserved: when no handoff has been stored, none is exported, and the gate fails the
     transition exactly as it did when the file was missing from the repo.
     """
-    repo_root = resolve_workspace_root(workspace)
     root = scratch_root(repo_root)
     ticket_scratch = root / ticket.external_id
     if ticket_scratch.exists():
