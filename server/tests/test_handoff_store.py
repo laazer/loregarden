@@ -99,7 +99,7 @@ def test_export_writes_scratch_not_tracked_checkpoints(isolated_db, tmp_path):
         ws, ticket = _seed(session, repo)
         store_handoff(session, ticket=ticket, doc=_doc())
         session.commit()
-        root = export_for_gate(session, ws, ticket)
+        root = export_for_gate(session, ticket, repo_root=repo)
 
     exported = root / "t1-demo" / HANDOFF_FILENAME
     assert exported.is_file()
@@ -121,7 +121,7 @@ def test_export_mirrors_colocated_gate_artifacts(isolated_db, tmp_path):
         ws, ticket = _seed(session, repo)
         store_handoff(session, ticket=ticket, doc=_doc())
         session.commit()
-        root = export_for_gate(session, ws, ticket)
+        root = export_for_gate(session, ticket, repo_root=repo)
 
     assert (root / "t1-demo" / "todos-latest.json").is_file()
     assert (root / "t1-demo" / HANDOFF_FILENAME).is_file()
@@ -134,7 +134,7 @@ def test_export_without_stored_handoff_omits_the_file(isolated_db, tmp_path):
     (repo / CHECKPOINTS_SUBDIR).mkdir(parents=True)
     with Session(isolated_db) as session:
         ws, ticket = _seed(session, repo)
-        root = export_for_gate(session, ws, ticket)
+        root = export_for_gate(session, ticket, repo_root=repo)
     assert not (root / "t1-demo" / HANDOFF_FILENAME).exists()
 
 
@@ -145,14 +145,14 @@ def test_export_replaces_a_stale_previous_export(isolated_db, tmp_path):
         ws, ticket = _seed(session, repo)
         store_handoff(session, ticket=ticket, doc=_doc("first"))
         session.commit()
-        export_for_gate(session, ws, ticket)
+        export_for_gate(session, ticket, repo_root=repo)
 
         stale = repo / HANDOFF_SCRATCH_SUBDIR / "t1-demo" / "leftover.txt"
         stale.write_text("from an earlier transition", encoding="utf-8")
 
         store_handoff(session, ticket=ticket, doc=_doc("second"))
         session.commit()
-        root = export_for_gate(session, ws, ticket)
+        root = export_for_gate(session, ticket, repo_root=repo)
 
     assert not stale.exists()
     doc = yaml.safe_load((root / "t1-demo" / HANDOFF_FILENAME).read_text(encoding="utf-8"))
@@ -224,7 +224,7 @@ def test_the_boundary_survives_the_yaml_export(isolated_db, tmp_path):
         ws, ticket = _seed(session, repo)
         store_handoff(session, ticket=ticket, doc=_doc(boundary=boundary))
         session.commit()
-        root = export_for_gate(session, ws, ticket)
+        root = export_for_gate(session, ticket, repo_root=repo)
 
     exported = yaml.safe_load((root / "t1-demo" / HANDOFF_FILENAME).read_text(encoding="utf-8"))
     assert boundary_from_doc(exported) == boundary

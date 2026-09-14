@@ -311,7 +311,7 @@ def run_transition_gates(
         # exported tree rather than the repo's tracked checkpoints. The export mirrors
         # the ticket's checkpoint dir first, because the todo gate reads the same
         # `--checkpoints-dir` and its artifact is still a committed file.
-        export_for_gate(session, workspace, ticket)
+        export_for_gate(session, ticket, repo_root=repo_root)
         script_command = format_gate_command(
             f"{sys.executable} {script.relative_to(repo_root)} "
             f"--ticket-id {context['external_id']} "

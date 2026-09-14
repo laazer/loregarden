@@ -323,9 +323,9 @@ def write_handoff(
     if not workspace:
         raise HandoffWriteError("Workspace not found for ticket")
 
-    repo_root = resolve_workspace_root(workspace)
-    if not repo_root.is_dir():
-        raise HandoffWriteError(f"Workspace repo path does not exist: {repo_root}")
+    workspace_root = resolve_workspace_root(workspace)
+    if not workspace_root.is_dir():
+        raise HandoffWriteError(f"Workspace repo path does not exist: {workspace_root}")
 
     dangling = unresolvable_evidence(session, ticket, normalized)
     if dangling:
@@ -363,8 +363,9 @@ def write_handoff(
     met, total = _counters(session, ticket, normalized)
     # Read here rather than accepted from the caller: an agent reporting the tree
     # it worked in is the claim, not the evidence for it. The ticket's worktree,
-    # not `repo_root` above — that is the shared checkout the gate export is
-    # written under, while the agent's edits are in the tree the stages ran in.
+    # not `workspace_root` above — the agent's edits are in the tree the stages ran
+    # in, and the gate export below is written there too, since that is the tree
+    # the transition gate later runs in (737).
     ticket_root = resolve_ticket_root(session, ticket, workspace)
     boundary = read_boundary(ticket_root)
 
@@ -376,7 +377,7 @@ def write_handoff(
         session,
         ticket,
         ticket_root=ticket_root,
-        is_ticket_worktree=ticket_root != resolve_workspace_root(workspace),
+        is_ticket_worktree=ticket_root != workspace_root,
     )
     if uncommitted.blocks_handoff:
         raise HandoffWriteError(uncommitted.message())
@@ -394,10 +395,10 @@ def write_handoff(
     # rollback below un-stores it. Flushing without committing keeps the row visible to
     # `export_for_gate` in this session while leaving the transaction abortable.
     artifact = store_handoff(session, ticket=ticket, doc=doc)
-    export_for_gate(session, workspace, ticket)
+    export_for_gate(session, ticket, repo_root=ticket_root)
 
     validation = _validate_via_workspace_gate(
-        repo_root,
+        ticket_root,
         external_id=external_id,
         from_agent=from_agent,
         to_agent=to_agent,
@@ -420,7 +421,7 @@ def write_handoff(
             # indistinguishable from "checked and fine" (134). Rolled back on the
             # same path a real FAIL takes, because the handoff is equally unproven.
             session.rollback()
-            export_for_gate(session, workspace, ticket)
+            export_for_gate(session, ticket, repo_root=ticket_root)
             return {
                 **base,
                 "artifact_id": "",
@@ -473,7 +474,7 @@ def write_handoff(
     # Validation failed — discard the row so the ticket's latest handoff stays whatever
     # last passed, and re-export so the scratch tree matches the database again.
     session.rollback()
-    export_for_gate(session, workspace, ticket)
+    export_for_gate(session, ticket, repo_root=ticket_root)
 
     return {
         **base,
