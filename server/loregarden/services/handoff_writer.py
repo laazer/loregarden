@@ -25,7 +25,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import ArtifactKind, ClaimCertainty, Ticket, Workspace
+from loregarden.models.domain import (
+    ArtifactKind,
+    ClaimCertainty,
+    OrchestratorDecision,
+    Ticket,
+    Workspace,
+)
 from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
@@ -38,6 +44,7 @@ from loregarden.services.handoff_store import (
     store_handoff,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -529,12 +536,17 @@ def write_handoff(
         # the order (lg-workflow-integrity-730). Nothing the gate would have
         # checked is lost: on an unknown pair it returns before evaluating the
         # checklist at all. The drift is said out loud rather than absorbed.
-        logger.warning(
-            "workspace handoff gate for %s does not know pair (%s, %s); "
-            "the ticket's template does — storing the handoff, gate is stale",
-            workspace.slug,
-            from_agent,
-            to_agent,
+        record_orchestrator_decision(
+            session,
+            ticket,
+            decision=OrchestratorDecision.OVERRULED_STALE_GATE,
+            stage_key=ticket.workflow_stage_key or "",
+            reason=(
+                f"Stored the {from_agent} → {to_agent} handoff over the workspace gate: "
+                f"its pair table does not know that pair, but this ticket's template "
+                f"runs them consecutively. The gate is stale."
+            ),
+            evidence={"from_agent": from_agent, "to_agent": to_agent, "workspace": workspace.slug},
         )
         session.commit()
         return {

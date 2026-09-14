@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
+    OrchestratorDecision,
     RunStatus,
     StageStatus,
     Ticket,
@@ -27,6 +28,7 @@ from loregarden.services.orchestration import (
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
@@ -273,6 +275,16 @@ def settle_stranded_stages(
             stage_key=stage_key,
             message=message,
         )
+        record_orchestrator_decision(
+            session,
+            ticket,
+            decision=OrchestratorDecision.SETTLED_STRANDED_STAGE,
+            stage_key=stage_key,
+            reason=(
+                f"Stage '{stage_key}' read RUNNING with no live run behind it; "
+                "settled it as blocked so it stops reporting an agent that is not there."
+            ),
+        )
         session.add(ticket)
         session.add(instance)
         settled.append(ticket)
@@ -482,9 +494,30 @@ def settle_orphaned_agent_runs(
         # Once per run by construction: this sweep only selects runs still in
         # flight, and the run is terminal by the line above, so a second pass
         # cannot select it again.
+        refunded = 0
         if run.stage_key:
-            refund_stage_dispatch_charged_before(
+            refunded = refund_stage_dispatch_charged_before(
                 session, run.ticket_id, run.stage_key, run.created_at
+            )
+        ticket = session.get(Ticket, run.ticket_id)
+        if ticket is not None:
+            record_orchestrator_decision(
+                session,
+                ticket,
+                decision=OrchestratorDecision.SETTLED_ORPHANED_RUN,
+                stage_key=run.stage_key or "",
+                run_id=run.id,
+                reason=(
+                    f"Run {run.run_code} was still in flight when its orchestration "
+                    f"{parent.run_code} went {parent.status.value}; settled it as failed"
+                    + (" and handed its retry attempt back." if refunded else ".")
+                ),
+                evidence={
+                    "run_code": run.run_code,
+                    "parent_run_code": parent.run_code,
+                    "parent_status": parent.status.value,
+                    "attempt_refunded": bool(refunded),
+                },
             )
         settled.append(run)
     return settled

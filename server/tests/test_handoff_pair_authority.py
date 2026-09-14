@@ -222,3 +222,29 @@ def test_a_pair_the_gate_already_knows_is_not_touched(isolated_db, tmp_path: Pat
 
     assert result["status"] == "PASS"
     assert not result.get("warnings")
+
+
+def test_the_overrule_reaches_the_ticket_history(isolated_db, tmp_path: Path):
+    """lg-workflow-integrity-734. Overruling a gate is the orchestrator's
+    decision, and a decision that lives only in a server log is one nobody can
+    question. Asserted through ticket_history, which filters by type — an event
+    published outside TRANSITION_EVENTS is written and never shown."""
+    from loregarden.core.event_bus import event_bus
+    from loregarden.models.domain import EventType, OrchestratorDecision
+
+    repo = _repo_with_gate(tmp_path, _FROZEN_PAIR_GATE)
+    with Session(isolated_db) as s:
+        ticket = _ticket_on_template(s, repo, _blobert_like_stages())
+        _write(s, ticket, "ui-design-decision", "spec")
+
+        decisions = [
+            e
+            for e in event_bus.ticket_history(s, ticket.id, limit=50)
+            if e.type == EventType.ORCHESTRATOR_DECISION
+        ]
+
+    assert len(decisions) == 1
+    payload = json.loads(decisions[0].payload_json)
+    assert payload["decision"] == OrchestratorDecision.OVERRULED_STALE_GATE.value
+    assert payload["from_agent"] == "ui-design-decision"
+    assert payload["to_agent"] == "spec"

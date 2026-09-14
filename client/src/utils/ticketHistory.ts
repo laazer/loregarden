@@ -7,6 +7,7 @@ export const HISTORY_LABELS: Record<string, string> = {
   StageCompleted: "Stage completed",
   StageSkipped: "Stage skipped",
   GateEvaluated: "Gate",
+  OrchestratorDecision: "Orchestrator",
 };
 
 /**
@@ -48,8 +49,20 @@ function gateText(event: TicketHistoryEvent): string {
   return `Gate${where} ${outcome}${afterFix(tier)}`;
 }
 
+function decisionText(event: TicketHistoryEvent): string {
+  // The reason is already a sentence written for a person; the rail shows it
+  // verbatim rather than reassembling it from the payload's parts. Falls back
+  // to the decision kind so an event with no reason still says what it was
+  // rather than nothing.
+  const reason = str(event.payload.reason);
+  if (reason) return `Orchestrator: ${reason}`;
+  const kind = str(event.payload.decision).replace(/_/g, " ");
+  return `Orchestrator ${kind}`.trim();
+}
+
 function describe(event: TicketHistoryEvent): string {
   if (event.type === "GateEvaluated") return gateText(event);
+  if (event.type === "OrchestratorDecision") return decisionText(event);
   const stage = event.payload.stage_key ?? event.payload.stage;
   const to = event.payload.to ?? event.payload.state ?? event.payload.status;
   const parts = [HISTORY_LABELS[event.type] ?? event.type];
@@ -59,6 +72,13 @@ function describe(event: TicketHistoryEvent): string {
 }
 
 function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
+  // A refusal or a settle is the orchestrator declining to let something
+  // proceed — worth reading as trouble, the way a failed gate is. An overrule
+  // is the orchestrator letting something proceed that a gate would have
+  // stopped, which is the opposite and reads normal.
+  if (event.type === "OrchestratorDecision") {
+    return str(event.payload.decision) === "overruled_stale_gate" ? "normal" : "failed";
+  }
   if (event.type !== "GateEvaluated") return "normal";
   const outcome = str(event.payload.outcome);
   if (outcome === "unavailable") return "unavailable";

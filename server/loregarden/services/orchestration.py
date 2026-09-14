@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
@@ -820,20 +821,13 @@ class OrchestrationService:
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
 
-        # The parent must still be claiming a lane. A stage was once dispatched
-        # 25 seconds after its orchestration had been reaped for an expired
-        # lease: nothing here looked, the run started, and a sweeper failed it
-        # 13 seconds later with a message about plumbing, leaving the ticket
-        # blocked as though the stage itself had failed
-        # (lg-workflow-integrity-688). Refusing costs nothing — the work could
-        # not have been recorded against a terminal parent anyway.
-        parent: OrchestrationRun | None = None
-        if orchestration_run_id:
-            parent = self.session.get(OrchestrationRun, orchestration_run_id)
-            if parent is not None and parent.status not in LIVE_ORCHESTRATION_STATUSES:
-                raise ValueError(
-                    f"Cannot start run: orchestration {parent.run_code} is {parent.status.value}"
-                )
+        parent = refuse_dispatch_under_terminal_parent(
+            self.session,
+            ticket,
+            stage_key=stage_key,
+            orchestration_run_id=orchestration_run_id,
+            live_statuses=LIVE_ORCHESTRATION_STATUSES,
+        )
 
         # Read before `_prepare_stage_start`, which erases the blocking text this
         # decision is partly read from.
