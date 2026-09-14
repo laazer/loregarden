@@ -869,3 +869,305 @@ class TestInitiativeSelfParent:
                 work_item_type=_initiative(),
                 parent_ticket_id=parent.id,
             )
+
+
+# --- MCP positive milestone<-initiative (AC2 surface) -----------------------
+
+
+class TestMcpMilestoneUnderInitiative:
+    """Prior MCP coverage only checked parentless initiative create + reject-
+    with-parent. AC2 also requires the positive milestone<-initiative path on
+    the MCP surface — schema enum / create_ticket must not soft-drop the parent."""
+
+    def test_mcp_create_milestone_under_initiative(self, db_session: Session):
+        import json
+
+        from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
+
+        initiative = _create(
+            db_session, title="MCP init parent for ms", work_item_type=_initiative()
+        )
+        args = normalize_tool_arguments(
+            "loregarden_create_ticket",
+            {
+                "workspace_slug": "loregarden",
+                "title": "MCP milestone under initiative",
+                "work_item_type": "milestone",
+                "parent": initiative.id,
+            },
+        )
+        result = json.loads(execute_tool(db_session, "loregarden_create_ticket", args))
+        stored = db_session.get(Ticket, result["id"])
+        assert stored is not None
+        assert stored.work_item_type == WorkItemType.MILESTONE
+        assert stored.parent_ticket_id == initiative.id
+        assert stored.workspace_id == initiative.workspace_id
+
+
+# --- cross-workspace parent (workspace check stays local) -------------------
+
+
+class TestCrossWorkspaceInitiativeParent:
+    """731 requires same-workspace initiative parents; 732 owns null workspace.
+    A foreign-workspace initiative must still fail the local workspace check —
+    not coerce via type-pair alone."""
+
+    def test_create_milestone_rejects_foreign_workspace_initiative(
+        self, db_session: Session, tmp_path
+    ):
+        from loregarden.models.domain import Workspace
+
+        foreign = Workspace(
+            slug="adv-foreign-ws",
+            name="Adv Foreign",
+            repo_path=str(tmp_path / "foreign"),
+        )
+        db_session.add(foreign)
+        db_session.commit()
+        db_session.refresh(foreign)
+
+        # Build an initiative row bound to the foreign workspace without going
+        # through TicketService.create (which would re-resolve slug).
+        initiative = Ticket(
+            external_id="adv-foreign-init",
+            workspace_id=foreign.id,
+            title="Foreign initiative",
+            work_item_type=_initiative(),
+            priority=3,
+        )
+        db_session.add(initiative)
+        db_session.commit()
+        db_session.refresh(initiative)
+
+        with pytest.raises(ValueError, match="(?i)workspace|not found"):
+            _create(
+                db_session,
+                title="Ms under foreign init",
+                work_item_type=WorkItemType.MILESTONE,
+                parent_ticket_id=initiative.id,
+                workspace_slug="loregarden",
+            )
+
+
+# --- import sort-key AST (third twin of type_order) --------------------------
+
+
+class TestImportSortKeyRanksInitiative:
+    """_import_sort_key currently defaults unknown types to 99 (after BUG).
+    Multi-pass deferral can still link milestone→initiative, but a single-pass
+    implement that forgets INITIATIVE in the map depends on that loop forever.
+    Pin INITIATIVE rank < MILESTONE in the import sort map itself."""
+
+    def test_import_sort_key_ranks_initiative_before_milestone(self):
+        from loregarden.models.domain import TicketImportItem
+        from loregarden.services import ticket_import_service as tis
+
+        source = inspect.getsource(tis._import_sort_key)
+        assert "INITIATIVE" in source or "initiative" in source.lower(), (
+            "_import_sort_key must name INITIATIVE — default 99 leaves it after BUG"
+        )
+
+        init_item = TicketImportItem(
+            title="sort init",
+            work_item_type=_initiative(),
+            source_label="a",
+        )
+        ms_item = TicketImportItem(
+            title="sort ms",
+            work_item_type=WorkItemType.MILESTONE,
+            source_label="a",
+        )
+        assert tis._import_sort_key(init_item) < tis._import_sort_key(ms_item)
+
+
+# --- mixed batch: legal + illegal in one import -----------------------------
+
+
+class TestImportMixedBatchPartialReject:
+    """A batch that creates a parentless initiative then tries a feature under
+    it must not leave the feature row behind. Initiative may land; feature must
+    not. Soft short-circuit that orphans features under initiatives would hide
+    AC3 on this path."""
+
+    def test_mixed_batch_initiative_ok_feature_under_init_rejected(
+        self, client: TestClient, db_session: Session
+    ):
+        before_ids = {t.id for t in db_session.exec(select(Ticket)).all()}
+        res = client.post(
+            "/api/tickets/import",
+            json={
+                "workspace_slug": "loregarden",
+                "tickets": [
+                    {
+                        "title": "Mixed batch initiative",
+                        "work_item_type": "initiative",
+                        "external_id": "adv-mixed-init",
+                    },
+                    {
+                        "title": "Illegal feature under init",
+                        "work_item_type": "feature",
+                        "external_id": "adv-mixed-feat",
+                        "parent_external_id": "adv-mixed-init",
+                    },
+                ],
+            },
+        )
+        assert res.status_code == 400, res.text
+        body = res.json()
+        # Either hard-fail the whole batch or report errors with no feature created.
+        created = body.get("created_count")
+        if created is not None:
+            assert created <= 1
+        feature = (
+            db_session.exec(select(Ticket).where(Ticket.external_id == "adv-mixed-feat")).first()
+            or db_session.exec(
+                select(Ticket).where(Ticket.legacy_external_id == "adv-mixed-feat")
+            ).first()
+        )
+        assert feature is None, "AC3: feature under initiative must not persist"
+        after = db_session.exec(select(Ticket)).all()
+        new_tickets = [t for t in after if t.id not in before_ids]
+        for t in new_tickets:
+            assert t.work_item_type == _initiative()
+            assert t.parent_ticket_id is None
+
+
+# --- type_order twin AST (hierarchy_service + subtree_auto_run) --------------
+
+
+class TestTypeOrderTwinAst:
+    """Sort twin maps can drift independently of runtime stubs. AST-pin that
+    both sources place INITIATIVE immediately before MILESTONE."""
+
+    def test_both_type_order_maps_rank_initiative_before_milestone(self):
+        from loregarden.services import hierarchy_service as hs
+        from loregarden.services import subtree_auto_run as sar
+
+        for mod, label in ((hs, "hierarchy_service"), (sar, "subtree_auto_run")):
+            source = inspect.getsource(mod)
+            assert "INITIATIVE" in source, f"{label} must name INITIATIVE in type_order"
+            # Relative ranks via the live keys once INITIATIVE exists.
+            initiative = _ticket_stub(work_item_type=_initiative(), external_id="ast-init")
+            milestone = _ticket_stub(work_item_type=WorkItemType.MILESTONE, external_id="ast-ms")
+            if label == "subtree_auto_run":
+                assert child_sort_key(initiative) < child_sort_key(milestone)
+            else:
+                # hierarchy_service nests type_order inside build_tree; exercise
+                # via child_sort_key agreement already covered — here just require
+                # the name appears before MILESTONE in the dict literal block.
+                idx_init = source.find("INITIATIVE")
+                idx_ms = source.find("MILESTONE")
+                assert 0 <= idx_init < idx_ms, (
+                    f"{label}: INITIATIVE must appear before MILESTONE in source"
+                )
+
+
+# --- REST parentless initiative + finalize sibling roots --------------------
+
+
+class TestRestAndFinalizeRootSurfaces:
+    def test_rest_create_parentless_initiative(self, client: TestClient, db_session: Session):
+        res = client.post(
+            "/api/tickets",
+            json={
+                "workspace_slug": "loregarden",
+                "title": "REST parentless initiative",
+                "work_item_type": "initiative",
+            },
+        )
+        assert res.status_code == 201, res.text
+        body = res.json()
+        assert body["parent_ticket_id"] is None
+        assert body["work_item_type"] == "initiative"
+
+    def test_finalize_sibling_initiative_and_milestone_roots(
+        self, client: TestClient, db_session: Session
+    ):
+        """Two legal roots in one finalize payload — INITIATIVE must not force
+        the sibling milestone into a parent link or get rejected as non-root."""
+        res = client.post(
+            "/api/tickets/finalize-hierarchy",
+            json={
+                "workspace_slug": "loregarden",
+                "hierarchy": [
+                    {
+                        "external_id": "adv-fin-sib-init",
+                        "title": "Sibling Initiative",
+                        "work_item_type": "initiative",
+                        "children": [],
+                    },
+                    {
+                        "external_id": "adv-fin-sib-ms",
+                        "title": "Sibling Milestone",
+                        "work_item_type": "milestone",
+                        "children": [],
+                    },
+                ],
+            },
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["total_created"] == 2
+        initiative = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "adv-fin-sib-init")
+        ).first()
+        milestone = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "adv-fin-sib-ms")
+        ).first()
+        assert initiative is not None and milestone is not None
+        assert initiative.parent_ticket_id is None
+        assert milestone.parent_ticket_id is None
+
+
+# --- import AC3 matrix for non-milestone under initiative -------------------
+
+
+class TestImportNonMilestoneUnderInitiativeMatrix:
+    @pytest.mark.parametrize(
+        "child_type",
+        ["capability", "task", "bug"],
+    )
+    def test_import_non_milestone_under_initiative_rejected(
+        self, client: TestClient, db_session: Session, child_type: str
+    ):
+        """Design suite covers feature; extend AC3 to capability/task/bug on import."""
+        initiative = _create(
+            db_session,
+            title=f"Import reject {child_type} init",
+            work_item_type=_initiative(),
+        )
+        before = len(db_session.exec(select(Ticket)).all())
+        # Scaffold legal parents for types that cannot be created bare — import
+        # still names initiative as parent_ticket_id directly.
+        res = client.post(
+            "/api/tickets/import",
+            json={
+                "workspace_slug": "loregarden",
+                "tickets": [
+                    {
+                        "title": f"Imported {child_type} under init",
+                        "work_item_type": child_type,
+                        "parent_ticket_id": initiative.id,
+                    }
+                ],
+            },
+        )
+        assert res.status_code == 400, res.text
+        assert len(db_session.exec(select(Ticket)).all()) == before
+
+
+# --- reparent cycle under initiative tree -----------------------------------
+
+
+class TestReparentCycleUnderInitiative:
+    def test_cannot_reparent_initiative_beneath_its_milestone_descendant(self, db_session: Session):
+        initiative = _create(db_session, title="Cycle init", work_item_type=_initiative())
+        milestone = _create(
+            db_session,
+            title="Cycle ms",
+            work_item_type=WorkItemType.MILESTONE,
+            parent_ticket_id=initiative.id,
+        )
+        # Type rules alone reject initiative-under-milestone; also ensure the
+        # cycle check is not the only line of defence that gets deleted.
+        with pytest.raises(ValueError):
+            reparent_ticket(db_session, initiative, milestone.id)
