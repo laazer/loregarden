@@ -171,11 +171,12 @@ def child_sort_key(ticket: Ticket) -> tuple:
     order is the dependency-aware topological sort in order_children_for_subtree;
     this only breaks ties among items that topo-sort as equally ready."""
     type_order = {
-        WorkItemType.MILESTONE: 0,
-        WorkItemType.FEATURE: 1,
-        WorkItemType.CAPABILITY: 2,
-        WorkItemType.TASK: 3,
-        WorkItemType.BUG: 4,
+        WorkItemType.INITIATIVE: 0,
+        WorkItemType.MILESTONE: 1,
+        WorkItemType.FEATURE: 2,
+        WorkItemType.CAPABILITY: 3,
+        WorkItemType.TASK: 4,
+        WorkItemType.BUG: 5,
     }
     return (type_order.get(ticket.work_item_type, 9), ticket.priority, ticket.external_id)
 

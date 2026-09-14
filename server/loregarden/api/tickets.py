@@ -620,7 +620,10 @@ def import_tickets(
         raise HTTPException(400, "At least one ticket is required")
     svc = TicketImportService(session)
     result = svc.import_tickets(workspace_slug=body.workspace_slug, tickets=body.tickets)
-    if result.created_count == 0 and result.errors:
+    if result.errors:
+        # Any parent-link / validation failure makes the batch unclean — including
+        # partial creates (initiative ok, feature under it rejected). Callers must
+        # not treat HTTP 201 as "every row landed".
         raise HTTPException(400, "; ".join(result.errors))
     return result
 
@@ -1367,7 +1370,7 @@ def finalize_hierarchy(
     body: FinalizeHierarchyRequest, session: Session = Depends(get_session)
 ) -> FinalizeHierarchyResponse:
     """Create all work items in hierarchy atomically, with parent-child validation."""
-    from loregarden.services.hierarchy_service import validate_parent_child
+    from loregarden.services.hierarchy_service import validate_parent_assignment
     from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
 
     ws = session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
@@ -1399,22 +1402,21 @@ def finalize_hierarchy(
             if item.priority < 1 or item.priority > 3:
                 raise ValueError(f"Invalid priority {item.priority}: must be in [1, 3]")
 
-            if item.work_item_type == WorkItemType.MILESTONE:
-                if item.parent_ticket_id:
-                    raise ValueError("Milestones cannot have a parent")
-                parent_id = None
-            elif parent_id:
+            parent_type = None
+            if parent_id:
                 parent = session.get(Ticket, parent_id)
                 if not parent:
                     raise ValueError(f"Parent not found: {parent_id}")
-                validate_parent_child(parent.work_item_type, item.work_item_type)
-            else:
-                if item.work_item_type not in (
-                    WorkItemType.MILESTONE,
-                    WorkItemType.FEATURE,
-                    WorkItemType.CAPABILITY,
-                ):
-                    raise ValueError(f"{item.work_item_type.value} cannot be a root item")
+                parent_type = parent.work_item_type
+            elif item.parent_ticket_id:
+                # Payload-named parent without a tree parent — load and type-check.
+                linked = session.get(Ticket, item.parent_ticket_id)
+                if not linked or linked.workspace_id != ws.id:
+                    raise ValueError("Parent work item not found in workspace")
+                parent_id = linked.id
+                parent_type = linked.work_item_type
+
+            validate_parent_assignment(item.work_item_type, parent_type)
 
             ext_id = item.external_id.strip()
             if not ext_id:

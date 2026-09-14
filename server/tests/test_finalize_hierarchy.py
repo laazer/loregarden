@@ -996,15 +996,22 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
                 "workspace_slug": "loregarden",
                 "hierarchy": [
                     {
-                        "external_id": "test-feature-bug",
-                        "title": "Feature with Bug",
-                        "work_item_type": "feature",
+                        "external_id": "test-ms-feature-bug",
+                        "title": "Milestone for feature+bug",
+                        "work_item_type": "milestone",
                         "children": [
                             {
-                                "external_id": "test-bug-under-feature",
-                                "title": "Regression in Feature",
-                                "work_item_type": "bug",
-                                "children": [],
+                                "external_id": "test-feature-bug",
+                                "title": "Feature with Bug",
+                                "work_item_type": "feature",
+                                "children": [
+                                    {
+                                        "external_id": "test-bug-under-feature",
+                                        "title": "Regression in Feature",
+                                        "work_item_type": "bug",
+                                        "children": [],
+                                    }
+                                ],
                             }
                         ],
                     }
@@ -1012,7 +1019,7 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
             },
         )
         assert res.status_code == 201
-        assert res.json()["total_created"] == 2
+        assert res.json()["total_created"] == 3
 
     def test_capability_can_have_bug_children(self, client: TestClient, db_session: Session):
         """Capability can have Bug as direct child (valid per VALID_HIERARCHY)."""
@@ -1022,15 +1029,29 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
                 "workspace_slug": "loregarden",
                 "hierarchy": [
                     {
-                        "external_id": "test-capability-bug",
-                        "title": "Capability with Bug",
-                        "work_item_type": "capability",
+                        "external_id": "test-ms-capability-bug",
+                        "title": "Milestone for capability+bug",
+                        "work_item_type": "milestone",
                         "children": [
                             {
-                                "external_id": "test-bug-under-capability",
-                                "title": "Bug in Capability",
-                                "work_item_type": "bug",
-                                "children": [],
+                                "external_id": "test-feature-for-cap-bug",
+                                "title": "Feature for capability+bug",
+                                "work_item_type": "feature",
+                                "children": [
+                                    {
+                                        "external_id": "test-capability-bug",
+                                        "title": "Capability with Bug",
+                                        "work_item_type": "capability",
+                                        "children": [
+                                            {
+                                                "external_id": "test-bug-under-capability",
+                                                "title": "Bug in Capability",
+                                                "work_item_type": "bug",
+                                                "children": [],
+                                            }
+                                        ],
+                                    }
+                                ],
                             }
                         ],
                     }
@@ -1038,7 +1059,7 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
             },
         )
         assert res.status_code == 201
-        assert res.json()["total_created"] == 2
+        assert res.json()["total_created"] == 4
 
     def test_mixed_bug_and_proper_children(self, client: TestClient, db_session: Session):
         """Hierarchy can mix proper type children and bugs at same level."""
@@ -1048,22 +1069,29 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
                 "workspace_slug": "loregarden",
                 "hierarchy": [
                     {
-                        "external_id": "test-mixed-parent",
-                        "title": "Parent",
-                        "work_item_type": "feature",
+                        "external_id": "test-mixed-ms",
+                        "title": "Milestone for mixed",
+                        "work_item_type": "milestone",
                         "children": [
                             {
-                                "external_id": "test-mixed-capability",
-                                "title": "Capability",
-                                "work_item_type": "capability",
-                                "children": [],
-                            },
-                            {
-                                "external_id": "test-mixed-bug",
-                                "title": "Bug",
-                                "work_item_type": "bug",
-                                "children": [],
-                            },
+                                "external_id": "test-mixed-parent",
+                                "title": "Parent",
+                                "work_item_type": "feature",
+                                "children": [
+                                    {
+                                        "external_id": "test-mixed-capability",
+                                        "title": "Capability",
+                                        "work_item_type": "capability",
+                                        "children": [],
+                                    },
+                                    {
+                                        "external_id": "test-mixed-bug",
+                                        "title": "Bug",
+                                        "work_item_type": "bug",
+                                        "children": [],
+                                    },
+                                ],
+                            }
                         ],
                     }
                 ],
@@ -1071,7 +1099,7 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
         )
         assert res.status_code == 201
         body = res.json()
-        assert body["total_created"] == 3
+        assert body["total_created"] == 4
 
 
 class TestFinalizeHierarchyAtomicityAdvanced:
@@ -1191,23 +1219,33 @@ class TestFinalizeHierarchyAcceptanceCriteria:
                 "workspace_slug": "loregarden",
                 "hierarchy": [
                     {
-                        "external_id": "ac1-finalization",
-                        "title": "Finalization and Work-Item Persistence",
-                        "work_item_type": "feature",  # Changed from epic to feature per schema
-                        "description": "Create endpoint/handler for bulk work-item creation",
-                        "acceptance_criteria": ["Endpoint accepts hierarchy", "Creates atomically"],
-                        "priority": 1,
+                        "external_id": "ac1-ms",
+                        "title": "AC1 Milestone",
+                        "work_item_type": "milestone",
                         "children": [
                             {
-                                "external_id": "ac1-finalize-confirmation",
-                                "title": "Implement finalize confirmation and work-item creation",
-                                "work_item_type": "capability",
+                                "external_id": "ac1-finalization",
+                                "title": "Finalization and Work-Item Persistence",
+                                "work_item_type": "feature",
+                                "description": "Create endpoint/handler for bulk work-item creation",
+                                "acceptance_criteria": [
+                                    "Endpoint accepts hierarchy",
+                                    "Creates atomically",
+                                ],
+                                "priority": 1,
                                 "children": [
                                     {
-                                        "external_id": "ac1-backend-endpoint",
-                                        "title": "Backend endpoint implementation",
-                                        "work_item_type": "task",
-                                        "children": [],
+                                        "external_id": "ac1-finalize-confirmation",
+                                        "title": "Implement finalize confirmation and work-item creation",
+                                        "work_item_type": "capability",
+                                        "children": [
+                                            {
+                                                "external_id": "ac1-backend-endpoint",
+                                                "title": "Backend endpoint implementation",
+                                                "work_item_type": "task",
+                                                "children": [],
+                                            }
+                                        ],
                                     }
                                 ],
                             }
@@ -1217,7 +1255,7 @@ class TestFinalizeHierarchyAcceptanceCriteria:
             },
         )
         assert res.status_code == 201
-        assert res.json()["total_created"] == 3
+        assert res.json()["total_created"] == 4
 
     def test_creates_all_work_items_atomically(self, client: TestClient, db_session: Session):
         """All work items created in single transaction (AC2)."""
