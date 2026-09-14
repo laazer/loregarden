@@ -655,3 +655,217 @@ class TestNoMilestoneParentShortCircuitAnywhereInServer:
         assert not offenders, (
             "Unconditional milestone-parent short-circuit still present:\n" + "\n".join(offenders)
         )
+
+
+# --- order dependency / forward parent refs ---------------------------------
+
+
+class TestImportOrderDependency:
+    """_import_sort_key currently ranks MILESTONE before unknown types (default 99).
+    INITIATIVE will land in that default bucket until the map is updated, so a
+    batch that lists the milestone *before* the initiative exercises the
+    multi-pass deferral path — a single-pass + short-circuit combo silently
+    orphans the milestone today."""
+
+    def test_import_milestone_before_initiative_in_payload(
+        self, client: TestClient, db_session: Session
+    ):
+        res = client.post(
+            "/api/tickets/import",
+            json={
+                "workspace_slug": "loregarden",
+                "tickets": [
+                    {
+                        "title": "Child first (order trap)",
+                        "work_item_type": "milestone",
+                        "external_id": "adv-order-ms-first",
+                        "parent_external_id": "adv-order-init-second",
+                    },
+                    {
+                        "title": "Parent second (order trap)",
+                        "work_item_type": "initiative",
+                        "external_id": "adv-order-init-second",
+                    },
+                ],
+            },
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["created_count"] == 2
+        initiative = (
+            db_session.exec(
+                select(Ticket).where(Ticket.external_id == "adv-order-init-second")
+            ).first()
+            or db_session.exec(
+                select(Ticket).where(Ticket.legacy_external_id == "adv-order-init-second")
+            ).first()
+        )
+        milestone = (
+            db_session.exec(
+                select(Ticket).where(Ticket.external_id == "adv-order-ms-first")
+            ).first()
+            or db_session.exec(
+                select(Ticket).where(Ticket.legacy_external_id == "adv-order-ms-first")
+            ).first()
+        )
+        assert initiative is not None and milestone is not None
+        assert milestone.parent_ticket_id == initiative.id
+
+
+# --- finalize root allow-list -----------------------------------------------
+
+
+class TestFinalizeInitiativeRootAllowList:
+    """finalize create_item_recursive currently allow-lists only
+    MILESTONE/FEATURE/CAPABILITY as roots. INITIATIVE alone must be legal."""
+
+    def test_finalize_sole_initiative_root(self, client: TestClient, db_session: Session):
+        res = client.post(
+            "/api/tickets/finalize-hierarchy",
+            json={
+                "workspace_slug": "loregarden",
+                "hierarchy": [
+                    {
+                        "external_id": "adv-fin-sole-init",
+                        "title": "Sole Initiative Root",
+                        "work_item_type": "initiative",
+                        "children": [],
+                    }
+                ],
+            },
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["total_created"] == 1
+        initiative = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "adv-fin-sole-init")
+        ).first()
+        assert initiative is not None
+        assert initiative.parent_ticket_id is None
+        assert initiative.work_item_type == _initiative()
+
+
+# --- caller seam wiring (mutation: helper exists but unused) ----------------
+
+
+class TestCallerSeamWiring:
+    """A helper that nothing calls satisfies ImportError checks while leaving
+    the short-circuits in place. Pin that every create/reparent/import/finalize
+    call path names validate_parent_assignment."""
+
+    _MODULES = (
+        "loregarden.services.hierarchy_service",
+        "loregarden.services.ticket_service",
+        "loregarden.services.ticket_import_service",
+        "loregarden.api.tickets",
+    )
+
+    def test_call_paths_reference_validate_parent_assignment(self):
+        missing: list[str] = []
+        for mod_name in self._MODULES:
+            mod = __import__(mod_name, fromlist=["*"])
+            source = inspect.getsource(mod)
+            if "validate_parent_assignment" not in source:
+                missing.append(mod_name)
+        assert not missing, (
+            "Call paths must invoke validate_parent_assignment (not only "
+            "validate_parent_child / local short-circuits):\n" + "\n".join(missing)
+        )
+
+
+# --- MCP create surface -----------------------------------------------------
+
+
+class TestMcpInitiativeSurfaces:
+    """MCP create_ticket must accept initiative and enforce the same pairs —
+    schema enum rejection of 'initiative' is an AC1/AC6 miss on this surface."""
+
+    def test_mcp_create_parentless_initiative(self, db_session: Session):
+        from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
+
+        args = normalize_tool_arguments(
+            "loregarden_create_ticket",
+            {
+                "workspace_slug": "loregarden",
+                "title": "MCP parentless initiative",
+                "work_item_type": "initiative",
+            },
+        )
+        import json
+
+        result = json.loads(execute_tool(db_session, "loregarden_create_ticket", args))
+        stored = db_session.get(Ticket, result["id"])
+        assert stored is not None
+        assert stored.parent_ticket_id is None
+        assert stored.work_item_type == _initiative()
+
+    def test_mcp_create_initiative_with_parent_rejected(self, db_session: Session):
+        from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
+
+        milestone = _create(
+            db_session, title="MCP init reject parent", work_item_type=WorkItemType.MILESTONE
+        )
+        args = normalize_tool_arguments(
+            "loregarden_create_ticket",
+            {
+                "workspace_slug": "loregarden",
+                "title": "MCP initiative with parent",
+                "work_item_type": "initiative",
+                "parent": milestone.id,
+            },
+        )
+        with pytest.raises(ValueError):
+            execute_tool(db_session, "loregarden_create_ticket", args)
+
+
+# --- invalid / corrupt type strings -----------------------------------------
+
+
+class TestCorruptWorkItemTypeInputs:
+    def test_rest_create_rejects_wrong_case_initiative(
+        self, client: TestClient, db_session: Session
+    ):
+        """Enum is lowercase 'initiative'; casing mutations must 422, not coerce."""
+        before = len(db_session.exec(select(Ticket)).all())
+        res = client.post(
+            "/api/tickets",
+            json={
+                "workspace_slug": "loregarden",
+                "title": "Wrong case Initiative",
+                "work_item_type": "Initiative",
+            },
+        )
+        assert res.status_code == 422, res.text
+        assert len(db_session.exec(select(Ticket)).all()) == before
+
+    def test_rest_create_rejects_empty_work_item_type(
+        self, client: TestClient, db_session: Session
+    ):
+        res = client.post(
+            "/api/tickets",
+            json={
+                "workspace_slug": "loregarden",
+                "title": "Empty type",
+                "work_item_type": "",
+            },
+        )
+        assert res.status_code == 422, res.text
+
+
+# --- reparent initiative under initiative -----------------------------------
+
+
+class TestInitiativeSelfParent:
+    def test_reparent_initiative_under_initiative_rejected(self, db_session: Session):
+        a = _create(db_session, title="Init A", work_item_type=_initiative())
+        b = _create(db_session, title="Init B", work_item_type=_initiative())
+        with pytest.raises(ValueError):
+            reparent_ticket(db_session, a, b.id)
+
+    def test_create_initiative_under_initiative_rejected(self, db_session: Session):
+        parent = _create(db_session, title="Init parent", work_item_type=_initiative())
+        with pytest.raises(ValueError):
+            _create(
+                db_session,
+                title="Init child",
+                work_item_type=_initiative(),
+                parent_ticket_id=parent.id,
+            )
