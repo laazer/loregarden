@@ -297,7 +297,11 @@ class TestFinalizeHierarchyAtomicity:
         assert len(exists) == 0
 
     def test_rollback_on_milestone_with_parent_id(self, client: TestClient, db_session: Session):
-        """Transaction rolls back when milestone (top-level) has parent_ticket_id."""
+        """Transaction rolls back when a top-level milestone names a non-resolvable parent.
+
+        After lg-initiatives-cross-731 a milestone may hang under an INITIATIVE;
+        an unresolved / non-initiative parent_ticket_id is still illegal.
+        """
         res = client.post(
             "/api/tickets/finalize-hierarchy",
             json={
@@ -307,7 +311,7 @@ class TestFinalizeHierarchyAtomicity:
                         "external_id": "test-invalid-milestone",
                         "title": "Invalid Milestone",
                         "work_item_type": "milestone",
-                        "parent_ticket_id": "invalid-uuid",  # Milestones cannot have parents
+                        "parent_ticket_id": "invalid-uuid",
                         "children": [],
                     }
                 ],
