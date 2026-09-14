@@ -50,6 +50,11 @@ TRANSITION_EVENTS: tuple[EventType, ...] = (
     EventType.STAGE_COMPLETED,
     EventType.STAGE_SKIPPED,
     EventType.GATE_EVALUATED,
+    # By the same rule as GATE_EVALUATED: no table records why the
+    # orchestrator refused, settled or overruled something, and the
+    # decision is the thing a person most wants to question on an
+    # unattended run (lg-workflow-integrity-734).
+    EventType.ORCHESTRATOR_DECISION,
 )
 
 

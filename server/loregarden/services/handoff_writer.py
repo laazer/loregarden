@@ -19,12 +19,19 @@ written on a mere authoring attempt.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import ArtifactKind, ClaimCertainty, Ticket, Workspace
+from loregarden.models.domain import (
+    ArtifactKind,
+    ClaimCertainty,
+    OrchestratorDecision,
+    Ticket,
+    Workspace,
+)
 from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
@@ -37,9 +44,13 @@ from loregarden.services.handoff_store import (
     store_handoff,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 GATE_MODULE_RELPATH = "ci/scripts/gates/handoff_validation_check.py"
 GATE_PACKAGE_ROOT = "ci/scripts"
@@ -294,6 +305,51 @@ def _record_unvalidated_handoff(
     )
 
 
+#: The one workspace-gate verdict loregarden may overrule, and the reason it
+#: may: the gate is asking a question loregarden answers with more authority.
+#: A frozen pair table in a workspace script says which agent may hand to
+#: which; the ticket's own template says which stages actually run in which
+#: order, and loregarden is the party executing that order. When the two
+#: disagree about a pair the template confirms, the table is stale, not the
+#: transition. Every other violation is the gate's to make.
+#:
+#: Waived from the vocabulary gate because this is the WORKSPACE gate's rule
+#: name — blobert's, today — not a value loregarden owns or could enum.
+_OVERRULABLE_RULE = "handoff_pair_unknown"  # py-org: allow-string
+
+
+def _only_violation_is(validation: dict[str, Any], rule: str) -> bool:
+    """True when the gate's FAIL rests on exactly one violation, of `rule`.
+
+    Exactly one, on purpose. A FAIL that also carries a catalog violation is a
+    real failure that happens to mention the pair; overruling it would discard
+    the part the gate was right about.
+    """
+    violations = validation.get("violations") or []
+    return len(violations) == 1 and violations[0].get("rule") == rule
+
+
+def _template_confirms_pair(
+    session: Session, ticket: Ticket, from_agent: str, to_agent: str
+) -> bool:
+    """Whether `from_agent` hands to `to_agent` in this ticket's own stage order.
+
+    Read from the ticket's workflow INSTANCE — its pinned template version —
+    not the latest template, so a ticket mid-run on an older version is judged
+    by the stages it actually has.
+
+    Consecutive AGENTS, not consecutive stages: `blobert-tdd` runs
+    `implement -> script_review -> ac_gate`, and `script_review` names no agent,
+    so `core_simulation -> ac_gatekeeper` is the real handoff. Skipping
+    agentless stages is what makes that pair recognisable.
+    """
+    _, stages = resolve_ticket_stages(session, ticket)
+    agents = [stage.agent_id for stage in sorted(stages, key=lambda s: s.order) if stage.agent_id]
+    # strict=False on purpose: pairing a list with its own tail is unequal by
+    # construction, and the dropped last element has no successor to hand to.
+    return any(a == from_agent and b == to_agent for a, b in zip(agents, agents[1:], strict=False))
+
+
 def write_handoff(
     session: Session,
     *,
@@ -468,6 +524,40 @@ def write_handoff(
             **base,
             "status": "PASS",
             "message": validation.get("message") or "Handoff stored and gate-validated.",
+        }
+
+    if _only_violation_is(validation, _OVERRULABLE_RULE) and _template_confirms_pair(
+        session, ticket, from_agent, to_agent
+    ):
+        # The gate does not know this pair; the template does. Loregarden
+        # dispatched `from_agent` and is dispatching `to_agent` — it IS the
+        # transition — so a frozen list saying otherwise is stale, and the
+        # party with less information must not overrule the one executing
+        # the order (lg-workflow-integrity-730). Nothing the gate would have
+        # checked is lost: on an unknown pair it returns before evaluating the
+        # checklist at all. The drift is said out loud rather than absorbed.
+        record_orchestrator_decision(
+            session,
+            ticket,
+            decision=OrchestratorDecision.OVERRULED_STALE_GATE,
+            stage_key=ticket.workflow_stage_key or "",
+            reason=(
+                f"Stored the {from_agent} → {to_agent} handoff over the workspace gate: "
+                f"its pair table does not know that pair, but this ticket's template "
+                f"runs them consecutively. The gate is stale."
+            ),
+            evidence={"from_agent": from_agent, "to_agent": to_agent, "workspace": workspace.slug},
+        )
+        session.commit()
+        return {
+            **base,
+            "status": "PASS",
+            "message": "Handoff stored. The workspace gate's pair table is stale.",
+            "warnings": [
+                f"The workspace gate does not know the pair ({from_agent}, {to_agent}); "
+                f"this ticket's template runs them consecutively. Update the gate's "
+                f"pair table — it has drifted from the workflow."
+            ],
         }
 
     # Validation failed — discard the row so the ticket's latest handoff stays whatever

@@ -105,3 +105,42 @@ describe("historyLines on events recorded before fix attribution existed", () =>
     expect(lines[1].text).toBe("Gate test_design passed");
   });
 });
+
+function decision(kind: string, reason: string, stage = "implement"): TicketHistoryEvent {
+  seq += 1;
+  return {
+    id: `e${seq}`,
+    type: "OrchestratorDecision",
+    ticket_id: "t1",
+    workspace_id: "w1",
+    payload: { decision: kind, stage_key: stage, reason },
+    created_at: "2026-09-14T12:33:00Z",
+  };
+}
+
+// lg-workflow-integrity-734: the orchestrator's own decisions were server log
+// lines the UI never read. An unknown type used to render as its raw name.
+describe("orchestrator decisions", () => {
+  it("renders the reason as a sentence, not the raw event type", () => {
+    const [line] = historyLines([
+      decision("overruled_stale_gate", "Stored the ui-design-decision → spec handoff over the workspace gate."),
+    ]);
+    expect(line.text).toContain("Orchestrator:");
+    expect(line.text).toContain("ui-design-decision → spec");
+    expect(line.text).not.toContain("OrchestratorDecision");
+  });
+
+  it("reads a refusal as trouble and an overrule as normal", () => {
+    const [refused, overruled] = historyLines([
+      decision("refused_dispatch_terminal_parent", "Did not dispatch 'implement'."),
+      decision("overruled_stale_gate", "Stored the handoff."),
+    ]);
+    expect(refused.tone).toBe("failed");
+    expect(overruled.tone).toBe("normal");
+  });
+
+  it("still says what it was when the reason is missing", () => {
+    const [line] = historyLines([decision("settled_orphaned_run", "")]);
+    expect(line.text).toContain("settled orphaned run");
+  });
+});

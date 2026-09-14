@@ -778,6 +778,11 @@ class EventType(str, Enum):
     APPROVAL_REQUESTED = "ApprovalRequested"
     APPROVAL_RESOLVED = "ApprovalResolved"
     GATE_EVALUATED = "GateEvaluated"
+    #: A choice the orchestrator made that a person might want to question —
+    #: refusing a dispatch, settling a run it did not start, overruling a
+    #: workspace gate. Distinct from the outcome events above: those record
+    #: what happened, this records why (lg-workflow-integrity-734).
+    ORCHESTRATOR_DECISION = "OrchestratorDecision"
 
 
 class QueueOperationType(str, Enum):
