@@ -133,6 +133,7 @@ class OrchestrationCallbackService:
         driver=None,
         profile_slug: str = "",
         auto_approve: bool = False,
+        approve_design_plans: bool = True,
         stop_at_stage_key: str = "",
         timeout_override_seconds: int | None = None,
     ) -> OrchestrationRun:
@@ -175,6 +176,7 @@ class OrchestrationCallbackService:
             status=OrchestrationRunStatus.QUEUED,
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_override_seconds,
         )
@@ -258,6 +260,7 @@ class OrchestrationCallbackService:
         driver,
         profile_slug: str,
         auto_approve: bool = False,
+        approve_design_plans: bool = True,
         stop_at_stage_key: str = "",
         timeout_override_seconds: int | None = None,
         external_harness: ExternalHarness | None = None,
@@ -318,6 +321,7 @@ class OrchestrationCallbackService:
             external_harness=external_harness,
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_override_seconds,
             started_at=datetime.now(timezone.utc),

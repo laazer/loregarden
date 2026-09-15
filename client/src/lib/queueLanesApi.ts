@@ -34,6 +34,7 @@ export const queueLanesApi = {
     body: {
       ticket_id: string;
       auto_approve?: boolean;
+      approve_design_plans?: boolean;
       stop_at_stage_key?: string;
       timeout_seconds?: number;
     },

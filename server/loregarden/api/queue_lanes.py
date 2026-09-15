@@ -26,6 +26,7 @@ class AddToLaneRequest(BaseModel):
     ticket_id: str
     #: Honoured whenever the lane reaches this entry, not when it is added.
     auto_approve: bool = False
+    approve_design_plans: bool = True
     stop_at_stage_key: str = ""
     #: Max seconds each agent run for this ticket (and its children) may take.
     timeout_seconds: int | None = Field(default=None, ge=30)
@@ -48,6 +49,7 @@ def add_to_lane(
             ticket_id=body.ticket_id,
             slot_number=slot_number,
             auto_approve=body.auto_approve,
+            approve_design_plans=body.approve_design_plans,
             stop_at_stage_key=body.stop_at_stage_key or None,
             timeout_seconds=body.timeout_seconds,
         )

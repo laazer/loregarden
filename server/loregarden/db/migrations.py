@@ -41,6 +41,10 @@ from loregarden.db.migrations_chat import (
     m_chat_turn_thinking,
 )
 from loregarden.db.migrations_composer import m_composer_commands
+from loregarden.db.migrations_design_plan_gate import (
+    m_approve_design_plans_columns,
+    m_design_plan_gates,
+)
 from loregarden.db.migrations_diff_comments import (
     m_branch_diff_comments,
     m_ticket_diff_comments,
@@ -1375,6 +1379,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
     ("0129_blobert_backend_lane", m_blobert_backend_lane),
     ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
+    ("0132_approve_design_plans_columns", m_approve_design_plans_columns),
+    ("0133_design_plan_gates", m_design_plan_gates),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

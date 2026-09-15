@@ -23,17 +23,23 @@ from loregarden.models.domain import (
     Approval,
     Artifact,
     EventType,
+    OrchestrationRun,
     ReworkStopReason,
     RunStatus,
     StageStatus,
     StageVerdictChannel,
     Ticket,
     TicketState,
+    WorkflowStageDef,
     Workspace,
 )
 from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
+)
+from loregarden.services.design_plan_gate import (
+    orchestrator_may_sign_off,
+    record_design_plan_sign_off,
 )
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -202,6 +208,32 @@ def _reroute_or_block_for_rework(
         )
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, full_context)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+
+
+def _sign_off_design_plan_if_permitted(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    stages: list[WorkflowStageDef],
+    gate_approval: Approval,
+) -> None:
+    """The post-run gate on a design plan, signed off by the run that reached it.
+
+    Same shape as the `auto_approve` pre-resolve above it, narrowed to the
+    design-plan stages and to a parent orchestration started with
+    `approve_design_plans` (746). A standalone run has no orchestrator to sign
+    for it, so its gate waits for a person. Recorded in the history either way.
+    """
+    if not run.orchestration_run_id:
+        return
+    parent = orch.session.get(OrchestrationRun, run.orchestration_run_id)
+    stage_def = next((s for s in stages if s.key == run.stage_key), None)
+    if parent is None or stage_def is None:
+        return
+    if not orchestrator_may_sign_off(parent, stage_def, auto_approve=False):
+        return
+    orch.auto_resolve_gate_approval(gate_approval, run)
+    record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
 
 
 def complete_run_tail(
@@ -563,6 +595,8 @@ def advance_stage_after_run(
     # importing it here would close a cycle.
     if gate_approval is not None and run.auto_approve:
         orch.auto_resolve_gate_approval(gate_approval, run)
+    elif gate_approval is not None:
+        _sign_off_design_plan_if_permitted(orch, ticket, run, stages, gate_approval)
         orch.session.refresh(ticket)
 
 

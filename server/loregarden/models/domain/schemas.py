@@ -376,6 +376,9 @@ class StartOrchestrationRequest(SQLModel):
     max_stages: int | None = None
     stop_at_stage_key: str | None = None
     auto_approve: bool = False
+    #: Let the orchestrator sign off the design/plan stages' gate itself. Off
+    #: means a person sees that gate in the inbox; `auto_approve` still wins.
+    approve_design_plans: bool = True
     #: Max seconds each agent run in this orchestration (and its child tickets)
     #: may take. None keeps each agent's configured default.
     timeout_seconds: int | None = None

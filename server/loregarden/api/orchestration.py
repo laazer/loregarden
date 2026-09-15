@@ -156,6 +156,7 @@ def start_orchestration(
     reservation = QueueAdmissionService(session).reserve_orchestration(
         ticket,
         auto_approve=body.auto_approve,
+        approve_design_plans=body.approve_design_plans,
         stop_at_stage_key=body.stop_at_stage_key,
         preferred_slot=body.slot_number,
         driver=driver.value if driver else "",
@@ -176,6 +177,7 @@ def start_orchestration(
                 max_stages=body.max_stages,
                 stop_at_stage_key=body.stop_at_stage_key,
                 auto_approve=body.auto_approve,
+                approve_design_plans=body.approve_design_plans,
                 timeout_seconds=body.timeout_seconds,
             )
         elif driver == OrchestrationDriver.EXTERNAL_MCP:
@@ -184,6 +186,7 @@ def start_orchestration(
                 driver=driver,
                 profile_slug=profile.slug,
                 auto_approve=body.auto_approve,
+                approve_design_plans=body.approve_design_plans,
                 stop_at_stage_key=body.stop_at_stage_key or "",
                 timeout_override_seconds=body.timeout_seconds,
             )

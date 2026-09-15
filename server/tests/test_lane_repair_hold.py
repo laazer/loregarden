@@ -81,6 +81,7 @@ class _Dispatcher:
         driver="",
         max_stages=None,
         timeout_seconds=None,
+        approve_design_plans=True,
     ):
         if self.refuse:
             return None

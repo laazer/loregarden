@@ -130,13 +130,15 @@ describe("orchestrator decisions", () => {
     expect(line.text).not.toContain("OrchestratorDecision");
   });
 
-  it("reads a refusal as trouble and an overrule as normal", () => {
-    const [refused, overruled] = historyLines([
+  it("reads a refusal as trouble and an overrule or a plan sign-off as normal", () => {
+    const [refused, overruled, signedOff] = historyLines([
       decision("refused_dispatch_terminal_parent", "Did not dispatch 'implement'."),
       decision("overruled_stale_gate", "Stored the handoff."),
+      decision("approved_design_plan", "Approved the design plan from 'ui-design'."),
     ]);
     expect(refused.tone).toBe("failed");
     expect(overruled.tone).toBe("normal");
+    expect(signedOff.tone).toBe("normal");
   });
 
   it("still says what it was when the reason is missing", () => {

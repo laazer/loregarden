@@ -61,7 +61,9 @@ _STAGES = [
     {
         "key": "signoff",
         "name": "Sign-off",
-        "agent_id": "planner",
+        # Not the planner: a planner's gate is a design plan, which the run signs
+        # off by default (746). These tests pin what an ordinary gate does.
+        "agent_id": "backend_implementer",
         "skill_name": "",
         "stage_type": "agent",
         "order": 2,

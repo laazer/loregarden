@@ -90,6 +90,7 @@ class LaneDispatcher(Protocol):
         auto_approve: bool,
         stop_at_stage_key: str | None,
         driver: str = "",
+        approve_design_plans: bool = True,
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
     ) -> OrchestrationRun | None: ...
@@ -165,6 +166,7 @@ class QueueLaneService:
         ticket_id: str,
         slot_number: int,
         auto_approve: bool = False,
+        approve_design_plans: bool = True,
         stop_at_stage_key: str | None = None,
         entry_kind: QueueEntryKind = QueueEntryKind.ORCHESTRATION,
         stage_key: str = "",
@@ -234,6 +236,7 @@ class QueueLaneService:
             # Carried on the entry so the lane honours them whenever it starts,
             # which may be long after the dialog that set them is gone.
             auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
             stop_at_stage_key=stop_at_stage_key or "",
             entry_kind=entry_kind,
             stage_key=stage_key,
@@ -541,6 +544,7 @@ class QueueLaneService:
             auto_approve=head.auto_approve,
             stop_at_stage_key=head.stop_at_stage_key or None,
             driver=head.driver or "",
+            approve_design_plans=head.approve_design_plans,
             max_stages=head.max_stages,
             timeout_seconds=head.timeout_seconds,
         )

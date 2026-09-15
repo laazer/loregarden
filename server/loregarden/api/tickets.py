@@ -1027,6 +1027,7 @@ def orchestrate_ticket(
     reservation = QueueAdmissionService(session).reserve_orchestration(
         ticket,
         auto_approve=body.auto_approve,
+        approve_design_plans=body.approve_design_plans,
         stop_at_stage_key=body.stop_at_stage_key,
         preferred_slot=body.slot_number,
         # Only used if the pool is full and this request parks: the entry is
@@ -1050,6 +1051,7 @@ def orchestrate_ticket(
         ticket,
         driver=body.driver,
         auto_approve=body.auto_approve,
+        approve_design_plans=body.approve_design_plans,
         stop_at_stage_key=body.stop_at_stage_key or "",
         timeout_override_seconds=body.timeout_seconds,
     )
@@ -1062,6 +1064,7 @@ def orchestrate_ticket(
             driver=body.driver,
             stop_at_stage_key=body.stop_at_stage_key,
             auto_approve=body.auto_approve,
+            approve_design_plans=body.approve_design_plans,
             timeout_seconds=body.timeout_seconds,
         )
     except ValueError as exc:

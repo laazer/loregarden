@@ -128,6 +128,7 @@ class LaneDispatch:
         driver: str = "",
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
+        approve_design_plans: bool = True,
     ) -> OrchestrationRun | None:
         """Start the ticket's pipeline and return the run that now owns the lane.
 
@@ -161,6 +162,7 @@ class LaneDispatch:
             ticket,
             driver=chosen_driver,
             auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_seconds,
         )
@@ -168,6 +170,7 @@ class LaneDispatch:
             schedule_orchestration(
                 ticket.id,
                 auto_approve=auto_approve,
+                approve_design_plans=approve_design_plans,
                 stop_at_stage_key=stop_at_stage_key or None,
                 driver=chosen_driver,
                 max_stages=max_stages,

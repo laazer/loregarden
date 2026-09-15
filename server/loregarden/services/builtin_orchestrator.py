@@ -48,9 +48,9 @@ from loregarden.services.studio_routing import (
 )
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
-    auto_resolve_awaiting_gate,
     finalize_aggregator_ticket,
     order_children_for_subtree,
+    resolve_gate_if_permitted,
     ticket_workflow_complete,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
@@ -148,6 +148,7 @@ class BuiltinOrchestrator:
         max_stages: int | None = None,
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
+        approve_design_plans: bool = True,
         timeout_seconds: int | None = None,
         _subtree_budget: SubtreeBudget | None = None,
     ) -> OrchestrationRun:
@@ -162,6 +163,7 @@ class BuiltinOrchestrator:
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             profile_slug=profile.slug,
             auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_seconds,
         )
@@ -238,8 +240,8 @@ class BuiltinOrchestrator:
                 stage_status = stage_map.get(target_key, ticket.workflow_stage_status)
 
                 if stage_status == StageStatus.AWAITING:
-                    if auto_approve and auto_resolve_awaiting_gate(
-                        self.session, ticket, orch_run, target_key
+                    if resolve_gate_if_permitted(
+                        self.session, ticket, orch_run, stage_def, auto_approve=auto_approve
                     ):
                         continue
                     return self._pause_orchestration(
@@ -535,7 +537,9 @@ class BuiltinOrchestrator:
             return None
         self.orch.enter_human_gate(ticket, stage_key=target_key)
         self.session.refresh(ticket)
-        if auto_approve and auto_resolve_awaiting_gate(self.session, ticket, orch_run, target_key):
+        if resolve_gate_if_permitted(
+            self.session, ticket, orch_run, stage_def, auto_approve=auto_approve
+        ):
             return None
         return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
 
