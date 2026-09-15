@@ -36,7 +36,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.acceptance_criteria import serialize_criteria
-from loregarden.services.hierarchy_service import child_count, validate_parent_child
+from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_ids import assign_external_id
 from loregarden.services.workflow_service import resolve_workspace_stages
@@ -118,19 +118,15 @@ class TicketService:
         work_item_type: WorkItemType,
         parent_ticket_id: str | None,
     ) -> Ticket | None:
-        """The parent this work item may hang off, or None for a milestone."""
-        if work_item_type == WorkItemType.MILESTONE:
-            if parent_ticket_id:
-                raise ValueError("Milestones cannot have a parent")
-            return None
-
+        """The parent this work item may hang off, or None for a parentless root."""
         if not parent_ticket_id:
-            raise ValueError(f"{work_item_type.value} requires a parent work item")
+            validate_parent_assignment(work_item_type, None)
+            return None
 
         parent = self.session.get(Ticket, parent_ticket_id)
         if not parent or parent.workspace_id != workspace_id:
             raise ValueError("Parent work item not found in workspace")
-        validate_parent_child(parent.work_item_type, work_item_type)
+        validate_parent_assignment(work_item_type, parent.work_item_type)
         return parent
 
     def _reject_taken_supplied_id(

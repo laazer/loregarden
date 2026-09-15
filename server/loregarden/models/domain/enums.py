@@ -91,6 +91,7 @@ class TicketActivity(StrEnum):
 class WorkItemType(str, Enum):
     """Hierarchy types — matches lllm-charge convention."""
 
+    INITIATIVE = "initiative"
     MILESTONE = "milestone"
     FEATURE = "feature"
     CAPABILITY = "capability"
@@ -99,6 +100,7 @@ class WorkItemType(str, Enum):
 
 
 VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
+    WorkItemType.INITIATIVE: [WorkItemType.MILESTONE],
     WorkItemType.MILESTONE: [WorkItemType.FEATURE, WorkItemType.BUG],
     WorkItemType.FEATURE: [WorkItemType.CAPABILITY, WorkItemType.BUG],
     WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],
@@ -106,7 +108,17 @@ VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
     WorkItemType.BUG: [],
 }
 
-WORKFLOW_WORK_ITEM_TYPES = frozenset(WorkItemType)
+# Explicit five-type set — never frozenset(WorkItemType), which would auto-include
+# INITIATIVE and let non-executable roots enter workflow/orchestration paths.
+WORKFLOW_WORK_ITEM_TYPES = frozenset(
+    {
+        WorkItemType.MILESTONE,
+        WorkItemType.FEATURE,
+        WorkItemType.CAPABILITY,
+        WorkItemType.TASK,
+        WorkItemType.BUG,
+    }
+)
 
 
 class CliAdapter(str, Enum):
