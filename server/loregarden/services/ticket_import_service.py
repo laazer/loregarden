@@ -182,7 +182,9 @@ class TicketImportService:
 
             try:
                 created = svc.create_ticket(
-                    workspace_slug=workspace_slug,
+                    workspace_slug=(
+                        None if item.work_item_type == WorkItemType.INITIATIVE else workspace_slug
+                    ),
                     title=item.title,
                     work_item_type=item.work_item_type,
                     parent_ticket_id=parent_id,
@@ -215,7 +217,12 @@ class TicketImportService:
 
         if item.parent_ticket_id:
             parent = self.session.get(Ticket, item.parent_ticket_id)
-            if not parent or parent.workspace_id != workspace_id:
+            if not parent:
+                label = item.source_label or item.title
+                errors.append(f"{label}: parent_ticket_id not found in workspace")
+                return _PARENT_REJECTED
+            # Null-workspace INITIATIVE parents may own a workspace-bound child.
+            if parent.workspace_id is not None and parent.workspace_id != workspace_id:
                 label = item.source_label or item.title
                 errors.append(f"{label}: parent_ticket_id not found in workspace")
                 return _PARENT_REJECTED
@@ -224,7 +231,11 @@ class TicketImportService:
             if not resolved:
                 return False
             parent = self.session.get(Ticket, resolved)
-            if not parent or parent.workspace_id != workspace_id:
+            if not parent:
+                label = item.source_label or item.title
+                errors.append(f"{label}: parent_external_id not found in workspace")
+                return _PARENT_REJECTED
+            if parent.workspace_id is not None and parent.workspace_id != workspace_id:
                 label = item.source_label or item.title
                 errors.append(f"{label}: parent_external_id not found in workspace")
                 return _PARENT_REJECTED

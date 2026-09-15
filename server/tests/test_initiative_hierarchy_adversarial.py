@@ -1072,6 +1072,8 @@ class TestTypeOrderTwinAst:
 
 class TestRestAndFinalizeRootSurfaces:
     def test_rest_create_parentless_initiative(self, client: TestClient, db_session: Session):
+        """732 AC1 — REST TicketCreate still requires workspace_slug (727); reject the pair."""
+        before = len(db_session.exec(select(Ticket)).all())
         res = client.post(
             "/api/tickets",
             json={
@@ -1080,10 +1082,9 @@ class TestRestAndFinalizeRootSurfaces:
                 "work_item_type": "initiative",
             },
         )
-        assert res.status_code == 201, res.text
-        body = res.json()
-        assert body["parent_ticket_id"] is None
-        assert body["work_item_type"] == "initiative"
+        assert res.status_code == 400, res.text
+        assert "initiative" in res.text.lower() or "workspace" in res.text.lower()
+        assert len(db_session.exec(select(Ticket)).all()) == before
 
     def test_finalize_sibling_initiative_and_milestone_roots(
         self, client: TestClient, db_session: Session

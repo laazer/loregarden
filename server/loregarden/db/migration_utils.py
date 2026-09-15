@@ -66,29 +66,35 @@ def _column_clause(row, column: str) -> str:
     return " ".join(parts)
 
 
-def relax_not_null(conn: Connection, table: str, column: str) -> None:
-    """Drop the NOT NULL constraint on one column.
-
-    SQLite has no ``ALTER COLUMN``, so the table is rebuilt: the schema is read
-    back from ``PRAGMA`` rather than restated here, which keeps the rebuild
-    correct no matter which earlier migrations added columns to this table.
+def _rebuild_table(
+    conn: Connection,
+    table: str,
+    *,
+    drop_not_null: str | None = None,
+    extra_constraints: list[str] | None = None,
+    temp_suffix: str,
+) -> None:
+    """Rebuild ``table`` from PRAGMA, optionally dropping NOT NULL and appending CHECKs.
 
     The drop-and-rename is only safe with foreign-key enforcement off — every
     dependant's reference would otherwise break the moment the original table is
     dropped. ``apply_migrations`` turns it off for the duration of the run; this
     helper must not be called on a connection outside that scope.
     """
-    if not table_exists(conn, table) or column_is_nullable(conn, table, column):
-        return
-
     info = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
     names = [row[1] for row in info]
-    definitions = [_column_clause(row, column) for row in info]
+    if drop_not_null:
+        definitions = [_column_clause(row, drop_not_null) for row in info]
+    else:
+        definitions = [_column_clause(row, "") for row in info]
 
     for fk in conn.execute(text(f"PRAGMA foreign_key_list({table})")).fetchall():
         definitions.append(
             f"FOREIGN KEY({_quote(fk[3])}) REFERENCES {_quote(fk[2])} ({_quote(fk[4])})"
         )
+
+    for constraint in extra_constraints or []:
+        definitions.append(constraint)
 
     indexes = [
         row[0]
@@ -101,7 +107,7 @@ def relax_not_null(conn: Connection, table: str, column: str) -> None:
         ).fetchall()
     ]
 
-    temp = f"{table}__relax_{column}"
+    temp = f"{table}__{temp_suffix}"
     column_list = ", ".join(_quote(name) for name in names)
     conn.execute(text(f"CREATE TABLE {_quote(temp)} ({', '.join(definitions)})"))
     conn.execute(
@@ -113,3 +119,56 @@ def relax_not_null(conn: Connection, table: str, column: str) -> None:
     conn.execute(text(f"ALTER TABLE {_quote(temp)} RENAME TO {_quote(table)}"))
     for statement in indexes:
         conn.execute(text(statement))
+
+
+def relax_not_null(conn: Connection, table: str, column: str) -> None:
+    """Drop the NOT NULL constraint on one column.
+
+    SQLite has no ``ALTER COLUMN``, so the table is rebuilt: the schema is read
+    back from ``PRAGMA`` rather than restated here, which keeps the rebuild
+    correct no matter which earlier migrations added columns to this table.
+    """
+    if not table_exists(conn, table) or column_is_nullable(conn, table, column):
+        return
+
+    _rebuild_table(
+        conn,
+        table,
+        drop_not_null=column,
+        temp_suffix=f"relax_{column}",
+    )
+
+
+def rebuild_drop_not_null_and_add_check(
+    conn: Connection,
+    table: str,
+    column: str,
+    *,
+    check_name: str,
+    check_expr: str,
+) -> None:
+    """One rebuild that drops NOT NULL on ``column`` and installs a named CHECK.
+
+    Used when both changes must land together — SQLite cannot ADD a CHECK via
+    ALTER, and a plain ``relax_not_null`` would leave the table without the
+    invariant the CHECK is meant to enforce.
+    """
+    if not table_exists(conn, table):
+        return
+
+    _rebuild_table(
+        conn,
+        table,
+        drop_not_null=column,
+        extra_constraints=[f"CONSTRAINT {_quote(check_name)} CHECK ({check_expr})"],
+        temp_suffix=f"ck_{column}",
+    )
+
+
+def table_sql(conn: Connection, table: str) -> str | None:
+    """CREATE TABLE statement text from sqlite_master, or None if absent."""
+    row = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": table},
+    ).fetchone()
+    return row[0] if row else None

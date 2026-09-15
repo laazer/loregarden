@@ -127,6 +127,7 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
 from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
@@ -1375,6 +1376,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
     ("0129_blobert_backend_lane", m_blobert_backend_lane),
     ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
+    ("0131_tickets_workspace_binding", m_tickets_workspace_binding),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

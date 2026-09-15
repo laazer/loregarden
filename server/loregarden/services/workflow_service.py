@@ -131,8 +131,10 @@ def prime_workflow_instances(session: Session, ticket_ids: list[str]) -> None:
         bucket.setdefault(ticket_id, None)
 
 
-def workspace_for(session: Session, workspace_id: str) -> Workspace | None:
+def workspace_for(session: Session, workspace_id: str | None) -> Workspace | None:
     """A workspace row, held for the length of a read scope."""
+    if workspace_id is None:
+        return None
     bucket = _memo_bucket("workspaces")
     if bucket is not None and workspace_id in bucket:
         return bucket[workspace_id]

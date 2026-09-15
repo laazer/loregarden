@@ -111,6 +111,44 @@ def _workspace_id_nullable(engine) -> bool:
     raise AssertionError("tickets.workspace_id column missing")
 
 
+def _raw_ticket_insert(
+    conn,
+    *,
+    ticket_id: str,
+    external_id: str,
+    workspace_id: str | None,
+    title: str,
+    work_item_type: str,
+) -> None:
+    """INSERT with NOT NULL columns filled — create_all has no SQL defaults."""
+    conn.execute(
+        text(
+            "INSERT INTO tickets ("
+            "id, external_id, ticket_number, milestone_code, legacy_external_id, "
+            "workspace_id, title, description, state, priority, branch, milestone, "
+            "work_item_type, acceptance_criteria_json, tags_json, workflow_stage_key, "
+            "workflow_stage_status, revision, last_updated_by, next_agent, next_status, "
+            "blocking_issues, scope_reroute_agent, dispatch_waiver_stage_key, "
+            "dispatch_waiver_approval_id, is_integration_review, state_locked, "
+            "workflow_disabled, git_automation_json, triage_runtime_json, "
+            "orchestration_runtime_json, permission_allowlist_json, compatibility_posture, "
+            "created_at, updated_at"
+            ") VALUES ("
+            ":id, :ext, 0, '', '', :ws, :title, '', 'backlog', 3, '', '', :wit, "
+            "'[]', '[]', '', 'pending', 0, '', '', 'Proceed', '', '', '', '', "
+            "0, 0, 0, '', '{}', '{}', '[]', '', datetime('now'), datetime('now')"
+            ")"
+        ),
+        {
+            "id": ticket_id,
+            "ext": external_id,
+            "ws": workspace_id,
+            "title": title,
+            "wit": work_item_type,
+        },
+    )
+
+
 # --- R1 / unit seam ----------------------------------------------------------
 
 
@@ -244,45 +282,47 @@ class TestTicketsWorkspaceCheckConstraint:
         ws_id = self._seed_workspace(engine)
         with pytest.raises(IntegrityError):
             with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "INSERT INTO tickets "
-                        "(id, external_id, workspace_id, title, work_item_type, state, priority) "
-                        "VALUES ('t-bad-init', '', :ws, 'Bad init', 'initiative', 'backlog', 3)"
-                    ),
-                    {"ws": ws_id},
+                _raw_ticket_insert(
+                    conn,
+                    ticket_id="t-bad-init",
+                    external_id="",
+                    workspace_id=ws_id,
+                    title="Bad init",
+                    work_item_type="initiative",
                 )
 
     def test_illegal_task_with_null_workspace(self):
         engine = self._migrated()
         with pytest.raises(IntegrityError):
             with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "INSERT INTO tickets "
-                        "(id, external_id, workspace_id, title, work_item_type, state, priority) "
-                        "VALUES ('t-bad-task', 'x', NULL, 'Bad task', 'task', 'backlog', 3)"
-                    )
+                _raw_ticket_insert(
+                    conn,
+                    ticket_id="t-bad-task",
+                    external_id="x",
+                    workspace_id=None,
+                    title="Bad task",
+                    work_item_type="task",
                 )
 
     def test_legal_pairs_succeed(self):
         engine = self._migrated()
         ws_id = self._seed_workspace(engine)
         with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO tickets "
-                    "(id, external_id, workspace_id, title, work_item_type, state, priority) "
-                    "VALUES ('t-ok-init', '', NULL, 'Ok init', 'initiative', 'backlog', 3)"
-                )
+            _raw_ticket_insert(
+                conn,
+                ticket_id="t-ok-init",
+                external_id="",
+                workspace_id=None,
+                title="Ok init",
+                work_item_type="initiative",
             )
-            conn.execute(
-                text(
-                    "INSERT INTO tickets "
-                    "(id, external_id, workspace_id, title, work_item_type, state, priority) "
-                    "VALUES ('t-ok-ms', 'ms-1', :ws, 'Ok ms', 'milestone', 'backlog', 3)"
-                ),
-                {"ws": ws_id},
+            _raw_ticket_insert(
+                conn,
+                ticket_id="t-ok-ms",
+                external_id="ms-1",
+                workspace_id=ws_id,
+                title="Ok ms",
+                work_item_type="milestone",
             )
 
 
@@ -368,6 +408,8 @@ class TestWorkspaceBindingMigration:
         ws_id = "ws-keep"
         with Session(engine) as session:
             session.add(Workspace(id=ws_id, slug="keep", name="Keep", repo_path="/tmp/keep"))
+            session.commit()
+        with Session(engine) as session:
             session.add(
                 Ticket(
                     id="keep-ms",
@@ -405,13 +447,13 @@ class TestWorkspaceBindingMigration:
         # that still proves the invariant; skip the abort path in that case.
         try:
             with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "INSERT INTO tickets "
-                        "(id, external_id, workspace_id, title, work_item_type, state, priority) "
-                        "VALUES ('bad-init', '', 'ws-bad', 'Pre-check init', 'initiative', "
-                        "'backlog', 3)"
-                    )
+                _raw_ticket_insert(
+                    conn,
+                    ticket_id="bad-init",
+                    external_id="",
+                    workspace_id="ws-bad",
+                    title="Pre-check init",
+                    work_item_type="initiative",
                 )
         except IntegrityError:
             pytest.skip("create_all already enforces CHECK — abort path needs old DDL")

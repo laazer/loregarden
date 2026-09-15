@@ -64,11 +64,13 @@ def build_tree(
     """Assemble a forest from a flat ticket list (roots = no parent)."""
     stage_names = stage_names or {}
     by_id = {t.id: t for t in tickets}
-    workspace_slugs: dict[str, str] = {}
+    workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
-        if ticket.workspace_id not in workspace_slugs:
-            ws = session.get(Workspace, ticket.workspace_id)
-            workspace_slugs[ticket.workspace_id] = ws.slug if ws else ""
+        wid = ticket.workspace_id
+        if wid is None or wid in workspace_slugs:
+            continue
+        ws = session.get(Workspace, wid)
+        workspace_slugs[wid] = ws.slug if ws else ""
     children_map: dict[str | None, list[Ticket]] = {}
     for t in tickets:
         pid = t.parent_ticket_id
@@ -151,7 +153,10 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
         ticket.parent_ticket_id = None
     else:
         parent = session.get(Ticket, parent_ticket_id)
-        if not parent or parent.workspace_id != ticket.workspace_id:
+        if not parent:
+            raise ValueError("Parent work item not found in workspace")
+        # Null-workspace INITIATIVE parents may own a workspace-bound child.
+        if parent.workspace_id is not None and parent.workspace_id != ticket.workspace_id:
             raise ValueError("Parent work item not found in workspace")
         if parent.id == ticket.id:
             raise ValueError("A work item cannot be its own parent")
