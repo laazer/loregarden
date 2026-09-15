@@ -54,8 +54,11 @@ def _create(
     title: str,
     work_item_type: WorkItemType,
     parent_ticket_id: str | None = None,
-    workspace_slug: str = "loregarden",
+    workspace_slug: str | None = "loregarden",
 ) -> Ticket:
+    # 732 — initiatives bind to no workspace; a non-empty slug is rejected (AC1).
+    if work_item_type == _initiative():
+        workspace_slug = None
     return TicketService(session).create_ticket(
         workspace_slug=workspace_slug,
         title=title,
@@ -204,7 +207,8 @@ class TestImportShortCircuitMutations:
             ).first()
         assert initiative is not None and milestone is not None
         assert milestone.parent_ticket_id == initiative.id
-        assert milestone.workspace_id == initiative.workspace_id
+        assert initiative.workspace_id is None
+        assert milestone.workspace_id is not None
 
     def test_import_parentless_initiative(self, client: TestClient, db_session: Session):
         res = client.post(
@@ -222,6 +226,11 @@ class TestImportShortCircuitMutations:
         )
         assert res.status_code == 201, res.text
         assert res.json()["created_count"] == 1
+        created = db_session.get(Ticket, res.json()["ticket_ids"][0])
+        assert created is not None
+        # 732 — import must create initiatives with null workspace despite batch slug.
+        assert created.workspace_id is None
+        assert created.work_item_type == _initiative()
 
     def test_import_initiative_with_parent_rejected(self, client: TestClient, db_session: Session):
         milestone = _create(
@@ -775,10 +784,12 @@ class TestCallerSeamWiring:
 
 
 class TestMcpInitiativeSurfaces:
-    """MCP create_ticket must accept initiative and enforce the same pairs —
-    schema enum rejection of 'initiative' is an AC1/AC6 miss on this surface."""
+    """MCP create_ticket accepts initiative as an enum value (731), but 732's
+    TicketService rejects initiative + required workspace_slug until 727 drops
+    the schema requirement. Hierarchy pairs still apply when create succeeds."""
 
     def test_mcp_create_parentless_initiative(self, db_session: Session):
+        """732 AC1 — MCP still requires workspace_slug (727); service rejects the pair."""
         from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 
         args = normalize_tool_arguments(
@@ -789,13 +800,8 @@ class TestMcpInitiativeSurfaces:
                 "work_item_type": "initiative",
             },
         )
-        import json
-
-        result = json.loads(execute_tool(db_session, "loregarden_create_ticket", args))
-        stored = db_session.get(Ticket, result["id"])
-        assert stored is not None
-        assert stored.parent_ticket_id is None
-        assert stored.work_item_type == _initiative()
+        with pytest.raises(ValueError, match="(?i)initiative|workspace"):
+            execute_tool(db_session, "loregarden_create_ticket", args)
 
     def test_mcp_create_initiative_with_parent_rejected(self, db_session: Session):
         from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
@@ -901,18 +907,19 @@ class TestMcpMilestoneUnderInitiative:
         assert stored is not None
         assert stored.work_item_type == WorkItemType.MILESTONE
         assert stored.parent_ticket_id == initiative.id
-        assert stored.workspace_id == initiative.workspace_id
+        assert initiative.workspace_id is None
+        assert stored.workspace_id is not None
 
 
 # --- cross-workspace parent (workspace check stays local) -------------------
 
 
-class TestCrossWorkspaceInitiativeParent:
-    """731 requires same-workspace initiative parents; 732 owns null workspace.
-    A foreign-workspace initiative must still fail the local workspace check —
-    not coerce via type-pair alone."""
+class TestCrossWorkspaceParentStillRejected:
+    """732 — null-workspace INITIATIVE may parent any workspace's MILESTONE, but a
+    parent with a non-null workspace_id must still equal the child's. A foreign
+    bound parent must fail the local workspace check — not coerce via type-pair."""
 
-    def test_create_milestone_rejects_foreign_workspace_initiative(
+    def test_create_feature_rejects_foreign_workspace_milestone(
         self, db_session: Session, tmp_path
     ):
         from loregarden.models.domain import Workspace
@@ -926,25 +933,23 @@ class TestCrossWorkspaceInitiativeParent:
         db_session.commit()
         db_session.refresh(foreign)
 
-        # Build an initiative row bound to the foreign workspace without going
-        # through TicketService.create (which would re-resolve slug).
-        initiative = Ticket(
-            external_id="adv-foreign-init",
+        foreign_ms = Ticket(
+            external_id="adv-foreign-ms",
             workspace_id=foreign.id,
-            title="Foreign initiative",
-            work_item_type=_initiative(),
+            title="Foreign milestone",
+            work_item_type=WorkItemType.MILESTONE,
             priority=3,
         )
-        db_session.add(initiative)
+        db_session.add(foreign_ms)
         db_session.commit()
-        db_session.refresh(initiative)
+        db_session.refresh(foreign_ms)
 
         with pytest.raises(ValueError, match="(?i)workspace|not found"):
             _create(
                 db_session,
-                title="Ms under foreign init",
-                work_item_type=WorkItemType.MILESTONE,
-                parent_ticket_id=initiative.id,
+                title="Feature under foreign ms",
+                work_item_type=WorkItemType.FEATURE,
+                parent_ticket_id=foreign_ms.id,
                 workspace_slug="loregarden",
             )
 

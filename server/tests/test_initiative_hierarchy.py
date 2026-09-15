@@ -1,9 +1,8 @@
 """INITIATIVE work-item type and hierarchy parent-assignment rules (lg-initiatives-cross-731).
 
-Contracts for ACs 1–9. Implementation lands later; these tests are the red suite.
-
-Initiative parents in TicketService / import / finalize paths MUST share the
-child's workspace_id — nullable workspace is sibling 732.
+Contracts for ACs 1–9. Updated by sibling 732: initiatives are created with
+workspace_id=None; a null-workspace INITIATIVE may parent a workspace-bound
+MILESTONE (parent.workspace_id equality only when parent is non-null).
 """
 
 from __future__ import annotations
@@ -56,8 +55,11 @@ def _create(
     title: str,
     work_item_type: WorkItemType,
     parent_ticket_id: str | None = None,
-    workspace_slug: str = "loregarden",
+    workspace_slug: str | None = "loregarden",
 ) -> Ticket:
+    # 732 — initiatives bind to no workspace; a non-empty slug is rejected (AC1).
+    if work_item_type == _initiative():
+        workspace_slug = None
     return TicketService(session).create_ticket(
         workspace_slug=workspace_slug,
         title=title,
@@ -193,13 +195,13 @@ class TestValidateParentAssignment:
 
 
 class TestTicketServiceInitiativeParents:
-    """Create path — initiative parent shares child's workspace_id (not null)."""
+    """Create path — null-workspace INITIATIVE may parent a bound MILESTONE (732)."""
 
     def test_create_parentless_initiative(self, db_session: Session):
         initiative = _create(db_session, title="Root initiative", work_item_type=_initiative())
         assert initiative.parent_ticket_id is None
         assert initiative.work_item_type == _initiative()
-        assert initiative.workspace_id
+        assert initiative.workspace_id is None
 
     def test_create_initiative_with_parent_rejected(self, db_session: Session):
         milestone = _create(
@@ -222,7 +224,8 @@ class TestTicketServiceInitiativeParents:
             parent_ticket_id=initiative.id,
         )
         assert milestone.parent_ticket_id == initiative.id
-        assert milestone.workspace_id == initiative.workspace_id
+        assert initiative.workspace_id is None
+        assert milestone.workspace_id is not None
 
     @pytest.mark.parametrize(
         "child_type",
@@ -427,7 +430,8 @@ class TestFinalizeInitiativeAgreement:
         assert milestone is not None
         assert initiative.work_item_type == _initiative()
         assert milestone.parent_ticket_id == initiative.id
-        assert milestone.workspace_id == initiative.workspace_id
+        assert initiative.workspace_id is None
+        assert milestone.workspace_id is not None
 
     def test_finalize_initiative_with_feature_child_rejected(
         self, client: TestClient, db_session: Session

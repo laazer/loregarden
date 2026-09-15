@@ -208,11 +208,14 @@ def test_milestone_with_non_initiative_parent_is_rejected(client, db_session):
 
 
 def test_milestone_under_initiative_succeeds_via_mcp(client, db_session):
-    """AC2 / AC9 — MCP create delegates to TicketService; initiative parent ok."""
+    """AC2 / AC9 — MCP create delegates to TicketService; initiative parent ok.
+
+    732 — initiative is null-workspace; child milestone stays workspace-bound.
+    """
     initiative_type = getattr(WorkItemType, "INITIATIVE", None)
     assert initiative_type is not None, "WorkItemType.INITIATIVE missing — R1 / AC1"
     initiative = TicketService(db_session).create_ticket(
-        workspace_slug="loregarden",
+        workspace_slug=None,
         title="MCP initiative parent",
         work_item_type=initiative_type,
     )
@@ -228,7 +231,8 @@ def test_milestone_under_initiative_succeeds_via_mcp(client, db_session):
     stored = db_session.get(Ticket, result["id"])
     assert stored is not None
     assert stored.parent_ticket_id == initiative.id
-    assert stored.workspace_id == initiative.workspace_id
+    assert initiative.workspace_id is None
+    assert stored.workspace_id is not None
     assert stored.work_item_type == WorkItemType.MILESTONE
 
 
