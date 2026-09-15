@@ -16,8 +16,7 @@ class OrchestratorDecision(StrEnum):
 
     Deliberately closed. Each is a shape that has actually cost a run here and
     was, until lg-workflow-integrity-734, visible only as a server log line the
-    UI never read. A fifth kind added here is a fifth kind the readers must
-    learn to render.
+    UI never read. A kind added here is a kind the readers must learn to render.
     """
 
     #: A stage was not dispatched because its parent orchestration was already
@@ -31,3 +30,6 @@ class OrchestratorDecision(StrEnum):
     #: A handoff was stored despite the workspace gate not knowing the pair,
     #: because the ticket's own template confirmed it (730).
     OVERRULED_STALE_GATE = "overruled_stale_gate"
+    #: The sign-off gate on a design/plan stage was approved by the run itself,
+    #: as the run modal allowed (746). A person can still see it in the history.
+    APPROVED_DESIGN_PLAN = "approved_design_plan"

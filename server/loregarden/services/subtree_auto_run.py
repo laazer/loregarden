@@ -17,7 +17,12 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WorkflowStageDef,
     WorkItemType,
+)
+from loregarden.services.design_plan_gate import (
+    orchestrator_may_sign_off,
+    record_design_plan_sign_off,
 )
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -137,6 +142,29 @@ def auto_resolve_awaiting_gate(
     ApprovalService(session).auto_resolve(approval.id, orchestration_run_id=orch_run.id)
     session.refresh(ticket)
     return True
+
+
+def resolve_gate_if_permitted(
+    session: Session,
+    ticket: Ticket,
+    orch_run: OrchestrationRun,
+    stage: WorkflowStageDef,
+    *,
+    auto_approve: bool,
+) -> bool:
+    """Auto-resolve the awaiting gate on `stage` when the run is allowed to.
+
+    `auto_approve` signs off every gate as it always has. Without it, only a
+    design-plan stage's gate, and only under `approve_design_plans` — recorded
+    as an orchestrator decision so the history says who approved the plan.
+    Returns True when a gate was resolved and the loop may continue.
+    """
+    if not orchestrator_may_sign_off(orch_run, stage, auto_approve=auto_approve):
+        return False
+    resolved = auto_resolve_awaiting_gate(session, ticket, orch_run, stage.key)
+    if resolved and not auto_approve:
+        record_design_plan_sign_off(session, ticket, orch_run, stage.key)
+    return resolved
 
 
 def ticket_workflow_complete(orch: OrchestrationService, ticket: Ticket) -> bool:

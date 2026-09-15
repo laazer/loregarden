@@ -77,7 +77,10 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
   // is the orchestrator letting something proceed that a gate would have
   // stopped, which is the opposite and reads normal.
   if (event.type === "OrchestratorDecision") {
-    return str(event.payload.decision) === "overruled_stale_gate" ? "normal" : "failed";
+    const decision = str(event.payload.decision);
+  return decision === "overruled_stale_gate" || decision === "approved_design_plan"
+    ? "normal"
+    : "failed";
   }
   if (event.type !== "GateEvaluated") return "normal";
   const outcome = str(event.payload.outcome);

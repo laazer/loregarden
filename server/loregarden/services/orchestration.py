@@ -1454,7 +1454,11 @@ class ApprovalService:
             .where(OrchestrationRun.ticket_id == ticket.id)
             .order_by(OrchestrationRun.created_at.desc())
         ).first()
-        schedule_orchestration(ticket.id, auto_approve=bool(previous and previous.auto_approve))
+        schedule_orchestration(
+            ticket.id,
+            auto_approve=bool(previous and previous.auto_approve),
+            approve_design_plans=previous.approve_design_plans if previous else True,
+        )
 
     def list_pending(self) -> list[Approval]:
         return list(

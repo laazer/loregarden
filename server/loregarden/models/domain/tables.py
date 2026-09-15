@@ -273,6 +273,10 @@ class OrchestrationRun(SQLModel, table=True):
     error_message: str = ""
     auto_approve: bool = Field(default=False)
     stop_at_stage_key: str = ""
+    #: Whether this run may sign off the design/plan stages' gate itself
+    #: (`services.design_plan_gate`). On by default; the run modal hands the
+    #: gate to a person by turning it off. Threads like `auto_approve`.
+    approve_design_plans: bool = Field(default=True)
     # Per-orchestration override of the workspace profile's monitor mode, for
     # this run and every child ticket orchestration it recurses into. Null =
     # use the profile. Lives here, beside auto_approve and

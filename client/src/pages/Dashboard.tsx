@@ -274,12 +274,7 @@ export function Dashboard() {
       options,
     }: {
       ticketId: string;
-      options?: {
-        stop_at_stage_key?: string;
-        auto_approve?: boolean;
-        slot_number?: number | null;
-        timeout_seconds?: number;
-      };
+      options?: Parameters<typeof api.orchestrate>[1];
     }) => api.orchestrate(ticketId, options),
     onSuccess: (data, { ticketId }) => {
       notifyIfQueued(data);
@@ -857,6 +852,7 @@ export function Dashboard() {
         options: {
           stop_at_stage_key: options.stopAtStageKey || undefined,
           auto_approve: options.autoApprove,
+          approve_design_plans: options.approveDesignPlans,
           slot_number: options.slotNumber,
           timeout_seconds: options.timeoutSeconds,
         },

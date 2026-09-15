@@ -20,6 +20,11 @@ export interface AgentsAssembleOptions {
   runtime: WorkspaceRuntimeSettings;
   stopAtStageKey: string;
   autoApprove: boolean;
+  /**
+   * Let the orchestrator sign off the design/plan stages' gate itself. On by
+   * default; off puts that gate in a person's inbox. Other gates are untouched.
+   */
+  approveDesignPlans: boolean;
   branch: string;
   /**
    * Which execution lane to run in; null asks for whichever is quietest. Every
@@ -67,6 +72,7 @@ export function AgentsAssembleModal({
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
+  const [approveDesignPlans, setApproveDesignPlans] = useState(true);
   const [branch, setBranch] = useState("");
   const [slotNumber, setSlotNumber] = useState<LaneChoice>(defaultSlotNumber);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
@@ -208,6 +214,25 @@ export function AgentsAssembleModal({
             />
             Auto-approve CLI tool permissions and workflow gates for this ticket and its subtree
           </label>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--txm)",
+              cursor: "pointer",
+              marginTop: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={approveDesignPlans}
+              disabled={busy || autoApprove}
+              onChange={(e) => setApproveDesignPlans(e.target.checked)}
+            />
+            Let the orchestrator approve design plans (untick to review the plan before implementation)
+          </label>
         </div>
 
         <div className="modal-footer">
@@ -226,6 +251,7 @@ export function AgentsAssembleModal({
                 runtime: draftRuntime,
                 stopAtStageKey,
                 autoApprove,
+                approveDesignPlans,
                 // A parent's branch is unused; pass its stored value so confirmAssemble
                 // treats it as unchanged and never rewrites it.
                 branch: isParent ? (ticket.branch ?? "") : branch.trim(),

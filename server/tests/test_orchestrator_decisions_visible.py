@@ -132,7 +132,7 @@ def test_a_stranded_stage_settle_reaches_the_history(db_session: Session):
 
 
 def test_the_decision_kind_is_closed(db_session: Session):
-    """AC2. A fifth kind cannot be added without the readers knowing — the
+    """AC2. A kind cannot be added without the readers knowing — the
     client's tone() and the enum must agree on the members."""
     kinds = {d.value for d in OrchestratorDecision}
     assert kinds == {
@@ -140,6 +140,7 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "settled_orphaned_run",
         "settled_stranded_stage",
         "overruled_stale_gate",
+        "approved_design_plan",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

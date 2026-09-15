@@ -82,6 +82,7 @@ class _Dispatcher:
         driver="",
         max_stages=None,
         timeout_seconds=None,
+        approve_design_plans=True,
     ):
         if self.refuse:
             return None
@@ -221,11 +222,13 @@ def test_run_options_survive_the_wait(lanes, session, workspace):
         ticket_id=second.id,
         slot_number=1,
         auto_approve=True,
+        approve_design_plans=False,
         stop_at_stage_key="verify",
     )
 
     entry = lanes.waiting_in_lane(1)[0]
     assert entry.auto_approve is True
+    assert entry.approve_design_plans is False  # the person asked to see the plan
     assert entry.stop_at_stage_key == "verify"
 
 

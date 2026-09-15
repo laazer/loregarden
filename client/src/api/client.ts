@@ -378,6 +378,8 @@ export const api = {
       max_stages?: number;
       stop_at_stage_key?: string;
       auto_approve?: boolean;
+      /** Let the run sign off the design/plan gate itself; default on server-side. */
+      approve_design_plans?: boolean;
       timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
