@@ -158,12 +158,15 @@ def test_the_count_still_stops_a_loop_that_keeps_changing(db_session):
 def test_the_tree_is_read_from_the_run_s_worktree_not_the_shared_checkout(db_session, tmp_path):
     """The common path, not an edge case: worktree execution is the default.
 
-    `resolve_head_sha` answers for `workspace.repo_path` — the shared checkout —
-    while `GitAutomationConfig.worktree` defaults to True, so a ticket's commits
-    normally land in a per-ticket worktree the shared checkout never sees.
-    Stamping the shared HEAD compared a repository the run never wrote to: two
-    rounds read as "the same tree" while the ticket's worktree advanced between
-    them, which is a false STUCK on the majority of real runs.
+    `resolve_head_sha` is ticket-scoped via `resolve_ticket_root` (ACTIVE
+    worktree, else workspace-root fallback). `_tree_sha` is the run-scoped
+    sibling via `resolve_run_root`: under stage fan-out an attempt worktree can
+    diverge from the ticket's ACTIVE worktree, and convergence must compare the
+    tree the finding was raised against. Stamping the shared checkout HEAD would
+    have compared a repository the run never wrote to: two rounds would read as
+    "the same tree" while the ticket's worktree advanced between them, which is
+    a false STUCK, and the signal would be answering a question about the wrong
+    repo entirely.
 
     Asserted by giving the run a worktree whose HEAD differs from the workspace
     checkout's, and requiring the ledger to record the worktree's.
