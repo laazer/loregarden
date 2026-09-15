@@ -430,6 +430,9 @@ class ExternalStageView(SQLModel):
     parallel: bool = False
     runs: list[ExternalStageRunView] = Field(default_factory=list)
     message: str = ""
+    #: What this stage is, in words, with the next primitive named — see
+    #: ``services.stage_shape``.
+    stage_shape: str = ""
 
 
 class ExternalStageResultView(SQLModel):

@@ -197,8 +197,11 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     ),
     StudioMcpToolGuide(
         name="loregarden_request_approval",
-        description="Create a human approval inbox item for a stage.",
-        when_to_use="Before risky/destructive actions or when human sign-off is required by gate checks.",
+        description="Open a human approval inbox item for a stage.",
+        when_to_use=(
+            "An agentless human gate, or a sign-off after this stage's own run succeeded. "
+            "Not to run a stage (start_stage / begin_external_stage) or waive one (skip_stage)."
+        ),
         example='tools/call loregarden_request_approval {"run_id": "<run id>", "stage_key": "review", "title": "Deploy to staging?", "impact": "Requires operator approval"}',
         stage_agent=True,
     ),
