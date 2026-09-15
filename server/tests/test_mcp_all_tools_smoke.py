@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
+from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from sqlmodel import Session
 
 MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
 #: Every module that owns dispatch for some slice of the tool surface. tools.py
@@ -286,7 +288,7 @@ def _args_for(
     return table.get(tool)
 
 
-def test_every_advertised_tool_is_callable(client: TestClient):
+def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     """Call each tool once with well-formed args; none may return a JSON-RPC error.
 
     Ordering matters: an orchestration run must exist before stage tools, and a run_id must
@@ -302,6 +304,22 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     run_id = run.get("id", "")
     assert run_id, f"start_orchestration returned no run id: {run}"
     stage_key = run.get("current_stage_key") or "triage"
+    # A gate approval signs off work that ran; on an agent stage nothing has run
+    # it is refused (`services.gate_approvals`). Give the stage its run first.
+    with Session(isolated_db) as session:
+        seeded = session.get(Ticket, ticket_id)
+        assert seeded is not None
+        session.add(
+            AgentRun(
+                run_code="smoke-run",
+                ticket_id=ticket_id,
+                workspace_id=seeded.workspace_id,
+                agent_id="planner",
+                stage_key=stage_key,
+                status=RunStatus.SUCCEEDED,
+            )
+        )
+        session.commit()
     detail = client.get(f"/api/tickets/{ticket_id}").json()
     optional_stage_key = next((s["key"] for s in detail.get("stages", []) if s.get("optional")), "")
     assert optional_stage_key, "seed workflow has no optional stage for skip_stage to skip"
