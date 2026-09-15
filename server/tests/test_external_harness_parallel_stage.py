@@ -263,3 +263,11 @@ def test_an_unrunnable_stage_no_longer_claims_to_be_an_approval_gate(
     """A parallel stage started without naming a member is a routing defect."""
     with pytest.raises(ValueError, match="resolved no agent"):
         OrchestrationService(db_session).start_run(ticket, stage_key=PLAN_STAGE)
+
+
+def test_the_checked_out_view_says_what_the_stage_is(db_session: Session, ticket: Ticket):
+    """The harness reads `runs`; the shape line says why there are three."""
+    _, view = _checkout(db_session, ticket)
+
+    assert view.stage_shape.startswith(f"{PLAN_STAGE}: parallel")
+    assert "not a human gate" in view.stage_shape

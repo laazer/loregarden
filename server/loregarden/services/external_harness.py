@@ -62,7 +62,8 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
-from loregarden.services.studio_routing import is_parallel_stage
+from loregarden.services.stage_shape import describe_stage_shape
+from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -344,11 +345,23 @@ def begin_external_stage(
     Returns the prompt Loregarden's own agent would have been given for that
     stage, so the harness runs the same instructions rather than an improvised
     reading of the ticket. A parallel stage returns one entry per member; every
-    other stage returns exactly one.
+    other stage returns exactly one. Every view carries ``stage_shape`` — what
+    the stage is, in words — so a harness reading ``runs`` cannot mistake a
+    parallel stage for a human gate (745).
     """
     ticket = session.get(Ticket, orch_run.ticket_id)
     if not ticket:
         raise ValueError(f"Ticket not found: {orch_run.ticket_id}")
+    view = _begin_external_stage(session, orch_run, ticket, stage_key=stage_key)
+    stage = ticket_stage_definition(session, ticket, view.stage_key) if view.stage_key else None
+    if stage is not None:
+        view.stage_shape = describe_stage_shape(session, ticket, stage)
+    return view
+
+
+def _begin_external_stage(
+    session: Session, orch_run: OrchestrationRun, ticket: Ticket, *, stage_key: str | None
+) -> ExternalStageView:
     if orch_run.external_harness is None:
         raise ValueError(
             "This orchestration run was not opened by an external harness — "

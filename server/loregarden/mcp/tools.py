@@ -74,6 +74,7 @@ from loregarden.services.evidence import (
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
+from loregarden.services.stage_shape import current_stage_shape
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
@@ -685,7 +686,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.REQUEST_APPROVAL,
-        "description": "Create a human approval inbox item for a stage.",
+        "description": (
+            "Open a human approval inbox item for a stage. Only for an agentless human gate "
+            "(no agent — a person is the stage), or a sign-off after this stage's own agent "
+            "run succeeded. Never a substitute for running a stage (start_stage / "
+            "begin_external_stage) or waiving one (skip_stage with a reason): a stage with "
+            "agents and no succeeded run is refused."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "run_id": _string_prop("Orchestration run UUID."),
@@ -1348,6 +1355,9 @@ def execute_tool(
                 "ok": True,
                 "workflow_stage_key": ticket.workflow_stage_key,
                 "ticket_state": ticket.state.value,
+                # What the cursor now sits on, in words — a parallel stage and a
+                # human gate look identical by agent_id alone (745).
+                "next_stage_shape": current_stage_shape(session, ticket),
             },
             indent=2,
         )

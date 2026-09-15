@@ -23,6 +23,7 @@ from loregarden.services.acceptance_criteria import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.stage_shape import current_stage_shape
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
@@ -49,6 +50,7 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
         "workflow_stage_key": ticket.workflow_stage_key,
         "workflow_stage_status": ticket.workflow_stage_status.value,
         "current_stage_agent": ticket_stage_agent(session, ticket),
+        "current_stage_shape": current_stage_shape(session, ticket),
         "blocking_issues": ticket.blocking_issues,
         "active_orchestration": (
             {
