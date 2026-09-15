@@ -10,6 +10,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
     Worktree,
+    WorktreeState,
 )
 from loregarden.services.evidence import EVIDENCE_KINDS, evidence_for_commit, has_evidence
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -565,6 +566,7 @@ def test_resolve_head_sha_reads_ticket_worktree_not_shared_checkout(tmp_path):
         agent_run_id=run.id,
         ticket_id=ticket.id,
         worktree_path=str(worktree_dir),
+        state=WorktreeState.ACTIVE,  # resolve_ticket_root only accepts ACTIVE
     )
     session.add(worktree)
     session.commit()
@@ -589,4 +591,87 @@ def test_resolve_head_sha_reads_ticket_worktree_not_shared_checkout(tmp_path):
     assert stored is not None
     assert stored.commit_sha == worktree_head
 
+    session.close()
+
+
+def test_resolve_head_sha_ignores_non_active_worktree_and_falls_back_to_shared(tmp_path):
+    """AC1 fallback: CLEANUP (or otherwise non-ACTIVE) must not stamp the old tree.
+
+    A wrong fix that drops the ACTIVE filter would keep stamping a retired
+    worktree after release. Locks the resolve_ticket_root fallback to
+    workspace.repo_path when no usable ACTIVE row exists.
+    """
+    from loregarden.services.evidence import resolve_head_sha
+    from tests.worktree_helpers import git, make_repo
+
+    shared = make_repo(tmp_path, name="shared")
+    retired = make_repo(tmp_path, name="retired-worktree")
+    (retired / "only-here.txt").write_text("x", encoding="utf-8")
+    git(retired, "add", "-A")
+    git(retired, "commit", "-q", "-m", "retired tree")
+
+    shared_head = git(shared, "rev-parse", "HEAD").stdout.strip()
+    retired_head = git(retired, "rev-parse", "HEAD").stdout.strip()
+    assert shared_head != retired_head
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-cleanup.sqlite'}")
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine)
+
+    workspace = Workspace(slug="ev-cu", name="EV-CU", repo_path=str(shared))
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+
+    ticket = Ticket(
+        external_id="ev-cu-1",
+        workspace_id=workspace.id,
+        title="Evidence cleanup fallback",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    run = AgentRun(
+        run_code="ev_cu_run",
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        agent_id="test_breaker",
+        stage_key="test-break",
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            ticket_id=ticket.id,
+            worktree_path=str(retired),
+            state=WorktreeState.CLEANUP,
+        )
+    )
+    session.commit()
+
+    assert resolve_head_sha(session, ticket) == shared_head
+    session.close()
+
+
+def test_resolve_head_sha_returns_empty_when_workspace_row_missing(tmp_path):
+    """AC1: no Workspace row → "" (cannot stamp a commit that does not exist)."""
+    from types import SimpleNamespace
+
+    from loregarden.services.evidence import resolve_head_sha
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-nows.sqlite'}")
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine)
+
+    # FK would refuse a Ticket row pointing at a missing workspace; the helper
+    # only reads ticket.workspace_id, so a stand-in is enough to hit the miss.
+    orphan = SimpleNamespace(workspace_id="missing-workspace-id")
+    assert resolve_head_sha(session, orphan) == ""
     session.close()
