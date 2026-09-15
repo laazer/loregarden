@@ -35,6 +35,7 @@ from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
 )
+from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
@@ -397,8 +398,8 @@ def _advance_clean_exit(
         template = orch.get_template_for_ticket(ticket)
         if template:
             stage_name = stage_display_name(template, run.stage_key)
-            gate_approval = orch._create_workflow_gate_approval(
-                ticket, run.stage_key, stage_name, stage_def=stage_def
+            gate_approval = create_workflow_gate_approval(
+                orch.session, ticket, run.stage_key, stage_name, stage_def=stage_def
             )
     set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
     ticket.blocking_issues = ""

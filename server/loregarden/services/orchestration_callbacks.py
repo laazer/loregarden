@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.gate_approvals import gate_would_skip_work
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
@@ -45,7 +46,11 @@ from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
     guard_standalone_stage_dispatch,
 )
-from loregarden.services.studio_routing import is_prunable_stage, prunable_stage_keys
+from loregarden.services.studio_routing import (
+    is_prunable_stage,
+    prunable_stage_keys,
+    ticket_stage_definition,
+)
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_state_service import choose
@@ -807,6 +812,11 @@ class OrchestrationCallbackService:
         level: str = "medium",
         kind: ApprovalKind = ApprovalKind.WORKFLOW_GATE,
     ) -> Approval:
+        if kind is ApprovalKind.WORKFLOW_GATE:
+            stage = ticket_stage_definition(self.session, ticket, stage_key)
+            reason = gate_would_skip_work(self.session, ticket, stage) if stage else ""
+            if reason:
+                raise ValueError(reason)
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,

@@ -33,7 +33,7 @@ from loregarden.models.domain import (
 from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
-from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
+from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
 from loregarden.services.run_completion import (
@@ -65,6 +65,7 @@ from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
     resolve_stage_execution,
+    ticket_stage_definition,
 )
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
@@ -112,27 +113,6 @@ def _blocking_issue_for_stage(
     session: Session, ticket: Ticket, stage_key: str, message: str
 ) -> str:
     return record_blocking_issue(session, ticket, run_id=None, stage_key=stage_key, message=message)
-
-
-def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
-    lines = [f"Stage '{stage_name}' requires human sign-off before completion."]
-    lines.append(f"What's being tested: {ticket.title}")
-    if ticket.description.strip():
-        lines.append(ticket.description.strip())
-    try:
-        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
-    except json.JSONDecodeError:
-        logger.warning(
-            "Unparseable acceptance_criteria_json on ticket %s; the %s gate brief omits it",
-            ticket.external_id,
-            stage_name,
-            exc_info=True,
-        )
-        criteria = []
-    if criteria:
-        lines.append("Acceptance criteria:")
-        lines.extend(f"- {item}" for item in criteria)
-    return "\n".join(lines)
 
 
 #: An orchestration that still claims a lane. Children of anything else are
@@ -723,7 +703,9 @@ class OrchestrationService:
             )
         ).first()
         if not existing:
-            self._create_workflow_gate_approval(ticket, target_key, stage_name, stage_def=stage_def)
+            create_workflow_gate_approval(
+                self.session, ticket, target_key, stage_name, stage_def=stage_def
+            )
 
         event_bus.publish(
             self.session,
@@ -1045,39 +1027,6 @@ class OrchestrationService:
         self.session.add(instance)
         self.session.commit()
 
-    def _create_workflow_gate_approval(
-        self,
-        ticket: Ticket,
-        stage_key: str,
-        stage_name: str,
-        *,
-        stage_def: WorkflowStageDef | None = None,
-    ) -> Approval:
-        checklist = expand_gate_checklist_for_ticket(
-            self.session, ticket, list(stage_def.checklist) if stage_def else []
-        )
-        approval = Approval(
-            ticket_id=ticket.id,
-            workspace_id=ticket.workspace_id,
-            kind=ApprovalKind.WORKFLOW_GATE,
-            title=f"Approve {ticket.title}",
-            level="high" if ticket.priority == 1 else "medium",
-            stage_key=stage_key,
-            impact=_build_gate_impact(ticket, stage_name),
-            checklist_json=json.dumps(checklist),
-            status=ApprovalStatus.PENDING,
-        )
-        self.session.add(approval)
-        self.session.commit()
-        event_bus.publish(
-            self.session,
-            EventType.APPROVAL_REQUESTED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"approval_id": approval.id},
-        )
-        return approval
-
 
 #: Approval kinds whose resolution moves the workflow, and so may name a stage to
 #: route to. A rework pause asks the same question a gate does — accept this
@@ -1179,6 +1128,7 @@ class ApprovalService:
                     stage_key=approval.stage_key,
                 )
 
+        self._refuse_gate_that_skips_work(approval, approved=approved)
         approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
         approval.resolved_at = datetime.now(timezone.utc)
         self.session.add(approval)
@@ -1306,6 +1256,20 @@ class ApprovalService:
             target_stage,
             forgiven,
         )
+
+    def _refuse_gate_that_skips_work(self, approval: Approval, *, approved: bool) -> None:
+        """Approving a gate must not stand in for the stage's own agent run."""
+        if not (approved and approval.kind is ApprovalKind.WORKFLOW_GATE and approval.ticket_id):
+            return
+        ticket = self.session.get(Ticket, approval.ticket_id)
+        stage = (
+            ticket_stage_definition(self.session, ticket, approval.stage_key) if ticket else None
+        )
+        if ticket is None or stage is None:
+            return
+        reason = gate_would_skip_work(self.session, ticket, stage)
+        if reason:
+            raise ValueError(reason)
 
     def _apply_ticket_resolution(
         self,
