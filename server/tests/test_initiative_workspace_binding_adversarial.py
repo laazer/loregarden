@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 import tempfile
 from itertools import product
 from unittest.mock import patch
@@ -242,26 +243,27 @@ class TestCreateSlugMutations:
 
 
 class TestInitiativeCreateSkips:
-    """AC3 — assign_external_id / next_ticket_number must not run for null initiatives."""
+    """AC3 — workspace assign_external_id / next_ticket_number must not run for initiatives."""
 
     def test_assign_external_id_not_called(self, db_session: Session):
         with patch("loregarden.services.ticket_service.assign_external_id") as assign_mock:
             initiative = _create_initiative(db_session, title="No assign")
         assign_mock.assert_not_called()
         assert initiative.workspace_id is None
-        assert initiative.external_id == ""
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", initiative.external_id), initiative.external_id
 
-    def test_does_not_invent_init_prefixed_id(self, db_session: Session):
-        initiative = _create_initiative(db_session, title="No scheme")
-        assert not initiative.external_id.startswith("init-")
-        assert initiative.ticket_number == 0
+    def test_spells_init_prefixed_id_from_global_counter(self, db_session: Session):
+        """733 contract — system spells init-*; ticket_number equals trailing n."""
+        initiative = _create_initiative(db_session, title="Init Scheme")
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", initiative.external_id), initiative.external_id
+        assert initiative.ticket_number == int(initiative.external_id.rsplit("-", 1)[-1])
+        assert initiative.ticket_number >= 1
 
-    def test_supplied_external_id_not_lowercased_into_init_scheme(self, db_session: Session):
+    def test_supplied_external_id_becomes_legacy_not_canonical(self, db_session: Session):
         initiative = _create_initiative(db_session, title="Supplied", external_id="Keep-Case-Id")
-        # Caller-supplied only — do not invent init-<slug>-n; casing policy is
-        # existing assign_external_id behavior and out of 733 until that path runs.
-        assert initiative.external_id != ""
-        assert not initiative.external_id.startswith("init-")
+        assert initiative.legacy_external_id == "Keep-Case-Id"
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", initiative.external_id), initiative.external_id
+        assert initiative.external_id != "Keep-Case-Id"
         assert initiative.workspace_id is None
 
 

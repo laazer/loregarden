@@ -6,6 +6,7 @@ Maps 1:1 to AC1–AC8 / R1–R8. Implementation lands later — this is the red 
 from __future__ import annotations
 
 import inspect
+import re
 import tempfile
 from pathlib import Path
 
@@ -221,26 +222,28 @@ class TestTicketServiceWorkspaceBinding:
         assert _count_tickets(db_session) == before
 
     def test_ac3_creates_initiative_with_null_workspace(self, db_session: Session):
-        """AC3 — null workspace_id; no WorkflowInstance; blank external_id."""
+        """AC3 — null workspace_id; no WorkflowInstance; system-spelled init-* id."""
         initiative = _create_initiative(db_session, title="AC3 initiative")
         assert initiative.workspace_id is None
         assert initiative.work_item_type == _initiative()
-        assert initiative.external_id == ""
-        assert initiative.ticket_number == 0
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", initiative.external_id), initiative.external_id
+        assert initiative.ticket_number == int(initiative.external_id.rsplit("-", 1)[-1])
         instances = db_session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == initiative.id)
         ).all()
         assert instances == []
 
-    def test_ac3_caller_supplied_external_id_kept(self, db_session: Session):
+    def test_ac3_caller_supplied_external_id_becomes_legacy(self, db_session: Session):
+        """733 contract — supplied id is legacy; external_id is always init-*."""
         initiative = _create_initiative(
             db_session,
             title="AC3 supplied id",
             external_id="supplied-init-id",
         )
         assert initiative.workspace_id is None
-        assert initiative.external_id == "supplied-init-id"
-        assert not initiative.external_id.startswith("init-")
+        assert initiative.legacy_external_id == "supplied-init-id"
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", initiative.external_id), initiative.external_id
+        assert initiative.external_id != "supplied-init-id"
 
     def test_r4_4_non_initiative_with_slug_still_binds(self, db_session: Session):
         milestone = _create_milestone(db_session, "Still bound")

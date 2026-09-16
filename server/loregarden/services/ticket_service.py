@@ -38,7 +38,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.ticket_ids import assign_external_id
+from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
 from loregarden.services.ticket_workspace_binding import validate_workspace_binding
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
@@ -196,10 +196,8 @@ class TicketService:
     ) -> tuple:
         """Spell external_id / workflow stage fields for a new ticket."""
         if work_item_type == WorkItemType.INITIATIVE:
-            # No assign_external_id / next_ticket_number / workflow (733 owns ids).
-            supplied = external_id.strip()
-            self._reject_taken_supplied_id(workspace_id=None, ticket=ticket, supplied_id=supplied)
-            ticket.external_id = supplied
+            # Global init-* spelling; never workspace assign_external_id / workflow.
+            assign_initiative_external_id(self.session, ticket, supplied_id=external_id.strip())
             return None, None
 
         if ws is None:

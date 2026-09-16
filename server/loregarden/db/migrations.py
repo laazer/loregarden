@@ -67,6 +67,7 @@ from loregarden.db.migrations_git_boundary import (
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
+from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -1383,6 +1384,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0131_tickets_workspace_binding", m_tickets_workspace_binding),
     ("0132_approve_design_plans_columns", m_approve_design_plans_columns),
     ("0133_design_plan_gates", m_design_plan_gates),
+    ("0134_initiative_number_pool", m_initiative_number_pool),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -110,6 +110,10 @@ class TestInitiativeCreateSpelling:
         n = first.ticket_number
         assert _pool_last(db_session) >= n
 
+        # create_ticket publishes domain_events that FK the ticket.
+        db_session.execute(
+            text("DELETE FROM domain_events WHERE ticket_id = :id"), {"id": first.id}
+        )
         db_session.delete(first)
         db_session.commit()
 
