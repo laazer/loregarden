@@ -208,3 +208,32 @@ def test_concurrent_waiters_get_distinct_positions(isolated_db) -> None:
         ]
     assert len(positions) == 6
     assert len(set(positions)) == len(positions), f"duplicate queue positions: {sorted(positions)}"
+
+
+def test_a_claimant_that_keeps_losing_the_race_is_granted_while_room_remains(
+    isolated_db, monkeypatch
+) -> None:
+    """A lost revision race is not a full pool. The old loop gave up after a
+    fixed number of losses and queued a lease that fit — "3 fit; 2 are held"
+    under eight claimants (lg-workflow-integrity-735). Six forced losses here;
+    the honest exit is only "the pool no longer fits this".
+    """
+    with Session(isolated_db) as setup:
+        _set_ceiling(setup, cpus=3.0, memory_mb=3072, leases=3)
+
+    real_claim = docker_leases._claim_capacity
+    losses = {"left": 6}
+
+    def losing_then_real(session, **kwargs):
+        if losses["left"] > 0:
+            losses["left"] -= 1
+            return False  # a peer moved the revision under this read
+        return real_claim(session, **kwargs)
+
+    monkeypatch.setattr(docker_leases, "_claim_capacity", losing_then_real)
+
+    with Session(isolated_db) as session:
+        reservation = _reserve(session, "unlucky", cpus=1.0, memory_mb=1024)
+
+    assert losses["left"] == 0, "the claim stopped retrying before the forced losses ran out"
+    assert reservation.granted, "a claimant that fit was queued after losing races, not the pool"

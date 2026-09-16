@@ -74,10 +74,13 @@ from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-#: Retries for a claim that lost a race rather than found the pool full. Named
-#: for the same reason `parallel_queue._CLAIM_ATTEMPTS` is: the number is a
-#: contention allowance, not a magic constant.
-_CLAIM_ATTEMPTS = 4
+#: How long a claim keeps re-trying a lost revision race while the pool still
+#: fits it. A *count* was the wrong bound here: with eight claimants for three
+#: slots a claimant could lose four consecutive races to other winners and be
+#: queued with a slot free ("3 fit; 2 are held" — lg-workflow-integrity-735).
+#: The honest exit is "full, not contended"; this budget only stops a claimant
+#: spinning forever under pathological contention, and is seconds, not tries.
+_CLAIM_CONTENTION_BUDGET_SECONDS = 5.0
 
 #: How often a stage waiting for capacity re-checks its place in line.
 _STAGE_POLL_SECONDS = 2.0
@@ -426,7 +429,8 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
     directly; the revision counter alone cannot, because it moves for reasons
     that have nothing to do with whether this claim fits.
     """
-    for _ in range(_CLAIM_ATTEMPTS):
+    deadline = time.monotonic() + _CLAIM_CONTENTION_BUDGET_SECONDS
+    while True:
         session.expire_all()
         pool = load_pool(session)
         if _claim_capacity(
@@ -439,7 +443,17 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
         fresh = load_pool(session)
         if not _fits(fresh, lease):
             return False  # full, not contended — retrying would only spin
-    return False
+        if time.monotonic() >= deadline:
+            # Contended past the budget with room still showing: queue rather
+            # than spin, and say so — this is the one path that can queue a
+            # claim that fit, and it must not look like "full".
+            logger.warning(
+                "Docker lease %s lost the pool revision race for %.0fs while capacity fit; "
+                "queued under contention",
+                lease.id,
+                _CLAIM_CONTENTION_BUDGET_SECONDS,
+            )
+            return False
 
 
 def _fits(pool: DockerCapacityPool, lease: DockerLease) -> bool:
