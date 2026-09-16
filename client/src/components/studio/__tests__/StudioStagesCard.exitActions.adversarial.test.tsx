@@ -116,6 +116,79 @@ describe("Studio exit-action authoring (AC-1/AC-2 UI)", () => {
     expect(authored[0].key).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
   });
 
+  it.each([
+    {
+      name: "runtime capability",
+      kind: "runtime_capability",
+      identifierLabel: /Capability/i,
+      identifierValue: "http_test_client",
+      expected: { kind: "runtime_capability", capability_id: "http_test_client" },
+    },
+    {
+      name: "authority",
+      kind: "authority",
+      identifierLabel: /Authority/i,
+      identifierValue: "release:publish",
+      expected: { kind: "authority", authority_scope: "release:publish" },
+    },
+    {
+      name: "operator judgment",
+      kind: "operator_judgment",
+      identifierLabel: /Decision prompt/i,
+      identifierValue: "Ship despite residual risk?",
+      expected: {
+        kind: "operator_judgment",
+        decision_prompt: "Ship despite residual risk?",
+      },
+      freeText: true,
+    },
+  ])("authors a $name requirement without inventing identifiers from prose", async ({
+    kind,
+    identifierLabel,
+    identifierValue,
+    expected,
+    freeText,
+  }) => {
+    const user = userEvent.setup();
+    const { latest } = renderCard(draftWith(emptyStage(1)));
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /Resolve exit actions before leaving this stage/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /Add exit action/i }));
+
+    const row = screen.getByRole("group", { name: /Exit action 1/i });
+    await user.clear(within(row).getByLabelText(/Action label/i));
+    await user.type(within(row).getByLabelText(/Action label/i), `Action for ${kind}`);
+    await user.selectOptions(within(row).getByLabelText(/Requirement/i), kind);
+
+    if (freeText) {
+      await user.clear(within(row).getByLabelText(identifierLabel));
+      await user.type(within(row).getByLabelText(identifierLabel), identifierValue);
+    } else {
+      await user.selectOptions(within(row).getByLabelText(identifierLabel), identifierValue);
+    }
+
+    expect(latest().stages[0].exit_actions?.[0]?.requirement).toEqual(expected);
+  });
+
+  it("clears authored actions when exit actions are disabled again (AC-2 UI)", async () => {
+    const user = userEvent.setup();
+    const { latest } = renderCard(draftWith(emptyStage(1)));
+
+    const toggle = screen.getByRole("checkbox", {
+      name: /Resolve exit actions before leaving this stage/i,
+    });
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: /Add exit action/i }));
+    expect((latest().stages[0].exit_actions ?? []).length).toBeGreaterThan(0);
+
+    await user.click(toggle);
+    expect(latest().stages[0].exit_actions_enabled).toBe(false);
+    expect(latest().stages[0].exit_actions).toEqual([]);
+    expect(screen.queryByRole("button", { name: /Add exit action/i })).toBeNull();
+  });
+
   it("shows Evaluated at run time rather than claiming the action will or will not gate", async () => {
     const user = userEvent.setup();
     renderCard(draftWith(emptyStage(1)));

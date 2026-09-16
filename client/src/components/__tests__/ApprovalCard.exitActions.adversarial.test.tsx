@@ -160,6 +160,10 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
       reason: "Credential unavailable: claude_profile",
       requirement: { kind: "credential" as const, credential_key: "claude_profile" },
       category: /Credential unavailable/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
     },
     {
       name: "credential status unknown",
@@ -167,6 +171,10 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
       reason: "Credential status unavailable: claude_profile",
       requirement: { kind: "credential" as const, credential_key: "claude_profile" },
       category: /Credential status unavailable/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
     },
     {
       name: "capability unavailable",
@@ -174,6 +182,10 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
       reason: "Capability unavailable on this runtime: http_test_client",
       requirement: { kind: "runtime_capability" as const, capability_id: "http_test_client" },
       category: /Capability unavailable/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
     },
     {
       name: "capability status unknown",
@@ -181,8 +193,43 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
       reason: "Capability status unavailable: http_test_client",
       requirement: { kind: "runtime_capability" as const, capability_id: "http_test_client" },
       category: /Capability status unavailable/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
     },
-  ])("emphasizes Re-check for $name and never offers Approve", ({ reason_code, reason, requirement, category }) => {
+    {
+      name: "authority denied (recheck)",
+      reason_code: "authority_denied",
+      reason: "Authority denied: release:publish",
+      requirement: { kind: "authority" as const, authority_scope: "release:publish" },
+      category: /Missing authority/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
+    },
+    {
+      name: "authority status unknown",
+      reason_code: "authority_status_unknown",
+      reason: "Authority status unavailable: release:publish",
+      requirement: { kind: "authority" as const, authority_scope: "release:publish" },
+      category: /Authority status unavailable/i,
+      resolution_mode: "recheck" as const,
+      allowed: ["recheck", "reject"] as Array<"approve" | "recheck" | "reject">,
+      primary: /^Re-check$/i,
+      forbiddenPrimary: /^Approve$/i,
+    },
+  ])("emphasizes Re-check for $name and never offers Approve", ({
+    reason_code,
+    reason,
+    requirement,
+    category,
+    resolution_mode,
+    allowed,
+    primary,
+    forbiddenPrimary,
+  }) => {
     const { onApprove, onRecheck } = renderCard(
       gate({
         human_required_actions: [
@@ -192,10 +239,10 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
             requirement,
             reason_code,
             reason,
-            resolution_mode: "recheck",
+            resolution_mode,
           },
         ],
-        allowed_actions: ["recheck", "reject"],
+        allowed_actions: allowed,
       }),
     );
 
@@ -203,13 +250,37 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
     expect(screen.getByText("Read provider usage")).toBeInTheDocument();
     expect(screen.getByText(reason)).toBeInTheDocument();
 
-    const recheck = screen.getByRole("button", { name: /^Re-check$/i });
+    const recheck = screen.getByRole("button", { name: primary });
     expect(recheck).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: forbiddenPrimary })).not.toBeInTheDocument();
 
     fireEvent.click(recheck);
     // Either an explicit onRecheck or a recheck-labelled primary path must fire.
     expect(onRecheck.mock.calls.length + onApprove.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("maps authority_grant_required to Missing authority with Approve (grant), not Re-check", () => {
+    const { onApprove } = renderCard(
+      gate({
+        human_required_actions: [
+          {
+            action_key: "publish-release",
+            action_label: "Publish the release",
+            requirement: { kind: "authority", authority_scope: "release:publish" },
+            reason_code: "authority_grant_required",
+            reason: "Authority grant required: release:publish",
+            resolution_mode: "approve",
+          },
+        ],
+        allowed_actions: ["approve", "reject"],
+      }),
+    );
+
+    expect(screen.getByText(/Missing authority/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Approve$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Re-check$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
+    expect(onApprove).toHaveBeenCalled();
   });
 
   it("lists only human-required actions in a mixed gate and keeps Approve hidden while recheck remains", () => {

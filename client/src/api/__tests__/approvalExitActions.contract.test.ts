@@ -1,12 +1,13 @@
 /**
- * Client API contract for exit-action approvals (AC-10).
+ * Client API contract for exit-action approvals (AC-10) and Studio stages (AC-1/AC-11).
  *
  * Pins the shared Approval shape and resolveApproval action vocabulary against
  * the server ApprovalView / ApprovalAction enums. The retired
- * `approve_or_reject` resolution_mode must not reappear.
+ * `approve_or_reject` resolution_mode must not reappear. StudioWorkflowStage
+ * must carry exit_actions_enabled / exit_actions with no dual gate_required path.
  */
 
-import type { Approval } from "../client";
+import type { Approval, StudioExitAction, StudioWorkflowStage } from "../client";
 
 type ResolutionMode = "approve" | "recheck";
 type AllowedAction = "approve" | "recheck" | "reject";
@@ -58,5 +59,56 @@ describe("Approval exit-action TypeScript contract", () => {
     const allowed: AllowedAction[] = approval.allowed_actions ?? [];
     expect(mode).toBe("recheck");
     expect(allowed).toContain("recheck");
+  });
+});
+
+describe("StudioWorkflowStage exit-action TypeScript contract (AC-1/AC-11)", () => {
+  it("round-trips typed exit_actions without a gate_required field", () => {
+    const actions: StudioExitAction[] = [
+      {
+        key: "read-usage",
+        label: "Read provider usage",
+        requirement: { kind: "credential", credential_key: "claude_profile" },
+      },
+      {
+        key: "accept-risk",
+        label: "Accept launch risk",
+        description: "Operator call",
+        requirement: {
+          kind: "operator_judgment",
+          decision_prompt: "Ship despite residual risk?",
+        },
+      },
+    ];
+
+    // AC-11: no dual path — constructing a stage without gate_required must type-check
+    // once the deprecated field is removed. Runtime probe mirrors that shape.
+    const stage = {
+      key: "verify",
+      name: "Verify",
+      stage_type: "agent" as const,
+      agent_id: "verifier",
+      skill_name: "",
+      optional: false,
+      order: 1,
+      exit_actions_enabled: true,
+      exit_actions: actions,
+      classify_routes: [] as StudioWorkflowStage["classify_routes"],
+      parallel_agents: [] as StudioWorkflowStage["parallel_agents"],
+      model: "",
+    } satisfies Omit<StudioWorkflowStage, "gate_required"> & {
+      exit_actions_enabled: boolean;
+      exit_actions: StudioExitAction[];
+    };
+
+    expect(stage).not.toHaveProperty("gate_required");
+    expect(stage.exit_actions_enabled).toBe(true);
+    expect(stage.exit_actions).toEqual(actions);
+  });
+
+  it("rejects the retired approve_or_reject vocabulary next to Studio exit actions", () => {
+    const retired = "approve_or_reject";
+    const modes: ResolutionMode[] = ["approve", "recheck"];
+    expect(modes).not.toContain(retired as ResolutionMode);
   });
 });

@@ -92,4 +92,26 @@ describe("ApprovalsView exit-action recheck wiring", () => {
       expect.objectContaining({ action: "approve" }),
     );
   });
+
+  it("never posts approve when allowed_actions is recheck-only even if Approve were clicked", async () => {
+    // Mutation-style guard: ApprovalsView must not collapse recheck into approve
+    // at the host boundary (onResolve typed as approve|reject is the failure mode).
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderWithRouter(<ApprovalsView ticket={TICKET} />, { queryClient: client });
+
+    await screen.findByText(/Resolve Verify exit actions/i);
+    const approve = screen.queryByRole("button", { name: /^Approve$/i });
+    if (approve) {
+      fireEvent.click(approve);
+      await waitFor(() => {
+        expect(mockApi.resolveApproval).toHaveBeenCalled();
+      });
+      expect(mockApi.resolveApproval).not.toHaveBeenCalledWith(
+        "appr_recheck",
+        expect.objectContaining({ action: "approve" }),
+      );
+    } else {
+      expect(approve).toBeNull();
+    }
+  });
 });
