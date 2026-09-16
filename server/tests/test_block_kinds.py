@@ -324,3 +324,36 @@ def test_an_editor_trust_refusal_is_harness():
         classify_block_message("⚠ Workspace Trust Required   Cursor Agent can execute code…")
         is BlockKind.HARNESS
     )
+
+
+def test_the_kind_clears_when_the_stage_leaves_blocked(db_session, ticket):
+    """574 sat at a legitimate test-break sign-off still badged `work`."""
+    from loregarden.services.orchestration import OrchestrationService
+    from loregarden.services.workflow_state import set_stage_status
+
+    ticket.block_kind = BlockKind.WORK
+    instance, stages = OrchestrationService(db_session)._resolve_stages(ticket)
+    set_stage_status(ticket, instance, stages, IMPLEMENT, StageStatus.AWAITING)
+    assert ticket.block_kind is None
+
+
+def test_an_invented_kind_is_named_in_the_history(db_session, ticket):
+    """sdf-39's rerun wrote `blocked_kind: "awaiting_human"`. Not a kind — but
+    a different mistake from naming none, and the history should say which."""
+    _complete_blocked(
+        db_session,
+        ticket,
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        + json.dumps(
+            {
+                "status": "blocked",
+                "confidence": 0.9,
+                "reroute_context": "pick one",
+                "blocked_kind": "awaiting_human",
+            }
+        )
+        + "\n<<<END_STAGE_REPORT>>>\n",
+    )
+
+    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    assert "unknown kind 'awaiting_human'" in classified[0]["reason"]

@@ -48,6 +48,10 @@ class StageReport:
     #: person will be asked to choose between.
     blocked_kind: BlockKind | None = None
     options: list[str] = field(default_factory=list)
+    #: The literal text the agent wrote in `blocked_kind` when it was not a kind
+    #: ("awaiting_human" was seen live) — so the history can say so rather than
+    #: "named no kind", which is a different mistake.
+    kind_as_written: str = ""
 
 
 def _embedded_strings(node: object):
@@ -166,20 +170,22 @@ class _BlockPayload(BaseModel):
     options: list[str] | None = Field(default=None)
 
 
-def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str]]:
+def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str], str]:
     try:
         parsed = _BlockPayload.model_validate_json(payload)
     except ValidationError:
         logger.warning("stage report block fields could not be parsed", exc_info=True)
-        return None, []
+        return None, [], ""
     kind: BlockKind | None = None
+    unknown = ""
     if parsed.blocked_kind:
         try:
             kind = BlockKind(parsed.blocked_kind.strip().lower())
         except ValueError:
-            logger.warning("stage report named an unknown blocked_kind %r", parsed.blocked_kind)
+            unknown = parsed.blocked_kind.strip()
+            logger.warning("stage report named an unknown blocked_kind %r", unknown)
     options = [item.strip() for item in (parsed.options or []) if item.strip()]
-    return kind, options
+    return kind, options, unknown
 
 
 def _build_report(payload: str) -> StageReport | None:
@@ -192,7 +198,7 @@ def _build_report(payload: str) -> StageReport | None:
         return None
     if parsed.status not in _VALID_STATUSES:
         return None
-    kind, options = _block_fields_of(payload)
+    kind, options, unknown = _block_fields_of(payload)
     return StageReport(
         status=parsed.status,
         confidence=max(0.0, min(1.0, parsed.confidence or 0.0)),
@@ -201,6 +207,7 @@ def _build_report(payload: str) -> StageReport | None:
         unmet_criteria=_criteria_of(payload),
         blocked_kind=kind,
         options=options,
+        kind_as_written=unknown,
     )
 
 

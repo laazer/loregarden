@@ -328,6 +328,10 @@ def set_stage_status(
     if stage_key not in stage_map:
         raise ValueError(f"Unknown stage key: {stage_key}")
     stage_map[stage_key] = status
+    if status is not StageStatus.BLOCKED and stage_key == ticket.workflow_stage_key:
+        # The kind describes a block; once the cursor's stage is anything else
+        # it is stale, and the badge would say "agent work" beside a sign-off.
+        ticket.block_kind = None
     notes = parse_stage_notes(instance)
     if note is not None:
         if note:
