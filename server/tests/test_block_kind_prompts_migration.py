@@ -62,6 +62,19 @@ def test_a_seeded_body_without_the_sentence_is_refreshed(isolated_db):
         assert agent.version == before + 1
 
 
+def test_a_reconciler_written_version_is_not_a_person(isolated_db):
+    """`reconcile` is the studio-agent reconciler; counting it as an editor
+    skipped 25 of 27 bodies on the first live run of 0137."""
+    with Session(isolated_db) as session:
+        before = _stale(session, "planner", edited_by="reconcile").version
+    with isolated_db.begin() as conn:
+        m_block_kind_in_role_prompts(conn)
+    with Session(isolated_db) as session:
+        agent = session.exec(select(StudioAgent).where(StudioAgent.slug == "planner")).one()
+        assert BLOCK_KIND_SENTENCE in agent.role_body
+        assert agent.version == before + 1
+
+
 def test_a_hand_edited_body_is_left_alone(isolated_db):
     with Session(isolated_db) as session:
         _stale(session, "spec", edited_by="jacob")

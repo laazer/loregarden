@@ -1387,6 +1387,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0135_ticket_block_kind", m_ticket_block_kind),
     ("0136_auto_repair_columns", m_auto_repair_columns),
     ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),
+    # Re-run: the first pass counted the automated reconciler as a human editor.
+    ("0138_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
