@@ -285,10 +285,23 @@ def test_server_rejects_approve_for_a_recheck_only_gate(db_session: Session):
 def test_successful_recheck_schedules_only_newly_satisfied_actions(db_session: Session):
     """AC-9: recheck resumes execution; it does not complete the underlying action."""
     approval = _recheck_only_approval(db_session)
-    snapshot = _snapshot()
 
-    with patch("loregarden.services.run_service.schedule_orchestration") as scheduled:
-        result = ApprovalService(db_session).recheck(approval.id, runtime_snapshot=snapshot)
+    with (
+        patch(
+            "loregarden.services.exit_action_approvals.probe_credentials",
+            return_value={"claude_profile": "available"},
+        ),
+        patch(
+            "loregarden.services.exit_action_approvals.probe_capabilities",
+            return_value={},
+        ),
+        patch(
+            "loregarden.services.exit_action_approvals.probe_authority",
+            return_value={},
+        ),
+        patch("loregarden.services.run_service.schedule_orchestration") as scheduled,
+    ):
+        result = ApprovalService(db_session).recheck(approval.id)
 
     assert result.newly_assigned_action_keys == ["read-usage"]
     assert result.completed_action_keys == []
@@ -330,3 +343,43 @@ def test_authority_grant_schedules_execution_without_completing_the_action(
     assert result.completed_action_keys == []
     scheduled.assert_called_once()
     assert scheduled.call_args.kwargs["assigned_exit_action_keys"] == ["publish-release"]
+
+
+def test_approve_exit_action_gate_grants_authority_instead_of_completing_stage(
+    db_session: Session,
+):
+    """AC-9: inbox approve of grantable authority schedules continuation, not stage DONE."""
+    approval = _recheck_only_approval(db_session)
+    payload = json.loads(approval.tool_input_json)
+    payload["human_required_actions"][0] = {
+        "action_key": "publish-release",
+        "action_label": "Publish the release",
+        "action_description": "",
+        "requirement": {
+            "kind": "authority",
+            "authority_scope": "release:publish",
+        },
+        "reason_code": "authority_grant_required",
+        "reason": "Authority grant required: release:publish",
+        "resolution_mode": "approve",
+    }
+    payload["allowed_actions"] = ["approve", "reject"]
+    approval.tool_input_json = json.dumps(payload)
+    db_session.add(approval)
+    db_session.commit()
+
+    ticket = db_session.get(Ticket, approval.ticket_id)
+    assert ticket is not None
+    stage_before = ticket.workflow_stage_status
+
+    with patch("loregarden.services.run_service.schedule_orchestration") as scheduled:
+        result = ApprovalService(db_session).approve_exit_action_gate(approval.id)
+
+    assert result is not None
+    assert result.newly_assigned_action_keys == ["publish-release"]
+    assert result.completed_action_keys == []
+    scheduled.assert_called_once()
+    db_session.refresh(approval)
+    db_session.refresh(ticket)
+    assert approval.status == ApprovalStatus.APPROVED
+    assert ticket.workflow_stage_status == stage_before

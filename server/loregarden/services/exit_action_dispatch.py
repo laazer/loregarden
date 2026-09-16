@@ -31,7 +31,7 @@ from loregarden.services.orchestration_profile import resolve_orchestration_prof
 from sqlmodel import Session
 
 
-def _driver_for_run(session: Session, run: AgentRun) -> OrchestrationDriver:
+def driver_for_run(session: Session, run: AgentRun) -> OrchestrationDriver:
     """Resolve the harness that opened this run; manual when there is none."""
     if not run.orchestration_run_id:
         return OrchestrationDriver.MANUAL_STAGE
@@ -56,7 +56,7 @@ def assign_dispatch_exit_actions(
     record of what was true at dispatch, and a stage that gains actions later
     should not silently have no evidence for the run that preceded them.
     """
-    driver = _driver_for_run(session, run)
+    driver = driver_for_run(session, run)
     profile = resolve_orchestration_profile(workspace)
     snapshot = capture_runtime_snapshot(
         run=run,

@@ -3,23 +3,39 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalKind,
     ApprovalResolutionAction,
     ApprovalStatus,
+    CliAdapter,
     ExitActionContinuation,
     ExitActionRequirementKind,
     ExitActionResolution,
     ExitActionResolutionMode,
+    OrchestrationDriver,
+    RuntimeExitActionSnapshot,
+    Ticket,
     WorkflowExitAction,
     WorkflowStageDef,
+    Workspace,
+)
+from loregarden.services.exit_action_dispatch import driver_for_run
+from loregarden.services.exit_action_probe import (
+    probe_authority,
+    probe_capabilities,
+    probe_credentials,
 )
 from loregarden.services.exit_actions import (
     allowed_resolution_actions,
+    capture_runtime_snapshot,
     resolve_exit_actions,
 )
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from sqlmodel import col, select
 
 
 class ExitActionApprovalMixin:
@@ -88,8 +104,70 @@ class ExitActionApprovalMixin:
             completed_action_keys=[],
         )
 
-    def recheck(self, approval_id: str, *, runtime_snapshot):
-        """Re-evaluate a gate's unresolved actions against a fresh snapshot."""
+    def _gate_run(self, approval: Approval) -> AgentRun | None:
+        """The run whose runtime the gate was opened against, when one exists."""
+        if approval.run_id:
+            run = self.session.get(AgentRun, approval.run_id)
+            if run is not None:
+                return run
+        if not approval.ticket_id:
+            return None
+        query = select(AgentRun).where(AgentRun.ticket_id == approval.ticket_id)
+        if approval.stage_key:
+            query = query.where(AgentRun.stage_key == approval.stage_key)
+        return self.session.exec(query.order_by(col(AgentRun.created_at).desc())).first()
+
+    def _adapter_for_gate(self, approval: Approval, run: AgentRun | None) -> CliAdapter:
+        raw = (approval.cli_adapter or "").strip()
+        if not raw and run and run.runtime_exit_action_snapshot_json:
+            try:
+                prior = json.loads(run.runtime_exit_action_snapshot_json)
+            except (
+                json.JSONDecodeError
+            ):  # silent-ok: corrupt prior snapshot; fall through to default
+                prior = {}
+            raw = str(prior.get("adapter") or "").strip()
+        if not raw:
+            return CliAdapter.LOCAL
+        try:
+            return CliAdapter(raw)
+        except ValueError:  # silent-ok: unknown adapter string; fail closed as non-executing
+            return CliAdapter.LOCAL
+
+    def _fresh_runtime_snapshot(self, approval: Approval) -> RuntimeExitActionSnapshot:
+        """Probe the live environment — never trust a client-supplied snapshot."""
+        run = self._gate_run(approval)
+        workspace = self.session.get(Workspace, approval.workspace_id)
+        adapter = self._adapter_for_gate(approval, run)
+        profile = resolve_orchestration_profile(workspace) if workspace is not None else None
+        capabilities = probe_capabilities(adapter=adapter)
+        credentials = probe_credentials()
+        authority = probe_authority(profile=profile)
+        if run is not None:
+            snapshot = capture_runtime_snapshot(
+                run=run,
+                driver=driver_for_run(self.session, run),
+                adapter=adapter,
+                capability_statuses=capabilities,
+                credential_preflight=credentials,
+                authority_statuses=authority,
+            )
+            self.session.add(run)
+            self.session.commit()
+            return snapshot
+        ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
+        return RuntimeExitActionSnapshot(
+            run_id=approval.id,
+            agent_id=(ticket.next_agent if ticket is not None else "") or "",
+            adapter=adapter,
+            driver=OrchestrationDriver.MANUAL_STAGE,
+            capabilities=capabilities,
+            credentials=credentials,
+            authority=authority,
+        )
+
+    def recheck(self, approval_id: str) -> ExitActionContinuation:
+        """Re-evaluate a gate against a server-probed runtime snapshot."""
         approval = self._pending_gate(approval_id)
         resolution = self._gate_resolution(approval)
         actions = [
@@ -107,11 +185,12 @@ class ExitActionApprovalMixin:
             exit_actions_enabled=True,
             exit_actions=actions,
         )
-        rechecked = resolve_exit_actions(stage, runtime_snapshot)
+        snapshot = self._fresh_runtime_snapshot(approval)
+        rechecked = resolve_exit_actions(stage, snapshot)
         self._rewrite_gate(approval, rechecked.human_required_actions)
         return self._schedule_exit_action_continuation(approval, rechecked.assigned_action_keys)
 
-    def grant_authority(self, approval_id: str, *, authority_scope: str):
+    def grant_authority(self, approval_id: str, *, authority_scope: str) -> ExitActionContinuation:
         """Grant one policy scope, which lets its actions run — nothing more."""
         approval = self._pending_gate(approval_id)
         resolution = self._gate_resolution(approval)
@@ -132,4 +211,44 @@ class ExitActionApprovalMixin:
                 if action.action_key not in granted_keys
             ],
         )
+        return self._schedule_exit_action_continuation(approval, granted_keys)
+
+    def approve_exit_action_gate(self, approval_id: str) -> ExitActionContinuation | None:
+        """Approve a workflow gate that grants authority rather than completing the stage.
+
+        Returns a continuation when grantable authority was present — the caller must
+        not fall through to resolve()/stage-DONE. Returns None when the gate is pure
+        operator judgment (or not a workflow gate), so the normal approve path runs.
+        """
+        approval = self.session.get(Approval, approval_id)
+        if approval is None or approval.kind != ApprovalKind.WORKFLOW_GATE:
+            return None
+        if approval.status != ApprovalStatus.PENDING:
+            raise ValueError("Approval already resolved")
+        self._reject_unsupported_approve(approval)
+        resolution = self._gate_resolution(approval)
+        grantable = [
+            action
+            for action in resolution.human_required_actions
+            if action.requirement.kind == ExitActionRequirementKind.AUTHORITY
+            and action.resolution_mode == ExitActionResolutionMode.APPROVE
+        ]
+        if not grantable:
+            return None
+
+        granted_keys = [action.action_key for action in grantable]
+        # Operator judgment on the same card is satisfied by this approve click;
+        # everything else that was approve-eligible is authority we just granted.
+        remaining = [
+            action
+            for action in resolution.human_required_actions
+            if action.action_key not in granted_keys
+            and action.requirement.kind != ExitActionRequirementKind.OPERATOR_JUDGMENT
+        ]
+        self._rewrite_gate(approval, remaining)
+        if not remaining:
+            approval.status = ApprovalStatus.APPROVED
+            approval.resolved_at = datetime.now(timezone.utc)
+            self.session.add(approval)
+            self.session.commit()
         return self._schedule_exit_action_continuation(approval, granted_keys)
