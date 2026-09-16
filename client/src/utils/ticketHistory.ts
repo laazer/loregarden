@@ -80,7 +80,9 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     const decision = str(event.payload.decision);
   return decision === "overruled_stale_gate" ||
     decision === "approved_design_plan" ||
-    decision === "requeued_after_decision"
+    decision === "requeued_after_decision" ||
+    decision === "dispatched_repair" ||
+    decision === "repaired"
     ? "normal"
     : "failed";
   }

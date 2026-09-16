@@ -3,6 +3,9 @@
 #: Takes over a stage whose tests failed, rather than the agent that just
 #: declared success. Named here so routing does not hardcode the key.
 DEBUGGER_AGENT_ID = "debugger"
+#: Reruns a blocked stage the orchestrator judged fixable without a person
+#: (lg-workflow-integrity-750). One turn, never a second; see services.block_repair.
+REPAIR_AGENT_ID = "repair"
 
 AGENTS: dict[str, dict] = {
     "planner": {
@@ -131,6 +134,12 @@ AGENTS: dict[str, dict] = {
     "debugger": {
         "name": "Debugger",
         "role_file": "agents/misc_agents/debugger_v1.md",
+        "adapter": "claude",
+        "timeout": 900,
+    },
+    "repair": {
+        "name": "Repair",
+        "role_file": "agents/misc_agents/repair_v1.md",
         "adapter": "claude",
         "timeout": 900,
     },

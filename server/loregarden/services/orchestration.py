@@ -1481,6 +1481,7 @@ class ApprovalService:
             ticket.id,
             auto_approve=bool(previous and previous.auto_approve),
             approve_design_plans=previous.approve_design_plans if previous else True,
+            auto_repair=previous.auto_repair if previous else True,
         )
 
     def list_pending(self) -> list[Approval]:

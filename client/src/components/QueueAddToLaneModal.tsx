@@ -90,6 +90,7 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
         ticket_id: request!.ticketId,
         auto_approve: options.autoApprove,
         approve_design_plans: options.approveDesignPlans,
+        auto_repair: options.autoRepair,
         stop_at_stage_key: options.stopAtStageKey,
         timeout_seconds: options.timeoutSeconds,
       }),

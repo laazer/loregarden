@@ -11,7 +11,7 @@ import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
 import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
-import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
+import { AgentsAssembleModal, type AgentsAssembleOptions, orchestrateBody } from "../components/AgentsAssembleModal";
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
@@ -847,16 +847,7 @@ export function Dashboard() {
       if (options.branch !== (sel.branch || "")) {
         await saveTicketBranchOrThrow(selectedId, options.branch);
       }
-      await orchestrate.mutateAsync({
-        ticketId: selectedId,
-        options: {
-          stop_at_stage_key: options.stopAtStageKey || undefined,
-          auto_approve: options.autoApprove,
-          approve_design_plans: options.approveDesignPlans,
-          slot_number: options.slotNumber,
-          timeout_seconds: options.timeoutSeconds,
-        },
-      });
+      await orchestrate.mutateAsync({ ticketId: selectedId, options: orchestrateBody(options) });
     } catch {
       // silent-ok: every step above reports itself; the modal stays open to retry
     }

@@ -382,6 +382,9 @@ class StartOrchestrationRequest(SQLModel):
     #: Let the orchestrator sign off the design/plan stages' gate itself. Off
     #: means a person sees that gate in the inbox; `auto_approve` still wins.
     approve_design_plans: bool = True
+    #: Let the run spend one repair turn on a harness/work block instead of
+    #: waiting for a person (750).
+    auto_repair: bool = True
     #: Max seconds each agent run in this orchestration (and its child tickets)
     #: may take. None keeps each agent's configured default.
     timeout_seconds: int | None = None

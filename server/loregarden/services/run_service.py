@@ -584,6 +584,7 @@ def execute_orchestration_background(
     stop_at_stage_key: str | None = None,
     auto_approve: bool = False,
     approve_design_plans: bool = True,
+    auto_repair: bool = True,
     timeout_seconds: int | None = None,
 ) -> None:
     try:
@@ -599,6 +600,7 @@ def execute_orchestration_background(
                 stop_at_stage_key=stop_at_stage_key,
                 auto_approve=auto_approve,
                 approve_design_plans=approve_design_plans,
+                auto_repair=auto_repair,
                 timeout_seconds=timeout_seconds,
             )
     except Exception:  # noqa: BLE001 - background boundary: a dead task must still be reported
@@ -613,6 +615,7 @@ def schedule_orchestration(
     stop_at_stage_key: str | None = None,
     auto_approve: bool = False,
     approve_design_plans: bool = True,
+    auto_repair: bool = True,
     timeout_seconds: int | None = None,
 ) -> None:
     """Queue orchestration without blocking the API event loop.
@@ -630,6 +633,7 @@ def schedule_orchestration(
             stop_at_stage_key=stop_at_stage_key,
             auto_approve=auto_approve,
             approve_design_plans=approve_design_plans,
+            auto_repair=auto_repair,
             timeout_seconds=timeout_seconds,
         )
         return
@@ -642,6 +646,7 @@ def schedule_orchestration(
             "stop_at_stage_key": stop_at_stage_key,
             "auto_approve": auto_approve,
             "approve_design_plans": approve_design_plans,
+            "auto_repair": auto_repair,
             "timeout_seconds": timeout_seconds,
         },
         name=f"loregarden-orch-{ticket_id[:8]}",
@@ -665,6 +670,7 @@ class RunService:
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
         approve_design_plans: bool = True,
+        auto_repair: bool = True,
         timeout_seconds: int | None = None,
     ) -> OrchestrationRun:
         ws = self.session.get(Workspace, ticket.workspace_id)
@@ -681,6 +687,7 @@ class RunService:
                 stop_at_stage_key=stop_at_stage_key,
                 auto_approve=auto_approve,
                 approve_design_plans=approve_design_plans,
+                auto_repair=auto_repair,
                 timeout_seconds=timeout_seconds,
             )
         if chosen == OrchestrationDriver.EXTERNAL_MCP:
@@ -690,6 +697,7 @@ class RunService:
                 profile_slug=profile.slug,
                 auto_approve=auto_approve,
                 approve_design_plans=approve_design_plans,
+                auto_repair=auto_repair,
                 stop_at_stage_key=stop_at_stage_key or "",
                 timeout_override_seconds=timeout_seconds,
             )

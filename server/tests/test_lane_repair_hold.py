@@ -82,6 +82,7 @@ class _Dispatcher:
         max_stages=None,
         timeout_seconds=None,
         approve_design_plans=True,
+        auto_repair=True,
     ):
         if self.refuse:
             return None

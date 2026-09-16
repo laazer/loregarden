@@ -301,6 +301,7 @@ def apply_stage_route(
             set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
         ticket.workflow_stage_key = plan.to_key
         ticket.blocking_issues = ""
+        ticket.block_kind = None
         ticket.next_status = "Proceed"
 
     # Derives workflow_stage_key/status/ticket.state from the stage map.

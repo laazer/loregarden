@@ -31,6 +31,7 @@ class InterruptionResume:
     #: Carried from the interrupted run: the choice made in the run modal
     #: survives the interruption the same way auto_approve does.
     approve_design_plans: bool = True
+    auto_repair: bool = True
 
 
 def _execute_resumes(requests: list[InterruptionResume]) -> None:
@@ -40,6 +41,7 @@ def _execute_resumes(requests: list[InterruptionResume]) -> None:
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             auto_approve=request.auto_approve,
             approve_design_plans=request.approve_design_plans,
+            auto_repair=request.auto_repair,
             stop_at_stage_key=request.stop_at_stage_key,
             timeout_seconds=request.timeout_seconds,
         )
@@ -104,6 +106,7 @@ def _resume_plan(
             ticket_id=ticket.id,
             auto_approve=previous.auto_approve,
             approve_design_plans=previous.approve_design_plans,
+            auto_repair=previous.auto_repair,
             stop_at_stage_key=previous.stop_at_stage_key or None,
             timeout_seconds=previous.timeout_override_seconds,
         )
@@ -131,6 +134,7 @@ def _resume_plan(
         ticket_id=ticket.id,
         auto_approve=False,
         approve_design_plans=previous.approve_design_plans if previous else True,
+        auto_repair=previous.auto_repair if previous else True,
         stop_at_stage_key=stage_key,
         timeout_seconds=previous.timeout_override_seconds if previous else None,
     )
@@ -170,6 +174,7 @@ def resume_interrupted_orchestrations(session: Session) -> list[str]:
             ticket,
             auto_approve=plan.auto_approve,
             approve_design_plans=plan.approve_design_plans,
+            auto_repair=plan.auto_repair,
             stop_at_stage_key=plan.stop_at_stage_key,
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT.value,
             timeout_seconds=plan.timeout_seconds,
@@ -189,6 +194,7 @@ def resume_interrupted_orchestrations(session: Session) -> list[str]:
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             auto_approve=plan.auto_approve,
             approve_design_plans=plan.approve_design_plans,
+            auto_repair=plan.auto_repair,
             stop_at_stage_key=plan.stop_at_stage_key or "",
             timeout_override_seconds=plan.timeout_seconds,
         )
