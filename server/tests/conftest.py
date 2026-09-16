@@ -6,7 +6,7 @@ from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
-from loregarden.services import reference_cache
+from loregarden.services import docker_capacity, reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -83,6 +83,18 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+
+
+@pytest.fixture(autouse=True)
+def _forget_docker_probe():
+    """The `docker info` cache is one module-global value with no key. A probe
+    another test cached — `NCPU: 0` from the doctor tests — leaked into the
+    reaper test on the same xdist worker, and that test's fixed clock made it
+    look fresh forever (`now - at` negative), so a 4-cpu waiter never fit and
+    was never promoted. Every test starts with no cached probe."""
+    docker_capacity.clear_probe_cache()
+    yield
+    docker_capacity.clear_probe_cache()
 
 
 @pytest.fixture(name="isolated_db", autouse=True)
