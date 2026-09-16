@@ -424,7 +424,7 @@ export const api = {
   resolveApproval: (
     id: string,
     body: {
-      action: "approve" | "reject";
+      action: "approve" | "recheck" | "reject";
       answers?: Record<string, string | string[]>;
       response?: string;
       always_allow?: boolean;

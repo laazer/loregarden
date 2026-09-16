@@ -854,6 +854,19 @@ export interface ParallelAgentSpec {
   skill_name: string;
 }
 
+export type StudioExitActionRequirement =
+  | { kind: "runtime_capability"; capability_id: string }
+  | { kind: "credential"; credential_key: string }
+  | { kind: "authority"; authority_scope: string }
+  | { kind: "operator_judgment"; decision_prompt: string };
+
+export interface StudioExitAction {
+  key: string;
+  label: string;
+  description?: string;
+  requirement: StudioExitActionRequirement;
+}
+
 export interface StudioWorkflowStage {
   key: string;
   name: string;
@@ -862,7 +875,10 @@ export interface StudioWorkflowStage {
   skill_name: string;
   optional: boolean;
   order: number;
+  /** @deprecated Use exit_actions_enabled / exit_actions (lg-bug-hole-574). */
   gate_required: boolean;
+  exit_actions_enabled?: boolean;
+  exit_actions?: StudioExitAction[];
   /** Reaching this stage ends the workflow. */
   terminal?: boolean;
   /** Condition under which this stage is passed over; values from StudioDefaults.skip_conditions. */
