@@ -297,3 +297,30 @@ def test_record_block_does_not_raise_a_second_question_for_the_same_stage(db_ses
         )
     ).all()
     assert len(pending) == 1
+
+
+def test_the_sweep_reads_the_error_artifact_behind_an_errors_tab_pointer(db_session, ticket):
+    """A long block leaves only a pointer inline; classifying the pointer would
+    call every such block `work`. The sdf-39 shape: the real message names a
+    person."""
+    from loregarden.services.artifact_service import record_blocking_issue
+
+    long_message = "Needs a person to choose: " + "x" * 600
+    ticket.blocking_issues = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key=IMPLEMENT, message=long_message
+    )
+    ticket.workflow_stage_status = StageStatus.BLOCKED
+    db_session.add(ticket)
+    db_session.commit()
+    assert "see the Errors tab" in ticket.blocking_issues  # the pointer, not the words
+
+    assert sweep_unclassified_blocks(db_session) == 1
+    db_session.refresh(ticket)
+    assert ticket.block_kind is BlockKind.HUMAN_ACTION
+
+
+def test_an_editor_trust_refusal_is_harness():
+    assert (
+        classify_block_message("⚠ Workspace Trust Required   Cursor Agent can execute code…")
+        is BlockKind.HARNESS
+    )

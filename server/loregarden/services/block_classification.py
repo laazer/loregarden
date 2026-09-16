@@ -70,6 +70,7 @@ _HARNESS_SIGNATURES = (
     "Environment preflight failed",
     "Baxter was interrupted by a server restart",
     "died of an infrastructure failure",
+    "Workspace Trust Required",
     "usage limit",
     "could not examine",
 )
@@ -183,6 +184,31 @@ def record_block(
     return kind
 
 
+#: What `record_blocking_issue` leaves inline when the real message went to an
+#: error artifact — classifying this text would call every long block `work`.
+_ERRORS_TAB_POINTER = "hit a blocking issue — see the Errors tab"
+
+
+def block_message_for(session: Session, ticket: Ticket) -> str:
+    """The block's own words: the inline text, or the artifact it points at."""
+    inline = ticket.blocking_issues or ""
+    if _ERRORS_TAB_POINTER not in inline:
+        return inline
+    artifact = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.ERROR)
+        .order_by(Artifact.created_at.desc())
+    ).first()
+    if artifact is None:
+        return inline
+    try:
+        message = json.loads(artifact.content_json or "{}").get("message")
+    except json.JSONDecodeError:
+        logger.warning("error artifact %s on %s is unreadable", artifact.id, ticket.external_id)
+        return inline
+    return str(message or inline)
+
+
 def sweep_unclassified_blocks(session: Session) -> int:
     """Classify every blocked ticket the writers did not — run by the reconciler.
 
@@ -197,7 +223,7 @@ def sweep_unclassified_blocks(session: Session) -> int:
             session,
             ticket,
             stage_key=ticket.workflow_stage_key or "",
-            message=ticket.blocking_issues,
+            message=block_message_for(session, ticket),
         )
     return len(stale)
 

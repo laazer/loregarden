@@ -18,7 +18,7 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
     find_terminal_stage,
     is_terminal_stage,
 )
-from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.models.domain import ClassifyRoute, StageType, Ticket, WorkflowStageDef
 from loregarden.models.domain.enums import ClassifyBasis
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
@@ -440,12 +440,6 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
     if not get_agent(next_agent):
         return None
 
-    # The repair turn (750) is the orchestrator's own pin, not an agent's hint:
-    # it wins on any single-agent stage, whether or not the template lets a
-    # hint replace its declared agent, and before classify routing re-picks.
-    if next_agent == REPAIR_AGENT_ID:
-        return next_agent, ""
-
     if stage.classify_routes:
         return _resolve_next_agent_from_routes(ticket, stage)
 
@@ -675,10 +669,35 @@ def agent_is_overridable(stage: WorkflowStageDef) -> bool:
     return bool(stage.agent_is_default) or stage.key in LEGACY_DEFAULT_AGENT_STAGES
 
 
+def repair_pin_applies(stage: WorkflowStageDef) -> bool:
+    """Whether a repair turn can take this stage over: any stage that resolves to
+    one agent. A parallel stage has no single agent, and a gate runs its own
+    checker — both keep today's behaviour (750)."""
+    return not is_parallel_stage(stage) and stage.stage_type != StageType.GATE
+
+
+def resolve_repair_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
+    """The repair turn's pin (750): the orchestrator's own, not an agent's hint.
+
+    Decided before classify routing and before `agent_is_overridable`, because
+    both would otherwise re-pick the stage's declared agent, leave the pin
+    unconsumed, and re-arm the stage on the next failure — twelve dispatches in
+    a minute on a classify `implement` stage before the budget caught it.
+    """
+    if (ticket.next_agent or "").strip() != REPAIR_AGENT_ID:
+        return None
+    if not repair_pin_applies(stage) or not get_agent(REPAIR_AGENT_ID):
+        return None
+    return REPAIR_AGENT_ID, ""
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     pinned = resolve_scope_reroute_pin(ticket, stage)
     if pinned:
         return pinned
+    repair = resolve_repair_pin(ticket, stage)
+    if repair:
+        return repair
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
