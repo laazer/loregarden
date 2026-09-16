@@ -131,14 +131,18 @@ describe("orchestrator decisions", () => {
   });
 
   it("reads a refusal as trouble and an overrule or a plan sign-off as normal", () => {
-    const [refused, overruled, signedOff] = historyLines([
+    const [refused, overruled, signedOff, classified, requeued] = historyLines([
       decision("refused_dispatch_terminal_parent", "Did not dispatch 'implement'."),
       decision("overruled_stale_gate", "Stored the handoff."),
       decision("approved_design_plan", "Approved the design plan from 'ui-design'."),
+      decision("classified_block", "Block on 'implement' classified as decision."),
+      decision("requeued_after_decision", "A person chose 'Try B'; requeued there."),
     ]);
     expect(refused.tone).toBe("failed");
     expect(overruled.tone).toBe("normal");
     expect(signedOff.tone).toBe("normal");
+    expect(classified.tone).toBe("failed"); // a block is still trouble until it is cleared
+    expect(requeued.tone).toBe("normal");
   });
 
   it("still says what it was when the reason is missing", () => {

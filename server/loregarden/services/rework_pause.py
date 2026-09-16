@@ -4,7 +4,7 @@
 getting anywhere. Stopping was all they did. The ticket went BLOCKED, the rounds
 that led there stayed in artifacts nobody was pointed at, and — on the parallel
 path — the block message's own words ("Paused for a human") matched the handover
-heuristic in `orchestration_callbacks._looks_like_human_work`, so the pause was
+heuristic in `block_classification.looks_like_human_work`, so the pause was
 filed as a HUMAN_ACTION carrying an empty `PreparedAction` and `assess_handover`
 findings telling an agent to prepare something no agent had been asked for.
 Neither of that card's buttons touched the ticket, because `ApprovalService`

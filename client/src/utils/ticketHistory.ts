@@ -78,7 +78,9 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
   // stopped, which is the opposite and reads normal.
   if (event.type === "OrchestratorDecision") {
     const decision = str(event.payload.decision);
-  return decision === "overruled_stale_gate" || decision === "approved_design_plan"
+  return decision === "overruled_stale_gate" ||
+    decision === "approved_design_plan" ||
+    decision === "requeued_after_decision"
     ? "normal"
     : "failed";
   }

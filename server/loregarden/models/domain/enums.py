@@ -680,6 +680,11 @@ class ApprovalKind(str, Enum):
     #: the stage done. Separate kinds because the two resolutions are opposites,
     #: and because auto-approve must reach the gate and never the park.
     STAGE_PARK = "stage_park"
+    #: A stage blocked on a choice only a person should make, asked as a
+    #: question with options (749). `tool_input_json` carries the question the
+    #: way a CLI_QUESTION does, so the inbox renders it the same; resolving it
+    #: records the choice as a checkpoint and requeues the ticket itself.
+    BLOCK_DECISION = "block_decision"
 
 
 class BlockOrigin(str, Enum):

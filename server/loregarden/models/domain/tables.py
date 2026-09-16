@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
+from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.enums import (
     DEFAULT_COMPATIBILITY_POSTURE,
     ApprovalKind,
@@ -178,6 +179,12 @@ class Ticket(SQLModel, table=True):
     next_agent: str = ""
     next_status: str = "Proceed"
     blocking_issues: str = ""
+    #: Who can unblock this, when `blocking_issues` is set — see
+    #: `models.domain.block_kinds`. Null while nothing is blocked, and for a
+    #: block the classifier has not yet seen (the reconciler sweeps those).
+    block_kind: BlockKind | None = Field(
+        default=None, sa_column=str_enum_column(BlockKind, nullable=True)
+    )
     # Authoritative "run this agent next for the current stage" pin, set only when
     # a scoped implementer is denied a write onto a sibling implementer's subtree
     # (see agent_scope / permission_bridge). Outranks classify keyword-scoring in

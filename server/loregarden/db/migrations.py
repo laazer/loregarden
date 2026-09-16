@@ -27,6 +27,7 @@ from loregarden.db.migration_utils import (
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
 from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
+from loregarden.db.migrations_block_kinds import m_ticket_block_kind
 from loregarden.db.migrations_blocked_run_reason import m_blocked_run_reason
 from loregarden.db.migrations_btw import (
     m_btw_exchange_deleted_at,
@@ -1381,6 +1382,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
     ("0132_approve_design_plans_columns", m_approve_design_plans_columns),
     ("0133_design_plan_gates", m_design_plan_gates),
+    ("0135_ticket_block_kind", m_ticket_block_kind),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

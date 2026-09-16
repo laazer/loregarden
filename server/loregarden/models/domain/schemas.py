@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.enums import (
     CliTool,
     DockerFootprint,
@@ -285,6 +286,8 @@ class TicketDetail(TicketSummary):
     last_updated_by: str
     next_status: str
     blocking_issues: str
+    #: Who can unblock it, when blocked — see `models.domain.block_kinds` (749).
+    block_kind: BlockKind | None = None
     state_locked: bool = False
     workflow_template_slug: str = ""
     workflow_template_name: str = ""

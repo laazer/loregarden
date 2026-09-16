@@ -58,7 +58,7 @@ inferring your outcome from prose or exit code alone.
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "blocked_kind": "harness|work|decision|human_action|null", "options": ["<choice a person can pick, when blocked_kind is decision>"]}
 <<<END_STAGE_REPORT>>>
 ```
 
@@ -88,6 +88,17 @@ Field rules:
 - `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
 - `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work, name its stage key **exactly as it appears in the "Valid `reroute_to_stage` values for this workflow" list in your run context** — do not guess or invent a plausible-sounding key, and do not use a stage's display name. A key that isn't in that list is discarded, and the rework falls back to the immediately preceding stage — which is rarely where you wanted it. Use `null` if you don't know or none applies: the orchestrator will then fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
 - `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up. Use `null` or `""` when you are not rerouting.
+- `blocked_kind`: **required when `status` is `blocked`** — who can unblock it. `harness`: the
+  environment or the control plane failed (a tool crashed, a dependency is missing), not the work.
+  `work`: you stopped on something an agent can still do (a test you could not crack, a gap you
+  could have assumed past) — say so honestly; a repair run will pick it up. `decision`: a choice
+  only a person should make (a spec bar tripped, two valid approaches) — you MUST also give
+  `options`, 2–4 short choices a person can pick in one click; the answer comes back to the
+  ticket and the stage reruns without anyone asking. `human_action`: a person's hands are needed
+  (credentials, hardware, an external account). A `blocked` report with no kind is treated as
+  `work`, and the history says the agent did not say — earn the person's attention by naming it.
+- `options`: only with `blocked_kind: decision`. Each is the answer itself ("Relax the bar to
+  0.5", "Try approach B", "Accept and continue"), not a question.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.
 
 If you emit no report, or a malformed one, the orchestrator **blocks the stage** (fail-closed).

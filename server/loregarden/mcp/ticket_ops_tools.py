@@ -23,7 +23,6 @@ from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import enum_string_prop, string_prop, tool_schema
 from loregarden.models.domain import (
-    ArtifactKind,
     StageStatus,
     Ticket,
     TicketState,
@@ -31,6 +30,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_relations import TicketRelationService
@@ -162,77 +162,16 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     counter was reset rather than finding it mysteriously empty.
     """
     reason = (arguments.get("reason") or "").strip()
-    if not reason:
-        raise ValueError("A reason is required — it is the record of why the block was cleared.")
-
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
     stage_key = (arguments.get("stage_key") or ticket.workflow_stage_key or "").strip()
-    if not stage_key:
-        raise ValueError("This ticket is not on a workflow stage — nothing to requeue.")
-
-    orch = OrchestrationService(session)
-    orch.update_ticket_manual(
+    requeue_stage(
+        session,
+        OrchestrationService(session),
         ticket,
-        UpdateTicketRequest(
-            stage_key=stage_key,
-            stage_status=StageStatus.PENDING,
-            state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
-            # Naming a state ordinarily pins it (`state_locked`), which is right
-            # for an operator settling a ticket and wrong here: a requeue says
-            # "run this stage again", not "this is where the ticket ends up".
-            # Pinned, `derive` refused every later recomputation, so a requeued
-            # ticket could finish every required stage and never leave
-            # `in_progress`. The state below is where the ticket *waits*; the
-            # workflow still settles where it lands.
-            auto_state=True,
-        ),
-    )
-    if ticket.workflow_stage_key != stage_key:
-        # `stage_key` + `stage_status` lands on the branch of
-        # `_apply_manual_stage_edits` that sets ONE stage's status and returns —
-        # it never moves the cursor. Requeuing a stage other than the current one
-        # therefore reported success having left the ticket pointing at the stage
-        # it was stuck on, so the next start resumed exactly where it had
-        # blocked. "Requeue stage X" can only mean the workflow is now at X.
-        # No `auto_state` of its own, deliberately. This call reaches the
-        # branch that reconciles only `if body.auto_state is True or not
-        # ticket.state_locked`, so it looks like a pinned ticket would skip the
-        # reconcile — but the call above already cleared `state_locked` via
-        # `auto_state=True` (`_apply_state_edit`), for the whole function.
-        # Repeating the flag here would read as though this call were
-        # independently responsible for releasing the pin, which it is not.
-        # `test_requeue_to_another_stage_still_reconciles_a_pinned_ticket`
-        # pins the coupling, since the two calls agree only through that side
-        # effect.
-        orch.update_ticket_manual(
-            ticket,
-            UpdateTicketRequest(
-                workflow_stage_key=stage_key,
-                workflow_stage_status=StageStatus.PENDING,
-            ),
-        )
-    # `refresh_stage_retry_budget` only clears blocking text when this breaker's
-    # own structural mark is on the stage; a requeue clears the block whatever
-    # wrote it, and says who did it.
-    orch.refresh_stage_retry_budget(ticket, stage_key)
-    ticket.blocking_issues = ""
-    ticket.next_status = ""
-    ticket.revision += 1
-    ticket.last_updated_by = "triage"
-    session.add(ticket)
-    session.commit()
-
-    svc.attach_artifact(
-        ticket,
-        kind=ArtifactKind.CONTEXT,
-        title=f"Requeued — {stage_key}",
-        content={
-            "title": f"Requeued — {stage_key}",
-            "rows": [
-                {"k": "Stage", "v": stage_key},
-                {"k": "Reason", "v": reason},
-            ],
-        },
+        stage_key=stage_key,
+        reason=reason,
+        actor="triage",
+        state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
     )
     payload = ticket_state_payload(session, ticket.id)
     payload["requeued"] = _requeue_outcome(session, svc, ticket, stage_key)

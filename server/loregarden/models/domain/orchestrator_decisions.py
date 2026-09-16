@@ -33,3 +33,9 @@ class OrchestratorDecision(StrEnum):
     #: The sign-off gate on a design/plan stage was approved by the run itself,
     #: as the run modal allowed (746). A person can still see it in the history.
     APPROVED_DESIGN_PLAN = "approved_design_plan"
+    #: A block was given a kind — who can unblock it (749). The history line
+    #: says which, and whether the agent said so or the message decided.
+    CLASSIFIED_BLOCK = "classified_block"
+    #: A person answered a decision block's question; the choice is on the
+    #: ticket and the stage was requeued without anyone asking (749).
+    REQUEUED_AFTER_DECISION = "requeued_after_decision"

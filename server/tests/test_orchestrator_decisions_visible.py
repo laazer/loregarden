@@ -141,6 +141,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "settled_stranded_stage",
         "overruled_stale_gate",
         "approved_design_plan",
+        "classified_block",
+        "requeued_after_decision",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

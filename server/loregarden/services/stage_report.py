@@ -10,6 +10,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.interruption_messages import (
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
@@ -41,6 +42,12 @@ class StageReport:
     #: it dropped on the floor, and the stage it rerouted to received the
     #: complaint without the grounds (lg-workflow-integrity-205).
     unmet_criteria: list[str] = field(default_factory=list)
+    #: On a `blocked` verdict: who can unblock it, in the agent's own words,
+    #: validated against `BlockKind`. None when the agent did not say — the
+    #: classifier then decides (749). A `decision` carries the `options` a
+    #: person will be asked to choose between.
+    blocked_kind: BlockKind | None = None
+    options: list[str] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -148,6 +155,33 @@ def _criteria_of(payload: str) -> list[str]:
     return [item.strip() for item in (parsed.unmet_criteria or []) if item.strip()]
 
 
+class _BlockPayload(BaseModel):
+    """`blocked_kind` and `options`, parsed apart from the verdict like the
+    criteria are: a kind the agent misspelt must not cost the block its
+    status — an unreadable kind is an *unclassified* block, not no block."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    blocked_kind: str | None = Field(default=None)
+    options: list[str] | None = Field(default=None)
+
+
+def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str]]:
+    try:
+        parsed = _BlockPayload.model_validate_json(payload)
+    except ValidationError:
+        logger.warning("stage report block fields could not be parsed", exc_info=True)
+        return None, []
+    kind: BlockKind | None = None
+    if parsed.blocked_kind:
+        try:
+            kind = BlockKind(parsed.blocked_kind.strip().lower())
+        except ValueError:
+            logger.warning("stage report named an unknown blocked_kind %r", parsed.blocked_kind)
+    options = [item.strip() for item in (parsed.options or []) if item.strip()]
+    return kind, options
+
+
 def _build_report(payload: str) -> StageReport | None:
     try:
         parsed = _ReportPayload.model_validate_json(payload)
@@ -158,12 +192,15 @@ def _build_report(payload: str) -> StageReport | None:
         return None
     if parsed.status not in _VALID_STATUSES:
         return None
+    kind, options = _block_fields_of(payload)
     return StageReport(
         status=parsed.status,
         confidence=max(0.0, min(1.0, parsed.confidence or 0.0)),
         reroute_to_stage=parsed.reroute_to_stage or None,
         reroute_context=parsed.reroute_context or "",
         unmet_criteria=_criteria_of(payload),
+        blocked_kind=kind,
+        options=options,
     )
 
 
