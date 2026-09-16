@@ -152,6 +152,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0132_approve_design_plans_columns",
     "0133_design_plan_gates",
     "0135_ticket_block_kind",
+    "0136_auto_repair_columns",
 )
 
 

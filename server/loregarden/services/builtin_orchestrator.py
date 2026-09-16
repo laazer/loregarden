@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -149,6 +150,7 @@ class BuiltinOrchestrator:
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
         approve_design_plans: bool = True,
+        auto_repair: bool = True,
         timeout_seconds: int | None = None,
         _subtree_budget: SubtreeBudget | None = None,
     ) -> OrchestrationRun:
@@ -164,6 +166,7 @@ class BuiltinOrchestrator:
             profile_slug=profile.slug,
             auto_approve=auto_approve,
             approve_design_plans=approve_design_plans,
+            auto_repair=auto_repair,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_seconds,
         )
@@ -352,6 +355,11 @@ class BuiltinOrchestrator:
         statement cap, and because the answer they compute is one question.
         """
         if ticket.scope_reroute_agent:
+            return True
+        # **A repair turn** (`block_repair`, 750): the stage blocked, the block
+        # was one an agent can clear, and it was re-armed with the repair agent
+        # pinned. Same shape as the two above; consumed by the dispatch.
+        if repair_pinned(ticket, target_key):
             return True
         return stage_rearmed_for_latest_run(self.session, ticket, target_key)
 
@@ -666,6 +674,10 @@ class BuiltinOrchestrator:
             # a server reload, which is what the retry exists to stop. Let the
             # pass continue; the loop re-dispatches.
             if stage_rearmed_for_latest_run(self.session, ticket, target_key):
+                return False
+            # `run_completion` classified the failure and, when it could, re-armed
+            # the stage for its repair turn (750) — the loop re-runs it inline.
+            if repair_pinned(ticket, target_key):
                 return False
             self.callbacks.block_ticket(
                 orch_run,

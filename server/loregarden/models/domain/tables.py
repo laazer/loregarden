@@ -284,6 +284,9 @@ class OrchestrationRun(SQLModel, table=True):
     #: (`services.design_plan_gate`). On by default; the run modal hands the
     #: gate to a person by turning it off. Threads like `auto_approve`.
     approve_design_plans: bool = Field(default=True)
+    #: Whether a harness/work block gets its one repair turn under this run
+    #: (`services.block_repair`, 750). Off restores "block and wait".
+    auto_repair: bool = Field(default=True)
     # Per-orchestration override of the workspace profile's monitor mode, for
     # this run and every child ticket orchestration it recurses into. Null =
     # use the profile. Lives here, beside auto_approve and

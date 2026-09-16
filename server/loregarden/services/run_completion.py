@@ -16,12 +16,14 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.models.domain import (
     AgentRun,
     Approval,
     Artifact,
+    BlockKind,
     EventType,
     OrchestrationRun,
     ReworkStopReason,
@@ -30,6 +32,7 @@ from loregarden.models.domain import (
     StageVerdictChannel,
     Ticket,
     TicketState,
+    WorkflowInstance,
     WorkflowStageDef,
     Workspace,
 )
@@ -38,6 +41,7 @@ from loregarden.services.artifact_service import (
     refresh_execution_artifacts,
 )
 from loregarden.services.block_classification import record_block
+from loregarden.services.block_repair import offer_repair, record_repair_outcome
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
@@ -209,6 +213,66 @@ def _reroute_or_block_for_rework(
         )
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, full_context)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+
+
+def _offer_repair_turn(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    *,
+    kind: BlockKind,
+    message: str,
+) -> bool:
+    """One repair turn for a block an agent can clear (750). A standalone run has
+    no orchestrator to spend it; `offer_repair` says no for those and for a run
+    started with `auto_repair` off."""
+    parent = (
+        orch.session.get(OrchestrationRun, run.orchestration_run_id)
+        if run.orchestration_run_id
+        else None
+    )
+    return offer_repair(
+        orch.session,
+        ticket,
+        parent,
+        instance=instance,
+        stages=stages,
+        transitions=orch._resolve_transitions(ticket),
+        stage_key=run.stage_key,
+        kind=kind,
+        message=message,
+        failed_agent=run.agent_id,
+    )
+
+
+def _note_repair_if_it_was_one(
+    orch: OrchestrationService, ticket: Ticket, run: AgentRun, report
+) -> None:
+    """The repair turn passed: the block is gone; say so in the history (750)."""
+    if run.agent_id == REPAIR_AGENT_ID and report is not None:
+        record_repair_outcome(orch.session, ticket, run)
+
+
+def _classify_raw_failure(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    failure: str,
+) -> None:
+    """A failed run wrote no report, so the message decides the kind (749).
+
+    Only a `work` failure gets its repair turn here: a harness message on this
+    path is a control-plane death (interruption, orphan, lease) that the
+    startup resume and the settlers already own — re-arming the stage under a
+    dead orchestration would hide it from them (750).
+    """
+    kind = record_block(orch.session, ticket, stage_key=run.stage_key, message=failure)
+    if kind is BlockKind.WORK:
+        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=failure)
 
 
 def _sign_off_design_plan_if_permitted(
@@ -396,6 +460,15 @@ def _block_for_usage_limit(
     set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     if status == RunStatus.SUCCEEDED:
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+    # Harness, but not one a repair turn can clear — the fix is the quota
+    # window passing. Classified so the person sees it needs no action from them.
+    record_block(
+        orch.session,
+        ticket,
+        stage_key=run.stage_key,
+        message=ticket.blocking_issues,
+        declared=BlockKind.HARNESS,
+    )
 
 
 def _advance_clean_exit(
@@ -503,6 +576,15 @@ def _rearmed_for_transient_retry(
             spent,
             reason,
         )
+        # The environment had its retries; now one agent turn looks at it (750).
+        kind = record_block(
+            orch.session,
+            ticket,
+            stage_key=run.stage_key,
+            message=message,
+            declared=BlockKind.HARNESS,
+        )
+        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=message)
         return True
 
     # The marker is both the charge and the record: see `record_transient_retry`
@@ -561,7 +643,7 @@ def advance_stage_after_run(
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         # Who can unblock it — the agent's own word, or the message's (749). A
         # `decision` becomes an inbox question here rather than a dead ticket.
-        record_block(
+        kind = record_block(
             orch.session,
             ticket,
             stage_key=run.stage_key,
@@ -569,6 +651,7 @@ def advance_stage_after_run(
             declared=report.blocked_kind,
             options=report.options,
         )
+        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=message)
     elif report and report.status in ("fail", "needs_rework"):
         clear_transient_retries(orch.session, ticket.id, run.stage_key)
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
@@ -586,15 +669,21 @@ def advance_stage_after_run(
         pass
     elif status == RunStatus.SUCCEEDED:
         gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)
+        _note_repair_if_it_was_one(orch, ticket, run, report)
     elif status == RunStatus.CANCELLED:
         # A stop is not a failure — leave the stage re-runnable with no inbox noise.
         ticket.blocking_issues = ""
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.PENDING)
     else:
-        ticket.blocking_issues = _blocking_issue(
-            orch.session, ticket, run, stderr[:2000] or "Agent run failed"
-        )
+        failure = stderr[:2000] or "Agent run failed"
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, failure)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        # A failed run wrote no report, so the message decides the kind (749).
+        # Only a `work` failure gets its repair turn here: a harness message on
+        # this path is a control-plane death (interruption, orphan, lease) that
+        # the startup resume and the settlers already own — re-arming the stage
+        # under a dead orchestration would hide it from them (750).
+        _classify_raw_failure(orch, ticket, run, instance, stages, failure)
     orch.session.add(ticket)
     orch.session.add(instance)
     orch.session.commit()

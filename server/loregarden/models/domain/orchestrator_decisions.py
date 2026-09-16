@@ -39,3 +39,10 @@ class OrchestratorDecision(StrEnum):
     #: A person answered a decision block's question; the choice is on the
     #: ticket and the stage was requeued without anyone asking (749).
     REQUEUED_AFTER_DECISION = "requeued_after_decision"
+    #: A harness/work block got its one repair turn: the stage was re-armed
+    #: under the repair agent instead of waiting for a person (750).
+    DISPATCHED_REPAIR = "dispatched_repair"
+    #: The repair turn passed; the block is gone and the workflow carried on.
+    REPAIRED = "repaired"
+    #: No repair, or no second one: the block goes to a person with its kind.
+    REPAIR_ESCALATED = "repair_escalated"

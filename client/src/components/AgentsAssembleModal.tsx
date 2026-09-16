@@ -16,6 +16,23 @@ import {
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
+/**
+ * The request body `POST /orchestrate` takes for what this dialog collected.
+ * Owned here, beside the options it maps, so a dial added to the dialog cannot
+ * be dropped by a caller restating the mapping (`branch` and `runtime` are
+ * handled by the caller before the start).
+ */
+export function orchestrateBody(options: AgentsAssembleOptions) {
+  return {
+    stop_at_stage_key: options.stopAtStageKey || undefined,
+    auto_approve: options.autoApprove,
+    approve_design_plans: options.approveDesignPlans,
+    auto_repair: options.autoRepair,
+    slot_number: options.slotNumber,
+    timeout_seconds: options.timeoutSeconds,
+  };
+}
+
 export interface AgentsAssembleOptions {
   runtime: WorkspaceRuntimeSettings;
   stopAtStageKey: string;
@@ -25,6 +42,11 @@ export interface AgentsAssembleOptions {
    * default; off puts that gate in a person's inbox. Other gates are untouched.
    */
   approveDesignPlans: boolean;
+  /**
+   * Let the orchestrator spend one repair turn on a block an agent can clear
+   * (harness or work) instead of waiting for a person. Never a second turn.
+   */
+  autoRepair: boolean;
   branch: string;
   /**
    * Which execution lane to run in; null asks for whichever is quietest. Every
@@ -73,6 +95,7 @@ export function AgentsAssembleModal({
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [approveDesignPlans, setApproveDesignPlans] = useState(true);
+  const [autoRepair, setAutoRepair] = useState(true);
   const [branch, setBranch] = useState("");
   const [slotNumber, setSlotNumber] = useState<LaneChoice>(defaultSlotNumber);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
@@ -233,6 +256,25 @@ export function AgentsAssembleModal({
             />
             Let the orchestrator approve design plans (untick to review the plan before implementation)
           </label>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--txm)",
+              cursor: "pointer",
+              marginTop: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={autoRepair}
+              disabled={busy}
+              onChange={(e) => setAutoRepair(e.target.checked)}
+            />
+            Let the orchestrator repair blocks an agent can fix (one turn, then it asks you)
+          </label>
         </div>
 
         <div className="modal-footer">
@@ -252,6 +294,7 @@ export function AgentsAssembleModal({
                 stopAtStageKey,
                 autoApprove,
                 approveDesignPlans,
+                autoRepair,
                 // A parent's branch is unused; pass its stored value so confirmAssemble
                 // treats it as unchanged and never rewrites it.
                 branch: isParent ? (ticket.branch ?? "") : branch.trim(),

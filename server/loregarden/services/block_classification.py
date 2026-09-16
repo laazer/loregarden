@@ -69,6 +69,7 @@ _HARNESS_SIGNATURES = (
     "Agent run exited successfully but emitted no parseable",
     "Environment preflight failed",
     "Baxter was interrupted by a server restart",
+    "died of an infrastructure failure",
     "usage limit",
     "could not examine",
 )

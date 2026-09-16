@@ -78,6 +78,7 @@ class QueuedRun(SQLModel, table=True):
     auto_approve: bool = False
     stop_at_stage_key: str = ""
     approve_design_plans: bool = True
+    auto_repair: bool = True
     #: Whether this entry runs the whole ticket or one stage of it. Typed, not a
     #: bare string: this is the discriminator between the two regimes sharing
     #: `queued_runs`, so a typo in a comparison against it reads as "the other

@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from loregarden.agents.registry import get_agent
+from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.core.stage_groups import (  # noqa: F401 — re-exported for existing import sites
     emptied_groups,
     group_members,
@@ -439,6 +439,12 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
 
     if not get_agent(next_agent):
         return None
+
+    # The repair turn (750) is the orchestrator's own pin, not an agent's hint:
+    # it wins on any single-agent stage, whether or not the template lets a
+    # hint replace its declared agent, and before classify routing re-picks.
+    if next_agent == REPAIR_AGENT_ID:
+        return next_agent, ""
 
     if stage.classify_routes:
         return _resolve_next_agent_from_routes(ticket, stage)

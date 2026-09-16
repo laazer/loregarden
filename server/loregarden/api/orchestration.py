@@ -157,6 +157,7 @@ def start_orchestration(
         ticket,
         auto_approve=body.auto_approve,
         approve_design_plans=body.approve_design_plans,
+        auto_repair=body.auto_repair,
         stop_at_stage_key=body.stop_at_stage_key,
         preferred_slot=body.slot_number,
         driver=driver.value if driver else "",
@@ -178,6 +179,7 @@ def start_orchestration(
                 stop_at_stage_key=body.stop_at_stage_key,
                 auto_approve=body.auto_approve,
                 approve_design_plans=body.approve_design_plans,
+                auto_repair=body.auto_repair,
                 timeout_seconds=body.timeout_seconds,
             )
         elif driver == OrchestrationDriver.EXTERNAL_MCP:
@@ -187,6 +189,7 @@ def start_orchestration(
                 profile_slug=profile.slug,
                 auto_approve=body.auto_approve,
                 approve_design_plans=body.approve_design_plans,
+                auto_repair=body.auto_repair,
                 stop_at_stage_key=body.stop_at_stage_key or "",
                 timeout_override_seconds=body.timeout_seconds,
             )
