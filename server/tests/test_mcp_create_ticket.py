@@ -187,10 +187,15 @@ def test_create_ticket_default_work_item_type_and_priority_match_schema_defaults
 # --- validation delegated to TicketService, not reimplemented --------------
 
 
-def test_milestone_with_parent_is_rejected_with_service_message(client, db_session):
-    milestone = _milestone(db_session)
+def test_milestone_with_non_initiative_parent_is_rejected(client, db_session):
+    """AC4 / plan step 5 — absolute "milestones never have a parent" is gone.
+
+    A milestone under another milestone (or any non-INITIATIVE parent) is still
+    illegal via the shared parent-assignment / VALID_HIERARCHY rules. Positive
+    milestone<-initiative coverage lives in test_initiative_hierarchy.py.
+    """
     other_milestone = _milestone(db_session)
-    with pytest.raises(ValueError, match="Milestones cannot have a parent"):
+    with pytest.raises(ValueError, match="cannot contain|requires a parent|parent"):
         _create(
             db_session,
             {
@@ -200,7 +205,35 @@ def test_milestone_with_parent_is_rejected_with_service_message(client, db_sessi
                 "parent": other_milestone.id,
             },
         )
-    assert milestone  # keep the seeded milestone referenced/unused-import-safe
+
+
+def test_milestone_under_initiative_succeeds_via_mcp(client, db_session):
+    """AC2 / AC9 — MCP create delegates to TicketService; initiative parent ok.
+
+    732 — initiative is null-workspace; child milestone stays workspace-bound.
+    """
+    initiative_type = getattr(WorkItemType, "INITIATIVE", None)
+    assert initiative_type is not None, "WorkItemType.INITIATIVE missing — R1 / AC1"
+    initiative = TicketService(db_session).create_ticket(
+        workspace_slug=None,
+        title="MCP initiative parent",
+        work_item_type=initiative_type,
+    )
+    result = _create(
+        db_session,
+        {
+            "workspace_slug": "loregarden",
+            "title": "MCP milestone under initiative",
+            "work_item_type": "milestone",
+            "parent": initiative.id,
+        },
+    )
+    stored = db_session.get(Ticket, result["id"])
+    assert stored is not None
+    assert stored.parent_ticket_id == initiative.id
+    assert initiative.workspace_id is None
+    assert stored.workspace_id is not None
+    assert stored.work_item_type == WorkItemType.MILESTONE
 
 
 def test_unknown_workspace_slug_is_rejected_with_service_message(client, db_session):
