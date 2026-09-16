@@ -51,7 +51,11 @@ the default is a blank pane.
   benefit to the person using it.
 - **Assume WCAG AA** where this project has no precedent of its own.
 - **Separate what you decided from what needs a human.** A choice that changes what the product
-  is, rather than how it behaves, is flagged, not made.
+  is, rather than how it behaves, is flagged, not made — and "flagged" has one shape: report
+  `blocked` with `blocked_kind: decision` and 2–4 `options` a person can pick in one click. The
+  answer lands on the ticket and this stage reruns with it. Do not open an approval yourself and
+  do not describe the choice in prose and stop; a described choice with no options is a dead
+  ticket someone has to interrogate.
 
 ## Where the decisions go
 
@@ -77,3 +81,4 @@ block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routi
 a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
 from a stage run (orchestrator/autopilot only). Attach long reports via
 `loregarden_attach_artifact`.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.

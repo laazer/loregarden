@@ -81,6 +81,7 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 
 End with `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`. A clean exit without
 that block blocks the stage.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.
 
 ---
 

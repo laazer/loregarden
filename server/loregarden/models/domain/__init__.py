@@ -12,4 +12,5 @@ from loregarden.models.domain.git_tables import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403
 from loregarden.models.domain.queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403
+from loregarden.models.domain.stage_types import *  # noqa: F401,F403
 from loregarden.models.domain.tables import *  # noqa: F401,F403

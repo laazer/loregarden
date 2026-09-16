@@ -27,6 +27,7 @@ from loregarden.db.migration_utils import (
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
 from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
+from loregarden.db.migrations_block_kind_prompts import m_block_kind_in_role_prompts
 from loregarden.db.migrations_block_kinds import m_ticket_block_kind
 from loregarden.db.migrations_block_repair import m_auto_repair_columns
 from loregarden.db.migrations_blocked_run_reason import m_blocked_run_reason
@@ -1385,6 +1386,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0133_design_plan_gates", m_design_plan_gates),
     ("0135_ticket_block_kind", m_ticket_block_kind),
     ("0136_auto_repair_columns", m_auto_repair_columns),
+    ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

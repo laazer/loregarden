@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.studio_routing import repair_pin_applies
 from loregarden.services.workflow_routing import apply_stage_route
 from sqlmodel import Session, select
 
@@ -129,6 +130,33 @@ def offer_repair(
         )
         return False
     if kind not in REPAIRABLE_KINDS:
+        return False
+    if (ticket.next_agent or "") == REPAIR_AGENT_ID:
+        # The pin from the last offer was never consumed — the dispatch resolved
+        # to someone else. Re-arming would repeat that until the budget ran out.
+        _escalate(
+            session,
+            ticket,
+            stage_key,
+            kind,
+            f"A repair pin on '{stage_key}' was not honoured by the dispatch; not re-armed. "
+            "Blocked for a person.",
+        )
+        return False
+    stage = next((s for s in stages if s.key == stage_key), None)
+    if stage is None or not repair_pin_applies(stage):
+        # The pin is resolved by `_resolve_next_agent_override`, which does not
+        # apply to a parallel or gate stage: the stage would re-arm with the pin
+        # never consumed and its own agent re-run instead, until the budget ran
+        # out. Those stages keep today's behaviour — a person, with the kind.
+        _escalate(
+            session,
+            ticket,
+            stage_key,
+            kind,
+            f"'{stage_key}' is a {stage.stage_type if stage else 'unknown'} stage, which the "
+            "repair turn cannot take over; blocked for a person.",
+        )
         return False
     if get_agent(REPAIR_AGENT_ID) is None:
         # Pinning an agent that cannot resolve would re-arm the stage for the

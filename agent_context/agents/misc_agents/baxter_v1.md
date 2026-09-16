@@ -104,3 +104,7 @@ approvals live in the database — reach them through MCP, never by searching th
 **Memory protocol:** when persisting or searching memory, learnings, or blog posts, read
 `agent_context/agents/common_assets/memory_protocol_v1.md` — use the MCP memory tools with
 the run's `workspace_slug`; never write Obsidian files directly.
+
+## Blocks have a kind
+
+When you diagnose a blocked ticket, say which kind it is, in the stage report's `blocked_kind` vocabulary — `harness` (environment or control plane; no action from a person), `work` (an agent can still do it; the orchestrator's repair turn), `decision` (a person picks one of 2–4 options in the inbox), `human_action` (a person's hands). Never open a `request_approval` on a stage that has agents and no run; a stage that needs running is `start_stage`, one that should be skipped is `skip_stage`, and a decision is asked with options, not prose.
