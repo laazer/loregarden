@@ -34,6 +34,7 @@ from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
+from loregarden.services.exit_action_approvals import ExitActionApprovalMixin
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
@@ -658,41 +659,69 @@ class OrchestrationService:
             self.finalize_workflow(ticket)
             return ticket
 
-        agent_id, _ = resolve_stage_execution(ticket, stage_def)
-        if agent_id or not is_agentless_stage(stage_def):
-            raise ValueError(f"Stage '{target_key}' is not a human approval gate")
+        self._assert_human_gate_allowed(ticket, stage_def, target_key)
+        self._park_ticket_at_gate(ticket, instance, stages, target_key)
+        self._ensure_exit_action_gate_approval(ticket, stage_def, target_key)
 
+        event_bus.publish(
+            self.session,
+            EventType.STAGE_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"stage_key": target_key, "human_gate": True},
+        )
+        return ticket
+
+    def _assert_human_gate_allowed(
+        self, ticket: Ticket, stage_def: WorkflowStageDef, target_key: str
+    ) -> None:
+        agent_id, _ = resolve_stage_execution(ticket, stage_def)
+        from loregarden.services.exit_actions import resolve_exit_actions
+
+        human_actions = resolve_exit_actions(stage_def, None).human_required_actions
+        if (agent_id or not is_agentless_stage(stage_def)) and not human_actions:
+            raise ValueError(f"Stage '{target_key}' is not a human approval gate")
         if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
             if not (
                 ticket.workflow_stage_status == StageStatus.AWAITING
                 and target_key == ticket.workflow_stage_key
             ):
                 raise ValueError("Current stage must complete before starting another")
+        if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
+            raise ValueError(f"Cannot open human gate for ticket in state: {ticket.state.value}")
 
+    def _park_ticket_at_gate(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        target_key: str,
+    ) -> WorkflowInstance:
         stage_map = parse_stage_map(instance, stages)
         if stage_map.get(target_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{target_key}' is marked won't do")
-
         # Opening the gate is a fresh attempt — drop any stale blocking message
         # left over from a prior failure (see the matching comment in
         # start_run for why this must be unconditional, not just BLOCKED/DONE).
         ticket.blocking_issues = ""
-
-        if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
-            raise ValueError(f"Cannot open human gate for ticket in state: {ticket.state.value}")
-
         if ticket.state == TicketState.BACKLOG:
             self.start_ticket(ticket)
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
-
         ticket.workflow_stage_key = target_key
         set_stage_status(ticket, instance, stages, target_key, StageStatus.AWAITING)
         ticket.blocking_issues = ""
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
+        return instance
 
+    def _ensure_exit_action_gate_approval(
+        self, ticket: Ticket, stage_def: WorkflowStageDef, target_key: str
+    ) -> None:
+        from loregarden.services.exit_actions import resolve_exit_actions
+
+        human_actions = resolve_exit_actions(stage_def, None).human_required_actions
         template = self.get_template_for_ticket(ticket)
         stage_name = stage_display_name(template, target_key) if template else target_key
         existing = self.session.exec(
@@ -703,19 +732,25 @@ class OrchestrationService:
                 Approval.kind == ApprovalKind.WORKFLOW_GATE,
             )
         ).first()
-        if not existing:
-            create_workflow_gate_approval(
-                self.session, ticket, target_key, stage_name, stage_def=stage_def
-            )
-
-        event_bus.publish(
+        if existing:
+            return
+        created = create_workflow_gate_approval(
             self.session,
-            EventType.STAGE_STARTED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"stage_key": target_key, "human_gate": True},
+            ticket,
+            target_key,
+            stage_name,
+            stage_def=stage_def,
+            human_required_actions=human_actions,
         )
-        return ticket
+        if created is not None:
+            return
+        # No unresolved actions — mark done instead of parking.
+        instance, stages = self._resolve_stages(ticket)
+        if instance and stages:
+            set_stage_status(ticket, instance, stages, target_key, StageStatus.DONE)
+            self.session.add(ticket)
+            self.session.add(instance)
+            self.session.commit()
 
     def _reject_if_triage_active(self, ticket: Ticket) -> None:
         from loregarden.services.run_concurrency import find_active_run
@@ -998,16 +1033,6 @@ class OrchestrationService:
             # failed, and every leaked slot took a lane off the board for good.
             release_execution_slot(self, run)
 
-    def auto_resolve_gate_approval(self, approval: Approval, run: AgentRun) -> None:
-        """Pre-resolve a gate approval raised under auto_approve.
-
-        Lives here rather than in ``run_completion`` only because ``ApprovalService``
-        is defined in this module; importing it there would close a cycle.
-        """
-        ApprovalService(self.session).auto_resolve(
-            approval.id, orchestration_run_id=run.orchestration_run_id or ""
-        )
-
     def finalize_stage(
         self,
         ticket: Ticket,
@@ -1033,16 +1058,16 @@ class OrchestrationService:
 #: route to. A rework pause asks the same question a gate does — accept this
 #: stage, or send the work back and where to — so it resolves the same way.
 #:
-#: `auto_resolve` deliberately does NOT accept this set: it stays WORKFLOW_GATE
-#: only, so an unattended run cannot sign off the pause raised to stop it looping
-#: (see `services.rework_pause`).
+#: Human-required exit-action gates and rework pauses are never auto-resolved
+#: under ``auto_approve`` (AC-6); design-plan sign-off is the only permitted
+#: unattended path, and it lives in ``subtree_auto_run.resolve_gate_if_permitted``.
 _ROUTABLE_APPROVAL_KINDS = frozenset({ApprovalKind.WORKFLOW_GATE, ApprovalKind.REWORK_PAUSE})
 #: Approval kinds answered with `answers` against a `tool_input_json` question —
 #: an agent's AskUserQuestion, and a decision block asked the same way (749).
 _QUESTION_APPROVAL_KINDS = frozenset({ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION})
 
 
-class ApprovalService:
+class ApprovalService(ExitActionApprovalMixin):
     def __init__(self, session: Session) -> None:
         self.session = session
         self.orchestration = OrchestrationService(session)
@@ -1059,78 +1084,28 @@ class ApprovalService:
         allow_for_stage: bool = False,
         route_to_stage_key: str = "",
     ) -> Approval:
-        from loregarden.agents.executors.permission_bridge import (
-            build_ask_user_question_input,
-            parse_stored_tool_input,
-            validate_question_answers,
-        )
-        from loregarden.services.permission_allowlist import (
-            add_ticket_allow_rule,
-            add_workspace_allow_rule,
-        )
-
         approval = self.session.get(Approval, approval_id)
         if not approval:
             raise ValueError("Approval not found")
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
 
+        if approved:
+            self._reject_unsupported_approve(approval)
+
         rework_route_key = route_to_stage_key.strip()
         if rework_route_key:
             self._validate_rework_route(approval, rework_route_key)
 
-        if approval.kind in _QUESTION_APPROVAL_KINDS and approved:
-            tool_input = json.loads(approval.tool_input_json or "{}")
-            validate_question_answers(tool_input, answers, response=response_text)
-            updated_input = build_ask_user_question_input(
-                tool_input,
-                answers=answers or {},
-                response=response_text,
-            )
-            approval.response_json = json.dumps({"updated_input": updated_input})
-            # The answer reaches the agent as a tool result; mirror it into the chat so the
-            # operator's transcript shows the exchange rather than jumping over it.
-            record_triage_question_exchange(
-                self.session,
+        if approved:
+            self._record_question_or_permission_response(
                 approval,
-                tool_input,
                 answers=answers,
-                response=response_text,
+                response_text=response_text,
+                always_allow=always_allow,
+                allow_for_ticket=allow_for_ticket,
+                allow_for_stage=allow_for_stage,
             )
-            record_home_chat_question_exchange(
-                self.session,
-                approval,
-                tool_input,
-                answers=answers,
-                response=response_text,
-            )
-        elif approval.kind == ApprovalKind.CLI_PERMISSION and approved:
-            tool_input = parse_stored_tool_input(approval.tool_input_json)
-            approval.response_json = json.dumps({"updated_input": tool_input})
-            if always_allow:
-                add_workspace_allow_rule(
-                    self.session,
-                    approval.workspace_id,
-                    approval.tool_name,
-                    tool_input,
-                )
-            # Ticket/stage allow rules need a work item; Home chat approvals are
-            # workspace-scoped and can only persist always_allow.
-            if allow_for_ticket and approval.ticket_id:
-                add_ticket_allow_rule(
-                    self.session,
-                    approval.ticket_id,
-                    approval.tool_name,
-                    tool_input,
-                )
-            if allow_for_stage and approval.ticket_id and approval.stage_key:
-                add_ticket_allow_rule(
-                    self.session,
-                    approval.ticket_id,
-                    approval.tool_name,
-                    tool_input,
-                    stage_key=approval.stage_key,
-                )
 
         self._refuse_gate_that_skips_work(approval, approved=approved)
         approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
@@ -1157,50 +1132,80 @@ class ApprovalService:
         )
         return approval
 
-    def auto_resolve(self, approval_id: str, *, orchestration_run_id: str) -> Approval:
-        """Resolve a WORKFLOW_GATE approval on behalf of an auto_approve run.
-
-        Unlike `resolve()`, this never schedules a background resume — the
-        caller (BuiltinOrchestrator) is already mid-loop and continues the
-        same `execute()` pass synchronously. The row is still created/kept
-        (never skipped) and marked `resolved_by="automation"` with the
-        resolving run id, so an auto-approved gate stays distinguishable from
-        a human sign-off in the approvals table.
-        """
-        approval = self.session.get(Approval, approval_id)
-        if not approval:
-            raise ValueError("Approval not found")
-        if approval.status != ApprovalStatus.PENDING:
-            return approval
-        if approval.kind != ApprovalKind.WORKFLOW_GATE:
-            raise ValueError("auto_resolve only applies to workflow-gate approvals")
-
-        approval.status = ApprovalStatus.APPROVED
-        approval.resolved_at = datetime.now(timezone.utc)
-        approval.resolved_by = "automation"
-        approval.resolving_orchestration_run_id = orchestration_run_id
-        self.session.add(approval)
-        self.session.commit()
-
-        ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
-        if ticket:
-            self._apply_gate_resolution(
-                ticket,
-                approval,
-                approved=True,
-                rework_route_key="",
-                response_text="",
-                resume=False,
-            )
-
-        event_bus.publish(
-            self.session,
-            EventType.APPROVAL_RESOLVED,
-            workspace_id=approval.workspace_id,
-            ticket_id=approval.ticket_id,
-            payload={"approval_id": approval.id, "approved": True, "automated": True},
+    def _record_question_or_permission_response(
+        self,
+        approval: Approval,
+        *,
+        answers: dict[str, str | list[str]] | None,
+        response_text: str,
+        always_allow: bool,
+        allow_for_ticket: bool,
+        allow_for_stage: bool,
+    ) -> None:
+        from loregarden.agents.executors.permission_bridge import (
+            build_ask_user_question_input,
+            parse_stored_tool_input,
+            validate_question_answers,
         )
-        return approval
+        from loregarden.services.permission_allowlist import (
+            add_ticket_allow_rule,
+            add_workspace_allow_rule,
+        )
+
+        if approval.kind in _QUESTION_APPROVAL_KINDS:
+            tool_input = json.loads(approval.tool_input_json or "{}")
+            validate_question_answers(tool_input, answers, response=response_text)
+            updated_input = build_ask_user_question_input(
+                tool_input,
+                answers=answers or {},
+                response=response_text,
+            )
+            approval.response_json = json.dumps({"updated_input": updated_input})
+            # The answer reaches the agent as a tool result; mirror it into the chat so the
+            # operator's transcript shows the exchange rather than jumping over it.
+            record_triage_question_exchange(
+                self.session,
+                approval,
+                tool_input,
+                answers=answers,
+                response=response_text,
+            )
+            record_home_chat_question_exchange(
+                self.session,
+                approval,
+                tool_input,
+                answers=answers,
+                response=response_text,
+            )
+            return
+        if approval.kind != ApprovalKind.CLI_PERMISSION:
+            return
+        tool_input = parse_stored_tool_input(approval.tool_input_json)
+        approval.response_json = json.dumps({"updated_input": tool_input})
+        if always_allow:
+            add_workspace_allow_rule(
+                self.session,
+                approval.workspace_id,
+                approval.tool_name,
+                tool_input,
+            )
+        # Ticket/stage allow rules need a work item; Home chat approvals are
+        # workspace-scoped and can only persist always_allow.
+        if allow_for_ticket and approval.ticket_id:
+            add_ticket_allow_rule(
+                self.session,
+                approval.ticket_id,
+                approval.tool_name,
+                tool_input,
+            )
+        if allow_for_stage and approval.ticket_id and approval.stage_key:
+            add_ticket_allow_rule(
+                self.session,
+                approval.ticket_id,
+                approval.tool_name,
+                tool_input,
+                stage_key=approval.stage_key,
+            )
 
     def _validate_rework_route(self, approval: Approval, rework_route_key: str) -> None:
         """Validate an explicit stage override up front so a bad target can't

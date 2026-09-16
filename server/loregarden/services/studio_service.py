@@ -48,6 +48,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from loregarden.services.exit_actions import validate_against_catalog
 from loregarden.services.mcp_registry import registered_mcp_server_names
 from loregarden.services.skill_service import SkillService
 from loregarden.services.studio_agent_config import (
@@ -622,7 +623,8 @@ _STORED_STAGE_DEFAULTS: dict[str, object] = {
     "classify_routes": list,
     "parallel_agents": list,
     "gate_commands": list,
-    "gate_required": False,
+    "exit_actions_enabled": False,
+    "exit_actions": list,
 }
 
 
@@ -1159,6 +1161,8 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        for stage in stages:
+            validate_against_catalog(stage.exit_actions)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1193,6 +1197,8 @@ class StudioService:
             validate_has_terminal_stage(stages)
             validate_stage_skill_names(stages)
             validate_alternative_groups(stages)
+            for stage in stages:
+                validate_against_catalog(stage.exit_actions)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1255,6 +1261,8 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        for stage in stages:
+            validate_against_catalog(stage.exit_actions)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
@@ -1404,6 +1412,14 @@ class StudioService:
             select(StudioWorkflow).where(StudioWorkflow.slug == slug)
         ).first()
         if workflow:
+            workflow.name = template.name
+            workflow.description = template.description
+            workflow.stages_json = template.stages_json
+            workflow.transitions_json = template.transitions_json
+            workflow.updated_at = datetime.now(timezone.utc)
+            self.session.add(workflow)
+            self.session.commit()
+            self.session.refresh(workflow)
             return _workflow_view(self.session, workflow)
         return _template_workflow_view(template)
 

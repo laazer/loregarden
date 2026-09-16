@@ -61,6 +61,7 @@ from loregarden.db.migrations_doctor import (
     m_orchestration_run_lease,
     m_stage_park_approvals,
 )
+from loregarden.db.migrations_exit_actions import m_runtime_exit_actions
 from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
@@ -1385,6 +1386,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0133_design_plan_gates", m_design_plan_gates),
     ("0135_ticket_block_kind", m_ticket_block_kind),
     ("0136_auto_repair_columns", m_auto_repair_columns),
+    ("0138_runtime_exit_actions", m_runtime_exit_actions),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

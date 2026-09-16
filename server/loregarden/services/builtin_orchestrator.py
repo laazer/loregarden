@@ -543,6 +543,21 @@ class BuiltinOrchestrator:
             self.orch.finalize_workflow(ticket)
             self.session.refresh(ticket)
             return None
+        # Agentless stages with no human-required exit actions are not gates —
+        # they complete and advance (AC-5).
+        from loregarden.models.domain import StageStatus
+        from loregarden.services.exit_actions import resolve_exit_actions
+        from loregarden.services.workflow_state import set_stage_status
+
+        resolution = resolve_exit_actions(stage_def, None)
+        if not resolution.human_required_actions:
+            instance, stages = self.orch._resolve_stages(ticket)
+            if instance and stages:
+                set_stage_status(ticket, instance, stages, target_key, StageStatus.DONE)
+                self.session.add(ticket)
+                self.session.add(instance)
+                self.session.commit()
+            return None
         self.orch.enter_human_gate(ticket, stage_key=target_key)
         self.session.refresh(ticket)
         if resolve_gate_if_permitted(

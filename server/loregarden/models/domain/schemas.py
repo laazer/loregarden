@@ -22,7 +22,11 @@ from loregarden.models.domain.enums import (
     ToolPosture,
     WorkItemType,
 )
-from pydantic import ConfigDict
+from loregarden.models.domain.enums_exit_actions import (
+    ApprovalResolutionAction,
+    ExitActionResolutionMode,
+)
+from pydantic import ConfigDict, model_validator
 from sqlmodel import Field, SQLModel
 
 # --- API DTOs ---
@@ -45,7 +49,13 @@ class ParallelAgentSpec(SQLModel):
     skill_name: str = ""
 
 
-class WorkflowStageDef(SQLModel):
+from loregarden.models.domain.schemas_exit_actions import (  # noqa: E402
+    ExitActionsStage,
+    HumanRequiredExitAction,
+)
+
+
+class WorkflowStageDef(ExitActionsStage):
     key: str
     name: str
     agent_id: str = ""
@@ -56,7 +66,6 @@ class WorkflowStageDef(SQLModel):
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
-    gate_required: bool = False
     # Evidence kinds this stage must produce for the current commit before it can
     # pass. Empty means unproven work advances, which is the old behaviour.
     required_evidence: list[str] = Field(default_factory=list)
@@ -342,6 +351,17 @@ class ApprovalView(SQLModel):
     tool_name: str = ""
     tool_input_json: str = "{}"
     cli_adapter: str = ""
+    human_required_actions: list[HumanRequiredExitAction] = Field(default_factory=list)
+    allowed_actions: list[ApprovalResolutionAction] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_allowed_actions(self):
+        if ApprovalResolutionAction.APPROVE in self.allowed_actions and any(
+            action.resolution_mode == ExitActionResolutionMode.RECHECK
+            for action in self.human_required_actions
+        ):
+            raise ValueError("approve is not allowed while an action requires recheck")
+        return self
 
 
 class EventView(SQLModel):
@@ -765,7 +785,7 @@ class TicketImportResult(SQLModel):
 
 
 class ApprovalAction(SQLModel):
-    action: str  # approve | reject
+    action: ApprovalResolutionAction
     answers: dict[str, str | list[str]] | None = None
     response: str = ""
     always_allow: bool = False
@@ -988,7 +1008,7 @@ class StudioAgentPreviewRequest(SQLModel):
     handoff_checks: list[StudioHandoffCheck] = Field(default_factory=list)
 
 
-class StudioWorkflowStage(SQLModel):
+class StudioWorkflowStage(ExitActionsStage):
     key: str
     name: str
     stage_type: str = "agent"
@@ -996,7 +1016,6 @@ class StudioWorkflowStage(SQLModel):
     skill_name: str = ""
     optional: bool = False
     order: int = 0
-    gate_required: bool = False
     terminal: bool = False
     skip_when: str = ""
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)

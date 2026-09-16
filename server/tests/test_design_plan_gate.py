@@ -44,8 +44,24 @@ from loregarden.services.workflow_state import initial_stages_json
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-DESIGN = WorkflowStageDef(
-    key="ui-design", name="UI design", order=1, agent_id="ui-design-decision", gate_required=True
+DESIGN = WorkflowStageDef.model_validate(
+    {
+        "key": "ui-design",
+        "name": "UI design",
+        "order": 1,
+        "agent_id": "ui-design-decision",
+        "exit_actions_enabled": True,
+        "exit_actions": [
+            {
+                "key": "legacy-stage-sign-off",
+                "label": "Approve UI design completion",
+                "requirement": {
+                    "kind": "operator_judgment",
+                    "decision_prompt": "Approve completion of stage 'UI design'.",
+                },
+            }
+        ],
+    }
 )
 PLAN = WorkflowStageDef(
     key="plan",
@@ -54,8 +70,24 @@ PLAN = WorkflowStageDef(
     stage_type="parallel",
     parallel_agents=[ParallelAgentSpec(agent_id="planner", skill_name="plan-simplest")],
 )
-IMPLEMENT = WorkflowStageDef(
-    key="implement", name="Implement", order=3, agent_id="backend_implementer", gate_required=True
+IMPLEMENT = WorkflowStageDef.model_validate(
+    {
+        "key": "implement",
+        "name": "Implement",
+        "order": 3,
+        "agent_id": "backend_implementer",
+        "exit_actions_enabled": True,
+        "exit_actions": [
+            {
+                "key": "legacy-stage-sign-off",
+                "label": "Approve Implement completion",
+                "requirement": {
+                    "kind": "operator_judgment",
+                    "decision_prompt": "Approve completion of stage 'Implement'.",
+                },
+            }
+        ],
+    }
 )
 STAGES = [
     DESIGN,
@@ -88,7 +120,7 @@ def test_which_stages_are_design_plans():
         (DESIGN, True, False, True),
         (DESIGN, False, False, False),
         (IMPLEMENT, True, False, False),
-        (IMPLEMENT, False, True, True),  # auto_approve still signs off everything
+        (IMPLEMENT, False, True, False),  # auto_approve never bypasses human gates
     ],
 )
 def test_who_may_sign_off(stage, flag, auto, expected):
@@ -144,6 +176,17 @@ def gated_fixture(db_session: Session, tmp_path):
             approve_design_plans=approve_design_plans,
             status=OrchestrationRunStatus.RUNNING,
         )
+        # Design-plan sign-off is raised after the stage agent has already
+        # succeeded (run_completion → exit-action gate). Seed that run so
+        # ApprovalService.resolve does not refuse the gate as skipping work.
+        agent_run = AgentRun(
+            run_code=f"run_{uuid4().hex[:6]}",
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            agent_id="ui-design-decision",
+            stage_key=stage_key,
+            status=RunStatus.SUCCEEDED,
+        )
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=workspace.id,
@@ -151,8 +194,26 @@ def gated_fixture(db_session: Session, tmp_path):
             stage_key=stage_key,
             status=ApprovalStatus.PENDING,
             title="sign off",
+            tool_input_json=json.dumps(
+                {
+                    "human_required_actions": [
+                        {
+                            "action_key": "legacy-stage-sign-off",
+                            "action_label": "Approve completion",
+                            "requirement": {
+                                "kind": "operator_judgment",
+                                "decision_prompt": "Approve completion of stage.",
+                            },
+                            "reason_code": "operator_judgment_required",
+                            "reason": "Operator judgment required.",
+                            "resolution_mode": "approve",
+                        }
+                    ],
+                    "allowed_actions": ["approve", "reject"],
+                }
+            ),
         )
-        db_session.add_all([run, approval])
+        db_session.add_all([run, agent_run, approval])
         db_session.commit()
         db_session.refresh(run)
         db_session.refresh(approval)
@@ -202,15 +263,16 @@ def test_the_flag_never_touches_another_gate(db_session, gated):
     assert approval.status is ApprovalStatus.PENDING
 
 
-def test_auto_approve_signs_off_without_claiming_a_design_decision(db_session, gated):
+def test_auto_approve_does_not_bypass_a_non_design_gate(db_session, gated):
+    """AC-6: auto_approve never resolves human-required exit actions."""
     ticket, park = gated
     run, approval = park(IMPLEMENT.key, approve_design_plans=True)
 
-    assert resolve_gate_if_permitted(db_session, ticket, run, IMPLEMENT, auto_approve=True)
+    assert not resolve_gate_if_permitted(db_session, ticket, run, IMPLEMENT, auto_approve=True)
 
     db_session.refresh(approval)
-    assert approval.status is ApprovalStatus.APPROVED
-    assert _decisions(db_session, ticket) == []  # auto_approve is its own audit trail
+    assert approval.status is ApprovalStatus.PENDING
+    assert _decisions(db_session, ticket) == []
 
 
 _PASS_REPORT = (
@@ -222,7 +284,7 @@ _PASS_REPORT = (
 
 @pytest.mark.parametrize("flag", [True, False])
 def test_the_post_run_gate_follows_the_flag(db_session, gated, flag):
-    """The path a real gate_required stage takes: the run succeeds,
+    """The path a real exit_actions_enabled stage takes: the run succeeds,
     run_completion raises the sign-off, and the parent run's dial decides."""
     ticket, _ = gated
     ticket.workflow_stage_status = StageStatus.RUNNING
@@ -294,10 +356,10 @@ def test_migration_gates_the_live_templates_and_their_drafts(isolated_db):
 
     with Session(isolated_db) as session:
         live = session.exec(select(WorkflowTemplate).where(WorkflowTemplate.slug == slug)).one()
-        gated = {s["key"] for s in json.loads(live.stages_json) if s.get("gate_required")}
+        gated = {s["key"] for s in json.loads(live.stages_json) if s.get("exit_actions_enabled")}
         assert gated == set(DESIGN_PLAN_STAGES[slug])
         assert live.version == 4  # bumped once, not twice
         draft = session.execute(
             text("SELECT stages_json FROM studio_workflows WHERE slug=:s"), {"s": slug}
         ).scalar_one()
-        assert {s["key"] for s in json.loads(draft) if s.get("gate_required")} == gated
+        assert {s["key"] for s in json.loads(draft) if s.get("exit_actions_enabled")} == gated

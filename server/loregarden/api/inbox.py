@@ -4,6 +4,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalAction,
     ApprovalKind,
+    ApprovalResolutionAction,
     ApprovalStatus,
     ArtifactKind,
     Ticket,
@@ -50,8 +51,15 @@ def resolve_approval(
     session: Session = Depends(get_session),
 ) -> dict:
     svc = ApprovalService(session)
-    approved = body.action == "approve"
     try:
+        if body.action == ApprovalResolutionAction.RECHECK:
+            result = svc.recheck(approval_id, runtime_snapshot=body.answers or {})
+            return {
+                "id": approval_id,
+                "status": "pending",
+                "newly_assigned_action_keys": result.newly_assigned_action_keys,
+            }
+        approved = body.action == ApprovalResolutionAction.APPROVE
         approval = svc.resolve(
             approval_id,
             approved=approved,

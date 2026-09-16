@@ -738,7 +738,7 @@ class OrchestrationCallbackService:
         into `impact`, so the decision is made against the feedback rather than
         against a pointer to it.
 
-        REWORK_PAUSE and not WORKFLOW_GATE because `auto_resolve_awaiting_gate`
+        REWORK_PAUSE and not WORKFLOW_GATE because `resolve_gate_if_permitted`
         would find a pending gate on this stage and auto-approve it: an
         unattended run would sign off its own pause and walk straight through the
         cap that exists to stop it looping.

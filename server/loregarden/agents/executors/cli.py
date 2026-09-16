@@ -63,6 +63,7 @@ from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
+from loregarden.services.exit_action_dispatch import assign_dispatch_exit_actions
 from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import (
@@ -909,6 +910,18 @@ class CliAgentExecutor:
             )
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
+        adapter = resolve_effective_adapter(
+            agent_adapter=agent.get("adapter", "local"),
+            workspace=workspace,
+            ticket_adapter=get_ticket_orchestration_runtime(ticket).cli_adapter,
+        )
+        assigned_exit_actions = assign_dispatch_exit_actions(
+            self.session,
+            run=run,
+            workspace=workspace,
+            stage_def=stage_def,
+            adapter=adapter,
+        )
         orchestration_context = build_orchestration_context(
             ticket=ticket,
             run=run,
@@ -916,16 +929,13 @@ class CliAgentExecutor:
             stages=self._resolve_template_stages(ticket),
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
             session=self.session,
+            assigned_exit_actions=assigned_exit_actions,
         )
         # Resolved from the wiring this run will actually get, not from the kind
         # of run it is: the prompt has to describe the channel the agent has.
         transport = resolve_control_plane_transport(
             run=run,
-            adapter=resolve_effective_adapter(
-                agent_adapter=agent.get("adapter", "local"),
-                workspace=workspace,
-                ticket_adapter=get_ticket_orchestration_runtime(ticket).cli_adapter,
-            ),
+            adapter=adapter,
         )
         mcp_context = build_mcp_run_context(
             ticket=ticket,

@@ -375,23 +375,26 @@ def test_the_reset_keeps_the_feedback_the_next_round_needs(db_session: Session, 
 
 
 def test_an_unattended_run_cannot_sign_off_its_own_pause(db_session: Session, review_ticket):
-    """The reason this is not a WORKFLOW_GATE. `auto_resolve_awaiting_gate` looks
-    for a pending gate on the stage; had the pause been one, an auto_approve run
-    would approve it and walk through the cap raised to stop it looping."""
+    """A rework pause is not a WORKFLOW_GATE. auto_approve and resolve_gate_if_permitted
+    must leave it pending; the deleted auto_resolve path must stay gone.
+    """
+    from loregarden.models.domain import WorkflowStageDef
     from loregarden.services.rework_pause import file_rework_pause
-    from loregarden.services.subtree_auto_run import auto_resolve_awaiting_gate
+    from loregarden.services.subtree_auto_run import resolve_gate_if_permitted
 
     ticket, orch_run, _ = review_ticket
     pause = file_rework_pause(
         db_session, ticket, stage_key="script_review", target_stage="implement", message="Paused."
     )
+    stage = WorkflowStageDef(key="script_review", name="Review", agent_id="")
 
-    assert auto_resolve_awaiting_gate(db_session, ticket, orch_run, "script_review") is False
+    assert (
+        resolve_gate_if_permitted(db_session, ticket, orch_run, stage, auto_approve=True) is False
+    )
     db_session.refresh(pause)
     assert pause.status is ApprovalStatus.PENDING
 
-    with pytest.raises(ValueError, match="workflow-gate"):
-        ApprovalService(db_session).auto_resolve(pause.id, orchestration_run_id=orch_run.id)
+    assert not hasattr(ApprovalService(db_session), "auto_resolve")
 
 
 # --------------------------------------------------------------------------- #

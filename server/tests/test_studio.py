@@ -43,7 +43,8 @@ WORKFLOW_GENERATE_STUB = """Draft workflow:
       "skill_name": "plan",
       "optional": false,
       "order": 1,
-      "gate_required": false,
+      "exit_actions_enabled": false,
+      "exit_actions": [],
       "classify_routes": []
     },
     {
@@ -54,7 +55,8 @@ WORKFLOW_GENERATE_STUB = """Draft workflow:
       "skill_name": "ac_gate",
       "optional": false,
       "order": 2,
-      "gate_required": true,
+      "exit_actions_enabled": true,
+      "exit_actions": [{"key": "legacy-stage-sign-off", "label": "Approve Gate completion", "requirement": {"kind": "operator_judgment", "decision_prompt": "Approve completion of stage 'Gate'."}}],
       "classify_routes": []
     }
   ]
@@ -147,7 +149,17 @@ def test_studio_workflow_publish(client: TestClient):
                     "stage_type": "gate",
                     "agent_id": "gatekeeper",
                     "skill_name": "",
-                    "gate_required": True,
+                    "exit_actions_enabled": True,
+                    "exit_actions": [
+                        {
+                            "key": "legacy-stage-sign-off",
+                            "label": "Approve completion",
+                            "requirement": {
+                                "kind": "operator_judgment",
+                                "decision_prompt": "Approve completion.",
+                            },
+                        }
+                    ],
                     "order": 3,
                 },
                 {"key": "done", "name": "Done", "stage_type": "agent", "order": 4},
@@ -577,7 +589,8 @@ def test_parse_workflow_generate_payload_supports_parallel_stage():
       "skill_name": "plan",
       "optional": false,
       "order": 1,
-      "gate_required": false
+      "exit_actions_enabled": false,
+      "exit_actions": []
     },
     {
       "key": "review",
@@ -585,7 +598,8 @@ def test_parse_workflow_generate_payload_supports_parallel_stage():
       "stage_type": "parallel",
       "optional": false,
       "order": 2,
-      "gate_required": false,
+      "exit_actions_enabled": false,
+      "exit_actions": [],
       "parallel_agents": [
         {"agent_id": "gatekeeper", "skill_name": "ac_gate"},
         {"agent_id": "backend_implementer", "skill_name": "apply_patch"},

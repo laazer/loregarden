@@ -1,18 +1,9 @@
-"""Parent auto-mode: run a ticket subtree end-to-end with auto-approved
-standard gates (ticket 164).
+"""Parent auto-mode: run a ticket subtree end-to-end.
 
 Exercises the real BuiltinOrchestrator/OrchestrationService/PermissionBridgeRunner
-pipeline against a small hand-built workflow template (work -> signoff
-[gate_required] -> review [agentless human gate] -> done) so every stage shape
-the ticket calls out is covered without depending on the seeded workspace's own
-(much longer) template. Only the CLI subprocess boundary is faked, matching the
-pattern already used in test_permission_bridge.py; everything else — DB state,
-stage routing, gate resolution — runs for real.
-
-Gaps 1/2 (auto_approve child propagation, stage-gate auto-resolution) are not
-yet implemented as of the test-design stage — several tests below are
-intentionally red until the implement stage lands the fix; that is the point
-of writing them here first.
+pipeline against a small hand-built workflow template (work -> signoff ->
+review [agentless with no exit actions] -> done). Human-required exit actions
+use a dedicated fixture: ``auto_approve`` must never resolve those gates.
 """
 
 import json
@@ -45,9 +36,18 @@ from tests.worktree_helpers import seed_stage_report_contract
 
 # Stage shapes the ticket names explicitly:
 #   work    - ordinary agent stage, nothing special
-#   signoff - agent stage with gate_required=True (Gap 2a)
-#   review  - agentless stage (no agent_id) => human approval gate (Gap 2b)
+#   signoff - agent stage; default has no exit actions (auto_mode e2e completes)
+#   review  - agentless with no exit actions → completes, not a human gate (AC-5)
 #   done    - terminal
+# Gate-behavior tests use `_OPERATOR_GATE_STAGES` (operator_judgment on signoff).
+_LEGACY_JUDGMENT = {
+    "key": "legacy-stage-sign-off",
+    "label": "Approve completion",
+    "requirement": {
+        "kind": "operator_judgment",
+        "decision_prompt": "Approve completion of stage.",
+    },
+}
 _STAGES = [
     {
         "key": "work",
@@ -56,18 +56,20 @@ _STAGES = [
         "skill_name": "",
         "stage_type": "agent",
         "order": 1,
-        "gate_required": False,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
     },
     {
         "key": "signoff",
         "name": "Sign-off",
-        # Not the planner: a planner's gate is a design plan, which the run signs
-        # off by default (746). These tests pin what an ordinary gate does.
+        # Not the planner: a planner's design-plan gate is signed off by default
+        # (746). Operator-judgment gates use `_OPERATOR_GATE_STAGES`.
         "agent_id": "backend_implementer",
         "skill_name": "",
         "stage_type": "agent",
         "order": 2,
-        "gate_required": True,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
     },
     {
         "key": "review",
@@ -76,7 +78,8 @@ _STAGES = [
         "skill_name": "",
         "stage_type": "agent",
         "order": 3,
-        "gate_required": False,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
     },
     {
         "key": "done",
@@ -87,6 +90,66 @@ _STAGES = [
         "order": 4,
         "terminal": True,
     },
+]
+_OPERATOR_GATE_STAGES = [
+    {
+        "key": "work",
+        "name": "Work",
+        "agent_id": "planner",
+        "skill_name": "",
+        "stage_type": "agent",
+        "order": 1,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
+    },
+    {
+        "key": "signoff",
+        "name": "Sign-off",
+        "agent_id": "backend_implementer",
+        "skill_name": "",
+        "stage_type": "agent",
+        "order": 2,
+        "exit_actions_enabled": True,
+        "exit_actions": [_LEGACY_JUDGMENT],
+    },
+    {
+        "key": "review",
+        "name": "Review",
+        "agent_id": "",
+        "skill_name": "",
+        "stage_type": "agent",
+        "order": 3,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
+    },
+    {
+        "key": "done",
+        "name": "Done",
+        "agent_id": "",
+        "skill_name": "",
+        "stage_type": "agent",
+        "order": 4,
+        "terminal": True,
+    },
+]
+_OPERATOR_GATE_STAGES = [
+    _STAGES[0],
+    {
+        **_STAGES[1],
+        "exit_actions_enabled": True,
+        "exit_actions": [
+            {
+                "key": "accept-residual-risk",
+                "label": "Accept residual risk",
+                "requirement": {
+                    "kind": "operator_judgment",
+                    "decision_prompt": "Are the documented residual risks acceptable?",
+                },
+            }
+        ],
+    },
+    _STAGES[2],
+    _STAGES[3],
 ]
 _TRANSITIONS = [
     {"from": "work", "to": "signoff", "when": "pass"},
@@ -243,21 +306,17 @@ def test_child_run_does_not_get_auto_approve_without_it(db_session: Session, tmp
 
 
 # ---------------------------------------------------------------------------
-# AC: gate_required stage sign-off auto-resolves under auto_approve, with an
-# audit trail distinguishing it from a human approval
+# AC-6/AC-12: auto_approve cannot resolve human-required exit actions
 # ---------------------------------------------------------------------------
 
 
-def test_gate_required_stage_auto_resolves_under_auto_approve(db_session: Session, tmp_path):
-    ws = _make_workspace(db_session, tmp_path, "auto-mode-gate-on")
+def test_auto_approve_does_not_resolve_operator_judgment(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-gate-on", stages=_OPERATOR_GATE_STAGES)
     ticket = _make_ticket(db_session, ws, external_id="gate-auto-1", title="Solo")
 
-    orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
+    BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
     db_session.refresh(ticket)
 
-    # Scoped to the signoff stage: the agentless `review` gate later in the
-    # same auto run writes its own (spec-required) WORKFLOW_GATE audit row,
-    # which the agentless test covers — an unscoped count would see both.
     approvals = db_session.exec(
         select(Approval).where(
             Approval.ticket_id == ticket.id,
@@ -265,22 +324,16 @@ def test_gate_required_stage_auto_resolves_under_auto_approve(db_session: Sessio
             Approval.stage_key == "signoff",
         )
     ).all()
-    assert len(approvals) == 1, "the WORKFLOW_GATE approval row must still be created, not skipped"
+    assert len(approvals) == 1
     approval = approvals[0]
-    assert approval.status == ApprovalStatus.APPROVED
-    assert approval.resolved_by == "automation", (
-        "auto-resolved gates must be distinguishable from a human sign-off in the "
-        "approvals table (AC: absence of a row must never be the record of an "
-        "auto-approval, and a resolved row must say who/what resolved it)"
-    )
-    assert approval.resolving_orchestration_run_id == orch_run.id
-
-    assert _stage_status(db_session, ticket, "signoff") == StageStatus.DONE
+    assert approval.status == ApprovalStatus.PENDING
+    assert approval.resolved_by == ""
+    assert approval.resolving_orchestration_run_id is None
+    assert _stage_status(db_session, ticket, "signoff") == StageStatus.AWAITING
 
 
-def test_gate_required_stage_pauses_without_auto_approve(db_session: Session, tmp_path):
-    """Regression guard: today's default behavior (no auto_approve) must not change."""
-    ws = _make_workspace(db_session, tmp_path, "auto-mode-gate-off")
+def test_operator_judgment_pauses_without_auto_approve(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-gate-off", stages=_OPERATOR_GATE_STAGES)
     ticket = _make_ticket(db_session, ws, external_id="gate-manual-1", title="Solo")
 
     BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
@@ -297,76 +350,48 @@ def test_gate_required_stage_pauses_without_auto_approve(db_session: Session, tm
 
 
 # ---------------------------------------------------------------------------
-# AC: agentless human-gate stages resolve the same way under auto_approve
+# AC-5: an agentless stage with no exit actions is not a human gate
 # ---------------------------------------------------------------------------
 
 
-def test_agentless_human_gate_auto_resolves_under_auto_approve(db_session: Session, tmp_path):
+def test_agentless_stage_without_actions_creates_no_gate_under_auto_approve(
+    db_session: Session, tmp_path
+):
     ws = _make_workspace(db_session, tmp_path, "auto-mode-agentless-on")
     ticket = _make_ticket(db_session, ws, external_id="agentless-auto-1", title="Solo")
 
     orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
     db_session.refresh(ticket)
 
-    # With both stage-level gates auto-resolving, the whole workflow completes
-    # in one execute() call.
     assert ticket.state == TicketState.DONE
     assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
-
-    review_approvals = [
-        a
-        for a in db_session.exec(select(Approval).where(Approval.ticket_id == ticket.id)).all()
-        if a.stage_key == "review"
-    ]
-    assert len(review_approvals) == 1, "the agentless gate must still create an audit row"
-    approval = review_approvals[0]
-    assert approval.status == ApprovalStatus.APPROVED
-    assert approval.resolved_by == "automation"
-    assert approval.resolving_orchestration_run_id == orch_run.id
-
-
-def test_agentless_human_gate_pauses_without_auto_approve(
-    db_session: Session, tmp_path, monkeypatch
-):
-    """Regression guard: today's default behavior (no auto_approve) must not change."""
-    # Resolving a gate normally auto-resumes the ticket on a background thread/
-    # session (OrchestrationService._resume_orchestration -> schedule_orchestration).
-    # Suppress that here so this test drives the second stage with its own
-    # explicit execute() call on a single, controlled session instead of racing
-    # a second one.
-    monkeypatch.setattr(
-        "loregarden.services.run_service.schedule_orchestration", lambda *a, **k: None
+    assert (
+        db_session.exec(
+            select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "review")
+        ).all()
+        == []
     )
 
+
+def test_agentless_stage_without_actions_creates_no_gate_in_attended_mode(
+    db_session: Session, tmp_path
+):
     ws = _make_workspace(db_session, tmp_path, "auto-mode-agentless-off")
     ticket = _make_ticket(db_session, ws, external_id="agentless-manual-1", title="Solo")
 
-    # Resolve the first gate manually so we reach the agentless "review" stage.
     BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
     db_session.refresh(ticket)
-    signoff_approval = db_session.exec(
-        select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "signoff")
-    ).first()
-    from loregarden.services.orchestration import ApprovalService
-
-    ApprovalService(db_session).resolve(signoff_approval.id, approved=True)
-    db_session.refresh(ticket)
-
-    BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
-    db_session.refresh(ticket)
-
-    assert ticket.state != TicketState.DONE
-    assert _stage_status(db_session, ticket, "review") == StageStatus.AWAITING
-    review_approval = db_session.exec(
-        select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "review")
-    ).first()
-    assert review_approval is not None
-    assert review_approval.status == ApprovalStatus.PENDING
+    assert ticket.state == TicketState.DONE
+    assert (
+        db_session.exec(
+            select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "review")
+        ).all()
+        == []
+    )
 
 
 # ---------------------------------------------------------------------------
-# AC: subtree end-to-end — parent with 2+ children crossing a gate_required
-# stage and an agentless gate, entirely under one auto-mode orchestration call
+# Regression: a no-action workflow remains unattended under auto mode
 # ---------------------------------------------------------------------------
 
 
@@ -408,29 +433,15 @@ def test_subtree_with_two_children_completes_end_to_end_under_auto_mode(
     )
     assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
 
-    # Each child runs its own gates for real.
     for ticket in (child_a, child_b):
-        gate_approval = db_session.exec(
-            select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "signoff")
-        ).first()
-        review_approval = db_session.exec(
-            select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "review")
-        ).first()
-        assert gate_approval.status == ApprovalStatus.APPROVED
-        assert gate_approval.resolved_by == "automation"
-        assert review_approval.status == ApprovalStatus.APPROVED
-        assert review_approval.resolved_by == "automation"
+        assert db_session.exec(select(Approval).where(Approval.ticket_id == ticket.id)).all() == []
 
-    # The parent is a pure aggregator: it runs none of its own stages, so it
-    # produces no agent runs and opens no gates of its own — its DONE state comes
-    # from finalizing once every child completed.
     assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == [], (
         "an aggregator parent must not run any of its own workflow stages"
     )
     assert db_session.exec(select(Approval).where(Approval.ticket_id == parent.id)).all() == [], (
         "an aggregator parent opens no gates of its own"
     )
-    # The children did the actual work.
     assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_a.id)).all()
     assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_b.id)).all()
 
@@ -903,47 +914,17 @@ def test_grandchild_blocked_stops_subtree_auto_run(db_session: Session, tmp_path
     assert "blocked" in (orch_run.error_message or "").lower()
 
 
-def test_already_done_child_is_not_rerun_under_auto_mode(
-    db_session: Session, tmp_path, monkeypatch
-):
+def test_already_done_child_is_not_rerun_under_auto_mode(db_session: Session, tmp_path):
     """A child that already finished its workflow before the parent's auto run
     starts must be skipped (via _ticket_workflow_complete), not re-executed.
-    Re-running a finished child would waste subtree-wide stage budget on work
-    that's already done and could re-trigger side effects (commits, approvals)
-    for a ticket nothing asked to touch again.
     """
-    # This test drives the child to DONE manually first, so suppress the
-    # background auto-resume a gate resolution would otherwise schedule.
-    monkeypatch.setattr(
-        "loregarden.services.run_service.schedule_orchestration", lambda *a, **k: None
-    )
-
     ws = _make_workspace(db_session, tmp_path, "auto-mode-already-done")
     parent = _make_ticket(db_session, ws, external_id="done-parent-1", title="Parent")
     child = _make_ticket(
         db_session, ws, external_id="done-child-1", title="Child", parent_ticket_id=parent.id
     )
 
-    from loregarden.services.orchestration import ApprovalService
-
-    # Walk the child fully to DONE by hand: work -> signoff (gate) -> review
-    # (agentless gate) -> done, resolving each gate manually.
-    BuiltinOrchestrator(db_session).execute(child, _profile(), auto_approve=False)
-    db_session.refresh(child)
-    signoff = db_session.exec(
-        select(Approval).where(Approval.ticket_id == child.id, Approval.stage_key == "signoff")
-    ).first()
-    ApprovalService(db_session).resolve(signoff.id, approved=True)
-    db_session.refresh(child)
-
-    BuiltinOrchestrator(db_session).execute(child, _profile(), auto_approve=False)
-    db_session.refresh(child)
-    review = db_session.exec(
-        select(Approval).where(Approval.ticket_id == child.id, Approval.stage_key == "review")
-    ).first()
-    ApprovalService(db_session).resolve(review.id, approved=True)
-    db_session.refresh(child)
-
+    # No-action workflow completes in one attended execute call.
     BuiltinOrchestrator(db_session).execute(child, _profile(), auto_approve=False)
     db_session.refresh(child)
     assert child.state == TicketState.DONE, (
@@ -958,9 +939,9 @@ def test_already_done_child_is_not_rerun_under_auto_mode(
 
     runs_after = len(db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all())
     assert runs_after == runs_before, (
-        "an already-DONE child must not get new agent runs when the parent "
-        f"auto-runs; had {runs_before} runs before, {runs_after} after"
+        "an already-done child must not be re-executed by the parent's auto run"
     )
+    assert parent.state == TicketState.DONE
     assert child.state == TicketState.DONE
 
 
@@ -1181,7 +1162,9 @@ def test_subtree_wide_bound_caps_total_completed_stages_across_all_tickets(
 
 
 def test_human_resolved_gate_is_not_labeled_automation(db_session: Session, tmp_path):
-    ws = _make_workspace(db_session, tmp_path, "auto-mode-human-label")
+    ws = _make_workspace(
+        db_session, tmp_path, "auto-mode-human-label", stages=_OPERATOR_GATE_STAGES
+    )
     ticket = _make_ticket(db_session, ws, external_id="gate-human-1", title="Solo")
 
     BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
@@ -1224,13 +1207,13 @@ def test_human_resolved_gate_is_not_labeled_automation(db_session: Session, tmp_
 # ---------------------------------------------------------------------------
 
 
-def test_auto_run_resolves_a_stage_that_was_already_awaiting_before_auto_mode(
-    db_session: Session, tmp_path
-):
-    ws = _make_workspace(db_session, tmp_path, "auto-mode-late-adopt")
+def test_auto_approve_does_not_resolve_a_preexisting_human_gate(db_session: Session, tmp_path):
+    """AC-6: auto_approve never resolves human-required exit actions, even ones
+    that were already awaiting before the auto run started.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-late-adopt", stages=_OPERATOR_GATE_STAGES)
     ticket = _make_ticket(db_session, ws, external_id="gate-late-adopt-1", title="Solo")
 
-    # Reach AWAITING the old-fashioned way: no auto_approve at all.
     BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
     db_session.refresh(ticket)
     assert _stage_status(db_session, ticket, "signoff") == StageStatus.AWAITING
@@ -1242,20 +1225,13 @@ def test_auto_run_resolves_a_stage_that_was_already_awaiting_before_auto_mode(
         )
     ).one()
 
-    # Now someone (or a parent's subtree auto run) re-invokes execute() with
-    # auto_approve=True on the very same, already-paused ticket.
-    orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
+    BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
     db_session.refresh(ticket)
     db_session.refresh(pending)
 
-    assert pending.status == ApprovalStatus.APPROVED, (
-        "re-entering an already-AWAITING gate under auto_approve=True must "
-        "resolve the existing pending approval, not leave the ticket stuck "
-        "at AWAITING forever because the row predates this run"
-    )
-    assert pending.resolved_by == "automation"
-    assert pending.resolving_orchestration_run_id == orch_run.id
-    assert ticket.state == TicketState.DONE
+    assert pending.status == ApprovalStatus.PENDING
+    assert _stage_status(db_session, ticket, "signoff") == StageStatus.AWAITING
+    assert ticket.state != TicketState.DONE
 
 
 # ---------------------------------------------------------------------------

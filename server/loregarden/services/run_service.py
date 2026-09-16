@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -586,6 +587,7 @@ def execute_orchestration_background(
     approve_design_plans: bool = True,
     auto_repair: bool = True,
     timeout_seconds: int | None = None,
+    assigned_exit_action_keys: list[str] | None = None,
 ) -> None:
     try:
         with Session(engine) as session:
@@ -593,6 +595,21 @@ def execute_orchestration_background(
             if not ticket:
                 logger.error("Background orchestration ticket not found: %s", ticket_id)
                 return
+            if assigned_exit_action_keys:
+                # Continuation after a recheck/authority grant: pin the next
+                # dispatch to the newly executable subset before the loop runs.
+                from loregarden.models.domain import AgentRun as _AgentRun
+                from sqlmodel import select as _select
+
+                run = session.exec(
+                    _select(_AgentRun)
+                    .where(_AgentRun.ticket_id == ticket_id)
+                    .order_by(_AgentRun.created_at.desc())
+                ).first()
+                if run is not None:
+                    run.assigned_exit_action_keys_json = json.dumps(list(assigned_exit_action_keys))
+                    session.add(run)
+                    session.commit()
             RunService(session).orchestrate_ticket(
                 ticket,
                 max_stages=max_stages,
@@ -617,6 +634,7 @@ def schedule_orchestration(
     approve_design_plans: bool = True,
     auto_repair: bool = True,
     timeout_seconds: int | None = None,
+    assigned_exit_action_keys: list[str] | None = None,
 ) -> None:
     """Queue orchestration without blocking the API event loop.
 
@@ -635,6 +653,7 @@ def schedule_orchestration(
             approve_design_plans=approve_design_plans,
             auto_repair=auto_repair,
             timeout_seconds=timeout_seconds,
+            assigned_exit_action_keys=assigned_exit_action_keys,
         )
         return
     thread = threading.Thread(
@@ -648,6 +667,7 @@ def schedule_orchestration(
             "approve_design_plans": approve_design_plans,
             "auto_repair": auto_repair,
             "timeout_seconds": timeout_seconds,
+            "assigned_exit_action_keys": assigned_exit_action_keys,
         },
         name=f"loregarden-orch-{ticket_id[:8]}",
         daemon=True,
