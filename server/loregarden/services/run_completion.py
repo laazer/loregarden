@@ -650,6 +650,7 @@ def advance_stage_after_run(
             message=message,
             declared=report.blocked_kind,
             options=report.options,
+            kind_as_written=report.kind_as_written,
         )
         _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=message)
     elif report and report.status in ("fail", "needs_rework"):

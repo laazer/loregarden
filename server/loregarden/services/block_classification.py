@@ -146,6 +146,16 @@ def _raise_decision(
     return approval
 
 
+def _how_classified(declared: BlockKind | None, kind_as_written: str) -> str:
+    if declared:
+        return ""
+    if kind_as_written:
+        return (
+            f" (the agent named an unknown kind {kind_as_written!r}; classified from the message)"
+        )
+    return " (the agent named no kind; classified from the message)"
+
+
 def record_block(
     session: Session,
     ticket: Ticket,
@@ -154,6 +164,7 @@ def record_block(
     message: str,
     declared: BlockKind | None = None,
     options: list[str] | None = None,
+    kind_as_written: str = "",
 ) -> BlockKind:
     """Stamp the kind on the ticket, say so in the history, and act on it.
 
@@ -165,7 +176,7 @@ def record_block(
     session.add(ticket)
     reason = (
         f"Block on '{stage_key}' classified as {kind.value}"
-        + ("" if declared else " (the agent named no kind; classified from the message)")
+        + _how_classified(declared, kind_as_written)
         + "."
     )
     record_orchestrator_decision(
