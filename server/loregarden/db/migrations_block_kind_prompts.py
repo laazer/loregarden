@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 MIGRATION_ID = "0137_block_kind_in_role_prompts"
 
+#: Version writers that are not a person. `reconcile` is the studio-agent
+#: reconciler; 0137's first pass counted it as an editor and refreshed 2 of 27.
+AUTOMATED_EDITORS = frozenset({"seed", "migration", "reconcile"})
+
 #: What every refreshed seed file names and no pre-749 body did (checked: 0 of
 #: 27 built-in bodies mentioned it); its presence is what the refresh checks.
 BLOCK_KIND_SENTENCE = "blocked_kind"
@@ -51,7 +55,7 @@ def _refresh_from_seed(conn: Connection, slug: str, role_file: str) -> None:
     )
     if row is None or BLOCK_KIND_SENTENCE in (row["role_body"] or ""):
         return
-    editors = _versions_by(conn, row["id"]) - {"seed", "migration"}
+    editors = _versions_by(conn, row["id"]) - AUTOMATED_EDITORS
     if editors:
         logger.warning(
             "%s: %r lacks the blocked_kind sentence and was edited by %s — leaving it alone; "
