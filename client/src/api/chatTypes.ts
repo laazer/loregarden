@@ -54,7 +54,9 @@ export interface Approval {
     | "cli_question"
     | "human_action"
     | "rework_pause"
-    | "stage_park";
+    | "stage_park"
+    /** A stage blocked on a choice only a person should make; asked with options (749). */
+    | "block_decision";
   /** Present on `human_action`: what the agent prepared before handing over. */
   prepared_action?: PreparedAction | null;
   status?: string;

@@ -37,6 +37,7 @@ from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
 )
+from loregarden.services.block_classification import record_block
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
@@ -558,6 +559,16 @@ def advance_stage_after_run(
         message = report.reroute_context or stderr[:2000] or fallback
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        # Who can unblock it — the agent's own word, or the message's (749). A
+        # `decision` becomes an inbox question here rather than a dead ticket.
+        record_block(
+            orch.session,
+            ticket,
+            stage_key=run.stage_key,
+            message=message,
+            declared=report.blocked_kind,
+            options=report.options,
+        )
     elif report and report.status in ("fail", "needs_rework"):
         clear_transient_retries(orch.session, ticket.id, run.stage_key)
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)

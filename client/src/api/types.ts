@@ -125,6 +125,9 @@ export interface ExternalHarnessPrompt {
   prompt: string;
 }
 
+/** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
+export type BlockKind = "harness" | "work" | "decision" | "human_action";
+
 export interface TicketDetail extends TicketSummary {
   /**
    * Present only on responses that start work. The slot pool is shared with the
@@ -150,6 +153,8 @@ export interface TicketDetail extends TicketSummary {
   current_stage_agent: string;
   next_status: string;
   blocking_issues: string;
+  /** Who can unblock it, when blocked (749). Null while nothing is blocked. */
+  block_kind?: BlockKind | null;
   state_locked: boolean;
   workflow_template_slug: string;
   workflow_template_name: string;

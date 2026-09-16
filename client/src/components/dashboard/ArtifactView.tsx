@@ -6,6 +6,8 @@ import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 import { RunLedgerPanel } from "../RunLedgerPanel";
 import { StageFanoutPanel } from "../StageFanoutPanel";
 
+import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
+
 /**
  * Stages the control plane re-ran by itself. Not styled as an error, because it
  * is not one: the run died of infrastructure — a lost CLI login, a reaped lease
@@ -169,8 +171,13 @@ export function ArtifactView({
             }}
           >
             <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rdl)" }}>
-              Blocking issue
+              Blocking issue{ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}
             </div>
+            {ticket.block_kind && (
+              <div style={{ marginTop: 4, fontSize: 12, color: "var(--txm)" }}>
+                {blockKindMeaning(ticket.block_kind)}
+              </div>
+            )}
             <pre
               style={{
                 margin: "8px 0 0",

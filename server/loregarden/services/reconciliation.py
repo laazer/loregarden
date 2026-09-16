@@ -42,6 +42,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from loregarden.services.block_classification import sweep_unclassified_blocks
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
@@ -102,6 +103,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.
     SweepStep("scan_workflow_monitor", monitor_sweep),
+    # After the settlers, because they are what writes most of the harness
+    # blocks this classifies: a lease expiry settled two steps up gets its
+    # kind here, in the same pass, without the settler having to know (749).
+    SweepStep("classify_unclassified_blocks", sweep_unclassified_blocks),
 )
 
 

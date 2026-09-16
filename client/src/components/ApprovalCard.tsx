@@ -71,7 +71,9 @@ export function ApprovalCard({
   /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
   impactText?: string;
 }) {
-  const isQuestion = approval.kind === "cli_question";
+  // A decision block is asked the way an agent's question is — same payload
+  // shape, same options, same answer — so it shares the whole question path.
+  const isQuestion = approval.kind === "cli_question" || approval.kind === "block_decision";
   const isPermission = approval.kind === "cli_permission";
   // A rework pause resolves through the same routing a gate does — approve to
   // accept the stage, reject to send the work back to a stage you pick — so it
@@ -190,6 +192,9 @@ export function ApprovalCard({
           {approval.stage_name}
           {approval.kind === "workflow_gate" && <span> · stage sign-off</span>}
           {approval.kind === "rework_pause" && <span> · rework loop paused</span>}
+          {approval.kind === "block_decision" && (
+            <span> · decision needed; answering reruns the stage</span>
+          )}
           {approval.kind === "cli_permission" && approval.cli_adapter && (
             <span> · {approval.cli_adapter} permission</span>
           )}

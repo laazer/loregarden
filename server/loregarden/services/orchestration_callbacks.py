@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.gate_approvals import gate_would_skip_work
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
@@ -62,26 +63,6 @@ from sqlmodel import Session, col, select
 
 def _orch_code() -> str:
     return f"orch_{secrets.token_hex(3)}"
-
-
-#: Phrases a stage report uses when it is asking for a person rather than
-#: reporting a fault. Deliberately a small, literal list: this only decides
-#: whether a block also lands in the inbox as an action, and a false negative
-#: leaves today's behaviour exactly as it was.
-_HUMAN_WORK_MARKERS = (
-    "a human",
-    "an operator",
-    "human/operator",
-    "manually",
-    "by hand",
-    "needs a person",
-    "requires a person",
-)
-
-
-def _looks_like_human_work(message: str) -> bool:
-    lowered = (message or "").lower()
-    return any(marker in lowered for marker in _HUMAN_WORK_MARKERS)
 
 
 class OrchestrationCallbackService:
@@ -697,7 +678,7 @@ class OrchestrationCallbackService:
         """
         if prepared_action is None and origin is BlockOrigin.CONTROL_PLANE:
             return None
-        if prepared_action is None and not _looks_like_human_work(message):
+        if prepared_action is None and not looks_like_human_work(message):
             return None
 
         assessment = assess_handover(message=message, action=prepared_action)

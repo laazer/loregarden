@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import ticket_manual_edit
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.block_classification import resolve_block_decision
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
 from loregarden.services.rework_feedback import reset_rework_budget
@@ -1036,6 +1037,9 @@ class OrchestrationService:
 #: only, so an unattended run cannot sign off the pause raised to stop it looping
 #: (see `services.rework_pause`).
 _ROUTABLE_APPROVAL_KINDS = frozenset({ApprovalKind.WORKFLOW_GATE, ApprovalKind.REWORK_PAUSE})
+#: Approval kinds answered with `answers` against a `tool_input_json` question —
+#: an agent's AskUserQuestion, and a decision block asked the same way (749).
+_QUESTION_APPROVAL_KINDS = frozenset({ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION})
 
 
 class ApprovalService:
@@ -1075,7 +1079,7 @@ class ApprovalService:
         if rework_route_key:
             self._validate_rework_route(approval, rework_route_key)
 
-        if approval.kind == ApprovalKind.CLI_QUESTION and approved:
+        if approval.kind in _QUESTION_APPROVAL_KINDS and approved:
             tool_input = json.loads(approval.tool_input_json or "{}")
             validate_question_answers(tool_input, answers, response=response_text)
             updated_input = build_ask_user_question_input(
@@ -1303,6 +1307,25 @@ class ApprovalService:
                 approved=approved,
                 response_text=response_text,
             )
+        elif approval.kind == ApprovalKind.BLOCK_DECISION:
+            self._apply_block_decision(
+                ticket, approval, approved=approved, response_text=response_text
+            )
+
+    def _apply_block_decision(
+        self, ticket: Ticket, approval: Approval, *, approved: bool, response_text: str
+    ) -> None:
+        """A person answered a decision block (749): the policy lives beside the
+        classifier; this only resumes the run afterwards, as a gate would."""
+        if resolve_block_decision(
+            self.session,
+            self.orchestration,
+            ticket,
+            approval,
+            approved=approved,
+            response_text=response_text,
+        ):
+            self._resume_orchestration(ticket)
 
     def _apply_park_resolution(
         self,
