@@ -124,6 +124,37 @@ def test_a_live_recorded_pid_outranks_a_stale_lease(db_session, ticket):
     assert agent_run_lease_expired(db_session, run) is False
 
 
+def test_a_verified_live_agent_process_outranks_a_stale_lease(db_session, ticket):
+    """A missed beat is a delay; a CLI that is demonstrably still the same
+    process is mid-answer, and reaping it costs the whole turn."""
+    import os
+
+    from loregarden.services.process_identity import identify
+
+    run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED)
+    run.agent_pid = os.getpid()
+    run.agent_pid_identity = identify(os.getpid()) or ""
+    db_session.add(run)
+    db_session.commit()
+
+    assert run.agent_pid_identity, "this host must be able to identify its own process"
+    assert agent_run_lease_expired(db_session, run) is False
+
+
+def test_a_reused_pid_cannot_vouch_for_a_run_it_never_belonged_to(db_session, ticket):
+    """Identity, not a bare pid: the same number with a different start time
+    is another process, and the stale lease stands."""
+    import os
+
+    run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED)
+    run.agent_pid = os.getpid()
+    run.agent_pid_identity = "not-this-process"
+    db_session.add(run)
+    db_session.commit()
+
+    assert agent_run_lease_expired(db_session, run) is True
+
+
 # ---- fail closed --------------------------------------------------------
 
 
