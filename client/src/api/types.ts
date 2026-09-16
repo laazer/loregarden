@@ -875,10 +875,10 @@ export interface StudioWorkflowStage {
   skill_name: string;
   optional: boolean;
   order: number;
-  /** @deprecated Use exit_actions_enabled / exit_actions (lg-bug-hole-574). */
-  gate_required: boolean;
-  exit_actions_enabled?: boolean;
-  exit_actions?: StudioExitAction[];
+  /** When true, authored exit_actions are evaluated before leaving the stage. */
+  exit_actions_enabled: boolean;
+  /** Typed requirements; empty when exit_actions_enabled is false. */
+  exit_actions: StudioExitAction[];
   /** Reaching this stage ends the workflow. */
   terminal?: boolean;
   /** Condition under which this stage is passed over; values from StudioDefaults.skip_conditions. */

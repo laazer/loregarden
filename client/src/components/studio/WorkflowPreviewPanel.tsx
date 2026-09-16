@@ -80,7 +80,7 @@ export function WorkflowPreviewPanel({
                     <span style={{ color: "var(--txl)" }}> · {stage.skill_name || "—"}</span>
                   </div>
                 )}
-                {stage.gate_required && (
+                {stage.exit_actions_enabled && (
                   <div
                     style={{
                       marginTop: 6,
@@ -89,14 +89,14 @@ export function WorkflowPreviewPanel({
                       gap: 5,
                       fontSize: 10,
                       fontWeight: 600,
-                      color: "var(--rdl)",
-                      background: "rgba(255,106,84,.1)",
-                      border: "1px solid rgba(255,106,84,.25)",
+                      color: "var(--ac2)",
+                      background: "rgba(120,160,255,.1)",
+                      border: "1px solid rgba(120,160,255,.25)",
                       borderRadius: 6,
                       padding: "2px 7px",
                     }}
                   >
-                    gate · human approval
+                    evaluated at run time
                   </div>
                 )}
               </div>

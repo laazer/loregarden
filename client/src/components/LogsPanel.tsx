@@ -111,6 +111,9 @@ export function LogsPanel({
         onApprove={(approval, payload) =>
           resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
         }
+        onRecheck={(approval, payload) =>
+          resolveApproval.mutate({ id: approval.id, action: "recheck", ...payload })
+        }
         onReject={(approval, payload) =>
           resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
         }

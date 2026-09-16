@@ -56,11 +56,52 @@ export function emptyStage(order: number): StudioWorkflowStage {
     skill_name: "plan",
     optional: false,
     order,
-    gate_required: false,
+    exit_actions_enabled: false,
+    exit_actions: [],
     terminal: false,
     skip_when: "",
     classify_routes: [],
     parallel_agents: [],
     model: "",
   };
+}
+
+/** Server-owned catalogs mirrored for Studio selects (GET /api/studio/exit-action-requirements). */
+export const EXIT_ACTION_REQUIREMENT_KINDS = [
+  { value: "runtime_capability", label: "Runtime capability" },
+  { value: "credential", label: "Credential" },
+  { value: "authority", label: "Authority" },
+  { value: "operator_judgment", label: "Operator judgment" },
+] as const;
+
+export const EXIT_ACTION_CAPABILITY_IDS = [
+  "http_test_client",
+  "git_push",
+  "github_pull_request",
+  "shell_command",
+  "workspace_file_write",
+] as const;
+
+export const EXIT_ACTION_CREDENTIAL_KEYS = [
+  "claude_profile",
+  "cursor_profile",
+  "codex_profile",
+  "github_token",
+] as const;
+
+export const EXIT_ACTION_AUTHORITY_SCOPES = [
+  "release:publish",
+  "repo:push",
+  "workspace:destructive_write",
+  "ticket:supersede",
+] as const;
+
+/** Stable kebab key from a human label (Studio authoring). */
+export function exitActionKeyFromLabel(label: string, index: number): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || `exit-action-${index + 1}`;
 }

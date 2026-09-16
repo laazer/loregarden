@@ -31,6 +31,8 @@ import type {
   ParallelAgentSpec,
   RuntimeOptions,
   StudioAgent,
+  StudioExitAction,
+  StudioExitActionRequirement,
   StudioWorkflow,
   StudioWorkflowStage,
 } from "../../api/client";
@@ -38,6 +40,11 @@ import { StageRouteHints } from "../StageRouteHints";
 import { SkillSelect } from "./SkillSelect";
 import {
   emptyStage,
+  EXIT_ACTION_AUTHORITY_SCOPES,
+  EXIT_ACTION_CAPABILITY_IDS,
+  EXIT_ACTION_CREDENTIAL_KEYS,
+  EXIT_ACTION_REQUIREMENT_KINDS,
+  exitActionKeyFromLabel,
   modelOptionsForAdapter,
   type StudioWorkflowDraft,
 } from "./studioWorkflowHelpers";
@@ -543,7 +550,7 @@ export function StudioStagesCard({
                             onChange={(e) => updateStage(index, { agent_id: e.target.value })}
                           >
                             {stage.stage_type === "agent" && (
-                              <option value="">— None (human approval) —</option>
+                              <option value="">— No agent runtime —</option>
                             )}
                             {agentOptions.map((opt) => (
                               <option key={opt.id} value={opt.id}>
@@ -553,7 +560,9 @@ export function StudioStagesCard({
                           </select>
                           {stage.stage_type === "agent" && !stage.agent_id && (
                             <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
-                              No agent runs — the ticket pauses here until a human approves in Triage/Inbox.
+                              No agent runtime — exit actions are still evaluated against the
+                              responsible active runtime when one is assigned; absence of a runtime
+                              is not itself a human decision.
                             </div>
                           )}
                         </div>
@@ -611,13 +620,66 @@ export function StudioStagesCard({
                     <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
                         type="checkbox"
-                        checked={stage.gate_required}
+                        checked={Boolean(stage.exit_actions_enabled)}
                         disabled={isWorkflowReadOnly}
-                        onChange={(e) => updateStage(index, { gate_required: e.target.checked })}
+                        onChange={(e) =>
+                          updateStage(index, {
+                            exit_actions_enabled: e.target.checked,
+                            exit_actions: e.target.checked ? stage.exit_actions ?? [] : [],
+                          })
+                        }
                         style={{ accentColor: "var(--ac)" }}
                       />
-                      Require gate approval before leaving this stage
+                      Resolve exit actions before leaving this stage
                     </label>
+                    {stage.exit_actions_enabled && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ fontSize: 11, color: "var(--txl)" }}>
+                          Available and permitted actions run with the responsible agent; only unmet
+                          requirements pause for an operator. Evaluated at run time.
+                        </div>
+                        {(stage.exit_actions ?? []).map((action, actionIndex) => (
+                          <ExitActionEditorRow
+                            key={actionIndex}
+                            action={action}
+                            index={actionIndex}
+                            readOnly={isWorkflowReadOnly}
+                            onChange={(next) => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              actions[actionIndex] = next;
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                            onRemove={() => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              actions.splice(actionIndex, 1);
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                          />
+                        ))}
+                        {!isWorkflowReadOnly && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ width: "fit-content", fontSize: 12 }}
+                            onClick={() => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              const n = actions.length + 1;
+                              actions.push({
+                                key: `exit-action-${n}`,
+                                label: "",
+                                requirement: {
+                                  kind: "operator_judgment",
+                                  decision_prompt: "",
+                                },
+                              });
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                          >
+                            Add exit action
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
@@ -651,5 +713,220 @@ export function StudioStagesCard({
               })}
             </div>
           </div>
+  );
+}
+
+function defaultRequirement(kind: StudioExitActionRequirement["kind"]): StudioExitActionRequirement {
+  if (kind === "runtime_capability") {
+    return { kind, capability_id: EXIT_ACTION_CAPABILITY_IDS[0] };
+  }
+  if (kind === "credential") {
+    return { kind, credential_key: EXIT_ACTION_CREDENTIAL_KEYS[0] };
+  }
+  if (kind === "authority") {
+    return { kind, authority_scope: EXIT_ACTION_AUTHORITY_SCOPES[0] };
+  }
+  return { kind: "operator_judgment", decision_prompt: "" };
+}
+
+function ExitActionEditorRow({
+  action,
+  index,
+  readOnly,
+  onChange,
+  onRemove,
+}: {
+  action: StudioExitAction;
+  index: number;
+  readOnly: boolean;
+  onChange: (next: StudioExitAction) => void;
+  onRemove: () => void;
+}) {
+  const kind = action.requirement.kind;
+  const setLabel = (label: string) => {
+    onChange({
+      ...action,
+      label,
+      key: exitActionKeyFromLabel(label, index),
+    });
+  };
+  const setKind = (nextKind: StudioExitActionRequirement["kind"]) => {
+    onChange({ ...action, requirement: defaultRequirement(nextKind) });
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label={`Exit action ${index + 1}`}
+      style={{
+        border: "1px solid var(--bd)",
+        borderRadius: 8,
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        background: "var(--bg3)",
+      }}
+    >
+      <div className="studio-stage-fields">
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-label-${index}`}>
+            Action label
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.label}</div>
+          ) : (
+            <input
+              id={`exit-action-label-${index}`}
+              className="studio-stage-select"
+              value={action.label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          )}
+        </div>
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-kind-${index}`}>
+            Requirement
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12, color: "var(--txm)" }}>
+              {EXIT_ACTION_REQUIREMENT_KINDS.find((k) => k.value === kind)?.label ?? kind}
+            </div>
+          ) : (
+            <select
+              id={`exit-action-kind-${index}`}
+              className="studio-stage-select"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as StudioExitActionRequirement["kind"])}
+            >
+              {EXIT_ACTION_REQUIREMENT_KINDS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {kind === "runtime_capability" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-cap-${index}`}>
+            Capability
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.capability_id}</div>
+          ) : (
+            <select
+              id={`exit-action-cap-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.capability_id}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "runtime_capability", capability_id: e.target.value },
+                })
+              }
+            >
+              {EXIT_ACTION_CAPABILITY_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "credential" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-cred-${index}`}>
+            Credential
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.credential_key}</div>
+          ) : (
+            <select
+              id={`exit-action-cred-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.credential_key}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "credential", credential_key: e.target.value },
+                })
+              }
+            >
+              {EXIT_ACTION_CREDENTIAL_KEYS.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "authority" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-auth-${index}`}>
+            Authority
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.authority_scope}</div>
+          ) : (
+            <select
+              id={`exit-action-auth-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.authority_scope}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "authority", authority_scope: e.target.value },
+                })
+              }
+            >
+              {EXIT_ACTION_AUTHORITY_SCOPES.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "operator_judgment" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-prompt-${index}`}>
+            Decision prompt
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.decision_prompt}</div>
+          ) : (
+            <input
+              id={`exit-action-prompt-${index}`}
+              className="studio-stage-select"
+              value={action.requirement.decision_prompt}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "operator_judgment", decision_prompt: e.target.value },
+                })
+              }
+            />
+          )}
+        </div>
+      )}
+
+      {!readOnly && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ width: "fit-content", fontSize: 11 }}
+          aria-label={`Remove exit action ${index + 1}`}
+          onClick={onRemove}
+        >
+          Remove
+        </button>
+      )}
+    </div>
   );
 }

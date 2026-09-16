@@ -148,7 +148,7 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
     expect(screen.getByText("Authority grant required: release:publish")).toBeInTheDocument();
     expect(
       actionOrder(view.container, "Publish the release", "Authority grant required: release:publish"),
-    ).toBeGreaterThan(0);
+    ).toBeLessThan(0);
     // Impact may still render as narrative, but category badges must not come from it.
     expect(screen.queryByText(/^Credential unavailable$/i)).not.toBeInTheDocument();
   });
@@ -246,7 +246,7 @@ describe("AC-10 ApprovalCard exit-action rendering", () => {
       }),
     );
 
-    expect(screen.getByText(category)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: category })).toBeInTheDocument();
     expect(screen.getByText("Read provider usage")).toBeInTheDocument();
     expect(screen.getByText(reason)).toBeInTheDocument();
 

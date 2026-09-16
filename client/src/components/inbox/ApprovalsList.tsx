@@ -157,6 +157,9 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
           onApprove={(payload) =>
             resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
           }
+          onRecheck={(payload) =>
+            resolveApproval.mutate({ id: a.id, action: "recheck", ...payload })
+          }
           onReject={(payload) => resolveApproval.mutate({ id: a.id, action: "reject", ...payload })}
           onInspect={onInspect !== undefined && a.ticket_id ? () => inspect(a) : undefined}
           inspectLabel={hasHumanCriteria(a) ? "Approvals tab" : "Inspect"}
@@ -185,6 +188,10 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
         onApprove={(payload?: ApprovalResolvePayload) => {
           if (!expandedApproval) return;
           resolveApproval.mutate({ id: expandedApproval.id, action: "approve", ...payload });
+        }}
+        onRecheck={(payload?: ApprovalResolvePayload) => {
+          if (!expandedApproval) return;
+          resolveApproval.mutate({ id: expandedApproval.id, action: "recheck", ...payload });
         }}
         onReject={(payload?: ApprovalResolvePayload) => {
           if (!expandedApproval) return;
