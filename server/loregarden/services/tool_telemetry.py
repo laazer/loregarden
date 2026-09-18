@@ -16,7 +16,11 @@ measured:
 
 Two blind spots worth stating rather than discovering later: runs with
 permission bypass enabled have no bridge, and the cursor adapter is print-mode,
-so neither produces rows.
+so neither produces rows here. By August 2026 every run was one or the other
+and this table went silent for a month (lg-workflow-integrity-759). Loregarden's
+own tools are therefore also recorded at MCP dispatch — `tool_call_ledger`,
+which every adapter passes through and which sees the outcome — and the bridge
+skips the unattended decisions dispatch is about to count.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import McpToolCall
-from loregarden.services.tool_policy import split_mcp_tool
+from loregarden.services.tool_policy import LOREGARDEN_SERVER, split_mcp_tool
 from sqlmodel import Session, func, select
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,11 @@ DECISION_SCOPE_ALLOW = "auto_scope"  # a persisted per-ticket/stage allowance
 DECISION_APPROVED = "approved"  # a human said yes
 DECISION_REJECTED = "rejected"  # a human said no
 DECISION_RATE_LIMITED = "rate_limited"  # refused by the server's own ceiling
+# Written by `tool_call_ledger` at MCP dispatch, which sees the outcome the
+# bridge never does. Loregarden's own tools are counted there, so the bridge
+# skips its unattended decisions on them (see `bridge_would_double_count`).
+DECISION_EXECUTED = "executed"  # the tool ran
+DECISION_FAILED = "failed"  # the tool raised, including a policy refusal
 
 DECISIONS = (
     DECISION_TRUSTED_SERVER,
@@ -73,7 +82,31 @@ DECISIONS = (
     DECISION_APPROVED,
     DECISION_REJECTED,
     DECISION_RATE_LIMITED,
+    DECISION_EXECUTED,
+    DECISION_FAILED,
 )
+
+#: Decisions the bridge makes on its own, with nobody asked.
+UNATTENDED_DECISIONS = frozenset(
+    {
+        DECISION_TRUSTED_SERVER,
+        DECISION_ALLOWLIST,
+        DECISION_READ_ONLY_CLI,
+        DECISION_RUN_AUTO,
+        DECISION_SCOPE_ALLOW,
+    }
+)
+
+
+def bridge_would_double_count(tool_name: str, decision: str) -> bool:
+    """Whether dispatch will record this same call, so the bridge should not.
+
+    A Loregarden tool the bridge waved through unattended is about to be
+    executed, and `tool_call_ledger` writes that row. A human's yes or no, a
+    rate-limit refusal, and every other server's call are the bridge's alone.
+    """
+    split = split_mcp_tool(tool_name)
+    return bool(split) and split[0] == LOREGARDEN_SERVER and decision in UNATTENDED_DECISIONS
 
 
 def record_tool_call(
@@ -90,7 +123,14 @@ def record_tool_call(
 
     Telemetry that can fail a run is worse than no telemetry: the agent's work
     is the point, and a full disk or a locked table must not end it.
+
+    A Loregarden tool the bridge waved through unattended is skipped: dispatch
+    is about to record that same call with its outcome, and a row here would
+    double it. Dispatch's own decisions are never unattended ones, so its
+    writes always land.
     """
+    if bridge_would_double_count(tool_name, decision):
+        return
     try:
         split = split_mcp_tool(tool_name)
         session.add(

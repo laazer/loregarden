@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from sqlmodel import Session
 
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
+from loregarden.services.tool_call_ledger import record_dispatch
+from loregarden.services.tool_telemetry import DECISION_EXECUTED, DECISION_FAILED
 
 SERVER_INFO = {"name": "loregarden", "version": "0.1.0"}
 PROTOCOL_VERSION = "2024-11-05"
@@ -40,14 +43,20 @@ def handle_request(
         params = req.get("params") or {}
         name = params.get("name")
         arguments = params.get("arguments") or {}
+        started = time.monotonic()
         try:
             result = execute_tool(session, name, arguments, orchestrated=orchestrated)
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"content": [{"type": "text", "text": result}]},
-            }
         except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: any tool failure becomes an isError result
+            # The failed tool may have left writes pending on this session; a
+            # ledger commit must not carry them through.
+            session.rollback()
+            record_dispatch(
+                session,
+                name=name,
+                arguments=arguments,
+                decision=DECISION_FAILED,
+                decision_ms=int((time.monotonic() - started) * 1000),
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -56,6 +65,18 @@ def handle_request(
                     "isError": True,
                 },
             }
+        record_dispatch(
+            session,
+            name=name,
+            arguments=arguments,
+            decision=DECISION_EXECUTED,
+            decision_ms=int((time.monotonic() - started) * 1000),
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"content": [{"type": "text", "text": result}]},
+        }
 
     if method == "notifications/initialized":
         return None
