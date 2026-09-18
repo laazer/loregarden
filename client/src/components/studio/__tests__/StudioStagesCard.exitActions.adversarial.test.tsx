@@ -12,6 +12,13 @@ import type { StudioWorkflowStage } from "../../../api/client";
 import { StudioStagesCard } from "../StudioStagesCard";
 import { emptyStage, type StudioWorkflowDraft } from "../studioWorkflowHelpers";
 
+const EXIT_ACTION_REQUIREMENTS = {
+  requirement_kinds: ["runtime_capability", "credential", "authority", "operator_judgment"],
+  capability_ids: ["http_test_client"],
+  credential_keys: ["claude_profile"],
+  authority_scopes: ["release:publish"],
+} as const;
+
 const AGENTS = [
   { slug: "planner", name: "Planner", built_in: true, adapter: "claude" },
   { slug: "verifier", name: "Verifier", built_in: true, adapter: "claude" },
@@ -51,6 +58,7 @@ function renderCard(initial: StudioWorkflowDraft, readOnly = false) {
         }))}
         agents={AGENTS}
         skills={["plan", "verify"]}
+        exitActionRequirements={EXIT_ACTION_REQUIREMENTS}
         runtimeOptions={undefined}
         skipConditions={["has_description"]}
         selectedWorkflow={null}
@@ -114,6 +122,55 @@ describe("Studio exit-action authoring (AC-1/AC-2 UI)", () => {
       requirement: { kind: "credential", credential_key: "claude_profile" },
     });
     expect(authored[0].key).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  });
+
+  it("derives selectable identifiers from the server-owned catalog", async () => {
+    const user = userEvent.setup();
+    const customCatalog = {
+      ...EXIT_ACTION_REQUIREMENTS,
+      capability_ids: ["custom_runtime_probe"],
+      credential_keys: ["custom_usage_profile"],
+      authority_scopes: ["custom:grant"],
+    } as const;
+    const seen: StudioWorkflowDraft[] = [];
+
+    function Host() {
+      const [draft, setDraft] = useState(draftWith(emptyStage(1)));
+      seen.push(draft);
+      return (
+        <StudioStagesCard
+          workflowDraft={draft}
+          setWorkflowDraft={setDraft}
+          isWorkflowReadOnly={false}
+          agentOptions={AGENTS.map((a: { slug: string; name: string }) => ({
+            id: a.slug,
+            label: a.name,
+          }))}
+          agents={AGENTS}
+          skills={["plan", "verify"]}
+          exitActionRequirements={customCatalog}
+          runtimeOptions={undefined}
+          skipConditions={["has_description"]}
+          selectedWorkflow={null}
+        />
+      );
+    }
+
+    render(<Host />);
+    await user.click(
+      screen.getByRole("checkbox", { name: /Resolve exit actions before leaving this stage/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /Add exit action/i }));
+
+    const row = screen.getByRole("group", { name: /Exit action 1/i });
+    await user.selectOptions(within(row).getByLabelText(/Requirement/i), "credential");
+
+    expect(within(row).queryByRole("option", { name: "claude_profile" })).toBeNull();
+    expect(within(row).getByRole("option", { name: "custom_usage_profile" })).toBeInTheDocument();
+    expect(seen.at(-1)?.stages[0].exit_actions?.[0]?.requirement).toEqual({
+      kind: "credential",
+      credential_key: "custom_usage_profile",
+    });
   });
 
   it.each([

@@ -43,6 +43,7 @@ import type {
   StudioAgent,
   StudioAgentVersion,
   StudioMcpToolGuide,
+  StudioExitActionRequirementCatalog,
   StudioAgentPreview,
   StudioDefaults,
   StudioGeneratedAgent,
@@ -538,6 +539,8 @@ export const api = {
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),
+  studioExitActionRequirements: () =>
+    request<StudioExitActionRequirementCatalog>("/api/studio/exit-action-requirements"),
   studioDefaults: () => request<StudioDefaults>("/api/studio/defaults"),
   previewStudioAgent: (body: Partial<StudioAgent> & { name: string }) =>
     request<StudioAgentPreview>("/api/studio/agents/preview", {

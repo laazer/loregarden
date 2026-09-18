@@ -32,6 +32,7 @@ import type {
   RuntimeOptions,
   StudioAgent,
   StudioExitAction,
+  StudioExitActionRequirementCatalog,
   StudioExitActionRequirement,
   StudioWorkflow,
   StudioWorkflowStage,
@@ -40,10 +41,6 @@ import { StageRouteHints } from "../StageRouteHints";
 import { SkillSelect } from "./SkillSelect";
 import {
   emptyStage,
-  EXIT_ACTION_AUTHORITY_SCOPES,
-  EXIT_ACTION_CAPABILITY_IDS,
-  EXIT_ACTION_CREDENTIAL_KEYS,
-  EXIT_ACTION_REQUIREMENT_KINDS,
   exitActionKeyFromLabel,
   modelOptionsForAdapter,
   type StudioWorkflowDraft,
@@ -67,6 +64,7 @@ export interface StudioStagesCardProps {
   agents: StudioAgent[];
   /** Skill names, as `/api/agents/skills` returns them. */
   skills: string[];
+  exitActionRequirements: StudioExitActionRequirementCatalog | undefined;
   runtimeOptions: RuntimeOptions | undefined;
   skipConditions: string[];
   /**
@@ -86,6 +84,7 @@ export function StudioStagesCard({
   agentOptions,
   agents,
   skills,
+  exitActionRequirements,
   runtimeOptions,
   skipConditions,
   selectedWorkflow,
@@ -644,6 +643,7 @@ export function StudioStagesCard({
                             action={action}
                             index={actionIndex}
                             readOnly={isWorkflowReadOnly}
+                            catalog={exitActionRequirements}
                             onChange={(next) => {
                               const actions = [...(stage.exit_actions ?? [])];
                               actions[actionIndex] = next;
@@ -716,15 +716,25 @@ export function StudioStagesCard({
   );
 }
 
-function defaultRequirement(kind: StudioExitActionRequirement["kind"]): StudioExitActionRequirement {
+function requirementLabel(kind: StudioExitActionRequirement["kind"]): string {
+  return kind
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function defaultRequirementFromCatalog(
+  kind: StudioExitActionRequirement["kind"],
+  catalog: StudioExitActionRequirementCatalog | undefined,
+): StudioExitActionRequirement {
   if (kind === "runtime_capability") {
-    return { kind, capability_id: EXIT_ACTION_CAPABILITY_IDS[0] };
+    return { kind, capability_id: catalog?.capability_ids[0] ?? "" };
   }
   if (kind === "credential") {
-    return { kind, credential_key: EXIT_ACTION_CREDENTIAL_KEYS[0] };
+    return { kind, credential_key: catalog?.credential_keys[0] ?? "" };
   }
   if (kind === "authority") {
-    return { kind, authority_scope: EXIT_ACTION_AUTHORITY_SCOPES[0] };
+    return { kind, authority_scope: catalog?.authority_scopes[0] ?? "" };
   }
   return { kind: "operator_judgment", decision_prompt: "" };
 }
@@ -733,16 +743,19 @@ function ExitActionEditorRow({
   action,
   index,
   readOnly,
+  catalog,
   onChange,
   onRemove,
 }: {
   action: StudioExitAction;
   index: number;
   readOnly: boolean;
+  catalog: StudioExitActionRequirementCatalog | undefined;
   onChange: (next: StudioExitAction) => void;
   onRemove: () => void;
 }) {
   const kind = action.requirement.kind;
+  const requirementKinds = catalog?.requirement_kinds ?? [kind];
   const setLabel = (label: string) => {
     onChange({
       ...action,
@@ -751,7 +764,7 @@ function ExitActionEditorRow({
     });
   };
   const setKind = (nextKind: StudioExitActionRequirement["kind"]) => {
-    onChange({ ...action, requirement: defaultRequirement(nextKind) });
+    onChange({ ...action, requirement: defaultRequirementFromCatalog(nextKind, catalog) });
   };
 
   return (
@@ -790,7 +803,7 @@ function ExitActionEditorRow({
           </label>
           {readOnly ? (
             <div style={{ fontSize: 12, color: "var(--txm)" }}>
-              {EXIT_ACTION_REQUIREMENT_KINDS.find((k) => k.value === kind)?.label ?? kind}
+              {requirementLabel(kind)}
             </div>
           ) : (
             <select
@@ -799,9 +812,9 @@ function ExitActionEditorRow({
               value={kind}
               onChange={(e) => setKind(e.target.value as StudioExitActionRequirement["kind"])}
             >
-              {EXIT_ACTION_REQUIREMENT_KINDS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
+              {requirementKinds.map((requirementKind) => (
+                <option key={requirementKind} value={requirementKind}>
+                  {requirementLabel(requirementKind)}
                 </option>
               ))}
             </select>
@@ -828,7 +841,7 @@ function ExitActionEditorRow({
                 })
               }
             >
-              {EXIT_ACTION_CAPABILITY_IDS.map((id) => (
+              {(catalog?.capability_ids ?? []).map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>
@@ -856,7 +869,7 @@ function ExitActionEditorRow({
                 })
               }
             >
-              {EXIT_ACTION_CREDENTIAL_KEYS.map((id) => (
+              {(catalog?.credential_keys ?? []).map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>
@@ -884,7 +897,7 @@ function ExitActionEditorRow({
                 })
               }
             >
-              {EXIT_ACTION_AUTHORITY_SCOPES.map((id) => (
+              {(catalog?.authority_scopes ?? []).map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>

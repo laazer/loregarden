@@ -511,6 +511,13 @@ export interface RuntimeOptions {
   effective?: RuntimeEffective;
 }
 
+export interface StudioExitActionRequirementCatalog {
+  requirement_kinds: StudioExitActionRequirement["kind"][];
+  capability_ids: string[];
+  credential_keys: string[];
+  authority_scopes: string[];
+}
+
 export interface WorkspaceRuntimeSettings {
   cli_adapter: string;
   claude_model: string;
