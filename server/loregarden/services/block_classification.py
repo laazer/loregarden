@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     TicketState,
 )
 from loregarden.services.interruption_messages import (
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -64,6 +65,7 @@ _HARNESS_SIGNATURES = (
     STRANDED_STAGE_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     "Orchestration lease expired",
     "Agent run lease expired",
     "Agent run exited successfully but emitted no parseable",
