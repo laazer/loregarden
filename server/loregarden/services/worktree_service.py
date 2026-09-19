@@ -118,70 +118,28 @@ class WorktreeService:
 
         Returns:
             Worktree record if successful, None on error
+
+        An existing ``branch`` is checked out as it is. This used ``worktree add
+        -B``, which resets an existing branch to ``parent_branch`` — so a retried
+        run whose branch already carried commits had them orphaned on the way
+        in, and the tree it got looked exactly like a first attempt
+        (lg-milestone-that-772).
         """
-        try:
-            # Validate agent run exists
-            agent_run_stmt = select(AgentRun).where(AgentRun.id == agent_run_id)
-            agent_run = self.session.exec(agent_run_stmt).first()
-            if not agent_run:
-                logger.warning(f"Agent run not found: {agent_run_id}")
-                return None
-
-            # Ensure worktree base directory exists
-            self.worktree_base.mkdir(parents=True, exist_ok=True)
-
-            # Generate unique worktree path: .worktrees/run-{run_id}-{random}
-            worktree_name = f"run-{agent_run_id[:8]}-{str(uuid4())[:8]}"
-            worktree_path = self.worktree_base / worktree_name
-            branch = branch or worktree_name
-
-            # `add <path> <parent_branch>` checked *parent_branch itself* out
-            # here, which git refuses when the root already has it checked out
-            # — and when it did work, the run committed straight onto main.
-            # `-B <branch> <parent_branch>` cuts the run its own branch instead,
-            # and -B rather than -b so a retried run reuses its branch.
-            logger.info(f"Creating worktree: {worktree_path} on {branch} from {parent_branch}")
-            run_git(
-                ["worktree", "add", "-B", branch, str(worktree_path), parent_branch],
-                cwd=str(self.repo_path),
-                check=True,
-                capture_output=True,
-            )
-
-            # Get current commit on new worktree (merge base)
-            result = run_git(
-                ["rev-parse", "HEAD"],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            merge_base = result.stdout.strip()
-
-            # Create worktree record
-            worktree = Worktree(
-                id=str(uuid4()),
-                workspace_id=workspace_id,
-                agent_run_id=agent_run_id,
-                parent_branch=parent_branch,
-                branch=branch,
-                worktree_path=str(worktree_path),
-                state=WorktreeState.ACTIVE,
-                merge_base=merge_base,
-            )
-
-            self.session.add(worktree)
-            self.session.commit()
-
-            logger.info(f"Created worktree {worktree.id} at {worktree_path}")
-            return worktree
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed: {e.stderr}", exc_info=True)
+        agent_run_stmt = select(AgentRun).where(AgentRun.id == agent_run_id)
+        agent_run = self.session.exec(agent_run_stmt).first()
+        if not agent_run:
+            logger.warning(f"Agent run not found: {agent_run_id}")
             return None
-        except Exception as e:
-            logger.error(f"Error creating worktree: {e}", exc_info=True)
-            return None
+
+        # Unique worktree path: .worktrees/run-{run_id}-{random}
+        worktree_name = f"run-{agent_run_id[:8]}-{str(uuid4())[:8]}"
+        return self._add_worktree(
+            workspace_id=workspace_id,
+            agent_run_id=agent_run_id,
+            branch=branch or worktree_name,
+            parent_branch=parent_branch,
+            name=worktree_name,
+        )
 
     def get_or_create_for_ticket(
         self,

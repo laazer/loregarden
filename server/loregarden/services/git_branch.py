@@ -146,18 +146,40 @@ def _try_free_worktree_lock(repo_root: Path, branch: str, locked_at: str) -> tup
     return True, note
 
 
-def _checkout_branch(repo_root: Path, branch: str) -> None:
-    run_git(
-        ["checkout", "-B", branch],
+def _branch_exists(repo_root: Path, branch: str) -> bool:
+    result = run_git(
+        ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
         cwd=repo_root,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
+    return result.returncode == 0
 
 
-def ensure_ticket_branch(repo_root: Path, ticket: Ticket) -> str:
+def _checkout_branch(repo_root: Path, branch: str, *, start_point: str) -> None:
+    """Check ``branch`` out, creating it from ``start_point`` only if it is missing.
+
+    This was ``checkout -B``, which *resets* an existing branch to HEAD. On any
+    re-dispatch — a retry, a rework round after another ticket had moved HEAD, a
+    requeue — the ticket's earlier commits were left unreachable and the tree
+    looked like a first attempt (lg-milestone-that-772).
+    """
+    if _branch_exists(repo_root, branch):
+        args = ["checkout", branch]
+    else:
+        args = (
+            ["checkout", "-b", branch, start_point] if start_point else ["checkout", "-b", branch]
+        )
+    run_git(args, cwd=repo_root, capture_output=True, text=True, check=True)
+
+
+def ensure_ticket_branch(repo_root: Path, ticket: Ticket, *, start_point: str = "") -> str:
     """Checkout or create the branch a ticket should run on.
+
+    ``start_point`` is where a *missing* branch is cut from; empty means HEAD,
+    which is where the callers still cut from until the target branch reaches
+    them (lg-milestone-that-769). An existing branch is never moved.
 
     If another (non-primary) worktree holds the branch — common with stale Claude
     scratchpads — remove that worktree once and retry. Gate autofix never sees
@@ -170,7 +192,7 @@ def ensure_ticket_branch(repo_root: Path, ticket: Ticket) -> str:
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
 
     try:
-        _checkout_branch(repo_root, branch)
+        _checkout_branch(repo_root, branch, start_point=start_point)
         return branch
     except subprocess.CalledProcessError as first_exc:
         locked_at = _worktree_lock_path(_process_text(first_exc))
@@ -184,7 +206,7 @@ def ensure_ticket_branch(repo_root: Path, ticket: Ticket) -> str:
             ) from first_exc
 
         try:
-            _checkout_branch(repo_root, branch)
+            _checkout_branch(repo_root, branch, start_point=start_point)
         except subprocess.CalledProcessError as second_exc:
             raise ValueError(
                 _checkout_failure_message(

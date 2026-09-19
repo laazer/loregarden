@@ -58,6 +58,23 @@ def make_ticket(session, workspace, external_id: str = "LG-1", title: str = "Add
     return ticket
 
 
+def make_run(session, workspace, ticket, code: str):
+    """A running implementer run on `ticket`, which is what a worktree hangs off."""
+    from loregarden.models.domain import AgentRun, RunStatus
+
+    run = AgentRun(
+        run_code=code,
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        status=RunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
 def seed_stage_report_contract(repo_root) -> None:
     """Give a throwaway repo the workflow-enforcement doc a real workspace has.
 
