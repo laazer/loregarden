@@ -44,6 +44,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -195,7 +196,11 @@ def prepare_tree_for_parallel_stage(
     try:
         if resolve_execution_root(session, runs[0], ticket, workspace) != workspace_root:
             return ""
-        ensure_ticket_branch(workspace_root, ticket)
+        ensure_ticket_branch(
+            workspace_root,
+            ticket,
+            start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
+        )
     except (ValueError, subprocess.CalledProcessError) as exc:
         message = f"Failed to checkout branch: {exc}"
         orch = OrchestrationService(session)

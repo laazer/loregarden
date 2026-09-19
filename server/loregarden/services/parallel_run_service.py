@@ -13,6 +13,7 @@ reaching the rest of the state machine.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
 from loregarden.services.git_automation import AutomationResult
@@ -140,6 +141,7 @@ class ParallelRunService:
         """
         from loregarden.services.git_automation_config import resolve_git_automation
         from loregarden.services.git_branch import resolve_ticket_branch
+        from loregarden.services.target_branch import resolve_target_branch
         from loregarden.services.worktree_service import (
             WorktreeService,
             repo_path_for_workspace,
@@ -157,14 +159,14 @@ class ParallelRunService:
         if not config or not config.worktree:
             return run, None
 
-        worktree_service = WorktreeService(
-            self.session,
-            repo_path=repo_path_for_workspace(self.session, ticket.workspace_id),
-        )
+        repo_path = repo_path_for_workspace(self.session, ticket.workspace_id)
+        worktree_service = WorktreeService(self.session, repo_path=repo_path)
         worktree = worktree_service.create_worktree(
             workspace_id=ticket.workspace_id,
             agent_run_id=run.id,
-            parent_branch=config.base_branch,
+            parent_branch=resolve_target_branch(
+                self.session, ticket, workspace, repo_root=Path(repo_path)
+            ),
             branch=resolve_ticket_branch(ticket),
         )
 
