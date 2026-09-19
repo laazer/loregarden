@@ -11,10 +11,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace, WorktreeState
+from loregarden.models.domain import Ticket, Workspace, WorktreeState
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
-from tests.worktree_helpers import head_branch, make_repo, make_ticket
+from tests.worktree_helpers import head_branch, make_repo, make_run, make_ticket
 
 
 @pytest.fixture(name="session")
@@ -42,26 +42,14 @@ def ticket_fixture(session, workspace):
     return make_ticket(session, workspace)
 
 
-def _run(session, workspace, ticket, code):
-    run = AgentRun(
-        run_code=code,
-        ticket_id=ticket.id,
-        workspace_id=workspace.id,
-        agent_id="backend_implementer",
-        status=RunStatus.RUNNING,
-    )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-    return run
-
-
 def test_first_stage_creates_the_ticket_worktree_on_the_ticket_branch(
     session, workspace, ticket, repo
 ):
     service = WorktreeService(session, repo_path=str(repo))
 
-    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+    worktree = service.get_or_create_for_ticket(
+        ticket, make_run(session, workspace, ticket, "r1").id
+    )
 
     assert worktree is not None
     assert worktree.ticket_id == ticket.id
@@ -75,8 +63,8 @@ def test_first_stage_creates_the_ticket_worktree_on_the_ticket_branch(
 def test_a_later_stage_reuses_the_same_worktree_row_and_path(session, workspace, ticket, repo):
     service = WorktreeService(session, repo_path=str(repo))
 
-    first = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
-    second = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r2").id)
+    first = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r1").id)
+    second = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r2").id)
 
     assert first is not None and second is not None
     assert second.id == first.id
@@ -87,13 +75,13 @@ def test_reuse_keeps_the_work_the_earlier_stage_committed(session, workspace, ti
     """`worktree add -B` would reset the ticket branch to main and throw the
     earlier stage's commits away. Reuse must not go near the branch."""
     service = WorktreeService(session, repo_path=str(repo))
-    first = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+    first = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r1").id)
     assert first is not None
     (Path(first.worktree_path) / "stage-one.txt").write_text("work\n")
     for args in (["add", "-A"], ["commit", "-q", "-m", "stage one"]):
         subprocess.run(["git", *args], cwd=first.worktree_path, check=True, capture_output=True)
 
-    second = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r2").id)
+    second = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r2").id)
 
     assert second is not None
     assert (Path(second.worktree_path) / "stage-one.txt").exists()
@@ -105,7 +93,7 @@ def test_a_worktree_whose_directory_vanished_is_retired_and_replaced(
     """A removed directory must not be handed back as a working cwd, and the
     branch it still holds in git's admin data must be freed for the new one."""
     service = WorktreeService(session, repo_path=str(repo))
-    first = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+    first = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r1").id)
     assert first is not None
     subprocess.run(
         ["git", "worktree", "remove", "--force", first.worktree_path],
@@ -114,7 +102,7 @@ def test_a_worktree_whose_directory_vanished_is_retired_and_replaced(
         capture_output=True,
     )
 
-    second = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r2").id)
+    second = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r2").id)
 
     assert second is not None
     assert second.id != first.id
@@ -135,8 +123,8 @@ def test_two_tickets_get_two_worktrees(session, workspace, ticket, repo):
     session.refresh(other)
     service = WorktreeService(session, repo_path=str(repo))
 
-    one = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
-    two = service.get_or_create_for_ticket(other, _run(session, workspace, other, "r2").id)
+    one = service.get_or_create_for_ticket(ticket, make_run(session, workspace, ticket, "r1").id)
+    two = service.get_or_create_for_ticket(other, make_run(session, workspace, other, "r2").id)
 
     assert one is not None and two is not None
     assert one.worktree_path != two.worktree_path
@@ -160,7 +148,9 @@ def test_a_ticket_worktree_gets_the_parent_checkout_s_node_modules(
     (modules / "marker.txt").write_text("installed", encoding="utf-8")
 
     service = WorktreeService(session, repo_path=str(repo))
-    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+    worktree = service.get_or_create_for_ticket(
+        ticket, make_run(session, workspace, ticket, "r1").id
+    )
 
     assert worktree is not None
     linked = Path(worktree.worktree_path) / "client" / "node_modules" / "marker.txt"
@@ -173,7 +163,9 @@ def test_linking_is_best_effort_when_the_parent_has_nothing_installed(
     """A checkout with no node_modules must still get a worktree."""
     service = WorktreeService(session, repo_path=str(repo))
 
-    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+    worktree = service.get_or_create_for_ticket(
+        ticket, make_run(session, workspace, ticket, "r1").id
+    )
 
     assert worktree is not None
     assert not (Path(worktree.worktree_path) / "client" / "node_modules").exists()
