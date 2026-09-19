@@ -1278,6 +1278,8 @@ class ParallelQueueService:
                 "longest_wait_seconds": longest_wait_seconds,
             }
 
-        except Exception as e:
-            logger.error(f"Error getting queue stats: {e}", exc_info=True)
-            return {}
+        except Exception:
+            # See get_queued_runs: `{}` here made queue_status read a board with
+            # every slot free over a query that had failed outright.
+            logger.exception("Error getting queue stats")
+            raise
