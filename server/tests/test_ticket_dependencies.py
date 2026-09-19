@@ -4,7 +4,8 @@ test_auto_mode_subtree.py and test_studio_workflow_assignment.py.
 """
 
 import pytest
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.mcp.ticket_edit_tools import ticket_state_payload
+from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.subtree_auto_run import order_children_for_subtree
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
@@ -130,3 +131,123 @@ def test_review_child_type_by_parent():
     assert review_child_type(WorkItemType.CAPABILITY) is None
     assert review_child_type(WorkItemType.TASK) is None
     assert review_child_type(None) is None
+
+
+# --- unmet_prerequisites: may this ticket start at all? ---------------------
+#
+# `order_children_for_subtree` above answers a different question — what order
+# should these siblings run in — and drops every edge pointing outside the
+# sibling set. That is every cross-workspace edge. Nine of those already existed
+# when this was written, rendered in the UI as prerequisites and affecting
+# nothing (676).
+
+
+def _other_workspace(db_session: Session) -> Workspace:
+    workspace = Workspace(id="ws-lore-eden", slug="lore-eden", name="lore-eden")
+    db_session.add(workspace)
+    db_session.commit()
+    return workspace
+
+
+def test_an_unfinished_prerequisite_is_unmet(db_session: Session) -> None:
+    _rows(db_session, "waiter", "prereq")
+    TicketDependencyService(db_session).add_dependency("waiter", "prereq")
+
+    unmet = TicketDependencyService(db_session).unmet_prerequisites("waiter")
+
+    assert [t.id for t in unmet] == ["prereq"]
+
+
+@pytest.mark.parametrize("state", [TicketState.DONE, TicketState.WONT_DO])
+def test_a_settled_prerequisite_stops_blocking(db_session: Session, state: TicketState) -> None:
+    """`wont_do` counts as settled, and that is deliberate.
+
+    Work that will never be done cannot be waited for. Treating it as unmet is
+    how a dependency graph deadlocks on a decision somebody already took.
+    """
+    _rows(db_session, "waiter", "prereq")
+    TicketDependencyService(db_session).add_dependency("waiter", "prereq")
+    db_session.get(Ticket, "prereq").state = state
+    db_session.commit()
+
+    assert TicketDependencyService(db_session).unmet_prerequisites("waiter") == []
+
+
+def test_a_prerequisite_in_another_workspace_is_unmet_like_any_other(db_session: Session) -> None:
+    """The whole point: an edge is two ticket ids, and nothing in this path
+    filters by workspace. Cross-workspace support is the absence of a
+    restriction, not a feature bolted on beside one."""
+    _rows(db_session, "waiter")
+    other = _other_workspace(db_session)
+    make_ticket(db_session, workspace_id=other.id, ticket_id="lor-extract-lore-35")
+    TicketDependencyService(db_session).add_dependency("waiter", "lor-extract-lore-35")
+
+    unmet = TicketDependencyService(db_session).unmet_prerequisites("waiter")
+
+    assert [t.id for t in unmet] == ["lor-extract-lore-35"]
+    assert unmet[0].workspace_id == other.id
+
+
+def test_ordering_still_ignores_the_edge_that_blocking_honours(db_session: Session) -> None:
+    """The two consumers must stay different, and this pins the seam.
+
+    A cross-set prerequisite may not reorder siblings — there is nothing in the
+    set to run first — but it must still stop the dependent from starting. Fold
+    them together and either sibling ordering starts hanging on tickets it
+    cannot see, or blocking goes back to ignoring the edges that matter most.
+    """
+    _rows(db_session, "waiter")
+    other = _other_workspace(db_session)
+    make_ticket(db_session, workspace_id=other.id, ticket_id="outsider")
+    TicketDependencyService(db_session).add_dependency("waiter", "outsider")
+    siblings = [_ticket("waiter")]
+
+    prereqs = TicketDependencyService(db_session).prerequisites_map(["waiter"])
+    ordered = order_children_for_subtree(siblings, prereqs)
+
+    assert [t.id for t in ordered] == ["waiter"], "ordering must ignore the outside edge"
+    assert TicketDependencyService(db_session).unmet_prerequisites("waiter"), "blocking must not"
+
+
+# --- the MCP surface: what a reader is told about the far end ---------------
+
+
+def test_an_edge_names_the_workspace_it_points_into(db_session: Session) -> None:
+    """676: `depends_on: lor-extract-lore-35` is not actionable on its own.
+
+    The far end of an edge need not be in this workspace — nine such edges
+    already existed — and the board the reader is looking at does not show the
+    other one. Without the workspace the id sends them to the wrong place, which
+    is worse than saying nothing.
+    """
+    _rows(db_session, "waiter")
+    other = _other_workspace(db_session)
+    make_ticket(db_session, workspace_id=other.id, ticket_id="lor-extract-lore-35")
+    TicketDependencyService(db_session).add_dependency("waiter", "lor-extract-lore-35")
+
+    payload = ticket_state_payload(db_session, "waiter")
+
+    assert [e["workspace"] for e in payload["depends_on"]] == ["lore-eden"]
+
+
+def test_blocked_by_is_the_subset_actually_holding_the_ticket_up(db_session: Session) -> None:
+    """`depends_on` lists edges; `blocked_by` answers the question.
+
+    A reader with only `depends_on` has to fetch each far end and check its
+    state — and for a cross-workspace edge they may not be able to. The two
+    differ here precisely because one prerequisite is settled and the other is
+    not, which is the only case where the distinction earns its place.
+    """
+    _rows(db_session, "waiter", "finished")
+    other = _other_workspace(db_session)
+    make_ticket(db_session, workspace_id=other.id, ticket_id="still-open")
+    db_session.get(Ticket, "finished").state = TicketState.DONE
+    db_session.commit()
+    svc = TicketDependencyService(db_session)
+    svc.add_dependency("waiter", "finished")
+    svc.add_dependency("waiter", "still-open")
+
+    payload = ticket_state_payload(db_session, "waiter")
+
+    assert {e["external_id"] for e in payload["depends_on"]} == {"finished", "still-open"}
+    assert [e["external_id"] for e in payload["blocked_by"]] == ["still-open"]
