@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowStageDef,
+    Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
