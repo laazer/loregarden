@@ -164,14 +164,58 @@ def _checkout_branch(repo_root: Path, branch: str, *, start_point: str) -> None:
     re-dispatch — a retry, a rework round after another ticket had moved HEAD, a
     requeue — the ticket's earlier commits were left unreachable and the tree
     looked like a first attempt (lg-milestone-that-772).
+
+    An existing branch is then brought up to ``start_point`` when one is given
+    and the tree is clean, so a prerequisite that landed since the branch was
+    cut reaches the ticket (lg-milestone-that-769). A dirty tree is left alone
+    — merging over uncommitted work is how it gets lost — and said so.
     """
-    if _branch_exists(repo_root, branch):
-        args = ["checkout", branch]
-    else:
+    if not _branch_exists(repo_root, branch):
+        if start_point and not _branch_exists(repo_root, start_point):
+            # A repository with no commits yet has no base branch to cut from.
+            # HEAD is the only thing there is; said out loud because on any
+            # other repository this means the workspace's base_branch is wrong.
+            logger.warning(
+                "Start point %r does not exist in %s; cutting %s from HEAD",
+                start_point,
+                repo_root,
+                branch,
+            )
+            start_point = ""
         args = (
             ["checkout", "-b", branch, start_point] if start_point else ["checkout", "-b", branch]
         )
-    run_git(args, cwd=repo_root, capture_output=True, text=True, check=True)
+        run_git(args, cwd=repo_root, capture_output=True, text=True, check=True)
+        return
+    run_git(["checkout", branch], cwd=repo_root, capture_output=True, text=True, check=True)
+    if start_point:
+        _refresh_onto(repo_root, branch, start_point)
+
+
+def _refresh_onto(repo_root: Path, branch: str, start_point: str) -> None:
+    dirty = run_git(
+        ["status", "--porcelain"], cwd=repo_root, capture_output=True, text=True, check=True
+    )
+    if dirty.stdout.strip():
+        logger.warning(
+            "Not refreshing %s from %s: %s has uncommitted changes", branch, start_point, repo_root
+        )
+        return
+    merged = run_git(
+        ["merge", "--no-edit", start_point],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if merged.returncode == 0:
+        return
+    detail = (merged.stdout or merged.stderr or "git merge failed").strip()
+    # silent-ok: cleanup on an already-failing path; the ValueError below carries
+    # the merge's own output, and a failed abort leaves conflict markers the
+    # next `status --porcelain` refuses to merge over.
+    run_git(["merge", "--abort"], cwd=repo_root, capture_output=True, text=True, check=False)
+    raise ValueError(f"Branch {branch!r} could not take {start_point!r} before starting: {detail}")
 
 
 def ensure_ticket_branch(repo_root: Path, ticket: Ticket, *, start_point: str = "") -> str:

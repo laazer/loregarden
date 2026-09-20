@@ -84,6 +84,7 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
+from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
@@ -166,6 +167,7 @@ class CliAgentExecutor:
         failed_checkout = self._ensure_branch_or_fail(
             run,
             ticket,
+            workspace,
             repo_root=repo_root,
             skip=skip_git_branch or in_worktree,
             advance_workflow=advance_workflow,
@@ -408,7 +410,13 @@ class CliAgentExecutor:
         # was abandoned.
         repo_root = resolve_execution_root(self.session, run, ticket, workspace)
         if repo_root == workspace_root:
-            ensure_ticket_branch(repo_root, ticket)
+            ensure_ticket_branch(
+                repo_root,
+                ticket,
+                start_point=resolve_target_branch(
+                    self.session, ticket, workspace, repo_root=workspace_root
+                ),
+            )
 
         stage_def = self._resolve_stage_def(ticket, run)
         prompt = self._build_prompt(
@@ -712,6 +720,7 @@ class CliAgentExecutor:
         self,
         run: AgentRun,
         ticket: Ticket,
+        workspace: Workspace,
         *,
         repo_root: Path,
         skip: bool,
@@ -721,13 +730,20 @@ class CliAgentExecutor:
         when the checkout could not be made, or None to carry on.
 
         Skipped for a worktree, which is already on its own branch, created with
-        it: running `checkout -B` there would be a no-op at best and, if two runs
-        share a ticket branch, a fight at worst.
+        it and refreshed onto its target there. In the shared checkout the branch
+        is cut from — and an existing one brought up to — the ticket's target
+        branch, so a sibling's landed work reaches it (lg-milestone-that-769).
         """
         if skip:
             return None
         try:
-            ensure_ticket_branch(repo_root, ticket)
+            ensure_ticket_branch(
+                repo_root,
+                ticket,
+                start_point=resolve_target_branch(
+                    self.session, ticket, workspace, repo_root=repo_root
+                ),
+            )
         except (ValueError, subprocess.CalledProcessError) as exc:
             return self.orchestration.complete_run(
                 run,
