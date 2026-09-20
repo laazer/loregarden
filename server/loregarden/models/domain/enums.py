@@ -779,6 +779,10 @@ class EventType(str, Enum):
     AGENT_RUN_COMPLETED = "AgentRunCompleted"
     ORCHESTRATION_RUN_STARTED = "OrchestrationRunStarted"
     ORCHESTRATION_RUN_COMPLETED = "OrchestrationRunCompleted"
+    #: A finished ticket's branch was merged into its target, or could not be.
+    #: The payload says which; a landing that fails is why a ticket that passed
+    #: every stage is not `done` (lg-milestone-that-768).
+    TICKET_LANDED = "TicketLanded"
     ARTIFACT_CREATED = "ArtifactCreated"
     APPROVAL_REQUESTED = "ApprovalRequested"
     APPROVAL_RESOLVED = "ApprovalResolved"
