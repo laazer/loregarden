@@ -1467,3 +1467,57 @@ def test_builtin_run_records_a_lease_stamp(db_session: Session, tmp_path):
         "a builtin run must renew its own lease; without a stamp the sweep judges "
         "it on started_at and reclaims a healthy run mid-handoff"
     )
+
+
+def test_a_child_whose_prerequisite_is_done_but_unlanded_is_held_and_says_so(
+    db_session: Session, tmp_path
+) -> None:
+    """770: done is not landed. The hold names the branch the work is missing from."""
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-unlanded")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlanded-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    other_parent = _make_ticket(
+        db_session, ws, external_id="unlanded-q", title="Other", work_item_type=WorkItemType.FEATURE
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="unlanded-c", title="Child", parent_ticket_id=parent.id
+    )
+    prerequisite = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlanded-a",
+        title="Done elsewhere",
+        parent_ticket_id=other_parent.id,
+    )
+    prerequisite.state = TicketState.DONE
+    prerequisite.branch = "loregarden/unlanded-a"
+    db_session.add(prerequisite)
+    db_session.commit()
+    repo = Path(ws.repo_path)
+    other_target = resolve_target_branch(db_session, prerequisite, ws, repo_root=repo)
+    subprocess.run(["git", "branch", prerequisite.branch, other_target], cwd=repo, check=True)
+    tree = tmp_path / "prereq-tree"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", str(tree), prerequisite.branch], cwd=repo, check=True
+    )
+    (tree / "a.txt").write_text("work nobody landed\n")
+    subprocess.run(["git", "add", "-A"], cwd=tree, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "a"], cwd=tree, check=True)
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo, check=True)
+    TicketDependencyService(db_session).add_dependency(child.id, prerequisite.id)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+
+    message = orch_run.error_message or ""
+    assert "unlanded-a" in message, message
+    assert "not landed on integration/unlanded-p" in message, message
+    assert parent.state != TicketState.DONE

@@ -102,18 +102,14 @@ def test_a_worktree_is_cut_from_the_integration_branch_not_main(
     child = _child(session, workspace, milestone, "lg-a-1")
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
     landed = _commit_on(repo, target, "sibling.txt", "landed by a sibling\n")
-    # main moves on independently; the ticket must not see this.
-    (repo / "unrelated.txt").write_text("on main\n")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "unrelated on main")
 
     run = make_run(session, workspace, child, "r1")
     root = resolve_execution_root(session, run, child, workspace)
 
     assert root != repo
-    assert _sha(root) == landed
-    assert (root / "sibling.txt").exists()
-    assert not (root / "unrelated.txt").exists()
+    assert _sha(root) == landed, "cut from the integration branch's tip"
+    assert (root / "sibling.txt").exists(), "which main does not have"
+    assert not (repo / "sibling.txt").exists()
 
 
 def test_head_position_in_the_primary_checkout_does_not_matter(session, workspace, repo, milestone):

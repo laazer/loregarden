@@ -23,6 +23,11 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.dependency_readiness import (
+    UnmetPrerequisite,
+    UnmetReason,
+    unmet_prerequisites_for_start,
+)
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -836,7 +841,8 @@ def _orchestrate_incomplete_children(
     dependencies = TicketDependencyService(builtin.session)
     prereqs = dependencies.prerequisites_map([c.id for c in children])
     children = order_children_for_subtree(children, prereqs)
-    runnable, parked, waiting = _partition_children(builtin.session, dependencies, children)
+    workspace = builtin.session.get(Workspace, ticket.workspace_id)
+    runnable, parked, waiting = _partition_children(builtin.session, workspace, children)
     for child in runnable:
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
@@ -879,7 +885,7 @@ def _orchestrate_incomplete_children(
 
 
 def _partition_children(
-    session: Session, dependencies: TicketDependencyService, children: list[Ticket]
+    session: Session, workspace: Workspace | None, children: list[Ticket]
 ) -> tuple[list[Ticket], list[str], list[str]]:
     """Split ordered children into those that may run now, and two kinds of hold.
 
@@ -917,9 +923,9 @@ def _partition_children(
             parked.append(child.title)
             continue
         unmet = [
-            prereq
-            for prereq in dependencies.unmet_prerequisites(child.id)
-            if prereq.id not in sibling_ids
+            entry
+            for entry in _unmet_for(session, child, workspace)
+            if entry.ticket.id not in sibling_ids
         ]
         if unmet:
             waiting.append(f"{child.title} (waits for {_name_prerequisites(session, unmet)})")
@@ -928,23 +934,45 @@ def _partition_children(
     return runnable, parked, waiting
 
 
-def _name_prerequisites(session: Session, unmet: list[Ticket]) -> str:
-    """Name each blocking prerequisite with its workspace.
+def _unmet_for(
+    session: Session, child: Ticket, workspace: Workspace | None
+) -> list[UnmetPrerequisite]:
+    """Landed-readiness when there is a repository to ask; state alone otherwise."""
+    if workspace is not None:
+        return unmet_prerequisites_for_start(session, child, workspace)
+    return [
+        UnmetPrerequisite(prereq, UnmetReason.NOT_DONE)
+        for prereq in TicketDependencyService(session).unmet_prerequisites(child.id)
+    ]
+
+
+def _name_prerequisites(session: Session, unmet: list[UnmetPrerequisite]) -> str:
+    """Name each blocking prerequisite with its workspace and why it blocks.
 
     The workspace is not decoration. A prerequisite in another workspace is
     invisible from the board the reader is looking at, so "waits for
     lor-extract-lore-35" sends them looking in the wrong place; "lore-eden:
-    lor-extract-lore-35" does not.
+    lor-extract-lore-35" does not. Neither is the reason: "done, not landed on
+    integration/x" and "in_progress" are different things to go and fix (770).
     """
     slugs = {
         row.id: row.slug
         for row in session.exec(
-            select(Workspace).where(Workspace.id.in_({t.workspace_id for t in unmet}))
+            select(Workspace).where(
+                Workspace.id.in_({entry.ticket.workspace_id for entry in unmet})
+            )
         ).all()
     }
     return ", ".join(
-        f"{slugs.get(t.workspace_id, '?')}:{t.external_id} [{t.state.value}]" for t in unmet
+        f"{slugs.get(entry.ticket.workspace_id, '?')}:{entry.ticket.external_id} [{_why(entry)}]"
+        for entry in unmet
     )
+
+
+def _why(entry: UnmetPrerequisite) -> str:
+    if entry.reason is UnmetReason.NOT_LANDED:
+        return f"{entry.ticket.state.value}, not landed on {entry.target}"
+    return entry.ticket.state.value
 
 
 def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemberResult]:

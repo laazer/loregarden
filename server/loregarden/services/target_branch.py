@@ -30,6 +30,7 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import validate_branch_name
+from loregarden.services.git_merge_noco import merge_without_checkout
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
@@ -116,17 +117,48 @@ def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) ->
     return True
 
 
+def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
+    """Bring ``branch`` up to ``base_branch``. True when a merge commit was made.
+
+    A tree lands on its integration branch for as long as it runs, while the
+    base keeps moving — other trees publish, people merge by hand. A ticket
+    cut from an integration branch that never takes the base in builds against
+    a base weeks old, and a prerequisite that reached ``main`` through another
+    tree's publish is invisible to it (770). Done without a checkout, so it is
+    safe from any working tree; a conflict is raised, because a ticket about to
+    be cut from a branch that cannot take its base is not a ticket to start.
+    """
+    outcome = merge_without_checkout(
+        repo_root,
+        target=branch,
+        source=base_branch,
+        subject=f"Refresh {branch} from {base_branch}",
+    )
+    if outcome.ok:
+        if not outcome.already_contained:
+            logger.info("Refreshed %s from %s as %s", branch, base_branch, outcome.sha[:12])
+        return not outcome.already_contained
+    if outcome.conflicted:
+        raise TargetBranchError(
+            f"{branch!r} cannot take {base_branch!r}: merge conflicts in "
+            f"{', '.join(outcome.conflicted_files)}"
+        )
+    raise TargetBranchError(f"Cannot refresh {branch!r} from {base_branch!r}: {outcome.detail}")
+
+
 def resolve_target_branch(
     session: Session, ticket: Ticket, workspace: Workspace, *, repo_root: Path
 ) -> str:
-    """The branch ``ticket`` lands on, existing in ``repo_root`` by the time this returns.
+    """The branch ``ticket`` lands on, existing and current in ``repo_root`` on return.
 
-    Idempotent: the second call for the same tree finds the branch and creates
-    nothing. ``base_branch`` is never created here — a workspace whose base is
-    missing is misconfigured, and that is reported, not repaired.
+    Idempotent: the second call for the same tree finds the branch, creates
+    nothing, and merges nothing unless the base moved. ``base_branch`` is never
+    created here — a workspace whose base is missing is misconfigured, and
+    that is reported, not repaired.
     """
     base = resolve_orchestration_profile(workspace).git.base_branch
     target = target_branch_name(session, ticket, workspace)
     if target != base:
         ensure_integration_branch(repo_root, target, base)
+        refresh_integration_branch(repo_root, target, base)
     return target

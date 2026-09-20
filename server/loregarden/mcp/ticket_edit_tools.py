@@ -21,6 +21,7 @@ from loregarden.services.acceptance_criteria import (
     load_criteria,
     merge_criteria,
 )
+from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.stage_shape import current_stage_shape
@@ -77,11 +78,26 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
         # `depends_on` alone does not answer "can this start?" — a reader has to
         # check each far end's state, and for an edge into another workspace
         # they cannot see that board at all (676).
-        "blocked_by": ticket_summaries(
+        "blocked_by": blocked_by_summaries(session, ticket),
+    }
+
+
+def blocked_by_summaries(session: Session, ticket: Ticket) -> list[dict[str, str]]:
+    """`blocked_by`, each entry saying why: not done, or done but not landed (770)."""
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        return ticket_summaries(
             session,
             [t.id for t in TicketDependencyService(session).unmet_prerequisites(ticket.id)],
-        ),
-    }
+        )
+    unmet = unmet_prerequisites_for_start(session, ticket, workspace)
+    by_id = {entry.ticket.id: entry for entry in unmet}
+    summaries = ticket_summaries(session, list(by_id))
+    for summary in summaries:
+        entry = by_id[summary["id"]]
+        summary["reason"] = entry.reason.value
+        summary["needs_landing_on"] = entry.target
+    return summaries
 
 
 def ticket_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, str]]:
