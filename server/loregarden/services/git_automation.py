@@ -287,6 +287,40 @@ def publish_run(
     return result
 
 
+def publish_branch(
+    repo_root: Path, subject: PublishSubject, config: GitAutomationConfig
+) -> AutomationResult:
+    """The publish chain for a branch that is never checked out.
+
+    An integration branch (768) exists only as a ref: every commit on it was
+    made without a working tree, so the ``commit`` step has nothing to act on
+    and is skipped — not turned off. ``commit`` still gates the chain, because
+    a workspace that switched it off asked for no automation at all, and
+    `enabled_steps` stops there.
+    """
+    result = AutomationResult()
+    try:
+        validate_branch_name(subject.branch)
+    except ValueError as exc:
+        result.steps.append(StepResult("resolve", False, str(exc)))
+        return result
+
+    for step in enabled_steps(config):
+        if step == "commit":
+            continue
+        if step == "push":
+            result.steps.append(_push(repo_root, subject.branch))
+        elif step == "open_pr":
+            pr_step, pr_url = _open_pr(repo_root, subject, config.base_branch)
+            result.steps.append(pr_step)
+            result.pr_url = pr_url
+        elif step == "auto_merge":
+            result.steps.append(_auto_merge(repo_root, result.pr_url))
+        if not result.ok:
+            return result
+    return result
+
+
 def run_git_automation(
     session: Session,
     run: AgentRun,

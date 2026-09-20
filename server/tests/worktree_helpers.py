@@ -75,6 +75,44 @@ def make_run(session, workspace, ticket, code: str):
     return run
 
 
+def commit_on(repo: Path, branch: str, filename: str, content: str) -> str:
+    """One commit adding `filename` to `branch`, without disturbing the checkout.
+
+    Goes through a throwaway worktree, or straight into the repository when
+    `branch` is what it has checked out (git refuses a second checkout of it).
+    Returns the new commit.
+    """
+    if branch == git(repo, "branch", "--show-current").stdout.strip():
+        (repo / filename).write_text(content)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", f"{filename} on {branch}")
+        return git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = repo.parent / f"tmp-{branch.replace('/', '-')}"
+    git(repo, "worktree", "add", "-q", str(tree), branch)
+    (tree / filename).write_text(content)
+    git(tree, "add", "-A")
+    git(tree, "commit", "-q", "-m", f"{filename} on {branch}")
+    sha = git(tree, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "worktree", "remove", "--force", str(tree))
+    return sha
+
+
+def make_orch_run(session, ticket):
+    """A running orchestration on `ticket`, for driving `complete_orchestration`."""
+    from loregarden.models.domain import OrchestrationRun, OrchestrationRunStatus
+
+    run = OrchestrationRun(
+        run_code=f"orch-{ticket.external_id}",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        status=OrchestrationRunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
 def seed_stage_report_contract(repo_root) -> None:
     """Give a throwaway repo the workflow-enforcement doc a real workspace has.
 

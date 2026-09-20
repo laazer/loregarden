@@ -361,10 +361,12 @@ def release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:
     finished, which is where a lane reading "succeeded" comes from.
 
     Hooked at completion because this is the one place every run reaches its
-    terminal status, whatever started it. `ParallelRunService.on_parallel_run_complete`
-    was written to do this and had no callers at all, so a run started from the
-    queue claimed a slot and never gave it back — the board lost a lane per
-    launch until nothing could start.
+    terminal status, whatever started it. `ParallelRunService` once had an
+    `on_parallel_run_complete` written to do this with no callers at all, so a
+    run started from the queue claimed a slot and never gave it back — the
+    board lost a lane per launch until nothing could start. (That method, and
+    the publish half stranded with it, are gone: landing now happens at the
+    ticket's terminal stage — see `landing.py`.)
 
     Best-effort: a run's completion is already durable by the time we get here,
     and failing to release a slot must not undo it. The slot is recoverable

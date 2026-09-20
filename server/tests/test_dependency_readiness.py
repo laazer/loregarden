@@ -16,7 +16,7 @@ from loregarden.services.target_branch import (
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from sqlmodel import Session
-from tests.worktree_helpers import git, make_repo
+from tests.worktree_helpers import commit_on, git, make_repo
 
 
 @pytest.fixture(name="session")
@@ -61,22 +61,6 @@ def _sha(cwd, ref="HEAD"):
     return git(cwd, "rev-parse", ref).stdout.strip()
 
 
-def _commit_on(repo, branch, filename, content):
-    if branch == git(repo, "branch", "--show-current").stdout.strip():
-        (repo / filename).write_text(content)
-        git(repo, "add", "-A")
-        git(repo, "commit", "-q", "-m", f"{filename} on {branch}")
-        return _sha(repo)
-    tree = repo.parent / f"tmp-{branch.replace('/', '-')}"
-    git(repo, "worktree", "add", "-q", str(tree), branch)
-    (tree / filename).write_text(content)
-    git(tree, "add", "-A")
-    git(tree, "commit", "-q", "-m", f"{filename} on {branch}")
-    sha = _sha(tree)
-    git(repo, "worktree", "remove", "--force", str(tree))
-    return sha
-
-
 def _depends(session, dependent, prerequisite):
     TicketDependencyService(session).add_dependency(dependent.id, prerequisite.id)
     session.commit()
@@ -109,7 +93,7 @@ def test_a_done_prerequisite_whose_branch_never_landed_is_not_landed(session, wo
     _depends(session, b, a)
     target = resolve_target_branch(session, b, workspace, repo_root=repo)
     git(repo, "branch", a.branch, target)
-    _commit_on(repo, a.branch, "a.txt", "a's work\n")
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
 
     unmet = unmet_prerequisites_for_start(session, b, workspace)
 
@@ -125,7 +109,7 @@ def test_a_landed_prerequisite_is_satisfied(session, workspace, repo):
     _depends(session, b, a)
     target = resolve_target_branch(session, a, workspace, repo_root=repo)
     git(repo, "branch", a.branch, target)
-    _commit_on(repo, a.branch, "a.txt", "a's work\n")
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
     assert _reasons(session, b, workspace) == {"a": UnmetReason.NOT_LANDED}
 
     assert land_ticket(session, a, workspace).ok
@@ -141,7 +125,7 @@ def test_a_prerequisite_whose_work_reached_main_by_hand_is_satisfied(session, wo
     b = _ticket(session, workspace, "b", parent=ms)
     _depends(session, b, a)
     git(repo, "branch", a.branch, "main")
-    _commit_on(repo, a.branch, "a.txt", "a's work\n")
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
     git(repo, "merge", "-q", "--no-ff", "-m", "merged by a person", a.branch)
 
     assert a.landed_sha == ""
@@ -175,7 +159,7 @@ def test_cutting_a_ticket_brings_its_integration_branch_up_to_main(session, work
     b = _ticket(session, workspace, "b", parent=ms)
     target = resolve_target_branch(session, b, workspace, repo_root=repo)
     before = _sha(repo, target)
-    landed_elsewhere = _commit_on(repo, "main", "other.txt", "another tree's work\n")
+    landed_elsewhere = commit_on(repo, "main", "other.txt", "another tree's work\n")
 
     again = resolve_target_branch(session, b, workspace, repo_root=repo)
 
@@ -189,8 +173,8 @@ def test_a_refresh_that_conflicts_refuses_to_cut_the_ticket(session, workspace, 
     ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
     b = _ticket(session, workspace, "b", parent=ms)
     target = resolve_target_branch(session, b, workspace, repo_root=repo)
-    _commit_on(repo, target, "shared.txt", "integration side\n")
-    _commit_on(repo, "main", "shared.txt", "main side\n")
+    commit_on(repo, target, "shared.txt", "integration side\n")
+    commit_on(repo, "main", "shared.txt", "main side\n")
 
     with pytest.raises(TargetBranchError, match="shared.txt"):
         resolve_target_branch(session, b, workspace, repo_root=repo)
