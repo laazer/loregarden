@@ -4,6 +4,8 @@
  *
  * Checks (on staged .ts/.tsx files):
  *   1. File size limit — only when this commit *grows* an already-over-limit file
+ *      (a generated file — `AUTO-GENERATED` / `@generated` in its leading comment —
+ *      is exempt: nobody can split what a generator writes; its size is the API's)
  *   2. No direct fetch/axios calls in .tsx — only on newly added lines
  *   3. Within-file duplicate function bodies (>= MIN_DUPLICATE_BODY_LINES)
  *   4. Cross-codebase DRY against the rest of client/src
@@ -32,6 +34,11 @@ const API_CALL_PATTERNS = [/\bfetch\s*\(/, /\baxios\s*\./, /\baxios\s*\(/];
 
 const ALLOW_INSTANCEOF = "ts-org: allow-instanceof";
 
+/** Markers a generator leaves in a file's leading comment. Only the first few lines
+ *  count, so a hand-written module cannot exempt itself with a stray mention. */
+const GENERATED_MARKERS = ["AUTO-GENERATED", "@generated"];
+const GENERATED_HEADER_LINES = 5;
+
 /** Where a TypeScript source tree lives, most specific first. This gate's own
  *  policy; the resolver turns it into a path against the repository root. */
 const TS_SOURCE_ROOT_CANDIDATES = ["client/src", "src", "app", "frontend/src"];
@@ -44,6 +51,12 @@ function isComponentFile(filePath) {
 
 function isIndexFile(filePath) {
   return path.basename(filePath) === "index.ts" || path.basename(filePath) === "index.tsx";
+}
+
+function isGeneratedFile(lines) {
+  return lines
+    .slice(0, GENERATED_HEADER_LINES)
+    .some((line) => GENERATED_MARKERS.some((marker) => line.includes(marker)));
 }
 
 function isTestFile(filePath) {
@@ -480,7 +493,11 @@ function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }) 
   const fileErrors = [];
   const lineCount = lines.length;
 
-  if (isIndexFile(filePath)) {
+  if (isGeneratedFile(lines)) {
+    // A generated file (e.g. an OpenAPI -> TypeScript types module) grows with
+    // the API it mirrors; the size rule would block every API addition with a
+    // finding nobody can act on. The other rules still run below.
+  } else if (isIndexFile(filePath)) {
     if (lineCount > MAX_INDEX_LINES && netGrowing) {
       fileErrors.push(
         `${filePath}: index file is ${lineCount} lines (max ${MAX_INDEX_LINES}); keep barrel files minimal (re-exports only)`,
