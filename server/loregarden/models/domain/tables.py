@@ -157,6 +157,11 @@ class Ticket(SQLModel, table=True):
     )
     priority: int = Field(default=3, ge=1, le=3)
     branch: str = ""
+    # Where this ticket's work landed: the commit on `landed_branch` that
+    # contains it, written by `land_ticket` at the terminal stage. Empty means
+    # not landed — which is not "done": a dependent's readiness reads this.
+    landed_sha: str = ""
+    landed_branch: str = ""
     milestone: str = ""
     work_item_type: WorkItemType = Field(
         default=WorkItemType.TASK,
