@@ -288,7 +288,7 @@ def test_a_git_failure_blocks_with_its_text(session, workspace, repo, milestone)
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-11")
     orch = _orch(session, ticket)
 
-    from loregarden.services import land_ticket as module
+    from loregarden.services import git_merge_noco as module
 
     real = module.run_git
 

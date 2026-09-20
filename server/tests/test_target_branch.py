@@ -122,15 +122,20 @@ def test_resolve_creates_the_integration_branch_from_base_once(
     assert _git(["rev-parse", first], cwd=repo) == main_sha
     after_first = _branches(repo)
 
-    # Move main so a second call that re-created the branch would be visible.
+    # Move main. A second call must not re-create the branch (770 brings it up
+    # to main with a merge, which is a different thing from resetting it).
     (repo / "later.txt").write_text("later\n", encoding="utf-8")
     _git(["add", "."], cwd=repo)
     _git(["commit", "-m", "later"], cwd=repo)
+    later_sha = _git(["rev-parse", "main"], cwd=repo)
 
     second = resolve_target_branch(db_session, task, workspace, repo_root=repo)
     assert second == first
     assert _branches(repo) == after_first
-    assert _git(["rev-parse", second], cwd=repo) == main_sha
+    tip = _git(["rev-parse", second], cwd=repo)
+    assert tip not in (main_sha, later_sha), "a merge, not a reset to either side"
+    parents = _git(["rev-list", "--parents", "-n", "1", tip], cwd=repo).split()[1:]
+    assert set(parents) == {main_sha, later_sha}
 
 
 def test_resolve_never_creates_the_base_branch(
