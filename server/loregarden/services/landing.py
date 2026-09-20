@@ -40,8 +40,9 @@ from loregarden.models.domain import (
 from loregarden.services.conflict_resolution import request_agent_resolution
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.land_ticket import LandResult, land_ticket
+from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
 from loregarden.services.orchestration_profile import GitAutomationConfig
+from loregarden.services.publish_tree import publish_tree
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, col, select
@@ -99,6 +100,12 @@ def land_at_completion(
     result = land_ticket(session, ticket, workspace)
     _publish(session, ticket, result)
     if result.ok:
+        # A tree's root has nothing of its own to land — no branch, or a
+        # target that is the base — but its tree does: the integration branch
+        # goes to the base now (771). `publish_tree` is a no-op for anything
+        # that is not a root.
+        if result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
+            return _publish_tree_or_block(session, callbacks, orch_run, ticket, workspace)
         return True
 
     config = resolve_git_automation(workspace, ticket)
@@ -126,6 +133,26 @@ def land_at_completion(
         ticket,
         origin=BlockOrigin.CONTROL_PLANE,
         message=_block_message(result),
+    )
+    return False
+
+
+def _publish_tree_or_block(
+    session: Session,
+    callbacks: LandingCallbacks,
+    orch_run: OrchestrationRun,
+    ticket: Ticket,
+    workspace: Workspace,
+) -> bool:
+    """A root that lands on the base publishes its tree instead (771)."""
+    outcome = publish_tree(session, ticket, workspace)
+    if outcome.ok:
+        return True
+    callbacks.block_ticket(
+        orch_run,
+        ticket,
+        origin=BlockOrigin.CONTROL_PLANE,
+        message=f"Could not publish {outcome.branch}: {outcome.detail}",
     )
     return False
 

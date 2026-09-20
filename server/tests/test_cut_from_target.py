@@ -14,7 +14,7 @@ from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_service import WorktreeRefreshError, WorktreeService
 from sqlmodel import Session
-from tests.worktree_helpers import git, make_repo, make_run
+from tests.worktree_helpers import commit_on, git, make_repo, make_run
 
 
 @pytest.fixture(name="session")
@@ -69,18 +69,6 @@ def _sha(cwd, ref="HEAD"):
     return git(cwd, "rev-parse", ref).stdout.strip()
 
 
-def _commit_on(repo, branch, filename, content):
-    """Add a commit to `branch` without disturbing whatever the repo has checked out."""
-    tree = repo.parent / f"tmp-{branch.replace('/', '-')}"
-    git(repo, "worktree", "add", "-q", str(tree), branch)
-    (tree / filename).write_text(content)
-    git(tree, "add", "-A")
-    git(tree, "commit", "-q", "-m", f"{filename} on {branch}")
-    sha = _sha(tree)
-    git(repo, "worktree", "remove", "--force", str(tree))
-    return sha
-
-
 def _ancestor(cwd, ancestor, descendant) -> bool:
     import subprocess
 
@@ -101,7 +89,7 @@ def test_a_worktree_is_cut_from_the_integration_branch_not_main(
 ):
     child = _child(session, workspace, milestone, "lg-a-1")
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
-    landed = _commit_on(repo, target, "sibling.txt", "landed by a sibling\n")
+    landed = commit_on(repo, target, "sibling.txt", "landed by a sibling\n")
 
     run = make_run(session, workspace, child, "r1")
     root = resolve_execution_root(session, run, child, workspace)
@@ -137,8 +125,8 @@ def test_a_prerequisite_landed_after_the_branch_was_cut_still_reaches_the_ticket
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
     # The ticket branch exists already, cut from the target before anything landed.
     git(repo, "branch", child.branch, target)
-    own = _commit_on(repo, child.branch, "own.txt", "the ticket's own earlier work\n")
-    landed = _commit_on(repo, target, "sibling.txt", "landed later\n")
+    own = commit_on(repo, child.branch, "own.txt", "the ticket's own earlier work\n")
+    landed = commit_on(repo, target, "sibling.txt", "landed later\n")
 
     root = resolve_execution_root(
         session, make_run(session, workspace, child, "r1"), child, workspace
@@ -155,8 +143,8 @@ def test_a_conflicting_refresh_fails_loudly_and_leaves_no_half_cut_tree(
     child = _child(session, workspace, milestone, "lg-a-4")
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
     git(repo, "branch", child.branch, target)
-    _commit_on(repo, child.branch, "shared.txt", "the ticket's version\n")
-    _commit_on(repo, target, "shared.txt", "a sibling's version\n")
+    commit_on(repo, child.branch, "shared.txt", "the ticket's version\n")
+    commit_on(repo, target, "shared.txt", "a sibling's version\n")
     service = WorktreeService(session, repo_path=str(repo))
 
     with pytest.raises(WorktreeRefreshError, match="could not take"):
@@ -186,7 +174,7 @@ def test_the_shared_checkout_cuts_from_and_refreshes_onto_the_start_point(repo, 
     (repo / "own.txt").write_text("own\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "own")
-    landed = _commit_on(repo, "integration/x", "sibling.txt", "landed\n")
+    landed = commit_on(repo, "integration/x", "sibling.txt", "landed\n")
     git(repo, "checkout", "-q", "main")
 
     ensure_ticket_branch(repo, ticket, start_point="integration/x")
@@ -206,7 +194,7 @@ def test_the_shared_checkout_does_not_refresh_over_uncommitted_work(repo, caplog
     )
     git(repo, "branch", "integration/y", "main")
     ensure_ticket_branch(repo, ticket, start_point="integration/y")
-    _commit_on(repo, "integration/y", "sibling.txt", "landed\n")
+    commit_on(repo, "integration/y", "sibling.txt", "landed\n")
     (repo / "seed.txt").write_text("edited but not committed\n")
 
     with caplog.at_level("WARNING"):
@@ -230,7 +218,7 @@ def test_a_conflicting_refresh_in_the_shared_checkout_is_a_valueerror(repo):
     (repo / "shared.txt").write_text("ticket\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "ticket side")
-    _commit_on(repo, "integration/z", "shared.txt", "sibling\n")
+    commit_on(repo, "integration/z", "shared.txt", "sibling\n")
     git(repo, "checkout", "-q", "main")
 
     with pytest.raises(ValueError, match="could not take"):
