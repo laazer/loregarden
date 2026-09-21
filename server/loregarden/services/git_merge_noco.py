@@ -50,6 +50,18 @@ def is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
     return _git(repo_root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
 
+def signs_commits(repo_root: Path) -> bool:
+    """Whether this repository signs its commits (`commit.gpgsign`).
+
+    `git commit` reads that setting; `git commit-tree` does not — it signs
+    only with an explicit `-S`. The first eight landings this module made
+    were unsigned in a repository whose branch rules require signatures, and
+    the integration branch could not be merged (lg-milestone-that-782).
+    """
+    result = _git(repo_root, "config", "--get", "--type=bool", "commit.gpgsign")
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
 def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[str, ...], str]:
     """The merged tree, the conflicted paths (empty when clean), and git's own words.
 
@@ -90,8 +102,9 @@ def merge_without_checkout(
     if not tree:
         return MergeOutcome(ok=False, detail=words)
 
+    sign = ["-S"] if signs_commits(repo_root) else []
     committed = _git(
-        repo_root, "commit-tree", tree, "-p", target_sha, "-p", source_sha, "-m", subject
+        repo_root, "commit-tree", tree, *sign, "-p", target_sha, "-p", source_sha, "-m", subject
     )
     if committed.returncode != 0:
         detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
