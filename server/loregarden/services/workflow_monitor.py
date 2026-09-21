@@ -53,6 +53,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
 from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
+from loregarden.services.monitor_escalation import escalate_recurring_findings
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
     MonitorConfig,
@@ -616,7 +617,7 @@ def record_findings(session: Session, findings: list[MonitorFinding]) -> int:
 
 
 def sweep(session: Session) -> int:
-    """Scan, persist, then repair whatever the config allows.
+    """Scan, persist, escalate recurring titles, then repair whatever the config allows.
 
     Registered as a reconciliation step, not its own loop: `reconcile_once`
     already runs on a worker thread and already wraps each step so a bad pass
@@ -625,10 +626,13 @@ def sweep(session: Session) -> int:
 
     Findings are recorded BEFORE any repair, so the record of what was wrong
     survives the fix. A monitor that repaired first and reported after would
-    erase its own evidence.
+    erase its own evidence. Escalation runs after record and before autofix so
+    currency (`last_seen >= sweep_started_at`) reflects this sweep's upserts.
     """
+    sweep_started_at = _utcnow()
     findings = scan(session)
     touched = record_findings(session, findings)
+    escalate_recurring_findings(session, sweep_started_at=sweep_started_at)
     apply_autofixes(session, findings)
     return touched
 
