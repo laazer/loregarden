@@ -121,8 +121,10 @@ def test_the_key_is_stamped_only_after_the_run_exists(db_session: Session):
     created — otherwise the next retry replays a phantom."""
     ticket = make_workspace_ticket(db_session, "idem-6")
 
-    with mock.patch(
-        "loregarden.mcp.admission.run_admitted", side_effect=RuntimeError("driver blew up")
+    with mock.patch.object(
+        OrchestrationCallbackService,
+        "start_orchestration_run",
+        side_effect=RuntimeError("driver blew up"),
     ):
         with pytest.raises(RuntimeError):
             _start(db_session, ticket.id, "doomed-1")
@@ -131,3 +133,6 @@ def test_the_key_is_stamped_only_after_the_run_exists(db_session: Session):
         select(OrchestrationRun).where(col(OrchestrationRun.idempotency_key) == "doomed-1")
     ).all()
     assert list(stamped) == []
+    # The claim the start was made for is abandoned, not left QUEUED — a live
+    # claim would block every later start of this ticket.
+    assert [r.status for r in _runs(db_session, ticket.id)] == [OrchestrationRunStatus.FAILED]
