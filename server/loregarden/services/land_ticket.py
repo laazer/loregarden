@@ -46,6 +46,8 @@ class LandSkip(str, Enum):
     ALREADY_LANDED = "already_landed"
     #: The target is the base branch; landing there is the publish chain's leg.
     BASE_TARGET = "base_target"
+    #: The workspace has no git repository at its root — nothing ran in one.
+    NO_REPOSITORY = "no_repository"
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,11 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
     base = resolve_orchestration_profile(workspace).git.base_branch
     target = target_branch_name(session, ticket, workspace)
 
+    if not (repo_root / ".git").exists():
+        # A run never starts in a workspace whose root is not a repository
+        # (the executor refuses the dispatch), so a workflow finishing here
+        # has no work in git to land. Skipped, and the event says so.
+        return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
     if not rev(repo_root, f"refs/heads/{branch}"):
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
     if target == base:

@@ -29,7 +29,9 @@ from loregarden.models.domain import (
     UpdateTicketRequest,
     Workspace,
 )
+from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.publish_tree import publish_tree
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.stage_agent_pin import pin_stage_agent
@@ -198,6 +200,40 @@ def _pin_stage_agent(session: Session, svc, arguments: dict[str, Any]) -> str:
     )
     payload = ticket_state_payload(session, ticket.id)
     payload["pinned"] = {"stage_key": stage_key, "agent_id": ticket.scope_reroute_agent}
+    return json.dumps(payload, indent=2)
+
+
+def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
+    """Land a ticket's work on its target now, outside the workflow.
+
+    For a ticket that finished before landing ran at the terminal stage (717
+    was the first), or one closed by hand. Idempotent: an already-landed
+    branch records its tip and merges nothing. A root publishes its tree.
+    """
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        raise ValueError(f"Ticket {ticket.external_id} has no workspace to land in")
+    result = land_ticket(session, ticket, workspace)
+    payload: dict[str, Any] = {
+        "ok": result.ok,
+        "branch": result.branch,
+        "target": result.target,
+        "landed_sha": result.landed_sha,
+        "skipped": result.skipped.value if result.skipped else "",
+        "conflicted_files": list(result.conflicted_files),
+        "detail": result.detail,
+    }
+    if result.ok and result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
+        outcome = publish_tree(session, ticket, workspace)
+        payload["published"] = {
+            "ok": outcome.ok,
+            "branch": outcome.branch,
+            "tip": outcome.tip,
+            "pr_url": outcome.pr_url,
+            "skipped": outcome.skipped,
+            "detail": outcome.detail,
+        }
     return json.dumps(payload, indent=2)
 
 
@@ -424,6 +460,22 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": McpTool.LAND_TICKET,
+        "description": (
+            "Merge a ticket's branch into its target branch now — the integration "
+            "branch of its tree, or nothing for a top-level ticket, whose leg is the "
+            "publish chain. Idempotent. For a ticket that finished before landing "
+            "ran at its terminal stage, or one closed by hand. A tree's root "
+            "publishes its integration branch instead."
+        ),
+        "inputSchema": tool_schema(
+            properties={
+                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
+            },
+            required=["ticket_id"],
+        ),
+    },
+    {
         "name": McpTool.SUPERSEDE_TICKET,
         "description": (
             "Replace a ticket with a corrected one: creates a new ticket beside it, "
@@ -502,6 +554,9 @@ def normalize_ticket_ops_args(
             "stage_key": coerce_optional_string(args.get("stage_key")),
         }
 
+    if name == McpTool.LAND_TICKET:
+        return {"ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id")}
+
     if name == McpTool.SUPERSEDE_TICKET:
         return {
             "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
@@ -522,6 +577,7 @@ _OPS_HANDLERS = {
     "loregarden_set_ticket_workflow": _set_ticket_workflow,
     "loregarden_requeue_ticket": _requeue_ticket,
     "loregarden_pin_stage_agent": _pin_stage_agent,
+    "loregarden_land_ticket": _land_ticket,
     "loregarden_supersede_ticket": _supersede_ticket,
 }
 
