@@ -1,96 +1,67 @@
-"""What happens to a landing's result at the terminal stage (lg-milestone-that-768).
+"""What happens to a landing's result when a workflow finishes (lg-milestone-that-768).
 
 `land_ticket` decides whether the merge happened; this module decides what
-the orchestration does about it. Kept out of `orchestration_callbacks` — the
-hook there is three lines — and out of `land_ticket`, which knows git and
-nothing about runs, resolvers or blocks.
+the workflow does about it. It runs at the moment the workflow is about to
+derive `done` — the terminal stage completing with no route onward — and
+*before* it does: done → blocked is not a transition the state machine
+allows, so a failed landing has to block from in progress.
 
-Three outcomes:
+That moment is in `OrchestrationService`, not in `complete_orchestration`:
+the first version hooked the latter and guarded on "not already done", and
+the terminal stage's own completion had already written `done` a second
+earlier. 717 finished its whole pipeline, reported done, and landed nothing
+(lg-milestone-that-777).
 
-- Landed (or nothing to land): a `TicketLanded` event, and the caller goes on
-  to mark the ticket done.
-- Conflicted, with `auto_resolve_conflicts` on and a resolver dispatched: the
-  conflict is materialised in the ticket's worktree — the resolver works on a
-  checkout — and handed over. The orchestration finishes *failed*, naming the
-  resolver run: the ticket is not done, but nobody is owed anything either.
-  The resolver's run advances the workflow, and the next completion re-lands.
-- Anything else — a conflict nobody can take, a ref that moved underneath, git
-  refusing outright: the ticket blocks with the reason, from the control
-  plane's own words. A ticket that passed every stage and did not land is not
-  done, and this is where that stops looking like it was.
+Outcomes:
+
+- Landed, or nothing to land: a `TicketLanded` event; the caller derives done.
+  A tree's root has nothing of its own to land, so its completion publishes
+  its tree instead (771).
+- Anything else — a conflict, a ref that moved underneath, git refusing: the
+  terminal stage goes BLOCKED and the ticket blocks with the reason, from the
+  control plane's own words. The orchestration that drove the stage sees a
+  blocked ticket and finishes blocked, as it does for any other block.
+
+`auto_resolve_conflicts` is not honoured here yet: the resolver has to be
+dispatched on the implement stage, not the terminal one, and that routing is
+not designed. A conflict blocks and the message says so.
 """
 
 from __future__ import annotations
 
 import logging
-from enum import Enum
-from pathlib import Path
-from typing import Protocol
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
-    AgentRun,
-    BlockOrigin,
     EventType,
-    OrchestrationRun,
-    OrchestrationRunStatus,
+    StageStatus,
     Ticket,
+    WorkflowInstance,
+    WorkflowStageDef,
     Workspace,
 )
-from loregarden.services.conflict_resolution import request_agent_resolution
+from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.git_automation_config import resolve_git_automation
-from loregarden.services.git_subprocess import run_git
 from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
-from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_tree import publish_tree
-from loregarden.services.workspace_paths import resolve_workspace_root
-from loregarden.services.worktree_service import WorktreeService
-from sqlmodel import Session, col, select
+from loregarden.services.workflow_state import set_stage_status
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
 
-class Handover(str, Enum):
-    """What came of trying to hand a landing conflict to the resolver."""
-
-    #: The resolver is on it; the orchestration finishes failed, not blocked.
-    DISPATCHED = "dispatched"
-    #: Merging the target into the worktree produced no conflict after all —
-    #: the branch has moved since the landing was tried. Land again.
-    MERGED_CLEAN = "merged_clean"
-    #: No tree, no run, or the resolver was refused. Block.
-    REFUSED = "refused"
-
-
-class LandingCallbacks(Protocol):
-    """The two things a landing can do to an orchestration."""
-
-    def block_ticket(
-        self,
-        orch_run: OrchestrationRun,
-        ticket: Ticket,
-        *,
-        origin: BlockOrigin,
-        stage_key: str = "",
-        message: str,
-    ) -> Ticket: ...
-
-    def _finish_orchestration_run(
-        self, orch_run: OrchestrationRun, *, status: OrchestrationRunStatus, message: str = ""
-    ) -> None: ...
-
-
-def land_at_completion(
+def land_before_done(
     session: Session,
-    callbacks: LandingCallbacks,
-    orch_run: OrchestrationRun,
     ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    *,
+    stage_key: str,
 ) -> bool:
-    """Land the ticket's work. True when the caller may go on to mark it done.
+    """Land the ticket's work. True when the caller may go on to derive done.
 
-    False means this function already finished the orchestration run — blocked,
-    or failed with a resolver on the way — and the ticket must not be reconciled
-    to done.
+    False means this function blocked the ticket at ``stage_key`` and the
+    workflow must not be reconciled to done.
     """
     workspace = session.get(Workspace, ticket.workspace_id)
     if workspace is None:
@@ -101,70 +72,51 @@ def land_at_completion(
     _publish(session, ticket, result)
     if result.ok:
         # A tree's root has nothing of its own to land — no branch, or a
-        # target that is the base — but its tree does: the integration branch
-        # goes to the base now (771). `publish_tree` is a no-op for anything
-        # that is not a root.
+        # target that is the base — but its tree does (771). `publish_tree`
+        # is a no-op for anything that is not a root.
+        if result.skipped is LandSkip.NO_REPOSITORY:
+            return True
         if result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
-            return _publish_tree_or_block(session, callbacks, orch_run, ticket, workspace)
-        return True
-
-    config = resolve_git_automation(workspace, ticket)
-    if result.conflicted and config.auto_resolve_conflicts:
-        handover = _hand_to_resolver(session, ticket, workspace, result, config)
-        if handover is Handover.DISPATCHED:
-            callbacks._finish_orchestration_run(
-                orch_run,
-                status=OrchestrationRunStatus.FAILED,
-                message=(
-                    f"Landing {result.branch} on {result.target} conflicted in "
-                    f"{len(result.conflicted_files)} file(s); resolver dispatched on stage "
-                    f"{ticket.workflow_stage_key}"
-                ),
-            )
-            return False
-        if handover is Handover.MERGED_CLEAN:
-            result = land_ticket(session, ticket, workspace)
-            _publish(session, ticket, result)
-            if result.ok:
+            outcome = publish_tree(session, ticket, workspace)
+            if outcome.ok:
                 return True
-
-    callbacks.block_ticket(
-        orch_run,
-        ticket,
-        origin=BlockOrigin.CONTROL_PLANE,
-        message=_block_message(result),
-    )
-    return False
-
-
-def _publish_tree_or_block(
-    session: Session,
-    callbacks: LandingCallbacks,
-    orch_run: OrchestrationRun,
-    ticket: Ticket,
-    workspace: Workspace,
-) -> bool:
-    """A root that lands on the base publishes its tree instead (771)."""
-    outcome = publish_tree(session, ticket, workspace)
-    if outcome.ok:
+            _block(session, ticket, instance, stages, stage_key, _publish_message(outcome))
+            return False
         return True
-    callbacks.block_ticket(
-        orch_run,
-        ticket,
-        origin=BlockOrigin.CONTROL_PLANE,
-        message=f"Could not publish {outcome.branch}: {outcome.detail}",
-    )
+
+    _block(session, ticket, instance, stages, stage_key, _block_message(result, workspace, ticket))
     return False
 
 
-def _block_message(result: LandResult) -> str:
+def _block(
+    session: Session,
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stage_key: str,
+    message: str,
+) -> None:
+    set_stage_status(ticket, instance, stages, stage_key, StageStatus.BLOCKED)
+    session.add(instance)
+    block_ticket_for_unresolved_blocker(session, ticket, entry=message, stage_key=stage_key)
+    logger.warning("Ticket %s did not land: %s", ticket.external_id, message)
+
+
+def _block_message(result: LandResult, workspace: Workspace, ticket: Ticket) -> str:
     if result.conflicted:
         files = ", ".join(result.conflicted_files)
+        note = ""
+        if resolve_git_automation(workspace, ticket).auto_resolve_conflicts:
+            note = " (auto_resolve_conflicts is set, but resolution at landing is not wired yet)"
         return (
             f"Could not land {result.branch} on {result.target}: merge conflicts in "
-            f"{files}. Resolve them on the ticket branch and requeue."
+            f"{files}. Resolve them on the ticket branch and requeue.{note}"
         )
     return f"Could not land {result.branch} on {result.target}: {result.detail}"
+
+
+def _publish_message(outcome) -> str:
+    return f"Could not publish {outcome.branch}: {outcome.detail}"
 
 
 def _publish(session: Session, ticket: Ticket, result: LandResult) -> None:
@@ -183,71 +135,3 @@ def _publish(session: Session, ticket: Ticket, result: LandResult) -> None:
             "detail": result.detail,
         },
     )
-
-
-def _hand_to_resolver(
-    session: Session,
-    ticket: Ticket,
-    workspace: Workspace,
-    result: LandResult,
-    config: GitAutomationConfig,
-) -> Handover:
-    """Put the conflict in the ticket's worktree and dispatch the resolver."""
-    repo_root = resolve_workspace_root(workspace)
-    worktree = WorktreeService(session, repo_path=str(repo_root)).active_worktree_for_ticket(
-        ticket.id
-    )
-    if worktree is None or not Path(worktree.worktree_path).is_dir():
-        logger.warning(
-            "Landing %s conflicted but ticket %s has no worktree to resolve in",
-            result.branch,
-            ticket.external_id,
-        )
-        return Handover.REFUSED
-    last_run = session.exec(
-        select(AgentRun)
-        .where(AgentRun.ticket_id == ticket.id)
-        .order_by(col(AgentRun.created_at).desc())
-    ).first()
-    if last_run is None:
-        return Handover.REFUSED
-
-    # Bring the conflict into the checkout: the merge is expected to stop with
-    # markers, which is what the resolver reads. A merge that *succeeds* here
-    # means the branch moved between the landing attempt and now — then there
-    # is nothing to resolve, and the caller lands again.
-    merged = run_git(
-        ["merge", "--no-edit", result.target],
-        cwd=worktree.worktree_path,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if merged.returncode == 0:
-        logger.warning(
-            "Landing %s reported conflicts but merging %s into the worktree succeeded",
-            result.branch,
-            result.target,
-        )
-        return Handover.MERGED_CLEAN
-
-    report = request_agent_resolution(
-        session,
-        last_run,
-        ticket,
-        worktree,
-        Path(worktree.worktree_path),
-        max_attempts=config.max_conflict_resolve_attempts,
-    )
-    if report is None or not report.resolution_attempted:
-        # Budget spent or dispatch refused. Leave the tree clean for a person.
-        run_git(
-            # silent-ok: cleanup before blocking; the block message names the
-            # conflicted files whether or not the abort succeeded
-            ["merge", "--abort"],
-            cwd=worktree.worktree_path,
-            check=False,
-            capture_output=True,
-        )
-        return Handover.REFUSED
-    return Handover.DISPATCHED
