@@ -52,6 +52,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
+from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
@@ -59,8 +60,10 @@ from loregarden.services.orchestration_profile import (
     resolve_orchestration_profile,
 )
 from loregarden.services.run_duration_stats import (
+    MIN_SAMPLES,
     DurationStats,
     load_duration_stats,
+    load_stage_duration_profiles,
 )
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
@@ -349,6 +352,79 @@ def _detect_skip_condition_rot(session: Session) -> list[MonitorFinding]:
     return findings
 
 
+#: Right-censoring note for every trusted p95 comparison. The sample only
+#: contains runs that finished under whatever ceiling was in force then, so the
+#: measured tail can sit below the true one. Every presentation of the number
+#: carries this — the monitor is a reader, not a recalibrator.
+_RIGHT_CENSORING_CAVEAT = (
+    "The sample consists only of runs that completed under the ceiling then in "
+    "force, so the measured p95 may understate the true tail."
+)
+
+
+def _detect_timeout_floor_stale(session: Session) -> list[MonitorFinding]:
+    """Configured stage timeout floors that sit below measured successful p95.
+
+    Report-only. Compares `STAGE_TIMEOUT_BUDGETS` against per-workspace
+    successful wall-clock durations; never mutates the budget table or the
+    dispatch path that reads it. Thin samples are visible as insufficient-data
+    findings rather than trusted p95 comparisons. Stages absent from the budget
+    table are ignored — this ticket watches configured floors going stale, not
+    unconfigured stages going unnoticed.
+
+    Evaluated per workspace so one workspace's thick history cannot launder
+    another's thin sample into a trusted p95.
+    """
+    findings: list[MonitorFinding] = []
+    for workspace in session.exec(select(Workspace)).all():
+        profiles = load_stage_duration_profiles(session, workspace_id=workspace.id)
+        for stage_key, floor_seconds in sorted(STAGE_TIMEOUT_BUDGETS.items()):
+            profile = profiles.get(stage_key)
+            sample_count = profile.sample_count if profile else 0
+            if sample_count < MIN_SAMPLES:
+                findings.append(
+                    MonitorFinding(
+                        condition=MonitorCondition.TIMEOUT_FLOOR_STALE,
+                        stage_key=stage_key,
+                        summary=(
+                            f"Stage '{stage_key}' has {sample_count} successful duration "
+                            f"sample{'s' if sample_count != 1 else ''} "
+                            f"(need {MIN_SAMPLES}); configured floor is {floor_seconds}s. "
+                            "Not enough data to compare against the timeout floor."
+                        ),
+                        evidence={
+                            "configured_floor_seconds": str(floor_seconds),
+                            "sample_count": str(sample_count),
+                            "min_samples": str(MIN_SAMPLES),
+                            "workspace_slug": workspace.slug,
+                        },
+                    )
+                )
+                continue
+            measured = profile.p95_seconds if profile is not None else None
+            if measured is None or floor_seconds >= measured:
+                continue
+            findings.append(
+                MonitorFinding(
+                    condition=MonitorCondition.TIMEOUT_FLOOR_STALE,
+                    stage_key=stage_key,
+                    summary=(
+                        f"Stage '{stage_key}' configured timeout floor is {floor_seconds}s "
+                        f"but measured p95 is {measured:g}s over {sample_count} successful "
+                        f"runs. {_RIGHT_CENSORING_CAVEAT}"
+                    ),
+                    evidence={
+                        "configured_floor_seconds": str(floor_seconds),
+                        "measured_p95_seconds": f"{measured:g}",
+                        "sample_count": str(sample_count),
+                        "right_censoring_caveat": _RIGHT_CENSORING_CAVEAT,
+                        "workspace_slug": workspace.slug,
+                    },
+                )
+            )
+    return findings
+
+
 #: Re-exported from the enum module, which owns it so `orchestration_profile`
 #: can validate against it without importing this service.
 AUTO_FIXABLE = AUTO_FIXABLE_CONDITIONS
@@ -538,6 +614,7 @@ def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindi
         findings.extend(_detect_failure_clusters(runs))
         findings.extend(_detect_draft_drift(session))
         findings.extend(_detect_skip_condition_rot(session))
+        findings.extend(_detect_timeout_floor_stale(session))
     return findings
 
 
@@ -552,6 +629,7 @@ WORKSPACE_SCOPED = frozenset(
         MonitorCondition.FAILURE_CLUSTER,
         MonitorCondition.DRAFT_DRIFT,
         MonitorCondition.SKIP_CONDITION_ROT,
+        MonitorCondition.TIMEOUT_FLOOR_STALE,
     }
 )
 
