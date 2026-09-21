@@ -146,6 +146,9 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "dispatched_repair",
         "repaired",
         "repair_escalated",
+        # Reads as trouble in the client's tone(), like the other settles: a
+        # lane that was busy with nothing in it is a release that stopped short.
+        "reclaimed_ghost_lane",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

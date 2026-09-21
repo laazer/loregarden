@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationProfileView,
     OrchestrationRun,
+    OrchestrationRunStatus,
     OrchestrationRunView,
     RequestApprovalRequest,
     SkipStageRequest,
@@ -150,6 +151,13 @@ def start_orchestration(
         raise HTTPException(404, "Workspace not found")
     profile = resolve_orchestration_profile(ws)
     driver = body.driver or profile.driver
+    if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
+        raise HTTPException(400, "Use POST /api/tickets/{id}/start for manual_stage driver")
+    active = svc.get_active_orchestration_run(ticket.id)
+    if active is not None:
+        # Before the reservation and the claim: `claim_orchestration_run` hands
+        # back a live run, and the failure path below must never abandon one.
+        raise HTTPException(400, f"Orchestration already running: {active.run_code}")
 
     # Same pool as /orchestrate and MCP: this path used to start work with no
     # slot, so the board showed idle lanes while agents ran.
@@ -170,6 +178,21 @@ def start_orchestration(
             detail={"status": "queued", **reservation.as_dict()},
         )
 
+    # Claimed and bound before the work starts. The builtin driver runs the
+    # whole pipeline inside `execute`, so binding on return bound to a finished
+    # run and the slot named nothing for as long as the ticket ran (775).
+    # `start_orchestration_run` adopts the claim on either driver.
+    claim = svc.claim_orchestration_run(
+        ticket,
+        driver=driver,
+        profile_slug=profile.slug,
+        auto_approve=body.auto_approve,
+        approve_design_plans=body.approve_design_plans,
+        auto_repair=body.auto_repair,
+        stop_at_stage_key=body.stop_at_stage_key or "",
+        timeout_override_seconds=body.timeout_seconds,
+    )
+    reservation.bind(orchestration_run_id=claim.id)
     try:
         if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
             run = BuiltinOrchestrator(session).execute(
@@ -182,7 +205,7 @@ def start_orchestration(
                 auto_repair=body.auto_repair,
                 timeout_seconds=body.timeout_seconds,
             )
-        elif driver == OrchestrationDriver.EXTERNAL_MCP:
+        else:
             run = svc.start_orchestration_run(
                 ticket,
                 driver=driver,
@@ -193,14 +216,15 @@ def start_orchestration(
                 stop_at_stage_key=body.stop_at_stage_key or "",
                 timeout_override_seconds=body.timeout_seconds,
             )
-        else:
-            reservation.release()
-            raise ValueError("Use POST /api/tickets/{id}/start for manual_stage driver")
     except ValueError as exc:
+        session.rollback()
+        session.refresh(claim)
+        if claim.status == OrchestrationRunStatus.QUEUED:
+            # Never adopted, so nothing else will ever finish it.
+            svc.abandon_claim(claim, message=str(exc))
         reservation.release()
         raise HTTPException(400, str(exc)) from exc
 
-    reservation.bind(orchestration_run_id=run.id)
     return _run_view(run)
 
 
