@@ -1160,6 +1160,8 @@ def test_all_workspace_scoped_conditions_never_escalate(db_session: Session):
             MonitorCondition.FAILURE_CLUSTER,
             MonitorCondition.DRAFT_DRIFT,
             MonitorCondition.SKIP_CONDITION_ROT,
+            MonitorCondition.TIMEOUT_FLOOR_STALE,
+            MonitorCondition.HARNESS_FAILURE_CLUSTER,
         }
     )
     now = _utcnow()

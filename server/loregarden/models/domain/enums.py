@@ -483,58 +483,34 @@ class MonitorArtifactKind(StrEnum):
 
 
 class MonitorCondition(StrEnum):
-    """What the workflow monitor knows how to notice.
+    """Closed set of shapes the workflow monitor knows how to notice."""
 
-    Deliberately closed. Each value is a shape that has actually cost runs here,
-    and each is reported with the rows that evidence it — the monitor observes
-    and never decides.
-    """
-
-    #: A (orchestration_run, stage) pair attempted far more often than the
-    #: 90-day baseline for that stage.
+    #: (orchestration_run, stage) attempted far more than the 90-day baseline.
     STAGE_THRASH = "stage_thrash"
-    #: Repeat attempts with no orchestration run behind them. The standalone
-    #: dispatch path had no retry budget at all until 560; these are the runs
-    #: nothing was counting.
+    #: Repeat attempts with no orchestration run behind them (no retry budget).
     UNBUDGETED_REPEAT = "unbudgeted_repeat"
-    #: A stage failing far more often than the workspace as a whole. Its fix is
-    #: a template or agent change, never a runtime action.
+    #: Stage failing far more often than the workspace; template/agent fix only.
     FAILURE_CLUSTER = "failure_cluster"
     #: A run still RUNNING long past what that stage has ever taken.
     STALLED_RUN = "stalled_run"
     #: A Studio draft that no longer matches the template it publishes to.
     DRAFT_DRIFT = "draft_drift"
-    #: A `skip_when` naming a condition no resolver knows, so the stage it is
-    #: on will never be pruned and nothing says so.
+    #: `skip_when` naming a condition no resolver knows — stage never pruned.
     SKIP_CONDITION_ROT = "skip_condition_rot"
-    #: A ticket cursor pointing at a stage its workflow does not have, or
-    #: disagreeing with stages_json. Auto-fixable: `reconcile_ticket` already
-    #: recomputes it, idempotently and without dispatching anything.
+    #: Cursor on a missing stage or disagreeing with stages_json. Auto-fixable.
     STALE_CURSOR = "stale_cursor"
-    #: Every member of an alternative group pruned, which derives a ticket DONE
-    #: with none of that group's work performed. Auto-fixable: restore the
-    #: earliest member to PENDING.
+    #: Every alternative-group member pruned → DONE with no work. Auto-fixable.
     EMPTIED_GROUP = "emptied_group"
-    #: A stage left blocked while its own agent run recorded success — the
-    #: residue of a write-back that was lost rather than of work that failed.
-    #: Report-only, and deliberately NOT auto-fixable: advancing a stage is a
-    #: judgement about whether the work passed, and the run's status does not
-    #: carry that. Outcome lives on the stage transition, so "the run succeeded"
-    #: and "the stage should pass" are different claims.
+    #: Stage blocked while its agent run succeeded — report-only, not autofixable.
     UNSETTLED_STAGE = "unsettled_stage"
-    #: Configured stage timeout floor below measured successful p95, or lacking
-    #: enough samples to judge. Report-only — never rewrites STAGE_TIMEOUT_BUDGETS.
+    #: Timeout floor below measured p95 (or thin sample). Report-only.
     TIMEOUT_FLOOR_STALE = "timeout_floor_stale"
+    #: Workspace failed-stage window is mostly harness interruptions. Report-only.
+    HARNESS_FAILURE_CLUSTER = "harness_failure_cluster"
 
 
-#: The only conditions an auto-fix may repair, and it should stay this small.
-#: Both are idempotent, reversible, and cost zero agent runs. Deliberately
-#: absent: clearing a stale retry counter — re-arming a circuit breaker without a
-#: human is how a ticket reaches 28 attempts at one stage.
-#:
-#: Defined here rather than in `services.workflow_monitor` because
-#: `orchestration_profile` validates against it, and importing the service from
-#: there closes a cycle back through the agent executors.
+#: Auto-fix may only repair these (idempotent, zero agent runs). Lives here so
+#: orchestration_profile can validate without importing workflow_monitor.
 AUTO_FIXABLE_CONDITIONS = frozenset({MonitorCondition.STALE_CURSOR, MonitorCondition.EMPTIED_GROUP})
 
 

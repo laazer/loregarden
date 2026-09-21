@@ -42,6 +42,8 @@ _WORKSPACE_SCOPED_VALUES = frozenset(
         MonitorCondition.FAILURE_CLUSTER.value,
         MonitorCondition.DRAFT_DRIFT.value,
         MonitorCondition.SKIP_CONDITION_ROT.value,
+        MonitorCondition.TIMEOUT_FLOOR_STALE.value,
+        MonitorCondition.HARNESS_FAILURE_CLUSTER.value,
     }
 )
 

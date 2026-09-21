@@ -55,6 +55,7 @@ from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFin
 from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
 from loregarden.services.monitor_escalation import escalate_recurring_findings
+from loregarden.services.monitor_harness_cluster import detect_harness_failure_clusters
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
     MonitorConfig,
@@ -616,6 +617,7 @@ def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindi
         findings.extend(_detect_draft_drift(session))
         findings.extend(_detect_skip_condition_rot(session))
         findings.extend(_detect_timeout_floor_stale(session))
+        findings.extend(detect_harness_failure_clusters(session))
     return findings
 
 
@@ -631,6 +633,7 @@ WORKSPACE_SCOPED = frozenset(
         MonitorCondition.DRAFT_DRIFT,
         MonitorCondition.SKIP_CONDITION_ROT,
         MonitorCondition.TIMEOUT_FLOOR_STALE,
+        MonitorCondition.HARNESS_FAILURE_CLUSTER,
     }
 )
 
