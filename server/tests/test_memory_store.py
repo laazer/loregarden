@@ -731,3 +731,160 @@ def test_service_search_still_substring_matches_and_keeps_its_envelope(vault_dir
     assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
     assert [row["title"] for row in found["obsidian"]] == ["Trusted server throttle"]
     assert service.search("throttle rate", workspace_slug="lg")["obsidian"] == []
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint discoverability via search_memory (R1–R3)
+#
+# Checkpoints already write to Obsidian; list_notes' default roots omit them, so
+# search returns []. These tests lock: search includes checkpoints; default
+# list_notes and recall_related stay checkpoint-blind; fill order prefers
+# non-checkpoint hits.
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_NEEDLE = "checkpoint-discoverability-needle-718xyz"
+
+
+def test_obsidian_list_notes_default_excludes_checkpoints(vault_dir):
+    """R1/R3 — default list_notes (include_checkpoints omitted/False) never
+    walks Checkpoints, scoped or unscoped."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-default",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+    store.upsert_note(
+        title="Ordinary memory",
+        body="Not a checkpoint.",
+        workspace_slug="loregarden",
+    )
+
+    scoped = store.list_notes(workspace_slug="loregarden")
+    assert all(n.note_type != "checkpoint" for n in scoped)
+    assert not any("Checkpoints" in n.path for n in scoped)
+
+    unscoped = store.list_notes()
+    assert all(n.note_type != "checkpoint" for n in unscoped)
+    assert not any("Checkpoints" in n.path for n in unscoped)
+
+
+def test_obsidian_list_notes_include_checkpoints_walks_checkpoints_root(vault_dir):
+    """R1 — include_checkpoints=True walks Checkpoints like other note roots,
+    scoped and unscoped."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-include",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    scoped = store.list_notes(workspace_slug="loregarden", include_checkpoints=True)
+    scoped_cps = [n for n in scoped if n.note_type == "checkpoint"]
+    assert len(scoped_cps) == 1
+    assert "Checkpoints" in scoped_cps[0].path
+
+    unscoped = store.list_notes(include_checkpoints=True)
+    assert any(n.note_type == "checkpoint" and "Checkpoints" in n.path for n in unscoped)
+
+
+def test_obsidian_search_includes_checkpoints(vault_dir):
+    """R2 — ObsidianMemoryStore.search returns file-level MemoryNote hits with
+    note_type=checkpoint under the Checkpoints path."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-search",
+        entry=(
+            f"### [feat-cp-discover] plan — {_CHECKPOINT_NEEDLE}\n"
+            "**Assumption made:** Keep Obsidian-only store.\n"
+            "**Confidence:** High"
+        ),
+    )
+
+    hits = store.search(_CHECKPOINT_NEEDLE, workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert "Checkpoints" in hits[0].path
+
+
+def test_obsidian_search_fills_non_checkpoint_hits_before_checkpoints(vault_dir):
+    """R2 — when limit would starve mixed results, non-checkpoint matches fill
+    first, then checkpoint hits until limit."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "fill-order-needle-718abc"
+    for index in range(3):
+        store.upsert_note(
+            title=f"Memory hit {index}",
+            body=f"{needle} in memory note {index}",
+            workspace_slug="loregarden",
+        )
+    for index in range(3):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-cp-fill",
+            run_id=f"run-fill-{index}",
+            entry=f"### Assumption\n{needle} in checkpoint {index}",
+        )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=4)
+    assert len(hits) == 4
+    assert all(hit.note_type != "checkpoint" for hit in hits[:3])
+    assert hits[3].note_type == "checkpoint"
+    assert "Checkpoints" in hits[3].path
+
+
+def test_agent_memory_service_search_includes_checkpoints(vault_dir, tmp_path):
+    """R2 — AgentMemoryService.search (MCP search_memory path) inherits checkpoint
+    hits via ObsidianMemoryStore.search; envelope unchanged."""
+    service = _both_backends(vault_dir, tmp_path)
+    service.append_checkpoint(
+        ticket_id="feat-cp-discover",
+        workspace_slug="loregarden",
+        run_id="run-cp-svc",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    found = service.search(_CHECKPOINT_NEEDLE, workspace_slug="loregarden")
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    checkpoint_hits = [
+        row
+        for row in found["obsidian"]
+        if row["note_type"] == "checkpoint" and "Checkpoints" in row["path"]
+    ]
+    assert len(checkpoint_hits) == 1
+    assert found["graph"] == []
+
+
+def test_recall_related_stays_checkpoint_blind(vault_dir, tmp_path):
+    """R3 — recall_related / _obsidian_candidates must not pass
+    include_checkpoints=True; a checkpoint-only needle must not surface."""
+    service = _both_backends(vault_dir, tmp_path)
+    blind_needle = "trusted server throttle checkpointblind718"
+    service.append_checkpoint(
+        ticket_id="feat-cp-blind",
+        workspace_slug="loregarden",
+        run_id="run-cp-blind",
+        entry=f"### Assumption\nAssumption about {blind_needle}.",
+    )
+    service.obsidian.upsert_note(
+        title="Unrelated memory",
+        body="Sprite batching lease renewal.",
+        workspace_slug="loregarden",
+    )
+
+    with patch.object(
+        service.obsidian, "list_notes", wraps=service.obsidian.list_notes
+    ) as list_notes:
+        ranked = service.recall_related(blind_needle, workspace_slug="loregarden")
+
+    assert list_notes.call_count == 1
+    assert list_notes.call_args.kwargs.get("include_checkpoints", False) is False
+    assert ranked == []
+    assert all(
+        n.note_type != "checkpoint"
+        for n in service.obsidian.list_notes(workspace_slug="loregarden")
+    )
