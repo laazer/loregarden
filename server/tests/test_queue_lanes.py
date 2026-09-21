@@ -6,6 +6,7 @@ waits, and a lane drains itself when its orchestration finishes rather than
 waiting to be poked.
 """
 
+import json
 import subprocess
 import sys
 
@@ -560,3 +561,160 @@ def test_reconcile_does_not_disturb_a_lane_that_is_genuinely_idle(lanes, session
     """An empty lane must not be poked into starting something."""
     lanes.reconcile_lanes()
     assert lanes.dispatcher.launched == []
+
+
+# ---- a lane held by nothing (lg-milestone-that-775) ------------------------
+
+
+def test_completion_releases_the_slot_the_entry_names_even_with_its_ids_cleared(
+    lanes, session, workspace
+):
+    """Observed on 714: `on_orchestration_complete` found the slot by the
+    orchestration it named. When that id was already gone the lookup found
+    nothing and the method returned after settling the entry — before
+    `is_available = True` — leaving the lane busy with no occupant.
+
+    The entry records the slot number. That is the release key.
+    """
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+
+    session.refresh(slot)
+    assert slot.is_available is True, "slot 1 is held by nothing"
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
+    assert entry.status == QueuePosition.STARTED
+
+
+def test_completion_does_not_release_a_slot_someone_else_reserved_since(lanes, session, workspace):
+    """The fallback keys on the entry's slot number, so it has to tell this
+    entry's own claim from a *later* one: a reservation claims a slot with
+    both ids null until `bind`, and releasing it would admit past the pool."""
+    from datetime import timedelta
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+    # Reconcile took the lane back, then a fresh reservation claimed it.
+    slot.current_orchestration_run_id = None
+    slot.assigned_at = slot.assigned_at + timedelta(seconds=5)
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+
+    session.refresh(slot)
+    assert slot.is_available is False, "released a lane a later reservation holds"
+
+
+def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
+    """The observed shape, end to end: the ticket's only lane entry points at a
+    finished orchestration, and a builtin start through the MCP tool follows.
+    While that orchestration runs, the queue snapshot must show it — not a
+    lane that is busy with nothing in it.
+
+    `execute` is stood in for by something that does what the real one does
+    to the queue: it starts the orchestration run, then finishes it. The
+    snapshot is read *during* execution, because that is the whole life of a
+    builtin run as far as the caller is concerned.
+    """
+    from unittest.mock import patch
+
+    from loregarden.mcp.admission import start_orchestration_admitted
+    from loregarden.models.domain import OrchestrationDriver
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+    from loregarden.services.queue_status import build_queue_status
+
+    dispatcher = _Dispatcher(session)
+    lanes = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
+    svc = OrchestrationCallbackService(session)
+    ticket = _ticket(session, workspace.id, "LG-714")
+
+    # First run: through a lane, then finished.
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    first = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    svc.complete_orchestration(first, ticket, status=OrchestrationRunStatus.SUCCEEDED)
+    session.refresh(slot)
+    assert slot.is_available is True
+
+    seen: dict = {}
+
+    def _execute(self, ticket, profile, *, max_stages=None, **_):
+        run = self.callbacks.start_orchestration_run(
+            ticket, driver=OrchestrationDriver.BUILTIN_AUTOPILOT, profile_slug=profile.slug
+        )
+        seen["run_id"] = run.id
+        seen["snapshot"] = build_queue_status(session)
+        self.callbacks.complete_orchestration(run, ticket, status=OrchestrationRunStatus.SUCCEEDED)
+        return run
+
+    with patch("loregarden.services.builtin_orchestrator.BuiltinOrchestrator.execute", _execute):
+        reservation, run = start_orchestration_admitted(
+            session, svc, {"ticket_id": ticket.id, "driver": "builtin_autopilot"}
+        )
+
+    assert reservation.admitted
+    assert run.id == seen["run_id"]
+    snapshot = seen["snapshot"]
+    running = {r["orchestration_run_id"] for r in snapshot["active_runs"]}
+    assert seen["run_id"] in running, (
+        f"the restart ran outside the board: active_runs={snapshot['active_runs']}"
+    )
+    busy = snapshot["total_slots"] - snapshot["available_slots"]
+    assert busy == len(snapshot["active_runs"]), "a lane is busy with nothing running in it"
+
+    # And afterwards: the lane is back, and nothing is left holding it.
+    session.refresh(slot)
+    assert slot.is_available is True
+    assert slot.current_orchestration_run_id is None
+
+
+def test_reconcile_reclaims_a_ghost_lane_and_says_so(lanes, session, workspace):
+    """A slot with `is_available=0` and no occupant is capacity nothing can
+    use. Reclaiming it is not enough: slot 1 sat that way for hours because
+    the reclaim was a log line nobody read."""
+    from datetime import timedelta
+
+    from loregarden.core.event_bus import event_bus
+    from loregarden.models.domain import EventType, OrchestratorDecision
+    from loregarden.services.parallel_queue import RESERVATION_GRACE, claim_free_slot
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    first = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    # The lane's occupant finished and its release stopped short of the slot.
+    first.status = OrchestrationRunStatus.SUCCEEDED
+    slot.current_orchestration_run_id = None
+    slot.assigned_at = slot.assigned_at - RESERVATION_GRACE - timedelta(seconds=1)
+    session.add(first)
+    session.add(slot)
+    session.commit()
+    assert claim_free_slot(session) is not None  # the pool still has room; slot 1 is not it
+
+    freed = lanes.reconcile_lanes()
+
+    assert 1 in freed
+    session.refresh(slot)
+    assert slot.is_available is True
+    decisions = [
+        e
+        for e in event_bus.ticket_history(session, ticket.id, limit=50)
+        if e.type == EventType.ORCHESTRATOR_DECISION
+    ]
+    payloads = [json.loads(d.payload_json) for d in decisions]
+    assert [p["decision"] for p in payloads] == [OrchestratorDecision.RECLAIMED_GHOST_LANE.value]
+    assert payloads[0]["slot_number"] == 1
