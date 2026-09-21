@@ -27,7 +27,7 @@ from loregarden.services.orchestration_profile import MonitorConfig
 from loregarden.services.ticket_ids import resolve as resolve_ticket_id
 from loregarden.services.workflow_monitor import AUTO_FIXABLE, _finding_title, sweep
 from sqlmodel import Session, col, select
-from tests.factories import make_workspace_ticket
+from tests.factories import make_ticket, make_workspace, make_workspace_ticket
 
 MILESTONE_LEGACY_ID = "monitor-escalations"
 CONDITION = MonitorCondition.STAGE_THRASH
@@ -482,3 +482,276 @@ def test_sweep_calls_escalate_between_record_and_autofix():
     autofix_at = source.index("apply_autofixes")
     assert record_at < escalate_at < autofix_at
     assert "sweep_started_at" in source
+
+
+# --- Adversarial (test-break): encoding, aggregation, currency, isolation ---
+
+
+def test_empty_stage_key_end_to_end_uses_dash_sentinel(db_session: Session):
+    """Empty stage_key must escalate under monitor-escalation:{condition}:- (not trailing colon)."""
+    a = make_workspace_ticket(db_session, "esc-empty-a")
+    b = make_workspace_ticket(db_session, "esc-empty-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 1
+    bugs = _escalation_bugs(db_session, a.workspace_id)
+    assert len(bugs) == 1
+    assert bugs[0].legacy_external_id == "monitor-escalation:stage_thrash:-"
+    assert bugs[0].legacy_external_id == _escalation().escalation_legacy_id(CONDITION.value, "")
+    assert (
+        resolve_ticket_id(
+            db_session, "monitor-escalation:stage_thrash:-", workspace_id=a.workspace_id
+        )
+        == bugs[0]
+    )
+
+
+def test_empty_and_dash_stage_key_coalesce_into_one_group(db_session: Session):
+    """stage_key '' and '-' share _finding_title sentinel — one Bug, not two."""
+    a = make_workspace_ticket(db_session, "esc-coalesce-a")
+    b = make_workspace_ticket(db_session, "esc-coalesce-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="-", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 1
+    bugs = _escalation_bugs(db_session, a.workspace_id)
+    assert len(bugs) == 1
+    assert bugs[0].legacy_external_id == "monitor-escalation:stage_thrash:-"
+
+
+def test_duplicate_findings_on_one_ticket_do_not_meet_threshold(db_session: Session):
+    """Count distinct ticket_id — two rows on one ticket are still one ticket."""
+    ticket = make_workspace_ticket(db_session, "esc-dup-solo")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, ticket, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, ticket, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, ticket.workspace_id) == []
+    assert _milestone(db_session, ticket.workspace_id) is None
+
+
+def test_cross_workspace_same_title_does_not_cross_escalate(db_session: Session):
+    """Aggregation is per workspace_id — one hit each side stays below threshold."""
+    home = make_workspace_ticket(db_session, "esc-ws-home")
+    other_ws = make_workspace(db_session, slug="esc-other-ws")
+    other = make_ticket(
+        db_session,
+        workspace_id=other_ws.id,
+        external_id="esc-ws-other",
+        title="esc-ws-other",
+    )
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, home, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, other, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, home.workspace_id) == []
+    assert _escalation_bugs(db_session, other.workspace_id) == []
+    assert _milestone(db_session, home.workspace_id) is None
+    assert _milestone(db_session, other.workspace_id) is None
+
+
+def test_last_seen_equal_to_sweep_started_at_counts(db_session: Session):
+    """Currency is inclusive: last_seen == sweep_started_at still qualifies."""
+    a = make_workspace_ticket(db_session, "esc-eq-a")
+    b = make_workspace_ticket(db_session, "esc-eq-b")
+    sweep_started = _utcnow()
+    _plant_finding(
+        db_session, a, condition=CONDITION, stage_key="implement", last_seen=sweep_started
+    )
+    _plant_finding(
+        db_session, b, condition=CONDITION, stage_key="implement", last_seen=sweep_started
+    )
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 1
+    )
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == 1
+
+
+def test_malformed_or_missing_last_seen_is_ignored_not_raised(db_session: Session):
+    """Corrupt currency fields must not crash the sweep path or count toward threshold."""
+    good_a = make_workspace_ticket(db_session, "esc-bad-a")
+    good_b = make_workspace_ticket(db_session, "esc-bad-b")
+    junk = make_workspace_ticket(db_session, "esc-bad-junk")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, good_a, condition=CONDITION, stage_key="implement", last_seen=now)
+    # One current peer would meet threshold if junk counted — it must not.
+    for broken in (
+        {"condition": CONDITION.value, "stage_key": "implement", "summary": "no clock"},
+        {
+            "condition": CONDITION.value,
+            "stage_key": "implement",
+            "summary": "garbage clock",
+            "last_seen": "not-a-datetime",
+        },
+    ):
+        db_session.add(
+            Artifact(
+                ticket_id=junk.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=f"{CONDITION.value}:implement",
+                content_json=json.dumps(broken),
+            )
+        )
+    db_session.commit()
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, good_a.workspace_id) == []
+    # Pair a real second current ticket — escalate still works after junk rows.
+    _plant_finding(db_session, good_b, condition=CONDITION, stage_key="implement", last_seen=now)
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 1
+    )
+
+
+def test_different_conditions_do_not_merge_under_same_stage(db_session: Session):
+    """Group key is full title — thrash:implement ≠ stale_cursor:implement."""
+    a = make_workspace_ticket(db_session, "esc-cond-a")
+    b = make_workspace_ticket(db_session, "esc-cond-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(
+        db_session,
+        b,
+        condition=MonitorCondition.STALE_CURSOR,
+        stage_key="implement",
+        last_seen=now,
+    )
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, a.workspace_id) == []
+
+
+def test_escalate_never_dispatches_orchestration_or_approvals(db_session: Session):
+    """RPT-1. Escalation path must not start agents or open inbox items."""
+    a = make_workspace_ticket(db_session, "esc-nodisp-a")
+    b = make_workspace_ticket(db_session, "esc-nodisp-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    mod = _escalation()
+    source = inspect.getsource(mod)
+    for forbidden in ("start_orchestration", "request_approval", "start_stage"):
+        assert forbidden not in source, f"monitor_escalation must not call {forbidden}"
+
+    upserted = mod.escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 1
+    bugs = _escalation_bugs(db_session, a.workspace_id)
+    milestone = _milestone(db_session, a.workspace_id)
+    assert bugs and milestone
+    assert bugs[0].workflow_disabled is True
+    assert milestone.workflow_disabled is True
+    assert _approvals_for(db_session, {bugs[0].id, milestone.id}) == []
+
+
+def test_concurrent_milestone_create_valueerror_reresolves(db_session: Session):
+    """IDEM-2 race on the Milestone key, not only the Bug — re-resolve + continue."""
+    from loregarden.services.ticket_service import TicketService
+
+    a = make_workspace_ticket(db_session, "esc-ms-race-a")
+    b = make_workspace_ticket(db_session, "esc-ms-race-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    real_create = TicketService.create_ticket
+    milestone_attempts = {"n": 0}
+
+    def racey_create(self, **kwargs):
+        supplied = kwargs.get("external_id", "")
+        if supplied == MILESTONE_LEGACY_ID:
+            milestone_attempts["n"] += 1
+            if milestone_attempts["n"] == 1:
+                created = real_create(self, **kwargs)
+                created.workflow_disabled = True
+                self.session.add(created)
+                self.session.commit()
+                raise ValueError(f"external_id already exists: {supplied}")
+        return real_create(self, **kwargs)
+
+    with patch.object(TicketService, "create_ticket", racey_create):
+        upserted = _escalation().escalate_recurring_findings(
+            db_session, sweep_started_at=sweep_started
+        )
+
+    assert upserted == 1
+    assert milestone_attempts["n"] == 1
+    milestones = list(
+        db_session.exec(
+            select(Ticket).where(
+                Ticket.workspace_id == a.workspace_id,
+                Ticket.legacy_external_id == MILESTONE_LEGACY_ID,
+            )
+        ).all()
+    )
+    assert len(milestones) == 1
+    assert milestones[0].workflow_disabled is True
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == 1
+
+
+def test_wrong_column_external_id_never_holds_escalation_key(db_session: Session):
+    """IDEM-2. Spelled external_id stays lg-/lor-; legacy_external_id holds the key."""
+    a = make_workspace_ticket(db_session, "esc-col-a")
+    b = make_workspace_ticket(db_session, "esc-col-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    bug_legacy = _escalation().escalation_legacy_id(CONDITION.value, "implement")
+    by_legacy = resolve_ticket_id(db_session, bug_legacy, workspace_id=a.workspace_id)
+    by_milestone = resolve_ticket_id(db_session, MILESTONE_LEGACY_ID, workspace_id=a.workspace_id)
+    assert by_legacy is not None
+    assert by_milestone is not None
+    assert by_legacy.external_id != bug_legacy
+    assert by_milestone.external_id != MILESTONE_LEGACY_ID
+    assert by_legacy.legacy_external_id == bug_legacy
+    assert by_milestone.legacy_external_id == MILESTONE_LEGACY_ID
+    # A caller filtering Ticket.external_id LIKE 'monitor-escalation:%' finds nothing.
+    assert (
+        db_session.exec(
+            select(Ticket).where(
+                Ticket.workspace_id == a.workspace_id,
+                col(Ticket.external_id).like("monitor-escalation:%"),
+            )
+        ).first()
+        is None
+    )
+    assert (
+        db_session.exec(
+            select(Ticket).where(
+                Ticket.workspace_id == a.workspace_id,
+                Ticket.external_id == MILESTONE_LEGACY_ID,
+            )
+        ).first()
+        is None
+    )
