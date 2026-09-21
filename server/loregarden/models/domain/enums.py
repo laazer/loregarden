@@ -522,6 +522,9 @@ class MonitorCondition(StrEnum):
     #: carry that. Outcome lives on the stage transition, so "the run succeeded"
     #: and "the stage should pass" are different claims.
     UNSETTLED_STAGE = "unsettled_stage"
+    #: Configured stage timeout floor below measured successful p95, or lacking
+    #: enough samples to judge. Report-only — never rewrites STAGE_TIMEOUT_BUDGETS.
+    TIMEOUT_FLOOR_STALE = "timeout_floor_stale"
 
 
 #: The only conditions an auto-fix may repair, and it should stay this small.
