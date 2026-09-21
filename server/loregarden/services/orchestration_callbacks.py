@@ -33,7 +33,6 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.gate_approvals import gate_would_skip_work
-from loregarden.services.landing import land_at_completion
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
@@ -863,11 +862,6 @@ class OrchestrationCallbackService:
             TicketState.DONE,
             TicketState.WONT_DO,
         ):
-            # Land before reconciling: a ticket is not done until its work is
-            # on its target, and done → blocked is not a transition the state
-            # machine allows, so a failed landing has to block from here.
-            if not land_at_completion(self.session, self, orch_run, ticket):
-                return orch_run
             instance, stages = self.orch._resolve_stages(ticket)
             if instance and stages:
                 self.orch.reconcile_ticket(ticket)

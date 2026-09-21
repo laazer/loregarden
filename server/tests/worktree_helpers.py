@@ -113,6 +113,72 @@ def make_orch_run(session, ticket):
     return run
 
 
+def at_terminal_stage(session, ticket):
+    """Give `ticket` a two-stage workflow (work → done) parked at `done`, pending.
+
+    The shape the orchestrator leaves a ticket in the instant before it derives
+    `done`: `advance_stage` from here finds no route and finishes the workflow —
+    which is where landing runs (768).
+    """
+    import json
+    from uuid import uuid4
+
+    from loregarden.models.domain import (
+        StageStatus,
+        WorkflowInstance,
+        WorkflowStageDef,
+        WorkflowTemplate,
+    )
+    from loregarden.services.workflow_state import initial_stages_json, set_stage_status
+
+    stages = [
+        WorkflowStageDef(key="work", name="Work", order=1, agent_id="backend_implementer"),
+        WorkflowStageDef(key="done", name="Done", order=2, terminal=True, stage_type="agent"),
+    ]
+    template = WorkflowTemplate(
+        slug=f"terminal-{uuid4()}",
+        name="Terminal stage test template",
+        stages_json=json.dumps([s.model_dump(mode="json") for s in stages]),
+        transitions_json=json.dumps([{"from": "work", "to": "done", "when": "pass"}]),
+    )
+    session.add(template)
+    session.commit()
+    instance = WorkflowInstance(
+        ticket_id=ticket.id,
+        template_id=template.id,
+        current_stage_key="done",
+        stages_json=initial_stages_json(stages),
+    )
+    session.add(instance)
+    session.commit()
+    set_stage_status(ticket, instance, stages, "work", StageStatus.DONE)
+    # The terminal stage is left PENDING: marking it done derives `done` on
+    # the ticket, and that is the orchestrator's move, after landing.
+    ticket.workflow_stage_key = "done"
+    ticket.workflow_stage_status = StageStatus.PENDING
+    session.add(ticket)
+    session.add(instance)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def blocking_text(session, ticket) -> str:
+    """Everything a blocked ticket recorded: the inline issue plus the Errors tab.
+
+    `record_blocking_issue` keeps a short message inline and files a long one
+    as an ERROR artifact behind a pointer, so a test that wants git's own words
+    has to read both.
+    """
+    from loregarden.models.domain import Artifact, ArtifactKind
+    from sqlmodel import select
+
+    errors = session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.ERROR)
+    ).all()
+    return " ".join([ticket.blocking_issues or "", *(e.content_json or "" for e in errors)])
+
+
 def seed_stage_report_contract(repo_root) -> None:
     """Give a throwaway repo the workflow-enforcement doc a real workspace has.
 

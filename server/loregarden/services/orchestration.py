@@ -31,10 +31,15 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import ticket_manual_edit
+from loregarden.services.approval_resolution import (
+    apply_gate_resolution,
+    apply_park_resolution,
+)
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
+from loregarden.services.landing import land_before_done
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
 from loregarden.services.run_completion import (
@@ -492,6 +497,15 @@ class OrchestrationService:
         if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
             raise ValueError("Current stage must complete before advancing")
 
+        # Resolved before the current stage is marked done: marking the
+        # *terminal* stage done derives `done` on the ticket (set_stage_status
+        # reconciles), and the landing has to run before that — see
+        # `_finish_workflow`.
+        transitions = self._resolve_transitions(ticket)
+        route = StateMachine.resolve_next_stage_key(stages, transitions, current, outcome="pass")
+        if not route:
+            return self._finish_workflow(ticket, instance, stages, current or "")
+
         if current and ticket.workflow_stage_status not in (
             StageStatus.DONE,
             StageStatus.WONT_DO,
@@ -500,22 +514,6 @@ class OrchestrationService:
 
         if ticket.workflow_stage_status in (StageStatus.DONE, StageStatus.WONT_DO):
             ticket.blocking_issues = ""
-
-        transitions = self._resolve_transitions(ticket)
-        route = StateMachine.resolve_next_stage_key(stages, transitions, current, outcome="pass")
-        if not route:
-            self._reconcile_workflow(ticket, instance, stages)
-            self.session.add(ticket)
-            self.session.add(instance)
-            self.session.commit()
-            event_bus.publish(
-                self.session,
-                EventType.STAGE_COMPLETED,
-                workspace_id=ticket.workspace_id,
-                ticket_id=ticket.id,
-                payload={"stage_key": current, "final": True},
-            )
-            return ticket
 
         from loregarden.services.workflow_routing import apply_stage_route
 
@@ -618,7 +616,38 @@ class OrchestrationService:
 
         settle_unreached_stages(ticket, instance, stages, terminal_key=done_def.key)
         ticket.workflow_stage_key = done_def.key
-        set_stage_status(ticket, instance, stages, done_def.key, StageStatus.DONE)
+        return self._finish_workflow(ticket, instance, stages, done_def.key)
+
+    def _finish_workflow(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        stage_key: str,
+    ) -> Ticket:
+        """The workflow has no stage left. Land the work, then mark it done.
+
+        Landing goes first, before the terminal stage is marked DONE: that mark
+        reconciles and derives `done` on the ticket, and done → blocked is not
+        a transition the state machine allows, so a failed landing has to
+        block from here (768). A blocked landing leaves the terminal stage
+        BLOCKED and the ticket blocked with the reason; nothing below runs.
+        The first version hooked orchestration completion instead and found
+        the ticket already done every time (lg-milestone-that-777).
+        """
+        if not land_before_done(self.session, ticket, instance, stages, stage_key=stage_key):
+            self.session.add(ticket)
+            self.session.add(instance)
+            self.session.commit()
+            return ticket
+        # The stage's own status, from the map: `finalize_workflow` moves the
+        # cursor here with `workflow_stage_status` still describing the stage it
+        # left, so the ticket row cannot answer "is the terminal stage done?".
+        if stage_key and parse_stage_map(instance, stages).get(stage_key) not in (
+            StageStatus.DONE,
+            StageStatus.WONT_DO,
+        ):
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
         ticket.blocking_issues = ""
         self._reconcile_workflow(ticket, instance, stages)
         self.session.add(ticket)
@@ -629,7 +658,7 @@ class OrchestrationService:
             EventType.STAGE_COMPLETED,
             workspace_id=ticket.workspace_id,
             ticket_id=ticket.id,
-            payload={"stage_key": "done", "final": True},
+            payload={"stage_key": stage_key, "final": True},
         )
         return ticket
 
@@ -1335,42 +1364,14 @@ class ApprovalService:
         approved: bool,
         response_text: str,
     ) -> None:
-        """Resolve a parked stage — the opposite of resolving a gate.
-
-        A gate asks "is this stage's work good?", so approving marks it DONE. A
-        park asks "should this stage start at all, given the machine it would run
-        on?", so approving must send it back to PENDING to actually run. Routed
-        through `_apply_gate_resolution` — as it was until this was fixed — a
-        click meant to unstick a broken checkout marked the stage complete
-        without it ever running, and the workflow advanced past it.
-
-        Approving arms the one-shot waiver `_consume_dispatch_waiver` spends at
-        the next dispatch. Without it the stage re-dispatches, meets the same
-        failing check, and parks again.
-
-        Rejecting blocks in place and does NOT reroute. The reject route exists
-        to send unsatisfactory *work* back to an earlier stage; a `core.bare`
-        checkout is not a defect in the plan, and re-running the planner would
-        fix nothing while consuming a rework round.
-        """
-        instance, stages = self.orchestration._resolve_stages(ticket)
-        if not instance or not stages or not approval.stage_key:
-            return
-
-        if approved:
-            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.PENDING)
-            ticket.dispatch_waiver_stage_key = approval.stage_key
-            ticket.dispatch_waiver_approval_id = approval.id
-            ticket.blocking_issues = ""
-        else:
-            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
-            ticket.blocking_issues = response_text.strip() or approval.impact
-
-        self.session.add(ticket)
-        self.session.add(instance)
-        self.session.commit()
-
-        if approved:
+        if apply_park_resolution(
+            self.session,
+            self.orchestration,
+            ticket,
+            approval,
+            approved=approved,
+            response_text=response_text,
+        ):
             self._resume_orchestration(ticket)
 
     def _apply_gate_resolution(
@@ -1383,74 +1384,17 @@ class ApprovalService:
         response_text: str,
         resume: bool = True,
     ) -> None:
-        instance, stages = self.orchestration._resolve_stages(ticket)
-        if not instance or not stages or not approval.stage_key:
-            return
-
-        from loregarden.services.workflow_routing import apply_stage_route
-
-        if approval.kind is ApprovalKind.REWORK_PAUSE:
-            self._settle_rework_pause(ticket, approval, approved=approved)
-
-        if approved and rework_route_key:
-            note = response_text.strip() or (
-                "Formalize the prototype changes made during this verification "
-                "with production-quality implementation and tests."
-            )
-            transitions = self.orchestration._resolve_transitions(ticket)
-            apply_stage_route(
-                ticket,
-                instance,
-                stages,
-                transitions,
-                from_key=approval.stage_key,
-                outcome="reject",
-                next_stage_key=rework_route_key,
-                blocking_issues=f"'{approval.stage_key}' gate approved with rework: {note}",
-            )
-        elif approved:
-            if approval.kind is ApprovalKind.REWORK_PAUSE:
-                # Cleared BEFORE the status write, not after: `set_stage_status`
-                # reconciles ticket.state on the way out, and
-                # `_derive_ticket_state` returns BLOCKED for any ticket whose
-                # `blocking_issues` is set while the cursor sits on a
-                # BLOCKED/RUNNING/AWAITING stage. Clearing afterwards leaves the
-                # state derived from a pause the operator has just resolved —
-                # invisible when the next stage happens to be PENDING, and wrong
-                # the moment it is a gate.
-                ticket.blocking_issues = ""
-            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
-        else:
-            reject_message = response_text.strip() or "Human rejected approval"
-            transitions = self.orchestration._resolve_transitions(ticket)
-            try:
-                apply_stage_route(
-                    ticket,
-                    instance,
-                    stages,
-                    transitions,
-                    from_key=approval.stage_key,
-                    outcome="reject",
-                    next_stage_key=rework_route_key,
-                    blocking_issues=reject_message,
-                )
-            except ValueError:
-                # No reject transition and no preceding stage to fall back to
-                # (already first-in-order) — hard-block in place.
-                logger.warning(
-                    "No rework route from stage %s on ticket %s; blocking in place",
-                    approval.stage_key,
-                    ticket.external_id,
-                    exc_info=True,
-                )
-                ticket.blocking_issues = reject_message
-                set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
-
-        self.session.add(ticket)
-        self.session.add(instance)
-        self.session.commit()
-
-        if approved and resume:
+        resume_now = apply_gate_resolution(
+            self.session,
+            self.orchestration,
+            ticket,
+            approval,
+            approved=approved,
+            rework_route_key=rework_route_key,
+            response_text=response_text,
+            settle_rework_pause=lambda t, a: self._settle_rework_pause(t, a, approved=approved),
+        )
+        if resume_now and resume:
             self._resume_orchestration(ticket)
 
     def _resume_orchestration(self, ticket: Ticket) -> None:
