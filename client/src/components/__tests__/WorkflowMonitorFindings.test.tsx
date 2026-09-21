@@ -43,11 +43,33 @@ describe("WorkflowMonitorFindings", () => {
     expect(await screen.findByText(/ran 9 times in one orchestration run/)).toBeInTheDocument();
   });
 
-  it("shows how many sweeps have seen a repeated finding", async () => {
-    monitorFindings.mockResolvedValue([finding({ occurrences: 4 })]);
+  it("never renders the occurrences count, which counts sweep ticks", async () => {
+    // Live payloads carry five-figure sweep ticks (e.g. 5989). Rendering that
+    // number — or "seen N×" / "seen in N sweeps" — reads as thrash events.
+    // Duration from first_seen is the replacement; do not pin an exact "Nd ago"
+    // string against unfrozen Date.now().
+    monitorFindings.mockResolvedValue([
+      finding({ occurrences: 5989, first_seen: "2026-09-09T00:33:19Z" }),
+    ]);
     renderPanel();
 
-    expect(await screen.findByText(/seen 4×/)).toBeInTheDocument();
+    expect(await screen.findByText(/ran 9 times in one orchestration run/)).toBeInTheDocument();
+    expect(screen.getByText(/first seen/)).toBeInTheDocument();
+    expect(screen.queryByText(/5989/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/seen \d+×/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/seen in \d+ sweeps/)).not.toBeInTheDocument();
+  });
+
+  it("omits the duration line when first_seen is absent", async () => {
+    // Gate is first_seen truthiness only — a high occurrences value must not
+    // force a secondary span (and must never leak sweep digits into the DOM).
+    monitorFindings.mockResolvedValue([finding({ occurrences: 5989, first_seen: null })]);
+    renderPanel();
+
+    expect(await screen.findByText(/ran 9 times in one orchestration run/)).toBeInTheDocument();
+    expect(screen.queryByText(/first seen/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/5989/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/seen \d+×/)).not.toBeInTheDocument();
   });
 
   it("renders nothing for a ticket with no findings", async () => {
