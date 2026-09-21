@@ -26,7 +26,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
 )
 from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
-from loregarden.services.run_duration_stats import MIN_SAMPLES
+from loregarden.services.run_duration_stats import DEFAULT_LOOKBACK_DAYS, MIN_SAMPLES
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_monitor import (
     WORKSPACE_SCOPED,
@@ -38,7 +38,7 @@ from loregarden.services.workflow_monitor import (
 )
 from sqlalchemy import event
 from sqlmodel import Session, select
-from tests.factories import make_workspace_ticket
+from tests.factories import make_workspace, make_workspace_ticket
 
 
 def _orchestration(db_session: Session, ticket: Ticket, code: str) -> str:
@@ -349,6 +349,68 @@ def test_timeout_floor_does_not_report_when_configured_floor_covers_p95(
         assert _timeout_floor_findings(db_session) == []
 
 
+def test_timeout_floor_uses_p95_per_configured_stage_not_average_or_max(
+    db_session: Session,
+):
+    """AC2/AC4. A scan can evaluate several configured stages at once, and must
+    use p95: not the mean, not the max, and not the first budgeted stage only."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-p95-shape")
+    for index in range(99):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            seconds=100,
+            code=f"max-control-low-{index}",
+        )
+    _completed_stage_run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        seconds=1000,
+        code="max-control-high",
+    )
+
+    for index in range(18):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="test-design",
+            seconds=100,
+            code=f"mean-control-low-{index}",
+        )
+    for index in range(2):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="test-design",
+            seconds=1000,
+            code=f"mean-control-high-{index}",
+        )
+
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="spec",
+            seconds=900,
+            code=f"multi-stage-{index}",
+        )
+
+    with patch.dict(
+        STAGE_TIMEOUT_BUDGETS,
+        {"implement": 500, "test-design": 500, "spec": 600},
+        clear=True,
+    ):
+        findings = _timeout_floor_findings(db_session)
+
+    assert {finding.stage_key for finding in findings} == {"test-design", "spec"}
+    by_stage = {finding.stage_key: finding for finding in findings}
+    assert float(by_stage["test-design"].evidence["measured_p95_seconds"]) > 500
+    assert by_stage["test-design"].evidence["sample_count"] == "20"
+    assert by_stage["spec"].evidence["sample_count"] == str(MIN_SAMPLES)
+
+
 def test_timeout_floor_reports_insufficient_samples_without_stale_wording(
     db_session: Session,
 ):
@@ -474,6 +536,81 @@ def test_timeout_floor_samples_only_valid_successful_budgeted_stage_runs(
     assert "measured_p95_seconds" not in findings[0].evidence
 
 
+def test_timeout_floor_samples_are_isolated_to_the_scanned_workspace(
+    db_session: Session,
+):
+    """AC1/AC4. A workspace monitor scan must not borrow successful samples
+    from another workspace and turn a thin local sample into a trusted p95."""
+    local_ticket = make_workspace_ticket(db_session, "monitor-timeout-local")
+    make_workspace(db_session, slug="other-timeout-workspace")
+    other_ticket = make_workspace_ticket(
+        db_session,
+        "monitor-timeout-other",
+        slug="other-timeout-workspace",
+    )
+    _completed_stage_run(
+        db_session,
+        local_ticket,
+        stage_key="implement",
+        seconds=1000,
+        code="workspace-local",
+    )
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            other_ticket,
+            stage_key="implement",
+            seconds=9000,
+            code=f"workspace-other-{index}",
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+
+    by_workspace = {finding.evidence["workspace_slug"]: finding for finding in findings}
+    assert set(by_workspace) == {"loregarden", "other-timeout-workspace"}
+    local = by_workspace["loregarden"]
+    assert local.stage_key == "implement"
+    assert local.evidence["sample_count"] == "1"
+    assert local.evidence["min_samples"] == str(MIN_SAMPLES)
+    assert "measured_p95_seconds" not in local.evidence
+    assert "stale" not in local.summary.lower()
+    other = by_workspace["other-timeout-workspace"]
+    assert other.evidence["sample_count"] == str(MIN_SAMPLES)
+    assert "measured_p95_seconds" in other.evidence
+    assert all(finding.evidence["sample_count"] != "4" for finding in findings)
+
+
+def test_timeout_floor_ignores_successes_outside_duration_stats_lookback(
+    db_session: Session,
+):
+    """AC2/AC3/AC4. Stale historical successes must not manufacture a trusted
+    p95; the monitor uses the same recency window as run_duration_stats."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-lookback")
+    old_finished = datetime.now(timezone.utc) - timedelta(days=DEFAULT_LOOKBACK_DAYS + 5)
+    for index in range(MIN_SAMPLES):
+        _run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            orch_id=f"orch-old-timeout-{index}",
+            status=RunStatus.SUCCEEDED,
+            started_at=old_finished - timedelta(seconds=9000),
+            finished_at=old_finished,
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.stage_key == "implement"
+    assert finding.evidence["sample_count"] == "0"
+    assert finding.evidence["min_samples"] == str(MIN_SAMPLES)
+    assert "measured_p95_seconds" not in finding.evidence
+    assert "stale" not in finding.summary.lower()
+
+
 def test_timeout_floor_stale_is_workspace_scoped_report_only(db_session: Session):
     """AC1. Timeout-floor stale findings are recomputed for workspace views,
     skipped for ticket scans, not persisted to artifacts, and not auto-fixable."""
@@ -498,6 +635,28 @@ def test_timeout_floor_stale_is_workspace_scoped_report_only(db_session: Session
 
     assert MonitorCondition.TIMEOUT_FLOOR_STALE.value not in persisted
     assert MonitorCondition.TIMEOUT_FLOOR_STALE in listed
+
+
+def test_timeout_floor_scan_never_recalibrates_configured_budget_table(
+    db_session: Session,
+):
+    """AC1/AC5. The monitor is a reader: even an obviously stale floor must not
+    rewrite STAGE_TIMEOUT_BUDGETS for future dispatches."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-no-recalibration")
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            seconds=9000,
+            code=f"no-recalibration-{index}",
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+        assert STAGE_TIMEOUT_BUDGETS == {"implement": 600}
+
+    assert [finding.stage_key for finding in findings] == ["implement"]
 
 
 # --- AC4: findings persist, upserted ----------------------------------------
