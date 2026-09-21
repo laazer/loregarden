@@ -961,3 +961,252 @@ def test_aggregation_uses_artifact_title_not_content_condition(db_session: Sessi
     assert bugs[0].legacy_external_id == _escalation().escalation_legacy_id(
         CONDITION.value, "implement"
     )
+
+
+# --- Adversarial (test-break re-entry): clocks, isolation, refresh, hook call ---
+
+
+def test_offset_plus00_last_seen_parses_as_current(db_session: Session):
+    """Currency parser must accept +00:00 — record_findings emits datetime.isoformat() that way."""
+    a = make_workspace_ticket(db_session, "esc-offset-a")
+    b = make_workspace_ticket(db_session, "esc-offset-b")
+    sweep_started = datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
+    stamp = "2026-09-21T12:00:01+00:00"
+    for ticket in (a, b):
+        db_session.add(
+            Artifact(
+                ticket_id=ticket.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=f"{CONDITION.value}:implement",
+                content_json=json.dumps(
+                    {
+                        "condition": CONDITION.value,
+                        "stage_key": "implement",
+                        "summary": "offset clock",
+                        "last_seen": stamp,
+                        "first_seen": stamp,
+                        "occurrences": 1,
+                    }
+                ),
+            )
+        )
+    db_session.commit()
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 1
+    )
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == 1
+
+
+def test_naive_last_seen_does_not_typeerror_against_aware_sweep(db_session: Session):
+    """Aware sweep_started_at vs naive last_seen must not raise TypeError (CUR-1 parse path)."""
+    a = make_workspace_ticket(db_session, "esc-naive-a")
+    b = make_workspace_ticket(db_session, "esc-naive-b")
+    sweep_started = datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
+    for ticket in (a, b):
+        db_session.add(
+            Artifact(
+                ticket_id=ticket.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=f"{CONDITION.value}:implement",
+                content_json=json.dumps(
+                    {
+                        "condition": CONDITION.value,
+                        "stage_key": "implement",
+                        "summary": "naive clock",
+                        "last_seen": "2026-09-21T12:00:01",  # no tzinfo
+                        "first_seen": "2026-09-21T12:00:01",
+                        "occurrences": 1,
+                    }
+                ),
+            )
+        )
+    db_session.commit()
+
+    # Pin: no TypeError. Counting-as-UTC (1) or ignoring (0) are both legal; never multiply.
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+    assert upserted in (0, 1)
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == upserted
+
+
+def test_last_seen_one_microsecond_before_sweep_is_stale(db_session: Session):
+    """CUR-1 exclusive boundary: last_seen = sweep_started_at - 1µs must not count."""
+    a = make_workspace_ticket(db_session, "esc-us-a")
+    b = make_workspace_ticket(db_session, "esc-us-b")
+    sweep_started = datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
+    almost = sweep_started - timedelta(microseconds=1)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=almost)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=almost)
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 0
+    )
+    assert _escalation_bugs(db_session, a.workspace_id) == []
+
+
+def test_two_workspaces_escalate_independently(db_session: Session):
+    """REC-1 positive isolation: each workspace gets its own Milestone + Bug for the same title."""
+    home_a = make_workspace_ticket(db_session, "esc-ind-home-a")
+    home_b = make_workspace_ticket(db_session, "esc-ind-home-b")
+    other_ws = make_workspace(db_session, slug="esc-ind-other")
+    other_a = make_ticket(
+        db_session,
+        workspace_id=other_ws.id,
+        external_id="esc-ind-other-a",
+        title="esc-ind-other-a",
+    )
+    other_b = make_ticket(
+        db_session,
+        workspace_id=other_ws.id,
+        external_id="esc-ind-other-b",
+        title="esc-ind-other-b",
+    )
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    for ticket in (home_a, home_b, other_a, other_b):
+        _plant_finding(
+            db_session, ticket, condition=CONDITION, stage_key="implement", last_seen=now
+        )
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 2
+    for workspace_id in (home_a.workspace_id, other_ws.id):
+        milestone = _milestone(db_session, workspace_id)
+        bugs = _escalation_bugs(db_session, workspace_id)
+        assert milestone is not None
+        assert milestone.workflow_disabled is True
+        assert len(bugs) == 1
+        assert bugs[0].parent_ticket_id == milestone.id
+        assert bugs[0].legacy_external_id == _escalation().escalation_legacy_id(
+            CONDITION.value, "implement"
+        )
+    # Two milestones with the same legacy key — one per workspace, not shared.
+    milestones = list(
+        db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == MILESTONE_LEGACY_ID)
+        ).all()
+    )
+    assert len(milestones) == 2
+    assert {m.workspace_id for m in milestones} == {home_a.workspace_id, other_ws.id}
+
+
+def test_refresh_does_not_clear_workflow_disabled(db_session: Session):
+    """IDEM-1/RPT-1: description refresh must not flip workflow_disabled True→False."""
+    a = make_workspace_ticket(db_session, "esc-keepdis-a")
+    b = make_workspace_ticket(db_session, "esc-keepdis-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+    bug = _escalation_bugs(db_session, a.workspace_id)[0]
+    milestone = _milestone(db_session, a.workspace_id)
+    assert bug.workflow_disabled is True
+    assert milestone is not None and milestone.workflow_disabled is True
+
+    for row in db_session.exec(
+        select(Artifact).where(Artifact.kind == MonitorArtifactKind.FINDING.value)
+    ).all():
+        payload = json.loads(row.content_json)
+        payload["summary"] = "still thrashing on refresh"
+        payload["last_seen"] = _utcnow().isoformat()
+        row.content_json = json.dumps(payload)
+        db_session.add(row)
+    db_session.commit()
+
+    _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    refreshed_bug = db_session.get(Ticket, bug.id)
+    refreshed_ms = db_session.get(Ticket, milestone.id)
+    assert refreshed_bug is not None and refreshed_bug.workflow_disabled is True
+    assert refreshed_ms is not None and refreshed_ms.workflow_disabled is True
+    assert "still thrashing on refresh" in refreshed_bug.description
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == 1
+
+
+def test_empty_content_json_and_non_string_last_seen_ignored(db_session: Session):
+    """Empty / typed-wrong content_json must not crash escalate or count toward threshold."""
+    good = make_workspace_ticket(db_session, "esc-empty-good")
+    junk = make_workspace_ticket(db_session, "esc-empty-junk")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, good, condition=CONDITION, stage_key="implement", last_seen=now)
+    title = f"{CONDITION.value}:implement"
+    for broken_content in ("", "null", json.dumps({"last_seen": 1_725_000_000})):
+        db_session.add(
+            Artifact(
+                ticket_id=junk.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=title,
+                content_json=broken_content,
+            )
+        )
+    db_session.commit()
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 0
+    )
+    assert _escalation_bugs(db_session, good.workspace_id) == []
+
+
+def test_all_workspace_scoped_conditions_never_escalate(db_session: Session):
+    """Every WORKSPACE_SCOPED condition is excluded — not only FAILURE_CLUSTER."""
+    from loregarden.services.workflow_monitor import WORKSPACE_SCOPED
+
+    assert WORKSPACE_SCOPED == frozenset(
+        {
+            MonitorCondition.FAILURE_CLUSTER,
+            MonitorCondition.DRAFT_DRIFT,
+            MonitorCondition.SKIP_CONDITION_ROT,
+        }
+    )
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    tickets = [make_workspace_ticket(db_session, f"esc-wscope-all-{i}") for i in range(2)]
+    for condition in WORKSPACE_SCOPED:
+        for ticket in tickets:
+            _plant_finding(db_session, ticket, condition=condition, stage_key="-", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, tickets[0].workspace_id) == []
+    assert _milestone(db_session, tickets[0].workspace_id) is None
+
+
+def test_sweep_calls_escalate_with_sweep_started_at_keyword():
+    """Hook call shape: escalate_recurring_findings(..., sweep_started_at=<aware datetime>)."""
+    source = inspect.getsource(sweep)
+    # Bound before record, passed as keyword — not a bare positional after session.
+    assert "sweep_started_at=" in source or "sweep_started_at =" in source
+    assert "escalate_recurring_findings(session" in source.replace(" ", "") or (
+        "escalate_recurring_findings(" in source and "sweep_started_at" in source
+    )
+    # Must not call escalate before capturing the clock.
+    clock_bind = min(
+        i
+        for i in (
+            source.find("sweep_started_at ="),
+            source.find("sweep_started_at="),
+        )
+        if i >= 0
+    )
+    assert clock_bind < source.index("record_findings")
+    assert source.index("record_findings") < source.index("escalate_recurring_findings")
+
+
+def test_cfg1_autofix_and_refusal_bodies_untouched():
+    """CFG-1: apply_autofixes / _raise_refusal_approval remain the pre-escalation implementations."""
+    from loregarden.services import workflow_monitor
+
+    autofix_src = inspect.getsource(workflow_monitor.apply_autofixes)
+    refusal_src = inspect.getsource(workflow_monitor._raise_refusal_approval)
+    # Escalation must not be folded into autofix or refusal — those stay independent.
+    assert "escalate_recurring_findings" not in autofix_src
+    assert "escalate_recurring_findings" not in refusal_src
+    assert "monitor-escalation" not in autofix_src
+    assert "monitor-escalation" not in refusal_src
+    # Refusal still opens Approvals; escalation path must not borrow that.
+    assert "Approval" in refusal_src or "approval" in refusal_src.lower()
