@@ -10,8 +10,10 @@ hardcodes "4 attempts is thrash" would pass while the production threshold moved
 
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from loregarden.models.domain import (
+    AUTO_FIXABLE_CONDITIONS,
     AgentRun,
     Artifact,
     MonitorArtifactKind,
@@ -23,6 +25,8 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowTemplate,
 )
+from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
+from loregarden.services.run_duration_stats import MIN_SAMPLES
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_monitor import (
     WORKSPACE_SCOPED,
@@ -66,6 +70,7 @@ def _run(
     status: RunStatus = RunStatus.SUCCEEDED,
     agent_id: str = "backend_implementer",
     started_at: datetime | None = None,
+    finished_at: datetime | None = None,
 ) -> AgentRun:
     _run.counter = getattr(_run, "counter", 0) + 1
     run = AgentRun(
@@ -77,6 +82,7 @@ def _run(
         status=status,
         orchestration_run_id=_orchestration(db_session, ticket, orch_id) if orch_id else None,
         started_at=started_at,
+        finished_at=finished_at,
     )
     db_session.add(run)
     db_session.commit()
@@ -262,6 +268,236 @@ def test_scanning_one_ticket_skips_workspace_wide_conditions(db_session: Session
         _run(db_session, ticket, stage_key="testing", status=RunStatus.FAILED)
 
     assert not _conditions(scan(db_session, ticket_id=ticket.id)) & WORKSPACE_SCOPED
+
+
+def _completed_stage_run(
+    db_session: Session,
+    ticket: Ticket,
+    *,
+    stage_key: str,
+    seconds: float,
+    code: str,
+    status: RunStatus = RunStatus.SUCCEEDED,
+) -> AgentRun:
+    started = datetime.now(timezone.utc) - timedelta(days=1)
+    return _run(
+        db_session,
+        ticket,
+        stage_key=stage_key,
+        orch_id=f"orch-{code}",
+        status=status,
+        started_at=started,
+        finished_at=started + timedelta(seconds=seconds),
+    )
+
+
+def _timeout_floor_findings(db_session: Session):
+    return [
+        finding
+        for finding in scan(db_session)
+        if finding.condition is MonitorCondition.TIMEOUT_FLOOR_STALE
+    ]
+
+
+def test_timeout_floor_stale_reports_configured_floor_below_measured_p95(
+    db_session: Session,
+):
+    """AC2. A configured stage with enough successful wall-clock samples gets a
+    report-only stale-floor finding when the measured p95 exceeds the floor."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-stale")
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            seconds=1000,
+            code=f"stale-{index}",
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.ticket_id == ""
+    assert finding.stage_key == "implement"
+    assert finding.evidence["configured_floor_seconds"] == "600"
+    assert float(finding.evidence["measured_p95_seconds"]) == 1000
+    assert finding.evidence["sample_count"] == str(MIN_SAMPLES)
+    assert "completed under the ceiling" in finding.summary
+    assert "understate the true tail" in finding.summary
+    assert "completed under the ceiling" in finding.evidence["right_censoring_caveat"]
+    assert "understate the true tail" in finding.evidence["right_censoring_caveat"]
+
+
+def test_timeout_floor_does_not_report_when_configured_floor_covers_p95(
+    db_session: Session,
+):
+    """AC2 control. Enough samples alone is not a finding; the configured floor
+    has to be below the measured p95."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-covered")
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            seconds=1000,
+            code=f"covered-{index}",
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 1200}, clear=True):
+        assert _timeout_floor_findings(db_session) == []
+
+
+def test_timeout_floor_reports_insufficient_samples_without_stale_wording(
+    db_session: Session,
+):
+    """AC3. Thin samples are visible as monitor findings, but they must not
+    present a trusted p95 comparison or imply the configured floor is stale."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-thin")
+    _completed_stage_run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        seconds=1000,
+        code="thin",
+    )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.stage_key == "implement"
+    assert finding.evidence["configured_floor_seconds"] == "600"
+    assert finding.evidence["sample_count"] == "1"
+    assert finding.evidence["min_samples"] == str(MIN_SAMPLES)
+    assert "measured_p95_seconds" not in finding.evidence
+    assert "p95" not in finding.summary.lower()
+    assert "stale" not in finding.summary.lower()
+
+
+def test_timeout_floor_samples_only_valid_successful_budgeted_stage_runs(
+    db_session: Session,
+):
+    """AC4. Failed, cancelled, running, queued, unfinished, malformed, and
+    unbudgeted-stage rows must not contribute to the timeout-floor comparison."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-filters")
+    started = datetime.now(timezone.utc) - timedelta(days=1)
+    _completed_stage_run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        seconds=1000,
+        code="valid",
+    )
+    _completed_stage_run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        seconds=9000,
+        code="failed",
+        status=RunStatus.FAILED,
+    )
+    _completed_stage_run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        seconds=9000,
+        code="cancelled",
+        status=RunStatus.CANCELLED,
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        orch_id="orch-running",
+        status=RunStatus.RUNNING,
+        started_at=started,
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        orch_id="orch-queued",
+        status=RunStatus.QUEUED,
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        orch_id="orch-unfinished",
+        status=RunStatus.SUCCEEDED,
+        started_at=started,
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        orch_id="orch-zero",
+        status=RunStatus.SUCCEEDED,
+        started_at=started,
+        finished_at=started,
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        orch_id="orch-negative",
+        status=RunStatus.SUCCEEDED,
+        started_at=started,
+        finished_at=started - timedelta(seconds=1),
+    )
+    _run(
+        db_session,
+        ticket,
+        stage_key="",
+        orch_id="orch-empty-stage",
+        status=RunStatus.SUCCEEDED,
+        started_at=started,
+        finished_at=started + timedelta(seconds=9000),
+    )
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="unbudgeted-stage",
+            seconds=9000,
+            code=f"unbudgeted-{index}",
+        )
+
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        findings = _timeout_floor_findings(db_session)
+
+    assert [finding.stage_key for finding in findings] == ["implement"]
+    assert findings[0].evidence["sample_count"] == "1"
+    assert "measured_p95_seconds" not in findings[0].evidence
+
+
+def test_timeout_floor_stale_is_workspace_scoped_report_only(db_session: Session):
+    """AC1. Timeout-floor stale findings are recomputed for workspace views,
+    skipped for ticket scans, not persisted to artifacts, and not auto-fixable."""
+    ticket = make_workspace_ticket(db_session, "monitor-timeout-report-only")
+    for index in range(MIN_SAMPLES):
+        _completed_stage_run(
+            db_session,
+            ticket,
+            stage_key="implement",
+            seconds=1000,
+            code=f"report-only-{index}",
+        )
+
+    assert MonitorCondition.TIMEOUT_FLOOR_STALE not in AUTO_FIXABLE_CONDITIONS
+    with patch.dict(STAGE_TIMEOUT_BUDGETS, {"implement": 600}, clear=True):
+        assert not _conditions(scan(db_session, ticket_id=ticket.id)) & {
+            MonitorCondition.TIMEOUT_FLOOR_STALE
+        }
+        sweep(db_session)
+        persisted = {json.loads(row.content_json)["condition"] for row in _finding_rows(db_session)}
+        listed = _conditions(list_findings(db_session))
+
+    assert MonitorCondition.TIMEOUT_FLOOR_STALE.value not in persisted
+    assert MonitorCondition.TIMEOUT_FLOOR_STALE in listed
 
 
 # --- AC4: findings persist, upserted ----------------------------------------
