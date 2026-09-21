@@ -38,6 +38,7 @@ class McpTool(StrEnum):
     SET_TICKET_WORKFLOW = "loregarden_set_ticket_workflow"
     REQUEUE_TICKET = "loregarden_requeue_ticket"
     PIN_STAGE_AGENT = "loregarden_pin_stage_agent"
+    LAND_TICKET = "loregarden_land_ticket"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
@@ -245,6 +246,7 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.SET_TICKET_WORKFLOW,
     McpTool.REQUEUE_TICKET,
     McpTool.PIN_STAGE_AGENT,
+    McpTool.LAND_TICKET,
     McpTool.SUPERSEDE_TICKET,
 )
 

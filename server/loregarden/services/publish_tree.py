@@ -45,7 +45,7 @@ class PublishOutcome:
 def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> PublishOutcome:
     """Push the tree's integration branch if ``ticket`` is its root and the tip is new."""
     repo_root = resolve_workspace_root(workspace)
-    if subtree_root(session, ticket).id != ticket.id:
+    if subtree_root(session, ticket).id != ticket.id or not (repo_root / ".git").exists():
         return PublishOutcome(ok=True, branch="", skipped=True)
     branch = integration_branch_for(ticket)
     tip = rev(repo_root, f"refs/heads/{branch}")

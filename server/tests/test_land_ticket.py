@@ -2,24 +2,28 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
-    OrchestrationRunStatus,
+    StageStatus,
     Ticket,
     TicketState,
     WorkItemType,
     Workspace,
 )
 from loregarden.services.land_ticket import LandSkip, land_ticket
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.target_branch import resolve_target_branch
-from loregarden.services.ticket_worktree import resolve_execution_root
 from sqlmodel import Session
-from tests.worktree_helpers import commit_on, git, make_orch_run, make_repo, make_run
+from tests.worktree_helpers import (
+    at_terminal_stage,
+    blocking_text,
+    commit_on,
+    git,
+    make_repo,
+)
 
 
 @pytest.fixture(name="session")
@@ -172,32 +176,33 @@ def test_a_conflict_is_returned_with_its_files_and_nothing_is_written(
 # --- at the terminal stage ---------------------------------------------------
 
 
-def test_completion_lands_the_work_and_marks_the_ticket_done(session, workspace, repo, milestone):
-    ticket, target, tip = _ticket_with_work(session, workspace, repo, milestone, "lg-l-7")
-    orch = make_orch_run(session, ticket)
-
-    OrchestrationCallbackService(session).complete_orchestration(
-        orch, ticket, status=OrchestrationRunStatus.SUCCEEDED
-    )
-
+def _finish(session, ticket):
+    """What the orchestrator does when the last stage passes: advance with no route."""
+    at_terminal_stage(session, ticket)
+    OrchestrationService(session).advance_stage(ticket)
     session.refresh(ticket)
-    session.refresh(orch)
-    assert orch.status == OrchestrationRunStatus.SUCCEEDED
+
+
+def test_finishing_the_workflow_lands_the_work_and_marks_the_ticket_done(
+    session, workspace, repo, milestone
+):
+    ticket, target, tip = _ticket_with_work(session, workspace, repo, milestone, "lg-l-7")
+
+    _finish(session, ticket)
+
+    assert ticket.state == TicketState.DONE
     assert ticket.landed_branch == target
     assert tip in _parents(repo, ticket.landed_sha)
 
 
-def test_landing_runs_once_per_completion(session, workspace, repo, milestone):
+def test_landing_runs_once_per_finish(session, workspace, repo, milestone):
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-8")
-    service = OrchestrationCallbackService(session)
 
-    service.complete_orchestration(
-        make_orch_run(session, ticket), ticket, status=OrchestrationRunStatus.SUCCEEDED
-    )
+    _finish(session, ticket)
     landed = _sha(repo, target)
-    service.complete_orchestration(
-        make_orch_run(session, ticket), ticket, status=OrchestrationRunStatus.SUCCEEDED
-    )
+    # A second pass over the finished workflow — a requeue, a re-run — lands
+    # nothing new.
+    OrchestrationService(session).advance_stage(ticket)
 
     assert _sha(repo, target) == landed
     assert len(git(repo, "rev-list", "--merges", target).stdout.split()) == 1
@@ -207,62 +212,39 @@ def test_a_conflict_blocks_the_ticket_naming_the_files(session, workspace, repo,
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-9")
     commit_on(repo, ticket.branch, "shared.txt", "ticket\n")
     commit_on(repo, target, "shared.txt", "sibling\n")
-    orch = make_orch_run(session, ticket)
 
-    OrchestrationCallbackService(session).complete_orchestration(
-        orch, ticket, status=OrchestrationRunStatus.SUCCEEDED
-    )
+    _finish(session, ticket)
 
-    session.refresh(ticket)
-    session.refresh(orch)
-    assert ticket.state == TicketState.BLOCKED
-    assert orch.status == OrchestrationRunStatus.BLOCKED
+    assert ticket.state == TicketState.BLOCKED, "not done: the work is not on its target"
+    assert ticket.workflow_stage_status == StageStatus.BLOCKED
     assert "shared.txt" in ticket.blocking_issues
     assert ticket.landed_sha == ""
 
 
-def test_a_conflict_with_auto_resolve_hands_over_to_the_resolver(
-    session, workspace, repo, milestone
-):
-    ticket, target, _ = _ticket_with_work(
-        session,
-        workspace,
-        repo,
-        milestone,
-        "lg-l-10",
-        git_automation_json=json.dumps({"auto_resolve_conflicts": True}),
-        workflow_stage_key="implement",
-    )
-    # The ticket's own worktree, where the resolver will work.
-    run = make_run(session, workspace, ticket, "r1")
-    tree = resolve_execution_root(session, run, ticket, workspace)
-    (tree / "shared.txt").write_text("ticket\n")
-    git(tree, "add", "-A")
-    git(tree, "commit", "-q", "-m", "ticket side")
-    commit_on(repo, target, "shared.txt", "sibling\n")
-    orch = make_orch_run(session, ticket)
+def test_landing_happens_before_done_is_derived(session, workspace, repo, milestone):
+    """717's exact failure: the terminal stage wrote `done` a second before the
+    orchestration's completion hook looked, and the hook skipped a done
+    ticket. Landing has to happen on the way to done, not after it."""
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-10")
+    seen: list[TicketState] = []
+    from loregarden.services import landing as module
 
-    with mock.patch(
-        "loregarden.services.conflict_resolution._dispatch_resolver", return_value=True
-    ) as dispatch:
-        OrchestrationCallbackService(session).complete_orchestration(
-            orch, ticket, status=OrchestrationRunStatus.SUCCEEDED
-        )
+    real = module.land_ticket
 
-    assert dispatch.called
-    session.refresh(ticket)
-    session.refresh(orch)
-    assert ticket.state != TicketState.DONE
-    assert ticket.state != TicketState.BLOCKED
-    assert orch.status == OrchestrationRunStatus.FAILED
-    assert "resolver dispatched" in (orch.error_message or "")
-    assert "shared.txt" in git(tree, "diff", "--name-only", "--diff-filter=U").stdout
+    def observe(session_, ticket_, workspace_):
+        seen.append(ticket_.state)
+        return real(session_, ticket_, workspace_)
+
+    with mock.patch.object(module, "land_ticket", side_effect=observe):
+        _finish(session, ticket)
+
+    assert seen == [TicketState.IN_PROGRESS], "landed while still in progress"
+    assert ticket.state == TicketState.DONE
+    assert ticket.landed_sha
 
 
 def test_a_git_failure_blocks_with_its_text(session, workspace, repo, milestone):
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-11")
-    orch = make_orch_run(session, ticket)
-
     from loregarden.services import git_merge_noco as module
 
     real = module.run_git
@@ -275,10 +257,29 @@ def test_a_git_failure_blocks_with_its_text(session, workspace, repo, milestone)
         return real(args, **kwargs)
 
     with mock.patch.object(module, "run_git", side_effect=broken):
-        OrchestrationCallbackService(session).complete_orchestration(
-            orch, ticket, status=OrchestrationRunStatus.SUCCEEDED
-        )
+        _finish(session, ticket)
 
-    session.refresh(ticket)
     assert ticket.state == TicketState.BLOCKED
-    assert "on fire" in ticket.blocking_issues
+    assert "on fire" in blocking_text(session, ticket), "git's own words"
+
+
+def test_a_workspace_with_no_repository_finishes_without_landing(session, tmp_path):
+    """Test workspaces (and misconfigured ones) point at paths that are not
+    repositories. Nothing ran there, so nothing lands — and the workflow must
+    still finish rather than block on git's FileNotFoundError."""
+    ws = Workspace(slug="no-repo", name="no repo", repo_path=str(tmp_path / "nowhere"))
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
+    ticket = Ticket(
+        external_id="lg-l-12", workspace_id=ws.id, title="No repo", state=TicketState.IN_PROGRESS
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    result = land_ticket(session, ticket, ws)
+    assert result.ok and result.skipped is LandSkip.NO_REPOSITORY
+
+    _finish(session, ticket)
+    assert ticket.state == TicketState.DONE

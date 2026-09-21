@@ -8,7 +8,6 @@ from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
-    OrchestrationRunStatus,
     Ticket,
     TicketState,
     WorkItemType,
@@ -16,11 +15,11 @@ from loregarden.models.domain import (
 )
 from loregarden.services import git_automation
 from loregarden.services.land_ticket import land_ticket
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session
-from tests.worktree_helpers import commit_on, git, make_orch_run, make_repo
+from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
 
 
 @pytest.fixture(name="session")
@@ -121,34 +120,28 @@ def test_a_non_root_ticket_publishes_nothing(session, workspace, repo):
     assert outcome.ok and outcome.skipped and outcome.branch == ""
 
 
-def test_a_root_completing_publishes_and_marks_done(session, workspace, repo):
+def test_a_root_finishing_its_workflow_publishes_and_marks_done(session, workspace, repo):
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
-    orch = make_orch_run(session, ms)
+    at_terminal_stage(session, ms)
 
-    OrchestrationCallbackService(session).complete_orchestration(
-        orch, ms, status=OrchestrationRunStatus.SUCCEEDED
-    )
+    OrchestrationService(session).advance_stage(ms)
 
-    session.refresh(orch)
-    assert orch.status == OrchestrationRunStatus.SUCCEEDED
+    session.refresh(ms)
+    assert ms.state == TicketState.DONE
     assert _remote_sha(repo, target) == _sha(repo, target)
 
 
 def test_a_push_failure_blocks_the_root_with_the_reason(session, workspace, repo):
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
     git(repo, "remote", "set-url", "origin", str(repo.parent / "no-such-remote.git"))
-    orch = make_orch_run(session, ms)
+    at_terminal_stage(session, ms)
 
-    OrchestrationCallbackService(session).complete_orchestration(
-        orch, ms, status=OrchestrationRunStatus.SUCCEEDED
-    )
+    OrchestrationService(session).advance_stage(ms)
 
     session.refresh(ms)
-    session.refresh(orch)
     assert ms.state == TicketState.BLOCKED
-    assert orch.status == OrchestrationRunStatus.BLOCKED
-    assert "push failed" in (orch.error_message or ""), orch.error_message
-    assert "no-such-remote" in (orch.error_message or ""), "git's own words, not a summary"
+    recorded = blocking_text(session, ms)
+    assert "push failed" in recorded and "no-such-remote" in recorded, "git's own words"
     assert ms.landed_sha == ""
 
 
