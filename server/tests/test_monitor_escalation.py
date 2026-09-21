@@ -755,3 +755,209 @@ def test_wrong_column_external_id_never_holds_escalation_key(db_session: Session
         ).first()
         is None
     )
+
+
+# --- Adversarial (test-break reroute): corrupt input, kind filter, race narrowness ---
+
+
+def test_invalid_json_content_is_ignored_not_raised(db_session: Session):
+    """Corrupt content_json must not crash escalate or pad the distinct-ticket count."""
+    good = make_workspace_ticket(db_session, "esc-json-good")
+    junk = make_workspace_ticket(db_session, "esc-json-junk")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, good, condition=CONDITION, stage_key="implement", last_seen=now)
+    db_session.add(
+        Artifact(
+            ticket_id=junk.id,
+            kind=MonitorArtifactKind.FINDING.value,
+            title=f"{CONDITION.value}:implement",
+            content_json="{not-json",
+        )
+    )
+    db_session.commit()
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, good.workspace_id) == []
+
+
+def test_non_finding_artifact_kind_does_not_count(db_session: Session):
+    """Aggregation source is kind=monitor_finding only — colliding titles on other kinds are noise."""
+    a = make_workspace_ticket(db_session, "esc-kind-a")
+    b = make_workspace_ticket(db_session, "esc-kind-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    title = f"{CONDITION.value}:implement"
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    db_session.add(
+        Artifact(
+            ticket_id=b.id,
+            kind="gate_evaluation",
+            title=title,
+            content_json=json.dumps(
+                {
+                    "condition": CONDITION.value,
+                    "stage_key": "implement",
+                    "summary": "not a finding",
+                    "last_seen": now.isoformat(),
+                }
+            ),
+        )
+    )
+    db_session.commit()
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 0
+    )
+    assert _escalation_bugs(db_session, a.workspace_id) == []
+
+
+def test_unrelated_create_valueerror_is_not_swallowed_as_race(db_session: Session):
+    """IDEM-2 is narrow: only 'external_id already exists…' re-resolves; other ValueErrors propagate."""
+    from loregarden.services.ticket_service import TicketService
+
+    a = make_workspace_ticket(db_session, "esc-ve-a")
+    b = make_workspace_ticket(db_session, "esc-ve-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    _plant_finding(db_session, a, condition=CONDITION, stage_key="implement", last_seen=now)
+    _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
+
+    bug_legacy = _escalation().escalation_legacy_id(CONDITION.value, "implement")
+    real_create = TicketService.create_ticket
+
+    def boom_create(self, **kwargs):
+        if kwargs.get("external_id") == bug_legacy:
+            raise ValueError("something else went wrong")
+        return real_create(self, **kwargs)
+
+    with patch.object(TicketService, "create_ticket", boom_create):
+        try:
+            _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+            raised = False
+        except ValueError as exc:
+            raised = True
+            assert "something else went wrong" in str(exc)
+
+    assert raised is True
+    assert _escalation_bugs(db_session, a.workspace_id) == []
+
+
+def test_above_threshold_still_one_bug_per_title(db_session: Session):
+    """REC-1 stress: five current tickets with the same title → still exactly one Bug."""
+    tickets = [make_workspace_ticket(db_session, f"esc-many-{i}") for i in range(5)]
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    for ticket in tickets:
+        _plant_finding(
+            db_session, ticket, condition=CONDITION, stage_key="implement", last_seen=now
+        )
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 1
+    bugs = _escalation_bugs(db_session, tickets[0].workspace_id)
+    assert len(bugs) == 1
+    assert bugs[0].legacy_external_id == _escalation().escalation_legacy_id(
+        CONDITION.value, "implement"
+    )
+
+
+def test_z_suffix_last_seen_parses_as_current(db_session: Session):
+    """Currency parser must accept ISO-8601 Z (record_findings may emit offset or Z)."""
+    a = make_workspace_ticket(db_session, "esc-z-a")
+    b = make_workspace_ticket(db_session, "esc-z-b")
+    sweep_started = datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
+    z_stamp = "2026-09-21T12:00:01Z"
+    for ticket in (a, b):
+        db_session.add(
+            Artifact(
+                ticket_id=ticket.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=f"{CONDITION.value}:implement",
+                content_json=json.dumps(
+                    {
+                        "condition": CONDITION.value,
+                        "stage_key": "implement",
+                        "summary": "z clock",
+                        "last_seen": z_stamp,
+                        "first_seen": z_stamp,
+                        "occurrences": 1,
+                    }
+                ),
+            )
+        )
+    db_session.commit()
+
+    assert (
+        _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started) == 1
+    )
+    assert len(_escalation_bugs(db_session, a.workspace_id)) == 1
+
+
+def test_workspace_scoped_condition_findings_never_escalate(db_session: Session):
+    """WORKSPACE_SCOPED never persist via record_findings; if planted, still must not escalate."""
+    a = make_workspace_ticket(db_session, "esc-wscope-a")
+    b = make_workspace_ticket(db_session, "esc-wscope-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    scoped = MonitorCondition.FAILURE_CLUSTER
+    _plant_finding(db_session, a, condition=scoped, stage_key="-", last_seen=now)
+    _plant_finding(db_session, b, condition=scoped, stage_key="-", last_seen=now)
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 0
+    assert _escalation_bugs(db_session, a.workspace_id) == []
+    assert _milestone(db_session, a.workspace_id) is None
+
+
+def test_sweep_captures_sweep_started_at_before_record_findings():
+    """Hook timing: sweep_started_at must be bound before record_findings so currency is this sweep."""
+    source = inspect.getsource(sweep)
+    started_at = source.index("sweep_started_at")
+    record_at = source.index("record_findings")
+    escalate_at = source.index("escalate_recurring_findings")
+    assert started_at < record_at < escalate_at
+
+
+def test_aggregation_uses_artifact_title_not_content_condition(db_session: Session):
+    """Group key is artifact.title — content_json.condition drift must not split or invent groups."""
+    a = make_workspace_ticket(db_session, "esc-title-a")
+    b = make_workspace_ticket(db_session, "esc-title-b")
+    now = _utcnow()
+    sweep_started = now - timedelta(seconds=5)
+    title = f"{CONDITION.value}:implement"
+    for ticket, content_condition in (
+        (a, CONDITION.value),
+        (b, MonitorCondition.STALE_CURSOR.value),  # content lies; title is thrash:implement
+    ):
+        db_session.add(
+            Artifact(
+                ticket_id=ticket.id,
+                kind=MonitorArtifactKind.FINDING.value,
+                title=title,
+                content_json=json.dumps(
+                    {
+                        "condition": content_condition,
+                        "stage_key": "implement",
+                        "summary": "title wins",
+                        "last_seen": now.isoformat(),
+                        "first_seen": now.isoformat(),
+                        "occurrences": 1,
+                    }
+                ),
+            )
+        )
+    db_session.commit()
+
+    upserted = _escalation().escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
+
+    assert upserted == 1
+    bugs = _escalation_bugs(db_session, a.workspace_id)
+    assert len(bugs) == 1
+    assert bugs[0].legacy_external_id == _escalation().escalation_legacy_id(
+        CONDITION.value, "implement"
+    )
