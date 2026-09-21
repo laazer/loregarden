@@ -173,6 +173,12 @@ def _args_for(
         "loregarden_search_reference": {"query": "smoke"},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
+        "loregarden_pin_stage_agent": {
+            "ticket_id": ticket_id,
+            "agent_id": "backend_implementer",
+            "stage_key": "implement",
+            "reason": "smoke",
+        },
         "loregarden_supersede_ticket": {
             "ticket_id": prereq_id,
             "title": "smoke replacement",
@@ -378,6 +384,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_block_ticket",
         "loregarden_set_ticket_workflow",
         "loregarden_requeue_ticket",
+        "loregarden_pin_stage_agent",
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
         "loregarden_search_reference",
