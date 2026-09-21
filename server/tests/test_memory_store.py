@@ -1146,6 +1146,48 @@ def test_agent_memory_service_search_checkpoints_absent_from_graph(vault_dir, tm
     assert any(row["note_type"] == "checkpoint" for row in found["obsidian"])
 
 
+def test_obsidian_search_non_checkpoint_fill_does_not_displace_for_checkpoints(vault_dir):
+    """R2 inverse — when non-checkpoint matches already fill limit, checkpoints
+    must not displace them (append-only after the non-cp bucket is full)."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "no-displace-needle-718yz0"
+    for index in range(4):
+        store.upsert_note(
+            title=f"Memory fill {index}",
+            body=f"{needle} memory {index}",
+            workspace_slug="loregarden",
+        )
+    for index in range(4):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-cp-nodisp",
+            run_id=f"run-nodisp-{index}",
+            entry=f"### Assumption\n{needle} checkpoint {index}",
+        )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=3)
+    assert len(hits) == 3
+    assert all(hit.note_type != "checkpoint" for hit in hits)
+
+
+def test_obsidian_search_unscoped_includes_checkpoints(vault_dir):
+    """R2 edge — unscoped search (no workspace_slug) still returns checkpoint
+    hits once include_checkpoints walks the Checkpoints root."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "unscoped-cp-needle-718ab1"
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-unscoped",
+        run_id="run-unscoped",
+        entry=f"### Assumption\n{needle}",
+    )
+
+    hits = store.search(needle)
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert "Checkpoints" in hits[0].path
+
+
 def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_dir, tmp_path):
     """R3 stress — a vault flooded with checkpoints must not change
     _obsidian_candidates' list_notes call (still RECALL_CANDIDATE_CAP, still
