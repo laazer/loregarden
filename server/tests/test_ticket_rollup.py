@@ -9,17 +9,19 @@ from __future__ import annotations
 
 import inspect
 import typing
+from unittest.mock import patch
 
 import pytest
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services import ticket_rollup
 from loregarden.services.ticket_rollup import (
     derive_parent_state,
+    has_children,
     reconcile_all_parents,
     reconcile_ancestors,
 )
 from sqlalchemy import text
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 
 @pytest.fixture(name="session")
@@ -558,3 +560,147 @@ def test_r5_rollup_child_parent_queries_have_no_workspace_id_predicate():
         assert "workspace_id" not in src, f"{name} must not filter on workspace_id; got:\n{src}"
         if name in ("_child_states", "has_children"):
             assert "parent_ticket_id" in src
+
+
+def _child_states_filtered_by_parent_workspace(
+    session: Session, parent_id: str
+) -> list[TicketState]:
+    """Adversarial mutation: same-workspace child filter (the regression R5 forbids).
+
+    Equating child.workspace_id to parent.workspace_id drops every child of a
+    NULL-workspace initiative — SQL NULL never equals a concrete workspace_id —
+    so both DONE milestones vanish from the tally and the parent never rolls up.
+    """
+    parent = session.get(Ticket, parent_id)
+    assert parent is not None
+    return list(
+        session.exec(
+            select(Ticket.state).where(
+                Ticket.parent_ticket_id == parent_id,
+                Ticket.workspace_id == parent.workspace_id,
+            )
+        ).all()
+    )
+
+
+def _has_children_filtered_by_parent_workspace(session: Session, ticket_id: str) -> bool:
+    """Adversarial mutation: has_children gated on matching workspace_id."""
+    parent = session.get(Ticket, ticket_id)
+    assert parent is not None
+    return (
+        session.exec(
+            select(Ticket.id)
+            .where(
+                Ticket.parent_ticket_id == ticket_id,
+                Ticket.workspace_id == parent.workspace_id,
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
+def test_r5_adversarial_same_workspace_filter_strands_push_rollup(session, workspace, workspace_b):
+    """R5 adversarial: child.workspace_id == parent.workspace_id leaves I stuck IN_PROGRESS.
+
+    Under the real (unfiltered) walk, R2b requires DONE. This mutation proves the
+    failure mode the suite must catch — if production ever grows that predicate,
+    R2b goes red for the same reason this assertion holds under the patch.
+    """
+    initiative, _ma, mb = _cross_workspace_initiative(
+        session,
+        workspace,
+        workspace_b,
+        milestone_a_state=TicketState.DONE,
+        milestone_b_state=TicketState.DONE,
+    )
+    assert initiative.workspace_id is None
+    assert mb.workspace_id != initiative.workspace_id
+
+    with patch.object(ticket_rollup, "_child_states", _child_states_filtered_by_parent_workspace):
+        changed = ticket_rollup.reconcile_ancestors(session, mb)
+
+    assert initiative.id not in {t.id for t in changed}
+    session.refresh(initiative)
+    assert initiative.state == TicketState.IN_PROGRESS, (
+        "same-workspace child filter must strand a NULL-workspace initiative; "
+        "if this ever passes under the mutation, R2b no longer detects the regression"
+    )
+    assert initiative.workspace_id is None
+
+
+def test_r5_adversarial_same_workspace_filter_strands_sweep(session, workspace, workspace_b):
+    """R5 adversarial (R3 path): filtered _child_states also strands reconcile_all_parents."""
+    initiative, _ma, _mb = _cross_workspace_initiative(
+        session,
+        workspace,
+        workspace_b,
+        initiative_state=TicketState.IN_PROGRESS,
+        milestone_a_state=TicketState.DONE,
+        milestone_b_state=TicketState.DONE,
+    )
+
+    with patch.object(ticket_rollup, "_child_states", _child_states_filtered_by_parent_workspace):
+        changed = ticket_rollup.reconcile_all_parents(session)
+
+    assert initiative.id not in {t.id for t in changed}
+    session.refresh(initiative)
+    assert initiative.state == TicketState.IN_PROGRESS
+    assert initiative.workspace_id is None
+
+
+def test_r5_adversarial_has_children_workspace_filter_hides_cross_ws_kids(
+    session, workspace, workspace_b
+):
+    """R5 adversarial: has_children must not equate workspace_id — else NULL parents look childless."""
+    initiative, _ma, _mb = _cross_workspace_initiative(session, workspace, workspace_b)
+
+    assert has_children(session, initiative.id) is True
+
+    with patch.object(ticket_rollup, "has_children", _has_children_filtered_by_parent_workspace):
+        assert ticket_rollup.has_children(session, initiative.id) is False, (
+            "workspace-eq has_children would hide every child of a NULL-workspace initiative"
+        )
+
+
+def test_r2b_order_independent_reconcile_from_either_done_child(session, workspace, workspace_b):
+    """Adversarial order: push from MA (ws1) must also land I at DONE when both are DONE.
+
+    R2b only exercises reconcile from MB. A walk that accidentally keyed off the
+    triggering child's workspace could pass R2b and still fail the other direction.
+    """
+    initiative, ma, mb = _cross_workspace_initiative(
+        session,
+        workspace,
+        workspace_b,
+        milestone_a_state=TicketState.DONE,
+        milestone_b_state=TicketState.DONE,
+    )
+    assert ma.workspace_id != mb.workspace_id
+
+    changed = reconcile_ancestors(session, ma)
+
+    assert initiative.id in {t.id for t in changed}
+    session.refresh(initiative)
+    assert initiative.state == TicketState.DONE
+    assert initiative.last_updated_by == "rollup"
+    assert initiative.workspace_id is None
+
+
+def test_cross_workspace_done_and_wont_do_still_resolves_initiative(
+    session, workspace, workspace_b
+):
+    """Combinatorial: DONE + WONT_DO across two workspaces is fully resolved → DONE."""
+    initiative, ma, mb = _cross_workspace_initiative(
+        session,
+        workspace,
+        workspace_b,
+        milestone_a_state=TicketState.DONE,
+        milestone_b_state=TicketState.WONT_DO,
+    )
+
+    reconcile_ancestors(session, ma)
+
+    session.refresh(initiative)
+    assert initiative.state == TicketState.DONE
+    assert initiative.workspace_id is None
