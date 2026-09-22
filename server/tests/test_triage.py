@@ -313,20 +313,22 @@ def test_triage_concurrency_guard_rejects_overlapping_triage_run(client: TestCli
     assert res.status_code == 409
 
 
-def test_orchestration_start_run_rejects_while_triage_active(client: TestClient, db_session):
+def test_orchestration_start_run_allowed_while_triage_active(client: TestClient, db_session):
+    """An open Baxter thread must not refuse the ticket's own stage run.
+
+    Triage runs no stage and completes none, so it cannot be what a stage run
+    is waiting on. Counting it as in-flight refused `begin_external_stage` on
+    ticket 8763cbba while the operator was talking about that very ticket.
+    """
     from loregarden.services.orchestration import OrchestrationService
 
     ticket_id = _ticket_id(client, external_id="01-bootstrap-fastapi-control-plane")
     _seed_active_run(client, ticket_id, agent_id="triage", status=RunStatus.RUNNING)
 
     ticket = db_session.get(Ticket, ticket_id)
-    try:
-        OrchestrationService(db_session).start_run(ticket)
-        raised = False
-    except ValueError as exc:
-        raised = True
-        assert "triage" in str(exc).lower()
-    assert raised
+    run = OrchestrationService(db_session).start_run(ticket)
+    assert run.agent_id != "triage"
+    assert run.stage_key == ticket.workflow_stage_key
 
 
 def test_triage_run_excluded_from_list_runs(client: TestClient, db_session):
