@@ -20,8 +20,8 @@ from loregarden.models.domain.enums import (
     TicketStudioSessionStatus,
     ToolGrantWarningCode,
     ToolPosture,
-    WorkItemType,
 )
+from loregarden.models.domain.work_item_types import WorkItemType
 from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
 

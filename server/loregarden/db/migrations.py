@@ -70,6 +70,7 @@ from loregarden.db.migrations_git_boundary import (
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
+from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -134,6 +135,7 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
 from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
@@ -1382,8 +1384,10 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
     ("0129_blobert_backend_lane", m_blobert_backend_lane),
     ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
+    ("0131_tickets_workspace_binding", m_tickets_workspace_binding),
     ("0132_approve_design_plans_columns", m_approve_design_plans_columns),
     ("0133_design_plan_gates", m_design_plan_gates),
+    ("0134_initiative_number_pool", m_initiative_number_pool),
     ("0135_ticket_block_kind", m_ticket_block_kind),
     ("0136_auto_repair_columns", m_auto_repair_columns),
     ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),

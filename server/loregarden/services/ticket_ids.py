@@ -20,14 +20,26 @@ A ticket with no milestone ancestor takes :data:`NO_MILESTONE_SEGMENT` in that
 slot (``lor-none-142``) rather than dropping the segment, so every id has the
 same shape and "filed under no milestone" is stated rather than inferred from a
 missing part.
+
+Initiatives are cross-workspace and use a separate scheme::
+
+    init-cross-workspace-7
+     │       │              └─ ticket_number — global, from initiative_number_pool
+     │       └─ slug derived from the title (like a milestone code)
+     └─ literal prefix ``init`` (reserved — not a Workspace.ticket_prefix)
+
+The literal ``init`` prefix is reserved for initiatives. A workspace must not
+treat ``init`` as its ``ticket_prefix`` for number-fallback identity; number
+fallback stays workspace-scoped and never returns an INITIATIVE row.
 """
 
 from __future__ import annotations
 
 import re
 
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
-from sqlalchemy import func
+from loregarden.models.domain import InitiativeNumberPool, Ticket, WorkItemType, Workspace
+from loregarden.models.domain.initiative_tables import GLOBAL_INITIATIVE_POOL_ID
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlmodel import Session, col, select
 
@@ -46,6 +58,10 @@ _NON_SLUG_RE = re.compile(r"[^a-z0-9]+")
 _STRUCTURED_ID_RE = re.compile(
     r"^(?P<prefix>[a-z0-9]+)(?:-(?P<segment>[a-z0-9-]*?))?-(?P<number>\d+)$"
 )
+_INITIATIVE_SPELLING_RE = re.compile(r"^init-(?P<slug>[a-z0-9-]+)-(?P<number>\d+)$")
+
+#: Fallback middle segment when a title yields nothing usable for an initiative.
+_INITIATIVE_SLUG_FALLBACK = "initiative"
 
 # Dropped from the head of a milestone title before its code is taken: they order
 # milestones, they do not name them. "01_milestone_bootstrap" -> "bootstrap",
@@ -107,7 +123,12 @@ def derive_milestone_code(title: str, *, taken: frozenset[str]) -> str:
 
 
 def spell_external_id(*, prefix: str, milestone_code: str, number: int) -> str:
-    """Assemble the three parts into the id a human sees."""
+    """Assemble the three parts into the id a human sees.
+
+    Workspace tickets only. Initiatives use :func:`spell_initiative_external_id`
+    with the reserved literal prefix ``init`` (``init-<slug>-<n>``) — that
+    prefix is not a ``Workspace.ticket_prefix``.
+    """
     return "-".join(
         (
             prefix.strip() or FALLBACK_PREFIX,
@@ -115,6 +136,149 @@ def spell_external_id(*, prefix: str, milestone_code: str, number: int) -> str:
             str(number),
         )
     )
+
+
+def derive_initiative_slug(title: str, *, taken: frozenset[str]) -> str:
+    """Middle segment for an initiative id, unique against other initiative slugs.
+
+    Reuses the milestone-code word/noise helpers so titles like
+    ``Track A — Cross Workspace`` yield ``cross-workspace``.
+    """
+    return derive_milestone_code(title, taken=taken)
+
+
+def spell_initiative_external_id(slug: str, n: int) -> str:
+    """Assemble ``init-<slug>-<n>``. Literal prefix ``init`` is reserved."""
+    cleaned = slug.strip().strip("-").lower()
+    if not cleaned:
+        cleaned = _INITIATIVE_SLUG_FALLBACK
+    return f"init-{cleaned}-{n}"
+
+
+def _initiative_slug_from_external_id(external_id: str) -> str | None:
+    match = _INITIATIVE_SPELLING_RE.match(external_id.strip().lower())
+    return match.group("slug") if match else None
+
+
+def _ensure_initiative_pool(session: Session) -> InitiativeNumberPool:
+    """The singleton row, created on first use if the migration has not run yet.
+
+    ``create_all`` on test engines builds the table empty; the migration seeds
+    the row for real databases. ``INSERT OR IGNORE`` avoids a commit-during-
+    create hazard while still racing safely on the primary key.
+    """
+    pool = session.get(InitiativeNumberPool, GLOBAL_INITIATIVE_POOL_ID)
+    if pool is not None:
+        return pool
+    session.execute(
+        text(
+            "INSERT OR IGNORE INTO initiative_number_pool "
+            "(id, last_initiative_number) VALUES ('global', 0)"
+        )
+    )
+    session.flush()
+    pool = session.get(InitiativeNumberPool, GLOBAL_INITIATIVE_POOL_ID)
+    if pool is None:
+        raise RuntimeError("could not create the initiative_number_pool singleton")
+    return pool
+
+
+def next_initiative_number(session: Session) -> int:
+    """One past the highest initiative number ever issued, and record it.
+
+    Delete-safe like :func:`next_ticket_number`: the high-water lives on the
+    pool, and the live max among INITIATIVE rows is still consulted so a lagging
+    pool cannot re-issue a number.
+
+    The bump is written with SQL so a raw UPDATE of the pool (tests, recovery)
+    cannot leave the identity map holding a stale high-water.
+    """
+    _ensure_initiative_pool(session)
+    highest_live = session.exec(
+        select(func.max(Ticket.ticket_number)).where(
+            Ticket.work_item_type == WorkItemType.INITIATIVE
+        )
+    ).one()
+    live_max = int(highest_live or 0)
+    session.execute(
+        text(
+            """
+            UPDATE initiative_number_pool
+            SET last_initiative_number =
+                CASE
+                    WHEN last_initiative_number > :live_max THEN last_initiative_number + 1
+                    ELSE :live_max + 1
+                END
+            WHERE id = 'global'
+            """
+        ),
+        {"live_max": live_max},
+    )
+    session.flush()
+    issued = session.execute(
+        text("SELECT last_initiative_number FROM initiative_number_pool WHERE id = 'global'")
+    ).scalar()
+    if issued is None:
+        raise RuntimeError("initiative_number_pool singleton missing after bump")
+    # Keep the identity-map row in sync with the SQL bump.
+    pool = session.get(InitiativeNumberPool, GLOBAL_INITIATIVE_POOL_ID)
+    if pool is not None:
+        session.refresh(pool)
+    return int(issued)
+
+
+def _taken_initiative_slugs(session: Session, *, exclude_id: str | None = None) -> frozenset[str]:
+    query = select(Ticket.external_id).where(Ticket.work_item_type == WorkItemType.INITIATIVE)
+    if exclude_id:
+        query = query.where(Ticket.id != exclude_id)
+    taken: set[str] = set()
+    for external_id in session.exec(query).all():
+        slug = _initiative_slug_from_external_id(external_id or "")
+        if slug:
+            taken.add(slug)
+    return frozenset(taken)
+
+
+def _reject_taken_global_spelling(session: Session, spelling: str, *, exclude_id: str) -> None:
+    """Refuse a spelling any ticket already answers to — any workspace including NULL."""
+    if not spelling:
+        return
+    candidates = {spelling, spelling.lower()}
+    dup = session.exec(
+        select(Ticket).where(
+            or_(
+                col(Ticket.external_id).in_(list(candidates)),
+                col(Ticket.legacy_external_id).in_(list(candidates)),
+            ),
+            Ticket.id != exclude_id,
+        )
+    ).first()
+    if dup:
+        raise ValueError(f"external_id already exists: {spelling}")
+
+
+def assign_initiative_external_id(
+    session: Session, ticket: Ticket, *, supplied_id: str = ""
+) -> str:
+    """Issue a global initiative number and spell ``init-<slug>-<n>``.
+
+    No Workspace argument — initiatives are null-workspace. A caller-supplied
+    id becomes ``legacy_external_id``; ``external_id`` is always system-spelled.
+    Uniqueness is global on both spellings (not ``workspace_id IS NULL``).
+    """
+    supplied = supplied_id.strip()
+    if supplied:
+        _reject_taken_global_spelling(session, supplied, exclude_id=ticket.id)
+        ticket.legacy_external_id = supplied
+
+    taken = _taken_initiative_slugs(session, exclude_id=ticket.id)
+    slug = derive_initiative_slug(ticket.title, taken=taken)
+    number = next_initiative_number(session)
+    spelling = spell_initiative_external_id(slug, number)
+    _reject_taken_global_spelling(session, spelling, exclude_id=ticket.id)
+    ticket.ticket_number = number
+    ticket.external_id = spelling
+    return spelling
 
 
 def parse_ticket_number(value: str) -> int | None:
@@ -235,7 +399,11 @@ def resolve(session: Session, value: str, *, workspace_id: str | None = None) ->
     def by_spelling(column: InstrumentedAttribute[str]) -> Ticket | None:
         query = select(Ticket).where(column.in_([ref, ref.lower()]))
         if workspace_id:
-            query = query.where(Ticket.workspace_id == workspace_id)
+            # INCLUDE null-workspace rows (initiatives) alongside the filtered
+            # workspace. Number fallback below stays workspace-scoped only.
+            query = query.where(
+                or_(Ticket.workspace_id == workspace_id, Ticket.workspace_id.is_(None))
+            )
         return session.exec(query).first()
 
     ticket = by_spelling(col(Ticket.external_id)) or by_spelling(col(Ticket.legacy_external_id))
