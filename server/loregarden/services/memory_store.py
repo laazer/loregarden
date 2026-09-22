@@ -296,18 +296,18 @@ class ObsidianMemoryStore:
         note_type: str = "",
         workspace_slug: str = "",
         limit: int = 50,
+        include_checkpoints: bool = False,
     ) -> list[MemoryNote]:
-        if workspace_slug.strip():
-            roots = [
-                self.memory_dir(workspace_slug),
-                self.learnings_dir(workspace_slug),
-                self.blogposts_dir(workspace_slug),
-            ]
+        # Checkpoint-only filter: walk Checkpoints alone so a shared limit with
+        # Memory/Learnings/BlogPosts cannot starve the root search needs.
+        if include_checkpoints and note_type == "checkpoint":
+            roots = self._checkpoint_roots(workspace_slug)
+        elif note_type == "checkpoint":
+            roots = []
         else:
-            memory_root = self.vault_dir / self._memory_subdir
-            learnings_root = self.vault_dir / self._learnings_subdir
-            blogposts_root = self.vault_dir / self._blogposts_subdir
-            roots = [p for p in (memory_root, learnings_root, blogposts_root) if p.is_dir()]
+            roots = self._standard_note_roots(
+                workspace_slug, include_checkpoints=include_checkpoints
+            )
         notes: list[MemoryNote] = []
         for root in roots:
             if not root.is_dir():
@@ -324,6 +324,30 @@ class ObsidianMemoryStore:
                     return notes
         return notes
 
+    def _standard_note_roots(self, workspace_slug: str, *, include_checkpoints: bool) -> list[Path]:
+        if workspace_slug.strip():
+            roots = [
+                self.memory_dir(workspace_slug),
+                self.learnings_dir(workspace_slug),
+                self.blogposts_dir(workspace_slug),
+            ]
+            if include_checkpoints:
+                roots.extend(self._checkpoint_roots(workspace_slug))
+            return roots
+        memory_root = self.vault_dir / self._memory_subdir
+        learnings_root = self.vault_dir / self._learnings_subdir
+        blogposts_root = self.vault_dir / self._blogposts_subdir
+        roots = [p for p in (memory_root, learnings_root, blogposts_root) if p.is_dir()]
+        if include_checkpoints:
+            roots.extend(self._checkpoint_roots(""))
+        return roots
+
+    def _checkpoint_roots(self, workspace_slug: str) -> list[Path]:
+        if workspace_slug.strip():
+            return [self.checkpoints_dir(workspace_slug)]
+        checkpoints_root = self.vault_dir / self._checkpoints_subdir
+        return [checkpoints_root] if checkpoints_root.is_dir() else []
+
     def search(
         self,
         query: str,
@@ -334,13 +358,30 @@ class ObsidianMemoryStore:
         needle = query.strip().lower()
         if not needle:
             return []
-        hits: list[MemoryNote] = []
-        for note in self.list_notes(workspace_slug=workspace_slug, limit=500):
-            haystack = f"{note.title}\n{note.body}\n{' '.join(note.tags)}".lower()
-            if needle in haystack:
-                hits.append(note)
-            if len(hits) >= limit:
-                break
+
+        def _matches(notes: list[MemoryNote]) -> list[MemoryNote]:
+            found: list[MemoryNote] = []
+            for note in notes:
+                haystack = f"{note.title}\n{note.body}\n{' '.join(note.tags)}".lower()
+                if needle in haystack:
+                    found.append(note)
+            return found
+
+        # Two passes: default roots stay checkpoint-blind; checkpoints get their
+        # own walk so a Memory-filled list_notes(limit=500) cannot starve them.
+        non_checkpoint = _matches(self.list_notes(workspace_slug=workspace_slug, limit=500))
+        checkpoints = _matches(
+            self.list_notes(
+                workspace_slug=workspace_slug,
+                include_checkpoints=True,
+                note_type="checkpoint",
+                limit=500,
+            )
+        )
+        hits = non_checkpoint[:limit]
+        remaining = limit - len(hits)
+        if remaining > 0:
+            hits.extend(checkpoints[:remaining])
         return hits
 
     def _read_note(self, path: Path) -> MemoryNote | None:
