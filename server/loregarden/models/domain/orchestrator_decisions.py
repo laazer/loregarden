@@ -54,3 +54,7 @@ class OrchestratorDecision(StrEnum):
     #: finish it was handed back to `finalize_workflow` (801). A landing that
     #: blocked and was then fixed by hand leaves exactly that residue.
     FINISHED_PARKED_TERMINAL_STAGE = "finished_parked_terminal_stage"
+    #: A landing conflicted on a ticket whose every stage passed, so one
+    #: resolution turn was armed on the terminal stage rather than blocking
+    #: for a person (801).
+    DISPATCHED_LANDING_RESOLVER = "dispatched_landing_resolver"

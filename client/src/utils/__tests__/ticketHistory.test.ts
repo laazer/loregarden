@@ -131,13 +131,14 @@ describe("orchestrator decisions", () => {
   });
 
   it("reads a refusal as trouble and an overrule or a plan sign-off as normal", () => {
-    const [refused, overruled, signedOff, classified, requeued, repairing, escalated] = historyLines([
+    const [refused, overruled, signedOff, classified, requeued, repairing, resolving, escalated] = historyLines([
       decision("refused_dispatch_terminal_parent", "Did not dispatch 'implement'."),
       decision("overruled_stale_gate", "Stored the handoff."),
       decision("approved_design_plan", "Approved the design plan from 'ui-design'."),
       decision("classified_block", "Block on 'implement' classified as decision."),
       decision("requeued_after_decision", "A person chose 'Try B'; requeued there."),
       decision("dispatched_repair", "Re-armed 'implement' for one repair turn."),
+      decision("dispatched_landing_resolver", "Landing conflicted in migrations.py; armed a resolution turn."),
       decision("repair_escalated", "No second repair; a person reads it from here."),
     ]);
     expect(refused.tone).toBe("failed");
@@ -146,6 +147,7 @@ describe("orchestrator decisions", () => {
     expect(classified.tone).toBe("failed"); // a block is still trouble until it is cleared
     expect(requeued.tone).toBe("normal");
     expect(repairing.tone).toBe("normal"); // the orchestrator is handling it
+    expect(resolving.tone).toBe("normal"); // likewise: a resolver is coming, not a person
     expect(escalated.tone).toBe("failed"); // it could not; a person must
   });
 

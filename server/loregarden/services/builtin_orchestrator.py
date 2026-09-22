@@ -52,6 +52,7 @@ from loregarden.services.stage_transient_retry import stage_rearmed_for_latest_r
 from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
+    resolve_stage_execution,
 )
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
@@ -257,7 +258,13 @@ class BuiltinOrchestrator:
                         orch_run, ticket, message="Awaiting human approval"
                     )
 
-                if is_agentless_stage(stage_def):
+                # A pin outranks the stage's own emptiness. The terminal stage
+                # names no agent, so it reads agentless and finalizes — which is
+                # right until a landing conflict arms it with a resolver (801).
+                # `resolve_stage_execution` answers with the pin when there is
+                # one, and with the stage's own (empty) agent when there is not.
+                pinned_agent, _ = resolve_stage_execution(ticket, stage_def)
+                if is_agentless_stage(stage_def) and not pinned_agent:
                     handled = self._handle_agentless_stage(
                         ticket, orch_run, stage_def, target_key, auto_approve=auto_approve
                     )
