@@ -2,8 +2,8 @@
 
 Split out of OrchestrationService, which is the workflow state machine and was
 already at its size cap before this. What lives here is a different job: give a
-run an isolated checkout, get it into a slot, and decide what happens to its
-work when it finishes.
+run an isolated checkout and get it into a slot. What happens to its work when
+the ticket finishes is the landing at the terminal stage (`landing.py`).
 
 Composed with OrchestrationService rather than inheriting from it — this needs
 exactly one thing from it (``start_run``), and the queue has no business
@@ -13,11 +13,10 @@ reaching the rest of the state machine.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
-from loregarden.services.git_automation import AutomationResult
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.orchestration_profile import GitAutomationConfig
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -140,6 +139,7 @@ class ParallelRunService:
         """
         from loregarden.services.git_automation_config import resolve_git_automation
         from loregarden.services.git_branch import resolve_ticket_branch
+        from loregarden.services.target_branch import resolve_target_branch
         from loregarden.services.worktree_service import (
             WorktreeService,
             repo_path_for_workspace,
@@ -157,14 +157,14 @@ class ParallelRunService:
         if not config or not config.worktree:
             return run, None
 
-        worktree_service = WorktreeService(
-            self.session,
-            repo_path=repo_path_for_workspace(self.session, ticket.workspace_id),
-        )
+        repo_path = repo_path_for_workspace(self.session, ticket.workspace_id)
+        worktree_service = WorktreeService(self.session, repo_path=repo_path)
         worktree = worktree_service.create_worktree(
             workspace_id=ticket.workspace_id,
             agent_run_id=run.id,
-            parent_branch=config.base_branch,
+            parent_branch=resolve_target_branch(
+                self.session, ticket, workspace, repo_root=Path(repo_path)
+            ),
             branch=resolve_ticket_branch(ticket),
         )
 
@@ -175,214 +175,3 @@ class ParallelRunService:
             self.session.refresh(run)
 
         return run, worktree
-
-    async def on_parallel_run_complete(
-        self,
-        run: AgentRun,
-        auto_merge: bool = False,
-    ) -> dict:
-        """
-        Called when a parallel run completes.
-
-        Handles:
-        - Publishing the run's work per the workspace's git automation policy
-        - Freeing the slot
-        - Promoting the next run from the queue
-
-        Args:
-            run: Completed AgentRun
-            auto_merge: Ignored; kept for callers that still pass it. Whether to
-                merge is the workspace's `git.auto_merge` policy, so that one
-                queue-wide setting governs every run rather than each call site
-                deciding.
-
-        Returns:
-            {
-                "status": "merged" | "failed" | "conflicts",
-                "next_run": AgentRun (if promoted),
-                "message": str
-            }
-        """
-        from loregarden.services.parallel_queue import ParallelQueueService
-
-        try:
-            automation = self._publish_run_work(run)
-            if automation and not automation.get("ok"):
-                # Publishing failed (a rejected push, a conflicted merge). The
-                # slot still has to be freed and the queue still has to drain —
-                # holding a slot for work nobody can land stops the whole queue.
-                await ParallelQueueService(self.session, max_concurrent=3).on_run_complete(
-                    run_id=run.id,
-                )
-                return {
-                    "status": "conflicts",
-                    "automation": automation,
-                    "message": automation.get("message", "Could not publish this run's work"),
-                }
-
-            # Free slot and promote from queue
-            queue_service = ParallelQueueService(self.session, max_concurrent=3)
-            promotion = await queue_service.on_run_complete(run_id=run.id)
-
-            if promotion and promotion.get("status") == "promoted":
-                return {
-                    "status": "merged",
-                    "next_run": promotion.get("next_run"),
-                    "message": promotion.get("message"),
-                }
-            else:
-                return {
-                    "status": "merged",
-                    "message": "Run completed, slot freed, queue empty",
-                }
-
-        except Exception as e:
-            import logging
-
-            logging.error(f"Error on parallel run complete: {e}", exc_info=True)
-            raise
-
-    def _publish_run_work(self, run: AgentRun) -> dict | None:
-        """Commit / push / PR / auto-merge this run's work, as configured.
-
-        Returns None when there is nothing to do, and a result dict otherwise.
-        A failure here is reported, never raised: the agent's work is already
-        on disk, and losing the slot-freeing that follows would stall the queue
-        over a publishing problem.
-        """
-        from loregarden.services.git_automation import run_git_automation
-        from loregarden.services.git_automation_config import resolve_git_automation
-        from loregarden.services.worktree_service import (
-            ConflictDetectionError,
-            WorktreeService,
-            repo_path_for_workspace,
-        )
-
-        ticket = self.session.get(Ticket, run.ticket_id)
-        workspace = self.session.get(Workspace, run.workspace_id)
-        if not ticket or not workspace:
-            return None
-
-        config = resolve_git_automation(workspace, ticket)
-        result = run_git_automation(self.session, run, ticket, config)
-        if not result.ok:
-            failure = result.failure
-            return {
-                **result.as_dict(),
-                "message": f"{failure.step} failed: {failure.detail}" if failure else "failed",
-            }
-
-        if not run.worktree_id or not config.auto_merge:
-            return result.as_dict() if result.steps else None
-
-        worktree_service = WorktreeService(
-            self.session,
-            repo_path=repo_path_for_workspace(self.session, run.workspace_id),
-        )
-        worktree = worktree_service.get_worktree(run.worktree_id)
-        if not worktree:
-            return result.as_dict() if result.steps else None
-
-        # Conflicts are checked even on the PR path. `gh pr merge --auto` will
-        # sit on a conflicted PR indefinitely rather than report anything back,
-        # so without this the auto-resolve setting could never fire for the one
-        # configuration anybody actually runs.
-        try:
-            conflicted = worktree_service.detect_conflicts(worktree, config.base_branch)
-        except ConflictDetectionError:
-            # Fail closed: an unknown conflict state must not become an
-            # automatic merge. Route it down the conflict path, which is the
-            # one that surfaces to a human.
-            logger.exception("Conflict detection failed for run %s; treating as conflicted", run.id)
-            conflicted = True
-
-        if conflicted:
-            return self._handle_merge_conflicts(run, ticket, workspace, worktree, config, result)
-
-        # Clean. With a PR open, auto-merge lands it once checks pass — merging
-        # here too would land the work twice and leave the PR merging an empty
-        # diff. Without one, this is the only thing that lands it.
-        if config.open_pr:
-            return {**result.as_dict(), "merge": "deferred to pull request"}
-
-        merged = worktree_service.merge_worktree(
-            worktree,
-            target_branch=config.base_branch,
-            auto_resolve=False,
-        )
-        if merged:
-            return {**result.as_dict(), "merged": True}
-
-        return {
-            **result.as_dict(),
-            "ok": False,
-            "worktree_id": worktree.id,
-            "message": "Merge failed after a clean conflict check",
-        }
-
-    def _handle_merge_conflicts(
-        self,
-        run: AgentRun,
-        ticket: Ticket,
-        workspace: Workspace,
-        worktree: Worktree,
-        config: GitAutomationConfig,
-        result: AutomationResult,
-    ) -> dict:
-        """Either hand the conflict to an agent, or report it and stop."""
-        from loregarden.services.conflict_resolution import request_agent_resolution
-        from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
-
-        if not config.auto_resolve_conflicts:
-            return {
-                **result.as_dict(),
-                "ok": False,
-                "worktree_id": worktree.id,
-                "conflict_files": worktree.conflict_files,
-                "message": f"Merge conflicts in {len(worktree.conflict_files)} files",
-            }
-
-        repo_root = resolve_run_root(self.session, run, resolve_workspace_root(workspace))
-        report = request_agent_resolution(
-            self.session,
-            run,
-            ticket,
-            worktree,
-            repo_root,
-            max_attempts=config.max_conflict_resolve_attempts,
-        )
-        if report and not report.resolution_attempted:
-            # The resolver would have been a standalone dispatch of a stage that
-            # has already spent its retry budget, so it was refused. Reported as
-            # a failure, never raised: `on_parallel_run_complete` frees the slot
-            # on this branch, and an exception here would skip that and strand
-            # it.
-            return {
-                **result.as_dict(),
-                "ok": False,
-                "worktree_id": worktree.id,
-                "conflict_files": worktree.conflict_files,
-                "message": (
-                    f"Merge conflicts in {len(report.conflicting_files)} files; the stage is at "
-                    "its retry budget, so no resolver was dispatched"
-                ),
-            }
-        if report:
-            return {
-                **result.as_dict(),
-                "ok": True,
-                "resolving_conflicts": True,
-                "attempt": report.merge_attempt_number,
-                "message": (
-                    f"Merge conflicts in {len(report.conflicting_files)} files; "
-                    f"resolution attempt {report.merge_attempt_number} dispatched"
-                ),
-            }
-
-        return {
-            **result.as_dict(),
-            "ok": False,
-            "worktree_id": worktree.id,
-            "conflict_files": worktree.conflict_files,
-            "message": "Merge conflicts remain after the resolution budget was spent",
-        }

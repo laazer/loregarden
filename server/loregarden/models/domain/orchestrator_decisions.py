@@ -46,3 +46,7 @@ class OrchestratorDecision(StrEnum):
     REPAIRED = "repaired"
     #: No repair, or no second one: the block goes to a person with its kind.
     REPAIR_ESCALATED = "repair_escalated"
+    #: A lane read busy with nothing in it — `is_available=0`, both occupant
+    #: ids null, past the reservation grace — and was given back to the pool
+    #: (775). Slot 1 sat that way for hours while the reclaim was a log line.
+    RECLAIMED_GHOST_LANE = "reclaimed_ghost_lane"

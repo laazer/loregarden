@@ -903,6 +903,75 @@ def test_grandchild_blocked_stops_subtree_auto_run(db_session: Session, tmp_path
     assert "blocked" in (orch_run.error_message or "").lower()
 
 
+def test_a_child_waiting_on_another_workspace_is_held_and_named(
+    db_session: Session, tmp_path
+) -> None:
+    """676: the orchestrator must not pick up work that cannot succeed yet.
+
+    Dependency edges were order-only. `order_children_for_subtree` drops every
+    prerequisite outside the sibling set, which is every cross-workspace edge —
+    so nine such edges existed, rendered in the UI as prerequisites, and the
+    orchestrator started the dependent anyway and reported the resulting failure
+    as the child's own.
+
+    Held rather than blocked, and named rather than counted: the reader cannot
+    see the other workspace's board, so the message has to carry the workspace
+    or it sends them somewhere they will not find it.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-cross-workspace")
+    parent = _make_ticket(db_session, ws, external_id="waiting-p-1", title="Parent")
+    child = _make_ticket(
+        db_session, ws, external_id="waiting-c-1", title="Child", parent_ticket_id=parent.id
+    )
+    upstream_ws = _make_workspace(db_session, tmp_path, "auto-mode-upstream")
+    upstream = _make_ticket(
+        db_session, upstream_ws, external_id="lor-extract-lore-35", title="Shared library"
+    )
+    TicketDependencyService(db_session).add_dependency(child.id, upstream.id)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+
+    message = orch_run.error_message or ""
+    assert "waiting on a prerequisite" in message.lower(), message
+    assert "lor-extract-lore-35" in message, message
+    assert "auto-mode-upstream" in message, (
+        "the prerequisite's workspace has to be named — an external id alone "
+        f"points the reader at the wrong board: {message}"
+    )
+    assert parent.state != TicketState.DONE, (
+        "a parent whose child never ran must not report itself complete"
+    )
+
+
+def test_a_child_runs_once_its_cross_workspace_prerequisite_is_settled(
+    db_session: Session, tmp_path
+) -> None:
+    """The control. Without it the test above passes for an orchestrator that
+    holds every child forever, which would stop the subtree rather than order it.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-cross-workspace-ok")
+    parent = _make_ticket(db_session, ws, external_id="ready-p-1", title="Parent")
+    child = _make_ticket(
+        db_session, ws, external_id="ready-c-1", title="Child", parent_ticket_id=parent.id
+    )
+    upstream_ws = _make_workspace(db_session, tmp_path, "auto-mode-upstream-ok")
+    upstream = _make_ticket(
+        db_session, upstream_ws, external_id="lor-extract-lore-99", title="Shared library"
+    )
+    upstream.state = TicketState.DONE
+    TicketDependencyService(db_session).add_dependency(child.id, upstream.id)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+
+    assert "waiting on a prerequisite" not in (orch_run.error_message or "").lower(), (
+        orch_run.error_message
+    )
+
+
 def test_already_done_child_is_not_rerun_under_auto_mode(
     db_session: Session, tmp_path, monkeypatch
 ):
@@ -1398,3 +1467,57 @@ def test_builtin_run_records_a_lease_stamp(db_session: Session, tmp_path):
         "a builtin run must renew its own lease; without a stamp the sweep judges "
         "it on started_at and reclaims a healthy run mid-handoff"
     )
+
+
+def test_a_child_whose_prerequisite_is_done_but_unlanded_is_held_and_says_so(
+    db_session: Session, tmp_path
+) -> None:
+    """770: done is not landed. The hold names the branch the work is missing from."""
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-unlanded")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlanded-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    other_parent = _make_ticket(
+        db_session, ws, external_id="unlanded-q", title="Other", work_item_type=WorkItemType.FEATURE
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="unlanded-c", title="Child", parent_ticket_id=parent.id
+    )
+    prerequisite = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlanded-a",
+        title="Done elsewhere",
+        parent_ticket_id=other_parent.id,
+    )
+    prerequisite.state = TicketState.DONE
+    prerequisite.branch = "loregarden/unlanded-a"
+    db_session.add(prerequisite)
+    db_session.commit()
+    repo = Path(ws.repo_path)
+    other_target = resolve_target_branch(db_session, prerequisite, ws, repo_root=repo)
+    subprocess.run(["git", "branch", prerequisite.branch, other_target], cwd=repo, check=True)
+    tree = tmp_path / "prereq-tree"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", str(tree), prerequisite.branch], cwd=repo, check=True
+    )
+    (tree / "a.txt").write_text("work nobody landed\n")
+    subprocess.run(["git", "add", "-A"], cwd=tree, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "a"], cwd=tree, check=True)
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo, check=True)
+    TicketDependencyService(db_session).add_dependency(child.id, prerequisite.id)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+
+    message = orch_run.error_message or ""
+    assert "unlanded-a" in message, message
+    assert "not landed on integration/unlanded-p" in message, message
+    assert parent.state != TicketState.DONE

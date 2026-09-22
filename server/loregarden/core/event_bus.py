@@ -28,7 +28,6 @@ one. `TRANSITION_EVENTS` names the subset nothing else records.
 """
 
 import json
-import threading
 from datetime import datetime
 from typing import Any
 
@@ -72,18 +71,25 @@ class EventBus:
         artifact_id: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> DomainEvent:
-        with _publish_lock:
-            event = DomainEvent(
-                type=event_type,
-                workspace_id=workspace_id,
-                ticket_id=ticket_id,
-                run_id=run_id,
-                artifact_id=artifact_id,
-                payload_json=json.dumps(payload or {}),
-            )
-            session.add(event)
-            session.commit()
-            return session.get(DomainEvent, event.id) or event
+        # No process-wide lock around this write. One guarded the subscriber
+        # fan-out until that was removed (567), and then guarded nothing — while
+        # still being held across `session.commit()`. Two orchestrations
+        # publishing at once took it in the opposite order to SQLite's write
+        # lock: A held the lock and waited on the database, B held the database
+        # (an uncommitted stage write) and waited on the lock, and A failed
+        # with "database is locked" after the full busy timeout. Sessions are
+        # per-thread and SQLite serialises writers itself (lg-milestone-that-778).
+        event = DomainEvent(
+            type=event_type,
+            workspace_id=workspace_id,
+            ticket_id=ticket_id,
+            run_id=run_id,
+            artifact_id=artifact_id,
+            payload_json=json.dumps(payload or {}),
+        )
+        session.add(event)
+        session.commit()
+        return session.get(DomainEvent, event.id) or event
 
     def list_recent(
         self,
@@ -132,4 +138,3 @@ class EventBus:
 
 
 event_bus = EventBus()
-_publish_lock = threading.Lock()

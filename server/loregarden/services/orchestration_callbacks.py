@@ -38,6 +38,7 @@ from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
 )
+from loregarden.services.process_identity import still_running
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
@@ -220,6 +221,20 @@ class OrchestrationCallbackService:
             .where(col(AgentRun.status).in_(list(SUPERVISED)))
         ).all()
         for child in children:
+            if still_running(child.agent_pid, child.agent_pid_identity):
+                # A leftover is a row nobody is working under. A verified-live
+                # process is somebody working (757): its row stays, and its own
+                # completion — under a parent it will find terminal — says what
+                # came of it. The startup reaper skips its parent for the same
+                # reason; this is the same rule at the other end of the edge.
+                logger.warning(
+                    "Not failing agent run %s under terminal orchestration %s: pid %s "
+                    "is still its process",
+                    child.run_code,
+                    orch_run.run_code,
+                    child.agent_pid,
+                )
+                continue
             self.orch.complete_run(
                 child,
                 status=RunStatus.FAILED,

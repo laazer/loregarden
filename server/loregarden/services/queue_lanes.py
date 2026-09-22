@@ -58,6 +58,10 @@ from loregarden.services.queue_repair import (
     repair_exhausted,
     resolve_repair_route,
 )
+from loregarden.services.queue_slot_claims import (
+    claim_orphaned_orchestrations,
+    release_nested_slot_claims,
+)
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
 
@@ -106,6 +110,23 @@ def set_lane_dispatcher_factory(factory: Callable[[Session], LaneDispatcher] | N
     """Install what lanes use to start work. Called by the composition root."""
     global _dispatcher_factory  # noqa: PLW0603 — one process-wide wiring point
     _dispatcher_factory = factory
+
+
+def _claimed_after(slot: AgentSlot, promoted_at: datetime | None) -> bool:
+    """Whether the slot's claim postdates the entry's promotion.
+
+    SQLite hands back naive datetimes; both sides are read as UTC. A slot with
+    no claim time, or an entry never promoted, cannot be shown to be a later
+    claim, so the answer is no.
+    """
+    assigned_at = slot.assigned_at
+    if assigned_at is None or promoted_at is None:
+        return False
+    if assigned_at.tzinfo is None:
+        assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+    if promoted_at.tzinfo is None:
+        promoted_at = promoted_at.replace(tzinfo=timezone.utc)
+    return assigned_at > promoted_at
 
 
 class QueueLaneService:
@@ -434,20 +455,32 @@ class QueueLaneService:
         (a restart, a status read racing this call) the slot lookup finds nothing,
         and gating the entry on it left the entry ACTIVE forever with no later pass
         able to find it.
+
+        The same reasoning applies to the slot. An occupant lookup that finds
+        nothing does not mean the lane is free: on 714 the ids had been cleared
+        but `is_available` had not, and returning here left slot 1 busy with no
+        occupant for hours (775). The entry records the slot number, so when the
+        occupant lookup fails the release falls back to that — provided the slot
+        is still this entry's claim and not a later one's.
         """
         entry = self.session.exec(
             select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
         ).first()
-        slot = self.session.exec(
+        held = self.session.exec(
             select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
         ).first()
+        slot = held
+        if held is None and entry is not None:
+            slot = self._slot_left_busy_by(entry)
 
         # Before the entry is settled: a block that may still resolve itself
         # keeps this lane rather than handing it to the next ticket. The hold is
         # only offered while a slot still names this orchestration — there is no
         # lane to hold otherwise, and pretending there is would leave an entry
-        # REPAIRING with nothing behind it.
-        if entry is not None and slot is not None and self._hold_for_repair(entry):
+        # REPAIRING with nothing behind it. A slot found by number does not
+        # count: `reconcile_slots` recognises a hold by the occupant id, so a
+        # hold on a slot naming nothing would be reclaimed on the next sweep.
+        if entry is not None and held is not None and self._hold_for_repair(entry):
             emit_execution_update()
             return
 
@@ -458,6 +491,12 @@ class QueueLaneService:
             self.session.commit()
 
         if not slot:
+            if entry is None:
+                logger.warning(
+                    "Orchestration %s completed with no lane entry and no slot naming it; "
+                    "nothing to release",
+                    orchestration_run_id,
+                )
             emit_execution_update()
             return
 
@@ -471,6 +510,54 @@ class QueueLaneService:
 
         self.start_lane_head(slot_number)
         emit_execution_update()
+
+    def _slot_left_busy_by(self, entry: QueuedRun) -> AgentSlot | None:
+        """The entry's slot, if it is busy with nothing in it and the claim is ours.
+
+        A slot with both ids null and `is_available=0` is either this entry's
+        own claim with the ids already cleared — release it — or a *fresh
+        reservation* by a later request, which claims with null ids until
+        `bind` and must be left alone. The two are told apart by when the slot
+        was claimed: a claim stamped after this entry was promoted is not this
+        entry's. Every other shape is logged and left, so a release that finds
+        nothing to release does not pass for one that succeeded.
+        """
+        slot = self._slot(entry.slot_number)
+        if slot is None:
+            logger.warning(
+                "Lane entry %s names slot %d, which no longer exists; nothing to release",
+                entry.id,
+                entry.slot_number,
+            )
+            return None
+        if slot.is_available:
+            return None
+        occupant = slot.current_orchestration_run_id or slot.current_run_id
+        if occupant:
+            logger.warning(
+                "Lane entry %s names slot %d, but that slot is now held by %s; leaving it in place",
+                entry.id,
+                entry.slot_number,
+                occupant,
+            )
+            return None
+        if _claimed_after(slot, entry.promoted_at):
+            logger.warning(
+                "Lane entry %s names slot %d, which a later reservation has claimed "
+                "(assigned %s, entry promoted %s); leaving it in place",
+                entry.id,
+                entry.slot_number,
+                slot.assigned_at,
+                entry.promoted_at,
+            )
+            return None
+        logger.warning(
+            "Lane entry %s names slot %d, which reads busy with no occupant; "
+            "releasing it by slot number",
+            entry.id,
+            entry.slot_number,
+        )
+        return slot
 
     def reconcile_lanes(self) -> list[int]:
         """Put stranded entries back in line, reclaim dead lanes, then drain them.
@@ -494,7 +581,7 @@ class QueueLaneService:
         # Nested child execute shares the parent's lane. Orphan-heal used to
         # bind free capacity to those children and empty the pool — undo that
         # before draining / claiming anything else.
-        freed.extend(self._release_nested_slot_claims())
+        freed.extend(release_nested_slot_claims(self.slots))
         # Every idle lane, not only the ones freed on this pass. A dispatch can
         # be refused — the ticket is already orchestrating, its workflow is
         # gone, the driver name is unknown — and `start_lane_head` then leaves
@@ -513,7 +600,9 @@ class QueueLaneService:
         # so a reclaim does not hand the lane to an orphan ahead of its queue.
         # Nested children of a slotted ancestor are not orphans — they share
         # that ancestor's lane for the life of the tree.
-        claimed = self._claim_orphaned_orchestrations()
+        claimed = claim_orphaned_orchestrations(
+            self.slots, ensure_entry=self.ensure_active_entry_for_orchestration
+        )
         if freed or claimed or settled or cancelled or repaired:
             emit_execution_update()
         return freed
@@ -557,125 +646,6 @@ class QueueLaneService:
         slot.current_orchestration_run_id = orch_run.id
         head.orchestration_run_id = orch_run.id
         return True
-
-    def _ticket_covered_by_ancestor_slot(
-        self, ticket_id: str, held_orchestration_ids: set[str]
-    ) -> bool:
-        """True when a live ancestor orchestration already holds a lane.
-
-        BuiltinOrchestrator walks incomplete children with nested execute and
-        opens a fresh OrchestrationRun per child. Those runs are intentional
-        work under the parent's slot, not separate admissions.
-        """
-        ticket = self.session.get(Ticket, ticket_id)
-        seen: set[str] = set()
-        while ticket and ticket.parent_ticket_id:
-            parent_id = ticket.parent_ticket_id
-            if parent_id in seen:
-                break
-            seen.add(parent_id)
-            parent_live = self.session.exec(
-                select(OrchestrationRun)
-                .where(OrchestrationRun.ticket_id == parent_id)
-                .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
-            ).all()
-            if any(run.id in held_orchestration_ids for run in parent_live):
-                return True
-            ticket = self.session.get(Ticket, parent_id)
-        return False
-
-    def _release_nested_slot_claims(self) -> list[int]:
-        """Free slots bound to nested children when an ancestor already holds one."""
-        self.slots.initialize_slots()
-        slots = list(self.session.exec(select(AgentSlot)).all())
-        held = {
-            slot.current_orchestration_run_id for slot in slots if slot.current_orchestration_run_id
-        }
-        freed: list[int] = []
-        for slot in slots:
-            orch_id = slot.current_orchestration_run_id
-            if not orch_id:
-                continue
-            orch = self.session.get(OrchestrationRun, orch_id)
-            if not orch:
-                continue
-            if not self._ticket_covered_by_ancestor_slot(orch.ticket_id, held - {orch_id}):
-                continue
-            slot.is_available = True
-            slot.current_orchestration_run_id = None
-            slot.current_run_id = None
-            slot.assigned_at = None
-            self.session.add(slot)
-            freed.append(slot.slot_number)
-            logger.info(
-                "Released nested slot %d claim for orchestration %s (ticket %s)",
-                slot.slot_number,
-                orch.id,
-                orch.ticket_id,
-            )
-        if freed:
-            self.session.commit()
-        return freed
-
-    def _claim_orphaned_orchestrations(self) -> list[int]:
-        """Bind free slots to live orchestrations that never claimed one.
-
-        Admission used to be missing from a few start paths, so agents ran while
-        every lane read Available. Healing on reconcile makes the board honest
-        without waiting for those runs to finish and restart through the gate.
-
-        Nested child orchestrations under a slotted ancestor are skipped — they
-        share the ancestor's lane and must not consume the rest of the pool.
-        """
-        self.slots.initialize_slots()
-        held = {
-            slot.current_orchestration_run_id
-            for slot in self.session.exec(select(AgentSlot)).all()
-            if slot.current_orchestration_run_id
-        }
-        lane_holders = tickets_holding_lanes(self.session)
-        orphans = [
-            run
-            for run in self.session.exec(
-                select(OrchestrationRun)
-                .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
-                .order_by(col(OrchestrationRun.started_at).asc())
-            ).all()
-            if run.id not in held
-            and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
-            # 645: the ancestor check reads orchestration claims only, so a
-            # ticket whose own stage run holds a lane through `current_run_id`
-            # was invisible here and got adopted into a second one.
-            and run.ticket_id not in lane_holders
-        ]
-        if not orphans:
-            return []
-
-        free_slots = list(
-            self.session.exec(
-                select(AgentSlot)
-                .where(AgentSlot.is_available == True)  # noqa: E712
-                .order_by(AgentSlot.slot_number)
-            ).all()
-        )
-        claimed: list[int] = []
-        for run, slot in zip(orphans, free_slots, strict=False):
-            slot.is_available = False
-            slot.current_orchestration_run_id = run.id
-            slot.current_run_id = None
-            slot.assigned_at = datetime.now(timezone.utc)
-            self.session.add(slot)
-            self.ensure_active_entry_for_orchestration(slot.slot_number, run.id)
-            claimed.append(slot.slot_number)
-            logger.info(
-                "Claimed slot %d for orphaned orchestration %s (ticket %s)",
-                slot.slot_number,
-                run.id,
-                run.ticket_id,
-            )
-        if claimed:
-            self.session.commit()
-        return claimed
 
     def _idle_lanes_with_work(self) -> list[int]:
         """Lanes sitting available with something already waiting in them.

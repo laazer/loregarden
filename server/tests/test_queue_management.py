@@ -412,7 +412,10 @@ class TestQueueInfo:
 
     async def test_the_readers_raise_rather_than_return_an_empty_list(self, db_session: Session):
         """`[]` is what an idle pool and an empty queue both return on success,
-        so a failure that returns one cannot be told apart from either."""
+        so a failure that returns one cannot be told apart from either. The
+        same goes for `{}` from the stats reader: `queue_status` reads
+        `max_concurrent` out of it, and an empty dict rendered a calm board
+        with every slot free over a query that was failing outright."""
         db_session.exec(text("DROP TABLE queued_runs"))
         db_session.exec(text("DROP TABLE agent_slots"))
 
@@ -422,6 +425,8 @@ class TestQueueInfo:
             service.get_queued_runs()
         with pytest.raises(OperationalError):
             service.get_active_runs()
+        with pytest.raises(OperationalError):
+            service.get_queue_stats()
 
     async def test_get_queue_info_estimated_clear_time(self, db_session: Session):
         """Verify estimated clear time calculation."""

@@ -7,6 +7,7 @@ from loregarden.models.domain import McpToolCall
 from loregarden.services.tool_telemetry import (
     DECISION_ALLOWLIST,
     DECISION_APPROVED,
+    DECISION_EXECUTED,
     DECISION_REJECTED,
     DECISION_TRUSTED_SERVER,
     RATE_WINDOW_MINUTES,
@@ -48,7 +49,10 @@ def test_a_non_mcp_tool_has_no_server(db_session: Session):
 def test_counts_group_by_server_and_ignore_non_mcp(db_session: Session):
     _call(db_session, "mcp__github__a")
     _call(db_session, "mcp__github__b")
-    _call(db_session, "mcp__loregarden__loregarden_get_ticket")
+    # Dispatch's row for a Loregarden tool; the bridge's unattended yes on
+    # the same call is skipped so the two do not double it (759).
+    _call(db_session, "mcp__loregarden__loregarden_get_ticket", DECISION_EXECUTED)
+    _call(db_session, "mcp__loregarden__loregarden_get_ticket", DECISION_ALLOWLIST)
     _call(db_session, "Bash")
 
     # This is the gateway's view; a shell command is not a server.
@@ -96,11 +100,11 @@ def test_recording_never_fails_the_run(db_session: Session):
 
 def test_the_endpoint_reports_calls_and_counts(client, db_session: Session):
     _call(db_session, "mcp__github__create_issue", DECISION_TRUSTED_SERVER)
-    _call(db_session, "mcp__loregarden__loregarden_get_ticket", DECISION_ALLOWLIST)
+    _call(db_session, "mcp__loregarden__loregarden_get_ticket", DECISION_EXECUTED)
 
     body = client.get("/api/mcp-servers/telemetry").json()
     assert body["by_server"] == {"github": 1, "loregarden": 1}
-    assert body["by_decision"] == {DECISION_TRUSTED_SERVER: 1, DECISION_ALLOWLIST: 1}
+    assert body["by_decision"] == {DECISION_TRUSTED_SERVER: 1, DECISION_EXECUTED: 1}
     assert [c["tool_name"] for c in body["recent"]][0] == "mcp__loregarden__loregarden_get_ticket"
 
 

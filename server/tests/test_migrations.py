@@ -2041,3 +2041,37 @@ def test_the_boot_reapers_status_filter_stops_scanning_the_table(tmp_path):
 
     assert "ix_agent_runs_status" in plan
     assert "SCAN agent_runs" not in plan
+
+
+def test_tickets_gain_the_landing_columns_with_empty_defaults(tmp_path):
+    """0140 records where a ticket's work landed (lg-milestone-that-768).
+
+    Existing rows have not landed anything — including ones already `done`,
+    whose work reached main by hand — so both columns read back empty rather
+    than NULL: a dependent's readiness check reads them, and "unrecorded" and
+    "not landed" mean the same thing to it.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'landing.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE tickets ("
+                "id TEXT PRIMARY KEY, external_id TEXT NOT NULL, workspace_id TEXT NOT NULL, "
+                "title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'done')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO tickets (id, external_id, workspace_id, title) "
+                "VALUES ('t1', 'LG-1', 'ws1', 'Landed by hand')"
+            )
+        )
+
+    apply_migrations(engine)
+
+    assert {"landed_sha", "landed_branch"} <= _columns(engine, "tickets")
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT landed_sha, landed_branch FROM tickets WHERE id = 't1'")
+        ).one()
+    assert tuple(row) == ("", "")

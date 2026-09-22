@@ -42,6 +42,7 @@ from loregarden.services.block_classification import (
     sweep_unclassified_blocks,
 )
 from loregarden.services.interruption_messages import (
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -76,6 +77,9 @@ SDF_39_OPTIONS = ["Relax the bar to 0.5", "Try approach B", "Accept and continue
         "Agent run exited successfully but emitted no parseable <<<LOREGARDEN_STAGE_REPORT>>> block.",
         "Environment preflight failed before this stage could run.\n  git_core_bare: ...",
         "Run run_abc — usage limit reached (Pro usage limit)",
+        # lg-bug-hole-574, 2026-09-16 23:48: the stage passed, its parent had
+        # been failed under it, and this refusal was filed as work.
+        f"{DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX} orch_b1622f is failed",
     ],
 )
 def test_the_control_plane_names_its_own_failures_harness(message):

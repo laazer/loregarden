@@ -54,9 +54,9 @@ from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_commit_push_service import commit_paths_in, working_tree_paths
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.stage_retry_budget import charge_fanout_dispatch
+from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -551,7 +551,9 @@ def _parent_branch(session: Session, ticket: Ticket, workspace: Workspace) -> st
     )
     if exists.returncode == 0:
         return branch
-    return resolve_orchestration_profile(workspace).git.base_branch
+    return resolve_target_branch(
+        session, ticket, workspace, repo_root=resolve_workspace_root(workspace)
+    )
 
 
 def _open_group_for(session: Session, ticket_id: str) -> StageFanoutGroup | None:

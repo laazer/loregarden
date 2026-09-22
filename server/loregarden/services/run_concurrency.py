@@ -1,4 +1,10 @@
-"""Shared active-run lookups used to keep triage and stage runs mutually exclusive."""
+"""Shared active-run lookups: what is in flight for a ticket, and what that means.
+
+The three lookups here differ only in what they count as "in flight", and the
+difference is the point — a triage turn is a live CLI but never a stage, so a
+caller asking "is anything running" and one asking "will this stage be picked
+up" must not share an answer.
+"""
 
 from __future__ import annotations
 
@@ -67,9 +73,9 @@ def find_active_stage_run(session: Session, ticket_id: str) -> AgentRun | None:
     """An in-flight run that will actually advance this ticket's workflow.
 
     Narrower than ``find_active_run`` on purpose, because it answers a different
-    question. ``find_active_run`` asks "is a live CLI holding this workspace's
-    checkout" — a triage turn does, so it counts there, and excluding it would
-    let an orchestration start on top of an operator's session.
+    question. ``find_active_run`` asks "is a live CLI holding this ticket" — a
+    triage turn does, so it counts there, and ``start_triage_run`` uses that to
+    keep the chat rail itself one-at-a-time.
 
     This asks "will anything pick this stage up". A triage turn never will: it
     runs no stage and completes none. Answering that question with the broad
@@ -78,6 +84,12 @@ def find_active_stage_run(session: Session, ticket_id: str) -> AgentRun | None:
     ticket in Baxter — which is exactly when a human requeues one. The ticket
     then sat pending with nothing driving it, and the response said it had been
     picked up.
+
+    Dispatch draws the same line, and used to draw it the other way:
+    ``OrchestrationService._reject_if_ticket_busy`` counted a triage turn as
+    in-flight and refused the stage, so an open Baxter thread could refuse the
+    ticket's own ``begin_external_stage``. That guard is gone; only work blocks
+    work.
     """
     return session.exec(
         select(AgentRun).where(

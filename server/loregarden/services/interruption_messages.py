@@ -36,6 +36,14 @@ ORPHAN_OF_TERMINAL_ORCH_MESSAGE = (
     "Parent orchestration is already terminal; this run was left in flight."
 )
 
+#: How `dispatch_guard` refuses to start a stage under an orchestration that
+#: is already over. The full sentence names the run and its status, so the
+#: classifier matches this prefix. It is the control plane declining to spend
+#: a run, not the agent failing: a block carrying it is HARNESS — the stage's
+#: work stands and the ticket wants a resume, never a repair turn or a person
+#: (lg-workflow-integrity-758).
+DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX = "Cannot start run: orchestration"
+
 #: Messages that mark a ticket as blocked by an *artifact* of this process
 #: rather than by a real failure, so recovery may re-run the stage unprompted.
 #: ``SUPERSEDED_RUN_MESSAGE`` is deliberately absent: a superseded run is

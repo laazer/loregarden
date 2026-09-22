@@ -71,6 +71,7 @@ from loregarden.db.migrations_git_boundary import (
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
+from loregarden.db.migrations_landing import m_ticket_landing_columns
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -1394,6 +1395,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # Re-run: the first pass counted the automated reconciler as a human editor.
     # 0139, not 0138: the live database already carries an unmerged branch's 0138.
     ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
+    ("0140_ticket_landing_columns", m_ticket_landing_columns),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

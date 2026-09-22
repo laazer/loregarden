@@ -26,6 +26,15 @@ from sqlmodel import Session, select
 logger = logging.getLogger(__name__)
 
 
+class WorktreeRefreshError(RuntimeError):
+    """An existing branch could not be brought up to its target branch.
+
+    Raised, not degraded into "run in the shared checkout": a ticket whose
+    branch cannot take its prerequisites' landed work is exactly the ticket
+    that must not start (lg-milestone-that-769).
+    """
+
+
 class ConflictDetectionError(RuntimeError):
     """The conflict check could not be completed.
 
@@ -118,70 +127,29 @@ class WorktreeService:
 
         Returns:
             Worktree record if successful, None on error
+
+        An existing ``branch`` is checked out as it is. This used ``worktree add
+        -B``, which resets an existing branch to ``parent_branch`` — so a retried
+        run whose branch already carried commits had them orphaned on the way
+        in, and the tree it got looked exactly like a first attempt
+        (lg-milestone-that-772).
         """
-        try:
-            # Validate agent run exists
-            agent_run_stmt = select(AgentRun).where(AgentRun.id == agent_run_id)
-            agent_run = self.session.exec(agent_run_stmt).first()
-            if not agent_run:
-                logger.warning(f"Agent run not found: {agent_run_id}")
-                return None
-
-            # Ensure worktree base directory exists
-            self.worktree_base.mkdir(parents=True, exist_ok=True)
-
-            # Generate unique worktree path: .worktrees/run-{run_id}-{random}
-            worktree_name = f"run-{agent_run_id[:8]}-{str(uuid4())[:8]}"
-            worktree_path = self.worktree_base / worktree_name
-            branch = branch or worktree_name
-
-            # `add <path> <parent_branch>` checked *parent_branch itself* out
-            # here, which git refuses when the root already has it checked out
-            # — and when it did work, the run committed straight onto main.
-            # `-B <branch> <parent_branch>` cuts the run its own branch instead,
-            # and -B rather than -b so a retried run reuses its branch.
-            logger.info(f"Creating worktree: {worktree_path} on {branch} from {parent_branch}")
-            run_git(
-                ["worktree", "add", "-B", branch, str(worktree_path), parent_branch],
-                cwd=str(self.repo_path),
-                check=True,
-                capture_output=True,
-            )
-
-            # Get current commit on new worktree (merge base)
-            result = run_git(
-                ["rev-parse", "HEAD"],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            merge_base = result.stdout.strip()
-
-            # Create worktree record
-            worktree = Worktree(
-                id=str(uuid4()),
-                workspace_id=workspace_id,
-                agent_run_id=agent_run_id,
-                parent_branch=parent_branch,
-                branch=branch,
-                worktree_path=str(worktree_path),
-                state=WorktreeState.ACTIVE,
-                merge_base=merge_base,
-            )
-
-            self.session.add(worktree)
-            self.session.commit()
-
-            logger.info(f"Created worktree {worktree.id} at {worktree_path}")
-            return worktree
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed: {e.stderr}", exc_info=True)
+        agent_run_stmt = select(AgentRun).where(AgentRun.id == agent_run_id)
+        agent_run = self.session.exec(agent_run_stmt).first()
+        if not agent_run:
+            logger.warning(f"Agent run not found: {agent_run_id}")
             return None
-        except Exception as e:
-            logger.error(f"Error creating worktree: {e}", exc_info=True)
-            return None
+
+        # Unique worktree path: .worktrees/run-{run_id}-{random}
+        worktree_name = f"run-{agent_run_id[:8]}-{str(uuid4())[:8]}"
+        return self._add_worktree(
+            workspace_id=workspace_id,
+            agent_run_id=agent_run_id,
+            branch=branch or worktree_name,
+            parent_branch=parent_branch,
+            name=worktree_name,
+            refresh=True,
+        )
 
     def get_or_create_for_ticket(
         self,
@@ -222,6 +190,7 @@ class WorktreeService:
             branch=branch,
             parent_branch=parent_branch,
             name=f"ticket-{slug}-{str(uuid4())[:8]}",
+            refresh=True,
         )
 
     def get_or_create_for_chat_session(
@@ -300,6 +269,33 @@ class WorktreeService:
             capture_output=True,
         )
 
+    def _refresh_onto(self, worktree_path: Path, branch: str, parent_branch: str) -> None:
+        merged = run_git(
+            ["merge", "--no-edit", parent_branch],
+            cwd=str(worktree_path),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if merged.returncode == 0:
+            return
+        detail = (merged.stdout or merged.stderr or "git merge failed").strip()
+        # silent-ok: cleanup on an already-failing path; the WorktreeRefreshError
+        # below carries the merge's own output.
+        run_git(["merge", "--abort"], cwd=str(worktree_path), check=False, capture_output=True)
+        # silent-ok: same failing path; a tree that survives the remove is pruned
+        # by the next `worktree add` (see _retire_missing), and the error is raised
+        # either way.
+        run_git(
+            ["worktree", "remove", "--force", str(worktree_path)],
+            cwd=str(self.repo_path),
+            check=False,
+            capture_output=True,
+        )
+        raise WorktreeRefreshError(
+            f"Branch {branch!r} could not take {parent_branch!r} before starting: {detail}"
+        )
+
     def _branch_exists(self, branch: str) -> bool:
         result = run_git(
             ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -318,19 +314,31 @@ class WorktreeService:
         name: str,
         ticket_id: str | None = None,
         chat_session_id: str | None = None,
+        refresh: bool = False,
     ) -> Worktree | None:
-        """Check `branch` out in a new directory without ever resetting it."""
+        """Check `branch` out in a new directory without ever resetting it.
+
+        With ``refresh``, an existing ``branch`` is brought up to
+        ``parent_branch`` by merging it in before the tree is handed out. The
+        tree is cut when the ticket starts, so this is the one point that can
+        see a prerequisite that landed after the ticket was scheduled. A merge
+        conflict raises :class:`WorktreeRefreshError`; the half-cut tree is
+        removed first so the next attempt starts clean.
+        """
         try:
             self.worktree_base.mkdir(parents=True, exist_ok=True)
             worktree_path = self.worktree_base / name
 
-            if self._branch_exists(branch):
+            existed = self._branch_exists(branch)
+            if existed:
                 add_args = ["worktree", "add", str(worktree_path), branch]
             else:
                 add_args = ["worktree", "add", "-b", branch, str(worktree_path), parent_branch]
 
             logger.info("Creating ticket worktree %s on %s", worktree_path, branch)
             run_git(add_args, cwd=str(self.repo_path), check=True, capture_output=True)
+            if existed and refresh:
+                self._refresh_onto(worktree_path, branch, parent_branch)
             _link_ignored_toolchains(self.repo_path, worktree_path)
 
             head = run_git(

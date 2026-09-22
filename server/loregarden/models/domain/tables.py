@@ -165,6 +165,11 @@ class Ticket(SQLModel, table=True):
     )
     priority: int = Field(default=3, ge=1, le=3)
     branch: str = ""
+    # Where this ticket's work landed: the commit on `landed_branch` that
+    # contains it, written by `land_ticket` at the terminal stage. Empty means
+    # not landed — which is not "done": a dependent's readiness reads this.
+    landed_sha: str = ""
+    landed_branch: str = ""
     milestone: str = ""
     work_item_type: WorkItemType = Field(
         default=WorkItemType.TASK,
@@ -365,7 +370,7 @@ class AgentRun(SQLModel, table=True):
     #: hold it: looked-and-found-nothing, never-looked, and (before PR #254) the
     #: read failed. That is why lg-workflow-integrity-406 could not be measured
     #: twice running. Rows written before this stay ambiguous — their meaning is
-    #: unknown and inventing one would be worse (lg-workflow-integrity-675).
+    #: unknown and inventing one would be worse (lg-workflow-integrity-676).
     changed_paths_recorded_at: datetime | None = None
     #: What this run READ, as a JSON list of repo-relative paths. Recovered from
     #: the CLI transcript, which carries the tool calls in two schemas — see

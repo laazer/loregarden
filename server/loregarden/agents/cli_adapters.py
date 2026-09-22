@@ -72,16 +72,32 @@ class CliInvocation:
     effort: str = ""
 
 
-def invocation_env(invocation: CliInvocation) -> dict[str, str] | None:
-    """Full environment for spawning ``invocation``, or None to inherit unchanged.
+#: Settings that bind a process to THIS server's state. An agent subprocess
+#: inherits the server's environment, and with these in it any ad-hoc
+#: ``from loregarden.main import app`` the agent runs resolves the production
+#: database — the app lifespan then reaps the very orchestration that spawned
+#: it (lg-workflow-integrity-756: an implementer booted the app under
+#: ``TestClient`` to exercise an endpoint, and failed its own run). The paths an
+#: agent legitimately reaches the control plane through do not need them:
+#: ``scripts/loregarden-cli.sh`` resolves the primary checkout from the worktree's
+#: git common dir, and the stdio MCP entry (`mcp_context`) sets its own root.
+STATE_BINDING_ENV_VARS = (
+    "LOREGARDEN_REPO_ROOT",
+    "LOREGARDEN_DATABASE_URL",
+    "LOREGARDEN_MEMORY_SQLITE_URL",
+)
 
-    ``None`` rather than a copy of ``os.environ`` so a run with no overlay keeps
-    the pre-existing inherit-the-parent behaviour exactly, including any variable
-    the supervising process sets after import.
+
+def invocation_env(invocation: CliInvocation) -> dict[str, str]:
+    """Full environment for spawning ``invocation``.
+
+    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS``, plus
+    the invocation's own overlay. Taken at call time rather than import so a
+    variable the supervising process sets after import still reaches the agent.
     """
-    if not invocation.env:
-        return None
-    return {**os.environ, **invocation.env}
+    env = {k: v for k, v in os.environ.items() if k not in STATE_BINDING_ENV_VARS}
+    env.update(invocation.env)
+    return env
 
 
 def _bin(name: str, env_key: str) -> str:
