@@ -15,6 +15,7 @@ from __future__ import annotations
 from loregarden.db.migration_utils import (
     column_is_nullable,
     rebuild_drop_not_null_and_add_check,
+    table_columns,
     table_exists,
     table_sql,
 )
@@ -57,6 +58,10 @@ def _abort_if_rows_violate(conn: Connection) -> None:
 
 def m_tickets_workspace_binding(conn: Connection) -> None:
     if not table_exists(conn, "tickets"):
+        return
+    if "workspace_id" not in table_columns(conn, "tickets"):
+        # A pre-binding schema has no column to relax; the table SQLModel
+        # creates from here already carries it.
         return
     if column_is_nullable(conn, "tickets", "workspace_id") and _has_binding_check(conn):
         return
