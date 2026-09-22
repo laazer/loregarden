@@ -51,6 +51,7 @@ from loregarden.services.run_service import (
     settle_orphaned_agent_runs,
     settle_stranded_stages,
 )
+from loregarden.services.terminal_stage_sweep import finish_parked_terminal_tickets
 from loregarden.services.ticket_rollup import reconcile_all_parents
 from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
@@ -92,6 +93,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
     SweepStep("reconcile_lanes", _reconcile_lanes),
+    # Periodic by the same rule: it selects only tickets with no agent run and
+    # no orchestration behind them. It sits after the settlers so a stage they
+    # just settled is read at its new status, and before `reconcile_all_parents`
+    # so a ticket this finishes is summarised by its parent in the same pass.
+    SweepStep("finish_parked_terminal_tickets", finish_parked_terminal_tickets),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
     # Periodic by the same rule as the steps above: it consults liveness
     # predicates — a pid, the run behind the lease, and docker itself — rather

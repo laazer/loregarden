@@ -78,6 +78,12 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
   // stopped, which is the opposite and reads normal.
   if (event.type === "OrchestratorDecision") {
     const decision = str(event.payload.decision);
+    // The one kind whose tone depends on how it went: the sweep re-enters a
+    // workflow nothing was left to finish, and the finish can still block on
+    // the landing it retried. It carries the state it reached.
+    if (decision === "finished_parked_terminal_stage") {
+      return str(event.payload.state) === "done" ? "normal" : "failed";
+    }
   return decision === "overruled_stale_gate" ||
     decision === "approved_design_plan" ||
     decision === "requeued_after_decision" ||
