@@ -149,6 +149,20 @@ describe("orchestrator decisions", () => {
     expect(escalated.tone).toBe("failed"); // it could not; a person must
   });
 
+  // 801: the sweep that finishes a ticket nothing was left to finish. Unlike
+  // every other kind, how it went is not implied by the kind.
+  it("tones a parked-terminal finish by the state it reached", () => {
+    const finished = decision("finished_parked_terminal_stage", "Retried the finish, which ended done.", "done");
+    finished.payload.state = "done";
+    const stillBlocked = decision("finished_parked_terminal_stage", "Retried the finish, which ended blocked.", "done");
+    stillBlocked.payload.state = "blocked";
+
+    const [landed, blocked] = historyLines([finished, stillBlocked]);
+
+    expect(landed.tone).toBe("normal");
+    expect(blocked.tone).toBe("failed");
+  });
+
   it("still says what it was when the reason is missing", () => {
     const [line] = historyLines([decision("settled_orphaned_run", "")]);
     expect(line.text).toContain("settled orphaned run");
