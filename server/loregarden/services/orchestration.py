@@ -746,20 +746,21 @@ class OrchestrationService:
         )
         return ticket
 
-    def _reject_if_triage_active(self, ticket: Ticket) -> None:
-        from loregarden.services.run_concurrency import find_active_run
-        from loregarden.services.triage_service import TRIAGE_AGENT_ID
-
-        if find_active_run(self.session, ticket.id, only_agent_id=TRIAGE_AGENT_ID):
-            raise ValueError(
-                "Triage is currently running for this ticket — wait for it to finish before starting a stage run."
-            )
-
     def _reject_if_ticket_busy(self, ticket: Ticket, target_key: str) -> None:
         """Refuse to start when something is already in flight on this ticket.
 
         Re-entering the stage that is already RUNNING is the one exception —
         that is a parallel member or a re-dispatch of the same stage.
+
+        A triage turn is deliberately not "something in flight" here. Baxter is
+        the operator's conversation about a ticket, not a stage: it runs no
+        stage and completes none, so nothing it does can advance or settle the
+        work a stage run is starting. Blocking on it refused the operator's own
+        ticket precisely when they were talking about it — including
+        `loregarden_begin_external_stage`, which spawns no process at all and is
+        only asking the control plane to record a checkout for a harness already
+        running in someone's terminal. See `find_active_stage_run`, which draws
+        the same line for the requeue path and for the same reason.
         """
         if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
             if not (
@@ -767,8 +768,6 @@ class OrchestrationService:
                 and target_key == ticket.workflow_stage_key
             ):
                 raise ValueError("Current stage must complete before advancing")
-
-        self._reject_if_triage_active(ticket)
 
     def _resolve_run_target(self, ticket: Ticket, stage_key: str | None) -> _RunTarget:
         """Resolve the stage a run would start on, refusing if it may not start.
