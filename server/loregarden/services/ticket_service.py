@@ -36,9 +36,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.acceptance_criteria import serialize_criteria
-from loregarden.services.hierarchy_service import child_count, validate_parent_child
+from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.ticket_ids import assign_external_id
+from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
+from loregarden.services.ticket_workspace_binding import validate_workspace_binding
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, col, select
@@ -86,7 +87,7 @@ class TicketService:
     def create_ticket(
         self,
         *,
-        workspace_slug: str,
+        workspace_slug: str | None = None,
         title: str,
         work_item_type: WorkItemType,
         parent_ticket_id: str | None = None,
@@ -114,27 +115,26 @@ class TicketService:
     def _validated_parent(
         self,
         *,
-        workspace_id: str,
+        workspace_id: str | None,
         work_item_type: WorkItemType,
         parent_ticket_id: str | None,
     ) -> Ticket | None:
-        """The parent this work item may hang off, or None for a milestone."""
-        if work_item_type == WorkItemType.MILESTONE:
-            if parent_ticket_id:
-                raise ValueError("Milestones cannot have a parent")
+        """The parent this work item may hang off, or None for a parentless root."""
+        if not parent_ticket_id:
+            validate_parent_assignment(work_item_type, None)
             return None
 
-        if not parent_ticket_id:
-            raise ValueError(f"{work_item_type.value} requires a parent work item")
-
         parent = self.session.get(Ticket, parent_ticket_id)
-        if not parent or parent.workspace_id != workspace_id:
+        if not parent:
             raise ValueError("Parent work item not found in workspace")
-        validate_parent_child(parent.work_item_type, work_item_type)
+        # Null-workspace INITIATIVE parents may own a workspace-bound child.
+        if parent.workspace_id is not None and parent.workspace_id != workspace_id:
+            raise ValueError("Parent work item not found in workspace")
+        validate_parent_assignment(work_item_type, parent.work_item_type)
         return parent
 
     def _reject_taken_supplied_id(
-        self, *, workspace_id: str, ticket: Ticket, supplied_id: str
+        self, *, workspace_id: str | None, ticket: Ticket, supplied_id: str
     ) -> None:
         """Refuse a caller-supplied id that some other ticket already answers to.
 
@@ -160,10 +160,65 @@ class TicketService:
         if dup:
             raise ValueError(f"external_id already exists: {supplied_id}")
 
+    def _resolve_create_workspace(
+        self,
+        *,
+        workspace_slug: str | None,
+        work_item_type: WorkItemType,
+    ) -> tuple[Workspace | None, str | None]:
+        """Resolve workspace for create, enforcing the binding seam first."""
+        slug = (workspace_slug or "").strip()
+        if work_item_type == WorkItemType.INITIATIVE:
+            # Binding before lookup so a non-empty slug cannot false-green as
+            # "Workspace not found" (AC1) and a missing slug cannot false-green
+            # as "Workspace not found: None" (AC2 adversarial pin).
+            if slug:
+                validate_workspace_binding(work_item_type, slug)
+            validate_workspace_binding(work_item_type, None)
+            return None, None
+
+        if not slug:
+            validate_workspace_binding(work_item_type, None)
+        ws = self.session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+        if not ws:
+            raise ValueError(f"Workspace not found: {workspace_slug}")
+        validate_workspace_binding(work_item_type, ws.id)
+        return ws, ws.id
+
+    def _assign_create_identity(
+        self,
+        ticket: Ticket,
+        *,
+        ws: Workspace | None,
+        work_item_type: WorkItemType,
+        external_id: str,
+        workspace_slug: str | None,
+    ) -> tuple:
+        """Spell external_id / workflow stage fields for a new ticket."""
+        if work_item_type == WorkItemType.INITIATIVE:
+            # Global init-* spelling; never workspace assign_external_id / workflow.
+            assign_initiative_external_id(self.session, ticket, supplied_id=external_id.strip())
+            return None, None
+
+        if ws is None:
+            raise ValueError(f"Workspace not found: {workspace_slug}")
+        supplied_id = external_id.strip().lower()
+        self._reject_taken_supplied_id(workspace_id=ws.id, ticket=ticket, supplied_id=supplied_id)
+        assign_external_id(self.session, ticket, ws, supplied_id=supplied_id)
+
+        template, stages = resolve_workspace_stages(self.session, ws)
+        if work_item_type in WORKFLOW_WORK_ITEM_TYPES:
+            if not template or not stages:
+                raise ValueError("Workspace has no workflow template for executable work items")
+            first_stage = min(stages, key=lambda s: s.order)
+            ticket.workflow_stage_key = first_stage.key
+            ticket.workflow_stage_status = StageStatus.PENDING
+        return template, stages
+
     def _create_ticket_impl(
         self,
         *,
-        workspace_slug: str,
+        workspace_slug: str | None = None,
         title: str,
         work_item_type: WorkItemType,
         parent_ticket_id: str | None = None,
@@ -178,15 +233,16 @@ class TicketService:
         if not title:
             raise ValueError("Title is required")
 
-        ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
-        if not ws:
-            raise ValueError(f"Workspace not found: {workspace_slug}")
-
         if priority < 1 or priority > 3:
             raise ValueError("Priority must be between 1 and 3")
 
+        ws, workspace_id = self._resolve_create_workspace(
+            workspace_slug=workspace_slug,
+            work_item_type=work_item_type,
+        )
+
         parent = self._validated_parent(
-            workspace_id=ws.id,
+            workspace_id=workspace_id,
             work_item_type=work_item_type,
             parent_ticket_id=parent_ticket_id,
         )
@@ -195,7 +251,7 @@ class TicketService:
 
         ticket = Ticket(
             external_id="",
-            workspace_id=ws.id,
+            workspace_id=workspace_id,
             title=title,
             description=description.strip(),
             state=TicketState.BACKLOG,
@@ -208,24 +264,20 @@ class TicketService:
             last_updated_by="user",
         )
 
-        supplied_id = external_id.strip().lower()
-        self._reject_taken_supplied_id(workspace_id=ws.id, ticket=ticket, supplied_id=supplied_id)
-        assign_external_id(self.session, ticket, ws, supplied_id=supplied_id)
-
-        template, stages = resolve_workspace_stages(self.session, ws)
-        if work_item_type in WORKFLOW_WORK_ITEM_TYPES:
-            if not template or not stages:
-                raise ValueError("Workspace has no workflow template for executable work items")
-            first_stage = min(stages, key=lambda s: s.order)
-            ticket.workflow_stage_key = first_stage.key
-            ticket.workflow_stage_status = StageStatus.PENDING
+        template, stages = self._assign_create_identity(
+            ticket,
+            ws=ws,
+            work_item_type=work_item_type,
+            external_id=external_id,
+            workspace_slug=workspace_slug,
+        )
 
         self.session.add(ticket)
         ticket_id = ticket.id
         self.session.commit()
         ticket = self.session.get(Ticket, ticket_id) or ticket
 
-        if work_item_type in WORKFLOW_WORK_ITEM_TYPES and template:
+        if work_item_type in WORKFLOW_WORK_ITEM_TYPES and template and stages:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=template.id,
@@ -240,7 +292,7 @@ class TicketService:
         event_bus.publish(
             self.session,
             EventType.TICKET_CREATED,
-            workspace_id=ws.id,
+            workspace_id=workspace_id,
             ticket_id=ticket.id,
             payload={
                 "external_id": ticket.external_id,

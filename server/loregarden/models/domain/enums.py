@@ -88,27 +88,6 @@ class TicketActivity(StrEnum):
     IDLE = "idle"
 
 
-class WorkItemType(str, Enum):
-    """Hierarchy types — matches lllm-charge convention."""
-
-    MILESTONE = "milestone"
-    FEATURE = "feature"
-    CAPABILITY = "capability"
-    TASK = "task"
-    BUG = "bug"
-
-
-VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
-    WorkItemType.MILESTONE: [WorkItemType.FEATURE, WorkItemType.BUG],
-    WorkItemType.FEATURE: [WorkItemType.CAPABILITY, WorkItemType.BUG],
-    WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],
-    WorkItemType.TASK: [],
-    WorkItemType.BUG: [],
-}
-
-WORKFLOW_WORK_ITEM_TYPES = frozenset(WorkItemType)
-
-
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 

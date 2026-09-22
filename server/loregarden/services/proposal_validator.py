@@ -175,7 +175,7 @@ class ProposalValidator:
         Raises:
             ProposalValidationError: If relationship is not allowed
         """
-        from loregarden.models.domain.enums import VALID_HIERARCHY
+        from loregarden.models.domain.work_item_types import VALID_HIERARCHY
 
         allowed = VALID_HIERARCHY.get(parent_type, [])
         if child_type not in allowed:

@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     UpdateTicketRequest,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services.land_ticket import LandSkip, land_ticket
@@ -78,6 +79,10 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
     destination or says explicitly to detach.
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    if ticket.work_item_type == WorkItemType.INITIATIVE:
+        raise ValueError(
+            "Cannot move an initiative between workspaces — initiatives have no workspace binding."
+        )
     destination = _workspace_by_slug(session, arguments["workspace_slug"])
     if ticket.workspace_id == destination.id:
         raise ValueError(f"Ticket is already in workspace {destination.slug!r}.")
