@@ -352,6 +352,36 @@ def is_transient_failure(stdout: str, stderr: str) -> bool:
     return detect_usage_limit(stdout, stderr) is not None
 
 
+def harness_cause_label(stdout: str, stderr: str) -> str:
+    """Closed cause bucket for a failed run's stdout/stderr.
+
+    Display/summary only — never used to decide whether HARNESS_FAILURE_CLUSTER
+    fires. Labels may name timeouts; ``is_transient_failure`` still excludes them
+    from the fire share. Buckets are derived from existing interruption /
+    transient / run_errors signatures — no parallel substring list.
+    """
+    blob = f"{stdout}\n{stderr}".lower()
+    if INTERRUPTED_RUN_MESSAGE.lower() in blob:
+        return "reload"
+    if RESTART_INTERRUPTION_MARKER in blob:
+        return "restart"
+    if "agent run lease expired" in blob:
+        return "lease"
+    if ORPHAN_OF_TERMINAL_ORCH_MESSAGE.lower() in blob:
+        return "orphan"
+    if STRANDED_STAGE_MESSAGE.lower() in blob:
+        return "stranded"
+    if "agent timed out after" in blob:
+        return "timeout"
+    if any(sig in blob for sig in _AUTH_FAILURE_SIGNATURES):
+        return "auth"
+    if detect_usage_limit(stdout, stderr) is not None:
+        return "usage"
+    if any(sig in blob for sig in _TRANSIENT_SIGNATURES):
+        return "usage"
+    return "other"
+
+
 def stage_report_artifact_content(stage_key: str, report: StageReport) -> dict:
     """Build the `context`-artifact `content` payload for a parsed stage report.
 

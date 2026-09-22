@@ -121,6 +121,90 @@ def estimate_for(medians: dict[str, float], agent_id: str | None) -> float | Non
 MIN_SAMPLES = 3
 
 
+def _percentile(values: list[float], fraction: float) -> float | None:
+    """Nearest-rank percentile. None for an empty sample, rather than 0 — a
+    stage nobody has finished has no p95, and 0 would read as "instant"."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, int(len(ordered) * fraction))
+    return ordered[index]
+
+
+@dataclass(frozen=True)
+class StageDurationProfile:
+    """Wall-clock duration distribution for one stage's successful runs.
+
+    `p95_seconds` is None when the sample is thinner than `MIN_SAMPLES` — a
+    single outlying success is not a trusted tail. Callers that need to report
+    "not enough data" still get `sample_count`.
+    """
+
+    stage_key: str
+    sample_count: int
+    p95_seconds: float | None
+
+
+def load_stage_duration_profiles(
+    session: Session,
+    workspace_id: str | None = None,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+) -> dict[str, StageDurationProfile]:
+    """Per-stage p95 of successful wall-clock durations, keyed by stage_key.
+
+    Same success / positive-duration / lookback rules as
+    `median_duration_by_agent`, but grouped by stage and summarised as p95
+    rather than median. Empty stage keys are dropped. Stages with fewer than
+    `MIN_SAMPLES` still appear, with `p95_seconds=None`, so a caller can tell
+    "thin sample" from "stage never ran".
+
+    `workspace_id=None` draws on every workspace. Prefer passing a workspace
+    when comparing against a workspace-local configured floor — otherwise one
+    workspace's thick sample can launder another's thin one into a trusted p95.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+
+    conditions = [
+        AgentRun.status == RunStatus.SUCCEEDED,
+        AgentRun.started_at.isnot(None),
+        AgentRun.finished_at.isnot(None),
+        AgentRun.finished_at >= cutoff,
+        col(AgentRun.stage_key) != "",
+    ]
+    if workspace_id is not None:
+        conditions.append(AgentRun.workspace_id == workspace_id)
+
+    stmt = (
+        select(AgentRun)
+        .where(*conditions)
+        .options(
+            load_only(
+                AgentRun.stage_key,
+                AgentRun.started_at,
+                AgentRun.finished_at,
+            )
+        )
+    )
+
+    samples: dict[str, list[float]] = defaultdict(list)
+    for run in session.exec(stmt).all():
+        seconds = _duration_seconds(run)
+        if seconds is None or seconds <= 0:
+            continue
+        if not run.stage_key:
+            continue
+        samples[run.stage_key].append(seconds)
+
+    return {
+        stage_key: StageDurationProfile(
+            stage_key=stage_key,
+            sample_count=len(values),
+            p95_seconds=(_percentile(values, 0.95) if len(values) >= MIN_SAMPLES else None),
+        )
+        for stage_key, values in samples.items()
+    }
+
+
 @dataclass(frozen=True)
 class DurationStats:
     """What history says a stage costs, and how often a stage runs twice."""

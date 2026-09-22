@@ -73,7 +73,7 @@ MCP write responses include `obsidian` and/or `graph` blocks. Use `graph.id` fro
 
 `loregarden_search_memory` returns:
 
-- `obsidian` — markdown note hits (`source: "obsidian"`)
+- `obsidian` — markdown note hits (`source: "obsidian"`), including Checkpoints (`note_type=checkpoint`); checkpoints remain in `memory_graph_excludes` and never appear in SQLite
 - `graph` — SQLite node hits (`source: "sqlite"`, includes `node_type`)
 
 Check both arrays before writing duplicate nodes.

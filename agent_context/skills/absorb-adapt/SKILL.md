@@ -33,9 +33,17 @@ repo root); query it with `sqlite3`.
 - **`approvals`** — where humans intervene, and on what. **Trap:** auto-approved
   tool calls write no row; zero rows means "never called on an `auto_approve=0`
   run", not "unused".
-- **`loregarden_search_memory` / `search_prior_work`** — learnings, and the
-  checkpoints where agents recorded assumptions they had to invent. The same
-  assumption invented three times is a missing spec field, not three errors.
+- **`loregarden_search_memory` / `search_prior_work`** — learnings, memory, and
+  Obsidian Checkpoints. Checkpoints live only under
+  `memory_status.obsidian_checkpoints_dir` (written by
+  `loregarden_append_checkpoint`, never `artifacts.kind=checkpoint`).
+  `loregarden_search_memory` returns them as file-level hits with
+  `note_type=checkpoint`. Split each hit's body on blank lines after stripping
+  frontmatter / the `# Checkpoint log` heading (same split as
+  `inherited_wisdom._checkpoint_entries`). Prefer distinctive assumption text
+  or a `ticket_id` in the query — not only the generic phrase "Assumption made".
+  The same assumption invented three times is a missing spec field, not three
+  errors.
 
 Take a count before taking a position. "Three tickets, ids named" is what makes
 a proposal reviewable.
