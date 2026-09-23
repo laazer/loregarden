@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import stage_display_name
+from loregarden.core.workflow_terminal import is_terminal_stage
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -501,7 +502,16 @@ def _advance_clean_exit(
     gate_approval: Approval | None = None
     stage_status = StageStatus.DONE
     stage_def = next((s for s in stages if s.key == run.stage_key), None)
-    if stage_def and stage_def.gate_required:
+    if stage_def and is_terminal_stage(stage_def):
+        # A terminal stage's DONE is `_finish_workflow`'s to write, and only
+        # after the landing: `set_stage_status` on the terminal stage derives
+        # `done` on the ticket, so a run marking it here finishes the ticket
+        # with its work unlanded — 777's exact failure, from a new direction.
+        # Left PENDING, the loop reaches the terminal stage again and finalizes
+        # through the landing. Nothing ran here at all until the landing
+        # resolver (801); this keeps that door shut.
+        stage_status = StageStatus.PENDING
+    elif stage_def and stage_def.gate_required:
         stage_status = StageStatus.AWAITING
         template = orch.get_template_for_ticket(ticket)
         if template:
