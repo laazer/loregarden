@@ -17,7 +17,6 @@ import json
 import pytest
 from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import (
-    EventType,
     StageStatus,
     Ticket,
     TicketState,
@@ -29,6 +28,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session
+from tests.history_helpers import decision_kinds
 from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
 
 
@@ -103,16 +103,6 @@ def _land(session, ticket):
     )
 
 
-def _decisions(session, ticket):
-    from loregarden.core.event_bus import event_bus
-
-    return [
-        json.loads(e.payload_json or "{}")
-        for e in event_bus.ticket_history(session, ticket.id, limit=100)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
 def test_a_conflict_arms_the_resolver_instead_of_blocking(session, conflicted):
     derived, instance, stages = _land(session, conflicted)
 
@@ -123,7 +113,7 @@ def test_a_conflict_arms_the_resolver_instead_of_blocking(session, conflicted):
     assert parse_stage_map(instance, stages)["done"] is StageStatus.PENDING
     assert "shared.txt" in conflicted.blocking_issues, "the brief names the conflicted file"
 
-    kinds = [d["decision"] for d in _decisions(session, conflicted)]
+    kinds = decision_kinds(session, conflicted.id)
     assert "dispatched_landing_resolver" in kinds
 
 
