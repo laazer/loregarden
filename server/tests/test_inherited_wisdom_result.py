@@ -135,16 +135,17 @@ def test_a_service_with_no_configured_store_reports_every_store_unconfigured(tmp
 # ---------------------------------------------------------------------------
 
 
-def test_recall_related_labels_a_failing_vault_read(tmp_path):
+def test_recall_related_ignores_a_failing_vault_list_notes(tmp_path):
+    """Cutover R5 — durable recall does not open Obsidian, so a vault list_notes
+    failure must not raise MemoryStoreReadError(VAULT)."""
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("vault unavailable")):
-        with pytest.raises(MemoryStoreReadError) as caught:
-            memory.recall_related(_MATCHING_BODY, workspace_slug="lg", limit=5)
+        ranked = memory.recall_related(_MATCHING_BODY, workspace_slug="lg", limit=5)
 
-    assert caught.value.store == MemoryStoreKind.VAULT
-    assert type(caught.value.__cause__) is OSError
+    assert ranked
+    assert all(row["source"] == "sqlite" for row in ranked)
 
 
 def test_recall_related_labels_a_failing_graph_read(tmp_path):
@@ -165,7 +166,12 @@ def test_recall_related_labels_a_failing_graph_read(tmp_path):
 
 
 def test_a_briefing_with_content_reports_its_size_and_healthy_stores(tmp_path):
-    """S8 case 1 — BUILT. Every figure AC1 names is populated."""
+    """S8 case 1 — BUILT. Every figure AC1 names is populated.
+
+    Cutover R8: durable memory/learning recall is GRAPH-only (`_RECALL_STORES`).
+    VAULT may still show READ from readiness/checkpoints, but must not be a
+    durable-recall store.
+    """
     memory = _both(tmp_path)
     memory.upsert_memory(
         title="Retry budget for throttled tools", body=_MATCHING_BODY, workspace_slug="lg"
@@ -181,11 +187,12 @@ def test_a_briefing_with_content_reports_its_size_and_healthy_stores(tmp_path):
     assert result.query_had_terms is True
     assert result.store_errors == ()
     assert result.elapsed_ms >= 0
-    assert result.store_states == {
-        MemoryStoreKind.CHECKPOINTS: MemoryStoreState.READ,
-        MemoryStoreKind.VAULT: MemoryStoreState.READ,
-        MemoryStoreKind.GRAPH: MemoryStoreState.READ,
-    }
+    assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.READ
+    assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.READ
+    from loregarden.agents import inherited_wisdom as iw
+
+    assert MemoryStoreKind.GRAPH in iw._RECALL_STORES
+    assert MemoryStoreKind.VAULT not in iw._RECALL_STORES
 
 
 def test_a_read_store_with_nothing_to_say_reports_read_and_zero(tmp_path):
@@ -209,21 +216,15 @@ def test_a_read_store_with_nothing_to_say_reports_read_and_zero(tmp_path):
     assert result.learnings_injected == 0
     assert result.query_had_terms is True
     assert result.store_errors == ()
-    assert result.store_states == {
-        MemoryStoreKind.CHECKPOINTS: MemoryStoreState.READ,
-        MemoryStoreKind.VAULT: MemoryStoreState.READ,
-        MemoryStoreKind.GRAPH: MemoryStoreState.READ,
-    }
+    assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.READ
+    assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.READ
 
 
 def test_an_all_stopword_query_leaves_the_recall_stores_not_queried(tmp_path):
-    """S8 case 2b — `recall_related` returns before touching either store when
-    the query tokenises to no terms, so neither 'read' nor 'unconfigured' is
-    true of the vault and the graph. Recording READ here would let an
-    all-stopword title read as 'both stores read and empty'.
-
-    CHECKPOINTS stays READ: the checkpoint lookup does not consult the query and
-    really did run.
+    """S8 case 2b / Cutover R8 — `recall_related` returns before touching GRAPH
+    when the query tokenises to no terms. Only GRAPH is a durable recall store;
+    VAULT stays readiness-READ (checkpoints may still use it) and is not flipped
+    via `_RECALL_STORES`.
     """
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
@@ -233,11 +234,11 @@ def test_an_all_stopword_query_leaves_the_recall_stores_not_queried(tmp_path):
 
     assert result.query_had_terms is False
     assert result.store_errors == ()
-    assert result.store_states == {
-        MemoryStoreKind.CHECKPOINTS: MemoryStoreState.READ,
-        MemoryStoreKind.VAULT: MemoryStoreState.NOT_QUERIED,
-        MemoryStoreKind.GRAPH: MemoryStoreState.NOT_QUERIED,
-    }
+    assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.READ
+    assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.NOT_QUERIED
+    from loregarden.agents import inherited_wisdom as iw
+
+    assert MemoryStoreKind.VAULT not in iw._RECALL_STORES
 
 
 def test_an_empty_title_and_description_report_no_query_terms(tmp_path):
@@ -250,23 +251,23 @@ def test_an_empty_title_and_description_report_no_query_terms(tmp_path):
     assert result.query_had_terms is False
 
 
-def test_an_unreadable_vault_is_named_as_the_vault(tmp_path):
-    """S8 case 3 — AC2. The label must send an operator at the right system."""
+def test_an_unreadable_vault_list_notes_does_not_take_down_graph_recall(tmp_path):
+    """Cutover R5/R8 — durable recall no longer walks vault list_notes, so an
+    OSError there must not erase GRAPH hits or be reported as the memory store.
+    """
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("vault unavailable")):
         result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
-    assert result.store_errors == ("vault:OSError",)
-    assert result.store_states[MemoryStoreKind.VAULT] == MemoryStoreState.ERRORED
+    assert "Retry budget" in result.text
     assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.READ
-    # The section still goes down whole — one failing store costs both halves.
-    assert "Retry budget" not in result.text
+    assert result.store_errors == ()
 
 
 def test_an_unreadable_graph_is_named_as_the_graph(tmp_path):
-    """S8 case 3b — AC2."""
+    """S8 case 3b — AC2 / Cutover R8 — durable recall errors name GRAPH."""
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
@@ -275,25 +276,25 @@ def test_an_unreadable_graph_is_named_as_the_graph(tmp_path):
 
     assert result.store_errors == ("graph:OSError",)
     assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.ERRORED
-    assert result.store_states[MemoryStoreKind.VAULT] == MemoryStoreState.READ
     assert "Retry budget" not in result.text
 
 
-def test_a_failing_vault_and_a_failing_graph_are_distinguishable(tmp_path):
-    """AC2, stated as the property rather than as two separate strings.
-
-    A label that collapses the two sends an operator to restart iCloud when the
-    SQLite file is the thing that is broken.
+def test_a_failing_checkpoint_vault_and_a_failing_graph_are_distinguishable(tmp_path):
+    """AC2 / Cutover R8 — checkpoint vault failures and graph recall failures
+    must stay labelled differently. list_notes is no longer on the durable
+    recall path, so the vault half of this distinction is checkpoints_dir.
     """
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
-    with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("boom")):
+    with patch.object(ObsidianMemoryStore, "checkpoints_dir", side_effect=OSError("boom")):
         from_vault = build_inherited_wisdom(_ticket(), "lg", memory=memory)
     with patch.object(MemoryGraphStore, "list_nodes", side_effect=OSError("boom")):
         from_graph = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
     assert from_vault.store_errors != from_graph.store_errors
+    assert from_vault.store_errors == ("checkpoints:OSError",)
+    assert from_graph.store_errors == ("graph:OSError",)
 
 
 def test_an_unreadable_checkpoint_directory_is_named_as_the_checkpoints_store(tmp_path):
@@ -459,19 +460,21 @@ def test_the_briefing_still_never_raises_when_every_lookup_explodes(tmp_path):
     reports only the first failure, or reports them in whichever order the
     lookups happened to run, sends an operator after one broken system while the
     other stays invisible. Single-store cases cannot see either defect.
+
+    Cutover R5/R8 — durable recall is GRAPH; checkpoints remain vault-native.
     """
     memory = _both(tmp_path)
 
     with (
-        patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("boom")),
+        patch.object(MemoryGraphStore, "list_nodes", side_effect=OSError("boom")),
         patch.object(ObsidianMemoryStore, "checkpoints_dir", side_effect=OSError("boom")),
     ):
         result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
     assert result.text == ""
-    assert result.store_errors == ("checkpoints:OSError", "vault:OSError")
+    assert result.store_errors == ("checkpoints:OSError", "graph:OSError")
     assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.ERRORED
-    assert result.store_states[MemoryStoreKind.VAULT] == MemoryStoreState.ERRORED
+    assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.ERRORED
 
 
 def test_elapsed_ms_covers_the_assembly_it_measures(tmp_path):
