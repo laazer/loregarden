@@ -460,19 +460,21 @@ def test_the_briefing_still_never_raises_when_every_lookup_explodes(tmp_path):
     reports only the first failure, or reports them in whichever order the
     lookups happened to run, sends an operator after one broken system while the
     other stays invisible. Single-store cases cannot see either defect.
+
+    Cutover R5/R8 — durable recall is GRAPH; checkpoints remain vault-native.
     """
     memory = _both(tmp_path)
 
     with (
-        patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("boom")),
+        patch.object(MemoryGraphStore, "list_nodes", side_effect=OSError("boom")),
         patch.object(ObsidianMemoryStore, "checkpoints_dir", side_effect=OSError("boom")),
     ):
         result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
     assert result.text == ""
-    assert result.store_errors == ("checkpoints:OSError", "vault:OSError")
+    assert result.store_errors == ("checkpoints:OSError", "graph:OSError")
     assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.ERRORED
-    assert result.store_states[MemoryStoreKind.VAULT] == MemoryStoreState.ERRORED
+    assert result.store_states[MemoryStoreKind.GRAPH] == MemoryStoreState.ERRORED
 
 
 def test_elapsed_ms_covers_the_assembly_it_measures(tmp_path):

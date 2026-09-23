@@ -148,8 +148,16 @@ def test_r2_append_learning_writes_graph_before_vault_export(vault_dir, tmp_path
     assert rows[0]["node_type"] == "learning"
 
 
-def test_r2_memory_learning_writes_fail_closed_without_graph(vault_dir):
-    """Cutover R2 — vault-only config must not create memory/learning records."""
+def test_r2_memory_learning_writes_fail_closed_without_graph(vault_dir, monkeypatch):
+    """Cutover R2 — vault-only config must not create memory/learning records.
+
+    ``graph_sqlite_base=None`` alone is not enough under the suite's autouse
+    memory fixture (settings still resolve a temp graph). Pin the fallthrough off.
+    """
+    monkeypatch.setattr(
+        "loregarden.services.memory_store.resolved_memory_sqlite_path",
+        lambda *args, **kwargs: None,
+    )
     service = _vault_only(vault_dir)
     with pytest.raises((ValueError, RuntimeError)):
         service.append_learning(

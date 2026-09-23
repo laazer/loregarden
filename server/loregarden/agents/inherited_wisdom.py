@@ -43,9 +43,9 @@ _LOG_HEADING = re.compile(r"^# Checkpoint log —.*$", re.M)
 
 #: The stores `store_readiness` reports on — every kind except the factory.
 _READY_STORES = (MemoryStoreKind.CHECKPOINTS, MemoryStoreKind.VAULT, MemoryStoreKind.GRAPH)
-#: The two stores `recall_related` consults. Both are skipped wholesale when the
-#: query tokenises to no terms, which is neither a read nor an absence.
-_RECALL_STORES = (MemoryStoreKind.VAULT, MemoryStoreKind.GRAPH)
+#: Durable recall consults GRAPH only (Cutover R5/R8). Checkpoints still read
+#: the vault separately; VAULT is not a durable-memory recall store.
+_RECALL_STORES = (MemoryStoreKind.GRAPH,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,7 +241,7 @@ def build_inherited_wisdom(
         ticket,
         workspace_slug,
         label="learnings",
-        default_store=MemoryStoreKind.VAULT,
+        default_store=MemoryStoreKind.GRAPH,
     )
 
     errors: list[str] = []
