@@ -42,7 +42,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from loregarden.services.block_classification import sweep_unclassified_blocks
+from loregarden.services.block_settlement import sweep_unclassified_blocks
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (

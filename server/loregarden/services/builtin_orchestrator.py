@@ -577,7 +577,14 @@ class BuiltinOrchestrator:
         resuming: bool,
     ) -> bool:
         """Run a parallel or sequential agent stage; True means stop the loop."""
-        if stage_def.stage_type == "parallel":
+        # A repair-pinned parallel stage runs as ONE sequential run under the
+        # repair agent, not as a fan-out. Fanning out would re-dispatch the
+        # members and leave the pin unconsumed, which is why 750 excluded
+        # parallel stages from the repair turn at all; dispatching sequentially
+        # is what lets the pin be honoured (802). `resolve_stage_execution`
+        # answers with the pin before it reaches its parallel branch, so the
+        # sequential path resolves the repair agent and the dispatch clears it.
+        if stage_def.stage_type == "parallel" and not repair_pinned(ticket, target_key):
             return self._run_parallel_stage_or_stop(
                 ticket,
                 orch_run,

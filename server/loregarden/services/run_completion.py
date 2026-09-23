@@ -41,8 +41,9 @@ from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
 )
-from loregarden.services.block_classification import record_block
-from loregarden.services.block_repair import offer_repair, record_repair_outcome
+from loregarden.services.block_classification import classify_block_message
+from loregarden.services.block_repair import record_repair_outcome
+from loregarden.services.block_settlement import BlockSettlement, settle_block
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
@@ -190,6 +191,11 @@ def _reroute_or_block_for_rework(
             target_stage=target_stage,
             message=reason,
         )
+        # Not repairable, and for the reason the cap exists: this stage has
+        # already been re-run and did not converge, so one more agent turn is
+        # the move the pause is there to stop. The settlement records that
+        # rather than leaving the block looking like one nobody considered.
+        _settle_block(orch, ticket, run, instance, stages, message=reason, repairable=False)
         return
 
     try:
@@ -214,27 +220,33 @@ def _reroute_or_block_for_rework(
         )
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, full_context)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        _settle_block(orch, ticket, run, instance, stages, message=full_context)
 
 
-def _offer_repair_turn(
+def _settle_block(
     orch: OrchestrationService,
     ticket: Ticket,
     run: AgentRun,
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
     *,
-    kind: BlockKind,
     message: str,
-) -> bool:
-    """One repair turn for a block an agent can clear (750). A standalone run has
-    no orchestrator to spend it; `offer_repair` says no for those and for a run
-    started with `auto_repair` off."""
+    declared: BlockKind | None = None,
+    options: list[str] | None = None,
+    kind_as_written: str = "",
+    repairable: bool = True,
+) -> BlockSettlement:
+    """Classify this block and spend its one repair turn (749 + 750, paired by 802).
+
+    A standalone run has no orchestrator to spend the turn; `settle_block`
+    records that as the reason rather than passing over it in silence, as it
+    does for a run started with `auto_repair` off."""
     parent = (
         orch.session.get(OrchestrationRun, run.orchestration_run_id)
         if run.orchestration_run_id
         else None
     )
-    return offer_repair(
+    return settle_block(
         orch.session,
         ticket,
         parent,
@@ -242,9 +254,12 @@ def _offer_repair_turn(
         stages=stages,
         transitions=orch._resolve_transitions(ticket),
         stage_key=run.stage_key,
-        kind=kind,
         message=message,
         failed_agent=run.agent_id,
+        declared=declared,
+        options=options,
+        kind_as_written=kind_as_written,
+        repairable=repairable,
     )
 
 
@@ -269,11 +284,22 @@ def _classify_raw_failure(
     Only a `work` failure gets its repair turn here: a harness message on this
     path is a control-plane death (interruption, orphan, lease) that the
     startup resume and the settlers already own — re-arming the stage under a
-    dead orchestration would hide it from them (750).
+    dead orchestration would hide it from them (750). It is still classified,
+    and still records why it got no turn (802).
     """
-    kind = record_block(orch.session, ticket, stage_key=run.stage_key, message=failure)
-    if kind is BlockKind.WORK:
-        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=failure)
+    # `settle_block` decides the kind, but `repairable` has to be answered
+    # before it is called, so the message is read once here for that. Same
+    # function, same argument, so the two cannot disagree.
+    probable = classify_block_message(failure)
+    _settle_block(
+        orch,
+        ticket,
+        run,
+        instance,
+        stages,
+        message=failure,
+        repairable=probable is BlockKind.WORK,
+    )
 
 
 def _sign_off_design_plan_if_permitted(
@@ -398,12 +424,15 @@ def settle_stage_after_failed_completion(
         if not ticket or not instance or not stages or not run.stage_key:
             return
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        ticket.blocking_issues = _blocking_issue(
-            orch.session, ticket, run, f"Run completion failed: {exc}"
-        )
+        message = f"Run completion failed: {exc}"
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
         orch.session.add(ticket)
         orch.session.add(instance)
         orch.session.commit()
+        # The tail of `complete_run` itself failed, so this is the last-ditch
+        # settle; a repair turn re-armed from inside a broken completion would
+        # run under a state nobody has finished writing. Recorded, not offered.
+        _settle_block(orch, ticket, run, instance, stages, message=message, repairable=False)
     except Exception:
         orch.session.rollback()
         logger.exception(
@@ -465,12 +494,15 @@ def _block_for_usage_limit(
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
     # Harness, but not one a repair turn can clear — the fix is the quota
     # window passing. Classified so the person sees it needs no action from them.
-    record_block(
-        orch.session,
+    _settle_block(
+        orch,
         ticket,
-        stage_key=run.stage_key,
+        run,
+        instance,
+        stages,
         message=ticket.blocking_issues,
         declared=BlockKind.HARNESS,
+        repairable=False,
     )
 
 
@@ -492,6 +524,12 @@ def _advance_clean_exit(
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, _MISSING_STAGE_REPORT)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+        # The most common non-work block there is, and until 802 the only block
+        # branch that called neither half of the pair — it blocked and stopped.
+        # The repair turn does not weaken the rule above: the stage is re-armed
+        # to run AGAIN under the repair agent, which must emit its own report
+        # like anyone else. Nothing here advances a missing report as a pass.
+        _settle_block(orch, ticket, run, instance, stages, message=_MISSING_STAGE_REPORT)
         return None
 
     # The stage produced a verdict, so whatever infrastructure trouble it had on
@@ -589,14 +627,9 @@ def _rearmed_for_transient_retry(
             reason,
         )
         # The environment had its retries; now one agent turn looks at it (750).
-        kind = record_block(
-            orch.session,
-            ticket,
-            stage_key=run.stage_key,
-            message=message,
-            declared=BlockKind.HARNESS,
+        _settle_block(
+            orch, ticket, run, instance, stages, message=message, declared=BlockKind.HARNESS
         )
-        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=message)
         return True
 
     # The marker is both the charge and the record: see `record_transient_retry`
@@ -655,16 +688,17 @@ def advance_stage_after_run(
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         # Who can unblock it — the agent's own word, or the message's (749). A
         # `decision` becomes an inbox question here rather than a dead ticket.
-        kind = record_block(
-            orch.session,
+        _settle_block(
+            orch,
             ticket,
-            stage_key=run.stage_key,
+            run,
+            instance,
+            stages,
             message=message,
             declared=report.blocked_kind,
             options=report.options,
             kind_as_written=report.kind_as_written,
         )
-        _offer_repair_turn(orch, ticket, run, instance, stages, kind=kind, message=message)
     elif report and report.status in ("fail", "needs_rework"):
         clear_transient_retries(orch.session, ticket.id, run.stage_key)
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)

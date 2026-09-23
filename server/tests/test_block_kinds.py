@@ -14,7 +14,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -23,7 +22,6 @@ from loregarden.models.domain import (
     Artifact,
     ArtifactKind,
     BlockKind,
-    EventType,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -36,11 +34,8 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.block_classification import (
-    classify_block_message,
-    record_block,
-    sweep_unclassified_blocks,
-)
+from loregarden.services.block_classification import classify_block_message
+from loregarden.services.block_settlement import settle_block, sweep_unclassified_blocks
 from loregarden.services.interruption_messages import (
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
@@ -51,6 +46,7 @@ from loregarden.services.orchestration import ApprovalService, OrchestrationServ
 from loregarden.services.run_service import AGENT_LEASE_EXPIRED_MESSAGE, EXPIRED_LEASE_MESSAGE
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds, decision_payloads
 
 IMPLEMENT = "implement"
 STAGES = [
@@ -174,14 +170,6 @@ def _complete_blocked(session: Session, ticket: Ticket, stdout: str) -> None:
     session.commit()
 
 
-def _decisions(session: Session, ticket: Ticket) -> list[dict]:
-    return [
-        json.loads(e.payload_json or "{}")
-        for e in event_bus.ticket_history(session, ticket.id)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
 def _pending_decision(session: Session, ticket: Ticket) -> Approval | None:
     return session.exec(
         select(Approval).where(
@@ -204,7 +192,9 @@ def test_a_decision_block_becomes_one_question_with_the_agents_options(db_sessio
     question = json.loads(approval.tool_input_json)["questions"][0]
     assert question["question"] == SDF_39_MESSAGE
     assert [o["label"] for o in question["options"]] == SDF_39_OPTIONS
-    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
     assert classified and classified[0]["block_kind"] == "decision"
 
 
@@ -236,7 +226,7 @@ def test_answering_the_question_requeues_the_stage_with_no_manual_step(db_sessio
     ).one()
     assert "Try approach B" in decision_note.content_json
     assert scheduled.called, "the run resumes itself after the answer, as a gate would"
-    kinds = [d["decision"] for d in _decisions(db_session, ticket)]
+    kinds = decision_kinds(db_session, ticket.id)
     assert "requeued_after_decision" in kinds
 
 
@@ -260,7 +250,9 @@ def test_an_unnamed_kind_is_work_and_the_history_says_the_agent_did_not_say(db_s
     db_session.refresh(ticket)
     assert ticket.block_kind is BlockKind.WORK
     assert _pending_decision(db_session, ticket) is None
-    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
     assert "named no kind" in classified[0]["reason"]
 
 
@@ -277,23 +269,16 @@ def test_the_sweep_classifies_blocks_the_writers_did_not(db_session, ticket):
     assert sweep_unclassified_blocks(db_session) == 0  # idempotent
 
 
-def test_record_block_does_not_raise_a_second_question_for_the_same_stage(db_session, ticket):
-    record_block(
-        db_session,
-        ticket,
-        stage_key=IMPLEMENT,
-        message="pick one",
-        declared=BlockKind.DECISION,
-        options=["a", "b"],
-    )
-    record_block(
-        db_session,
-        ticket,
-        stage_key=IMPLEMENT,
-        message="pick one",
-        declared=BlockKind.DECISION,
-        options=["a", "b"],
-    )
+def test_settling_a_block_does_not_raise_a_second_question_for_the_same_stage(db_session, ticket):
+    for _ in range(2):
+        settle_block(
+            db_session,
+            ticket,
+            stage_key=IMPLEMENT,
+            message="pick one",
+            declared=BlockKind.DECISION,
+            options=["a", "b"],
+        )
 
     pending = db_session.exec(
         select(Approval).where(
@@ -359,5 +344,7 @@ def test_an_invented_kind_is_named_in_the_history(db_session, ticket):
         + "\n<<<END_STAGE_REPORT>>>\n",
     )
 
-    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
     assert "unknown kind 'awaiting_human'" in classified[0]["reason"]

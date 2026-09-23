@@ -42,6 +42,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -390,7 +391,15 @@ def _begin_external_stage(
 
     orch = OrchestrationService(session)
     stage_def = orch.stage_definition(ticket, target_key)
-    if stage_def is not None and is_parallel_stage(stage_def):
+    # A repair-pinned parallel stage is served as one run under the repair
+    # agent, not as a fan-out — the same rule the builtin driver applies, so the
+    # two drivers do not differ on it. Fanning out would re-dispatch the members
+    # and leave the pin unconsumed (802).
+    if (
+        stage_def is not None
+        and is_parallel_stage(stage_def)
+        and not repair_pinned(ticket, target_key)
+    ):
         return _begin_parallel_stage(session, orch_run, ticket, stage_def, target_key)
 
     # The same re-checkout rule the parallel path applies, for a stage that can

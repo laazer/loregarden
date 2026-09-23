@@ -16,7 +16,6 @@ would miss.
 from __future__ import annotations
 
 import pytest
-from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     EventType,
     OrchestrationRun,
@@ -31,20 +30,7 @@ from loregarden.services.run_service import settle_orphaned_agent_runs, settle_s
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_workspace_ticket
-
-
-def _decisions(session: Session, ticket_id: str) -> list:
-    return [
-        e
-        for e in event_bus.ticket_history(session, ticket_id, limit=100)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
-def _payload(event) -> dict:
-    import json
-
-    return json.loads(event.payload_json or "{}")
+from tests.history_helpers import decision_events, decision_kinds, decision_payloads
 
 
 def test_a_refused_dispatch_reaches_the_history(db_session: Session):
@@ -67,9 +53,9 @@ def test_a_refused_dispatch_reaches_the_history(db_session: Session):
             ticket, stage_key="implement", orchestration_run_id=parent.id
         )
 
-    found = _decisions(db_session, ticket.id)
+    found = decision_payloads(db_session, ticket.id)
     assert len(found) == 1
-    payload = _payload(found[0])
+    payload = found[0]
     assert payload["decision"] == OrchestratorDecision.REFUSED_DISPATCH_TERMINAL_PARENT.value
     assert payload["stage_key"] == "implement"
     assert "orch_dead" in payload["reason"]
@@ -101,13 +87,14 @@ def test_a_settled_orphan_reaches_the_history_and_says_it_refunded(db_session: S
 
     settle_orphaned_agent_runs(db_session)
 
-    found = _decisions(db_session, ticket.id)
-    assert len(found) == 1
-    payload = _payload(found[0])
-    assert payload["decision"] == OrchestratorDecision.SETTLED_ORPHANED_RUN.value
-    assert payload["run_code"] == "run_orphan"
-    assert payload["parent_status"] == "blocked"
-    assert found[0].run_id == run.id
+    payloads = decision_payloads(db_session, ticket.id)
+    assert len(payloads) == 1
+    assert payloads[0]["decision"] == OrchestratorDecision.SETTLED_ORPHANED_RUN.value
+    assert payloads[0]["run_code"] == "run_orphan"
+    assert payloads[0]["parent_status"] == "blocked"
+    # The event, not the payload: `run_id` is a column on the row, which is what
+    # ties the decision to the run in every reader that joins on it.
+    assert decision_events(db_session, ticket.id)[0].run_id == run.id
 
 
 def test_a_stranded_stage_settle_reaches_the_history(db_session: Session):
@@ -124,11 +111,16 @@ def test_a_stranded_stage_settle_reaches_the_history(db_session: Session):
 
     settle_stranded_stages(db_session, ticket_id=ticket.id)
 
-    found = _decisions(db_session, ticket.id)
-    assert len(found) == 1
-    payload = _payload(found[0])
-    assert payload["decision"] == OrchestratorDecision.SETTLED_STRANDED_STAGE.value
-    assert payload["stage_key"] == "plan"
+    kinds = decision_kinds(db_session, ticket.id)
+    assert kinds[0] == OrchestratorDecision.SETTLED_STRANDED_STAGE.value
+    assert decision_payloads(db_session, ticket.id)[0]["stage_key"] == "plan"
+    # And then the block's own disposition (802). A stranded stage leaves the
+    # ticket blocked, so it is classified like any other block — and says it got
+    # no repair turn, because the run that would have spent one is already gone.
+    # Asserted rather than tolerated: these two are the record that the settle
+    # was handled, and a settle that stopped emitting them would be the silence
+    # 802 exists to remove.
+    assert kinds[1:] == ["classified_block", "repair_escalated"]
 
 
 def test_the_decision_kind_is_closed(db_session: Session):
