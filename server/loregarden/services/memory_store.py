@@ -1065,25 +1065,6 @@ class AgentMemoryService:
             deduped.append(row)
         return deduped[:limit]
 
-    def _obsidian_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
-        # Retained for callers/tests that still probe vault enumeration; durable
-        # recall no longer consults this path (Cutover R5).
-        if not self.obsidian:
-            return []
-        return [
-            {
-                "id": n.id,
-                "source": "obsidian",
-                "title": n.title,
-                "body": n.body,
-                "tags": n.tags,
-                "updated_at": n.updated_at,
-            }
-            for n in self.obsidian.list_notes(
-                workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
-            )
-        ]
-
     def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
         graph = self._graph_for_workspace(workspace_slug)
         if not graph:
