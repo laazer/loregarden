@@ -549,7 +549,7 @@ def _advance_clean_exit(
         # through the landing. Nothing ran here at all until the landing
         # resolver (801); this keeps that door shut.
         stage_status = StageStatus.PENDING
-    elif stage_def and stage_def.gate_required:
+    elif stage_def and stage_def.requires_human_sign_off:
         stage_status = StageStatus.AWAITING
         template = orch.get_template_for_ticket(ticket)
         if template:
@@ -735,7 +735,7 @@ def advance_stage_after_run(
     orch.session.add(instance)
     orch.session.commit()
 
-    # A gate_required stage reached under auto_approve resolves itself
+    # A stage requiring sign-off reached under auto_approve resolves itself
     # immediately instead of parking at AWAITING for a human — the
     # approval row is still created above (audit trail), just pre-resolved.
     # Delegated because ApprovalService lives in the orchestration module, and
