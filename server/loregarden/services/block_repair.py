@@ -79,6 +79,24 @@ def repair_already_spent(session: Session, ticket: Ticket, stage_key: str) -> bo
     return requeue is None or requeue.created_at <= last.created_at
 
 
+def repair_turns_spent(session: Session, ticket: Ticket, stage_key: str) -> int:
+    """How many repair turns this stage has had since a person last requeued it.
+
+    `repair_already_spent` is this capped at one, which is the block repair's
+    own rule. The landing resolver counts instead, because the operator sets
+    its cap (`max_conflict_resolve_attempts`) in the git automation panel.
+    """
+    requeue = _latest_human_requeue(session, ticket, stage_key)
+    query = select(AgentRun.id).where(
+        AgentRun.ticket_id == ticket.id,
+        AgentRun.stage_key == stage_key,
+        AgentRun.agent_id == REPAIR_AGENT_ID,
+    )
+    if requeue is not None:
+        query = query.where(AgentRun.created_at > requeue.created_at)
+    return len(session.exec(query).all())
+
+
 def repair_pinned(ticket: Ticket, stage_key: str) -> bool:
     """The loop's question after a dispatch: is a repair rerun of this stage
     waiting? True only until the dispatch consumes the pin."""

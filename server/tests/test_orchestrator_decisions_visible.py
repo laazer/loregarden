@@ -149,6 +149,12 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # Reads as trouble in the client's tone(), like the other settles: a
         # lane that was busy with nothing in it is a release that stopped short.
         "reclaimed_ghost_lane",
+        # Toned by its own outcome in the client, not by the kind: the finish
+        # it retried can still block on the landing (801).
+        "finished_parked_terminal_stage",
+        # The orchestrator handling it rather than waiting for a person, like
+        # dispatched_repair — normal in the client's tone().
+        "dispatched_landing_resolver",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

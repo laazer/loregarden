@@ -22,18 +22,27 @@ Outcomes:
   control plane's own words. The orchestration that drove the stage sees a
   blocked ticket and finishes blocked, as it does for any other block.
 
-`auto_resolve_conflicts` is not honoured here yet: the resolver has to be
-dispatched on the implement stage, not the terminal one, and that routing is
-not designed. A conflict blocks and the message says so.
+`auto_resolve_conflicts` is honoured as of 801. A conflict on a ticket whose
+every stage passed arms a resolution turn on the terminal stage — the same
+pin the repair turn uses — and the workflow comes back through here to retry
+the land when it passes. The earlier note said the resolver had to go on the
+implement stage, because a run finishing the terminal stage would derive
+`done` behind the landing's back; `run_completion` now leaves a terminal stage
+PENDING, so the only path to `done` still runs through this module. With the
+flag off, or `max_conflict_resolve_attempts` spent, a conflict blocks and the
+message says so.
 """
 
 from __future__ import annotations
 
 import logging
 
+from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.core.event_bus import event_bus
+from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     EventType,
+    OrchestratorDecision,
     StageStatus,
     Ticket,
     WorkflowInstance,
@@ -41,9 +50,13 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
+from loregarden.services.block_repair import repair_turns_spent
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.publish_tree import publish_tree
+from loregarden.services.workflow_routing import apply_stage_route
+from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session
 
@@ -84,8 +97,109 @@ def land_before_done(
             return False
         return True
 
+    if result.conflicted and _offer_conflict_resolution(
+        session, ticket, instance, stages, stage_key=stage_key, result=result, workspace=workspace
+    ):
+        return False
     _block(session, ticket, instance, stages, stage_key, _block_message(result, workspace, ticket))
     return False
+
+
+def _offer_conflict_resolution(
+    session: Session,
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    *,
+    stage_key: str,
+    result: LandResult,
+    workspace: Workspace,
+) -> bool:
+    """Arm the terminal stage for a resolution turn. True when it was armed.
+
+    The ticket passed every stage; the only thing between it and done is a
+    merge someone has to do. So the resolver is dispatched on the stage the
+    ticket is already parked on, under the same pin the repair turn uses, and
+    the workflow comes back here to retry the land when it passes.
+
+    Three things make this safe rather than a loop:
+
+    - `auto_resolve_conflicts` must be on. Off is today's behaviour, and the
+      block says the conflict is a person's.
+    - `max_conflict_resolve_attempts` bounds the turns. The operator already
+      sets it in the git automation panel, where it governed nothing until
+      now; spending it blocks for a person, who requeues to grant more.
+    - The run cannot finish the ticket behind the landing's back —
+      `run_completion` leaves a terminal stage PENDING, so the only path to
+      `done` still runs through `land_before_done`.
+    """
+    automation = resolve_git_automation(workspace, ticket)
+    if not automation.auto_resolve_conflicts:
+        return False
+    if repair_turns_spent(session, ticket, stage_key) >= automation.max_conflict_resolve_attempts:
+        return False
+    if get_agent(REPAIR_AGENT_ID) is None:
+        # Pinning an agent that cannot resolve would re-arm the stage forever.
+        logger.warning(
+            "repair agent %r is not registered; landing conflict left for a person",
+            REPAIR_AGENT_ID,
+        )
+        return False
+
+    apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        _transitions(session, ticket),
+        from_key=stage_key,
+        outcome="reject",
+        next_stage_key=stage_key,
+        next_agent=REPAIR_AGENT_ID,
+        blocking_issues=_resolution_brief(result),
+    )
+    session.add(ticket)
+    session.add(instance)
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.DISPATCHED_LANDING_RESOLVER,
+        stage_key=stage_key,
+        reason=(
+            f"Landing {result.branch} on {result.target} conflicted in "
+            f"{', '.join(result.conflicted_files)}; armed a resolution turn under the "
+            f"'{REPAIR_AGENT_ID}' agent instead of blocking a ticket whose every stage passed."
+        ),
+        evidence={
+            "branch": result.branch,
+            "target": result.target,
+            "conflicted_files": list(result.conflicted_files),
+        },
+    )
+    session.commit()
+    logger.warning(
+        "Landing %s on %s conflicted in %s; dispatching a resolution turn",
+        result.branch,
+        result.target,
+        ", ".join(result.conflicted_files),
+    )
+    return True
+
+
+def _transitions(session: Session, ticket: Ticket) -> list[dict[str, str]]:
+    template, _ = resolve_ticket_stages(session, ticket)
+    return StateMachine.parse_transitions(template.transitions_json) if template else []
+
+
+def _resolution_brief(result: LandResult) -> str:
+    return (
+        f"Every stage passed, but landing '{result.branch}' on '{result.target}' conflicts in "
+        f"{', '.join(result.conflicted_files)}. You are its one resolution turn: merge "
+        f"'{result.target}' into '{result.branch}' and resolve the conflicts on the ticket "
+        "branch, keeping both sides' intent — the other side is another ticket's finished "
+        "work, not noise. Commit the resolution and report `pass`; the landing is retried "
+        "automatically. If the conflict needs a decision only a person can make, report "
+        "`blocked` with that reason instead — there will be no second turn."
+    )
 
 
 def _block(
@@ -107,7 +221,7 @@ def _block_message(result: LandResult, workspace: Workspace, ticket: Ticket) -> 
         files = ", ".join(result.conflicted_files)
         note = ""
         if resolve_git_automation(workspace, ticket).auto_resolve_conflicts:
-            note = " (auto_resolve_conflicts is set, but resolution at landing is not wired yet)"
+            note = " (auto_resolve_conflicts is set; its resolution attempts are spent)"
         return (
             f"Could not land {result.branch} on {result.target}: merge conflicts in "
             f"{files}. Resolve them on the ticket branch and requeue.{note}"

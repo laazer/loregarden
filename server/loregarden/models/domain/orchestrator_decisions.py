@@ -50,3 +50,11 @@ class OrchestratorDecision(StrEnum):
     #: ids null, past the reservation grace — and was given back to the pool
     #: (775). Slot 1 sat that way for hours while the reclaim was a log line.
     RECLAIMED_GHOST_LANE = "reclaimed_ghost_lane"
+    #: A ticket sitting on its terminal stage with no orchestration left to
+    #: finish it was handed back to `finalize_workflow` (801). A landing that
+    #: blocked and was then fixed by hand leaves exactly that residue.
+    FINISHED_PARKED_TERMINAL_STAGE = "finished_parked_terminal_stage"
+    #: A landing conflicted on a ticket whose every stage passed, so one
+    #: resolution turn was armed on the terminal stage rather than blocking
+    #: for a person (801).
+    DISPATCHED_LANDING_RESOLVER = "dispatched_landing_resolver"
