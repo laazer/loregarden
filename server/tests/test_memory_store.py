@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 from loregarden.services.memory_store import (
-    RECALL_CANDIDATE_CAP,
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
@@ -210,7 +209,12 @@ def test_memory_graph_uses_delete_journal_in_icloud(tmp_path, monkeypatch):
     assert mode.lower() == "delete"
 
 
-def test_agent_memory_service_dual_write(vault_dir, tmp_path):
+def test_agent_memory_service_graph_then_export_shared_id(vault_dir, tmp_path):
+    """Cutover R2/R6/R9 — GRAPH is the record; vault is labelled export.
+
+    Replaces the peer dual-write assertion: learning lands in graph[], not as a
+    vault memory/learning peer in obsidian[], and ids match.
+    """
     service = AgentMemoryService(
         obsidian=ObsidianMemoryStore(vault_dir),
         graph_sqlite_base=tmp_path / "Loregarden" / "memory.db",
@@ -218,15 +222,16 @@ def test_agent_memory_service_dual_write(vault_dir, tmp_path):
     result = service.append_learning(
         ticket_id="t-01",
         workspace_slug="loregarden",
-        content="Dual-write learning test.",
+        content="Graph-then-export learning test.",
     )
     assert "obsidian" in result
     assert "graph" in result
+    assert result["obsidian"]["id"] == result["graph"]["id"]
     assert "loregarden" in result["obsidian"]["path"]
-    search = service.search("dual-write", workspace_slug="loregarden")
-    assert len(search["obsidian"]) == 1
+    search = service.search("Graph-then-export", workspace_slug="loregarden")
     assert len(search["graph"]) == 1
-    other_search = service.search("dual-write", workspace_slug="other")
+    assert search["obsidian"] == []
+    other_search = service.search("Graph-then-export", workspace_slug="other")
     assert len(other_search["obsidian"]) == 0
     assert len(other_search["graph"]) == 0
 
@@ -294,6 +299,7 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         )
         assert "obsidian" in upsert
         assert "graph" in upsert
+        assert upsert["obsidian"]["id"] == upsert["graph"]["id"]
 
         search = json.loads(
             execute_tool(
@@ -302,8 +308,10 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
                 {"query": "checkpoint", "workspace_slug": "loregarden"},
             )
         )
-        assert len(search["obsidian"]) >= 1
+        # Cutover R6: durable memory is graph-only; vault export peers are filtered.
         assert len(search["graph"]) >= 1
+        assert all(row.get("note_type") != "memory" for row in search["obsidian"])
+        assert all(row.get("node_type") in {"memory", "learning"} for row in search["graph"])
 
         checkpoint = json.loads(
             execute_tool(
@@ -436,7 +444,8 @@ def test_sqlite_db_in_icloud_dir(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------------------
 # R2 — MemoryGraphStore.list_nodes: enumeration surface for the graph half.
-# R3 — AgentMemoryService.recall_related: the both-stores term-overlap read.
+# R3 — AgentMemoryService.recall_related: GRAPH-only term-overlap read
+#      (lg-improved-memory-662 cutover; vault is export, not a recall peer).
 #
 # The briefing path used to query both stores with the whole ticket title as one
 # contiguous substring, which essentially never matched. These tests pin the
@@ -547,25 +556,27 @@ def test_recall_related_returns_nothing_at_zero_io_for_empty_queries(vault_dir, 
     assert list_nodes.call_count == 0
 
 
-def test_recall_related_reads_both_stores(vault_dir, tmp_path):
-    """AC3.2 — the graph half holds 285 live nodes. Catches an implementation
-    that ranks the Obsidian half only, which passes every test copied from the
-    existing graph_sqlite_base=None fixtures."""
+def test_recall_related_reads_graph_and_ignores_vault_memory(vault_dir, tmp_path):
+    """AC3.2 / Cutover R5 — durable recall is GRAPH-only. A vault memory peer
+    that would have ranked under the old both-stores path must not appear."""
     service = _both_backends(vault_dir, tmp_path)
     service.obsidian.upsert_note(
         title="Trusted server throttle",
         body="Cap the call rate per tool.",
         workspace_slug="lg",
+        note_type="memory",
     )
     graph = service._graph_for_workspace("lg")
     graph.upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
+        node_type="memory",
     )
 
-    titles = {row["title"] for row in service.recall_related("trusted server", workspace_slug="lg")}
-    assert titles == {"Trusted server throttle", "Retry budget"}
+    ranked = service.recall_related("trusted server", workspace_slug="lg")
+    assert [row["title"] for row in ranked] == ["Retry budget"]
+    assert all(row["source"] == "sqlite" for row in ranked)
 
 
 def test_recall_related_works_with_the_graph_alone(tmp_path):
@@ -582,61 +593,77 @@ def test_recall_related_works_with_the_graph_alone(tmp_path):
     assert [row["title"] for row in ranked] == ["Retry budget"]
 
 
-def test_recall_related_works_with_obsidian_alone(vault_dir):
-    """AC3.3 — the mirror case, and the shape every existing inherited-wisdom
-    test uses."""
+def test_recall_related_ignores_vault_only_memory_notes(vault_dir):
+    """AC3.3 / Cutover R5 — vault-only memory is no longer a recall source.
+
+    Writes of memory/learning without a graph fail closed (R2); leftover vault
+    notes from before cutover must not leak into recall either.
+    """
     service = AgentMemoryService(obsidian=ObsidianMemoryStore(vault_dir), graph_sqlite_base=None)
     service.obsidian.upsert_note(
         title="Trusted server throttle",
         body="Cap the call rate per tool.",
         workspace_slug="lg",
+        note_type="memory",
     )
 
     ranked = service.recall_related("trusted server", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Trusted server throttle"]
+    assert ranked == []
 
 
-def test_recall_related_deduplicates_a_dual_written_learning(vault_dir, tmp_path):
-    """AC3.4 — append_learning writes the same title+body to both stores under
-    two different uuid4s, so a dedupe keyed on id sees two records and burns two
-    of the five briefing slots on one learning."""
+def test_recall_related_shared_id_learning_appears_once(vault_dir, tmp_path):
+    """AC3.4 / Cutover R2 — shared node_id means one recall row, not a content-key
+    dedupe papering over dual uuid4s."""
     service = _both_backends(vault_dir, tmp_path)
-    service.append_learning(
+    result = service.append_learning(
         ticket_id="t-01",
         workspace_slug="lg",
         content="Throttle the trusted server before the retry loop consumes the budget.",
     )
+    assert result["obsidian"]["id"] == result["graph"]["id"]
 
     ranked = service.recall_related("trusted server throttle", workspace_slug="lg")
     assert [row["title"] for row in ranked] == ["Learning — t-01"]
+    assert ranked[0]["id"] == result["graph"]["id"]
+    assert ranked[0]["source"] == "sqlite"
 
 
-def test_recall_related_ranks_across_the_two_stores_together(vault_dir, tmp_path):
-    """AC3.5 — catches an implementation that concatenates per-store ranked
-    lists instead of ranking the union: there the Obsidian note always leads,
-    whatever it scored."""
+def test_recall_related_ranks_graph_nodes_only(vault_dir, tmp_path):
+    """AC3.5 / Cutover R5 — vault notes are not in the candidate pool, so ranking
+    is among graph nodes alone."""
     service = _both_backends(vault_dir, tmp_path)
     service.obsidian.upsert_note(
         title="Weekly notes",
         body="A throttled endpoint came up.",
         workspace_slug="lg",
+        note_type="memory",
     )
     service._graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
+        node_type="memory",
+    )
+    service._graph_for_workspace("lg").upsert_node(
+        title="Weak throttle mention",
+        body="throttled once.",
+        workspace_slug="lg",
+        node_type="memory",
     )
 
     ranked = service.recall_related("trusted server throttled", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Retry budget", "Weekly notes"]
+    assert [row["title"] for row in ranked] == ["Retry budget", "Weak throttle mention"]
+    assert all(row["source"] == "sqlite" for row in ranked)
 
 
-def test_recall_related_ranks_a_newer_note_above_an_equally_matching_older_one(vault_dir, tmp_path):
-    """AC3.5 / AC2 — the recency tiebreak, verified across the two stores."""
+def test_recall_related_ranks_a_newer_graph_node_above_an_equally_matching_older_one(
+    vault_dir, tmp_path
+):
+    """AC3.5 / AC2 — the recency tiebreak among GRAPH candidates."""
     service = _both_backends(vault_dir, tmp_path)
     with frozen_clock("2026-01-01T00:00:00+00:00"):
-        service.obsidian.upsert_note(
-            title="Older throttle note", body="trusted server", workspace_slug="lg"
+        service._graph_for_workspace("lg").upsert_node(
+            title="Older throttle node", body="trusted server", workspace_slug="lg"
         )
     with frozen_clock("2026-02-01T00:00:00+00:00"):
         service._graph_for_workspace("lg").upsert_node(
@@ -644,7 +671,7 @@ def test_recall_related_ranks_a_newer_note_above_an_equally_matching_older_one(v
         )
 
     ranked = service.recall_related("trusted server", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Newer throttle node", "Older throttle note"]
+    assert [row["title"] for row in ranked] == ["Newer throttle node", "Older throttle node"]
 
 
 def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir, tmp_path):
@@ -654,13 +681,14 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
     passes the whole suite. End to end it is hidden too, because _memory_hits
     stops at its own _MAX_MEMORY_HITS.
 
-    Three candidates with overlaps 3, 2 and 1 make the assertion independent of
-    the recency tiebreak: truncation must drop the WEAKEST, not the last one
+    Three graph candidates with overlaps 3, 2 and 1 make the assertion independent
+    of the recency tiebreak: truncation must drop the WEAKEST, not the last one
     enumerated, so a limit applied before ranking fails here as well."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(title="Weakest throttle note", body="Body.", workspace_slug="lg")
-    service.obsidian.upsert_note(title="Trusted server", body="Body.", workspace_slug="lg")
-    service.obsidian.upsert_note(title="Trusted server throttle", body="Body.", workspace_slug="lg")
+    graph = service._graph_for_workspace("lg")
+    graph.upsert_node(title="Weakest throttle note", body="Body.", workspace_slug="lg")
+    graph.upsert_node(title="Trusted server", body="Body.", workspace_slug="lg")
+    graph.upsert_node(title="Trusted server throttle", body="Body.", workspace_slug="lg")
 
     unlimited = service.recall_related("trusted server throttle", workspace_slug="lg")
     assert [row["title"] for row in unlimited] == [
@@ -673,12 +701,10 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
     assert [row["title"] for row in ranked] == ["Trusted server throttle", "Trusted server"]
 
 
-def test_recall_related_makes_exactly_one_obsidian_pass_of_five_hundred(vault_dir, tmp_path):
-    """AC3.6 / AC5 — the cost proof, and the only assertion that can make it. A
-    results assertion passes whether the vault was read once or once per note,
-    so AC5 is a call-count criterion by construction."""
+def test_recall_related_does_not_enumerate_obsidian(vault_dir, tmp_path):
+    """AC3.6 / Cutover R5 — vault list_notes is off the durable recall path."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
+    service._graph_for_workspace("lg").upsert_node(
         title="Trusted server throttle", body="Cap the rate.", workspace_slug="lg"
     )
 
@@ -687,8 +713,7 @@ def test_recall_related_makes_exactly_one_obsidian_pass_of_five_hundred(vault_di
     ) as list_notes:
         service.recall_related("trusted server", workspace_slug="lg")
 
-    assert list_notes.call_count == 1
-    assert list_notes.call_args.kwargs["limit"] == RECALL_CANDIDATE_CAP
+    assert list_notes.call_count == 0
 
 
 def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
@@ -696,11 +721,6 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
     whatever survived the whole-query substring match, i.e. almost always
     nothing. Neither store's search may be touched."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
-        title="Trusted server throttle",
-        body="Cap the call rate per tool.",
-        workspace_slug="lg",
-    )
     service._graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
@@ -716,21 +736,30 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
 
     assert obsidian_search.call_count == 0
     assert graph_search.call_count == 0
-    assert len(ranked) == 2
+    assert len(ranked) == 1
 
 
 def test_service_search_still_substring_matches_and_keeps_its_envelope(vault_dir, tmp_path):
-    """AC3.8 — guard. search() stays the loregarden_search_memory tool path;
-    its envelope keys are read by mcp/tools.py and api/memory.py."""
+    """AC3.8 / Cutover R6 — search() stays the loregarden_search_memory tool path;
+    envelope keys unchanged; vault memory peers are not in obsidian[]."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
-        title="Trusted server throttle", body="Cap the call rate.", workspace_slug="lg"
+    service.upsert_memory(
+        title="Trusted server throttle",
+        body="Cap the call rate.",
+        workspace_slug="lg",
+    )
+    service.upsert_blog_post(
+        ticket_id="t-blog",
+        workspace_slug="lg",
+        title="Blog about Cap the call",
+        body="Cap the call in a retrospective.",
     )
 
     found = service.search("Cap the call", workspace_slug="lg")
     assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
-    assert [row["title"] for row in found["obsidian"]] == ["Trusted server throttle"]
-    assert service.search("throttle rate", workspace_slug="lg")["obsidian"] == []
+    assert [row["title"] for row in found["graph"]] == ["Trusted server throttle"]
+    assert all(row.get("note_type") == "blog_post" for row in found["obsidian"])
+    assert service.search("throttle rate", workspace_slug="lg")["graph"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -860,8 +889,7 @@ def test_agent_memory_service_search_includes_checkpoints(vault_dir, tmp_path):
 
 
 def test_recall_related_stays_checkpoint_blind(vault_dir, tmp_path):
-    """R3 — recall_related / _obsidian_candidates must not pass
-    include_checkpoints=True; a checkpoint-only needle must not surface."""
+    """R3 / Cutover R5 — recall never walks vault notes (checkpoints or memory)."""
     service = _both_backends(vault_dir, tmp_path)
     blind_needle = "trusted server throttle checkpointblind718"
     service.append_checkpoint(
@@ -881,13 +909,8 @@ def test_recall_related_stays_checkpoint_blind(vault_dir, tmp_path):
     ) as list_notes:
         ranked = service.recall_related(blind_needle, workspace_slug="loregarden")
 
-    assert list_notes.call_count == 1
-    assert list_notes.call_args.kwargs.get("include_checkpoints", False) is False
+    assert list_notes.call_count == 0
     assert ranked == []
-    assert all(
-        n.note_type != "checkpoint"
-        for n in service.obsidian.list_notes(workspace_slug="loregarden")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1189,9 +1212,8 @@ def test_obsidian_search_unscoped_includes_checkpoints(vault_dir):
 
 
 def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_dir, tmp_path):
-    """R3 stress — a vault flooded with checkpoints must not change
-    _obsidian_candidates' list_notes call (still RECALL_CANDIDATE_CAP, still
-    include_checkpoints omitted/False)."""
+    """R3 / Cutover R5 — a vault flooded with checkpoints must not be opened
+    for durable recall; only GRAPH candidates rank."""
     service = _both_backends(vault_dir, tmp_path)
     for index in range(30):
         service.append_checkpoint(
@@ -1200,10 +1222,11 @@ def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_d
             run_id=f"run-flood-{index}",
             entry=f"### Assumption\nflood entry {index} trusted server throttle",
         )
-    service.obsidian.upsert_note(
+    service._graph_for_workspace("loregarden").upsert_node(
         title="Trusted server throttle",
         body="Cap the call rate.",
         workspace_slug="loregarden",
+        node_type="memory",
     )
 
     with patch.object(
@@ -1211,9 +1234,7 @@ def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_d
     ) as list_notes:
         ranked = service.recall_related("trusted server throttle", workspace_slug="loregarden")
 
-    assert list_notes.call_count == 1
-    assert list_notes.call_args.kwargs.get("include_checkpoints", False) is False
-    assert list_notes.call_args.kwargs["limit"] == RECALL_CANDIDATE_CAP
-    # Memory note remains recallable; checkpoint flood must not displace it.
+    assert list_notes.call_count == 0
     assert any(row["title"] == "Trusted server throttle" for row in ranked)
+    assert all(row["source"] == "sqlite" for row in ranked)
     assert not any(str(row.get("title", "")).startswith("Checkpoint log") for row in ranked)
