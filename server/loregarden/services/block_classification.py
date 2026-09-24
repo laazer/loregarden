@@ -172,6 +172,12 @@ def record_block(
 
     `declared` is the agent's own word from its stage report; without one the
     message decides. A `decision` raises the approval that asks the question.
+
+    Call it through `block_settlement.settle_block`, never directly —
+    `test_block_settlement` fails any other caller. Classifying without
+    offering the repair turn is what made every block look handled while three
+    call sites out of twenty-five offered one, so the two halves are no longer
+    separable in practice even though Python cannot say so (802).
     """
     kind = declared or classify_block_message(message)
     ticket.block_kind = kind
@@ -220,25 +226,6 @@ def block_message_for(session: Session, ticket: Ticket) -> str:
         logger.warning("error artifact %s on %s is unreadable", artifact.id, ticket.external_id)
         return inline
     return str(message or inline)
-
-
-def sweep_unclassified_blocks(session: Session) -> int:
-    """Classify every blocked ticket the writers did not — run by the reconciler.
-
-    Most block writers predate the kind and are not touched (there are ~30);
-    this is what makes "every block has a kind" true without editing each one.
-    """
-    stale = session.exec(
-        select(Ticket).where(Ticket.blocking_issues != "", Ticket.block_kind.is_(None))
-    ).all()
-    for ticket in stale:
-        record_block(
-            session,
-            ticket,
-            stage_key=ticket.workflow_stage_key or "",
-            message=block_message_for(session, ticket),
-        )
-    return len(stale)
 
 
 def chosen_option(approval: Approval, answers: dict[str, str | list[str]] | None) -> str:

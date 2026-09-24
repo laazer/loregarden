@@ -16,11 +16,19 @@ human requeue does not get another. Every step is an `OrchestratorDecision`.
 
 The monitor keeps its rule — it never dispatches an agent. This runs inside
 an orchestration, on the run's own `auto_repair` dial.
+
+`offer_repair` has exactly one caller, `block_settlement.settle_block`, and
+`test_block_settlement` fails any other (802): a block writer that classified
+without offering the repair turn is the defect that module exists to close, so
+the pair must not come apart. This module decides whether the turn can be armed
+and *says why not*; recording that answer is the settlement's job, so there is
+exactly one decision per block.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.models.domain import (
@@ -44,6 +52,19 @@ logger = logging.getLogger(__name__)
 
 #: The kinds an agent can clear. A decision or a person's hands are not.
 REPAIRABLE_KINDS = frozenset({BlockKind.HARNESS, BlockKind.WORK})
+
+
+@dataclass(frozen=True)
+class RepairOffer:
+    """Whether the stage was re-armed for its repair turn, and why when it was not.
+
+    `reason` is never empty on a refusal: it is the sentence a person reads on
+    the history rail, and the whole point of 802 is that a block which got no
+    repair says so out loud instead of looking handled.
+    """
+
+    armed: bool
+    reason: str = ""
 
 
 def _latest_repair_run(session: Session, ticket: Ticket, stage_key: str) -> AgentRun | None:
@@ -122,77 +143,84 @@ def offer_repair(
     ticket: Ticket,
     orch_run: OrchestrationRun | None,
     *,
-    instance: WorkflowInstance,
-    stages: list[WorkflowStageDef],
+    instance: WorkflowInstance | None,
+    stages: list[WorkflowStageDef] | None,
     transitions: list[dict[str, str]],
     stage_key: str,
     kind: BlockKind,
     message: str,
     failed_agent: str,
-) -> bool:
-    """Re-arm the stage for its repair turn, or say why not. True when re-armed.
+) -> RepairOffer:
+    """Re-arm the stage for its repair turn, or say why not.
 
-    A standalone run has no orchestrator to spend the turn (orch_run None), and
-    a run started with `auto_repair` off asked for today's behaviour.
+    Reached through `block_settlement.settle_block`, which pairs it with the
+    classification and records the refusal this returns. Every exit carries a
+    sentence, because a silent `False` here was how a block that nothing
+    handled came to look handled (802).
     """
-    if orch_run is None or not orch_run.auto_repair:
-        return False
+    if orch_run is None:
+        return RepairOffer(
+            False,
+            f"The block on '{stage_key}' was recorded outside an orchestration run, so there "
+            "is no orchestrator to spend a repair turn; it waits for a person.",
+        )
+    if not orch_run.auto_repair:
+        return RepairOffer(
+            False,
+            f"Auto-repair is off for this run, so the block on '{stage_key}' goes to a person "
+            "rather than taking a repair turn.",
+        )
     if failed_agent == REPAIR_AGENT_ID:
-        _escalate(
-            session,
-            ticket,
-            stage_key,
-            kind,
+        return RepairOffer(
+            False,
             f"The repair turn on '{stage_key}' blocked too ({kind.value}); no second repair — "
             "a person reads it from here.",
         )
-        return False
     if kind not in REPAIRABLE_KINDS:
-        return False
+        return RepairOffer(
+            False,
+            f"A {kind.value} block on '{stage_key}' is not one an agent can clear; it waits "
+            "for a person.",
+        )
     if (ticket.next_agent or "") == REPAIR_AGENT_ID:
         # The pin from the last offer was never consumed — the dispatch resolved
         # to someone else. Re-arming would repeat that until the budget ran out.
-        _escalate(
-            session,
-            ticket,
-            stage_key,
-            kind,
+        return RepairOffer(
+            False,
             f"A repair pin on '{stage_key}' was not honoured by the dispatch; not re-armed. "
             "Blocked for a person.",
         )
-        return False
+    if instance is None or stages is None:
+        return RepairOffer(
+            False,
+            f"The workflow behind '{stage_key}' could not be resolved, so the stage cannot be "
+            "re-armed for a repair turn; blocked for a person.",
+        )
     stage = next((s for s in stages if s.key == stage_key), None)
     if stage is None or not repair_pin_applies(stage):
-        # The pin is resolved by `_resolve_next_agent_override`, which does not
-        # apply to a parallel or gate stage: the stage would re-arm with the pin
-        # never consumed and its own agent re-run instead, until the budget ran
-        # out. Those stages keep today's behaviour — a person, with the kind.
-        _escalate(
-            session,
-            ticket,
-            stage_key,
-            kind,
+        # `repair_pin_applies` now admits a parallel stage — the dispatch runs
+        # its repair turn as one sequential run under the pin (802) — so what
+        # is left here is a gate stage, which runs its own checker, and a stage
+        # key no template knows.
+        return RepairOffer(
+            False,
             f"'{stage_key}' is a {stage.stage_type if stage else 'unknown'} stage, which the "
             "repair turn cannot take over; blocked for a person.",
         )
-        return False
     if get_agent(REPAIR_AGENT_ID) is None:
         # Pinning an agent that cannot resolve would re-arm the stage for the
         # worker again, forever. Say so once and leave the block for a person.
-        logger.warning(
-            "repair agent %r is not registered; block left for a person", REPAIR_AGENT_ID
+        return RepairOffer(
+            False,
+            f"The '{REPAIR_AGENT_ID}' agent is not registered, so the block on '{stage_key}' "
+            "cannot take a repair turn; blocked for a person.",
         )
-        return False
     if repair_already_spent(session, ticket, stage_key):
-        _escalate(
-            session,
-            ticket,
-            stage_key,
-            kind,
+        return RepairOffer(
+            False,
             f"'{stage_key}' already had its repair turn since the last requeue; blocked for a "
             "person rather than repaired again.",
         )
-        return False
 
     apply_stage_route(
         ticket,
@@ -220,21 +248,7 @@ def offer_repair(
         evidence={"block_kind": kind.value, "failed_agent": failed_agent},
     )
     session.commit()
-    return True
-
-
-def _escalate(
-    session: Session, ticket: Ticket, stage_key: str, kind: BlockKind, reason: str
-) -> None:
-    record_orchestrator_decision(
-        session,
-        ticket,
-        decision=OrchestratorDecision.REPAIR_ESCALATED,
-        stage_key=stage_key,
-        reason=reason,
-        evidence={"block_kind": kind.value},
-    )
-    session.commit()
+    return RepairOffer(True)
 
 
 def record_repair_outcome(session: Session, ticket: Ticket, run: AgentRun) -> None:
