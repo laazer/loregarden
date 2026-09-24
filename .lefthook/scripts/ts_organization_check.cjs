@@ -20,10 +20,27 @@ const fs = require("fs");
 const path = require("path");
 const { createRequire } = require("module");
 const { spawnSync } = require("child_process");
+const os = require("os");
+const crypto = require("crypto");
 
 const clientRoot = path.resolve(__dirname, "../../client");
 const requireFromClient = createRequire(path.join(clientRoot, "package.json"));
-const { parse } = requireFromClient("@typescript-eslint/typescript-estree");
+
+/** The TypeScript parser, loaded the first time something actually parses.
+ *
+ * Top-level, this `require` cost 455ms of every single run — including the runs
+ * that grade nothing. `main` returns early when no `.ts`/`.tsx` file is staged,
+ * which is the common case at a stage transition (a backend-only change), and
+ * that early exit could not avoid a parser loaded before it was reached: 1.29s
+ * to establish there was no work, at every transition in every workspace (808).
+ */
+let parseImpl = null;
+function parse(content, options) {
+  if (parseImpl === null) {
+    parseImpl = requireFromClient("@typescript-eslint/typescript-estree").parse;
+  }
+  return parseImpl(content, options);
+}
 
 const MAX_FILE_LINES = 1200;
 const MAX_TSX_FILE_LINES = 1200;
@@ -552,10 +569,85 @@ function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }) 
  * workspaces put it at src/ or app/. Detected, not hardcoded, because these
  * checks run against every workspace the control plane drives.
  */
+/** Version of the cache payload. Bump when the shape of a cached entry or the
+ *  meaning of `fn.key` changes, so an old cache is ignored rather than
+ *  misread. */
+const CATALOG_CACHE_VERSION = 1;
+
+/** Where the parsed-function cache lives.
+ *
+ * Deliberately outside the repository. A running orchestrator commits the whole
+ * working tree, so a cache file inside it would be swept into an unrelated
+ * ticket's commit — the repo has lost work to that before. The source root is
+ * hashed into the name so two workspaces, or two worktrees of one workspace,
+ * never read each other's catalog.
+ */
+function catalogCachePath(sourceRoot) {
+  const key = crypto.createHash("sha1").update(sourceRoot).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `loregarden-ts-org-catalog-${key}.json`);
+}
+
+/** The cache from disk, or an empty one. Never throws: a corrupt, unreadable or
+ *  absent cache means "parse everything", which is slow and correct. */
+function readCatalogCache(cacheFile) {
+  try {
+    const payload = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (payload.version !== CATALOG_CACHE_VERSION) return {};
+    return payload.byHash || {};
+  } catch {
+    // silent-ok: a missing or damaged cache is not a finding — the run
+    // reparses from source, which is the answer the cache was standing in for.
+    return {};
+  }
+}
+
+function writeCatalogCache(cacheFile, byHash) {
+  try {
+    fs.writeFileSync(
+      cacheFile,
+      JSON.stringify({ version: CATALOG_CACHE_VERSION, byHash }),
+      "utf8",
+    );
+  } catch (err) {
+    // silent-ok: the catalog is already built and the run's findings do not
+    // depend on this write; the next run reparses and tries again. Said out
+    // loud rather than swallowed, because a cache that never persists shows up
+    // only as unexplained slowness.
+    console.error(`note: could not write the DRY catalog cache (${cacheFile}): ${err.message}`);
+  }
+}
+
+/**
+ * Functions defined elsewhere in the tree, for the cross-file DRY check.
+ *
+ * Parsing all of `client/src` cost 3186ms of a 4697ms run — 68% — and it was
+ * paid on every invocation, at every stage transition in every workspace (808).
+ * Entries are cached per file so a warm run reparses only what changed.
+ *
+ * **Keyed on content, not mtime or size.** A stale entry here does not fail
+ * loudly; it silently weakens DRY detection, which is the failure this repo
+ * forbids, and a keyless cache has produced exactly that before. Hashing 650
+ * files costs tens of milliseconds against 3186ms of parsing, so correctness
+ * is nearly free and mtime granularity stops being a question anyone has to
+ * reason about.
+ */
 function buildCatalog(changedSet, sourceRoot) {
   const catalog = new Map();
   const clientSrc = sourceRoot;
   if (clientSrc === null || !fs.existsSync(clientSrc)) return catalog;
+
+  const cacheFile = catalogCachePath(clientSrc);
+  const cached = readCatalogCache(cacheFile);
+  // Only what this run saw, so the cache self-prunes as files are deleted or
+  // edited rather than growing without bound.
+  const fresh = {};
+
+  function record(full, fns) {
+    for (const fn of fns) {
+      if (!catalog.has(fn.key)) catalog.set(fn.key, []);
+      catalog.get(fn.key).push({ file: full, name: fn.name, line: fn.line });
+    }
+  }
 
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -568,13 +660,23 @@ function buildCatalog(changedSet, sourceRoot) {
         if (isTestFile(full)) continue;
         try {
           const content = fs.readFileSync(full, "utf8");
+          const hash = crypto.createHash("sha1").update(content).digest("hex");
+          const hit = cached[hash];
+          if (hit) {
+            fresh[hash] = hit;
+            record(full, hit);
+            continue;
+          }
           const lines = content.split("\n");
           const ast = parseFile(full, content);
           if (!ast) continue;
-          for (const fn of extractFunctions(ast, lines)) {
-            if (!catalog.has(fn.key)) catalog.set(fn.key, []);
-            catalog.get(fn.key).push({ file: full, name: fn.name, line: fn.line });
-          }
+          const fns = extractFunctions(ast, lines).map((fn) => ({
+            key: fn.key,
+            name: fn.name,
+            line: fn.line,
+          }));
+          fresh[hash] = fns;
+          record(full, fns);
         } catch (err) {
           // Background for the DRY catalog, not a file this run grades, so it
           // cannot make the run report a violation clean. It can still weaken a
@@ -587,13 +689,20 @@ function buildCatalog(changedSet, sourceRoot) {
     }
   }
   walk(clientSrc);
+  writeCatalogCache(cacheFile, fresh);
   return catalog;
 }
 
-function crossDryErrors(filePath, content, lines, catalog) {
+function crossDryErrors(filePath, content, lines, catalogFor) {
   const fileErrors = [];
   const ast = parseGradedFile(filePath, content);
-  for (const fn of extractFunctions(ast, lines)) {
+  const functions = extractFunctions(ast, lines);
+  // Nothing to look up, so the tree is never walked. The graded file is still
+  // parsed above — that is this gate's own work, and a file it cannot parse is
+  // a finding, not a reason to skip the check.
+  if (functions.length === 0) return fileErrors;
+  const catalog = catalogFor();
+  for (const fn of functions) {
     const matches = catalog.get(fn.key);
     if (!matches || matches.length === 0) continue;
     const refs = matches
@@ -654,7 +763,16 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
   }
 
   const changedSet = new Set(args.map((a) => path.resolve(a)));
-  const catalog = buildCatalog(changedSet, sourceRoot);
+
+  // Built on first use, not up front. A graded file with no functions has
+  // nothing to look up, and the catalog costs a parse of every other file in
+  // the tree — so a type-only or constants-only change used to pay 3186ms for
+  // a map it never read (808). Memoised, so several graded files share one.
+  let catalog = null;
+  const catalogFor = () => {
+    if (catalog === null) catalog = buildCatalog(changedSet, sourceRoot);
+    return catalog;
+  };
 
   for (const filePath of args) {
     const content = readSource(filePath, repoRoot);
@@ -663,7 +781,7 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
     const netGrowing = addedCount > deletedCount;
     errors.push(...checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }));
     if (!isTestFile(filePath)) {
-      errors.push(...crossDryErrors(filePath, content, lines, catalog));
+      errors.push(...crossDryErrors(filePath, content, lines, catalogFor));
     }
   }
 
