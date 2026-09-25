@@ -39,12 +39,6 @@ MEASURED = ("elapsed", "duration", "_ms", "seconds", "secs", "took", "latency", 
 #: line number, so ordinary edits above them do not require touching this table.
 ALLOWED: dict[tuple[str, str], str] = {
     (
-        "test_cli_run_timeout.py",
-        "3.5 < elapsed < 8",
-    ): "Same pair of budgets from the other side — the lower bound separates the "
-    "hard cap from the idle kill, the upper allows 2x the cap. Bounding a real "
-    "subprocess is the behaviour under test; there is no clock to fake.",
-    (
         "test_shutdown_drain.py",
         "report.waited_seconds < 2.0",
     ): "A zero-second window must not wait. Two orders of magnitude of margin on "
