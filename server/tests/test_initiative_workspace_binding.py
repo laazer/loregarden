@@ -23,6 +23,7 @@ from loregarden.services.ticket_service import TicketService
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
+from tests.ticket_row_helpers import raw_ticket_insert
 
 PREV_TIP = "0130_retire_unmerged_branch_ledger_ids"
 
@@ -110,44 +111,6 @@ def _workspace_id_nullable(engine) -> bool:
         if row[1] == "workspace_id":
             return int(row[3]) == 0
     raise AssertionError("tickets.workspace_id column missing")
-
-
-def _raw_ticket_insert(
-    conn,
-    *,
-    ticket_id: str,
-    external_id: str,
-    workspace_id: str | None,
-    title: str,
-    work_item_type: str,
-) -> None:
-    """INSERT with NOT NULL columns filled — create_all has no SQL defaults."""
-    conn.execute(
-        text(
-            "INSERT INTO tickets ("
-            "id, external_id, ticket_number, milestone_code, legacy_external_id, "
-            "workspace_id, title, description, state, priority, branch, milestone, "
-            "work_item_type, acceptance_criteria_json, tags_json, workflow_stage_key, "
-            "workflow_stage_status, revision, last_updated_by, next_agent, next_status, "
-            "blocking_issues, scope_reroute_agent, dispatch_waiver_stage_key, "
-            "dispatch_waiver_approval_id, is_integration_review, state_locked, "
-            "workflow_disabled, git_automation_json, triage_runtime_json, "
-            "orchestration_runtime_json, permission_allowlist_json, compatibility_posture, "
-            "created_at, updated_at"
-            ") VALUES ("
-            ":id, :ext, 0, '', '', :ws, :title, '', 'backlog', 3, '', '', :wit, "
-            "'[]', '[]', '', 'pending', 0, '', '', 'Proceed', '', '', '', '', "
-            "0, 0, 0, '', '{}', '{}', '[]', '', datetime('now'), datetime('now')"
-            ")"
-        ),
-        {
-            "id": ticket_id,
-            "ext": external_id,
-            "ws": workspace_id,
-            "title": title,
-            "wit": work_item_type,
-        },
-    )
 
 
 # --- R1 / unit seam ----------------------------------------------------------
@@ -285,7 +248,7 @@ class TestTicketsWorkspaceCheckConstraint:
         ws_id = self._seed_workspace(engine)
         with pytest.raises(IntegrityError):
             with engine.begin() as conn:
-                _raw_ticket_insert(
+                raw_ticket_insert(
                     conn,
                     ticket_id="t-bad-init",
                     external_id="",
@@ -298,7 +261,7 @@ class TestTicketsWorkspaceCheckConstraint:
         engine = self._migrated()
         with pytest.raises(IntegrityError):
             with engine.begin() as conn:
-                _raw_ticket_insert(
+                raw_ticket_insert(
                     conn,
                     ticket_id="t-bad-task",
                     external_id="x",
@@ -311,7 +274,7 @@ class TestTicketsWorkspaceCheckConstraint:
         engine = self._migrated()
         ws_id = self._seed_workspace(engine)
         with engine.begin() as conn:
-            _raw_ticket_insert(
+            raw_ticket_insert(
                 conn,
                 ticket_id="t-ok-init",
                 external_id="",
@@ -319,7 +282,7 @@ class TestTicketsWorkspaceCheckConstraint:
                 title="Ok init",
                 work_item_type="initiative",
             )
-            _raw_ticket_insert(
+            raw_ticket_insert(
                 conn,
                 ticket_id="t-ok-ms",
                 external_id="ms-1",
@@ -450,7 +413,7 @@ class TestWorkspaceBindingMigration:
         # that still proves the invariant; skip the abort path in that case.
         try:
             with engine.begin() as conn:
-                _raw_ticket_insert(
+                raw_ticket_insert(
                     conn,
                     ticket_id="bad-init",
                     external_id="",

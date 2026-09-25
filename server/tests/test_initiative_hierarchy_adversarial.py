@@ -11,7 +11,6 @@ short-circuits. Do not attribute those reds to implement regressions.
 
 from __future__ import annotations
 
-import ast
 import inspect
 from itertools import product
 from pathlib import Path
@@ -24,11 +23,11 @@ from loregarden.models.domain import (
     Ticket,
     WorkItemType,
 )
-from loregarden.models.domain import enums as enums_mod
 from loregarden.services.hierarchy_service import build_tree, reparent_ticket
 from loregarden.services.subtree_auto_run import child_sort_key
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
+from tests.domain_assignments import domain_assignment_source
 
 # --- helpers -----------------------------------------------------------------
 
@@ -615,30 +614,21 @@ class TestWorkflowFrozensetConstruction:
     def test_assignment_is_not_any_enum_iteration(self):
         """AC5 pins `frozenset(WorkItemType)`; also catch list/comprehension forms
         that would auto-include INITIATIVE the same way."""
-        source = Path(enums_mod.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "WORKFLOW_WORK_ITEM_TYPES":
-                    text = ast.unparse(node.value).replace(" ", "")
-                    forbidden = (
-                        "frozenset(WorkItemType)",
-                        "frozenset(list(WorkItemType))",
-                        "frozenset({*WorkItemType})",
-                        "frozenset([tfor tin WorkItemType])",
-                        "frozenset({tfor tin WorkItemType})",
-                    )
-                    for needle in forbidden:
-                        assert needle not in text, (
-                            f"WORKFLOW_WORK_ITEM_TYPES must be an explicit five-type "
-                            f"frozenset; construction {text!r} auto-includes new enum members"
-                        )
-                    assert _initiative() not in WORKFLOW_WORK_ITEM_TYPES
-                    assert len(WORKFLOW_WORK_ITEM_TYPES) == 5
-                    return
-        pytest.fail("WORKFLOW_WORK_ITEM_TYPES assignment not found")
+        text = domain_assignment_source("WORKFLOW_WORK_ITEM_TYPES").replace(" ", "")
+        forbidden = (
+            "frozenset(WorkItemType)",
+            "frozenset(list(WorkItemType))",
+            "frozenset({*WorkItemType})",
+            "frozenset([tfor tin WorkItemType])",
+            "frozenset({tfor tin WorkItemType})",
+        )
+        for needle in forbidden:
+            assert needle not in text, (
+                f"WORKFLOW_WORK_ITEM_TYPES must be an explicit five-type "
+                f"frozenset; construction {text!r} auto-includes new enum members"
+            )
+        assert _initiative() not in WORKFLOW_WORK_ITEM_TYPES
+        assert len(WORKFLOW_WORK_ITEM_TYPES) == 5
 
 
 # --- call-path message scan (broader) ---------------------------------------
@@ -764,7 +754,7 @@ class TestCallerSeamWiring:
         "loregarden.services.hierarchy_service",
         "loregarden.services.ticket_service",
         "loregarden.services.ticket_import_service",
-        "loregarden.api.tickets",
+        "loregarden.services.finalize_hierarchy",
     )
 
     def test_call_paths_reference_validate_parent_assignment(self):

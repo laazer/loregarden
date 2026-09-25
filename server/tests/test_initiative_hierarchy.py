@@ -7,9 +7,7 @@ MILESTONE (parent.workspace_id equality only when parent is non-null).
 
 from __future__ import annotations
 
-import ast
 import inspect
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,11 +17,11 @@ from loregarden.models.domain import (
     Ticket,
     WorkItemType,
 )
-from loregarden.models.domain import enums as enums_mod
 from loregarden.services.hierarchy_service import build_tree, reparent_ticket
 from loregarden.services.subtree_auto_run import child_sort_key
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
+from tests.domain_assignments import domain_assignment_source
 
 # --- helpers -----------------------------------------------------------------
 
@@ -112,20 +110,11 @@ class TestInitiativeVocabulary:
 
     def test_workflow_work_item_types_is_not_frozenset_of_enum(self):
         """AC5 — must not be `frozenset(WorkItemType)` (would auto-include INITIATIVE)."""
-        source = Path(enums_mod.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "WORKFLOW_WORK_ITEM_TYPES":
-                    text = ast.unparse(node.value)
-                    assert "frozenset(WorkItemType)" not in text.replace(" ", ""), (
-                        "WORKFLOW_WORK_ITEM_TYPES must be an explicit five-type frozenset, "
-                        f"not frozenset(WorkItemType); got {text!r}"
-                    )
-                    return
-        pytest.fail("WORKFLOW_WORK_ITEM_TYPES assignment not found in enums.py")
+        text = domain_assignment_source("WORKFLOW_WORK_ITEM_TYPES")
+        assert "frozenset(WorkItemType)" not in text.replace(" ", ""), (
+            "WORKFLOW_WORK_ITEM_TYPES must be an explicit five-type frozenset, "
+            f"not frozenset(WorkItemType); got {text!r}"
+        )
 
 
 # --- AC2/3/4/6 unit seam: validate_parent_assignment -------------------------
