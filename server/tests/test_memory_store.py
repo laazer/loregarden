@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from loregarden.services.memory_store import (
+    CHECKPOINT_ENTRY_DELIMITER,
     RECALL_CANDIDATE_CAP,
     AgentMemoryService,
     MemoryGraphStore,
@@ -118,6 +119,47 @@ def test_obsidian_append_checkpoint_accumulates_entries_in_one_file(vault_dir):
         entry="Other run entry.",
     )
     assert other_run["path"] != first["path"]
+
+
+def test_obsidian_append_checkpoint_marks_each_entry_boundary(vault_dir):
+    """Each entry is introduced by the reserved marker, whatever it contains.
+
+    The boundary used to be a blank line, which an entry may contain — so a
+    multi-paragraph checkpoint was read back as several, and the fragments spent
+    the stage briefing's slots. `_split_entries` in `agents/inherited_wisdom`
+    reads what this writes.
+    """
+    store = ObsidianMemoryStore(vault_dir)
+    written = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="### heading\n\n**Assumption made:** the conservative one",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="A second entry.",
+    )
+    text = (vault_dir / written["path"]).read_text(encoding="utf-8")
+    assert text.count(CHECKPOINT_ENTRY_DELIMITER) == 2
+    # Leading, not trailing: the marker must precede the entry it introduces, or
+    # the text before the first one cannot be told from a pre-marker legacy log.
+    assert f"{CHECKPOINT_ENTRY_DELIMITER}\n\n### heading" in text
+
+
+def test_obsidian_append_checkpoint_refuses_an_entry_carrying_the_marker(vault_dir):
+    """Loud rather than lenient: an entry holding the marker would split itself,
+    and the halves would look exactly like two checkpoints someone wrote."""
+    store = ObsidianMemoryStore(vault_dir)
+    with pytest.raises(ValueError, match="reserved as the entry separator"):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-checkpoint",
+            run_id="run-1",
+            entry=f"Decided X.\n\n{CHECKPOINT_ENTRY_DELIMITER}\n\nDecided Y.",
+        )
 
 
 def test_agent_memory_service_append_checkpoint_obsidian_only(vault_dir):
