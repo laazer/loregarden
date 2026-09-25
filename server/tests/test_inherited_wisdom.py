@@ -137,14 +137,13 @@ def _both(tmp_path) -> AgentMemoryService:
     )
 
 
-_SERVICE_SHAPES = [_obsidian_only, _graph_only, _both]
+_SERVICE_SHAPES = [_graph_only, _both]
 
 
 @pytest.mark.parametrize("build_service", _SERVICE_SHAPES)
 def test_a_learning_sharing_distinctive_terms_is_surfaced(tmp_path, build_service):
     """AC1 / AC4.1 — the regression this ticket exists for, run against
-    obsidian-only, graph-only and both. The graph-only case is the one a test
-    copied from the fixtures above physically cannot fail."""
+    graph-only and both. Vault-only memory writes fail closed after cutover."""
     memory = build_service(tmp_path)
     memory.upsert_memory(
         title="Retry budget for throttled tools",
@@ -222,10 +221,9 @@ def test_a_short_distinctive_note_outranks_a_long_generic_one(tmp_path):
     assert text.index("Retry budget for throttled tools") < text.index("Weekly notes")
 
 
-def test_a_dual_written_learning_appears_once(tmp_path):
-    """AC4.5 — append_learning writes the same content to both stores under two
-    different uuid4s. Without a content-keyed dedupe the same learning burns two
-    of the five briefing slots."""
+def test_a_shared_id_learning_appears_once(tmp_path):
+    """AC4.5 / Cutover R2 — append_learning shares one node_id across graph and
+    export, so recall surfaces a single briefing slot."""
     memory = _both(tmp_path)
     memory.append_learning(
         ticket_id="t-01",
@@ -237,13 +235,9 @@ def test_a_dual_written_learning_appears_once(tmp_path):
     assert text.count("- **Learning — t-01**") == 1
 
 
-def test_a_dual_written_learning_whose_body_opens_with_a_heading_appears_once(tmp_path):
-    """AC4.7 — the heading-free fixtures above cannot see this. `upsert_note`
-    injects a `# <title>` line the graph copy lacks, so a dedupe that strips
-    "the first heading, whatever it is" over-strips the Obsidian side of a body
-    that opens with its own `## Context`: the keys diverge and one learning
-    burns two of the five slots. Agent-written memory routinely opens with a
-    heading."""
+def test_a_learning_whose_body_opens_with_a_heading_appears_once(tmp_path):
+    """AC4.7 — agent-written memory routinely opens with a heading. Shared-id
+    export must still brief once."""
     memory = _both(tmp_path)
     memory.append_learning(
         ticket_id="t-02",
@@ -255,34 +249,35 @@ def test_a_dual_written_learning_whose_body_opens_with_a_heading_appears_once(tm
     assert text.count("- **Learning — t-02**") == 1
 
 
-def test_both_copies_of_a_dual_written_learning_read_back_identically(tmp_path):
-    """The dedupe collapses two records but keeps only one of them, and which
-    one is a uuid4 coin flip. That only produces stable briefings if the two
-    copies carry the same body — so pin the bodies, not just the key."""
+def test_graph_record_and_vault_export_bodies_match(tmp_path):
+    """Cutover R2/R3 — export body matches the graph record (search returns the
+    durable hit in graph[]; vault memory/learning peers are filtered from
+    obsidian[])."""
     memory = _both(tmp_path)
-    memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
+    written = memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
 
     found = memory.search("throttled", workspace_slug="lg")
-    assert [n["body"] for n in found["obsidian"]] == [_HEADED_BODY]
+    assert found["obsidian"] == []
     assert [n["body"] for n in found["graph"]] == [_HEADED_BODY]
+    assert found["graph"][0]["id"] == written["graph"]["id"]
+    export_path = (tmp_path / "vault") / written["obsidian"]["path"]
+    assert _HEADED_BODY in export_path.read_text(encoding="utf-8")
 
 
-def test_the_briefing_reads_the_same_whichever_store_the_dedupe_kept(tmp_path):
-    """The surviving record must not repeat its own title inside its summary.
-    Running the two single-store shapes is the deterministic way to ask this:
-    against `_both` the winner is drawn by uuid4, so the defect shows up in
-    only about half of the runs."""
-    obsidian = _obsidian_only(tmp_path / "o")
+def test_the_briefing_reads_the_graph_record_with_or_without_vault(tmp_path):
+    """Cutover R5 — durable briefing comes from GRAPH. Graph-only and both
+    shapes must agree; vault-only writes fail closed."""
     graph = _graph_only(tmp_path / "g")
-    for memory in (obsidian, graph):
+    both = _both(tmp_path / "b")
+    for memory in (graph, both):
         memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
 
     ticket = _ticket(title=_REALISTIC_TITLE)
-    from_obsidian = build_inherited_wisdom(ticket, "lg", memory=obsidian).text
     from_graph = build_inherited_wisdom(ticket, "lg", memory=graph).text
+    from_both = build_inherited_wisdom(ticket, "lg", memory=both).text
 
-    assert from_obsidian == from_graph
-    assert from_obsidian.count("Learning — t-02") == 1
+    assert from_graph == from_both
+    assert from_graph.count("Learning — t-02") == 1
 
 
 def test_the_newer_of_two_equally_matching_notes_comes_first(tmp_path):
@@ -322,25 +317,18 @@ def test_an_all_stopword_query_surfaces_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_an_unreadable_obsidian_vault_costs_only_the_section(tmp_path):
-    """AC5.2 — the seeded note WOULD be surfaced, so its absence proves the
-    raise really happened and _safely swallowed it. Asserting only that the
-    result is a string passes even when nothing raised.
-
-    The service here has BOTH backends, and the note is written to both, so the
-    still-readable graph copy could have been returned. Its absence is deliberate,
-    not an oversight: AC5.2 puts the guard at the section, so one unreadable store
-    costs the whole section. Do not 'fix' this into a per-store try/except that
-    lets the surviving half through — that is a different behaviour than the one
-    the spec pins, and this assertion is what says so."""
+def test_an_unreadable_obsidian_vault_does_not_block_graph_recall(tmp_path):
+    """Cutover R5 — durable recall is GRAPH-only. A vault list_notes failure
+    must not take the learnings section down when the graph record is readable.
+    """
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("vault unavailable")):
         text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
 
-    assert "Retry budget" not in text
-    assert "### Related learnings" not in text
+    assert "Retry budget" in text
+    assert "### Related learnings" in text
 
 
 def test_an_unreadable_memory_graph_costs_only_the_section(tmp_path):
