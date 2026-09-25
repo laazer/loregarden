@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
+from loregarden.services.block_settlement import BlockSettlement, settle_block
 from loregarden.services.gate_approvals import gate_would_skip_work
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
@@ -631,6 +632,7 @@ class OrchestrationCallbackService:
         stage_key: str = "",
         message: str,
         prepared_action: PreparedAction | None = None,
+        settlement: BlockSettlement | None = None,
     ) -> Ticket:
         """Stop this ticket, recording why.
 
@@ -638,6 +640,15 @@ class OrchestrationCallbackService:
         examined for a handover of human work — see `BlockOrigin`. It is required
         rather than defaulted so a new blocking path cannot inherit the wrong
         answer silently.
+
+        ``settlement`` is the caller's own, when it already classified this block
+        and decided about its repair turn (`parallel_stage` does). Left None,
+        this settles it here — with no orchestration run, which is the truth of
+        this function: it is the one that *ends* the run, so there is nothing
+        left to spend a repair turn on. A path that can still repair settles
+        before it reaches here. Either way the block leaves with a kind and a
+        recorded disposition, so nothing arrives on the board looking handled
+        when nothing handled it (802).
         """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -658,6 +669,13 @@ class OrchestrationCallbackService:
         if key:
             orch_run.current_stage_key = key
         self.session.add(ticket)
+        if settlement is None:
+            settle_block(
+                self.session,
+                ticket,
+                stage_key=key or "",
+                message=message,
+            )
         self._finish_orchestration_run(
             orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
         )

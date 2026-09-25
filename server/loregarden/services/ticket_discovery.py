@@ -33,7 +33,7 @@ def _workspace_by_slug(session: Session, workspace_slug: str) -> Workspace | Non
 
 
 def compact_ticket_row(session: Session, ticket: Ticket) -> dict[str, Any]:
-    ws = session.get(Workspace, ticket.workspace_id)
+    ws = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id is not None else None
     return {
         "id": ticket.id,
         "external_id": ticket.external_id,

@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
 from loregarden.services.orchestration import (
@@ -285,6 +286,17 @@ def settle_stranded_stages(
                 f"Stage '{stage_key}' read RUNNING with no live run behind it; "
                 "settled it as blocked so it stops reporting an agent that is not there."
             ),
+        )
+        # The run behind this stage is already gone, so nothing can spend a
+        # repair turn on it; the settlement records that alongside the kind, so
+        # a stranded stage does not read as one somebody dealt with (802).
+        settle_block(
+            session,
+            ticket,
+            instance=instance,
+            stages=stages,
+            stage_key=stage_key,
+            message=message,
         )
         session.add(ticket)
         session.add(instance)

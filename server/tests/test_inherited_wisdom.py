@@ -3,7 +3,12 @@
 from unittest.mock import Mock, patch
 
 import pytest
-from loregarden.agents.inherited_wisdom import build_inherited_wisdom
+from loregarden.agents.inherited_wisdom import (
+    _MAX_CHECKPOINTS,
+    _MAX_MEMORY_HITS,
+    MAX_WISDOM_CHARS,
+    build_inherited_wisdom,
+)
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
@@ -359,3 +364,196 @@ def test_a_discredited_learning_is_absent_from_the_briefing(tmp_path, build_serv
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Retry budget for throttled tools" not in text
+
+
+#: The checkpoint protocol's own entry template, written the way an agent does
+#: when it emits markdown rather than the template's `\n`-joined literal. Four
+#: fields separated by blank lines — which was four entries until they were
+#: delimited.
+def _protocol_entry(label: str) -> str:
+    return (
+        f"### [42-add-rate-limiting] Implement — {label}\n\n"
+        f"**Would have asked:** what should the {label} bound be?\n\n"
+        f"**Assumption made:** the conservative one\n\n"
+        "**Confidence:** high"
+    )
+
+
+def test_a_multi_paragraph_checkpoint_is_one_entry(tmp_path):
+    """A blank line inside an entry is not an entry boundary.
+
+    It was: `append_checkpoint` separated entries with a blank line and the read
+    split on one, so a protocol-shaped checkpoint arrived as four entries — a
+    bare `###` heading, two fields, and `**Confidence:** high` — three of which
+    carry no information and all four of which spend a slot of the cap.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run_1",
+        entry=_protocol_entry("token bucket"),
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 1
+    assert "**Confidence:** high" in result.text
+
+
+def test_the_cap_counts_checkpoints_not_paragraphs(tmp_path):
+    """Six protocol-shaped checkpoints all reach the prompt.
+
+    Splitting on blank lines spent the whole six-slot cap on the first one and a
+    half, so the five earlier decisions this exists to carry were evicted by
+    fragments of the sixth.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    labels = [f"decision-{i}" for i in range(6)]
+    for i, label in enumerate(labels):
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=_protocol_entry(label),
+        )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=100_000)
+    assert result.checkpoints_injected == 6
+    for label in labels:
+        assert label in result.text
+
+
+def test_a_log_written_before_entries_were_delimited_still_reads(tmp_path):
+    """The 815 logs already in the vault carry no delimiter.
+
+    They are split on blank lines as before — imperfectly, which is what they
+    were written as, and better than reading them as one blob or not at all.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    log = tmp_path / "Loregarden" / "Checkpoints" / "lg" / "42-add-rate-limiting" / "run-old.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '---\ntype: "checkpoint"\n---\n\n'
+        "# Checkpoint log — 42-add-rate-limiting / run-old\n\n"
+        "Chose a token bucket.\n\nChose a 60s window.\n\n",
+        encoding="utf-8",
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 2
+    assert "token bucket" in result.text
+    assert "60s window" in result.text
+
+
+def test_a_log_open_across_the_change_keeps_both_halves(tmp_path):
+    """A run in flight when the delimiter landed has an undelimited prefix.
+
+    That prefix is the earlier stages of the run being briefed — the most
+    valuable part — so it is split the old way rather than dropped or returned
+    as one blob with the delimited entries.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    log = tmp_path / "Loregarden" / "Checkpoints" / "lg" / "42-add-rate-limiting" / "run-mixed.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '---\ntype: "checkpoint"\n---\n\n'
+        "# Checkpoint log — 42-add-rate-limiting / run-mixed\n\n"
+        "Written before the delimiter.\n\n",
+        encoding="utf-8",
+    )
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run-mixed",
+        entry=_protocol_entry("written after"),
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 2
+    assert "Written before the delimiter." in result.text
+    assert "written after" in result.text
+
+
+def test_checkpoints_under_two_slugs_order_by_recency_not_by_directory(tmp_path):
+    """23 tickets in the live vault have logs under both an id and an external-id
+    directory, from either side of the id restructure. The cap used to be filled
+    from whichever directory the candidate *set* yielded first, so which run
+    reached the prompt was set ordering — not recency, and not stable."""
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    for i in range(_MAX_CHECKPOINTS):
+        memory.append_checkpoint(
+            ticket_id=ticket.id,
+            workspace_slug="lg",
+            run_id=f"old_run_{i}",
+            entry=f"older decision {i}",
+        )
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="new_run",
+        entry="newest decision",
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=100_000)
+    assert result.text.index("newest decision") < result.text.index("older decision")
+
+
+def test_each_checkpoint_renders_as_one_list_item(tmp_path):
+    """Continuation lines are indented under the bullet.
+
+    A multi-line entry with unindented continuations ends the markdown list, and
+    its fields read as prose belonging to nothing.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run_1",
+        entry=_protocol_entry("token bucket"),
+    )
+
+    body = build_inherited_wisdom(ticket, "lg", memory=memory).text
+    section = body.split("### Checkpoints from earlier stages\n", 1)[1]
+    assert section.startswith("- ### [42-add-rate-limiting]")
+    assert "\n  **Confidence:** high" in section
+    assert section.count("\n- ") == 0
+
+
+def test_the_default_char_cap_does_not_bind_on_a_saturated_briefing(tmp_path):
+    """Six checkpoints and five learnings, each the size real ones run to.
+
+    The entry counts are what bound this section; `MAX_WISDOM_CHARS` is a
+    backstop behind them. At 3000 it was the binding constraint instead — it cut
+    81 of the vault's 927 real briefings — so a saturated briefing of
+    realistically sized entries must survive it intact.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket(title=_REALISTIC_TITLE, description=_MATCHING_BODY)
+    for i in range(_MAX_CHECKPOINTS):
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=f"### [42] Implement — decision {i}\n\n" + "x" * 800,
+        )
+    for i in range(_MAX_MEMORY_HITS + 2):
+        memory.append_learning(
+            ticket_id=f"other-{i}",
+            workspace_slug="lg",
+            content=f"{_MATCHING_BODY}\n\n" + "y" * 800,
+        )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == _MAX_CHECKPOINTS
+    assert result.learnings_injected == _MAX_MEMORY_HITS
+    assert not result.truncated, (
+        f"{result.pre_truncation_chars} chars exceeded MAX_WISDOM_CHARS={MAX_WISDOM_CHARS}"
+    )
+    for i in range(_MAX_CHECKPOINTS):
+        assert f"decision {i}" in result.text

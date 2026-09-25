@@ -20,6 +20,9 @@ jest.mock("../ParallelQueueVisualization", () => ({
   ),
 }));
 jest.mock("../QueueHistoryRail", () => ({ QueueHistoryRail: () => <div>history rail</div> }));
+// The ticket board is its own panel with its own reads; this file is about the
+// dashboard's queue-kind switch, and it renders no QueryClient.
+jest.mock("../QueueTicketBoard", () => ({ QueueTicketBoard: () => <div>ticket board</div> }));
 jest.mock("../../api/dockerApi", () => ({
   dockerApi: {
     capacity: jest.fn().mockResolvedValue({

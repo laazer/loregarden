@@ -93,11 +93,12 @@ const mockDeleteView = deleteView as jest.MockedFunction<typeof deleteView>;
 
 const SLUG = "loregarden";
 
-/** The seven built-in pages, in the order the fixed rail drew them. */
+/** The built-in pages, in the order the fixed rail drew them. */
 const TOOL_LABELS = [
   "Home",
   "Chat",
   "Console",
+  "Editor",
   "Studios",
   "Parallel Execution",
   "MCP Gateway",
@@ -476,7 +477,7 @@ test("the three sections appear top to bottom in that order", async () => {
 // 472 AC2 and AC5 — Tools comes from the static catalog, so it is complete on a
 // workspace with no stored entries and cannot drift from the app's routes.
 
-test("all seven built-in pages are in Tools when the store is empty", async () => {
+test("every built-in page is in Tools when the store is empty", async () => {
   mockFetchEntries.mockResolvedValue([]);
   mockFetchViews.mockResolvedValue([]);
   renderSidebar();

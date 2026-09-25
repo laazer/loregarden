@@ -623,6 +623,7 @@ _STORED_STAGE_DEFAULTS: dict[str, object] = {
     "parallel_agents": list,
     "gate_commands": list,
     "gate_required": False,
+    "exit_actions_enabled": False,
 }
 
 

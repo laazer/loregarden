@@ -28,6 +28,7 @@ from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
 from loregarden.services import term_overlap
 from loregarden.services.memory_store import (
+    CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
     MemoryStoreReadError,
     slugify,
@@ -35,7 +36,21 @@ from loregarden.services.memory_store import (
 
 logger = logging.getLogger(__name__)
 
-MAX_WISDOM_CHARS = 3000
+#: A backstop against one pathological entry, not the budget that decides how
+#: much history a stage inherits. `_MAX_CHECKPOINTS` and `_MAX_MEMORY_HITS` do
+#: that, and 11 entries is what bounds the section's size.
+#:
+#: It was 3000, which was the binding constraint instead. Built against every
+#: one of the 927 real briefings the vault can currently assemble, with nothing
+#: truncated: median 1643 chars, p90 2723, p99 5771, longest 9678. At 3000 the
+#: cap cut 81 of them and dropped 128,591 characters of recorded decisions on
+#: the floor; nothing at all truncates above 12,000. 16,000 leaves room for the
+#: entries to grow — and for the real learnings that currently lose recall slots
+#: to test residue, which are longer than the residue they will replace.
+#:
+#: Truncation is still reported (`truncated`, `pre_truncation_chars`), so the day
+#: this binds again it says so rather than silently shortening the briefing.
+MAX_WISDOM_CHARS = 16000
 _MAX_CHECKPOINTS = 6
 _MAX_MEMORY_HITS = 5
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
@@ -109,17 +124,46 @@ def _checkpoint_entries(
         slugify(ticket.external_id or ""),
         slugify(ticket.legacy_external_id or ""),
     } - {""}
+    # One mtime ordering across every candidate directory, not one per directory.
+    # Iterating the candidate set filled the cap from whichever directory the set
+    # happened to yield first, so on the 23 tickets whose checkpoints live under
+    # more than one slug — an id dir and an external-id dir, from either side of
+    # the id restructure — which run reached the prompt depended on set ordering.
+    logs = sorted(
+        (path for slug in candidates for path in (base / slug).glob("*.md")),
+        # Path breaks an mtime tie, so two logs written in the same instant still
+        # order the same way on every read rather than by glob order.
+        key=lambda p: (p.stat().st_mtime, str(p)),
+        reverse=True,
+    )
     entries: list[str] = []
-    for slug in candidates:
-        directory = base / slug
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-            body = _LOG_HEADING.sub("", _FRONTMATTER.sub("", path.read_text(encoding="utf-8")))
-            entries.extend(chunk.strip() for chunk in body.split("\n\n") if chunk.strip())
-            if len(entries) >= _MAX_CHECKPOINTS:
-                return entries[:_MAX_CHECKPOINTS]
+    for path in logs:
+        body = _LOG_HEADING.sub("", _FRONTMATTER.sub("", path.read_text(encoding="utf-8")))
+        entries.extend(_split_entries(body))
+        if len(entries) >= _MAX_CHECKPOINTS:
+            return entries[:_MAX_CHECKPOINTS]
     return entries[:_MAX_CHECKPOINTS]
+
+
+def _split_entries(body: str) -> list[str]:
+    """One log body's checkpoint entries, newest-written last.
+
+    `append_checkpoint` introduces each entry with `CHECKPOINT_ENTRY_DELIMITER`,
+    so everything after one marker and before the next is exactly one entry,
+    however many paragraphs it spans. Logs written before it did have no boundary
+    but a blank line, which splits a multi-paragraph entry into fragments — so
+    the blank line stays the fallback for the text ahead of the first marker, and
+    only for that.
+
+    In a log open across the change that text is the earlier stages of the run
+    being briefed — the most valuable part — so it is split the old way rather
+    than dropped or returned as one blob. In a log written entirely after the
+    change it is the frontmatter remnant and the heading, and empty.
+    """
+    legacy_prefix, *delimited = body.split(CHECKPOINT_ENTRY_DELIMITER)
+    entries = [para.strip() for para in legacy_prefix.split("\n\n") if para.strip()]
+    entries.extend(chunk.strip() for chunk in delimited if chunk.strip())
+    return entries
 
 
 def _recall_query(ticket: Ticket) -> str:
@@ -272,6 +316,19 @@ def build_inherited_wisdom(
     )
 
 
+def _bullet(entry: str) -> str:
+    """One checkpoint as one list item, however many lines it spans.
+
+    A checkpoint is a heading and three fields. Before entries were delimited
+    each of those arrived here as its own entry and a flat `- {entry}` was
+    accurate; now that the whole thing is one entry, continuation lines have to
+    be indented under the marker or the blank line between its fields ends the
+    list and the fields read as loose prose belonging to nothing.
+    """
+    head, *rest = entry.splitlines()
+    return "\n".join([f"- {head}", *(f"  {line}" if line.strip() else "" for line in rest)])
+
+
 def _assemble(checkpoints: list[str], hits: list[str]) -> str:
     """The prompt section, or "" when there is nothing to say."""
     if not checkpoints and not hits:
@@ -282,7 +339,7 @@ def _assemble(checkpoints: list[str], hits: list[str]) -> str:
     ]
     if checkpoints:
         lines += ["", "### Checkpoints from earlier stages"]
-        lines += [f"- {entry}" for entry in checkpoints]
+        lines += [_bullet(entry) for entry in checkpoints]
     if hits:
         lines += ["", "### Related learnings"]
         lines += hits

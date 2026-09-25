@@ -20,8 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 from loregarden.agents.executors import launch_gate
-from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.launch_gate import acquire_launch_slot
+from loregarden.agents.executors.print_mode import run_print_mode
 from sqlmodel import Session
 
 
@@ -160,12 +160,11 @@ def test_print_mode_frees_the_slot_once_the_process_emits(db_session: Session, t
         env={},
     )
     streamer = _CollectingStreamer()
-    executor = CliAgentExecutor(db_session)
     result: list = []
 
     def _run() -> None:
         result.append(
-            executor._run_print_mode(
+            run_print_mode(
                 invocation=invocation,
                 repo_root=Path.cwd(),
                 # Generous: the idle timer starts at the child's one line, and
