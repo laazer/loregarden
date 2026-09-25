@@ -1,4 +1,4 @@
-"""Idle-vs-hard-cap timeout behavior of `CliAgentExecutor._run_print_mode`.
+"""Idle-vs-hard-cap timeout behavior of `executors.print_mode.run_print_mode`.
 
 A run's configured timeout is treated as an *idle* budget: a process that keeps
 streaming output survives past it, up to an absolute hard cap
@@ -15,8 +15,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.models.domain import RunStatus
+from loregarden.services.run_errors import RunTimeoutKind
 from sqlmodel import Session
 
 
@@ -40,32 +41,15 @@ def _invocation(script: str) -> SimpleNamespace:
 
 
 def _run(db_session: Session, script: str, timeout: int):
-    executor = CliAgentExecutor(db_session)
-    return executor._run_print_mode(
+    """`db_session` is the DB the spawned run's process identity is recorded in;
+    the fixture is what makes that write land somewhere."""
+    return run_print_mode(
         invocation=_invocation(script),
         repo_root=Path.cwd(),
         timeout=timeout,
         streamer=_CollectingStreamer(),
         run_id="test-print-mode-run",
     )
-
-
-def _spawn_overhead(db_session: Session) -> float:
-    """What a run of this shape costs before any budget is involved.
-
-    The timeout assertions below distinguish "killed at the idle budget" from
-    "ran to the hard cap", and those are only `timeout` and `timeout * 4`
-    apart — three seconds at `timeout=1`. Process spawn, interpreter start and
-    the reader loop's poll granularity all sit on top of that, and under xdist
-    they are not small: this test failed pre-push at 3.46s against a fixed
-    `< 3`, where 3.46s is genuinely ambiguous between the two outcomes.
-
-    So the margin is measured rather than guessed. A trivial run pays the same
-    fixed cost as a killed one, on the same machine under the same load.
-    """
-    start = time.time()
-    _run(db_session, "pass", timeout=1)
-    return time.time() - start
 
 
 def test_streaming_run_survives_past_the_idle_budget(db_session: Session):
@@ -85,20 +69,22 @@ def test_streaming_run_survives_past_the_idle_budget(db_session: Session):
 
 
 def test_silent_run_is_killed_at_the_idle_budget(db_session: Session):
-    """A process that emits nothing is a hang: killed at the idle budget (~1s),
-    not extended to the hard cap."""
-    overhead = _spawn_overhead(db_session)
+    """A process that emits nothing is a hang: killed by the idle budget, not
+    extended to the hard cap.
 
+    Which budget fired is read off the raised exception. It used to be inferred
+    from wall clock, and the two outcomes are only `timeout` and `timeout * 4`
+    apart — three seconds at `timeout=1` — which process spawn, interpreter
+    start and the reader loop's poll granularity eat under xdist. That test
+    failed the pre-push suite at 3.46s, then again at 5.70s after the bound was
+    widened once (lg-workflow-integrity-736). The reason is recorded now, so
+    nothing here depends on how loaded the box is.
+    """
     script = "import time\ntime.sleep(30)\n"
-    start = time.time()
-    with pytest.raises(subprocess.TimeoutExpired):
+    with pytest.raises(subprocess.TimeoutExpired) as excinfo:
         _run(db_session, script, timeout=1)
-    elapsed = time.time() - start
 
-    # Killed at the 1s idle budget lands near `overhead + 1`; running to the 4s
-    # hard cap lands near `overhead + 4`. Halfway between separates them at any
-    # load, where a fixed threshold only separated them on an idle machine.
-    assert elapsed < overhead + 2.5, f"elapsed {elapsed:.2f}s, spawn overhead {overhead:.2f}s"
+    assert excinfo.value.kind is RunTimeoutKind.IDLE
 
 
 def test_chatty_runaway_is_bounded_by_the_hard_cap(db_session: Session):
@@ -110,11 +96,9 @@ def test_chatty_runaway_is_bounded_by_the_hard_cap(db_session: Session):
         "while True:\n"
         "    sys.stdout.write('x\\n'); sys.stdout.flush(); time.sleep(0.01)\n"
     )
-    start = time.time()
     with pytest.raises(subprocess.TimeoutExpired) as excinfo:
         _run(db_session, script, timeout=1)
-    elapsed = time.time() - start
 
-    assert 3.5 < elapsed < 8  # bounded near the hard cap, not running forever
+    assert excinfo.value.kind is RunTimeoutKind.HARD_CAP
     assert isinstance(excinfo.value.output, str)
     assert "x" in excinfo.value.output  # partial stdout carried on the exception

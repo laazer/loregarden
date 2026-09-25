@@ -2,19 +2,17 @@ import json
 import logging
 import subprocess
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from loregarden.agents.cli_adapters import (
     CliInvocation,
-    invocation_env,
     resolve_cli_invocation,
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
-from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
+from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
 from loregarden.agents.executors.run_evidence import record_run_evidence
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
@@ -77,13 +75,13 @@ from loregarden.services.handoff_boundary import (
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.process_identity import record_process_identity
-from loregarden.services.run_cancellation import cancel_requested
-from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
+from loregarden.services.run_errors import (
+    RunTimeout,
+    agent_timeout_message,
+)
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
-from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
@@ -291,7 +289,7 @@ class CliAgentExecutor:
                     )
                     stdout, stderr, status = result.stdout, result.stderr, result.status
                 else:
-                    stdout, stderr, status = self._run_print_mode(
+                    stdout, stderr, status = run_print_mode(
                         invocation=invocation,
                         repo_root=repo_root,
                         timeout=timeout,
@@ -359,7 +357,12 @@ class CliAgentExecutor:
         FAILED run can never advance the stage, so preserving output cannot
         mis-mark the stage done.
         """
-        msg = agent_timeout_message(exc.timeout or fallback_timeout)
+        # The print-mode path raises RunTimeout and names its budget; the
+        # permission bridge runs one deadline and raises stdlib TimeoutExpired,
+        # which carries no kind to read. Foreign exception, not a type switch
+        # over our own models.
+        kind = exc.kind if isinstance(exc, RunTimeout) else None  # py-org: allow-isinstance
+        msg = agent_timeout_message(exc.timeout or fallback_timeout, kind)
         streamer.finalize(status=RunStatus.FAILED, stderr=msg)
         # TimeoutExpired.output is bytes | str | None — a foreign union, not a schema.
         output = exc.output
@@ -538,164 +541,6 @@ class CliAgentExecutor:
         )
         logger.warning("run %s (%s): %s", run.run_code, run.agent_id, message)
         streamer.append("WARN", message, force=True)
-
-    def _spawn_print_process(self, invocation, repo_root: Path):
-        """Open the CLI subprocess in its own session, and feed it any stdin prompt.
-
-        `start_new_session` is what detaches it. Without it the agent is in this
-        process's group, so a Ctrl-C, a reload, or anything else that signals the
-        group takes a turn that may be minutes in — and backend edits *require* a
-        reload to be picked up, so that happens by design rather than by accident.
-
-        Detaching alone does not make the run recoverable; 470 is what reattaches
-        to it. What this owes 470 is a pid it can trust, which is why the caller
-        records an identity alongside the number.
-        """
-        proc = subprocess.Popen(
-            invocation.argv,
-            cwd=invocation.cwd or str(repo_root),
-            env=invocation_env(invocation),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-            bufsize=0,
-            start_new_session=True,
-        )
-        if invocation.stdin_prompt and proc.stdin:
-            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-            proc.stdin.close()
-        return proc
-
-    def _record_print_line(
-        self,
-        line: str,
-        *,
-        stdout_lines: list[str],
-        launch_slot,
-        streamer: RunLogStreamer,
-    ) -> None:
-        line = line.rstrip("\n")
-        stdout_lines.append(line)
-        # Output proves this process is past its credential read, so a
-        # sibling lane may start authenticating now.
-        launch_slot.release()
-        streamer.append_stream_line(line)
-
-    def _drain_print_stdout(
-        self,
-        reader: SubprocessLineReader,
-        *,
-        stdout_lines: list[str],
-        launch_slot,
-        streamer: RunLogStreamer,
-    ) -> None:
-        """Empty the pipe after exit so trailing stage-report lines are not lost."""
-        while True:
-            leftover = reader.readline(timeout=0)
-            if leftover is None:
-                return
-            self._record_print_line(
-                leftover,
-                stdout_lines=stdout_lines,
-                launch_slot=launch_slot,
-                streamer=streamer,
-            )
-
-    def _run_print_mode(
-        self,
-        *,
-        invocation,
-        repo_root: Path,
-        timeout: int,
-        streamer: RunLogStreamer,
-        run_id: str,
-    ) -> tuple[str, str, RunStatus]:
-        launch_slot = acquire_launch_slot(invocation.adapter)
-        try:
-            proc = self._spawn_print_process(invocation, repo_root)
-        except BaseException:
-            launch_slot.release()
-            raise
-
-        # Recorded together, and immediately: the identity is the process start
-        # time, so it has to be read while this pid is still certainly ours. A
-        # pid stored without one is a number a later process can wear.
-        record_process_identity(run_id, proc.pid)
-
-        stdout_lines: list[str] = []
-        assert proc.stdout is not None
-        reader = SubprocessLineReader(proc.stdout)
-        # Two independent limits. `idle_deadline` fires after `timeout` seconds
-        # with no output — a presumed hang, killed exactly when the old fixed
-        # deadline would have. `hard_deadline` is a generous absolute ceiling so
-        # an agent that keeps streaming (e.g. a long test run emitting progress)
-        # survives past `timeout`, yet a runaway that streams forever is still
-        # bounded.
-        start = time.time()
-        idle_deadline = start + timeout
-        hard_deadline = start + timeout * TIMEOUT_HARD_CAP_MULTIPLIER
-        cancelled = False
-        try:
-            while True:
-                now = time.time()
-                if now >= idle_deadline or now >= hard_deadline:
-                    proc.kill()
-                    raise self._timeout_expired(invocation.argv, start, stdout_lines)
-                if cancel_requested(run_id):
-                    proc.kill()
-                    cancelled = True
-                    break
-                exited = proc.poll() is not None
-                # After exit, keep draining with a short poll so the last
-                # buffered lines (e.g. a stage-report block) are not dropped
-                # by a timeout=0 select race against the closing pipe.
-                line = reader.readline(timeout=0.05 if exited else 0.5)
-                if line is None:
-                    if exited:
-                        self._drain_print_stdout(
-                            reader,
-                            stdout_lines=stdout_lines,
-                            launch_slot=launch_slot,
-                            streamer=streamer,
-                        )
-                        break
-                    if now - start >= MAX_HOLD_SECONDS:
-                        launch_slot.release()
-                    continue
-                self._record_print_line(
-                    line,
-                    stdout_lines=stdout_lines,
-                    launch_slot=launch_slot,
-                    streamer=streamer,
-                )
-                # Output is progress: extend the idle budget. The hard cap never
-                # moves.
-                idle_deadline = time.time() + timeout
-        finally:
-            launch_slot.release()
-            if proc.poll() is None:
-                try:
-                    proc.wait(timeout=max(0.1, hard_deadline - time.time()))
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    if not cancelled:
-                        raise self._timeout_expired(invocation.argv, start, stdout_lines) from None
-
-        stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
-        stdout = "\n".join(stdout_lines)
-        if cancelled:
-            return stdout, "Cancelled by operator", RunStatus.CANCELLED
-        status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
-        return stdout, stderr, status
-
-    @staticmethod
-    def _timeout_expired(argv, start: float, stdout_lines: list[str]) -> subprocess.TimeoutExpired:
-        """A TimeoutExpired carrying the real elapsed time and whatever the agent
-        streamed before it was killed, so the caller can report an accurate
-        duration and preserve the partial output."""
-        return subprocess.TimeoutExpired(
-            argv, int(time.time() - start), output="\n".join(stdout_lines)
-        )
 
     def _touch_ticket_agent(self, ticket: Ticket, agent_name: str, status: RunStatus) -> None:
         ticket.last_updated_by = agent_name
