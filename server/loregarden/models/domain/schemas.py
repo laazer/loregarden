@@ -57,6 +57,15 @@ class WorkflowStageDef(SQLModel):
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
+    #: The same question `gate_required` asks, in the spelling migration
+    #: `0138_runtime_exit_actions` left behind: it pops `gate_required` out of
+    #: every `stages_json` and writes `exit_actions_enabled` plus a typed
+    #: `exit_actions` list in its place. SQLModel ignores unknown fields, so a
+    #: build that models only the old name reads a migrated stage as
+    #: `gate_required=False` and advances it — silently, for the four
+    #: operator-judgment stages in the live v3 template. Both names are read so
+    #: a stage's gate survives the migration whichever side of it the data is on.
+    exit_actions_enabled: bool = False
     # Evidence kinds this stage must produce for the current commit before it can
     # pass. Empty means unproven work advances, which is the old behaviour.
     required_evidence: list[str] = Field(default_factory=list)
@@ -116,6 +125,19 @@ class WorkflowStageDef(SQLModel):
     # no advance to refresh it, so it can still hold the PREVIOUS stage's agent —
     # which is how a stale hint once ran `learning` under `ac_gatekeeper`.
     agent_is_default: bool = False
+
+    @property
+    def requires_human_sign_off(self) -> bool:
+        """Whether passing this stage opens a gate for a person.
+
+        Asked through one predicate rather than a field, because the field it
+        is stored in depends on whether `0138_runtime_exit_actions` has run
+        against the data in front of you — and on a shared database, a build
+        can meet both spellings. Reading either one wrongly is silent: the
+        stage advances as DONE and the gate that should have held it never
+        opens, which is indistinguishable from a gate a person approved.
+        """
+        return self.gate_required or self.exit_actions_enabled
 
 
 class WorkflowStageView(SQLModel):
@@ -997,6 +1019,11 @@ class StudioWorkflowStage(SQLModel):
     optional: bool = False
     order: int = 0
     gate_required: bool = False
+    #: See `WorkflowStageDef.exit_actions_enabled`. Here for the reason the
+    #: comment below says: a field this model lacks is dropped the first time a
+    #: template is published from Studio, and dropping this one would silently
+    #: un-gate a stage `0138_runtime_exit_actions` had already migrated.
+    exit_actions_enabled: bool = False
     terminal: bool = False
     skip_when: str = ""
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)

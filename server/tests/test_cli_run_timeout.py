@@ -50,6 +50,24 @@ def _run(db_session: Session, script: str, timeout: int):
     )
 
 
+def _spawn_overhead(db_session: Session) -> float:
+    """What a run of this shape costs before any budget is involved.
+
+    The timeout assertions below distinguish "killed at the idle budget" from
+    "ran to the hard cap", and those are only `timeout` and `timeout * 4`
+    apart — three seconds at `timeout=1`. Process spawn, interpreter start and
+    the reader loop's poll granularity all sit on top of that, and under xdist
+    they are not small: this test failed pre-push at 3.46s against a fixed
+    `< 3`, where 3.46s is genuinely ambiguous between the two outcomes.
+
+    So the margin is measured rather than guessed. A trivial run pays the same
+    fixed cost as a killed one, on the same machine under the same load.
+    """
+    start = time.time()
+    _run(db_session, "pass", timeout=1)
+    return time.time() - start
+
+
 def test_streaming_run_survives_past_the_idle_budget(db_session: Session):
     """Eight lines, one every 0.2s (~1.6s total): each resets the 1s idle budget,
     and the total stays under the 4s hard cap, so the run completes instead of
@@ -69,13 +87,18 @@ def test_streaming_run_survives_past_the_idle_budget(db_session: Session):
 def test_silent_run_is_killed_at_the_idle_budget(db_session: Session):
     """A process that emits nothing is a hang: killed at the idle budget (~1s),
     not extended to the hard cap."""
+    overhead = _spawn_overhead(db_session)
+
     script = "import time\ntime.sleep(30)\n"
     start = time.time()
     with pytest.raises(subprocess.TimeoutExpired):
         _run(db_session, script, timeout=1)
     elapsed = time.time() - start
 
-    assert elapsed < 3  # near the 1s idle budget, nowhere near the 4s hard cap
+    # Killed at the 1s idle budget lands near `overhead + 1`; running to the 4s
+    # hard cap lands near `overhead + 4`. Halfway between separates them at any
+    # load, where a fixed threshold only separated them on an idle machine.
+    assert elapsed < overhead + 2.5, f"elapsed {elapsed:.2f}s, spawn overhead {overhead:.2f}s"
 
 
 def test_chatty_runaway_is_bounded_by_the_hard_cap(db_session: Session):

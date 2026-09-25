@@ -670,10 +670,18 @@ def agent_is_overridable(stage: WorkflowStageDef) -> bool:
 
 
 def repair_pin_applies(stage: WorkflowStageDef) -> bool:
-    """Whether a repair turn can take this stage over: any stage that resolves to
-    one agent. A parallel stage has no single agent, and a gate runs its own
-    checker — both keep today's behaviour (750)."""
-    return not is_parallel_stage(stage) and stage.stage_type != StageType.GATE
+    """Whether a repair turn can take this stage over.
+
+    A parallel stage has no single agent of its own, which is why 750 excluded
+    it — but that exclusion made the fan-out the one shape a repair could never
+    reach, and a fan-out is where a lost stage report is *most* likely: N
+    lenses, N chances to drop the envelope. The repair turn does not need the
+    members; it needs one agent to reproduce the block and finish the stage's
+    work. So the pin applies, and the driver dispatches a repair-pinned
+    parallel stage as a single sequential run under the repair agent (802).
+
+    A gate still runs its own checker, and `gate_recovery` is its equivalent."""
+    return stage.stage_type != StageType.GATE
 
 
 def resolve_repair_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:

@@ -40,12 +40,6 @@ MEASURED = ("elapsed", "duration", "_ms", "seconds", "secs", "took", "latency", 
 ALLOWED: dict[tuple[str, str], str] = {
     (
         "test_cli_run_timeout.py",
-        "elapsed < 3",
-    ): "Discriminates a kill at the 1s idle budget from one at the 4s hard cap. "
-    "The bound is load-bearing: widening it past 4 destroys the distinction the "
-    "test exists to make, so it cannot be relaxed, only kept honest.",
-    (
-        "test_cli_run_timeout.py",
         "3.5 < elapsed < 8",
     ): "Same pair of budgets from the other side — the lower bound separates the "
     "hard cap from the idle kill, the upper allows 2x the cap. Bounding a real "

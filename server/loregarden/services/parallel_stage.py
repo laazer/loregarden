@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     AgentRun,
+    BlockKind,
     BlockOrigin,
     OrchestrationRun,
     ParallelAgentSpec,
@@ -31,6 +32,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -210,6 +212,18 @@ def prepare_tree_for_parallel_stage(
             status=StageStatus.BLOCKED,
             blocking_message=message,
         )
+        instance, stages = orch._resolve_stages(ticket)
+        # No orchestration run reaches here — this runs before the members are
+        # dispatched — so the turn cannot be spent. Settled anyway, so the block
+        # carries its kind and says why it got no repair (802).
+        settle_block(
+            session,
+            ticket,
+            instance=instance,
+            stages=stages,
+            stage_key=stage_key,
+            message=message,
+        )
         session.refresh(ticket)
         return message
     return ""
@@ -225,8 +239,15 @@ def reconcile_parallel_stage(
     """Settle a parallel stage from every member's result.
 
     Files each member's stage report as an artifact, then either finalizes the
-    stage DONE or routes the rework its rejections ask for. ``True`` means the
-    stage settled cleanly; the message carries the failures otherwise.
+    stage DONE or routes the rework its rejections ask for.
+
+    ``True`` means **the caller need not block the ticket** — not that the stage
+    passed. Three things satisfy it: every member passed, the rework was routed
+    upstream, or the stage was re-armed for its one repair turn (802). Only the
+    first is a verdict; the other two are "this is handled, keep going", and the
+    driver's own `_stage_wants_another_attempt` is what re-dispatches. Read it
+    as "settled", never as "passed" — a test that asserted `ok is False` to mean
+    "nobody reported on this stage" was reading it the second way.
     """
     callbacks = OrchestrationCallbackService(session)
     for result in results:
@@ -257,8 +278,12 @@ def _route_parallel_stage_failures(
     results: list[ParallelMemberResult],
 ) -> tuple[bool, str]:
     """Route a rejected parallel stage's rework: record the reviewers' feedback for
-    the re-run agent and either reroute upstream or, at the loop cap, block for a
-    human. Pairs with run_completion._reroute_or_block_for_rework (single-stage).
+    the re-run agent and either reroute upstream, spend the stage's repair turn,
+    or, at the loop cap, block for a human. Pairs with
+    run_completion._reroute_or_block_for_rework (single-stage).
+
+    Returns the same "no block needed" boolean `reconcile_parallel_stage` does —
+    see its docstring for why that is not the same as "passed".
     """
     orch = OrchestrationService(session)
     callbacks = OrchestrationCallbackService(session)
@@ -281,25 +306,50 @@ def _route_parallel_stage_failures(
     agent_to_key = rejecting[0].reroute_to_stage if rejecting else ""
     agent_context = rejecting[0].reroute_context if rejecting else ""
 
+    instance, stages = orch._resolve_stages(ticket)
+
     if transient and not rejecting:
         # The only failures were infrastructure (API/usage limit, overload, a CLI
         # that could not authenticate) or protocol (a clean exit with no readable
         # stage report), and no reviewer produced a genuine rejection. Rerouting
         # to `implement` would waste a cycle and, via the rework loop cap, inch
-        # toward blocking for the wrong reason. Pause the stage for a
-        # human/resume instead — no reroute, no ledger entry, so the loop budget
-        # is untouched. A genuine rejection from another reviewer (rejecting
-        # non-empty) still takes precedence and is rerouted below with its real
-        # feedback.
+        # toward blocking for the wrong reason. A genuine rejection from another
+        # reviewer (rejecting non-empty) still takes precedence and is rerouted
+        # below with its real feedback.
+        #
+        # This is the likeliest place in the whole workflow to lose a stage
+        # report — N lenses, N chances to drop the envelope — and until 802 it
+        # was the one shape a repair turn could never reach, so it went straight
+        # to a person every time. Offer the turn first; the block still waits
+        # for a person when the turn cannot be spent, and says why.
+        block_message = (
+            f"'{stage_key}' stage hit a transient infrastructure or protocol error, not "
+            f"a rework rejection. ({message[:300]})"
+        )
+        settlement = settle_block(
+            session,
+            ticket,
+            orch_run,
+            instance=instance,
+            stages=stages,
+            transitions=transitions,
+            stage_key=stage_key,
+            message=block_message,
+            # Transient by construction: `is_transient_failure` already judged
+            # every member's failure to be infrastructure or protocol, so the
+            # message's own wording is not what decides this.
+            declared=BlockKind.HARNESS,
+        )
+        if settlement.repair_armed:
+            session.refresh(ticket)
+            return True, message
         callbacks.block_ticket(
             orch_run,
             ticket,
             origin=BlockOrigin.CONTROL_PLANE,
             stage_key=stage_key,
-            message=(
-                f"'{stage_key}' stage hit a transient infrastructure or protocol error, not "
-                f"a rework rejection. Paused — resume to retry once it clears. ({message[:300]})"
-            ),
+            message=f"{block_message} Paused — resume to retry once it clears.",
+            settlement=settlement,
         )
         session.refresh(ticket)
         return False, message
@@ -308,7 +358,6 @@ def _route_parallel_stage_failures(
     to_key = agent_to_key or (template_route[0] if template_route else "")
     transition_agent = template_route[1] if template_route else ""
 
-    instance, stages = orch._resolve_stages(ticket)
     if instance and stages:
         # Record the reviewers' full feedback for the stage this rework will
         # re-run, so the re-run agent sees every round in full rather than the
@@ -385,5 +434,17 @@ def _route_parallel_stage_failures(
         status=StageStatus.BLOCKED,
         blocking_message=message[:2000],
     )
+    # Nowhere upstream to send the rework, so the stage itself is what has to
+    # be re-run — which is exactly what a repair turn does (802).
+    settlement = settle_block(
+        session,
+        ticket,
+        orch_run,
+        instance=instance,
+        stages=stages,
+        transitions=transitions,
+        stage_key=stage_key,
+        message=message[:2000],
+    )
     session.refresh(ticket)
-    return False, message
+    return settlement.repair_armed, message
