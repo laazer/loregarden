@@ -36,7 +36,21 @@ from loregarden.services.memory_store import (
 
 logger = logging.getLogger(__name__)
 
-MAX_WISDOM_CHARS = 3000
+#: A backstop against one pathological entry, not the budget that decides how
+#: much history a stage inherits. `_MAX_CHECKPOINTS` and `_MAX_MEMORY_HITS` do
+#: that, and 11 entries is what bounds the section's size.
+#:
+#: It was 3000, which was the binding constraint instead. Built against every
+#: one of the 927 real briefings the vault can currently assemble, with nothing
+#: truncated: median 1643 chars, p90 2723, p99 5771, longest 9678. At 3000 the
+#: cap cut 81 of them and dropped 128,591 characters of recorded decisions on
+#: the floor; nothing at all truncates above 12,000. 16,000 leaves room for the
+#: entries to grow — and for the real learnings that currently lose recall slots
+#: to test residue, which are longer than the residue they will replace.
+#:
+#: Truncation is still reported (`truncated`, `pre_truncation_chars`), so the day
+#: this binds again it says so rather than silently shortening the briefing.
+MAX_WISDOM_CHARS = 16000
 _MAX_CHECKPOINTS = 6
 _MAX_MEMORY_HITS = 5
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)

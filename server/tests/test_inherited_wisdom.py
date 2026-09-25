@@ -3,7 +3,12 @@
 from unittest.mock import Mock, patch
 
 import pytest
-from loregarden.agents.inherited_wisdom import _MAX_CHECKPOINTS, build_inherited_wisdom
+from loregarden.agents.inherited_wisdom import (
+    _MAX_CHECKPOINTS,
+    _MAX_MEMORY_HITS,
+    MAX_WISDOM_CHARS,
+    build_inherited_wisdom,
+)
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
@@ -530,3 +535,37 @@ def test_each_checkpoint_renders_as_one_list_item(tmp_path):
     assert section.startswith("- ### [42-add-rate-limiting]")
     assert "\n  **Confidence:** high" in section
     assert section.count("\n- ") == 0
+
+
+def test_the_default_char_cap_does_not_bind_on_a_saturated_briefing(tmp_path):
+    """Six checkpoints and five learnings, each the size real ones run to.
+
+    The entry counts are what bound this section; `MAX_WISDOM_CHARS` is a
+    backstop behind them. At 3000 it was the binding constraint instead — it cut
+    81 of the vault's 927 real briefings — so a saturated briefing of
+    realistically sized entries must survive it intact.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket(title=_REALISTIC_TITLE, description=_MATCHING_BODY)
+    for i in range(_MAX_CHECKPOINTS):
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=f"### [42] Implement — decision {i}\n\n" + "x" * 800,
+        )
+    for i in range(_MAX_MEMORY_HITS + 2):
+        memory.append_learning(
+            ticket_id=f"other-{i}",
+            workspace_slug="lg",
+            content=f"{_MATCHING_BODY}\n\n" + "y" * 800,
+        )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == _MAX_CHECKPOINTS
+    assert result.learnings_injected == _MAX_MEMORY_HITS
+    assert not result.truncated, (
+        f"{result.pre_truncation_chars} chars exceeded MAX_WISDOM_CHARS={MAX_WISDOM_CHARS}"
+    )
+    for i in range(_MAX_CHECKPOINTS):
+        assert f"decision {i}" in result.text
