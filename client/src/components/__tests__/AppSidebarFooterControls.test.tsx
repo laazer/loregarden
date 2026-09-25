@@ -333,13 +333,14 @@ test("each control is one tab stop, and the rows gain none", async () => {
   const named = stops.map((stop) => stop.textContent?.trim());
   expect(named.filter((name) => name === "Pin tab")).toHaveLength(1);
   expect(named.filter((name) => name === "New tab")).toHaveLength(1);
-  // One stop per entry: the seven Tools rows, three tabs, the pair and
-  // Settings — and nothing from a row's own controls, which are reached with
-  // Left/Right instead.
+  // One stop per entry: every Tools row, three tabs, the pair and Settings —
+  // and nothing from a row's own controls, which are reached with Left/Right
+  // instead.
   expect(named).toEqual([
     "Home",
     "Chat",
     "Console",
+    "Editor",
     "Studios",
     "Parallel Execution",
     "MCP Gateway",

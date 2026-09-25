@@ -21,6 +21,7 @@ import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueGitAutomation } from "./QueueGitAutomation";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
 import { QueueHistoryRail } from "./QueueHistoryRail";
+import { QueueTicketBoard } from "./QueueTicketBoard";
 import "./QueueDashboard.css";
 
 export interface QueueDashboardProps {
@@ -189,11 +190,13 @@ export function QueueDashboard({
     ? `${metrics.activeCount} running · ${metrics.queuedCount} queued behind`
     : "All slots open — dispatch a run and Baxter will fetch the queue.";
 
+  const reviewing = activeSidebarTab === "review" && Boolean(operationDetails);
+
   return (
     <div className="queue-dashboard">
       <div className="queue-layout">
         <main className="queue-layout-main">
-          {activeSidebarTab === "review" && operationDetails ? (
+          {reviewing && operationDetails ? (
             <div className="queue-review-main">
               <button
                 type="button"
@@ -224,6 +227,10 @@ export function QueueDashboard({
               headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
             />
           )}
+
+          {/* Below whichever queue is showing, and not in the review flow —
+              that one is a focused diff, not a dashboard. */}
+          {reviewing ? null : <QueueTicketBoard />}
         </main>
 
         <aside className="queue-rail">
