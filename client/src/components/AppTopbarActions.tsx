@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
@@ -7,26 +7,21 @@ import { PANE_LABELS, PANE_ORDER } from "../lib/appTopbarConfig";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
 import { ApprovalInboxPanel } from "./ApprovalInboxPanel";
-import { AppTopbarToolMenu } from "./AppTopbarToolMenu";
-import { MemorySetupModal } from "./MemorySetupModal";
 import {
   TopbarDropdown,
   TopbarDropdownPaneRow,
 } from "./TopbarDropdown";
 import { UsageModal } from "./UsageModal";
-import { errorDetail } from "../utils/errorDetail";
 
 const USAGE_REFRESH_MS = 30 * 60_000;
 
 export function AppTopbarActions() {
-  const qc = useQueryClient();
   const appPage = useAppPage();
   const paneVisibility = useUiStore((s) => s.paneVisibility);
   const setPaneVisible = useUiStore((s) => s.setPaneVisible);
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
 
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   // The snapshot is served from a short server-side cache so a page load never
   // blocks on the providers; the modal's Refresh button asks for live numbers.
@@ -43,12 +38,6 @@ export function AppTopbarActions() {
     refetchOnWindowFocus: false,
   });
 
-  const memoryConfig = useQuery({
-    queryKey: ["memory-config"],
-    queryFn: api.memoryConfig,
-    enabled: memoryOpen,
-  });
-
   const approvals = useQuery({
     queryKey: ["approvals"],
     queryFn: () => api.approvals(),
@@ -56,14 +45,6 @@ export function AppTopbarActions() {
   });
 
   const notificationCount = useNotificationStore((s) => s.notifications.length);
-
-  const setMemoryConfig = useMutation({
-    meta: { errorTitle: "Save memory settings" },
-    mutationFn: api.setMemoryConfig,
-    onSuccess: (data) => {
-      qc.setQueryData(["memory-config"], data);
-    },
-  });
 
   const visiblePaneCount = Object.values(paneVisibility).filter(Boolean).length;
   const hiddenPaneCount = useMemo(
@@ -97,16 +78,9 @@ export function AppTopbarActions() {
                 />
               ))}
             </TopbarDropdown>
-            <button type="button" className="btn-secondary topbar-action-btn" onClick={() => setMemoryOpen(true)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              Memory
-            </button>
           </div>
         ) : null}
         <div className="topbar-actions-core">
-          <AppTopbarToolMenu />
           <button
             type="button"
             className={`btn-secondary topbar-action-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
@@ -161,25 +135,6 @@ export function AppTopbarActions() {
           </button>
         </div>
       </div>
-
-      <MemorySetupModal
-        open={memoryOpen}
-        data={memoryConfig.data}
-        isLoading={memoryConfig.isLoading}
-        isSaving={setMemoryConfig.isPending}
-        errorMessage={
-          errorDetail(setMemoryConfig.error) ?? undefined
-        }
-        onClose={() => {
-          if (setMemoryConfig.isPending) return;
-          setMemoryConfig.reset();
-          setMemoryOpen(false);
-        }}
-        onRefresh={() => void memoryConfig.refetch()}
-        onSave={async (config) => {
-          await setMemoryConfig.mutateAsync(config);
-        }}
-      />
 
       <UsageModal
         open={usageOpen}

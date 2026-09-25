@@ -64,12 +64,23 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     key: "dashboard",
     label: "Console",
     path: pathForPage("dashboard"),
-    // The editor and ticket deep links live in the Console shell.
-    ownsPage: (page) => page === "dashboard" || page === "editor",
+    ownsPage: ownsOnly("dashboard"),
     icon: (
       <svg {...STROKE} aria-hidden>
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <path d="M3 9h18M7 13l2 2-2 2M12 17h4" />
+      </svg>
+    ),
+  },
+  {
+    key: "editor",
+    label: "Editor",
+    path: pathForPage("editor"),
+    ownsPage: ownsOnly("editor"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11l1.8 2H18.5A1.5 1.5 0 0 1 20 7.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+        <path d="M9 15l2-2-2-2M13.5 16h3" />
       </svg>
     ),
   },
