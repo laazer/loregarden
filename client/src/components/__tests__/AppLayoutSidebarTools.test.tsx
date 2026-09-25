@@ -76,11 +76,12 @@ const mockFetchViews = fetchViews as jest.MockedFunction<typeof fetchViews>;
 const mockSetPinned = setEntryPinned as jest.MockedFunction<typeof setEntryPinned>;
 const mockReorder = reorderSidebarEntries as jest.MockedFunction<typeof reorderSidebarEntries>;
 
-/** The seven built-in pages, in the order the fixed rail drew them. */
+/** The built-in pages, in the order the fixed rail drew them. */
 const TOOL_LABELS = [
   "Home",
   "Chat",
   "Console",
+  "Editor",
   "Studios",
   "Parallel Execution",
   "MCP Gateway",
@@ -127,7 +128,7 @@ beforeEach(() => {
 // AC2 — all seven built-in pages appear in Tools on a fresh workspace with no
 // stored entries.
 
-test("a default-state app draws all seven built-in pages with an empty store", async () => {
+test("a default-state app draws every built-in page with an empty store", async () => {
   renderApp();
 
   // The first workspace, not `"all"` — which 404s against every view route.

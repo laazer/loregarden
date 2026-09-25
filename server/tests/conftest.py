@@ -1,4 +1,5 @@
 import subprocess
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,8 +9,10 @@ from loregarden.main import app
 from loregarden.models.domain import Workspace
 from loregarden.services import docker_capacity, reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
+from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
+from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.worktree_helpers import seed_stage_report_contract
 
 # Every module that binds the DB engine at import time via
@@ -245,6 +248,43 @@ def isolated_memory_store(tmp_path_factory, monkeypatch):
         settings, "memory_sqlite_url", f"sqlite:///{root / 'memory.db'}", raising=False
     )
     monkeypatch.setattr(settings, "icloud_root", "", raising=False)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _real_vault_is_off_limits():
+    """Every memory store built during the suite, checked at construction.
+
+    `isolated_memory_store` redirects the settings a store resolves its path
+    from; this refuses the path itself, wherever it came from. See
+    `tests/memory_guard.py` for why the rule is "not the real vault" rather than
+    "must be under tmp".
+
+    Session-scoped and patching `__init__` rather than wrapping each call site:
+    the leak came from a path nobody was looking at, so the check has to sit
+    where every path arrives.
+    """
+    roots = forbidden_memory_roots()
+    if not roots:
+        # No vault on this machine — CI, a fresh checkout — so nothing to guard.
+        yield
+        return
+
+    real_obsidian = ObsidianMemoryStore.__init__
+    real_graph = MemoryGraphStore.__init__
+
+    def guarded_obsidian(self, vault_dir):
+        reject_if_forbidden("An Obsidian memory store", vault_dir, roots)
+        real_obsidian(self, vault_dir)
+
+    def guarded_graph(self, db_path):
+        reject_if_forbidden("A memory graph store", db_path, roots)
+        real_graph(self, db_path)
+
+    with (
+        patch.object(ObsidianMemoryStore, "__init__", guarded_obsidian),
+        patch.object(MemoryGraphStore, "__init__", guarded_graph),
+    ):
+        yield
 
 
 class _RefusingHttpx:

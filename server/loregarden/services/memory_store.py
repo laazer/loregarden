@@ -31,6 +31,32 @@ from loregarden.services.path_resolve import (
 RECALL_CANDIDATE_CAP = 500
 
 
+#: Introduces each checkpoint entry inside a ticket+run log.
+#:
+#: Leading rather than trailing, which is what makes a log written across the
+#: change readable: everything before the first marker is undelimited legacy
+#: text and everything after one is exactly one entry. A terminator cannot say
+#: that — the text before the first terminator is either a legacy prefix or the
+#: first entry, with nothing to tell them apart.
+#:
+#: The boundary used to be a blank line, which is not a boundary: the checkpoint
+#: protocol's own entry template is four fields, and an agent that writes them
+#: with blank lines between — rather than the `\n`-joined form the template shows
+#: — had its one checkpoint read back as four. Measured across the vault, 198 of
+#: the 1662 entries the stage briefing injected were fragments of a split entry
+#: carrying no information: a bare `### [id] Stage — label`, or `**Confidence:**
+#: high` on its own. Each one also spent a slot of `_MAX_CHECKPOINTS`, evicting a
+#: real prior decision, and was counted in `memory_briefings.checkpoints_injected`
+#: as though continuity had worked.
+#:
+#: An HTML comment because the vault is read by humans in Obsidian, where it is
+#: invisible: the marker must be something no author would write and no renderer
+#: would show. `---` was the other candidate and is unusable — it is a thematic
+#: break an entry may legitimately contain, and at the top of a file it is
+#: frontmatter.
+CHECKPOINT_ENTRY_DELIMITER = "<!-- checkpoint-entry -->"
+
+
 class MemoryStoreReadError(Exception):
     """A store read failed, labelled with the store that failed it.
 
@@ -260,7 +286,18 @@ class ObsidianMemoryStore:
         it (with a frontmatter header) on first write. Unlike upsert_note's
         one-file-per-call notes, multiple entries accumulate in one file across
         a run — matching the checkpoint protocol's <ticket-id>/<run-id>.md log.
+
+        Each entry is introduced by `CHECKPOINT_ENTRY_DELIMITER`, so a
+        multi-paragraph entry survives the read back as one entry.
         """
+        if CHECKPOINT_ENTRY_DELIMITER in entry:
+            # Loud rather than lenient, per `reject_truncated_call`: an entry
+            # carrying the marker would split itself on read, and the halves
+            # would look exactly like two checkpoints someone meant to write.
+            raise ValueError(
+                f"checkpoint entry contains {CHECKPOINT_ENTRY_DELIMITER!r}, which is "
+                "reserved as the entry separator. Remove it and re-send the entry."
+            )
         base = self.checkpoints_dir(workspace_slug)
         ticket_slug = slugify(ticket_id) if ticket_id.strip() else "ticket"
         run_slug = slugify(run_id) if run_id.strip() else "run"
@@ -282,7 +319,7 @@ class ObsidianMemoryStore:
             )
 
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(entry.strip() + "\n\n")
+            handle.write(f"{CHECKPOINT_ENTRY_DELIMITER}\n\n{entry.strip()}\n\n")
 
         return {
             "path": str(path.relative_to(self.vault_dir)),

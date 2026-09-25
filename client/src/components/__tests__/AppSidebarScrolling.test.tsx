@@ -30,6 +30,7 @@ import path from "path";
 import { MemoryRouter } from "react-router-dom";
 
 import { AppSidebar } from "../AppSidebar";
+import { SIDEBAR_PAGES } from "../appSidebarPages";
 import {
   fetchSidebarEntries,
   fetchViews,
@@ -365,9 +366,10 @@ test("a scrolling list adds no tab stop and traps no focus", async () => {
     stops.push(active);
   }
 
-  // Seven Tools rows, two pinned tabs, every unpinned tab, then the footer's
+  // Every Tools row, two pinned tabs, every unpinned tab, then the footer's
   // three controls — one stop per entry, and not one belonging to a list.
-  expect(stops).toHaveLength(7 + 2 + TAB_COUNT + 3);
+  // Counted from the page catalog so adding a page moves this with it.
+  expect(stops).toHaveLength(SIDEBAR_PAGES.length + 2 + TAB_COUNT + 3);
   expect(stops.some((stop) => stop.tagName === "UL")).toBe(false);
   // Nothing holds focus: the sequence ran to the end and came back round to the
   // first stop, rather than stalling on a row inside a scroll container. It
