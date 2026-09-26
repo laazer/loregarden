@@ -74,6 +74,12 @@ touch "$RELOAD_TRIGGER"
 # Loopback unless asked otherwise. LOREGARDEN_DEV_HOST=0.0.0.0 serves the whole
 # local network — do that only on a network you trust, because the API writes
 # files and spawns agent processes, and LOREGARDEN_API_TOKEN is off by default.
+#
+# Exported, not just passed to uvicorn: the app reads them to advertise itself
+# as loregarden's main server in the local instance registry, which is how a
+# branch client launched from the Local instances panel finds it.
+export LOREGARDEN_DEV_HOST="${LOREGARDEN_DEV_HOST:-127.0.0.1}"
+export LOREGARDEN_DEV_PORT="${LOREGARDEN_DEV_PORT:-8000}"
 exec uv run uvicorn loregarden.main:app --reload \
-  --host "${LOREGARDEN_DEV_HOST:-127.0.0.1}" --port "${LOREGARDEN_DEV_PORT:-8000}" \
+  --host "$LOREGARDEN_DEV_HOST" --port "$LOREGARDEN_DEV_PORT" \
   --reload-exclude '*.py' --reload-include '.self-improve-restart'
