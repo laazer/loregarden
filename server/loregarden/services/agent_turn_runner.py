@@ -38,6 +38,7 @@ from loregarden.services.chat_worktree import (
 )
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
+    cap_reply,
     resolve_agent_timeout,
     run_cli_agent_turn,
 )
@@ -423,7 +424,11 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
         if thinking:
             thinking.close()
 
-    reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
+    reply = cap_reply(
+        extract_triage_reply(result.stdout),
+        request.profile.reply_cap,
+        label=request.profile.assistant_label,
+    )
     if result.status != RunStatus.SUCCEEDED:
         _settle(request, run, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
