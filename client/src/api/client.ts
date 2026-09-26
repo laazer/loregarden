@@ -1,11 +1,13 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
+import { initiativeApi } from "./initiativeApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 
 export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
+export type { InitiativeMilestone, InitiativeView } from "./initiativeApi";
 import type {
   WorkflowReassignmentPreview,
   TicketState,
@@ -314,6 +316,8 @@ export const api = {
       stage_status?: StageStatus;
       stage_updates?: Record<string, StageStatus>;
       auto_state?: boolean;
+      /** Reparent; "" detaches (legal only for a milestone). */
+      parent_ticket_id?: string;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}`, {
@@ -392,6 +396,7 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...initiativeApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",

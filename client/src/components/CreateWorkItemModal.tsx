@@ -7,12 +7,15 @@ import { ParentTicketSelector } from "./ParentTicketSelector";
 import {
   allowedChildTypes,
   defaultChildType,
+  isRootType,
+  isWorkspaceless,
   workItemTypeLabel,
 } from "../lib/workItemHierarchy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
+  { id: "initiative", label: "Initiative" },
   { id: "milestone", label: "Milestone" },
   { id: "feature", label: "Feature" },
   { id: "capability", label: "Capability" },
@@ -165,7 +168,7 @@ export function CreateWorkItemModal({
 
   useEffect(() => {
     if (lockParent) return;
-    if (draft.work_item_type === "milestone") {
+    if (isRootType(draft.work_item_type)) {
       if (draft.parent_ticket_id) {
         setDraft((d) => ({ ...d, parent_ticket_id: "" }));
       }
@@ -192,10 +195,11 @@ export function CreateWorkItemModal({
 
   if (!open) return null;
 
-  const needsParent = draft.work_item_type !== "milestone";
+  const needsParent = !isRootType(draft.work_item_type);
+  const workspaceless = isWorkspaceless(draft.work_item_type);
   const canSubmit =
     draft.title.trim().length > 0 &&
-    !!workspaceSlug &&
+    (workspaceless || !!workspaceSlug) &&
     (!needsParent || !!draft.parent_ticket_id);
 
   const handleCreate = () => {
@@ -206,7 +210,7 @@ export function CreateWorkItemModal({
   const modalTitle = lockParent ? "Add sub-item" : "New work item";
   const modalSubtitle = lockParent
     ? `Under ${parentTicketTitle || parentTicketId}`
-    : "Add a milestone, container, task, or bug to the tree";
+    : "Add an initiative, milestone, container, task, or bug to the tree";
 
   return (
     <>
@@ -220,7 +224,7 @@ export function CreateWorkItemModal({
       >
         <div className="modal-header">
           <div>
-            <div className="state-label">{workspaceSlug}</div>
+            <div className="state-label">{workspaceless ? "All workspaces" : workspaceSlug}</div>
             <h2 id="create-work-item-title" className="modal-title">
               {modalTitle}
             </h2>
@@ -230,7 +234,7 @@ export function CreateWorkItemModal({
         </div>
 
         <div className="modal-body">
-          {workspacePicker && !lockParent && (
+          {workspacePicker && !workspaceless && (
             <div className="modal-field">
               <div className="modal-field-label">Workspace</div>
               <select
@@ -253,8 +257,14 @@ export function CreateWorkItemModal({
             </div>
           )}
 
-          {!workspaceSlug && (
-            <p className="modal-hint">Select a workspace before creating work items.</p>
+          {workspaceless ? (
+            <p className="modal-hint">
+              An initiative spans workspaces. Attach milestones from any workspace once it exists.
+            </p>
+          ) : (
+            !workspaceSlug && (
+              <p className="modal-hint">Select a workspace before creating work items.</p>
+            )
           )}
 
           {errorMessage && (

@@ -305,9 +305,8 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return _normalize_get_ticket(args)
 
     if name == "loregarden_list_tickets":
-        payload = {
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-        }
+        # Optional: listing initiatives is global; list_tickets_mcp owns the error.
+        payload = {"workspace_slug": _coerce_optional_string(args.get("workspace_slug")) or ""}
         for field in (
             "state",
             "work_item_type",
@@ -479,10 +478,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.LIST_TICKETS,
-        "description": "Search and list tickets in a workspace (flat results for discovery).",
+        "description": (
+            "Search and list tickets in a workspace (flat results for discovery). "
+            "With work_item_type=initiative, lists initiatives across all workspaces."
+        ),
         "inputSchema": _tool_schema(
             properties={
-                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug, e.g. loregarden. Required unless listing initiatives."
+                ),
                 "search": _string_prop("Optional title or external_id substring search."),
                 "state": _enum_string_prop(
                     "Optional ticket state filter.",
@@ -490,7 +494,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "work_item_type": _enum_string_prop(
                     "Optional work item type filter.",
-                    ["milestone", "feature", "capability", "task", "bug"],
+                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
                 ),
                 "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
                 "parent_external_id": _string_prop("Optional parent external id."),
@@ -500,7 +504,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 },
                 "limit": _integer_prop("Max results (default 50, max 100)."),
             },
-            required=["workspace_slug"],
+            required=[],
         ),
     },
     {
@@ -849,17 +853,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.CREATE_TICKET,
         "description": (
             "Create a new ticket. Mirrors the TicketCreate schema — validation "
-            "(including milestone-cannot-have-parent and hierarchy rules) is owned "
+            "(hierarchy rules: initiatives are parentless and own milestones) is owned "
             "by TicketService.create_ticket, not reimplemented here. Returns the "
             "created ticket's id, external_id, and title."
         ),
         "inputSchema": _tool_schema(
             properties={
-                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug, e.g. loregarden. Omit for an initiative, which "
+                    "spans workspaces; required for every other type."
+                ),
                 "title": _string_prop("Ticket title."),
                 "work_item_type": _enum_string_prop(
                     "Work item type (default task).",
-                    ["milestone", "feature", "capability", "task", "bug"],
+                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
                 ),
                 "description": _string_prop("Ticket description (default empty)."),
                 "acceptance_criteria": {
@@ -876,7 +883,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "way loregarden_get_ticket resolves ticket_id."
                 ),
             },
-            required=["workspace_slug", "title"],
+            required=["title"],
         ),
     },
     {
@@ -1138,7 +1145,7 @@ def _create_ticket(
             raise ValueError(f"Parent ticket not found: {parent}") from exc
 
     ticket = TicketService(session).create_ticket(
-        workspace_slug=arguments["workspace_slug"],
+        workspace_slug=arguments.get("workspace_slug"),
         title=arguments["title"],
         work_item_type=work_item_type,
         parent_ticket_id=parent_ticket_id,
@@ -1251,7 +1258,7 @@ def execute_tool(
         return json.dumps(
             list_tickets_mcp(
                 session,
-                workspace_slug=arguments["workspace_slug"],
+                workspace_slug=arguments.get("workspace_slug") or "",
                 state=arguments.get("state"),
                 work_item_type=arguments.get("work_item_type"),
                 search=arguments.get("search"),

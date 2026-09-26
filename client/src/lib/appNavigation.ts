@@ -1,6 +1,15 @@
 import { looksLikeTicketUuid } from "./ticketIds";
 
-export type AppPage = "home" | "chat" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
+export type AppPage =
+  | "home"
+  | "chat"
+  | "dashboard"
+  | "initiatives"
+  | "studio"
+  | "editor"
+  | "queue"
+  | "branch-triage"
+  | "mcp";
 
 export type ArtifactTab =
   | "diff"
@@ -71,6 +80,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
   chat: "/chat",
   dashboard: "/console",
+  initiatives: "/initiatives",
   studio: "/studio/agents",
   editor: "/editor",
   queue: "/queue",
@@ -211,6 +221,7 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/console" || pathname.startsWith("/console/")) return "dashboard";
+  if (pathname === "/initiatives" || pathname.startsWith("/initiatives/")) return "initiatives";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
   if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
