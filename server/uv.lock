@@ -686,7 +686,7 @@ wheels = [
 [[package]]
 name = "lore-eden"
 version = "0.1.0"
-source = { git = "https://github.com/laazer/lore-eden?subdirectory=python&rev=3403154fe64812c292dfdd950202905a8bc3a050#3403154fe64812c292dfdd950202905a8bc3a050" }
+source = { git = "https://github.com/laazer/lore-eden?subdirectory=python&rev=495c035383047054b070fdaf17ba7711a7361e18#495c035383047054b070fdaf17ba7711a7361e18" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -741,7 +741,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "lore-eden", git = "https://github.com/laazer/lore-eden?subdirectory=python&rev=3403154fe64812c292dfdd950202905a8bc3a050" },
+    { name = "lore-eden", git = "https://github.com/laazer/lore-eden?subdirectory=python&rev=495c035383047054b070fdaf17ba7711a7361e18" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
