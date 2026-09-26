@@ -18,6 +18,7 @@ between the two paths now: approvals, not visibility.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import tempfile
@@ -35,6 +36,8 @@ from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.run_stream_sink import RunStreamSink
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_workspace_root
+
+logger = logging.getLogger(__name__)
 
 MIN_AGENT_TIMEOUT_SECONDS = 30
 
@@ -57,6 +60,22 @@ class CliAgentProfile:
     timeout_env: str
     tmp_prefix: str
     reply_cap: int
+
+
+REPLY_TRUNCATION_MARKER = "\n\n[Reply truncated at {cap:,} of {total:,} characters.]"
+
+
+def cap_reply(reply: str, cap: int, *, label: str) -> str:
+    """Bound a reply at `cap` characters, saying so where the operator will see it.
+
+    The cap is a guard against runaway output, not a length budget: a reply that hits it
+    keeps a visible marker at the cut and logs a warning, so a truncated answer never
+    reads as a complete one.
+    """
+    if len(reply) <= cap:
+        return reply
+    logger.warning("%s reply truncated from %d to %d characters", label, len(reply), cap)
+    return reply[:cap] + REPLY_TRUNCATION_MARKER.format(cap=cap, total=len(reply))
 
 
 def stub_response(profile: CliAgentProfile) -> str | None:
@@ -248,4 +267,8 @@ def run_cli_agent_turn(
         reply = extract_triage_reply(stdout_text)
         if not reply:
             raise RuntimeError(f"{profile.assistant_label} returned an empty response")
-        return reply[: reply_cap if reply_cap is not None else profile.reply_cap]
+        return cap_reply(
+            reply,
+            reply_cap if reply_cap is not None else profile.reply_cap,
+            label=profile.assistant_label,
+        )
