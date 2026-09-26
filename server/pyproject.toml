@@ -17,6 +17,7 @@ dependencies = [
     "httpx>=0.27.0",
     "trafilatura>=2.0",
     "python-multipart>=0.0.9",
+    "lore-eden",
 ]
 
 # The entry point for anything outside this repo — another service, a cron job, an MCP
@@ -55,6 +56,13 @@ dev = [
 build = [
     "pyinstaller>=6.11.0",
 ]
+
+[tool.uv.sources]
+# Local instances (`services/local_instances.py`) run on lore-eden's launcher,
+# registry and router. Pinned to a commit on its main: lore-eden is consumed unpublished
+# while its API settles (its CONTRIBUTING, rule 3), and a moving branch would
+# change what this server runs without a commit here saying so.
+lore-eden = { git = "https://github.com/laazer/lore-eden", subdirectory = "python", rev = "495c035383047054b070fdaf17ba7711a7361e18" }
 
 [tool.uv]
 default-groups = ["dev"]

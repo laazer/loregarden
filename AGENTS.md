@@ -62,6 +62,7 @@ loregarden/
 | Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify — docker ps prints nothing both when nothing matched and when it could not ask |
 | Docker waits / throttling | `services/docker_wait_estimate.py`, `services/docker_poll_guard.py` | `estimate_waits` separates a forecast from a TTL bound; `note_poll` refuses a fast poll without stamping the clock |
 | Is the ledger being used? | `services/docker_unaccounted.py` | `unaccounted_containers` is the only signal distinguishing an adopted ledger from an ignored one — both otherwise read as capacity-free with nothing reaped |
+| Local instances (branch servers/clients) | `services/local_instances.py`, `api/local_instances.py` | Templates only; launching, the registry (`~/.lore-eden/instances`) and the router are `lore_eden.instances`. A branch server boots with `LOREGARDEN_SANDBOX=1` on a DB snapshot — see `Settings.sandbox`. `python -m lore_eden.instances --project loregarden url main` finds main |
 
 ## THE DATABASE IS THE SOURCE OF TRUTH
 

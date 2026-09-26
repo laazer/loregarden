@@ -62,5 +62,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
+  // No Content has no body to parse; `res.json()` would throw on success.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
