@@ -16,10 +16,17 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
-from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState, RelationDirection
 from loregarden.services import term_overlap
 from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
 from loregarden.services.memory_export import export_node_to_vault
+from loregarden.services.memory_history import (
+    ChangeAttribution,
+    NodeContent,
+    ensure_history_schema,
+    list_versions,
+    record_superseded,
+)
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
@@ -71,6 +78,18 @@ class MemoryStoreReadError(Exception):
     def __init__(self, store: MemoryStoreKind) -> None:
         super().__init__(f"{store.value} read failed")
         self.store = store
+
+
+class MemoryNodeNotFoundError(LookupError):
+    """No graph node has this id in this workspace's shard."""
+
+
+class MemoryWriteNotAppliedError(RuntimeError):
+    """A write returned but the row read back does not carry it.
+
+    Raised rather than returning the unchanged row: a 200 describing a flag
+    that was never set is the failure an operator can least afford to miss.
+    """
 
 
 def _utcnow_iso() -> str:
@@ -552,6 +571,7 @@ class MemoryGraphStore:
                 """
             )
             self._ensure_discredited_column(conn)
+            ensure_history_schema(conn)
 
     @staticmethod
     def _ensure_discredited_column(conn: sqlite3.Connection) -> None:
@@ -587,13 +607,21 @@ class MemoryGraphStore:
         workspace_slug: str = "",
         node_type: str = "memory",
         discredited: bool | None = None,
+        attribution: ChangeAttribution | None = None,
     ) -> dict[str, Any]:
+        """Create or replace a node, preserving the version an update replaces.
+
+        The prior version is written to `memory_node_versions` inside the same
+        transaction as the update, so an update cannot land without its history
+        (see `services.memory_history`). A create writes no history row.
+        """
         node_id = node_id.strip() or str(uuid4())
         now = _utcnow_iso()
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT created_at, discredited FROM memory_nodes WHERE id = ?",
+                "SELECT title, body, tags_json, updated_at, created_at, discredited "
+                "FROM memory_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
@@ -601,6 +629,17 @@ class MemoryGraphStore:
                 flag = int(row["discredited"]) if row else 0
             else:
                 flag = 1 if discredited else 0
+            if row:
+                record_superseded(
+                    conn,
+                    node_id=node_id,
+                    prior=row,
+                    incoming=NodeContent(
+                        title=title, body=body, tags_json=tags_json, discredited=bool(flag)
+                    ),
+                    superseded_at=now,
+                    attribution=attribution or ChangeAttribution(),
+                )
             conn.execute(
                 """
                 INSERT INTO memory_nodes (
@@ -669,13 +708,66 @@ class MemoryGraphStore:
             "created_at": now,
         }
 
+    def get_node(self, node_id: str) -> dict[str, Any] | None:
+        """One node by id, discredited or not — None only when it does not exist.
+
+        An operator read: the discredit control acts on exactly the rows
+        `_VISIBLE_NODES` hides, so this must not filter them.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT {self._NODE_COLUMNS} FROM memory_nodes WHERE id = ?", (node_id,)
+            ).fetchone()
+        return self._node_row(row) if row else None
+
+    def related_nodes(self, node_ids: list[str]) -> list[dict[str, Any]]:
+        """Every visible node one `memory_relations` edge away, in both directions.
+
+        A reader only (179): `memory_relations` is the sole edge store, and this
+        writes nothing. Each row names the surfaced node it hangs off
+        (`anchor_id`), the neighbour's title and `updated_at`, the edge's
+        `relation_type`, and `direction` — ``out`` when the anchor is the
+        edge's source, ``in`` when it is the target. No bodies: a digest that
+        carried them would be a second briefing.
+
+        Discredited neighbours are excluded here, like every other read path
+        (182). Ranking and capping are the caller's — see
+        `inherited_wisdom.rank_related`.
+        """
+        if not node_ids:
+            return []
+        marks = ", ".join("?" for _ in node_ids)
+        visible = "COALESCE(n.discredited, 0) = 0"
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT r.source_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+                       r.relation_type, 'out' AS direction
+                FROM memory_relations r JOIN memory_nodes n ON n.id = r.target_id
+                WHERE r.source_id IN ({marks}) AND {visible}
+                UNION ALL
+                SELECT r.target_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+                       r.relation_type, 'in' AS direction
+                FROM memory_relations r JOIN memory_nodes n ON n.id = r.source_id
+                WHERE r.target_id IN ({marks}) AND {visible}
+                """,
+                (*node_ids, *node_ids),
+            ).fetchall()
+        return [{**dict(row), "direction": RelationDirection(row["direction"])} for row in rows]
+
+    def node_versions(self, node_id: str) -> list[dict[str, Any]]:
+        """The retained superseded versions of a node, oldest first."""
+        with self._connect() as conn:
+            return list_versions(conn, node_id)
+
     def list_nodes(
         self,
         *,
         workspace_slug: str = "",
         limit: int = RECALL_CANDIDATE_CAP,
+        include_discredited: bool = False,
     ) -> list[dict[str, Any]]:
-        """Visible nodes in the workspace, newest first — enumeration, not matching.
+        """Nodes in the workspace, newest first — enumeration, not matching.
 
         `search()` is the other reader of this table, and it is a
         `LIKE '%query%'` match. Ranking its output would rank whatever survived
@@ -683,32 +775,27 @@ class MemoryGraphStore:
         needs a surface that filters on nothing except the discredited flag.
         The default is `RECALL_CANDIDATE_CAP`, mirroring the Obsidian side so
         the graph cannot become the new cost centre.
+
+        `include_discredited` is for the operator surface only, which has to
+        show the rows it can restore. Every agent read path takes the default.
         """
         slug = workspace_slug.strip()
+        clauses = ["workspace_slug = ?"] if slug else []
+        params: list[Any] = [slug] if slug else []
+        if not include_discredited:
+            clauses.append(self._VISIBLE_NODES)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._connect() as conn:
-            if slug:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE workspace_slug = ?
-                      AND {self._VISIBLE_NODES}
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (slug, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE {self._VISIBLE_NODES}
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT {self._NODE_COLUMNS}
+                FROM memory_nodes
+                {where}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
         return [self._node_row(row) for row in rows]
 
     def search(
@@ -938,6 +1025,67 @@ class AgentMemoryService:
                 result["obsidian"] = exported
         return result
 
+    def _require_graph(self, workspace_slug: str) -> MemoryGraphStore:
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph:
+            raise ValueError("Memory graph SQLite is not configured.")
+        return graph
+
+    def list_graph_nodes(
+        self, *, workspace_slug: str, limit: int, include_discredited: bool
+    ) -> list[dict[str, Any]]:
+        """Operator listing of graph nodes. Agents use `recall_related`/`search`."""
+        return self._require_graph(workspace_slug).list_nodes(
+            workspace_slug=workspace_slug,
+            limit=limit,
+            include_discredited=include_discredited,
+        )
+
+    def node_detail(self, *, node_id: str, workspace_slug: str) -> dict[str, Any]:
+        """One node, discredited or not, with its retained version history."""
+        graph = self._require_graph(workspace_slug)
+        node = graph.get_node(node_id)
+        if node is None:
+            raise MemoryNodeNotFoundError(node_id)
+        return {**node, "versions": graph.node_versions(node_id)}
+
+    def set_discredited(
+        self,
+        *,
+        node_id: str,
+        workspace_slug: str,
+        discredited: bool,
+        reason: str,
+        writer: str,
+    ) -> dict[str, Any]:
+        """Mark a node wrong (or restore it), recording who and why.
+
+        Goes through `upsert_node` like every other graph write, so the version
+        it replaces — and the reason — land in `memory_node_versions`. The row
+        is read back afterwards: a write that did not stick raises.
+        """
+        graph = self._require_graph(workspace_slug)
+        node = graph.get_node(node_id)
+        if node is None:
+            raise MemoryNodeNotFoundError(node_id)
+        graph.upsert_node(
+            node_id=node_id,
+            title=node["title"],
+            body=node["body"],
+            tags=node["tags"],
+            ticket_id=node["ticket_id"],
+            workspace_slug=node["workspace_slug"],
+            node_type=node["node_type"],
+            discredited=discredited,
+            attribution=ChangeAttribution(writer=writer, note=reason),
+        )
+        stored = graph.get_node(node_id)
+        if stored is None or stored["discredited"] is not discredited:
+            raise MemoryWriteNotAppliedError(f"discredited={discredited} did not persist")
+        if self.obsidian:
+            export_node_to_vault(self, node=stored)
+        return {**stored, "versions": graph.node_versions(node_id)}
+
     def upsert_blog_post(
         self,
         *,
@@ -1101,6 +1249,20 @@ class AgentMemoryService:
             seen.add(key)
             deduped.append(row)
         return deduped[:limit]
+
+    def related_digest_rows(
+        self, node_ids: list[str], *, workspace_slug: str = ""
+    ) -> list[dict[str, Any]]:
+        """`MemoryGraphStore.related_nodes` for the workspace's graph, read-labelled.
+
+        No graph configured means no edges to read, which is `[]` — the same
+        answer `recall_related` gives, since no hits could have come from it.
+        """
+        try:
+            graph = self._graph_for_workspace(workspace_slug)
+            return graph.related_nodes(node_ids) if graph else []
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
 
     def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
         graph = self._graph_for_workspace(workspace_slug)

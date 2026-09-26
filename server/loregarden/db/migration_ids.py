@@ -158,6 +158,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0137_block_kind_in_role_prompts",
     "0139_block_kind_in_role_prompts_again",
     "0140_ticket_landing_columns",
+    "0141_learning_applications_table",
 )
 
 

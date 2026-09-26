@@ -3,6 +3,7 @@ import logging
 import subprocess
 import tempfile
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 from loregarden.agents.cli_adapters import (
@@ -72,6 +73,7 @@ from loregarden.services.handoff_boundary import (
     verdict_proceeds,
     verify_run_boundary,
 )
+from loregarden.services.learning_outcomes import confidence_for
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -701,11 +703,9 @@ class CliAgentExecutor:
         that a seam which stopped recording shows up as a hole; a second,
         unrecorded assembly reopens the blindness this exists to close.
 
-        Ticket 178 (the observed-outcome ladder) attaches its surfaced-learning
-        rows here, by foreign-keying the `memory_briefings.id` that
-        `record_briefing` returns. That work extends `record_briefing`'s
-        signature and body — not this file, which only has to keep calling it
-        once per assembly.
+        The observed-outcome ladder (178) rides on this seam: the briefing is
+        ranked and annotated by `learning_outcomes.confidence_for`, and
+        `record_briefing` links the learnings it injected to this run.
 
         Note for whoever extends the figures: `RECALL_CANDIDATE_CAP`
         (`services/memory_store.py`) is a second, still-unreported truncation
@@ -725,7 +725,11 @@ class CliAgentExecutor:
                 assembly_source=assembly_source,
             )
             return ""
-        result = build_inherited_wisdom(ticket, workspace.slug)
+        result = build_inherited_wisdom(
+            ticket,
+            workspace.slug,
+            confidence_lookup=partial(confidence_for, self.session),
+        )
         record_briefing(
             self.session,
             run,
