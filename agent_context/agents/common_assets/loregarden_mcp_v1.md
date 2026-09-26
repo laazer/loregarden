@@ -196,6 +196,8 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 |-----------|------|
 | Read current stage map, blocking issues, active orchestration | `loregarden_get_ticket` or `loregarden_get_ticket_by_external` |
 | Find tickets by title/slug, list siblings/children, browse workspace | `loregarden_list_tickets` |
+| List initiatives (cross-workspace parents of milestones; `init-*` ids) | `loregarden_list_tickets` with `work_item_type=initiative`, no `workspace_slug` |
+| Create an initiative / attach a milestone to one | `loregarden_create_ticket` with `work_item_type=initiative`, no `workspace_slug`; then `loregarden_update_ticket` on the milestone with `parent=<init-id>` (`""` detaches) |
 | Unrecoverable failure | `loregarden_block_ticket` |
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |

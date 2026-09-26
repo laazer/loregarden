@@ -71,7 +71,10 @@ def test_mcp_tool_schemas_are_strict():
     assert schema["properties"]["ticket_id"]["description"]
     assert "workspace_slug" in schema["properties"]
     list_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "loregarden_list_tickets")
-    assert "workspace_slug" in list_tool["inputSchema"]["required"]
+    # Optional so initiatives (bound to no workspace) can be listed; list_tickets_mcp
+    # raises when it is missing for any other type (test_initiative_management).
+    assert "workspace_slug" in list_tool["inputSchema"]["properties"]
+    assert list_tool["inputSchema"]["additionalProperties"] is False
 
 
 def test_mcp_normalize_ticket_id_aliases():

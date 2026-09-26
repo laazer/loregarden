@@ -24,6 +24,7 @@ from loregarden.api import (
     editor,
     events,
     inbox,
+    initiatives,
     mcp,
     mcp_servers,
     memory,
@@ -200,6 +201,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 
 
 app.include_router(tickets.router, prefix="/api")
+app.include_router(initiatives.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(calendar_events.router, prefix="/api")

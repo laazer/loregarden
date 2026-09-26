@@ -110,6 +110,7 @@ function FilterDropdown<T extends string>({
 }
 
 const TYPE_FILTERS: { id: WorkItemType; label: string }[] = [
+  { id: "initiative", label: "Initiatives" },
   { id: "milestone", label: "Milestones" },
   { id: "feature", label: "Features" },
   { id: "capability", label: "Capabilities" },

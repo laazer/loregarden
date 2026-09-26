@@ -1,0 +1,171 @@
+.initiatives-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 960px;
+}
+
+.initiative-card,
+.initiative-create {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.initiative-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.initiative-title {
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: var(--tx);
+}
+
+.initiative-desc {
+  margin: 0;
+  color: var(--txm);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.initiative-state {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.initiative-mono {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.initiative-muted {
+  color: var(--txl);
+  font-size: 11px;
+}
+
+.initiative-hint {
+  margin: 0;
+  color: var(--txl);
+  font-size: 12px;
+}
+
+.initiative-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+
+.initiative-progress-fill {
+  height: 100%;
+  background: var(--grn);
+  transition: width 200ms ease;
+}
+
+.initiative-milestones {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.initiative-milestone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.initiative-milestone-link {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--tx);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  font: inherit;
+}
+
+.initiative-milestone-link:hover,
+.initiative-milestone-link:focus-visible {
+  text-decoration: underline;
+}
+
+.initiative-ws-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--bd2);
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+.initiative-milestone-state {
+  color: var(--txl);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.initiative-attach {
+  display: flex;
+  gap: 8px;
+}
+
+.initiative-attach select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.initiative-small-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.initiative-danger-btn {
+  background: var(--rdl, #ff6a54);
+  border-color: transparent;
+}
+
+.initiative-card-foot,
+.initiative-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.initiative-input {
+  width: 100%;
+  font-size: 12px;
+}
+
+.initiative-skeleton {
+  height: 120px;
+  border-radius: 10px;
+  background: var(--bg2);
+  opacity: 0.6;
+}
