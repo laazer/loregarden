@@ -33,7 +33,8 @@ from __future__ import annotations
 
 import logging
 
-from loregarden.models.domain import Ticket, TicketState
+from loregarden.core.event_bus import event_bus
+from loregarden.models.domain import EventType, Ticket, TicketState
 from loregarden.services.ticket_state_service import derive
 from sqlmodel import Session, col, select
 
@@ -94,6 +95,23 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
     return derive(parent, target, actor="rollup")
 
 
+def _announce_rollup(session: Session, changed: list[Ticket]) -> None:
+    """One TicketStateChanged per parent the walk just committed.
+
+    Called only after that commit. ``publish`` commits on its own, so doing it
+    inside the ancestor walk would persist a partial chain. The boot sweep
+    never enters ``reconcile_ancestors``, so it stays silent.
+    """
+    for parent in changed:
+        event_bus.publish(
+            session,
+            EventType.TICKET_STATE_CHANGED,
+            workspace_id=parent.workspace_id,
+            ticket_id=parent.id,
+            payload={"state": parent.state.value, "actor": "rollup"},
+        )
+
+
 def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
     """Walk up from a changed ticket, reconciling every parent above it.
 
@@ -117,6 +135,7 @@ def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
         parent_id = parent.parent_ticket_id
     if changed:
         session.commit()
+        _announce_rollup(session, changed)
     return changed
 
 
