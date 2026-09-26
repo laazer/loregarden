@@ -56,6 +56,8 @@ STAGE_KEY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("queued_runs", "stop_at_stage_key"),
     ("approvals", "stage_key"),
     ("memory_briefings", "stage_key"),
+    # Added after this migration shipped (0141); guarded like the waiver above.
+    ("learning_applications", "stage_key"),
     ("agent_runs", "stage_key"),
     ("stage_fanout_groups", "stage_key"),
     ("stage_fanout_groups", "pre_fanout_workflow_stage_key"),

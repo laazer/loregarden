@@ -11,6 +11,8 @@ from loregarden.models.domain.enums import *  # noqa: F401,F403
 from loregarden.models.domain.git_tables import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_schemas import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_tables import *  # noqa: F401,F403
+from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
+from loregarden.models.domain.memory_tables import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403
 from loregarden.models.domain.queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403

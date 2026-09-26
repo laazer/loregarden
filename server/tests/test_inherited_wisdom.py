@@ -229,6 +229,7 @@ def test_a_shared_id_learning_appears_once(tmp_path):
         ticket_id="t-01",
         workspace_slug="lg",
         content=_MATCHING_BODY,
+        title="Learning — t-01",
     )
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
@@ -243,6 +244,7 @@ def test_a_learning_whose_body_opens_with_a_heading_appears_once(tmp_path):
         ticket_id="t-02",
         workspace_slug="lg",
         content=_HEADED_BODY,
+        title="Learning — t-02",
     )
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
@@ -270,7 +272,9 @@ def test_the_briefing_reads_the_graph_record_with_or_without_vault(tmp_path):
     graph = _graph_only(tmp_path / "g")
     both = _both(tmp_path / "b")
     for memory in (graph, both):
-        memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
+        memory.append_learning(
+            ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY, title="Learning — t-02"
+        )
 
     ticket = _ticket(title=_REALISTIC_TITLE)
     from_graph = build_inherited_wisdom(ticket, "lg", memory=graph).text
@@ -547,6 +551,7 @@ def test_the_default_char_cap_does_not_bind_on_a_saturated_briefing(tmp_path):
             ticket_id=f"other-{i}",
             workspace_slug="lg",
             content=f"{_MATCHING_BODY}\n\n" + "y" * 800,
+            title=f"Throttled retry lesson {i}",
         )
 
     result = build_inherited_wisdom(ticket, "lg", memory=memory)

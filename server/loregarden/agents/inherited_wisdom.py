@@ -20,13 +20,16 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
+from typing import Any
 
 from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
 from loregarden.services import term_overlap
+from loregarden.services.learning_confidence import UNOBSERVED, LearningConfidence, describe
 from loregarden.services.memory_store import (
     CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
@@ -53,11 +56,22 @@ logger = logging.getLogger(__name__)
 MAX_WISDOM_CHARS = 16000
 _MAX_CHECKPOINTS = 6
 _MAX_MEMORY_HITS = 5
+#: The 1-hop digest's hard caps (179). Per surfaced learning, then per briefing:
+#: a densely connected node gets its best few neighbours and no more, and the
+#: whole digest cannot outgrow a couple of learnings' worth of text however
+#: many edges exist.
+MAX_RELATED_PER_LEARNING = 3
+MAX_RELATED_CHARS = 1200
+_MAX_RELATED_TITLE = 120
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
 _LOG_HEADING = re.compile(r"^# Checkpoint log —.*$", re.M)
 
 #: The stores `store_readiness` reports on — every kind except the factory.
 _READY_STORES = (MemoryStoreKind.CHECKPOINTS, MemoryStoreKind.VAULT, MemoryStoreKind.GRAPH)
+#: Confidence for a set of graph node ids (178). Supplied by the caller, which
+#: owns the database session this module deliberately never imports.
+ConfidenceLookup = Callable[[Sequence[str]], Mapping[str, LearningConfidence]]
+
 #: Durable recall consults GRAPH only (Cutover R5/R8). Checkpoints still read
 #: the vault separately; VAULT is not a durable-memory recall store.
 _RECALL_STORES = (MemoryStoreKind.GRAPH,)
@@ -85,6 +99,14 @@ class InheritedWisdom:
     store_states: Mapping[MemoryStoreKind, MemoryStoreState] = field(default_factory=dict)
     store_errors: tuple[str, ...] = ()
     elapsed_ms: int = 0
+    #: Graph node ids of the learnings that reached `text`, in briefing order.
+    #: What `record_briefing` links to the run (178). Only learnings whose line
+    #: survived truncation: one cut off the prompt was not surfaced.
+    learning_node_ids: tuple[str, ...] = ()
+    related_injected: int = 0
+    #: True when a confidence lookup was supplied and failed, so the learnings
+    #: went out unranked and unannotated rather than silently looking unrated.
+    confidence_unavailable: bool = False
 
     @classmethod
     def not_attempted(cls) -> InheritedWisdom:
@@ -100,7 +122,7 @@ class InheritedWisdom:
 class _Lookup:
     """One store read, and the label for the store if it failed. Module-private."""
 
-    entries: list[str]
+    entries: list[Any]
     store: MemoryStoreKind | None = None
     error: str = ""
 
@@ -176,21 +198,98 @@ def _recall_query(ticket: Ticket) -> str:
     return " ".join(part for part in (ticket.title, ticket.description) if part).strip()
 
 
-def _memory_hits(memory: AgentMemoryService, ticket: Ticket, workspace_slug: str) -> list[str]:
-    """Learnings and memory notes whose text overlaps this ticket."""
+def _memory_hits(
+    memory: AgentMemoryService, ticket: Ticket, workspace_slug: str
+) -> list[dict[str, Any]]:
+    """Graph learnings and memory notes whose text overlaps this ticket, best first."""
     query = _recall_query(ticket)
     if not query:
         return []
     found = memory.recall_related(query, workspace_slug=workspace_slug, limit=_MAX_MEMORY_HITS)
-    hits: list[str] = []
-    for row in found:
-        title = str(row.get("title") or "").strip()
-        summary = " ".join(str(row.get("body") or "").split())[:240]
-        if title:
-            hits.append(f"- **{title}** — {summary}" if summary else f"- **{title}**")
-        if len(hits) >= _MAX_MEMORY_HITS:
-            break
-    return hits
+    return [row for row in found if str(row.get("title") or "").strip()][:_MAX_MEMORY_HITS]
+
+
+def rank_learnings(
+    rows: list[dict[str, Any]], confidence: Mapping[str, LearningConfidence]
+) -> list[dict[str, Any]]:
+    """Order recalled learnings by the lower bound of their confidence (178).
+
+    Superseded learnings go last. Stable, so learnings with equal bounds — every unobserved one — keep their
+    relevance order. The lower bound rather than the mean is what makes this
+    sample-size aware: one lucky clean pass does not outrank a long record.
+    """
+    return sorted(
+        rows,
+        key=lambda row: (
+            bool(row.get("superseded_by")),
+            -confidence.get(row["id"], UNOBSERVED).lower_bound,
+        ),
+    )
+
+
+def rank_related(
+    rows: list[dict[str, Any]], confidence: Mapping[str, LearningConfidence]
+) -> list[dict[str, Any]]:
+    """THE ranking swap point for the 1-hop digest (179).
+
+    Edges whose type is the point come first — a contradiction or a
+    supersession is what an agent must not miss, and a capped digest that
+    dropped one for a plain mention would hide exactly that. Then confidence
+    lower bound, then recency. Change how neighbours are chosen here and
+    nowhere else.
+    """
+    by_recency = sorted(rows, key=lambda row: row.get("updated_at") or "", reverse=True)
+    return sorted(
+        by_recency,
+        key=lambda row: (
+            row["relation_type"] not in _STRUCTURAL_EDGES,
+            -confidence.get(row["node_id"], UNOBSERVED).lower_bound,
+        ),
+    )
+
+
+def _learning_line(row: dict[str, Any], confidence: LearningConfidence | None) -> str:
+    title = str(row.get("title") or "").strip()
+    summary = " ".join(str(row.get("body") or "").split())[:240]
+    line = f"- **{title}** — {summary}" if summary else f"- **{title}**"
+    notes = [describe(confidence)] if confidence is not None else []
+    successors = row.get("superseded_by") or []
+    if successors:
+        # History, not an error: the agent should know it is no longer current
+        # and what replaced it, rather than acting on it as settled.
+        notes.insert(0, "superseded by " + "; ".join(s["title"] for s in successors))
+    return f"{line} _({'; '.join(notes)})_" if notes else line
+
+
+_ARROWS = {RelationDirection.OUT: "→", RelationDirection.IN: "←"}
+#: Edge types ranked ahead of everything else in the digest (see `rank_related`).
+_STRUCTURAL_EDGES = frozenset(
+    {MemoryRelationType.CONTRADICTS.value, MemoryRelationType.SUPERSEDES.value}
+)
+
+
+def _related_lines(
+    anchors: list[str],
+    related: list[dict[str, Any]],
+    confidence: Mapping[str, LearningConfidence],
+) -> dict[str, list[str]]:
+    """The digest lines for each surfaced learning, under both caps."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in related:
+        if row["node_id"] != row["anchor_id"]:
+            grouped.setdefault(row["anchor_id"], []).append(row)
+    lines: dict[str, list[str]] = {}
+    budget = MAX_RELATED_CHARS
+    for anchor in anchors:
+        for row in rank_related(grouped.get(anchor, []), confidence)[:MAX_RELATED_PER_LEARNING]:
+            title = " ".join(str(row["title"]).split())[:_MAX_RELATED_TITLE]
+            flag = "⚠ " if row["relation_type"] == MemoryRelationType.CONTRADICTS else ""
+            line = f"  - {flag}{_ARROWS[row['direction']]} _{row['relation_type']}_: {title}"
+            if len(line) + 1 > budget:
+                return lines
+            budget -= len(line) + 1
+            lines.setdefault(anchor, []).append(line)
+    return lines
 
 
 def _safely(
@@ -234,6 +333,7 @@ def build_inherited_wisdom(
     *,
     memory: AgentMemoryService | None = None,
     max_chars: int = MAX_WISDOM_CHARS,
+    confidence_lookup: ConfidenceLookup | None = None,
 ) -> InheritedWisdom:
     """Checkpoints and learnings this ticket already carries, plus how it went.
 
@@ -288,14 +388,43 @@ def build_inherited_wisdom(
         default_store=MemoryStoreKind.GRAPH,
     )
 
+    anchors = [row["id"] for row in hits.entries]
+    related = (
+        _safely(
+            lambda m, _t, slug: m.related_digest_rows(anchors, workspace_slug=slug),
+            store,
+            ticket,
+            workspace_slug,
+            label="related learnings",
+            default_store=MemoryStoreKind.GRAPH,
+        )
+        if anchors
+        else _Lookup(entries=[])
+    )
+
     errors: list[str] = []
-    for lookup in (checkpoints, hits):
+    for lookup in (checkpoints, hits, related):
         if lookup.store is None:
             continue
         states[lookup.store] = MemoryStoreState.ERRORED
         errors.append(f"{lookup.store.value}:{lookup.error}")
 
-    joined = _assemble(checkpoints.entries, hits.entries)
+    confidence, confidence_unavailable = _confidences(
+        confidence_lookup, [*anchors, *(row["node_id"] for row in related.entries)], ticket
+    )
+    ranked = rank_learnings(hits.entries, confidence)
+    digest = _related_lines([row["id"] for row in ranked], related.entries, confidence)
+    annotate = confidence_lookup is not None and not confidence_unavailable
+    learning_lines = [
+        _learning_line(row, confidence.get(row["id"], UNOBSERVED) if annotate else None)
+        for row in ranked
+    ]
+    learning_blocks = [
+        "\n".join([line, *digest.get(row["id"], [])])
+        for line, row in zip(learning_lines, ranked, strict=True)
+    ]
+
+    joined = _assemble(checkpoints.entries, learning_blocks)
     text = joined[:max_chars]
     return InheritedWisdom(
         text=text,
@@ -313,7 +442,32 @@ def build_inherited_wisdom(
         store_states=states,
         store_errors=tuple(sorted(errors)),
         elapsed_ms=_elapsed_ms(started),
+        learning_node_ids=tuple(
+            row["id"] for line, row in zip(learning_lines, ranked, strict=True) if line in text
+        ),
+        related_injected=sum(len(lines) for lines in digest.values()),
+        confidence_unavailable=confidence_unavailable,
     )
+
+
+def _confidences(
+    lookup: ConfidenceLookup | None, node_ids: list[str], ticket: Ticket
+) -> tuple[Mapping[str, LearningConfidence], bool]:
+    """Confidence for these nodes, and whether the lookup failed.
+
+    A failed lookup degrades to an unranked, unannotated section — the
+    briefing is never-fatal — and says so on the result and in the log, so it
+    cannot pass for a corpus in which nothing has been observed yet.
+    """
+    if lookup is None or not node_ids:
+        return {}, False
+    try:
+        return lookup(node_ids), False
+    except Exception:  # noqa: BLE001 - optional signal; reported on the result and logged
+        logger.warning(
+            "Inherited wisdom: confidence unavailable for ticket %s", ticket.id, exc_info=True
+        )
+        return {}, True
 
 
 def _bullet(entry: str) -> str:
