@@ -22,7 +22,7 @@ export type TicketState =
  */
 export type TicketActivity = "running" | "awaiting" | "queued" | "idle";
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
-export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
+export type WorkItemType = "initiative" | "milestone" | "feature" | "capability" | "task" | "bug";
 
 export interface TicketSummary {
   id: string;

@@ -18,6 +18,8 @@ from loregarden.config import (
 )
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
 from loregarden.services import term_overlap
+from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
+from loregarden.services.memory_export import export_node_to_vault
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
@@ -185,6 +187,7 @@ class ObsidianMemoryStore:
         workspace_slug: str = "",
         note_type: str = "memory",
         discredited: bool | None = None,
+        derived: bool = False,
     ) -> MemoryNote:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
@@ -217,6 +220,7 @@ class ObsidianMemoryStore:
                 "created": created_at,
                 "updated": now,
                 "discredited": True if flag else None,
+                "derived": True if derived else None,
             }
         )
         path.write_text(f"{frontmatter}\n\n# {title}\n\n{body.strip()}\n", encoding="utf-8")
@@ -346,20 +350,37 @@ class ObsidianMemoryStore:
                 workspace_slug, include_checkpoints=include_checkpoints
             )
         notes: list[MemoryNote] = []
+        for path in self._iter_note_paths(roots):
+            note = self._read_note(path)
+            if note and self._note_visible(
+                note, note_type=note_type, workspace_slug=workspace_slug
+            ):
+                notes.append(note)
+            if len(notes) >= limit:
+                return notes
+        return notes
+
+    @staticmethod
+    def _iter_note_paths(roots: list[Path]):
         for root in roots:
             if not root.is_dir():
                 continue
             for path in sorted(root.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-                note = self._read_note(path)
-                if note and (not note_type or note.note_type == note_type):
-                    if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
-                        continue
-                    if note.discredited:
-                        continue
-                    notes.append(note)
-                if len(notes) >= limit:
-                    return notes
-        return notes
+                if "_orphans" not in path.parts:
+                    yield path
+
+    @staticmethod
+    def _note_visible(
+        note: MemoryNote,
+        *,
+        note_type: str,  # py-org: allow-string — open filter; "" means any note type
+        workspace_slug: str,
+    ) -> bool:
+        if note_type and note.note_type != note_type:
+            return False
+        if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
+            return False
+        return not note.discredited
 
     def _standard_note_roots(self, workspace_slug: str, *, include_checkpoints: bool) -> list[Path]:
         if workspace_slug.strip():
@@ -855,35 +876,29 @@ class AgentMemoryService:
         content: str,
         tags: list[str] | None = None,
     ) -> dict[str, Any]:
+        # Cutover R2 — GRAPH is the record; vault is a labelled export. Fail closed
+        # without a graph: vault-only peer writes are not a valid path.
         graph = self._graph_for_workspace(workspace_slug)
-        if not self.obsidian and not graph:
+        if not graph:
             raise ValueError(
-                "No memory backend configured. Set LOREGARDEN_OBSIDIAN_VAULT_DIR and/or "
-                "LOREGARDEN_MEMORY_SQLITE_URL (or enable iCloud defaults)."
+                "Memory graph SQLite is not configured. Durable learnings require "
+                "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
+                "are not allowed."
             )
         result: dict[str, Any] = {"ticket_id": ticket_id, "workspace_slug": workspace_slug}
+        node = graph.upsert_node(
+            title=f"Learning — {ticket_id}",
+            body=content,
+            tags=["learning", "loregarden", *(tags or [])],
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            node_type="learning",
+        )
+        result["graph"] = node
         if self.obsidian:
-            note = self.obsidian.append_learning(
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                content=content,
-                tags=tags,
-            )
-            result["obsidian"] = {
-                "id": note.id,
-                "path": note.path,
-                "updated_at": note.updated_at,
-            }
-        if graph:
-            node = graph.upsert_node(
-                title=f"Learning — {ticket_id}",
-                body=content,
-                tags=["learning", "loregarden", *(tags or [])],
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                node_type="learning",
-            )
-            result["graph"] = node
+            exported = export_node_to_vault(self, node=node)
+            if exported:
+                result["obsidian"] = exported
         return result
 
     def upsert_memory(
@@ -898,33 +913,29 @@ class AgentMemoryService:
         discredited: bool | None = None,
     ) -> dict[str, Any]:
         graph = self._graph_for_workspace(workspace_slug)
-        if not self.obsidian and not graph:
-            raise ValueError("No memory backend configured.")
+        if not graph:
+            raise ValueError(
+                "Memory graph SQLite is not configured. Durable memory requires "
+                "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
+                "are not allowed."
+            )
         node_id = node_id.strip() or str(uuid4())
         result: dict[str, Any] = {}
+        node = graph.upsert_node(
+            node_id=node_id,
+            title=title,
+            body=body,
+            tags=tags,
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            node_type="memory",
+            discredited=discredited,
+        )
+        result["graph"] = node
         if self.obsidian:
-            note = self.obsidian.upsert_note(
-                note_id=node_id,
-                title=title,
-                body=body,
-                tags=tags,
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                note_type="memory",
-                discredited=discredited,
-            )
-            result["obsidian"] = {"id": note.id, "path": note.path, "updated_at": note.updated_at}
-        if graph:
-            result["graph"] = graph.upsert_node(
-                node_id=node_id,
-                title=title,
-                body=body,
-                tags=tags,
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                node_type="memory",
-                discredited=discredited,
-            )
+            exported = export_node_to_vault(self, node=node)
+            if exported:
+                result["obsidian"] = exported
         return result
 
     def upsert_blog_post(
@@ -1004,6 +1015,8 @@ class AgentMemoryService:
         workspace_slug: str = "",
         limit: int = 20,
     ) -> dict[str, Any]:
+        # Cutover R6 — envelope unchanged; membership filtered by kind.
+        # Vault hits: blog_post | checkpoint only. Graph hits: memory | learning.
         obsidian_hits: list[dict[str, Any]] = []
         graph_hits: list[dict[str, Any]] = []
         graph = self._graph_for_workspace(workspace_slug)
@@ -1021,11 +1034,13 @@ class AgentMemoryService:
                     "source": "obsidian",
                 }
                 for n in self.obsidian.search(query, workspace_slug=workspace_slug, limit=limit)
+                if n.note_type in SEARCH_OBSIDIAN_KINDS
             ]
         if graph:
             graph_hits = [
                 {**row, "source": "sqlite"}
                 for row in graph.search(query, workspace_slug=workspace_slug, limit=limit)
+                if row.get("node_type") in SEARCH_GRAPH_KINDS
             ]
         return {
             "query": query,
@@ -1041,18 +1056,11 @@ class AgentMemoryService:
 
     @staticmethod
     def _content_key(title: str, body: str) -> tuple[str, str]:
-        """Identify one piece of remembered content across both stores.
+        """Identify one piece of remembered content for recall ranking.
 
-        `append_learning` and `upsert_memory` dual-write the same text to
-        Obsidian and to the graph under two different uuid4s, so ids cannot
-        answer "is this the same learning twice?" — only the content can.
-
-        The two copies read back byte-identical (`_read_note` returns the body
-        its writer passed, not the file's rendering of it), so this only has to
-        absorb whitespace and case. It deliberately does not strip markdown:
-        a key that reinterprets the text is a key that can disagree with itself
-        on content it was not anticipating, which is exactly how the leading-
-        heading strip this replaced broke on bodies opening with `## Context`.
+        Shared node_ids mean vault export and graph share an id after cutover,
+        but content-key dedupe remains for any pre-cutover residue still in a
+        candidate list.
         """
         return (
             (title or "").strip().casefold(),
@@ -1066,38 +1074,19 @@ class AgentMemoryService:
         workspace_slug: str = "",
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Notes and nodes whose wording overlaps `query_text`, best match first.
+        """GRAPH-only durable knowledge whose wording overlaps ``query_text``.
 
-        This is the automatic inherited-wisdom briefing's read path
-        (`agents/inherited_wisdom._memory_hits`), where the query is a whole
-        ticket title and description — prose, not keywords. `search()` above
-        stays a substring match because it answers a different question: an
-        agent calling `loregarden_search_memory` passes a short deliberate
-        keyword, and there substring is exactly right. The two policies sit on
-        one screen so nobody discovers a year from now that they drifted.
-
-        Returns candidate records, not briefing lines: the sibling Reciprocal
-        Rank Fusion ticket fuses this list with another ranker's, keyed on
-        `(source, id)`. Each row carries `id`, `source` (`"obsidian"` or
-        `"sqlite"`), `title`, `body`, `tags`, `updated_at`, and the `overlap`
-        count `rank_by_overlap` adds — the shared-term score the order is built
-        from, which the RRF ticket reads to weigh this ranker against another.
+        Cutover R5 — candidates come from SQLite alone. Blog posts and vault
+        memory/learning exports are never recall inputs; hand-edits cannot
+        change ranking. ``search()`` above stays a kind-filtered substring match
+        for deliberate agent queries.
         """
         wanted = term_overlap.terms(query_text)
         if not wanted:
-            # No terms, no hits — and crucially no vault read and no graph file
-            # opened. An all-stopword title must cost nothing at all.
+            # No terms, no hits — and crucially no graph file opened.
             return []
 
         candidates: list[dict[str, Any]] = []
-        # Each read is labelled at its raise point. A caller that catches the
-        # failure further up cannot tell an unopenable vault from an unopenable
-        # graph, and an unlabelled failure sends an operator to restart iCloud
-        # when the SQLite file is the broken thing.
-        try:
-            candidates += self._obsidian_candidates(workspace_slug)
-        except Exception as exc:
-            raise MemoryStoreReadError(MemoryStoreKind.VAULT) from exc
         try:
             candidates += self._graph_candidates(workspace_slug)
         except Exception as exc:
@@ -1111,31 +1100,7 @@ class AgentMemoryService:
                 continue
             seen.add(key)
             deduped.append(row)
-        # Truncate after ranking, never before: `limit` must drop the weakest
-        # candidates, not whichever ones the stores happened to enumerate last.
         return deduped[:limit]
-
-    def _obsidian_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
-        if not self.obsidian:
-            return []
-        return [
-            {
-                "id": n.id,
-                "source": "obsidian",
-                "title": n.title,
-                "body": n.body,
-                "tags": n.tags,
-                "updated_at": n.updated_at,
-            }
-            # The one call site carrying AC5's budget. When `list_notes`
-            # grows a `NotePage(notes, truncated)` return, read `truncated`
-            # here rather than reflexively taking `.notes` — it is the only
-            # signal that the vault has outgrown RECALL_CANDIDATE_CAP and
-            # the briefing is now ranking a prefix of it.
-            for n in self.obsidian.list_notes(
-                workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
-            )
-        ]
 
     def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
         graph = self._graph_for_workspace(workspace_slug)

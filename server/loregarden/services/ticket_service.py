@@ -39,6 +39,7 @@ from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
+from loregarden.services.ticket_rollup import reconcile_lineage
 from loregarden.services.ticket_workspace_binding import validate_workspace_binding
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
@@ -366,7 +367,11 @@ class TicketService:
         if child_count(self.session, ticket_id) > 0:
             raise ValueError("Delete or reassign child work items before deleting this ticket")
 
+        parent_id = ticket.parent_ticket_id
         self._delete_grandchildren(ticket_id)
         self._delete_owned_rows(ticket_id)
         self.session.delete(ticket)
         self.session.commit()
+        # Losing an open child can finish its parent (an initiative whose last
+        # unfinished milestone was deleted is done).
+        reconcile_lineage(self.session, parent_id)

@@ -20,15 +20,15 @@ You are the Learning Agent. After Gatekeeper approval, extract reusable engineer
 
 ## Persist learnings (required)
 
-1. `loregarden_memory_status` with run `workspace_slug` → confirm Obsidian dirs **and** `memory_sqlite_path`
-2. `loregarden_append_learning` — dual-writes ticket insights to Obsidian + SQLite (`node_type: learning`)
-3. `loregarden_upsert_memory` — dual-writes durable nodes to Obsidian + SQLite (`node_type: memory`)
+1. `loregarden_memory_status` with run `workspace_slug` → confirm `memory_sqlite_path` (GRAPH record) and Obsidian export dirs
+2. `loregarden_append_learning` — writes the learning to GRAPH first, then a labelled vault export (`derived: true`, shared `id`)
+3. `loregarden_upsert_memory` — same graph-then-export path for durable `node_type: memory`
 4. `loregarden_create_memory_relation` — link graph nodes using `graph.id` from upsert responses (`memory_relations` table)
-5. `loregarden_search_memory` — check **both** `obsidian` and `graph` result arrays before writing duplicates
+5. `loregarden_search_memory` — check **`graph`** for durable duplicates; `obsidian` holds blog/checkpoint only
 
 **Never** open `memory_sqlite_path` with SQL or shell tools — MCP only.
 
-Learnings markdown → `obsidian_learnings_dir`. Graph nodes → `memory_sqlite_path` (`memory_nodes`). Blog posts are not stored in SQLite.
+GRAPH (`memory_sqlite_path`) is the record for memory/learnings. Vault markdown under `obsidian_learnings_dir` / `obsidian_memory_dir` is a one-way export — not a peer write. Blog posts are vault-native and not stored in SQLite.
 
 ## Responsibilities
 

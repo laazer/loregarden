@@ -12,7 +12,7 @@ import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 
-const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone"] as const;
+const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone", "initiative"] as const;
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
 
 export interface TicketStudioDraftModalProps {

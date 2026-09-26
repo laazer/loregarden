@@ -2,6 +2,7 @@ import type { WorkItemType } from "../api/client";
 
 /** Mirrors server VALID_HIERARCHY — parent types that may contain children. */
 export const VALID_HIERARCHY: Record<WorkItemType, WorkItemType[]> = {
+  initiative: ["milestone"],
   milestone: ["feature", "bug"],
   feature: ["capability", "bug"],
   capability: ["task", "bug"],
@@ -10,6 +11,7 @@ export const VALID_HIERARCHY: Record<WorkItemType, WorkItemType[]> = {
 };
 
 const TYPE_LABELS: Record<WorkItemType, string> = {
+  initiative: "Initiative",
   milestone: "Milestone",
   feature: "Feature",
   capability: "Capability",
@@ -51,4 +53,14 @@ export function addChildActionLabel(parentType: WorkItemType): string {
   if (allowed.length === 1) return `Add ${TYPE_LABELS[allowed[0]].toLowerCase()}`;
   const names = allowed.map((t) => TYPE_LABELS[t].toLowerCase()).join(" or ");
   return `Add ${names}`;
+}
+
+/** Types with no parent: initiatives always, milestones unless an initiative owns one. */
+export function isRootType(type: WorkItemType): boolean {
+  return type === "initiative" || type === "milestone";
+}
+
+/** Initiatives span workspaces and bind to none. */
+export function isWorkspaceless(type: WorkItemType): boolean {
+  return type === "initiative";
 }

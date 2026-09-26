@@ -73,6 +73,18 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "initiatives",
+    label: "Initiatives",
+    path: pathForPage("initiatives"),
+    ownsPage: ownsOnly("initiatives"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M5 21V4" />
+        <path d="M5 4h11l-2 4 2 4H5" />
+      </svg>
+    ),
+  },
+  {
     key: "editor",
     label: "Editor",
     path: pathForPage("editor"),

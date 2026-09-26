@@ -40,7 +40,7 @@ from sqlmodel import Session, col, select
 logger = logging.getLogger(__name__)
 
 #: A child in one of these has nothing left to contribute to its parent.
-_RESOLVED = (TicketState.DONE, TicketState.WONT_DO)
+RESOLVED_STATES = (TicketState.DONE, TicketState.WONT_DO)
 
 
 def derive_parent_state(child_states: list[TicketState]) -> TicketState | None:
@@ -55,7 +55,7 @@ def derive_parent_state(child_states: list[TicketState]) -> TicketState | None:
         return None
     if any(state == TicketState.BLOCKED for state in child_states):
         return TicketState.BLOCKED
-    if all(state in _RESOLVED for state in child_states):
+    if all(state in RESOLVED_STATES for state in child_states):
         return TicketState.DONE
     if any(state != TicketState.BACKLOG for state in child_states):
         return TicketState.IN_PROGRESS
@@ -118,6 +118,27 @@ def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
     if changed:
         session.commit()
     return changed
+
+
+def reconcile_lineage(session: Session, parent_id: str | None) -> list[Ticket]:
+    """Reconcile a parent whose *set* of children changed, then everything above it.
+
+    `reconcile_ancestors` starts from a child whose state moved. A reparent or a
+    delete moves no child's state — it adds or removes a child — so the parent
+    that gained or lost one is the first ticket to re-derive, not its parent.
+    Without this, attaching a finished milestone to an initiative left the
+    initiative showing its old state until the next startup sweep.
+    """
+    if not parent_id:
+        return []
+    parent = session.get(Ticket, parent_id)
+    if parent is None:
+        return []
+    if not reconcile_parent(session, parent):
+        return []
+    session.add(parent)
+    session.commit()
+    return [parent, *reconcile_ancestors(session, parent)]
 
 
 def reconcile_all_parents(session: Session) -> list[Ticket]:

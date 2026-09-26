@@ -59,7 +59,7 @@ def compact_ticket_row(session: Session, ticket: Ticket) -> dict[str, Any]:
 def list_tickets_mcp(
     session: Session,
     *,
-    workspace_slug: str,
+    workspace_slug: str = "",
     state: str | None = None,
     work_item_type: str | None = None,
     search: str | None = None,
@@ -68,20 +68,29 @@ def list_tickets_mcp(
     roots_only: bool = False,
     limit: int = 50,
 ) -> dict[str, Any]:
-    ws = _workspace_by_slug(session, workspace_slug)
-    if not ws:
-        return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
-
-    query = select(Ticket).where(Ticket.workspace_id == ws.id)
+    item_type = WorkItemType(work_item_type) if work_item_type else None
+    if item_type == WorkItemType.INITIATIVE:
+        # Initiatives bind to no workspace, so a workspace filter could only ever
+        # answer "none" — list them globally and ignore the slug.
+        workspace_id = None
+        query = select(Ticket)
+    else:
+        if not workspace_slug:
+            raise ValueError("workspace_slug is required unless work_item_type is 'initiative'")
+        ws = _workspace_by_slug(session, workspace_slug)
+        if not ws:
+            return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
+        workspace_id = ws.id
+        query = select(Ticket).where(Ticket.workspace_id == ws.id)
 
     if state:
         query = query.where(Ticket.state == TicketState(state))
-    if work_item_type:
-        query = query.where(Ticket.work_item_type == WorkItemType(work_item_type))
+    if item_type:
+        query = query.where(Ticket.work_item_type == item_type)
     if parent_ticket_id:
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if parent_external_id:
-        parent = resolve_external_id(session, parent_external_id, workspace_id=ws.id)
+        parent = resolve_external_id(session, parent_external_id, workspace_id=workspace_id)
         if not parent:
             return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
         query = query.where(Ticket.parent_ticket_id == parent.id)

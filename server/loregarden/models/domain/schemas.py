@@ -715,7 +715,8 @@ class UpdateTicketRequest(SQLModel):
 
 
 class TicketCreate(SQLModel):
-    workspace_slug: str
+    #: Omitted for an initiative, which spans workspaces and binds to none.
+    workspace_slug: str = ""
     title: str
     work_item_type: WorkItemType = WorkItemType.TASK
     parent_ticket_id: str | None = None

@@ -13,6 +13,7 @@ import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
+import { InitiativesPage } from "./pages/InitiativesPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { ViewPage } from "./pages/ViewPage";
@@ -93,6 +94,7 @@ export function AppShell() {
             <Route path="/" element={<HomePage />} />
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
+            <Route path="/initiatives" element={<InitiativesPage />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
             <Route
               path="/tickets/:ticketId/:artifactTab"
