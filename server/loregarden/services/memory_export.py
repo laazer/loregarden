@@ -40,6 +40,7 @@ def export_node_to_vault(
         note_type=node_type,
         discredited=bool(node.get("discredited")),
         derived=True,
+        aliases=list(node.get("aliases") or []),
     )
     return {"id": note.id, "path": note.path, "updated_at": note.updated_at}
 

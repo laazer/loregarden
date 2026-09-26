@@ -12,7 +12,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from loregarden.models.domain.enums import LearningOutcomeRung, str_enum_column, utcnow
+from loregarden.models.domain.enums import str_enum_column, utcnow
+from loregarden.models.domain.memory_enums import LearningOutcomeRung
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
@@ -48,3 +49,25 @@ class LearningApplication(SQLModel, table=True):
     )
     settled_at: datetime | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryHealthSnapshot(SQLModel, table=True):
+    """One recorded reading of a workspace memory graph's shape. Append-only.
+
+    Counts, not shares: the share is derived against `learnings` when read, so
+    a later change to how shares are rounded never rewrites history.
+    """
+
+    __tablename__ = "memory_health_snapshots"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_slug: str = Field(index=True)
+    taken_at: datetime = Field(default_factory=utcnow, index=True)
+    learnings: int
+    unlinked: int
+    never_surfaced: int
+    surfaced_unscored: int
+    stale: int
+    contested: int
+    superseded: int
+    discredited: int

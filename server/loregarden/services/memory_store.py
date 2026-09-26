@@ -16,7 +16,8 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
-from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState, RelationDirection
+from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
 from loregarden.services import term_overlap
 from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
 from loregarden.services.memory_export import export_node_to_vault
@@ -26,6 +27,14 @@ from loregarden.services.memory_history import (
     ensure_history_schema,
     list_versions,
     record_superseded,
+)
+from loregarden.services.memory_links import (
+    LEGACY_LEARNING_TITLE_PREFIX,
+    insert_relation,
+    learning_title,
+    lineage,
+    relations_of,
+    superseded_by,
 )
 from loregarden.services.path_resolve import (
     is_under_icloud,
@@ -78,6 +87,18 @@ class MemoryStoreReadError(Exception):
     def __init__(self, store: MemoryStoreKind) -> None:
         super().__init__(f"{store.value} read failed")
         self.store = store
+
+
+def clean_aliases(aliases: list[str], title: str) -> list[str]:
+    """Distinct, non-blank aliases that are not the title itself, in given order."""
+    seen = {title.casefold()}
+    kept: list[str] = []
+    for alias in aliases:
+        name = " ".join(alias.split())
+        if name and name.casefold() not in seen:
+            seen.add(name.casefold())
+            kept.append(name)
+    return kept
 
 
 class MemoryNodeNotFoundError(LookupError):
@@ -207,6 +228,7 @@ class ObsidianMemoryStore:
         note_type: str = "memory",
         discredited: bool | None = None,
         derived: bool = False,
+        aliases: list[str] | None = None,
     ) -> MemoryNote:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
@@ -234,6 +256,9 @@ class ObsidianMemoryStore:
                 "type": note_type,
                 "title": title,
                 "tags": tags,
+                # Obsidian resolves links through `aliases`, so an export
+                # carrying them links the way the graph recalls.
+                "aliases": list(aliases or []),
                 "ticket_id": ticket_id,
                 "workspace": workspace_slug,
                 "created": created_at,
@@ -265,7 +290,7 @@ class ObsidianMemoryStore:
         content: str,
         tags: list[str] | None = None,
     ) -> MemoryNote:
-        title = f"Learning — {ticket_id}"
+        title = f"{LEGACY_LEARNING_TITLE_PREFIX}{ticket_id}"
         merged_tags = ["learning", "loregarden", *(tags or [])]
         return self.upsert_note(
             title=title,
@@ -468,13 +493,22 @@ class ObsidianMemoryStore:
         fm_match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
         body = text
         fields: dict[str, str] = {}
+        lists: dict[str, list[str]] = {}
         if fm_match:
             body = text[fm_match.end() :].strip()
+            current = ""
             for line in fm_match.group(1).splitlines():
-                if ":" not in line or line.strip().startswith("- "):
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    # A list item belongs to the key above it. Collecting every
+                    # item as a tag made an exported `aliases:` read back as tags.
+                    lists.setdefault(current, []).append(stripped[2:].strip())
+                    continue
+                if ":" not in line:
                     continue
                 key, value = line.split(":", 1)
-                fields[key.strip()] = value.strip().strip('"')
+                current = key.strip()
+                fields[current] = value.strip().strip('"')
 
         title_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         title = title_match.group(1).strip() if title_match else path.stem
@@ -486,11 +520,7 @@ class ObsidianMemoryStore:
             # which carries no such line. Only a match at position 0 is that
             # injected heading; a `#` heading further down is the author's.
             body = body[title_match.end() :].lstrip("\n")
-        tags: list[str] = []
-        for line in fm_match.group(1).splitlines() if fm_match else []:
-            stripped = line.strip()
-            if stripped.startswith("- "):
-                tags.append(stripped[2:].strip())
+        tags = lists.get("tags", [])
 
         return MemoryNote(
             id=fields.get("id", path.stem),
@@ -512,7 +542,7 @@ class MemoryGraphStore:
 
     _NODE_COLUMNS = (
         "id, title, body, tags_json, ticket_id, workspace_slug, "
-        "node_type, created_at, updated_at, discredited"
+        "node_type, created_at, updated_at, discredited, aliases_json"
     )
     _VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
@@ -570,16 +600,30 @@ class MemoryGraphStore:
                 CREATE INDEX IF NOT EXISTS ix_memory_relations_source ON memory_relations(source_id);
                 """
             )
-            self._ensure_discredited_column(conn)
+            self._ensure_node_columns(conn)
             ensure_history_schema(conn)
 
     @staticmethod
-    def _ensure_discredited_column(conn: sqlite3.Connection) -> None:
+    def _ensure_node_columns(conn: sqlite3.Connection) -> None:
+        """Columns added after `memory_nodes` shipped, migrated on open.
+
+        `aliases_json` defaults to `'[]'` honestly: a node written before
+        aliases existed has none, which is a fact rather than an unknown.
+        """
         columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
         if "discredited" not in columns:
             conn.execute(
                 "ALTER TABLE memory_nodes ADD COLUMN discredited INTEGER NOT NULL DEFAULT 0"
             )
+        if "aliases_json" not in columns:
+            conn.execute(
+                "ALTER TABLE memory_nodes ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]'"
+            )
+
+    def connection(self) -> sqlite3.Connection:
+        """A configured connection, for the graph modules that read and write
+        beside this class (`memory_links`, `memory_curation`)."""
+        return self._connect()
 
     @staticmethod
     def _node_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -594,6 +638,7 @@ class MemoryGraphStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "discredited": bool(row["discredited"]),
+            "aliases": json.loads(row["aliases_json"] or "[]"),
         }
 
     def upsert_node(
@@ -608,8 +653,12 @@ class MemoryGraphStore:
         node_type: str = "memory",
         discredited: bool | None = None,
         attribution: ChangeAttribution | None = None,
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create or replace a node, preserving the version an update replaces.
+
+        `aliases` and `discredited` follow the same rule: None keeps what the
+        node already has, a value replaces it.
 
         The prior version is written to `memory_node_versions` inside the same
         transaction as the update, so an update cannot land without its history
@@ -620,11 +669,15 @@ class MemoryGraphStore:
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT title, body, tags_json, updated_at, created_at, discredited "
+                "SELECT title, body, tags_json, updated_at, created_at, discredited, aliases_json "
                 "FROM memory_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
+            if aliases is None:
+                aliases_json = row["aliases_json"] if row else "[]"
+            else:
+                aliases_json = json.dumps(clean_aliases(aliases, title))
             if discredited is None:
                 flag = int(row["discredited"]) if row else 0
             else:
@@ -635,7 +688,11 @@ class MemoryGraphStore:
                     node_id=node_id,
                     prior=row,
                     incoming=NodeContent(
-                        title=title, body=body, tags_json=tags_json, discredited=bool(flag)
+                        title=title,
+                        body=body,
+                        tags_json=tags_json,
+                        discredited=bool(flag),
+                        aliases_json=aliases_json,
                     ),
                     superseded_at=now,
                     attribution=attribution or ChangeAttribution(),
@@ -644,8 +701,8 @@ class MemoryGraphStore:
                 """
                 INSERT INTO memory_nodes (
                     id, title, body, tags_json, ticket_id, workspace_slug,
-                    node_type, created_at, updated_at, discredited
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    node_type, created_at, updated_at, discredited, aliases_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     body = excluded.body,
@@ -654,7 +711,8 @@ class MemoryGraphStore:
                     workspace_slug = excluded.workspace_slug,
                     node_type = excluded.node_type,
                     updated_at = excluded.updated_at,
-                    discredited = excluded.discredited
+                    discredited = excluded.discredited,
+                    aliases_json = excluded.aliases_json
                 """,
                 (
                     node_id,
@@ -667,6 +725,7 @@ class MemoryGraphStore:
                     created_at,
                     now,
                     flag,
+                    aliases_json,
                 ),
             )
         return {
@@ -680,6 +739,7 @@ class MemoryGraphStore:
             "created_at": created_at,
             "updated_at": now,
             "discredited": bool(flag),
+            "aliases": json.loads(aliases_json),
             "sqlite_path": str(self.db_path),
         }
 
@@ -688,25 +748,17 @@ class MemoryGraphStore:
         *,
         source_id: str,
         target_id: str,
-        relation_type: str = "related",
+        relation_type: MemoryRelationType = MemoryRelationType.RELATED,
     ) -> dict[str, Any]:
-        relation_id = str(uuid4())
-        now = _utcnow_iso()
+        """Write a typed edge (see `memory_links.insert_relation` for the rules)."""
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO memory_relations (id, source_id, target_id, relation_type, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (relation_id, source_id, target_id, relation_type, now),
+            return insert_relation(
+                conn,
+                source_id=source_id,
+                target_id=target_id,
+                relation_type=relation_type,
+                created_at=_utcnow_iso(),
             )
-        return {
-            "id": relation_id,
-            "source_id": source_id,
-            "target_id": target_id,
-            "relation_type": relation_type,
-            "created_at": now,
-        }
 
     def get_node(self, node_id: str) -> dict[str, Any] | None:
         """One node by id, discredited or not — None only when it does not exist.
@@ -817,11 +869,11 @@ class MemoryGraphStore:
                     FROM memory_nodes
                     WHERE workspace_slug = ?
                       AND {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
+                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
-                    (slug, needle, needle, needle, limit),
+                    (slug, needle, needle, needle, needle, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
@@ -829,11 +881,11 @@ class MemoryGraphStore:
                     SELECT {self._NODE_COLUMNS}
                     FROM memory_nodes
                     WHERE {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
+                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
-                    (needle, needle, needle, limit),
+                    (needle, needle, needle, needle, limit),
                 ).fetchall()
         return [self._node_row(row) for row in rows]
 
@@ -962,7 +1014,15 @@ class AgentMemoryService:
         workspace_slug: str,
         content: str,
         tags: list[str] | None = None,
+        title: str = "",
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Record a learning under a real title (see `memory_links.learning_title`).
+
+        `title_derived` in the result says when the title was taken from the
+        content's first line because the caller sent none, so the writer can
+        see what its learning will be called and correct it.
+        """
         # Cutover R2 — GRAPH is the record; vault is a labelled export. Fail closed
         # without a graph: vault-only peer writes are not a valid path.
         graph = self._graph_for_workspace(workspace_slug)
@@ -972,14 +1032,20 @@ class AgentMemoryService:
                 "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
                 "are not allowed."
             )
-        result: dict[str, Any] = {"ticket_id": ticket_id, "workspace_slug": workspace_slug}
+        name, derived = learning_title(title, content)
+        result: dict[str, Any] = {
+            "ticket_id": ticket_id,
+            "workspace_slug": workspace_slug,
+            "title_derived": derived,
+        }
         node = graph.upsert_node(
-            title=f"Learning — {ticket_id}",
+            title=name,
             body=content,
             tags=["learning", "loregarden", *(tags or [])],
             ticket_id=ticket_id,
             workspace_slug=workspace_slug,
             node_type="learning",
+            aliases=aliases or [],
         )
         result["graph"] = node
         if self.obsidian:
@@ -998,6 +1064,7 @@ class AgentMemoryService:
         ticket_id: str = "",
         workspace_slug: str = "",
         discredited: bool | None = None,
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
         graph = self._graph_for_workspace(workspace_slug)
         if not graph:
@@ -1017,6 +1084,7 @@ class AgentMemoryService:
             workspace_slug=workspace_slug,
             node_type="memory",
             discredited=discredited,
+            aliases=aliases,
         )
         result["graph"] = node
         if self.obsidian:
@@ -1025,7 +1093,8 @@ class AgentMemoryService:
                 result["obsidian"] = exported
         return result
 
-    def _require_graph(self, workspace_slug: str) -> MemoryGraphStore:
+    def require_graph(self, workspace_slug: str) -> MemoryGraphStore:
+        """The workspace's graph store; raises ValueError when none is configured."""
         graph = self._graph_for_workspace(workspace_slug)
         if not graph:
             raise ValueError("Memory graph SQLite is not configured.")
@@ -1035,19 +1104,43 @@ class AgentMemoryService:
         self, *, workspace_slug: str, limit: int, include_discredited: bool
     ) -> list[dict[str, Any]]:
         """Operator listing of graph nodes. Agents use `recall_related`/`search`."""
-        return self._require_graph(workspace_slug).list_nodes(
+        return self.require_graph(workspace_slug).list_nodes(
             workspace_slug=workspace_slug,
             limit=limit,
             include_discredited=include_discredited,
         )
 
     def node_detail(self, *, node_id: str, workspace_slug: str) -> dict[str, Any]:
-        """One node, discredited or not, with its retained version history."""
-        graph = self._require_graph(workspace_slug)
+        """One node, discredited or not, with its history, edges and successors."""
+        graph = self.require_graph(workspace_slug)
         node = graph.get_node(node_id)
         if node is None:
             raise MemoryNodeNotFoundError(node_id)
-        return {**node, "versions": graph.node_versions(node_id)}
+        with graph.connection() as conn:
+            edges = relations_of(conn, node_id)
+            successors = superseded_by(conn, [node_id]).get(node_id, [])
+        return {
+            **node,
+            "versions": graph.node_versions(node_id),
+            "relations": edges,
+            "superseded_by": successors,
+        }
+
+    def lineage(self, *, node_id: str, workspace_slug: str) -> list[dict[str, Any]]:
+        """The supersession chain through a node, oldest first, each step with its
+        own version history — what the position was, what replaced it, and the
+        change notes recorded along the way (`memory_links.lineage`)."""
+        graph = self.require_graph(workspace_slug)
+        if graph.get_node(node_id) is None:
+            raise MemoryNodeNotFoundError(node_id)
+        with graph.connection() as conn:
+            chain = lineage(conn, node_id)
+        steps = []
+        for step_id in chain:
+            node = graph.get_node(step_id)
+            if node is not None:
+                steps.append({**node, "versions": graph.node_versions(step_id)})
+        return steps
 
     def set_discredited(
         self,
@@ -1064,7 +1157,7 @@ class AgentMemoryService:
         it replaces — and the reason — land in `memory_node_versions`. The row
         is read back afterwards: a write that did not stick raises.
         """
-        graph = self._require_graph(workspace_slug)
+        graph = self.require_graph(workspace_slug)
         node = graph.get_node(node_id)
         if node is None:
             raise MemoryNodeNotFoundError(node_id)
@@ -1144,16 +1237,11 @@ class AgentMemoryService:
         *,
         source_id: str,
         target_id: str,
-        relation_type: str = "related",
+        relation_type: MemoryRelationType = MemoryRelationType.RELATED,
         workspace_slug: str = "",
     ) -> dict[str, Any]:
-        graph = self._graph_for_workspace(workspace_slug)
-        if not graph:
-            raise ValueError("Memory graph SQLite is not configured.")
-        return graph.create_relation(
-            source_id=source_id,
-            target_id=target_id,
-            relation_type=relation_type,
+        return self.require_graph(workspace_slug).create_relation(
+            source_id=source_id, target_id=target_id, relation_type=relation_type
         )
 
     def search(
@@ -1248,7 +1336,27 @@ class AgentMemoryService:
                 continue
             seen.add(key)
             deduped.append(row)
-        return deduped[:limit]
+        return self._superseded_last(deduped, workspace_slug)[:limit]
+
+    def _superseded_last(
+        self, rows: list[dict[str, Any]], workspace_slug: str
+    ) -> list[dict[str, Any]]:
+        """Label superseded rows with their successors and move them after the rest.
+
+        Stable, so relevance order holds within each group. A superseded
+        learning is still recalled — it is history, not an error — but it
+        should not take a slot its replacement could have had.
+        """
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph or not rows:
+            return rows
+        try:
+            with graph.connection() as conn:
+                successors = superseded_by(conn, [row["id"] for row in rows])
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
+        labelled = [{**row, "superseded_by": successors.get(row["id"], [])} for row in rows]
+        return sorted(labelled, key=lambda row: bool(row["superseded_by"]))
 
     def related_digest_rows(
         self, node_ids: list[str], *, workspace_slug: str = ""
@@ -1275,6 +1383,7 @@ class AgentMemoryService:
                 "title": row["title"],
                 "body": row["body"],
                 "tags": row["tags"],
+                "aliases": row["aliases"],
                 "updated_at": row["updated_at"],
             }
             for row in graph.list_nodes(workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP)

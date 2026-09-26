@@ -1,7 +1,7 @@
-"""Migration for `learning_applications` (lg-improved-memory-178).
+"""Migrations for the control-plane memory tables.
 
-One table, one id, nothing else touches it — split out the way
-`migrations_memory_briefings.py` is.
+`learning_applications` (178) and `memory_health_snapshots` — one id each,
+split out the way `migrations_memory_briefings.py` is.
 """
 
 from __future__ import annotations
@@ -45,5 +45,37 @@ def m_learning_applications_table(conn: Connection) -> None:
             text(
                 f"CREATE INDEX ix_learning_applications_{column} "
                 f"ON learning_applications ({column})"
+            )
+        )
+
+
+def m_memory_health_snapshots_table(conn: Connection) -> None:
+    """Dated readings of each workspace memory graph's shape. Append-only."""
+    if table_exists(conn, "memory_health_snapshots"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE memory_health_snapshots (
+                id TEXT PRIMARY KEY,
+                workspace_slug TEXT NOT NULL,
+                taken_at TEXT NOT NULL,
+                learnings INTEGER NOT NULL,
+                unlinked INTEGER NOT NULL,
+                never_surfaced INTEGER NOT NULL,
+                surfaced_unscored INTEGER NOT NULL,
+                stale INTEGER NOT NULL,
+                contested INTEGER NOT NULL,
+                superseded INTEGER NOT NULL,
+                discredited INTEGER NOT NULL
+            )
+            """
+        )
+    )
+    for column in ("workspace_slug", "taken_at"):
+        conn.execute(
+            text(
+                f"CREATE INDEX ix_memory_health_snapshots_{column} "
+                f"ON memory_health_snapshots ({column})"
             )
         )

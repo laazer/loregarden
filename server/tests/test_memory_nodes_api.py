@@ -57,3 +57,73 @@ def test_missing_node_is_404(client):
 
 def test_blank_reason_is_rejected(client, node_id):
     assert _discredit(client, node_id, reason="   ").status_code == 422
+
+
+def _second(title: str) -> str:
+    return AgentMemoryService.from_settings().upsert_memory(
+        title=title, body="other", workspace_slug="ws"
+    )["graph"]["id"]
+
+
+def test_graph_health_records_a_snapshot_and_compares_with_it(client, node_id):
+    first = client.post("/api/memory/graph-health/snapshots", json={"workspace_slug": "ws"})
+    assert first.status_code == 200 and first.json()["previous"] is None
+
+    report = client.get("/api/memory/graph-health", params={"workspace_slug": "ws"}).json()
+    assert report["previous"]["figures"]["learnings"] == 1
+    assert report["current"]["shares"]["unlinked"] == 100.0
+    history = client.get("/api/memory/graph-health/snapshots", params={"workspace_slug": "ws"})
+    assert len(history.json()) == 1
+
+
+def test_proposals_retitle_and_merge_over_http(client, node_id):
+    other = _second("Lesson copy")
+    assert client.get("/api/memory/proposals", params={"workspace_slug": "ws"}).status_code == 200
+
+    renamed = client.put(
+        f"/api/memory/nodes/{node_id}/title",
+        json={"workspace_slug": "ws", "title": "Real name", "reason": "rename"},
+    ).json()
+    assert (renamed["title"], renamed["aliases"]) == ("Real name", ["Lesson"])
+
+    merged = client.post(
+        f"/api/memory/nodes/{node_id}/merge",
+        json={"workspace_slug": "ws", "absorbed_id": other, "reason": "same"},
+    )
+    assert merged.status_code == 200
+    lineage = client.get(f"/api/memory/nodes/{node_id}/lineage", params={"workspace_slug": "ws"})
+    assert [s["id"] for s in lineage.json()["steps"]] == [other, node_id]
+
+
+def test_merge_into_itself_is_a_conflict(client, node_id):
+    response = client.post(
+        f"/api/memory/nodes/{node_id}/merge",
+        json={"workspace_slug": "ws", "absorbed_id": node_id, "reason": "r"},
+    )
+    assert response.status_code == 409
+
+
+def test_an_operator_can_mark_one_side_superseded(client, node_id):
+    other = _second("Newer lesson")
+    made = client.post(
+        "/api/memory/relations",
+        json={
+            "workspace_slug": "ws",
+            "source_id": other,
+            "target_id": node_id,
+            "relation_type": "supersedes",
+        },
+    )
+    assert made.status_code == 200 and made.json()["created"] is True
+    detail = client.get(f"/api/memory/nodes/{node_id}", params={"workspace_slug": "ws"}).json()
+    assert detail["superseded_by"] == [{"id": other, "title": "Newer lesson"}]
+    bad = client.post(
+        "/api/memory/relations",
+        json={
+            "workspace_slug": "ws",
+            "source_id": node_id,
+            "target_id": node_id,
+            "relation_type": "related",
+        },
+    )
+    assert bad.status_code == 422

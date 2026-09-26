@@ -6,7 +6,7 @@
  * writing, and that is the failure the telemetry exists to expose.
  */
 
-import type { MemoryBriefingStats } from "../api/memoryApi";
+import type { HealthShare, MemoryBriefingStats } from "../api/memoryApi";
 import { parseTimestamp } from "./timestamps";
 
 /**
@@ -73,3 +73,24 @@ export function holeShare(stats: MemoryBriefingStats): number {
   if (stats.runs_in_window === 0) return 0;
   return Math.round((stats.runs_with_no_briefing_row / stats.runs_in_window) * 100);
 }
+
+/** What each graph-health share means, for the panel's labels and hints. */
+export const HEALTH_SHARE_LABELS: Record<HealthShare, { label: string; hint: string }> = {
+  unlinked: {
+    label: "Unlinked",
+    hint: "no relation to any other learning — the related digest can never reach it",
+  },
+  never_surfaced: {
+    label: "Never briefed",
+    hint: "not injected into a single run's briefing yet",
+  },
+  contested: {
+    label: "Contested",
+    hint: "holds a contradiction nobody resolved; agents are briefed with both sides",
+  },
+  stale: { label: "Stale", hint: "not updated in 90 days" },
+  surfaced_unscored: {
+    label: "Unscored",
+    hint: "briefed into runs, none of which has concluded with an outcome yet",
+  },
+};

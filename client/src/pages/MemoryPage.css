@@ -330,3 +330,153 @@
 .memory-detail-placeholder {
   align-self: center;
 }
+
+.memory-workspace {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.memory-superseded,
+.memory-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--ywl, #d29922);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.memory-relations,
+.memory-proposals,
+.memory-lineage {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.memory-lineage {
+  padding-left: 18px;
+  list-style: decimal;
+}
+
+.memory-lineage li[aria-current="true"] strong {
+  text-decoration: underline;
+}
+
+.memory-relation {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.memory-relation-type {
+  min-width: 110px;
+  color: var(--txm);
+}
+
+.memory-relation--contradicts .memory-relation-type {
+  color: var(--rdl, #ff6a54);
+}
+
+.memory-link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--ac, #6aa9ff);
+  cursor: pointer;
+  text-align: left;
+}
+
+.memory-link-button:focus-visible {
+  outline: 2px solid var(--ac, #6aa9ff);
+  outline-offset: 2px;
+}
+
+.memory-proposal {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memory-proposal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-proposal-titles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.memory-choice {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.memory-choice label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.memory-shares {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.memory-share {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.memory-share dt {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.memory-share dd {
+  margin: 4px 0 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.memory-share--watch {
+  border-color: var(--rdl, #ff6a54);
+}
+
+.memory-share-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.memory-share-up {
+  color: var(--rdl, #ff6a54);
+  font-size: 12px;
+}
+
+.memory-share-down {
+  color: var(--gnl, #3fb950);
+  font-size: 12px;
+}

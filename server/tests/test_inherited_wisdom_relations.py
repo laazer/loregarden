@@ -12,6 +12,7 @@ from loregarden.agents.inherited_wisdom import (
     MAX_RELATED_PER_LEARNING,
     build_inherited_wisdom,
 )
+from loregarden.models.domain import MemoryRelationType
 from loregarden.services.memory_store import AgentMemoryService
 from tests.memory_helpers import briefing_ticket
 
@@ -29,7 +30,7 @@ def _anchor(memory: AgentMemoryService) -> str:
     return _node(memory, "Rate limiting lesson", "Rate limiting on the public API.")
 
 
-def _relate(memory, source, target, relation_type="related"):
+def _relate(memory, source, target, relation_type=MemoryRelationType.RELATED):
     memory.create_relation(
         source_id=source, target_id=target, relation_type=relation_type, workspace_slug="lg"
     )
@@ -43,12 +44,12 @@ def test_digest_lists_neighbours_in_both_directions_by_title_and_type(memory):
     anchor = _anchor(memory)
     child = _node(memory, "Token bucket sizing", body="SECRET BODY TEXT")
     parent = _node(memory, "Older limiter note", body="SECRET BODY TEXT")
-    _relate(memory, anchor, child, "refines")
-    _relate(memory, parent, anchor, "supersedes")
+    _relate(memory, anchor, child, MemoryRelationType.EXTENDS)
+    _relate(memory, parent, anchor, MemoryRelationType.SUPERSEDES)
 
     result = _brief(memory)
 
-    assert "→ _refines_: Token bucket sizing" in result.text
+    assert "→ _extends_: Token bucket sizing" in result.text
     assert "← _supersedes_: Older limiter note" in result.text
     assert "SECRET BODY TEXT" not in result.text
     assert result.related_injected == 2
@@ -57,7 +58,7 @@ def test_digest_lists_neighbours_in_both_directions_by_title_and_type(memory):
 def test_a_densely_connected_node_cannot_bloat_the_briefing(memory):
     anchor = _anchor(memory)
     for index in range(60):
-        _relate(memory, anchor, _node(memory, f"Neighbour {index} " + "x" * 200), "related")
+        _relate(memory, anchor, _node(memory, f"Neighbour {index} " + "x" * 200))
 
     result = _brief(memory)
 

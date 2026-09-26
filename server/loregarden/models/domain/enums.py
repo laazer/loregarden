@@ -1119,28 +1119,6 @@ class MemoryBriefingOutcome(str, Enum):
     SKIPPED = "skipped"
 
 
-class LearningOutcomeRung(str, Enum):
-    """How a run a learning was surfaced into actually ended (lg-improved-memory-178).
-
-    Derived from what the control plane recorded about the run — gate
-    evaluations, reroute ledgers, block classifications — and never from what
-    the run's agent said about itself. Ordered best to worst; when a run earns
-    several, the worst one is its rung.
-    """
-
-    CLEAN_PASS = "clean_pass"
-    PASSED_AFTER_AUTOFIX = "passed_after_autofix"
-    REROUTED = "rerouted"
-    BLOCKED = "blocked"
-
-
-class RelationDirection(str, Enum):
-    """Which end of a `memory_relations` edge a surfaced node sits on (179)."""
-
-    OUT = "out"  # the surfaced node is the edge's source
-    IN = "in"  # the surfaced node is the edge's target
-
-
 class MemoryStoreKind(str, Enum):
     """The stores a briefing reads, plus the factory that builds them.
 

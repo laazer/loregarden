@@ -26,7 +26,8 @@ from time import perf_counter
 from typing import Any
 
 from loregarden.models.domain import Ticket
-from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState, RelationDirection
+from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
 from loregarden.services import term_overlap
 from loregarden.services.learning_confidence import UNOBSERVED, LearningConfidence, describe
 from loregarden.services.memory_store import (
@@ -213,11 +214,17 @@ def rank_learnings(
 ) -> list[dict[str, Any]]:
     """Order recalled learnings by the lower bound of their confidence (178).
 
-    Stable, so learnings with equal bounds — every unobserved one — keep their
+    Superseded learnings go last. Stable, so learnings with equal bounds — every unobserved one — keep their
     relevance order. The lower bound rather than the mean is what makes this
     sample-size aware: one lucky clean pass does not outrank a long record.
     """
-    return sorted(rows, key=lambda row: -confidence.get(row["id"], UNOBSERVED).lower_bound)
+    return sorted(
+        rows,
+        key=lambda row: (
+            bool(row.get("superseded_by")),
+            -confidence.get(row["id"], UNOBSERVED).lower_bound,
+        ),
+    )
 
 
 def rank_related(
@@ -225,12 +232,19 @@ def rank_related(
 ) -> list[dict[str, Any]]:
     """THE ranking swap point for the 1-hop digest (179).
 
-    By confidence lower bound, then recency. Change how neighbours are chosen
-    here and nowhere else.
+    Edges whose type is the point come first — a contradiction or a
+    supersession is what an agent must not miss, and a capped digest that
+    dropped one for a plain mention would hide exactly that. Then confidence
+    lower bound, then recency. Change how neighbours are chosen here and
+    nowhere else.
     """
     by_recency = sorted(rows, key=lambda row: row.get("updated_at") or "", reverse=True)
     return sorted(
-        by_recency, key=lambda row: -confidence.get(row["node_id"], UNOBSERVED).lower_bound
+        by_recency,
+        key=lambda row: (
+            row["relation_type"] not in _STRUCTURAL_EDGES,
+            -confidence.get(row["node_id"], UNOBSERVED).lower_bound,
+        ),
     )
 
 
@@ -238,10 +252,20 @@ def _learning_line(row: dict[str, Any], confidence: LearningConfidence | None) -
     title = str(row.get("title") or "").strip()
     summary = " ".join(str(row.get("body") or "").split())[:240]
     line = f"- **{title}** — {summary}" if summary else f"- **{title}**"
-    return f"{line} _({describe(confidence)})_" if confidence is not None else line
+    notes = [describe(confidence)] if confidence is not None else []
+    successors = row.get("superseded_by") or []
+    if successors:
+        # History, not an error: the agent should know it is no longer current
+        # and what replaced it, rather than acting on it as settled.
+        notes.insert(0, "superseded by " + "; ".join(s["title"] for s in successors))
+    return f"{line} _({'; '.join(notes)})_" if notes else line
 
 
 _ARROWS = {RelationDirection.OUT: "→", RelationDirection.IN: "←"}
+#: Edge types ranked ahead of everything else in the digest (see `rank_related`).
+_STRUCTURAL_EDGES = frozenset(
+    {MemoryRelationType.CONTRADICTS.value, MemoryRelationType.SUPERSEDES.value}
+)
 
 
 def _related_lines(
@@ -259,7 +283,8 @@ def _related_lines(
     for anchor in anchors:
         for row in rank_related(grouped.get(anchor, []), confidence)[:MAX_RELATED_PER_LEARNING]:
             title = " ".join(str(row["title"]).split())[:_MAX_RELATED_TITLE]
-            line = f"  - {_ARROWS[row['direction']]} _{row['relation_type']}_: {title}"
+            flag = "⚠ " if row["relation_type"] == MemoryRelationType.CONTRADICTS else ""
+            line = f"  - {flag}{_ARROWS[row['direction']]} _{row['relation_type']}_: {title}"
             if len(line) + 1 > budget:
                 return lines
             budget -= len(line) + 1

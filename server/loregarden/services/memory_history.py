@@ -34,6 +34,7 @@ only ever edited twenty times.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS memory_node_versions (
     body TEXT NOT NULL,
     tags_json TEXT NOT NULL,
     discredited INTEGER NOT NULL,
+    aliases_json TEXT NULL,
     became_current_at TEXT NOT NULL,
     superseded_at TEXT NOT NULL,
     superseded_by TEXT NULL,
@@ -67,6 +69,7 @@ class NodeContent:
     body: str
     tags_json: str
     discredited: bool
+    aliases_json: str = "[]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +82,10 @@ class ChangeAttribution:
 
 def ensure_history_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_node_versions)")}
+    if "aliases_json" not in columns:
+        # NULL on rows written before aliases were versioned: not recorded, not "none".
+        conn.execute("ALTER TABLE memory_node_versions ADD COLUMN aliases_json TEXT NULL")
 
 
 def record_superseded(
@@ -101,6 +108,7 @@ def record_superseded(
         body=prior["body"],
         tags_json=prior["tags_json"],
         discredited=bool(prior["discredited"]),
+        aliases_json=prior["aliases_json"],
     )
     if before == incoming:
         return None
@@ -112,9 +120,9 @@ def record_superseded(
     conn.execute(
         """
         INSERT INTO memory_node_versions (
-            node_id, version, title, body, tags_json, discredited,
+            node_id, version, title, body, tags_json, discredited, aliases_json,
             became_current_at, superseded_at, superseded_by, change_note
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             node_id,
@@ -123,6 +131,7 @@ def record_superseded(
             before.body,
             before.tags_json,
             int(before.discredited),
+            before.aliases_json,
             prior["updated_at"],
             superseded_at,
             attribution.writer,
@@ -140,7 +149,7 @@ def list_versions(conn: sqlite3.Connection, node_id: str) -> list[dict[str, obje
     """Every retained version of a node, oldest first."""
     rows = conn.execute(
         """
-        SELECT node_id, version, title, body, tags_json, discredited,
+        SELECT node_id, version, title, body, tags_json, discredited, aliases_json,
                became_current_at, superseded_at, superseded_by, change_note
         FROM memory_node_versions
         WHERE node_id = ?
@@ -156,6 +165,7 @@ def list_versions(conn: sqlite3.Connection, node_id: str) -> list[dict[str, obje
             "body": row["body"],
             "tags_json": row["tags_json"],
             "discredited": bool(row["discredited"]),
+            "aliases": None if row["aliases_json"] is None else json.loads(row["aliases_json"]),
             "became_current_at": row["became_current_at"],
             "superseded_at": row["superseded_at"],
             "superseded_by": row["superseded_by"],

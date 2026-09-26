@@ -3,7 +3,13 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
-import type { MemoryBriefingStats, MemoryNode, MemoryNodeDetail } from "../../api/memoryApi";
+import type {
+  GraphHealthReport,
+  MemoryBriefingStats,
+  MemoryNode,
+  MemoryNodeDetail,
+  MemoryProposal,
+} from "../../api/memoryApi";
 import { TopbarPageSlot, TopbarPageSlotProvider } from "../../components/TopbarPageSlot";
 import { MemoryPage } from "../MemoryPage";
 
@@ -42,6 +48,7 @@ const NODE: MemoryNode = {
   created_at: "2026-09-01T00:00:00",
   updated_at: "2026-09-01T00:00:00",
   discredited: false,
+  aliases: [],
   confidence: { mean: 0.5, lower_bound: 0.02, observations: 0, trusted: false },
 };
 
@@ -50,6 +57,8 @@ function detail(overrides: Partial<MemoryNodeDetail> = {}): MemoryNodeDetail {
     ...NODE,
     versions: [],
     ladder: { clean_pass: 0, passed_after_autofix: 0, rerouted: 0, blocked: 0 },
+    relations: [],
+    superseded_by: [],
     ...overrides,
   };
 }
@@ -82,7 +91,46 @@ beforeEach(() => {
     nodes: [NODE],
   });
   mockApi.memoryNode.mockResolvedValue(detail());
+  mockApi.memoryGraphHealth.mockResolvedValue(healthReport());
+  mockApi.memoryProposals.mockResolvedValue([]);
+  mockApi.memoryLineage.mockResolvedValue({ node_id: "n1", steps: [] });
 });
+
+function reading(shares: Partial<GraphHealthReport["current"]["shares"]>, learnings = 10) {
+  return {
+    workspace_slug: "lg",
+    measured_at: "2026-09-20T00:00:00",
+    figures: {
+      learnings,
+      unlinked: 0,
+      never_surfaced: 0,
+      surfaced_unscored: 0,
+      stale: 0,
+      contested: 0,
+      superseded: 1,
+      discredited: 2,
+    },
+    shares: {
+      unlinked: 0,
+      never_surfaced: 0,
+      contested: 0,
+      stale: 0,
+      surfaced_unscored: 0,
+      ...shares,
+    },
+  };
+}
+
+function healthReport(overrides: Partial<GraphHealthReport> = {}): GraphHealthReport {
+  return {
+    current: reading({ unlinked: 40 }),
+    previous: reading({ unlinked: 20 }, 6),
+    moved: [{ metric: "unlinked", was: 20, now: 40 }],
+    notes: ["Learnings grew from 6 to 10 while the unlinked share rose: stop."],
+    watch: "unlinked",
+    ...overrides,
+  };
+}
 
 it("shows holes apart from the recorded outcomes", async () => {
   renderPage();
@@ -179,4 +227,136 @@ it("says a learning with no observed runs is not observed yet", async () => {
   renderPage();
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
   expect(await screen.findByText(/not observed yet/i)).toBeInTheDocument();
+});
+
+it("shows graph shares against the last snapshot and names one to watch", async () => {
+  renderPage();
+  const panel = await screen.findByRole("region", { name: /graph health/i });
+  expect(await within(panel).findByText("40%")).toBeInTheDocument();
+  expect(within(panel).getByText("+20 pts")).toBeInTheDocument();
+  expect(within(panel).getByText(/unlinked · watch/i)).toBeInTheDocument();
+  expect(within(panel).getByText(/unlinked share rose/i)).toBeInTheDocument();
+});
+
+it("records a snapshot without letting a second click fire twice", async () => {
+  mockApi.recordMemoryGraphHealth.mockReturnValue(new Promise(() => {}));
+  renderPage();
+  const panel = await screen.findByRole("region", { name: /graph health/i });
+  await within(panel).findByText("40%");
+  fireEvent.click(within(panel).getByRole("button", { name: "Record snapshot" }));
+  const busy = await within(panel).findByRole("button", { name: /recording/i });
+  expect(busy).toBeDisabled();
+  fireEvent.click(busy);
+  expect(mockApi.recordMemoryGraphHealth).toHaveBeenCalledTimes(1);
+});
+
+it("says an empty graph has no shape rather than showing zero percent", async () => {
+  mockApi.memoryGraphHealth.mockResolvedValue(
+    healthReport({ current: reading({}, 0), previous: null, moved: [], notes: [], watch: null }),
+  );
+  renderPage();
+  expect(await screen.findByText(/no live learnings in lg yet/i)).toBeInTheDocument();
+});
+
+it("says there is nothing to decide when no proposals come back", async () => {
+  renderPage();
+  expect(await screen.findByText(/nothing to decide/i)).toBeInTheDocument();
+});
+
+const DUPLICATE: MemoryProposal = {
+  kind: "near_duplicate",
+  node_ids: ["n1", "n2"],
+  titles: ["Use DELETE journal on iCloud", "iCloud journal mode"],
+  reason: "These read as the same idea.",
+  suggested_title: null,
+  similarity: 0.82,
+};
+
+it("merges a duplicate only after choosing what to keep and saying why", async () => {
+  mockApi.memoryProposals.mockResolvedValue([DUPLICATE]);
+  mockApi.mergeMemoryNodes.mockResolvedValue({
+    survivor: NODE,
+    absorbed_id: "n1",
+    aliases_added: [],
+    edges_moved: 0,
+    outcomes_moved: 0,
+  });
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: "Merge…" }));
+  const dialog = await screen.findByRole("dialog", { name: /merge these learnings/i });
+  fireEvent.click(within(dialog).getByRole("radio", { name: "iCloud journal mode" }));
+  const confirm = within(dialog).getByRole("button", { name: "Merge" });
+  expect(confirm).toBeDisabled();
+  fireEvent.change(within(dialog).getByRole("textbox", { name: /reason/i }), {
+    target: { value: "same lesson" },
+  });
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(mockApi.mergeMemoryNodes).toHaveBeenCalledWith("n2", {
+      workspace_slug: "lg",
+      absorbed_id: "n1",
+      reason: "same lesson",
+    }),
+  );
+});
+
+it("retitles with the suggested name prefilled and editable", async () => {
+  mockApi.memoryProposals.mockResolvedValue([
+    {
+      kind: "generic_title",
+      node_ids: ["n1"],
+      titles: ["Learning — t-1"],
+      reason: "Titled by its ticket.",
+      suggested_title: "Pin the retry budget",
+      similarity: null,
+    },
+  ]);
+  mockApi.retitleMemoryNode.mockResolvedValue(detail());
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: "Retitle…" }));
+  const dialog = await screen.findByRole("dialog");
+  const title = within(dialog).getByRole("textbox", { name: "New title" });
+  expect(title).toHaveValue("Pin the retry budget");
+  fireEvent.change(title, { target: { value: "   " } });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: /reason/i }), {
+    target: { value: "name it" },
+  });
+  expect(within(dialog).getByRole("button", { name: "Retitle" })).toBeDisabled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(mockApi.retitleMemoryNode).not.toHaveBeenCalled();
+});
+
+it("shows a learning's relations, its successor and what changed", async () => {
+  mockApi.memoryNode.mockResolvedValue(
+    detail({
+      aliases: ["journal mode"],
+      superseded_by: [{ id: "n9", title: "Use the native store" }],
+      relations: [
+        {
+          id: "r1",
+          relation_type: "supersedes",
+          direction: "in",
+          node_id: "n9",
+          title: "Use the native store",
+          discredited: false,
+        },
+      ],
+    }),
+  );
+  mockApi.memoryLineage.mockResolvedValue({
+    node_id: "n1",
+    steps: [
+      { ...NODE, versions: [] },
+      { ...NODE, id: "n9", title: "Use the native store", versions: [] },
+    ],
+  });
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
+  expect(await screen.findByText(/also known as journal mode/i)).toBeInTheDocument();
+  expect(screen.getByRole("note")).toHaveTextContent("Superseded by Use the native store");
+  const relations = screen.getByRole("list", { name: "Relations" });
+  expect(within(relations).getByText(/← supersedes/)).toBeInTheDocument();
+  const lineage = await screen.findByRole("list", { name: /lineage/i });
+  expect(within(lineage).getAllByRole("listitem")).toHaveLength(2);
 });

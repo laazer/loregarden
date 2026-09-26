@@ -1,17 +1,10 @@
 /**
- * The confirm step for discrediting or restoring a learning.
- *
- * Either direction changes what every future agent run is briefed with, so it
- * asks, and it asks why: the reason is stored with the change in the node's
- * version history, where the next person to wonder can read it.
+ * The confirm step for discrediting or restoring a learning — the reason is
+ * stored with the change (see `ReasonConfirmDialog`).
  */
 
-import { useState } from "react";
-
 import type { MemoryNode } from "../../api/memoryApi";
-import { useDialogDismiss } from "../../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
-import { IconCloseButton } from "../IconCloseButton";
+import { ReasonConfirmDialog } from "./ReasonConfirmDialog";
 
 export function DiscreditConfirmModal({
   node,
@@ -25,68 +18,23 @@ export function DiscreditConfirmModal({
   onClose: () => void;
   onConfirm: (reason: string) => void;
 }) {
-  const [reason, setReason] = useState("");
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  useDialogDismiss(!node ? null : isSaving ? undefined : onClose);
-  if (!node) return null;
-
-  const restoring = node.discredited;
-  const trimmed = reason.trim();
-  const action = restoring ? "Restore learning" : "Discredit learning";
-
+  const restoring = node?.discredited ?? false;
   return (
-    <>
-      <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby="discredit-confirm-title"
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Learning</div>
-            <h2 id="discredit-confirm-title" className="modal-title">
-              {restoring ? "Restore this learning?" : "Discredit this learning?"}
-            </h2>
-            <p className="modal-subtitle">{node.title}</p>
-          </div>
-          <IconCloseButton disabled={isSaving} onClick={onClose} />
-        </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (trimmed && !isSaving) onConfirm(trimmed);
-          }}
-        >
-          <div className="modal-body">
-            <p className="memory-muted">
-              {restoring
-                ? "Agents will be briefed with this learning again on their next run."
-                : "Agents stop being briefed with this learning on their next run. It stays in the record and can be restored."}
-            </p>
-            <label className="memory-field">
-              <span>Reason (stored with the change)</span>
-              <textarea
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                rows={3}
-                required
-                disabled={isSaving}
-              />
-            </label>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={isSaving || !trimmed}>
-              {isSaving ? "Saving…" : action}
-            </button>
-          </div>
-        </form>
-      </div>
-    </>
+    <ReasonConfirmDialog
+      open={node !== null}
+      title={restoring ? "Restore this learning?" : "Discredit this learning?"}
+      subtitle={node?.title}
+      description={
+        restoring
+          ? "Agents will be briefed with this learning again on their next run."
+          : "Agents stop being briefed with this learning on their next run. It stays in the record and can be restored."
+      }
+      reasonLabel="Reason (stored with the change)"
+      confirmLabel={restoring ? "Restore learning" : "Discredit learning"}
+      danger={!restoring}
+      isSaving={isSaving}
+      onClose={onClose}
+      onConfirm={onConfirm}
+    />
   );
 }

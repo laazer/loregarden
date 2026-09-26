@@ -47,11 +47,14 @@ function NodeRow({
 function NodeList({
   workspaceSlug,
   includeDiscredited,
+  selectedId,
+  onSelect,
 }: {
   workspaceSlug: string;
   includeDiscredited: boolean;
+  selectedId: string | null;
+  onSelect: (nodeId: string) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const nodes = useQuery({
     queryKey: ["memory-nodes", workspaceSlug, includeDiscredited],
     queryFn: () => api.memoryNodes(workspaceSlug, includeDiscredited),
@@ -88,84 +91,64 @@ function NodeList({
             key={node.id}
             node={node}
             selected={node.id === selectedId}
-            onSelect={() => setSelectedId(node.id)}
+            onSelect={() => onSelect(node.id)}
           />
         ))}
       </ul>
       {selected ? (
-        <LearningDetail key={selected.id} node={selected} workspaceSlug={workspaceSlug} />
+        <LearningDetail
+          key={selected.id}
+          node={selected}
+          workspaceSlug={workspaceSlug}
+          onOpen={onSelect}
+        />
       ) : (
         <p className="memory-muted memory-detail-placeholder">
-          Select a learning to see its confidence and history.
+          {selectedId
+            ? "That learning is not in this list — it may be discredited and hidden."
+            : "Select a learning to see its confidence, relations and history."}
         </p>
       )}
     </div>
   );
 }
 
-export function LearningsPanel() {
-  const workspaces = useQuery({
-    queryKey: ["workspaces"],
-    queryFn: api.workspaces,
-    meta: { errorTitle: "Load workspaces" },
-  });
-  const [chosen, setChosen] = useState<string | null>(null);
+/**
+ * The learnings in the page's workspace. Selection lives on the page so the
+ * maintenance proposals and a learning's relations can open a learning here.
+ */
+export function LearningsPanel({
+  workspaceSlug,
+  selectedId,
+  onSelect,
+}: {
+  workspaceSlug: string;
+  selectedId: string | null;
+  onSelect: (nodeId: string) => void;
+}) {
   const [includeDiscredited, setIncludeDiscredited] = useState(true);
-  const slug = chosen ?? workspaces.data?.[0]?.slug ?? null;
-
-  let body;
-  if (workspaces.isLoading) {
-    body = <PaneSkeleton variant="list" rows={4} label="Loading workspaces…" />;
-  } else if (!workspaces.data) {
-    body = (
-      <p className="memory-error" role="alert">
-        Could not load workspaces: {describeError(workspaces.error, "the request failed")}.
-      </p>
-    );
-  } else if (!slug) {
-    body = <p className="memory-empty">No workspaces yet. Add one to start recording memory.</p>;
-  } else {
-    body = (
-      <NodeList
-        key={`${slug}:${includeDiscredited}`}
-        workspaceSlug={slug}
-        includeDiscredited={includeDiscredited}
-      />
-    );
-  }
-
   return (
     <section className="memory-panel" aria-labelledby="memory-learnings-title">
       <header className="memory-panel-header">
         <h2 id="memory-learnings-title" className="memory-panel-title">
           Learnings
         </h2>
-        <div className="memory-filters">
-          <label>
-            <span>Workspace</span>
-            <select
-              value={slug ?? ""}
-              disabled={!workspaces.data?.length}
-              onChange={(event) => setChosen(event.target.value)}
-            >
-              {(workspaces.data ?? []).map((ws) => (
-                <option key={ws.id} value={ws.slug}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={includeDiscredited}
-              onChange={(event) => setIncludeDiscredited(event.target.checked)}
-            />
-            <span>Show discredited</span>
-          </label>
-        </div>
+        <label className="memory-filters">
+          <input
+            type="checkbox"
+            checked={includeDiscredited}
+            onChange={(event) => setIncludeDiscredited(event.target.checked)}
+          />
+          <span>Show discredited</span>
+        </label>
       </header>
-      {body}
+      <NodeList
+        key={`${workspaceSlug}:${includeDiscredited}`}
+        workspaceSlug={workspaceSlug}
+        includeDiscredited={includeDiscredited}
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
     </section>
   );
 }

@@ -1,6 +1,6 @@
 /**
- * One learning in full: its body, its confidence, its history, and the control
- * that discredits or restores it.
+ * One learning in full: its names, body, confidence, relations, lineage and
+ * history, and the control that discredits or restores it.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,13 +13,17 @@ import { describeError, pushToast } from "../../state/toastStore";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { DiscreditConfirmModal } from "./DiscreditConfirmModal";
 import { LearningConfidenceReadout } from "./LearningConfidenceReadout";
+import { LearningLineage } from "./LearningLineage";
+import { LearningRelations } from "./LearningRelations";
 
 export function LearningDetail({
   node,
   workspaceSlug,
+  onOpen,
 }: {
   node: MemoryNode;
   workspaceSlug: string;
+  onOpen: (nodeId: string) => void;
 }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -41,6 +45,7 @@ export function LearningDetail({
     onSuccess: (updated) => {
       qc.setQueryData(["memory-node", workspaceSlug, node.id], updated);
       void qc.invalidateQueries({ queryKey: ["memory-nodes", workspaceSlug] });
+      void qc.invalidateQueries({ queryKey: ["memory-proposals", workspaceSlug] });
       setConfirming(false);
       pushToast({
         tone: "success",
@@ -51,6 +56,7 @@ export function LearningDetail({
   });
 
   const lastChange = detail.data?.versions.at(-1);
+  const inLineage = detail.data?.relations.some((edge) => edge.relation_type === "supersedes");
 
   return (
     <section className="memory-detail" aria-labelledby="memory-detail-title">
@@ -72,6 +78,15 @@ export function LearningDetail({
           {change.isPending ? "Saving…" : current.discredited ? "Restore" : "Discredit"}
         </button>
       </header>
+      {current.aliases.length > 0 && (
+        <p className="memory-muted">Also known as {current.aliases.join(", ")}</p>
+      )}
+      {detail.data && detail.data.superseded_by.length > 0 && (
+        <p className="memory-superseded" role="note">
+          Superseded by {detail.data.superseded_by.map((s) => s.title).join("; ")}. Agents still see
+          it, labelled and ranked after its replacement.
+        </p>
+      )}
       <p className="memory-detail-body">{current.body || "(no body)"}</p>
       {detail.isLoading ? (
         <PaneSkeleton variant="list" rows={3} label="Loading confidence and history…" />
@@ -82,6 +97,14 @@ export function LearningDetail({
             confidence={detail.data.confidence}
             ladder={detail.data.ladder}
           />
+          <h4 className="memory-section-title">Relations</h4>
+          <LearningRelations relations={detail.data.relations} onOpen={onOpen} />
+          {inLineage && (
+            <>
+              <h4 className="memory-section-title">What changed</h4>
+              <LearningLineage nodeId={node.id} workspaceSlug={workspaceSlug} />
+            </>
+          )}
           <h4 className="memory-section-title">Last change</h4>
           <p className="memory-muted">
             {lastChange
