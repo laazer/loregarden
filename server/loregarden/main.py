@@ -23,6 +23,7 @@ from loregarden.api import (
     docker_capacity,
     editor,
     events,
+    github_issues,
     inbox,
     initiatives,
     local_instances,
@@ -248,6 +249,7 @@ app.include_router(reference_repos.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
+app.include_router(github_issues.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_lanes.router)
 app.include_router(queue_management.router)

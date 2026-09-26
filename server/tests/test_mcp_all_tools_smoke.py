@@ -256,6 +256,8 @@ def _args_for(
         # The two config checks only read the environment; the rest shell out to
         # git over the whole workspace or stat every backend source, which is
         # more than a smoke test needs to prove the tool is wired up.
+        # status only reads the link table; every other action shells out to gh.
+        "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -375,6 +377,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",
+        "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
         "loregarden_request_approval",

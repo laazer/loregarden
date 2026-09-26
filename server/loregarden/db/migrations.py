@@ -68,6 +68,7 @@ from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
 )
+from loregarden.db.migrations_github_issues import m_github_issue_links
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
@@ -1396,6 +1397,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # 0139, not 0138: the live database already carries an unmerged branch's 0138.
     ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
     ("0140_ticket_landing_columns", m_ticket_landing_columns),
+    ("0141_github_issue_links", m_github_issue_links),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
