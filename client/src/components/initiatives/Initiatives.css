@@ -7,6 +7,18 @@
   flex-direction: column;
   gap: 14px;
   max-width: 960px;
+  /* Without this the cap put every spare pixel on one side: measured at a
+     1600px viewport, the page sat 0px from the left of its 1540px container
+     and 580px from the right. */
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* The empty state centres inside the column, but its one sentence ran the full
+   960px, which read as the column being off rather than the line being long. */
+.initiatives-page .queue-page-empty p {
+  max-width: 54ch;
+  margin-inline: auto;
 }
 
 .initiative-card,
