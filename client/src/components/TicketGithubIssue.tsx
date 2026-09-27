@@ -7,31 +7,12 @@ import {
   githubIssueApi,
   type GithubConflictPolicy,
   type GithubLinkSyncResult,
-  type GithubSyncField,
 } from "../api/githubIssueApi";
+import { describeLinkSync, syncFieldList } from "../lib/githubSyncSummary";
 import { describeError, pushToast } from "../state/toastStore";
 
 interface TicketGithubIssueProps {
   ticket: TicketDetail;
-}
-
-const FIELD_LABEL: Record<GithubSyncField, string> = {
-  title: "title",
-  body: "description",
-  closure: "open/closed state",
-};
-
-function fieldList(fields: GithubSyncField[]): string {
-  return fields.map((field) => FIELD_LABEL[field]).join(", ");
-}
-
-/** One line saying what the last sync moved, in which direction. */
-function describeSync(result: GithubLinkSyncResult): string {
-  const parts: string[] = [];
-  if (result.pulled.length) parts.push(`Pulled ${fieldList(result.pulled)} from GitHub`);
-  if (result.pushed.length) parts.push(`Pushed ${fieldList(result.pushed)} to GitHub`);
-  if (!parts.length && !result.conflicts.length) return "Already in sync.";
-  return parts.join(" · ");
 }
 
 /** The ticket's two-way link to a GitHub issue: publish, sync, resolve, unlink.
@@ -146,13 +127,13 @@ export function TicketGithubIssue({ ticket }: TicketGithubIssueProps) {
         </div>
         {lastResult && !lastResult.error && (
           <p className="modal-hint" style={{ marginTop: 6 }}>
-            {describeSync(lastResult)}
+            {describeLinkSync(lastResult)}
           </p>
         )}
         {conflicts.length > 0 && (
           <div style={{ marginTop: 6 }}>
             <p className="modal-hint" style={{ color: "var(--red)", margin: 0 }}>
-              Changed on both sides since the last sync: {fieldList(conflicts.map((c) => c.field))}.
+              Changed on both sides since the last sync: {syncFieldList(conflicts.map((c) => c.field))}.
             </p>
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <button

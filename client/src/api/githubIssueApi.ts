@@ -32,6 +32,21 @@ export interface GithubLinkSyncResult {
   error: string;
 }
 
+export interface GithubWorkspaceSyncRequest {
+  /** Import unlinked open issues under this ticket. Blank imports nothing. */
+  import_parent_ticket_id?: string;
+  /** Only import issues carrying this label. */
+  import_label?: string;
+  policy?: GithubConflictPolicy;
+}
+
+export interface GithubWorkspaceSyncResult {
+  workspace_slug: string;
+  repo: string;
+  links: GithubLinkSyncResult[];
+  imported: GithubLinkSyncResult[];
+}
+
 /** Two-way sync between a ticket and a GitHub issue (server: api/github_issues.py). */
 export const githubIssueApi = {
   /** Null when the ticket is not linked. */
@@ -43,6 +58,11 @@ export const githubIssueApi = {
     request<GithubLinkSyncResult>(`/api/tickets/${ticketId}/github-issue/sync`, {
       method: "POST",
       body: JSON.stringify({ policy }),
+    }),
+  syncWorkspace: (workspaceSlug: string, body: GithubWorkspaceSyncRequest = {}) =>
+    request<GithubWorkspaceSyncResult>(`/api/workspaces/${workspaceSlug}/github-issues/sync`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   unlink: (ticketId: string) =>
     request<void>(`/api/tickets/${ticketId}/github-issue`, { method: "DELETE" }),
