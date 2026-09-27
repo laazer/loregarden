@@ -59,10 +59,10 @@ build = [
 
 [tool.uv.sources]
 # Local instances (`services/local_instances.py`) run on lore-eden's launcher,
-# registry and router. Pinned to a commit: lore-eden is consumed unpublished
+# registry and router. Pinned to a commit on its main: lore-eden is consumed unpublished
 # while its API settles (its CONTRIBUTING, rule 3), and a moving branch would
 # change what this server runs without a commit here saying so.
-lore-eden = { git = "https://github.com/laazer/lore-eden", subdirectory = "python", rev = "65857b17efe3d19c7a15e92502d7c7859779d4a9" }
+lore-eden = { git = "https://github.com/laazer/lore-eden", subdirectory = "python", rev = "5b03774fb3e5e56a6b2b455d00477585e379ca35" }
 
 [tool.uv]
 default-groups = ["dev"]
