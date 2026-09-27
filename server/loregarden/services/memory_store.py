@@ -17,7 +17,12 @@ from loregarden.config import (
     settings,
 )
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
-from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
+from loregarden.models.domain.memory_enums import (
+    MemoryNodeType,
+    MemoryOriginKind,
+    MemoryRelationType,
+    RelationDirection,
+)
 from loregarden.services import term_overlap
 from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
 from loregarden.services.memory_export import export_node_to_vault
@@ -33,6 +38,7 @@ from loregarden.services.memory_links import (
     insert_relation,
     learning_title,
     lineage,
+    relations_among,
     relations_of,
     superseded_by,
 )
@@ -542,7 +548,8 @@ class MemoryGraphStore:
 
     _NODE_COLUMNS = (
         "id, title, body, tags_json, ticket_id, workspace_slug, "
-        "node_type, created_at, updated_at, discredited, aliases_json"
+        "node_type, created_at, updated_at, discredited, aliases_json, "
+        "origin_kind, origin_ref"
     )
     _VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
@@ -601,6 +608,7 @@ class MemoryGraphStore:
                 """
             )
             self._ensure_node_columns(conn)
+            self._ensure_origin_columns(conn)
             ensure_history_schema(conn)
 
     @staticmethod
@@ -619,6 +627,19 @@ class MemoryGraphStore:
             conn.execute(
                 "ALTER TABLE memory_nodes ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]'"
             )
+
+    @staticmethod
+    def _ensure_origin_columns(conn: sqlite3.Connection) -> None:
+        """Provenance columns (766), nullable on purpose.
+
+        A row written before provenance existed has no known origin, and NULL
+        is how it says so. A default — `human`, or `agent` inferred from
+        `node_type` — would be a guess stored as a fact on every old row.
+        """
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
+        for column in ("origin_kind", "origin_ref"):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE memory_nodes ADD COLUMN {column} TEXT NULL")
 
     def connection(self) -> sqlite3.Connection:
         """A configured connection, for the graph modules that read and write
@@ -639,6 +660,8 @@ class MemoryGraphStore:
             "updated_at": row["updated_at"],
             "discredited": bool(row["discredited"]),
             "aliases": json.loads(row["aliases_json"] or "[]"),
+            "origin_kind": row["origin_kind"],
+            "origin_ref": row["origin_ref"],
         }
 
     def upsert_node(
@@ -654,11 +677,18 @@ class MemoryGraphStore:
         discredited: bool | None = None,
         attribution: ChangeAttribution | None = None,
         aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
         """Create or replace a node, preserving the version an update replaces.
 
         `aliases` and `discredited` follow the same rule: None keeps what the
         node already has, a value replaces it.
+
+        Origin is who produced the node, so it is set by the write that has
+        one and kept by every later write that does not: an operator's retitle
+        leaves an agent-written learning agent-written. `origin_kind` and
+        `origin_ref` are kept or replaced together.
 
         The prior version is written to `memory_node_versions` inside the same
         transaction as the update, so an update cannot land without its history
@@ -669,11 +699,15 @@ class MemoryGraphStore:
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT title, body, tags_json, updated_at, created_at, discredited, aliases_json "
-                "FROM memory_nodes WHERE id = ?",
+                "SELECT title, body, tags_json, updated_at, created_at, discredited, aliases_json, "
+                "origin_kind, origin_ref FROM memory_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
+            if origin_kind is None:
+                origin = (row["origin_kind"], row["origin_ref"]) if row else (None, None)
+            else:
+                origin = (origin_kind.value, origin_ref)
             if aliases is None:
                 aliases_json = row["aliases_json"] if row else "[]"
             else:
@@ -701,8 +735,9 @@ class MemoryGraphStore:
                 """
                 INSERT INTO memory_nodes (
                     id, title, body, tags_json, ticket_id, workspace_slug,
-                    node_type, created_at, updated_at, discredited, aliases_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    node_type, created_at, updated_at, discredited, aliases_json,
+                    origin_kind, origin_ref
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     body = excluded.body,
@@ -712,7 +747,9 @@ class MemoryGraphStore:
                     node_type = excluded.node_type,
                     updated_at = excluded.updated_at,
                     discredited = excluded.discredited,
-                    aliases_json = excluded.aliases_json
+                    aliases_json = excluded.aliases_json,
+                    origin_kind = excluded.origin_kind,
+                    origin_ref = excluded.origin_ref
                 """,
                 (
                     node_id,
@@ -726,6 +763,7 @@ class MemoryGraphStore:
                     now,
                     flag,
                     aliases_json,
+                    *origin,
                 ),
             )
         return {
@@ -740,6 +778,8 @@ class MemoryGraphStore:
             "updated_at": now,
             "discredited": bool(flag),
             "aliases": json.loads(aliases_json),
+            "origin_kind": origin[0],
+            "origin_ref": origin[1],
             "sqlite_path": str(self.db_path),
         }
 
@@ -818,6 +858,7 @@ class MemoryGraphStore:
         workspace_slug: str = "",
         limit: int = RECALL_CANDIDATE_CAP,
         include_discredited: bool = False,
+        node_type: MemoryNodeType | None = None,
     ) -> list[dict[str, Any]]:
         """Nodes in the workspace, newest first — enumeration, not matching.
 
@@ -836,6 +877,9 @@ class MemoryGraphStore:
         params: list[Any] = [slug] if slug else []
         if not include_discredited:
             clauses.append(self._VISIBLE_NODES)
+        if node_type is not None:
+            clauses.append("node_type = ?")
+            params.append(node_type.value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._connect() as conn:
             rows = conn.execute(
@@ -856,38 +900,60 @@ class MemoryGraphStore:
         *,
         workspace_slug: str = "",
         limit: int = 20,
+        node_type: MemoryNodeType | None = None,
+        include_discredited: bool = False,
     ) -> list[dict[str, Any]]:
-        needle = f"%{query.strip()}%"
+        """Visible nodes whose title, body, tags or aliases contain `query`.
+
+        `include_discredited` is for the operator surfaces only; every agent
+        read path takes the default.
+        """
         if query.strip() == "":
             return []
+        needle = f"%{query.strip()}%"
         slug = workspace_slug.strip()
+        clauses = ["workspace_slug = ?"] if slug else []
+        params: list[Any] = [slug] if slug else []
+        if not include_discredited:
+            clauses.append(self._VISIBLE_NODES)
+        clauses.append("(title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)")
+        params.extend([needle] * 4)
+        if node_type is not None:
+            clauses.append("node_type = ?")
+            params.append(node_type.value)
         with self._connect() as conn:
-            if slug:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE workspace_slug = ?
-                      AND {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (slug, needle, needle, needle, needle, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (needle, needle, needle, needle, limit),
-                ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT {self._NODE_COLUMNS}
+                FROM memory_nodes
+                WHERE {" AND ".join(clauses)}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
         return [self._node_row(row) for row in rows]
+
+    def list_relations(self, node_ids: list[str]) -> list[dict[str, Any]]:
+        """Edges whose source and target are both in `node_ids` (766).
+
+        Both ends, deliberately: an edge to a node the caller did not load is
+        an edge it cannot draw, and dropping it later in a client would be a
+        second, invisible filter. See `memory_links.relations_among`.
+        """
+        with self._connect() as conn:
+            return relations_among(conn, node_ids)
+
+    def node_type_counts(self, workspace_slug: str) -> dict[str, int]:
+        """Visible nodes per `node_type` in the workspace."""
+        slug = workspace_slug.strip()
+        where = f"WHERE {self._VISIBLE_NODES}" + (" AND workspace_slug = ?" if slug else "")
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT node_type, COUNT(*) FROM memory_nodes {where} GROUP BY node_type",
+                (slug,) if slug else (),
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
 
     def sqlite_url(self) -> str:
         return sqlite_url_for_path(self.db_path)
@@ -919,6 +985,14 @@ class AgentMemoryService:
         if not slug:
             return base
         return base.parent / slug / base.name
+
+    def graph_path(self, workspace_slug: str) -> Path | None:
+        """Where the workspace's graph lives, or None when none is configured.
+
+        Answers without opening the file: constructing a `MemoryGraphStore`
+        creates it, and a read must not.
+        """
+        return self._graph_path_for_workspace(workspace_slug)
 
     def _graph_for_workspace(self, workspace_slug: str) -> MemoryGraphStore | None:
         path = self._graph_path_for_workspace(workspace_slug)
@@ -1016,6 +1090,8 @@ class AgentMemoryService:
         tags: list[str] | None = None,
         title: str = "",
         aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
         """Record a learning under a real title (see `memory_links.learning_title`).
 
@@ -1046,6 +1122,8 @@ class AgentMemoryService:
             workspace_slug=workspace_slug,
             node_type="learning",
             aliases=aliases or [],
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         result["graph"] = node
         if self.obsidian:
@@ -1065,6 +1143,8 @@ class AgentMemoryService:
         workspace_slug: str = "",
         discredited: bool | None = None,
         aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
         graph = self._graph_for_workspace(workspace_slug)
         if not graph:
@@ -1085,6 +1165,8 @@ class AgentMemoryService:
             node_type="memory",
             discredited=discredited,
             aliases=aliases,
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         result["graph"] = node
         if self.obsidian:

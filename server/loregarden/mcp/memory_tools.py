@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.models.domain import MemoryRelationType
+from loregarden.models.domain import MemoryOriginKind, MemoryRelationType
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
@@ -38,7 +38,23 @@ MEMORY_TOOL_NAMES = frozenset(
 )
 
 
-def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) -> str | None:
+def _write_origin(orchestrated: bool) -> MemoryOriginKind | None:
+    """Who produced a memory write arriving over MCP — as far as the transport knows.
+
+    `orchestrated` is set only by Loregarden's own supervised agent CLI runs,
+    so it is a real signal of an agent. Anything else (an operator's terminal,
+    `curl`, an external orchestrator, the in-process CLI) cannot be told apart
+    and is recorded as unknown rather than guessed. The transport carries no
+    run id, so `origin_ref` stays NULL on this path; carrying the run id to
+    the MCP server (a header set beside `X-Loregarden-Orchestrated` in
+    `agents/mcp_context.py`) is the seam that would fill it.
+    """
+    return MemoryOriginKind.AGENT if orchestrated else None
+
+
+def execute_memory_tool(
+    session: Session, name: str, arguments: dict[str, Any], *, orchestrated: bool = False
+) -> str | None:
     """This module's entry point: run `name` if it is a memory tool, else None.
 
     Dispatch loregarden's memory/learnings/blog-post/checkpoint tools.
@@ -66,6 +82,7 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
             tags=arguments.get("tags"),
             title=arguments.get("title", ""),
             aliases=arguments.get("aliases"),
+            origin_kind=_write_origin(orchestrated),
         )
         return json.dumps(result, indent=2)
 
@@ -78,6 +95,7 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
             ticket_id=arguments.get("ticket_id", ""),
             workspace_slug=arguments["workspace_slug"],
             discredited=arguments.get("discredited"),
+            origin_kind=_write_origin(orchestrated),
         )
         return json.dumps(result, indent=2)
 
