@@ -22,18 +22,27 @@ import type { MemoryNodeDetail } from "../../api/memoryApi";
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
-import { ticketPath } from "../../lib/appNavigation";
+import { memoryPath, ticketPath } from "../../lib/appNavigation";
 import { formatLocalTimestamp } from "../../lib/timestamps";
+import { LearningConfidenceReadout } from "../memory/LearningConfidenceReadout";
 import { describeError, errorStatus, toastActionFailed } from "../../state/toastStore";
 import { IconCloseButton } from "../IconCloseButton";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 
 const ORIGIN_LABELS = { agent: "Agent", human: "Human", import: "Import" } as const;
+/** What an `origin_ref` names, per kind (see the server's `MemoryOriginKind`). */
+const REF_PREFIX = { agent: "run ", human: "", import: "" } as const;
 
 function Origin({ record }: { record: MemoryNodeDetail }) {
   const recorded = formatLocalTimestamp(record.created_at);
   const parts = record.origin_kind
-    ? [ORIGIN_LABELS[record.origin_kind], record.origin_ref ?? "reference not recorded", recorded]
+    ? [
+        ORIGIN_LABELS[record.origin_kind],
+        record.origin_ref
+          ? `${REF_PREFIX[record.origin_kind]}${record.origin_ref}`
+          : "reference not recorded",
+        recorded,
+      ]
     : ["Origin unknown", `recorded ${recorded}`];
   return (
     <section className="kb-origin" aria-labelledby="kb-origin-title">
@@ -86,6 +95,19 @@ function Record({
         {record.title}
       </h2>
       {record.discredited && <span className="kb-pill">Discredited</span>}
+      {record.superseded_by.length > 0 && (
+        <p className="kb-superseded">
+          Superseded by{" "}
+          {record.superseded_by.map((next, index) => (
+            <span key={next.id}>
+              {index > 0 && ", "}
+              <button type="button" className="kb-link-button" onClick={() => onSelect(next.id)}>
+                {next.title}
+              </button>
+            </span>
+          ))}
+        </p>
+      )}
       <div className="kb-body">
         {record.body ? (
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{record.body}</ReactMarkdown>
@@ -93,10 +115,26 @@ function Record({
           <p className="kb-muted">This record has no body.</p>
         )}
       </div>
-      {record.ticket_id && (
-        <p>
-          <Link to={ticketPath(record.ticket_id)}>Ticket {record.ticket_id}</Link>
+      {(record.ticket_id || record.versions.length > 0) && (
+        <p className="kb-meta">
+          {record.ticket_id && (
+            <>
+              From ticket{" "}
+              <Link className="kb-link" to={ticketPath(record.ticket_id)}>
+                {record.ticket_id}
+              </Link>
+            </>
+          )}
+          {record.ticket_id && record.versions.length > 0 && " · "}
+          {record.versions.length > 0 &&
+            `Revised ${record.versions.length} ${record.versions.length === 1 ? "time" : "times"}`}
         </p>
+      )}
+      {record.node_type === "learning" && (
+        <>
+          <h3 className="kb-section-title">Confidence</h3>
+          <LearningConfidenceReadout confidence={record.confidence} ladder={record.ladder} />
+        </>
       )}
       <h3 className="kb-section-title">Related</h3>
       <Neighbours record={record} onSelect={onSelect} />
@@ -146,7 +184,9 @@ export function KnowledgePanel({
           Record not found
         </h2>
         <p className="kb-muted">No record with this id exists in {workspaceSlug}.</p>
-        <Link to="/knowledge">Back to all records</Link>
+        <Link className="kb-link" to={memoryPath("map")}>
+          Back to all records
+        </Link>
       </div>
     );
   } else {

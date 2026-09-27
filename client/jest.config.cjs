@@ -52,6 +52,9 @@ module.exports = {
     "^pixi\\.js$": "<rootDir>/src/test/pixiMock.ts",
     "^@xterm/(xterm|addon-fit)$": "<rootDir>/src/test/xtermMock.ts",
     "^@xyflow/react$": "<rootDir>/src/test/xyflowMock.tsx",
+    // d3 v3 packages ship ESM only, which this transform leaves alone; their
+    // bundled UMD builds are CommonJS and require each other by bare name.
+    "^(d3-[a-z]+)$": "<rootDir>/node_modules/$1/dist/$1.js",
     "^@monaco-editor/react$": "<rootDir>/src/test/monacoMock.ts",
     "(^|/)viteEnv$": "<rootDir>/src/test/viteEnvMock.ts",
   },

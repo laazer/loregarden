@@ -65,11 +65,11 @@ function detail(overrides: Partial<MemoryNodeDetail> = {}): MemoryNodeDetail {
   };
 }
 
-function renderPage() {
+function renderPage(path: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <TopbarPageSlotProvider>
           <TopbarPageSlot />
           <MemoryPage />
@@ -135,7 +135,7 @@ function healthReport(overrides: Partial<GraphHealthReport> = {}): GraphHealthRe
 }
 
 it("shows holes apart from the recorded outcomes", async () => {
-  renderPage();
+  renderPage("/memory/health");
   const holes = await screen.findByRole("region", { name: /runs that recorded nothing/i });
   expect(within(holes).getByText("3")).toBeInTheDocument();
   expect(within(holes).getByText(/of 12 runs \(25%\)/)).toBeInTheDocument();
@@ -145,7 +145,7 @@ it("shows holes apart from the recorded outcomes", async () => {
 
 it("says in words when recording has stopped", async () => {
   mockApi.memoryBriefings.mockResolvedValue(stats({ last_row_at: "2026-09-20T12:00:00" }));
-  renderPage();
+  renderPage("/memory/health");
   expect(await screen.findByText(/recording appears to have stopped/i)).toBeInTheDocument();
 });
 
@@ -163,21 +163,21 @@ it("reads an empty window as no runs, not as an error", async () => {
       store_error: 0,
     }),
   );
-  renderPage();
+  renderPage("/memory/health");
   expect(await screen.findByText(/no runs in this window/i)).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("renders a failure as an error with a retry", async () => {
   mockApi.memoryBriefings.mockRejectedValue(new Error("server down"));
-  renderPage();
+  renderPage("/memory/health");
   const alert = await screen.findByText(/could not load briefing health: server down/i);
   expect(alert).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
 });
 
 it("switches the window through a keyboard-reachable radio group", async () => {
-  renderPage();
+  renderPage("/memory/health");
   await screen.findByRole("region", { name: /runs that recorded nothing/i });
   fireEvent.click(screen.getByRole("radio", { name: "30 days" }));
   await waitFor(() => expect(mockApi.memoryBriefings).toHaveBeenCalledWith(30));
@@ -185,7 +185,7 @@ it("switches the window through a keyboard-reachable radio group", async () => {
 });
 
 it("disables Refresh while a refresh is in flight", async () => {
-  renderPage();
+  renderPage("/memory/health");
   await screen.findByRole("region", { name: /runs that recorded nothing/i });
   mockApi.memoryBriefings.mockReturnValue(new Promise(() => {}));
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
@@ -194,7 +194,7 @@ it("disables Refresh while a refresh is in flight", async () => {
 
 it("discredits a learning only after a confirm step with a reason", async () => {
   mockApi.setMemoryNodeDiscredited.mockResolvedValue(detail({ discredited: true }));
-  renderPage();
+  renderPage("/memory/records");
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
   fireEvent.click(await screen.findByRole("button", { name: "Discredit" }));
 
@@ -216,7 +216,7 @@ it("discredits a learning only after a confirm step with a reason", async () => 
 });
 
 it("closes the confirm dialog on Escape without writing", async () => {
-  renderPage();
+  renderPage("/memory/records");
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
   fireEvent.click(await screen.findByRole("button", { name: "Discredit" }));
   await screen.findByRole("dialog");
@@ -226,13 +226,13 @@ it("closes the confirm dialog on Escape without writing", async () => {
 });
 
 it("says a learning with no observed runs is not observed yet", async () => {
-  renderPage();
+  renderPage("/memory/records");
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
   expect(await screen.findByText(/not observed yet/i)).toBeInTheDocument();
 });
 
 it("shows graph shares against the last snapshot and names one to watch", async () => {
-  renderPage();
+  renderPage("/memory/health");
   const panel = await screen.findByRole("region", { name: /graph health/i });
   expect(await within(panel).findByText("40%")).toBeInTheDocument();
   expect(within(panel).getByText("+20 pts")).toBeInTheDocument();
@@ -242,7 +242,7 @@ it("shows graph shares against the last snapshot and names one to watch", async 
 
 it("records a snapshot without letting a second click fire twice", async () => {
   mockApi.recordMemoryGraphHealth.mockReturnValue(new Promise(() => {}));
-  renderPage();
+  renderPage("/memory/health");
   const panel = await screen.findByRole("region", { name: /graph health/i });
   await within(panel).findByText("40%");
   fireEvent.click(within(panel).getByRole("button", { name: "Record snapshot" }));
@@ -256,12 +256,12 @@ it("says an empty graph has no shape rather than showing zero percent", async ()
   mockApi.memoryGraphHealth.mockResolvedValue(
     healthReport({ current: reading({}, 0), previous: null, moved: [], notes: [], watch: null }),
   );
-  renderPage();
+  renderPage("/memory/health");
   expect(await screen.findByText(/no live learnings in lg yet/i)).toBeInTheDocument();
 });
 
 it("says there is nothing to decide when no proposals come back", async () => {
-  renderPage();
+  renderPage("/memory/health");
   expect(await screen.findByText(/nothing to decide/i)).toBeInTheDocument();
 });
 
@@ -283,7 +283,7 @@ it("merges a duplicate only after choosing what to keep and saying why", async (
     edges_moved: 0,
     outcomes_moved: 0,
   });
-  renderPage();
+  renderPage("/memory/health");
   fireEvent.click(await screen.findByRole("button", { name: "Merge…" }));
   const dialog = await screen.findByRole("dialog", { name: /merge these learnings/i });
   fireEvent.click(within(dialog).getByRole("radio", { name: "iCloud journal mode" }));
@@ -314,7 +314,7 @@ it("retitles with the suggested name prefilled and editable", async () => {
     },
   ]);
   mockApi.retitleMemoryNode.mockResolvedValue(detail());
-  renderPage();
+  renderPage("/memory/health");
   fireEvent.click(await screen.findByRole("button", { name: "Retitle…" }));
   const dialog = await screen.findByRole("dialog");
   const title = within(dialog).getByRole("textbox", { name: "New title" });
@@ -353,7 +353,7 @@ it("shows a learning's relations, its successor and what changed", async () => {
       { ...NODE, id: "n9", title: "Use the native store", versions: [] },
     ],
   });
-  renderPage();
+  renderPage("/memory/records");
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));
   expect(await screen.findByText(/also known as journal mode/i)).toBeInTheDocument();
   expect(screen.getByRole("note")).toHaveTextContent("Superseded by Use the native store");

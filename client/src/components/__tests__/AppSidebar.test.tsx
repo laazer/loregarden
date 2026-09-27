@@ -105,7 +105,6 @@ const TOOL_LABELS = [
   "MCP Gateway",
   "Instances",
   "Memory",
-  "Knowledge",
   "Branch Triage",
 ];
 
