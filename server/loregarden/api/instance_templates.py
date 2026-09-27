@@ -3,8 +3,9 @@
 Reading answers where each template comes from — code, the workspace's
 committed `.loregarden/instances.yaml`, or a stored row — and what is wrong
 with any of them: a file that does not parse, a row shadowed by a file entry
-of the same name. Writing only ever touches stored rows; the file is edited in
-the repo, like any other code.
+of the same name. Writing touches stored rows, with one exception: a
+workspace with no file can have its saved templates written out as one, to
+review and commit. After that the file is edited in the repo, like any code.
 
 No MCP tool reaches these endpoints. Launching still takes a template name,
 never a command, and defining one stays with the operator.
@@ -19,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from lore_eden.instances import InstanceKind, TemplateSpec
 from loregarden.db.session import get_session
 from loregarden.services.instance_template_store import (
+    NothingToMoveError,
+    TemplateFileExistsError,
     TemplateNameTakenError,
     TemplateNotFoundError,
     TemplateRenameError,
@@ -26,6 +29,7 @@ from loregarden.services.instance_template_store import (
     WorkspaceNotFoundError,
     create_template,
     delete_template,
+    move_to_file,
     replace_template,
 )
 from loregarden.services.local_instances import get_template_source
@@ -57,6 +61,7 @@ class WorkspaceTemplatesView(BaseModel):
     name: str
     repo_root: str
     template_file: str
+    file_exists: bool
     file_error: str
     conflicts: list[str]
     entries: list[TemplateEntryView]
@@ -85,6 +90,7 @@ def _view(found: WorkspaceTemplates) -> WorkspaceTemplatesView:
         name=found.name,
         repo_root=str(found.repo_root),
         template_file=str(found.template_file),
+        file_exists=found.file_exists,
         file_error=found.file_error,
         conflicts=found.conflicts,
         entries=[_entry_view(entry) for entry in found.entries],
@@ -96,6 +102,8 @@ _STATUS: dict[type[TemplateStoreError], int] = {
     TemplateNotFoundError: status.HTTP_404_NOT_FOUND,
     TemplateNameTakenError: status.HTTP_409_CONFLICT,
     TemplateRenameError: 422,
+    TemplateFileExistsError: status.HTTP_409_CONFLICT,
+    NothingToMoveError: status.HTTP_409_CONFLICT,
 }
 
 
@@ -145,3 +153,13 @@ def delete_workspace_template(
 ) -> None:
     with _as_http():
         delete_template(session, slug, name)
+
+
+@router.post("/{slug}/file", response_model=WorkspaceTemplatesView)
+def write_workspace_template_file(
+    slug: str, session: Session = Depends(get_session)
+) -> WorkspaceTemplatesView:
+    """Write the workspace's saved templates as its `.loregarden/instances.yaml`."""
+    with _as_http():
+        move_to_file(session, _workspace_view(session, slug))
+    return _view(_workspace_view(session, slug))

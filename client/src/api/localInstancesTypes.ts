@@ -107,7 +107,24 @@ export interface WorkspaceTemplates {
   name: string;
   repo_root: string;
   template_file: string;
+  file_exists: boolean;
   file_error: string;
   conflicts: string[];
   entries: WorkspaceTemplateEntry[];
+}
+
+export type WorkspaceInstaller = "hooks" | "docs";
+export type InstallState = "current" | "missing" | "outdated" | "unavailable";
+
+export interface WorkspaceInstallerStatus {
+  installer: WorkspaceInstaller;
+  state: InstallState;
+  /** The installer's own report line, or why it cannot run. */
+  detail: string;
+}
+
+export interface WorkspaceIntegration {
+  slug: string;
+  repo_root: string;
+  installers: WorkspaceInstallerStatus[];
 }

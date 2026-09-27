@@ -39,7 +39,8 @@
   margin-top: 14px;
 }
 
-.instances-templates {
+.instances-templates,
+.instances-integration {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -49,8 +50,15 @@
   background: var(--bg1);
 }
 
-.instances-templates + .instances-templates {
-  margin-top: 12px;
+/* One workspace: its setup, then its templates. */
+.instances-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.instances-workspace + .instances-workspace {
+  margin-top: 16px;
 }
 
 .instances-section-head {

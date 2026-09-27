@@ -84,6 +84,8 @@ class WorkspaceTemplates:
     name: str
     repo_root: Path
     template_file: Path
+    #: Whether the file exists — an empty one declares no templates but is there.
+    file_exists: bool = False
     #: Why the file could not be read or parsed; empty when fine or absent.
     file_error: str = ""
     #: File entries ignored because code already took the name.
@@ -199,6 +201,7 @@ def collect(
             name=workspace.name,
             repo_root=root,
             template_file=root / TEMPLATE_FILE,
+            file_exists=(root / TEMPLATE_FILE).is_file(),
         )
         make = _spec_maker(workspace.slug, root, registry)
         found.entries.extend(_code_entries(code.get(workspace.slug, [])))
