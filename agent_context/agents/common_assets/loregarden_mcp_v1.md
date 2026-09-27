@@ -190,21 +190,6 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 - Only public http(s) addresses are reachable. Private, loopback and link-local addresses are
   refused on every redirect hop, so this is not a way to reach an internal service.
 
-## Local instances — run the change you are checking
-
-To see a change working rather than infer it from tests, run it. The templates `loregarden_list_instances` returns decide what can be launched, and so do the parameters and allowed values it lists for each. In loregarden these are a `server`, which runs sandboxed on a copy of main's database, and a `client`, which points at main or at a branch server.
-
-```
-tools/call loregarden_launch_instance {"template": "server", "params": {"worktree": "<your worktree>"}, "wait_seconds": 20}
-```
-
-- **A UI-only change:** launch a `client` from your worktree. It points at main by default.
-- **A server change:** launch a `server` from your worktree, then a `client` with `target` set to that server's `id`.
-- **Poll, do not sleep.** Launch returns in state `starting` unless `wait_seconds` (at most 30) saw it come up. Call `loregarden_instance_status` until `state` is `ready`; each call re-checks. A server syncing its dependencies can take minutes.
-- **`exited` or `stalled`: read the log.** `loregarden_instance_status` returns its tail, and it says why.
-- **Failures classify themselves.** Check `ok`, then `error_kind`. `invalid_params` means fix the call. `no_free_port` is `retryable`.
-- **Stop what you launched** with `loregarden_stop_instance` before you finish. It keeps running and holding its port otherwise. Main cannot be stopped from here.
-
 ## Which tool for which situation
 
 | Situation | Tool |
