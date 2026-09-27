@@ -162,6 +162,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0142_memory_health_snapshots_table",
     "0143_github_issue_links",
     "0144_github_sync_settings",
+    "0145_github_push_on_edit",
 )
 
 

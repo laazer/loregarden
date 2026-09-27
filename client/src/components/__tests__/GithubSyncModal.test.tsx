@@ -32,6 +32,7 @@ function settings(over: Partial<GithubSyncSettings> = {}): GithubSyncSettings {
     workspace_slug: 'beta',
     enabled: false,
     interval_minutes: 15,
+    push_on_edit: false,
     import_parent_ticket_id: '',
     import_label: '',
     last_run_at: null,
@@ -123,12 +124,13 @@ it('turns background sync on with the chosen interval and import parent', async 
   fireEvent.click(await screen.findByLabelText('Sync this workspace automatically'));
   fireEvent.change(screen.getByLabelText('How often'), { target: { value: '60' } });
   fireEvent.click(screen.getByRole('button', { name: 'Pick parent' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
 
   await waitFor(() =>
     expect(mockedSave).toHaveBeenCalledWith('beta', {
       enabled: true,
       interval_minutes: 60,
+      push_on_edit: false,
       import_parent_ticket_id: 'parent-in-beta',
       import_label: '',
     }),
@@ -153,5 +155,19 @@ it('shows the last background failure and prefills the saved import parent', asy
   fireEvent.click(screen.getByRole('button', { name: 'Sync and import' }));
   await waitFor(() =>
     expect(mockedSync).toHaveBeenCalledWith('beta', { import_parent_ticket_id: 'saved-parent', import_label: '' }),
+  );
+});
+
+it('turns push-on-edit on without the schedule', async () => {
+  mockedSave.mockImplementation((_slug: string, body: Partial<GithubSyncSettings>) =>
+    Promise.resolve(settings(body)),
+  );
+
+  renderModal();
+  fireEvent.click(await screen.findByLabelText('Push ticket edits to GitHub as they happen'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+  await waitFor(() =>
+    expect(mockedSave).toHaveBeenCalledWith('beta', expect.objectContaining({ enabled: false, push_on_edit: true })),
   );
 });
