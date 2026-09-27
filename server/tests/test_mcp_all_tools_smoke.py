@@ -246,6 +246,12 @@ def _args_for(
         "loregarden_renew_docker_lease": {"lease_id": "smoke-no-such-lease"},
         "loregarden_release_docker_capacity": {"lease_id": "smoke-no-such-lease"},
         "loregarden_docker_capacity_status": {},
+        # Instances: every call answers with a structured payload and none of
+        # these starts a process — an unknown template is refused before spawn.
+        "loregarden_list_instances": {},
+        "loregarden_launch_instance": {"template": "smoke-no-such-template"},
+        "loregarden_instance_status": {"instance_id": "smoke-no-such-instance"},
+        "loregarden_stop_instance": {"instance_id": "smoke-no-such-instance"},
         "loregarden_force_release_docker_lease": {
             "lease_id": "smoke-no-such-lease",
             "reason": "smoke",
@@ -398,6 +404,10 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_release_docker_capacity",
         "loregarden_docker_capacity_status",
         "loregarden_force_release_docker_lease",
+        "loregarden_list_instances",
+        "loregarden_launch_instance",
+        "loregarden_instance_status",
+        "loregarden_stop_instance",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)

@@ -39,6 +39,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.ticket_studio_run_service.engine",
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
+    "loregarden.services.github_push_on_edit.engine",
 )
 
 
@@ -62,6 +63,22 @@ def _no_shutdown_drain_in_tests():
     settings.drain_timeout_seconds = 0
     yield
     settings.drain_timeout_seconds = previous
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_github_push_worker_in_tests():
+    """No background push-on-edit worker in apps the suite builds.
+
+    Every app lifespan would otherwise start one, and it would drain edits from
+    whichever test happened to be running on a thread nobody awaits. The push
+    tests drive `process_due_pushes` themselves.
+    """
+    from loregarden.config import settings
+
+    previous = settings.github_push_poll_seconds
+    settings.github_push_poll_seconds = 0
+    yield
+    settings.github_push_poll_seconds = previous
 
 
 @pytest.fixture(autouse=True)
@@ -241,9 +258,11 @@ def isolated_instance_registry(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(settings, "dev_port", None)
     local_instances.get_registry.cache_clear()
     local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
     yield
     local_instances.get_registry.cache_clear()
     local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -349,7 +368,7 @@ def reference_network_refused(monkeypatch):
     untouched too: only the name `reference_cache` resolves is replaced.
     """
 
-    # DNS first. `_url_block_reason` calls socket.getaddrinfo as an SSRF guard
+    # DNS first. `_url_block_reason` resolves the host as an SSRF guard
     # BEFORE any request is built, so patching only httpx left every test in
     # test_search_reference_tool.py making a real lookup for devdocs.io — slow,
     # and dependent on someone else's uptime, which is the exact failure this
@@ -365,7 +384,11 @@ def reference_network_refused(monkeypatch):
     def _fake_getaddrinfo(host, port, *args, **kwargs):
         return [(2, 1, 6, "", ("93.184.216.34", port))]
 
-    monkeypatch.setattr(reference_cache.socket, "getaddrinfo", _fake_getaddrinfo)
+    #
+    # On the cache's own seam, not on `socket`: `reference_cache.socket` is the
+    # stdlib module, so patching `getaddrinfo` there faked DNS for every test in
+    # the suite — even `127.0.0.1` resolved to the address above.
+    monkeypatch.setattr(reference_cache, "_getaddrinfo", _fake_getaddrinfo)
 
     real = reference_cache.httpx
 

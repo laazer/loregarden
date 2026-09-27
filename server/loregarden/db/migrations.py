@@ -70,11 +70,13 @@ from loregarden.db.migrations_git_boundary import (
 )
 from loregarden.db.migrations_github_issues import (
     m_github_issue_links,
+    m_github_push_on_edit,
     m_github_sync_settings,
 )
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
+from loregarden.db.migrations_instances import m_instance_templates
 from loregarden.db.migrations_landing import m_ticket_landing_columns
 from loregarden.db.migrations_learning_applications import (
     m_learning_applications_table,
@@ -1408,6 +1410,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0142_memory_health_snapshots_table", m_memory_health_snapshots_table),
     ("0143_github_issue_links", m_github_issue_links),
     ("0144_github_sync_settings", m_github_sync_settings),
+    ("0145_github_push_on_edit", m_github_push_on_edit),
+    ("0146_instance_templates", m_instance_templates),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

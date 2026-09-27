@@ -202,5 +202,5 @@ def test_ordinary_boot_still_recovers(isolated_db) -> None:
 def test_templates_are_served_under_api_instances(client: TestClient) -> None:
     response = client.get("/api/instances/templates")
     assert response.status_code == 200, response.text
-    assert sorted(t["name"] for t in response.json()) == ["client", "server"]
+    assert sorted(t["name"] for t in response.json()) == ["loregarden/client", "loregarden/server"]
     assert client.get("/api/instances").json() == {"instances": [], "unreadable": []}

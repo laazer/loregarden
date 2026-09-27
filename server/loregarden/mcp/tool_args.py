@@ -253,6 +253,31 @@ def normalize_force_release_docker_lease(args: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def normalize_list_instances(args: dict[str, Any]) -> dict[str, Any]:
+    return {"project": coerce_optional_string(args.get("project"))}
+
+
+def normalize_launch_instance(args: dict[str, Any]) -> dict[str, Any]:
+    params = coerce_mapping(args.get("params"))
+    return {
+        "template": coerce_string(args.get("template"), field="template"),
+        "params": {str(key): str(value) for key, value in params.items()},
+        "name": coerce_optional_string(args.get("name")),
+        "wait_seconds": coerce_optional_int(args.get("wait_seconds"), field="wait_seconds"),
+    }
+
+
+def normalize_instance_status(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "instance_id": coerce_string(args.get("instance_id"), field="instance_id"),
+        "log_lines": coerce_optional_int(args.get("log_lines"), field="log_lines"),
+    }
+
+
+def normalize_stop_instance(args: dict[str, Any]) -> dict[str, Any]:
+    return {"instance_id": coerce_string(args.get("instance_id"), field="instance_id")}
+
+
 #: Normalizers dispatched by table instead of another branch in the chain below.
 #:
 #: `execute_tool` got this seam first, as `EXTENDED_TOOLS` — the chain was past
@@ -270,4 +295,8 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.RELEASE_DOCKER_CAPACITY.value: normalize_release_docker_capacity,
     McpTool.DOCKER_CAPACITY_STATUS.value: normalize_docker_capacity_status,
     McpTool.FORCE_RELEASE_DOCKER_LEASE.value: normalize_force_release_docker_lease,
+    McpTool.LIST_INSTANCES.value: normalize_list_instances,
+    McpTool.LAUNCH_INSTANCE.value: normalize_launch_instance,
+    McpTool.INSTANCE_STATUS.value: normalize_instance_status,
+    McpTool.STOP_INSTANCE.value: normalize_stop_instance,
 }

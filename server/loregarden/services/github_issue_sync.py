@@ -57,6 +57,7 @@ from loregarden.services.github_issue_client import (
     resolve_repo,
     set_issue_closure,
 )
+from loregarden.services.github_sync_origin import applying_remote_changes
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_service import can_choose
@@ -297,7 +298,8 @@ def sync_link(
     ]
 
     if pulls:
-        _pull(session, ticket, remote, pulls)
+        with applying_remote_changes():
+            _pull(session, ticket, remote, pulls)
         result.pulled = sorted(pulls)
     _record_base(link, remote, pulls | converged)
 

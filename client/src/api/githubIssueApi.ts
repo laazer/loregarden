@@ -52,6 +52,8 @@ export interface GithubSyncSettings {
   workspace_slug: string;
   enabled: boolean;
   interval_minutes: number;
+  /** Sync a linked ticket as soon as it is edited, not only on the schedule. */
+  push_on_edit: boolean;
   import_parent_ticket_id: string;
   import_label: string;
   last_run_at: string | null;
@@ -61,7 +63,7 @@ export interface GithubSyncSettings {
 
 export type GithubSyncSettingsUpdate = Pick<
   GithubSyncSettings,
-  "enabled" | "interval_minutes" | "import_parent_ticket_id" | "import_label"
+  "enabled" | "interval_minutes" | "push_on_edit" | "import_parent_ticket_id" | "import_label"
 >;
 
 /** Two-way sync between a ticket and a GitHub issue (server: api/github_issues.py). */
