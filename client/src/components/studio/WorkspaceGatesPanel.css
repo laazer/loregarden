@@ -515,6 +515,10 @@
   background: var(--bg4);
   color: var(--txm);
 }
+.gate-badge--running {
+  background: color-mix(in srgb, var(--blue) 18%, transparent);
+  color: var(--bll);
+}
 .gate-badge--passed {
   background: color-mix(in srgb, var(--grn) 18%, transparent);
   color: var(--grl);
