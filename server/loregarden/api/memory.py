@@ -1,12 +1,16 @@
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
-from loregarden.models.domain import LearningOutcomeRung, MemoryRelationType
+from loregarden.models.domain import MemoryNodeType, MemoryRelationType
 from loregarden.services import memory_curation, memory_graph_health
-from loregarden.services.learning_confidence import LearningConfidence
-from loregarden.services.learning_outcomes import confidence_for, ladder_counts
+from loregarden.services.learning_outcomes import confidence_for
 from loregarden.services.memory_briefing_telemetry import MemoryBriefingStats, briefing_stats
+from loregarden.services.memory_browser import (
+    ConfidenceView,
+    KnowledgeGraph,
+    MemoryNodeRecord,
+    knowledge_graph,
+    node_record,
+)
 from loregarden.services.memory_config import (
     apply_memory_config,
     current_memory_config,
@@ -84,24 +88,6 @@ def put_memory_config(body: MemoryConfigBody) -> dict:
     return _memory_config_response()
 
 
-class ConfidenceView(BaseModel):
-    """A learning's Beta posterior (178). `observations == 0` means never observed."""
-
-    mean: float
-    lower_bound: float
-    observations: int
-    trusted: bool
-
-    @classmethod
-    def of(cls, confidence: LearningConfidence) -> "ConfidenceView":
-        return cls(
-            mean=confidence.mean,
-            lower_bound=confidence.lower_bound,
-            observations=confidence.observations,
-            trusted=confidence.trusted,
-        )
-
-
 class DiscreditBody(BaseModel):
     # Stripped before validation, so a whitespace-only reason fails `min_length`.
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -130,14 +116,39 @@ def _graph_call(action):
         raise HTTPException(409, str(exc)) from exc
 
 
-def _with_outcomes(session: Session, node: dict[str, Any]) -> dict[str, Any]:
-    confidence = confidence_for(session, [node["id"]])[node["id"]]
-    counts = ladder_counts(session, node["id"])
-    return {
-        **node,
-        "confidence": ConfidenceView.of(confidence).model_dump(),
-        "ladder": {rung.value: counts[rung] for rung in LearningOutcomeRung},
-    }
+def _record(session: Session, service: AgentMemoryService, node_id: str, workspace_slug: str):
+    """The full node record, read back after any write so every node endpoint
+    answers with the same complete shape."""
+    detail = _graph_call(
+        lambda: service.node_detail(node_id=node_id, workspace_slug=workspace_slug)
+    )
+    return node_record(session, detail)
+
+
+@router.get("/graph")
+def memory_knowledge_graph(
+    workspace_slug: str = "",
+    node_type: MemoryNodeType | None = None,
+    q: str = "",
+    limit: int = Query(default=300, ge=1, le=500),
+    include_discredited: bool = False,
+) -> KnowledgeGraph:
+    """A window of the workspace graph for the knowledge browser (766).
+
+    `configured=false` when no graph exists for this installation — a setup
+    state, not an empty graph. `source` says whether `q` searched or the
+    newest nodes were listed. `relations` holds only edges between returned
+    nodes. Discredited nodes are left out unless `include_discredited` is set. A graph that fails to read raises (5xx); it is never an empty list.
+    """
+    service = AgentMemoryService.from_settings()
+    return knowledge_graph(
+        service,
+        workspace_slug=workspace_slug,
+        node_type=node_type,
+        query=q,
+        limit=limit,
+        include_discredited=include_discredited,
+    )
 
 
 @router.get("/nodes")
@@ -171,11 +182,10 @@ def memory_nodes(
 @router.get("/nodes/{node_id}")
 def memory_node(
     node_id: str, workspace_slug: str = "", session: Session = Depends(get_session)
-) -> dict:
-    """One node — discredited or not — with its version history and outcomes."""
-    service = AgentMemoryService.from_settings()
-    node = _graph_call(lambda: service.node_detail(node_id=node_id, workspace_slug=workspace_slug))
-    return _with_outcomes(session, node)
+) -> MemoryNodeRecord:
+    """One node — discredited or not — in full: body, provenance, history, edges,
+    successors and observed outcomes. 404 for an unknown id."""
+    return _record(session, AgentMemoryService.from_settings(), node_id, workspace_slug)
 
 
 @router.get("/nodes/{node_id}/lineage")
@@ -189,10 +199,10 @@ def memory_node_lineage(node_id: str, workspace_slug: str = "") -> dict:
 @router.put("/nodes/{node_id}/discredited")
 def set_memory_node_discredited(
     node_id: str, body: DiscreditBody, session: Session = Depends(get_session)
-) -> dict:
+) -> MemoryNodeRecord:
     """Mark a node wrong, or restore it. The reason is stored with the change."""
     service = AgentMemoryService.from_settings()
-    node = _graph_call(
+    _graph_call(
         lambda: service.set_discredited(
             node_id=node_id,
             workspace_slug=body.workspace_slug,
@@ -201,7 +211,7 @@ def set_memory_node_discredited(
             writer="operator",
         )
     )
-    return _with_outcomes(session, node)
+    return _record(session, service, node_id, body.workspace_slug)
 
 
 class WorkspaceBody(BaseModel):
@@ -272,7 +282,7 @@ def memory_proposals(
 @router.put("/nodes/{node_id}/title")
 def retitle_memory_node(
     node_id: str, body: RetitleBody, session: Session = Depends(get_session)
-) -> dict:
+) -> MemoryNodeRecord:
     """Rename a learning; the old title is kept as an alias."""
     service = AgentMemoryService.from_settings()
     _graph_call(
@@ -286,10 +296,7 @@ def retitle_memory_node(
             writer="operator",
         )
     )
-    node = _graph_call(
-        lambda: service.node_detail(node_id=node_id, workspace_slug=body.workspace_slug)
-    )
-    return _with_outcomes(session, node)
+    return _record(session, service, node_id, body.workspace_slug)
 
 
 @router.post("/nodes/{node_id}/merge")

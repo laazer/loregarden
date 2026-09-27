@@ -49,6 +49,8 @@ const NODE: MemoryNode = {
   updated_at: "2026-09-01T00:00:00",
   discredited: false,
   aliases: [],
+  origin_kind: null,
+  origin_ref: null,
   confidence: { mean: 0.5, lower_bound: 0.02, observations: 0, trusted: false },
 };
 

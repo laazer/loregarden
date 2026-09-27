@@ -63,16 +63,16 @@ def _observations(seed: int, count: int) -> list[Observation]:
 
 def test_shuffled_event_order_yields_identical_confidence():
     events = _observations(seed=7, count=200)
-    expected = score(events, as_of=T0)
+    expected = score(events)
     for seed in range(10):
         shuffled = events[:]
         random.Random(seed).shuffle(shuffled)
-        assert score(shuffled, as_of=T0) == expected
+        assert score(shuffled) == expected
 
 
 def test_confidence_is_sample_size_aware():
-    one = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)], as_of=T0)
-    many = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)] * 10, as_of=T0)
+    one = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)])
+    many = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)] * 10)
 
     assert many.lower_bound > one.lower_bound
     # Corroboration gate: one save cannot mint a trusted lesson.
@@ -85,14 +85,30 @@ def test_a_fresh_negative_outweighs_an_old_positive():
         [
             Observation(LearningOutcomeRung.CLEAN_PASS, T0 - timedelta(days=180)),
             Observation(LearningOutcomeRung.BLOCKED, T0),
-        ],
-        as_of=T0,
+        ]
     )
     assert mixed.mean < 0.5
 
 
+def test_a_learning_recovers_by_holding_up_after_its_latest_failure():
+    before = [Observation(LearningOutcomeRung.CLEAN_PASS, T0 - timedelta(days=d)) for d in (9, 8)]
+    failure = [Observation(LearningOutcomeRung.BLOCKED, T0 - timedelta(days=5))]
+    after = [Observation(LearningOutcomeRung.CLEAN_PASS, T0 - timedelta(days=d)) for d in (3, 2)]
+
+    assert score(before + failure + after).mean > score(after + failure).mean > 0.5
+    # Successes after the failure count in full; those before it at half weight.
+    assert score(before + failure + after).alpha == 1.0 + 0.5 * 2 + 2
+
+
+def test_evidence_does_not_decay_with_age():
+    """Time-based decay is rejected: a fact is invalidated by events, not by a clock."""
+    old = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0 - timedelta(days=1000))])
+    fresh = score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)])
+    assert (old.alpha, old.beta) == (fresh.alpha, fresh.beta)
+
+
 def test_no_observations_is_the_prior_and_says_so():
-    assert score([], as_of=T0) == UNOBSERVED
+    assert score([]) == UNOBSERVED
     assert UNOBSERVED.observations == 0
 
 
@@ -335,7 +351,7 @@ def graph_memory(tmp_path) -> tuple[AgentMemoryService, dict[str, str]]:
 
 
 def _trusted() -> LearningConfidence:
-    return score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)] * 8, as_of=T0)
+    return score([Observation(LearningOutcomeRung.CLEAN_PASS, T0)] * 8)
 
 
 def test_briefing_orders_by_confidence_and_annotates_it(graph_memory):

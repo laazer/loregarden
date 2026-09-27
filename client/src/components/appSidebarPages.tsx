@@ -161,6 +161,20 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "knowledge",
+    label: "Knowledge",
+    path: pathForPage("knowledge"),
+    ownsPage: ownsOnly("knowledge"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <circle cx="6" cy="6" r="2.5" />
+        <circle cx="18" cy="8" r="2.5" />
+        <circle cx="10" cy="18" r="2.5" />
+        <path d="M8.3 7.1l7.4.8M7.2 8.2l2 7.4M16.6 10.2l-5 6" />
+      </svg>
+    ),
+  },
+  {
     key: "branch-triage",
     label: "Branch Triage",
     path: pathForPage("branch-triage"),

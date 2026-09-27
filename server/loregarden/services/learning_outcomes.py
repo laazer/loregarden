@@ -258,9 +258,7 @@ def settle_pending(session: Session, *, limit: int = SETTLE_BATCH) -> int:
     return settled
 
 
-def confidence_for(
-    session: Session, node_ids: Sequence[str], *, as_of: datetime | None = None
-) -> dict[str, LearningConfidence]:
+def confidence_for(session: Session, node_ids: Sequence[str]) -> dict[str, LearningConfidence]:
     """The posterior for each node id; `UNOBSERVED` for one with no settled rung.
 
     Pooled across workspaces on purpose: a node id is global, and a lesson
@@ -268,7 +266,6 @@ def confidence_for(
     """
     if not node_ids:
         return {}
-    reference = as_of or utcnow()
     rows = session.exec(
         select(
             LearningApplication.node_id, LearningApplication.outcome, LearningApplication.created_at
@@ -282,9 +279,7 @@ def confidence_for(
             Observation(rung=rung, observed_at=_aware(surfaced_at))
         )
     return {
-        node_id: score(grouped[node_id], as_of=_aware(reference))
-        if node_id in grouped
-        else UNOBSERVED
+        node_id: score(grouped[node_id]) if node_id in grouped else UNOBSERVED
         for node_id in node_ids
     }
 

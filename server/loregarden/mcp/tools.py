@@ -1334,7 +1334,7 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = execute_memory_tool(session, name, arguments)
+    memory_result = execute_memory_tool(session, name, arguments, orchestrated=orchestrated)
     if memory_result is not None:
         return memory_result
 

@@ -53,3 +53,36 @@ class RelationDirection(str, Enum):
 
     OUT = "out"  # the surfaced node is the edge's source
     IN = "in"  # the surfaced node is the edge's target
+
+
+class MemoryOriginKind(str, Enum):
+    """Who or what produced a memory node (766). Stored as its value; NULL is "unknown".
+
+    NULL is a state of its own, not a default for any member: nodes written
+    before provenance was recorded, and writes whose caller the control plane
+    cannot identify, have no origin — and a browser must say "origin unknown"
+    rather than guess one.
+
+    ``AGENT``  a Loregarden-supervised agent run; `origin_ref` is its run id when
+               the write path carries one.
+    ``HUMAN``  a person; `origin_ref` names them.
+    ``IMPORT`` brought in from elsewhere; `origin_ref` is the source path.
+    """
+
+    AGENT = "agent"
+    HUMAN = "human"
+    IMPORT = "import"
+
+
+class MemoryNodeType(str, Enum):
+    """The kinds of node the memory graph records (see `memory_authority`)."""
+
+    MEMORY = "memory"
+    LEARNING = "learning"
+
+
+class KnowledgeGraphSource(str, Enum):
+    """Which reader produced a knowledge-graph response, so the UI labels it honestly."""
+
+    LIST = "list"  # `list_nodes`: newest first, no text match
+    SEARCH = "search"  # `search`: substring match over title, body, tags and aliases

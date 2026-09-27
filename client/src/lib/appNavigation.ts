@@ -11,6 +11,7 @@ export type AppPage =
   | "branch-triage"
   | "mcp"
   | "memory"
+  | "knowledge"
   | "instances";
 
 export type ArtifactTab =
@@ -89,6 +90,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
   memory: "/memory",
+  knowledge: "/knowledge",
   instances: "/instances",
 };
 
@@ -221,6 +223,23 @@ export function viewIdFromPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]) : null;
 }
 
+const KNOWLEDGE_PATH_RE = /^\/knowledge\/([^/]+)/;
+
+/** `/knowledge/:nodeId` for one memory record. */
+export function knowledgeNodePath(nodeId: string): string {
+  return `/knowledge/${encodeURIComponent(nodeId)}`;
+}
+
+/**
+ * The record id a `/knowledge/:nodeId` URL names, or null on `/knowledge`.
+ * Decoded through `decodeSegment`, so a stray `%` reads as itself rather than
+ * throwing during render.
+ */
+export function knowledgeNodeIdFromPath(pathname: string): string | null {
+  const match = pathname.match(KNOWLEDGE_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
+}
+
 export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
@@ -234,6 +253,7 @@ export function pageFromPath(pathname: string): AppPage {
   }
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
   if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "knowledge";
   if (pathname === "/instances" || pathname.startsWith("/instances/")) return "instances";
   // Ticket deep-links still live in the Console shell.
   if (pathname.startsWith("/tickets/")) return "dashboard";

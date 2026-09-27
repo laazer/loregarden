@@ -33,17 +33,19 @@ Two ideas borrowed from graphify's reflect pass, both deterministic and LLM-free
 
 - **Corroboration gate.** One save cannot mint a trusted lesson. `trusted`
   requires the one-sided 95% lower bound to clear 0.5, which a single clean pass
-  on the uniform prior cannot do; it takes three fresh ones. The posterior is
+  on the uniform prior cannot do; it takes three. The posterior is
   the continuous form of "promotion needs distinct results", and distinctness is
   enforced upstream by the one-row-per-(run, learning) constraint.
-- **Asymmetric recency.** Evidence decays with age, and failure evidence decays
-  slower than success evidence — `FAILURE_HALF_LIFE_DAYS` against
-  `SUCCESS_HALF_LIFE_DAYS` — so a fresh negative outweighs an old positive, and
-  a lesson that went bad recently cannot coast on a good record from last year.
+- **A fresh negative outweighs an old positive — by events, not by a clock.**
+  Success evidence observed *before* the learning's most recent negative outcome
+  (rerouted or blocked) counts at `SUPERSEDED_SUCCESS_WEIGHT`. Failure evidence
+  is never discounted, and successes after the latest negative count in full,
+  so a learning can recover by holding up again. Time-based decay was rejected
+  deliberately: codebase facts are invalidated by events, not by curves, and
+  nothing here weakens a learning merely because it is old.
 
-Age is measured against an explicit `as_of`, never the wall clock inside the
-sum, so the same events score the same no matter when or in what order they are
-folded in.
+"Before" compares recorded timestamps, not arrival order: the observations are
+sorted inside `score`, so shuffling them changes nothing (a test pins this).
 """
 
 from __future__ import annotations
@@ -57,8 +59,10 @@ from loregarden.models.domain import LearningOutcomeRung
 
 PRIOR_SUCCESS = 1.0
 PRIOR_FAILURE = 1.0
-SUCCESS_HALF_LIFE_DAYS = 45.0
-FAILURE_HALF_LIFE_DAYS = 180.0
+#: Weight of a success recorded before the learning's latest negative outcome.
+SUPERSEDED_SUCCESS_WEIGHT = 0.5
+#: Rungs that count as a negative outcome for the rule above.
+NEGATIVE_RUNGS = frozenset({LearningOutcomeRung.REROUTED, LearningOutcomeRung.BLOCKED})
 #: One-sided 95% normal quantile, for the lower bound.
 _Z = 1.645
 TRUST_THRESHOLD = 0.5
@@ -108,28 +112,26 @@ class LearningConfidence:
 UNOBSERVED = LearningConfidence(alpha=PRIOR_SUCCESS, beta=PRIOR_FAILURE, observations=0)
 
 
-def _decay(age_days: float, half_life_days: float) -> float:
-    return 0.5 ** (max(age_days, 0.0) / half_life_days)
-
-
-def score(observations: Iterable[Observation], *, as_of: datetime) -> LearningConfidence:
+def score(observations: Iterable[Observation]) -> LearningConfidence:
     """Fold observations into a posterior. Order-independent by construction.
 
     `math.fsum`, not `+=`: floating-point addition is not associative, so a
     running sum over shuffled input differs in the last bits. `fsum` is
     correctly rounded, which makes the result exactly independent of order.
     """
+    observed = list(observations)
+    latest_negative = max(
+        (obs.observed_at for obs in observed if obs.rung in NEGATIVE_RUNGS), default=None
+    )
     successes: list[float] = [PRIOR_SUCCESS]
     failures: list[float] = [PRIOR_FAILURE]
-    count = 0
-    for obs in observations:
+    for obs in observed:
         success, failure = RUNG_EVIDENCE[obs.rung]
-        age_days = (as_of - obs.observed_at).total_seconds() / 86400.0
-        successes.append(success * _decay(age_days, SUCCESS_HALF_LIFE_DAYS))
-        failures.append(failure * _decay(age_days, FAILURE_HALF_LIFE_DAYS))
-        count += 1
+        before_negative = latest_negative is not None and obs.observed_at < latest_negative
+        successes.append(success * (SUPERSEDED_SUCCESS_WEIGHT if before_negative else 1.0))
+        failures.append(failure)
     return LearningConfidence(
-        alpha=math.fsum(successes), beta=math.fsum(failures), observations=count
+        alpha=math.fsum(successes), beta=math.fsum(failures), observations=len(observed)
     )
 
 

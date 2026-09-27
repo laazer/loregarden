@@ -48,12 +48,15 @@ export interface MemoryNode {
   tags: string[];
   ticket_id: string;
   workspace_slug: string;
-  node_type: string;
+  node_type: NodeType;
   created_at: string;
   updated_at: string;
   discredited: boolean;
   /** Other names recall and search find it by. */
   aliases: string[];
+  /** Who produced it. Null means unknown — never a default (see `OriginKind`). */
+  origin_kind: OriginKind | null;
+  origin_ref: string | null;
   confidence: LearningConfidence;
 }
 
@@ -69,6 +72,58 @@ export interface MemoryNodeVersion {
   /** Null when the writer did not say — not the same as an empty string. */
   superseded_by: string | null;
   change_note: string | null;
+}
+
+/** The server's `MemoryOriginKind`. A null origin is "unknown", not any of these. */
+export const ORIGIN_KINDS = ["agent", "human", "import"] as const;
+export type OriginKind = (typeof ORIGIN_KINDS)[number];
+
+/** The server's `MemoryNodeType`. */
+export const NODE_TYPES = ["memory", "learning"] as const;
+export type NodeType = (typeof NODE_TYPES)[number];
+
+/** One node in a knowledge-graph window (`GET /api/memory/graph`). */
+export interface GraphNode {
+  id: string;
+  title: string;
+  excerpt: string;
+  node_type: NodeType;
+  tags: string[];
+  ticket_id: string;
+  discredited: boolean;
+  created_at: string;
+  updated_at: string;
+  origin_kind: OriginKind | null;
+  origin_ref: string | null;
+}
+
+export interface GraphRelation {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  created_at: string;
+}
+
+/**
+ * A window of one workspace's memory graph. `configured: false` is the setup
+ * state — no graph exists — and is not the same as a graph with no nodes.
+ * `relations` holds only edges between returned nodes.
+ */
+export interface KnowledgeGraph {
+  workspace_slug: string;
+  configured: boolean;
+  /** "search" when `query` matched text; "list" when the newest nodes were listed. */
+  source: "list" | "search";
+  query: string;
+  node_type: NodeType | null;
+  include_discredited: boolean;
+  nodes: GraphNode[];
+  relations: GraphRelation[];
+  counts: { entities: number; links: number };
+  type_counts: Partial<Record<NodeType, number>>;
+  truncated: boolean;
+  checked_at: string;
 }
 
 /** The server's `MemoryRelationType`, in the order the vocabulary is documented. */
@@ -99,6 +154,7 @@ export interface NodeRef {
   title: string;
 }
 
+/** One node in full — every node endpoint answers with this record. */
 export interface MemoryNodeDetail extends MemoryNode {
   versions: MemoryNodeVersion[];
   ladder: Record<OutcomeRung, number>;
@@ -202,6 +258,22 @@ export const memoryApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  memoryGraph: (
+    workspaceSlug: string,
+    filter: {
+      query?: string;
+      nodeType?: NodeType | null;
+      includeDiscredited?: boolean;
+      limit?: number;
+    } = {},
+  ) => {
+    const q = new URLSearchParams({ workspace_slug: workspaceSlug });
+    if (filter.query) q.set("q", filter.query);
+    if (filter.nodeType) q.set("node_type", filter.nodeType);
+    if (filter.includeDiscredited) q.set("include_discredited", "true");
+    if (filter.limit) q.set("limit", String(filter.limit));
+    return request<KnowledgeGraph>(`/api/memory/graph?${q}`);
+  },
   memoryLineage: (nodeId: string, workspaceSlug: string) =>
     request<MemoryLineage>(
       `/api/memory/nodes/${encodeURIComponent(nodeId)}/lineage?workspace_slug=${encodeURIComponent(workspaceSlug)}`,

@@ -142,6 +142,32 @@ def superseded_by(conn: sqlite3.Connection, node_ids: list[str]) -> dict[str, li
     return successors
 
 
+def relations_among(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict[str, Any]]:
+    """Every edge with both endpoints in `node_ids`, oldest first."""
+    if not node_ids:
+        return []
+    marks = ", ".join("?" for _ in node_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, source_id, target_id, relation_type, created_at
+        FROM memory_relations
+        WHERE source_id IN ({marks}) AND target_id IN ({marks})
+        ORDER BY created_at, id
+        """,  # noqa: S608 - placeholders only
+        (*node_ids, *node_ids),
+    ).fetchall()
+    return [
+        {
+            "id": row[0],
+            "source_id": row[1],
+            "target_id": row[2],
+            "relation_type": row[3],
+            "created_at": row[4],
+        }
+        for row in rows
+    ]
+
+
 def relations_of(conn: sqlite3.Connection, node_id: str) -> list[dict[str, Any]]:
     """Every edge touching a node, both directions, with the other end's title
     and flag. For the operator surface, so discredited neighbours are included
