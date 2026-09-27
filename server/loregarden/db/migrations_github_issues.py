@@ -53,3 +53,24 @@ def m_github_issue_links(conn: Connection) -> None:
     ):
         if not index_exists(conn, name):
             conn.execute(text(ddl))
+
+
+def m_github_sync_settings(conn: Connection) -> None:
+    """Per-workspace background sync settings. No row means off."""
+    if table_exists(conn, "github_sync_settings"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE github_sync_settings (
+                workspace_id VARCHAR NOT NULL PRIMARY KEY REFERENCES workspaces(id),
+                enabled BOOLEAN NOT NULL DEFAULT 0,
+                interval_minutes INTEGER NOT NULL DEFAULT 15,
+                import_parent_ticket_id VARCHAR NOT NULL DEFAULT '',
+                import_label VARCHAR NOT NULL DEFAULT '',
+                last_run_at DATETIME,
+                last_error VARCHAR NOT NULL DEFAULT ''
+            )
+            """
+        )
+    )

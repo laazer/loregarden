@@ -14,8 +14,10 @@ from loregarden.db.session import get_session
 from loregarden.models.domain import (
     ConflictPolicy,
     GithubIssueLinkView,
+    GithubSyncSettingsView,
     LinkSyncResult,
     Ticket,
+    UpdateGithubSyncSettings,
     WorkItemType,
     Workspace,
     WorkspaceSyncResult,
@@ -30,6 +32,7 @@ from loregarden.services.github_issue_sync import (
     sync_workspace,
     unlink_ticket,
 )
+from loregarden.services.github_sync_scheduler import get_sync_settings, update_sync_settings
 from loregarden.services.organization_gate_service import (
     UnknownWorkspaceError,
     workspace_for_slug,
@@ -107,10 +110,7 @@ def sync_workspace_issues(
     session: Session = Depends(get_session),
 ) -> WorkspaceSyncResult:
     request = body or SyncWorkspaceRequest()
-    try:
-        workspace = workspace_for_slug(session, workspace_slug)
-    except UnknownWorkspaceError as exc:
-        raise HTTPException(404, str(exc)) from exc
+    workspace = _workspace(session, workspace_slug)
     try:
         return sync_workspace(
             session,
@@ -121,6 +121,36 @@ def sync_workspace_issues(
             policy=request.policy,
         )
     except (GithubIssueError, ValueError, LookupError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _workspace(session: Session, workspace_slug: str) -> Workspace:
+    try:
+        return workspace_for_slug(session, workspace_slug)
+    except UnknownWorkspaceError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get(
+    "/workspaces/{workspace_slug}/github-issues/settings", response_model=GithubSyncSettingsView
+)
+def get_workspace_sync_settings(
+    workspace_slug: str, session: Session = Depends(get_session)
+) -> GithubSyncSettingsView:
+    return get_sync_settings(session, _workspace(session, workspace_slug))
+
+
+@router.put(
+    "/workspaces/{workspace_slug}/github-issues/settings", response_model=GithubSyncSettingsView
+)
+def put_workspace_sync_settings(
+    workspace_slug: str,
+    body: UpdateGithubSyncSettings,
+    session: Session = Depends(get_session),
+) -> GithubSyncSettingsView:
+    try:
+        return update_sync_settings(session, _workspace(session, workspace_slug), body)
+    except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

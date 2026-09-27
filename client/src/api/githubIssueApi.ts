@@ -47,6 +47,23 @@ export interface GithubWorkspaceSyncResult {
   imported: GithubLinkSyncResult[];
 }
 
+/** A workspace's background sync. Off unless `enabled`. */
+export interface GithubSyncSettings {
+  workspace_slug: string;
+  enabled: boolean;
+  interval_minutes: number;
+  import_parent_ticket_id: string;
+  import_label: string;
+  last_run_at: string | null;
+  /** The last background run's failure; blank when it succeeded. */
+  last_error: string;
+}
+
+export type GithubSyncSettingsUpdate = Pick<
+  GithubSyncSettings,
+  "enabled" | "interval_minutes" | "import_parent_ticket_id" | "import_label"
+>;
+
 /** Two-way sync between a ticket and a GitHub issue (server: api/github_issues.py). */
 export const githubIssueApi = {
   /** Null when the ticket is not linked. */
@@ -62,6 +79,13 @@ export const githubIssueApi = {
   syncWorkspace: (workspaceSlug: string, body: GithubWorkspaceSyncRequest = {}) =>
     request<GithubWorkspaceSyncResult>(`/api/workspaces/${workspaceSlug}/github-issues/sync`, {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  syncSettings: (workspaceSlug: string) =>
+    request<GithubSyncSettings>(`/api/workspaces/${workspaceSlug}/github-issues/settings`),
+  saveSyncSettings: (workspaceSlug: string, body: GithubSyncSettingsUpdate) =>
+    request<GithubSyncSettings>(`/api/workspaces/${workspaceSlug}/github-issues/settings`, {
+      method: "PUT",
       body: JSON.stringify(body),
     }),
   unlink: (ticketId: string) =>

@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { api } from "../api/client";
 import {
   githubIssueApi,
   type GithubLinkSyncResult,
+  type GithubWorkspaceSyncRequest,
   type GithubWorkspaceSyncResult,
 } from "../api/githubIssueApi";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
@@ -12,6 +13,7 @@ import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { describeLinkSync, syncFieldList } from "../lib/githubSyncSummary";
 import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
+import { GithubBackgroundSync } from "./GithubBackgroundSync";
 import { IconCloseButton } from "./IconCloseButton";
 import { ParentTicketSelector } from "./ParentTicketSelector";
 
@@ -100,13 +102,25 @@ export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
   const defaultSlug = activeWorkspace !== "all" && slugs.includes(activeWorkspace) ? activeWorkspace : slugs[0] ?? "";
   const slug = chosenSlug || defaultSlug;
 
+  const syncSettings = useQuery({
+    queryKey: ["github-sync-settings", slug],
+    queryFn: () => githubIssueApi.syncSettings(slug),
+    enabled: open && Boolean(slug),
+  });
+  // The saved import parent and label are this workspace's defaults: prefill
+  // them once per workspace, so "Sync now" and the schedule start from the same.
+  const savedSettings = syncSettings.data;
+  const [prefilledFor, setPrefilledFor] = useState("");
+  useEffect(() => {
+    if (!savedSettings || prefilledFor === savedSettings.workspace_slug) return;
+    setPrefilledFor(savedSettings.workspace_slug);
+    setParentId(savedSettings.import_parent_ticket_id || null);
+    setLabel(savedSettings.import_label);
+  }, [savedSettings, prefilledFor]);
+
   const sync = useMutation({
     meta: { errorTitle: "Sync GitHub issues" },
-    mutationFn: () =>
-      githubIssueApi.syncWorkspace(slug, {
-        import_parent_ticket_id: parentId ?? "",
-        import_label: label.trim(),
-      }),
+    mutationFn: (request: GithubWorkspaceSyncRequest) => githubIssueApi.syncWorkspace(slug, request),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tickets"] });
       void qc.invalidateQueries({ queryKey: ["ticket"] });
@@ -148,6 +162,10 @@ export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
             </p>
           ) : slugs.length === 0 ? (
             <p className="modal-hint">No workspaces yet. Add one before syncing with GitHub.</p>
+          ) : syncSettings.isPending ? (
+            // The saved settings prefill the import fields below; showing them
+            // first would let a choice made now be overwritten when they land.
+            <p className="modal-hint">Loading this workspace's GitHub settings…</p>
           ) : (
             <>
               <div>
@@ -201,6 +219,13 @@ export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
                 </div>
               )}
 
+              <GithubBackgroundSync
+                workspaceSlug={slug}
+                settings={syncSettings}
+                importParentTicketId={parentId ?? ""}
+                importLabel={label.trim()}
+              />
+
               {sync.isError && (
                 <p className="modal-hint" role="alert" style={{ color: "var(--red)", margin: 0 }}>
                   Sync failed: {describeError(sync.error, "request failed")}
@@ -220,7 +245,7 @@ export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
             type="button"
             className="btn-primary"
             disabled={!slug || sync.isPending}
-            onClick={() => sync.mutate()}
+            onClick={() => sync.mutate({ import_parent_ticket_id: parentId ?? "", import_label: label.trim() })}
           >
             {sync.isPending ? "Syncing…" : parentId ? "Sync and import" : "Sync now"}
           </button>

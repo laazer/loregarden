@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from loregarden.models.domain.enums import str_enum_column, utcnow
 from pydantic import BaseModel
+from pydantic import Field as PydanticField
 from sqlmodel import Field, SQLModel
 
 
@@ -76,6 +77,51 @@ class GithubIssueLink(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+#: Bounds on the background sync interval. The floor keeps a busy workspace
+#: from spending its GitHub rate limit on a sync every minute.
+MIN_SYNC_INTERVAL_MINUTES = 5
+MAX_SYNC_INTERVAL_MINUTES = 24 * 60
+DEFAULT_SYNC_INTERVAL_MINUTES = 15
+
+
+class GithubSyncSettings(SQLModel, table=True):
+    """Per-workspace background sync. No row means off, the default."""
+
+    __tablename__ = "github_sync_settings"
+
+    workspace_id: str = Field(foreign_key="workspaces.id", primary_key=True)
+    enabled: bool = Field(default=False)
+    interval_minutes: int = Field(default=DEFAULT_SYNC_INTERVAL_MINUTES)
+    #: Import unlinked open issues under this ticket on each run. Blank: links only.
+    import_parent_ticket_id: str = ""
+    import_label: str = ""
+    last_run_at: datetime | None = Field(default=None)
+    #: The last run's failure — the run itself, or a count of links that failed.
+    #: Blank when it succeeded.
+    last_error: str = ""
+
+
+class GithubSyncSettingsView(BaseModel):
+    workspace_slug: str
+    enabled: bool = False
+    interval_minutes: int = DEFAULT_SYNC_INTERVAL_MINUTES
+    import_parent_ticket_id: str = ""
+    import_label: str = ""
+    last_run_at: datetime | None = None
+    last_error: str = ""
+
+
+class UpdateGithubSyncSettings(BaseModel):
+    enabled: bool
+    interval_minutes: int = PydanticField(
+        default=DEFAULT_SYNC_INTERVAL_MINUTES,
+        ge=MIN_SYNC_INTERVAL_MINUTES,
+        le=MAX_SYNC_INTERVAL_MINUTES,
+    )
+    import_parent_ticket_id: str = ""
+    import_label: str = ""
+
+
 class IssueSnapshot(BaseModel):
     """The synced content of one side — a ticket, an issue, or the base."""
 
@@ -126,6 +172,12 @@ __all__ = [
     "ConflictPolicy",
     "GithubIssueLink",
     "GithubIssueLinkView",
+    "GithubSyncSettings",
+    "GithubSyncSettingsView",
+    "UpdateGithubSyncSettings",
+    "MIN_SYNC_INTERVAL_MINUTES",
+    "MAX_SYNC_INTERVAL_MINUTES",
+    "DEFAULT_SYNC_INTERVAL_MINUTES",
     "IssueClosure",
     "IssueSnapshot",
     "LinkSyncResult",
