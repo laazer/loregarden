@@ -16,7 +16,7 @@ PROTOCOL_VERSION = "2024-11-05"
 
 
 def handle_request(
-    session: Session, req: dict[str, Any], *, orchestrated: bool = False
+    session: Session, req: dict[str, Any], *, orchestrated: bool = False, run_id: str = ""
 ) -> dict[str, Any] | None:
     method = req.get("method")
     req_id = req.get("id")
@@ -45,7 +45,9 @@ def handle_request(
         arguments = params.get("arguments") or {}
         started = time.monotonic()
         try:
-            result = execute_tool(session, name, arguments, orchestrated=orchestrated)
+            result = execute_tool(
+                session, name, arguments, orchestrated=orchestrated, run_id=run_id
+            )
         except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: any tool failure becomes an isError result
             # The failed tool may have left writes pending on this session; a
             # ledger commit must not carry them through.
@@ -91,18 +93,20 @@ def handle_request(
     }
 
 
-def handle_message(session: Session, body: Any, *, orchestrated: bool = False) -> Any:
+def handle_message(
+    session: Session, body: Any, *, orchestrated: bool = False, run_id: str = ""
+) -> Any:
     """Accept a single JSON-RPC object or a batch array."""
     if isinstance(body, list):
         responses = []
         for item in body:
             if not isinstance(item, dict):
                 continue
-            resp = handle_request(session, item, orchestrated=orchestrated)
+            resp = handle_request(session, item, orchestrated=orchestrated, run_id=run_id)
             if resp is not None:
                 responses.append(resp)
         return responses
     if isinstance(body, dict):
-        resp = handle_request(session, body, orchestrated=orchestrated)
+        resp = handle_request(session, body, orchestrated=orchestrated, run_id=run_id)
         return resp if resp is not None else {}
     raise ValueError("Invalid MCP message body")

@@ -198,7 +198,7 @@ def _mcp_append(client, *, orchestrated: bool) -> dict:
 
 def test_an_orchestrated_agent_write_is_recorded_as_agent(client):
     node = _mcp_append(client, orchestrated=True)
-    # The transport carries no run id, so the reference stays unknown.
+    # No run header was sent, so the reference stays unknown.
     assert (node["origin_kind"], node["origin_ref"]) == ("agent", None)
 
 

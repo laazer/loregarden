@@ -1242,8 +1242,9 @@ def execute_tool(
     arguments: dict[str, Any] | Any,
     *,
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> str:
-    """Dispatch a tool call.
+    """Dispatch a tool call. `run_id` names the orchestrated run, when known.
 
     `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
     supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
@@ -1334,7 +1335,9 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = execute_memory_tool(session, name, arguments, orchestrated=orchestrated)
+    memory_result = execute_memory_tool(
+        session, name, arguments, orchestrated=orchestrated, run_id=run_id
+    )
     if memory_result is not None:
         return memory_result
 
