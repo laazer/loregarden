@@ -11,6 +11,7 @@ import {
   TopbarDropdown,
   TopbarDropdownPaneRow,
 } from "./TopbarDropdown";
+import { GithubSyncModal } from "./GithubSyncModal";
 import { LocalInstancesModal } from "./LocalInstancesModal";
 import { UsageModal } from "./UsageModal";
 
@@ -25,6 +26,7 @@ export function AppTopbarActions() {
 
   const [usageOpen, setUsageOpen] = useState(false);
   const [instancesOpen, setInstancesOpen] = useState(false);
+  const [githubOpen, setGithubOpen] = useState(false);
   // The snapshot is served from a short server-side cache so a page load never
   // blocks on the providers; the modal's Refresh button asks for live numbers.
   const forceUsageRefresh = useRef(false);
@@ -83,6 +85,18 @@ export function AppTopbarActions() {
           </div>
         ) : null}
         <div className="topbar-actions-core">
+          <button
+            type="button"
+            className="btn-secondary topbar-action-btn"
+            onClick={() => setGithubOpen(true)}
+            aria-label="Sync tickets with GitHub issues"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--bll)" strokeWidth="1.8" aria-hidden>
+              <path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2" />
+              <path d="M21 4v5h-5M3 20v-5h5" />
+            </svg>
+            GitHub
+          </button>
           <button
             type="button"
             className="btn-secondary topbar-action-btn"
@@ -151,6 +165,7 @@ export function AppTopbarActions() {
         </div>
       </div>
 
+      <GithubSyncModal open={githubOpen} onClose={() => setGithubOpen(false)} />
       <LocalInstancesModal open={instancesOpen} onClose={() => setInstancesOpen(false)} />
       <UsageModal
         open={usageOpen}

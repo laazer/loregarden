@@ -160,6 +160,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0140_ticket_landing_columns",
     "0141_learning_applications_table",
     "0142_memory_health_snapshots_table",
+    "0143_github_issue_links",
+    "0144_github_sync_settings",
 )
 
 

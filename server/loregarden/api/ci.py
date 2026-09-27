@@ -1,12 +1,10 @@
 """CI integration API endpoints."""
 
-import hashlib
-import hmac
 import json
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from loregarden.config import settings
+from loregarden.api.github_signature import verify_github_signature
 from loregarden.db.session import get_session
 from loregarden.services.ci_service import CIService
 from sqlmodel import Session
@@ -16,43 +14,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ci", tags=["ci"])
 
 
-def _verify_github_signature(
-    payload_bytes: bytes,
-    signature_header: str | None,
-) -> bool:
-    """Verify GitHub webhook HMAC signature."""
-    if not settings.LOREGARDEN_CI_WEBHOOK_SECRET:
-        logger.warning("GitHub webhook secret not configured, skipping signature verification")
-        return True
-
-    if not signature_header:
-        return False
-
-    # GitHub sends: X-Hub-Signature-256: sha256=<signature>
-    try:
-        algo, expected_sig = signature_header.split("=", 1)
-        if algo != "sha256":
-            return False
-
-        computed_sig = hmac.new(
-            settings.LOREGARDEN_CI_WEBHOOK_SECRET.encode(),
-            payload_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-
-        return hmac.compare_digest(computed_sig, expected_sig)
-    except (ValueError, TypeError):
-        # A malformed header is attacker-controlled input: reject it, but say so.
-        logger.warning("Malformed GitHub webhook signature header", exc_info=True)
-        return False
-
-
 @router.post("/webhook/{workspace_id}")
 async def receive_ci_webhook(
     workspace_id: str,
     request: Request,
     x_github_event: str | None = Header(None),
-    x_github_signature_256: str | None = Header(None),
+    x_hub_signature_256: str | None = Header(None),
     x_gitlab_event: str | None = Header(None),
     session: Session = Depends(get_session),
 ):
@@ -78,7 +45,7 @@ async def receive_ci_webhook(
         # Detect provider and verify signature
         if x_github_event:
             # Verify GitHub signature
-            if not _verify_github_signature(body, x_github_signature_256):
+            if not verify_github_signature(body, x_hub_signature_256):
                 logger.warning("GitHub webhook signature verification failed")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -122,6 +89,8 @@ async def receive_ci_webhook(
                 "reason": "Failed to process webhook",
             }
 
+    except HTTPException:
+        raise
     except json.JSONDecodeError as e:
         logger.exception("Invalid JSON in webhook body")
         raise HTTPException(

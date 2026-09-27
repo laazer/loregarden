@@ -4,6 +4,7 @@ import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
 import { IconCloseButton } from './IconCloseButton';
 import { TicketDependencies } from './TicketDependencies';
+import { TicketGithubIssue } from './TicketGithubIssue';
 import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
@@ -332,6 +333,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               <TicketDependencies ticket={ticket} />
 
               <TicketRelations ticket={ticket} />
+
+              {ticket.work_item_type !== 'initiative' && <TicketGithubIssue ticket={ticket} />}
 
               {asDisplayString(ticket.blocking_issues) && (
                 <div className="state-card">

@@ -62,6 +62,7 @@ class McpTool(StrEnum):
     LAUNCH_INSTANCE = "loregarden_launch_instance"
     INSTANCE_STATUS = "loregarden_instance_status"
     STOP_INSTANCE = "loregarden_stop_instance"
+    SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -289,6 +290,9 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.PIN_STAGE_AGENT,
     McpTool.LAND_TICKET,
     McpTool.SUPERSEDE_TICKET,
+    # Publishes to, and pulls from, a GitHub repository: an operator move on a
+    # ticket, never something a stage does to the ticket it was dispatched for.
+    McpTool.SYNC_GITHUB_ISSUES,
 )
 
 #: Tools an orchestrated pipeline agent may not call. Interactive chat is exempt.

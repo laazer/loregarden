@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     ConflictReport,
     DomainEvent,
     EventType,
+    GithubIssueLink,
     OrchestrationRun,
     QueuedRun,
     RunMessage,
@@ -51,6 +52,7 @@ from sqlmodel import Session, col, select
 # so the emitted DELETEs keep it. Anything referencing a ticket and missing here
 # outlives the ticket as an orphan row.
 _TICKET_OWNED_TABLES = (
+    GithubIssueLink,
     QueuedRun,
     ConflictReport,
     TicketDiffComment,
