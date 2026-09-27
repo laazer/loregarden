@@ -164,3 +164,13 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* The page's three sections: what is running, what to launch, what can be
+   launched. Each stacks its heading, notices and body. */
+.instances-running,
+.instances-launch,
+.instances-template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

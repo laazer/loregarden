@@ -115,7 +115,9 @@ def _workspace_view(session: Session, slug: str) -> WorkspaceTemplates:
 
 
 @router.get("", response_model=list[WorkspaceTemplatesView])
-def list_workspace_templates(session: Session = Depends(get_session)) -> list[WorkspaceTemplatesView]:
+def list_workspace_templates(
+    session: Session = Depends(get_session),
+) -> list[WorkspaceTemplatesView]:
     return [_view(found) for found in get_template_source().collect(session)]
 
 
@@ -138,6 +140,8 @@ def replace_workspace_template(
 
 
 @router.delete("/{slug}/{name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_workspace_template(slug: str, name: str, session: Session = Depends(get_session)) -> None:
+def delete_workspace_template(
+    slug: str, name: str, session: Session = Depends(get_session)
+) -> None:
     with _as_http():
         delete_template(session, slug, name)

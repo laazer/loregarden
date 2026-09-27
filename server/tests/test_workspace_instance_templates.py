@@ -46,20 +46,30 @@ def _spec(name: str = "docs", **overrides) -> dict:
 
 def test_code_templates_are_qualified_by_workspace(client: TestClient, repo: Path) -> None:
     entries = _entries(_workspace(client))
-    assert {name: e["origin"] for name, e in entries.items()} == {"client": "code", "server": "code"}
+    assert {name: e["origin"] for name, e in entries.items()} == {
+        "client": "code",
+        "server": "code",
+    }
     assert entries["server"]["qualified_name"] == "loregarden/server"
 
 
 def test_a_committed_file_adds_launchable_templates(client: TestClient, repo: Path) -> None:
-    _write_file(repo, """
+    _write_file(
+        repo,
+        """
         version: 1
         templates:
           - name: docs
             kind: server
             command: ["python3", "-m", "http.server", "{port}"]
-    """)
+    """,
+    )
     docs = _entries(_workspace(client))["docs"]
-    assert (docs["origin"], docs["launchable"], docs["qualified_name"]) == ("file", True, "loregarden/docs")
+    assert (docs["origin"], docs["launchable"], docs["qualified_name"]) == (
+        "file",
+        True,
+        "loregarden/docs",
+    )
     names = [t["name"] for t in client.get("/api/instances/templates").json()]
     assert "loregarden/docs" in names
 
@@ -76,7 +86,9 @@ def test_stored_templates_round_trip(client: TestClient, repo: Path) -> None:
     assert created.status_code == 201, created.text
     assert _entries(created.json())["docs"]["origin"] == "stored"
 
-    updated = client.put("/api/instance-templates/loregarden/docs", json=_spec(description="second"))
+    updated = client.put(
+        "/api/instance-templates/loregarden/docs", json=_spec(description="second")
+    )
     assert updated.status_code == 200, updated.text
     assert _entries(updated.json())["docs"]["description"] == "second"
 
@@ -96,7 +108,11 @@ def test_stored_templates_round_trip(client: TestClient, repo: Path) -> None:
     ],
 )
 def test_refusals(client: TestClient, repo: Path, method: str, path: str, body, code: int) -> None:
-    response = getattr(client, method)(path, json=body) if body is not None else getattr(client, method)(path)
+    response = (
+        getattr(client, method)(path, json=body)
+        if body is not None
+        else getattr(client, method)(path)
+    )
     assert response.status_code == code, response.text
 
 
@@ -107,15 +123,20 @@ def test_a_rename_is_refused(client: TestClient, repo: Path) -> None:
     assert "cannot rename" in response.json()["detail"]
 
 
-def test_a_stored_row_the_file_later_claims_is_shadowed_not_launched(client: TestClient, repo: Path) -> None:
+def test_a_stored_row_the_file_later_claims_is_shadowed_not_launched(
+    client: TestClient, repo: Path
+) -> None:
     assert client.post("/api/instance-templates/loregarden", json=_spec()).status_code == 201
-    _write_file(repo, """
+    _write_file(
+        repo,
+        """
         version: 1
         templates:
           - name: docs
             kind: server
             command: ["python3", "-m", "http.server", "{port}"]
-    """)
+    """,
+    )
     rows = [e for e in _workspace(client)["entries"] if e["name"] == "docs"]
     assert sorted((e["origin"], e["launchable"], e["shadowed_by"]) for e in rows) == [
         ("file", True, None),
@@ -124,9 +145,13 @@ def test_a_stored_row_the_file_later_claims_is_shadowed_not_launched(client: Tes
 
 
 def test_a_stored_template_launches_from_the_workspace(client: TestClient, repo: Path) -> None:
-    assert client.post("/api/instance-templates/loregarden", json=_spec(health_path="/")).status_code == 201
+    assert (
+        client.post("/api/instance-templates/loregarden", json=_spec(health_path="/")).status_code
+        == 201
+    )
     launched = client.post(
-        "/api/instances", json={"template": "loregarden/docs", "params": {"worktree": str(repo.resolve())}}
+        "/api/instances",
+        json={"template": "loregarden/docs", "params": {"worktree": str(repo.resolve())}},
     )
     assert launched.status_code == 201, launched.text
     instance = launched.json()

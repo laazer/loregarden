@@ -159,7 +159,9 @@ def _code_entries(templates: list[InstanceTemplate]) -> list[TemplateEntry]:
     return entries
 
 
-def _add_file_entries(found: WorkspaceTemplates, make: Callable[[TemplateSpec], InstanceTemplate]) -> None:
+def _add_file_entries(
+    found: WorkspaceTemplates, make: Callable[[TemplateSpec], InstanceTemplate]
+) -> None:
     try:
         specs = load_template_file(found.template_file)
     except TemplateFileError as exc:
@@ -193,7 +195,10 @@ def collect(
     for workspace in session.exec(select(Workspace).order_by(Workspace.name)).all():
         root = resolve_workspace_root(workspace)
         found = WorkspaceTemplates(
-            slug=workspace.slug, name=workspace.name, repo_root=root, template_file=root / TEMPLATE_FILE
+            slug=workspace.slug,
+            name=workspace.name,
+            repo_root=root,
+            template_file=root / TEMPLATE_FILE,
         )
         make = _spec_maker(workspace.slug, root, registry)
         found.entries.extend(_code_entries(code.get(workspace.slug, [])))

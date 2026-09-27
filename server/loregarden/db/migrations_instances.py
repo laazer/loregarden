@@ -29,5 +29,7 @@ def m_instance_templates(conn: Connection) -> None:
         )
     if not index_exists(conn, "ix_instance_templates_workspace_id"):
         conn.execute(
-            text("CREATE INDEX ix_instance_templates_workspace_id ON instance_templates (workspace_id)")
+            text(
+                "CREATE INDEX ix_instance_templates_workspace_id ON instance_templates (workspace_id)"
+            )
         )

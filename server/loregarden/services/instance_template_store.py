@@ -65,18 +65,26 @@ def create_template(
     workspace = _workspace(session, slug)
     clash = next((entry for entry in current.entries if entry.name == spec.name), None)
     if clash is not None:
-        raise TemplateNameTakenError(f"{slug} already has a {clash.origin} template named {spec.name!r}")
-    row = InstanceTemplateRecord(workspace_id=workspace.id, name=spec.name, spec_json=spec.model_dump_json())
+        raise TemplateNameTakenError(
+            f"{slug} already has a {clash.origin} template named {spec.name!r}"
+        )
+    row = InstanceTemplateRecord(
+        workspace_id=workspace.id, name=spec.name, spec_json=spec.model_dump_json()
+    )
     session.add(row)
     session.commit()
     session.refresh(row)
     return row
 
 
-def replace_template(session: Session, slug: str, name: str, spec: TemplateSpec) -> InstanceTemplateRecord:
+def replace_template(
+    session: Session, slug: str, name: str, spec: TemplateSpec
+) -> InstanceTemplateRecord:
     """Replace a stored template's spec. Renaming is not an edit: delete and create."""
     if spec.name != name:
-        raise TemplateRenameError(f"cannot rename {name!r} to {spec.name!r}; create a new template instead")
+        raise TemplateRenameError(
+            f"cannot rename {name!r} to {spec.name!r}; create a new template instead"
+        )
     row = _row(session, _workspace(session, slug), name)
     row.spec_json = spec.model_dump_json()
     row.updated_at = utcnow()
