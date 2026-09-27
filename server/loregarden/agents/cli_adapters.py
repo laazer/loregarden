@@ -163,6 +163,7 @@ def _codex_invocation(
     workspace_root: Path,
     codex_model: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> CliInvocation:
     # ``--json`` is the Codex equivalent of Claude/Cursor stream-json: events
     # land on stdout as the turn progresses. Without it, exec is silent until
@@ -176,7 +177,7 @@ def _codex_invocation(
         str(workspace_root),
     ]
     _append_model_flag(argv, codex_model)
-    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated)
+    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated, run_id=run_id)
     argv.append("-")
     return CliInvocation(
         argv=argv,
@@ -197,6 +198,7 @@ def build_interactive_invocation(
     partial_messages: bool = False,
     db_session=None,
     orchestrated: bool = True,
+    run_id: str = "",
     tool_grants: StudioAgentToolGrants | None = None,
     mcp_tools: Sequence[str] = (),
     mcp_enabled: bool = True,
@@ -261,6 +263,7 @@ def build_interactive_invocation(
             adapter="claude",
             session=db_session,
             orchestrated=orchestrated,
+            run_id=run_id,
             granted_servers=(list(tool_grants.mcp_servers) or None) if tool_grants else None,
         )
         return CliInvocation(
@@ -454,6 +457,7 @@ def _claude_print_invocation(
     workspace_root: Path,
     claude_model: str = "",
     claude_effort: str = "",
+    run_id: str = "",
 ) -> CliInvocation:
     output_format = os.environ.get("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", settings.claude_output_format)
     argv = [
@@ -475,7 +479,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
-    append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
+    append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
 
@@ -536,6 +540,7 @@ def _opencode_invocation(
     opencode_model: str = "",
     opencode_effort: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
     read_only: bool = False,
     prompt_file: Path | None = None,
 ) -> CliInvocation:
@@ -582,7 +587,7 @@ def _opencode_invocation(
     extra = os.environ.get("LOREGARDEN_OPENCODE_ARGS")
     if extra:
         argv[2:2] = shlex.split(extra)
-    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated)
+    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated, run_id=run_id)
     if prompt_file is not None:
         argv.extend(
             [
@@ -762,6 +767,7 @@ def resolve_cli_invocation(
             resume_session_id=resume_session_id,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CLAUDE:
         invocation = _claude_print_invocation(
@@ -769,6 +775,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CURSOR:
         invocation = _cursor_print_invocation(
@@ -783,6 +790,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             codex_model=model,
             orchestrated=True,
+            run_id=run_id,
         )
     elif selected == CliAdapter.LMSTUDIO:
         invocation = _lmstudio_invocation(
@@ -803,6 +811,7 @@ def resolve_cli_invocation(
             opencode_model=model,
             opencode_effort=effort,
             orchestrated=True,
+            run_id=run_id,
         )
     else:
         raise ValueError(f"Unknown CLI adapter: {selected}")

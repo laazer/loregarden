@@ -13,15 +13,18 @@ module decides what a tool call means, not where the store lives
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.models.domain import MemoryOriginKind, MemoryRelationType
+from loregarden.models.domain import AgentRun, MemoryOriginKind, MemoryRelationType
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+logger = logging.getLogger(__name__)
 
 #: The tools this module owns. Kept beside the dispatch it gates rather than in
 #: `mcp.tools`, so adding a memory tool touches one file.
@@ -38,22 +41,38 @@ MEMORY_TOOL_NAMES = frozenset(
 )
 
 
-def _write_origin(orchestrated: bool) -> MemoryOriginKind | None:
+def _write_origin(
+    session: Session, *, orchestrated: bool, run_id: str
+) -> tuple[MemoryOriginKind | None, str | None]:
     """Who produced a memory write arriving over MCP — as far as the transport knows.
 
     `orchestrated` is set only by Loregarden's own supervised agent CLI runs,
     so it is a real signal of an agent. Anything else (an operator's terminal,
     `curl`, an external orchestrator, the in-process CLI) cannot be told apart
-    and is recorded as unknown rather than guessed. The transport carries no
-    run id, so `origin_ref` stays NULL on this path; carrying the run id to
-    the MCP server (a header set beside `X-Loregarden-Orchestrated` in
-    `agents/mcp_context.py`) is the seam that would fill it.
+    and is recorded as unknown rather than guessed.
+
+    `run_id` rides beside it (`mcp/caller.py`) and becomes the `origin_ref`
+    only when it names a real run: a reference to a run that does not exist
+    would send the operator looking for it. An unknown id is still an agent
+    write, with the reference left unknown and the mismatch logged.
     """
-    return MemoryOriginKind.AGENT if orchestrated else None
+    if not orchestrated:
+        return None, None
+    if not run_id:
+        return MemoryOriginKind.AGENT, None
+    if session.get(AgentRun, run_id) is None:
+        logger.warning("memory write names unknown run %r; origin_ref left unset", run_id)
+        return MemoryOriginKind.AGENT, None
+    return MemoryOriginKind.AGENT, run_id
 
 
 def execute_memory_tool(
-    session: Session, name: str, arguments: dict[str, Any], *, orchestrated: bool = False
+    session: Session,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    orchestrated: bool = False,
+    run_id: str = "",
 ) -> str | None:
     """This module's entry point: run `name` if it is a memory tool, else None.
 
@@ -75,6 +94,7 @@ def execute_memory_tool(
         )
 
     if name == "loregarden_append_learning":
+        origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.append_learning(
             ticket_id=arguments["ticket_id"],
             workspace_slug=arguments["workspace_slug"],
@@ -82,11 +102,13 @@ def execute_memory_tool(
             tags=arguments.get("tags"),
             title=arguments.get("title", ""),
             aliases=arguments.get("aliases"),
-            origin_kind=_write_origin(orchestrated),
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         return json.dumps(result, indent=2)
 
     if name == "loregarden_upsert_memory":
+        origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.upsert_memory(
             node_id=arguments.get("node_id", ""),
             title=arguments["title"],
@@ -95,7 +117,8 @@ def execute_memory_tool(
             ticket_id=arguments.get("ticket_id", ""),
             workspace_slug=arguments["workspace_slug"],
             discredited=arguments.get("discredited"),
-            origin_kind=_write_origin(orchestrated),
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         return json.dumps(result, indent=2)
 
