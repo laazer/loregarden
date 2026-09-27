@@ -9,8 +9,7 @@ import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { InstancesPage } from "./pages/InstancesPage";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
-import { KnowledgePage } from "./pages/KnowledgePage";
-import { MemoryPage } from "./pages/MemoryPage";
+import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
@@ -113,9 +112,8 @@ export function AppShell() {
             <Route path="/editor/*" element={<EditorPage />} />
             <Route path="/queue/*" element={<QueuePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
-            <Route path="/memory" element={<MemoryPage />} />
-            <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route path="/knowledge/:nodeId" element={<KnowledgePage />} />
+            <Route path="/memory/*" element={<MemoryPage />} />
+            <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
             <Route path="/instances" element={<InstancesPage />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />

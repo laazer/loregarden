@@ -1,130 +1,118 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link, Navigate, useLocation } from "react-router-dom";
 
 import { api } from "../api/client";
-import { BriefingHealthPanel } from "../components/memory/BriefingHealthPanel";
-import { GraphHealthPanel } from "../components/memory/GraphHealthPanel";
+import { MemoryMapTab } from "../components/knowledge/MemoryMapTab";
 import { LearningsPanel } from "../components/memory/LearningsPanel";
-import { ProposalsPanel } from "../components/memory/ProposalsPanel";
+import { MemoryHealthTab } from "../components/memory/MemoryHealthTab";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
-import { formatLocalTimestamp } from "../lib/timestamps";
-import { describeError, pushToast } from "../state/toastStore";
+import {
+  MEMORY_TABS,
+  memoryPath,
+  memoryPathForLegacyKnowledge,
+  memoryTabFromPath,
+  type MemoryTab,
+} from "../lib/appNavigation";
+import { describeError } from "../state/toastStore";
 import "./MemoryPage.css";
 
-/** Everything scoped to one workspace's graph, under one picker. */
-function WorkspaceMemory() {
+const TAB_LABELS: Record<MemoryTab, string> = {
+  map: "Map",
+  records: "Records",
+  health: "Health",
+};
+
+function RecordsTab({ slug }: { slug: string }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  return (
+    <>
+      <PageTopbar title="Memory" />
+      <LearningsPanel workspaceSlug={slug} selectedId={selectedId} onSelect={setSelectedId} />
+    </>
+  );
+}
+
+function ActiveTab({ tab, slug }: { tab: MemoryTab; slug: string }) {
+  if (tab === "records") return <RecordsTab key={slug} slug={slug} />;
+  if (tab === "health") return <MemoryHealthTab key={slug} slug={slug} />;
+  return <MemoryMapTab key={slug} slug={slug} />;
+}
+
+/**
+ * Everything about agent memory, in one place: the map of what is recorded
+ * and how it links, the records themselves with their confidence and
+ * discredit/restore control, and whether memory is being recorded and used at
+ * all. One workspace picker scopes all three; the tab is in the URL.
+ */
+export function MemoryPage() {
+  const location = useLocation();
+  const tab = memoryTabFromPath(location.pathname);
   const workspaces = useQuery({
     queryKey: ["workspaces"],
     queryFn: api.workspaces,
     meta: { errorTitle: "Load workspaces" },
   });
   const [chosen, setChosen] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const slug = chosen ?? workspaces.data?.[0]?.slug ?? null;
 
+  let body;
   if (workspaces.isLoading) {
-    return <PaneSkeleton variant="list" rows={4} label="Loading workspaces…" />;
-  }
-  if (!workspaces.data) {
-    return (
-      <p className="memory-error" role="alert">
-        Could not load workspaces: {describeError(workspaces.error, "the request failed")}.
-      </p>
+    body = <PaneSkeleton variant="list" rows={6} label="Loading workspaces…" />;
+  } else if (!workspaces.data) {
+    body = (
+      <div className="kb-state" role="alert">
+        <p>Could not load workspaces: {describeError(workspaces.error, "the request failed")}.</p>
+        <button type="button" className="btn-secondary" onClick={() => void workspaces.refetch()}>
+          Try again
+        </button>
+      </div>
     );
+  } else if (!slug) {
+    body = <p className="kb-state">No workspaces yet. Add one to start recording memory.</p>;
+  } else {
+    body = <ActiveTab tab={tab} slug={slug} />;
   }
-  if (!slug) {
-    return <p className="memory-empty">No workspaces yet. Add one to start recording memory.</p>;
-  }
+
   return (
-    <>
-      <label className="memory-workspace">
-        <span>Workspace</span>
-        <select
-          value={slug}
-          onChange={(event) => {
-            setChosen(event.target.value);
-            setSelectedId(null);
-          }}
-        >
-          {workspaces.data.map((ws) => (
-            <option key={ws.id} value={ws.slug}>
-              {ws.name}
-            </option>
+    <div className={`screen-view screen-view--memory screen-view--memory-${tab}`}>
+      <div className="memory-header">
+        <nav className="memory-tabs" aria-label="Memory views">
+          {MEMORY_TABS.map((option) => (
+            <Link
+              key={option}
+              to={memoryPath(option)}
+              className={`memory-tab${option === tab ? " active" : ""}`}
+              aria-current={option === tab ? "page" : undefined}
+            >
+              {TAB_LABELS[option]}
+            </Link>
           ))}
-        </select>
-      </label>
-      <GraphHealthPanel key={`health:${slug}`} workspaceSlug={slug} />
-      <ProposalsPanel key={`proposals:${slug}`} workspaceSlug={slug} onOpen={setSelectedId} />
-      <LearningsPanel
-        key={`learnings:${slug}`}
-        workspaceSlug={slug}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
-    </>
+        </nav>
+        {workspaces.data && slug && workspaces.data.length > 1 && (
+          <label className="kb-workspace">
+            <span>Workspace</span>
+            <select value={slug} onChange={(event) => setChosen(event.target.value)}>
+              {workspaces.data.map((ws) => (
+                <option key={ws.id} value={ws.slug}>
+                  {ws.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {workspaces.data && slug && workspaces.data.length === 1 && (
+          <span className="memory-workspace-name">{workspaces.data[0].name}</span>
+        )}
+      </div>
+      <div className="memory-page-body">{body}</div>
+    </div>
   );
 }
 
-/**
- * The operator surface for agent memory.
- *
- * Top: whether briefings are actually being recorded (183's telemetry), with
- * runs that recorded nothing drawn apart from the outcomes that were. Then, for
- * one workspace: the graph's shape against its last snapshot, the maintenance
- * worth a person's decision, and the learnings themselves — with observed
- * confidence (178), relations, lineage, and discredit/restore.
- */
-export function MemoryPage() {
-  const [windowDays, setWindowDays] = useState(7);
-  const stats = useQuery({
-    queryKey: ["memory-briefings", windowDays],
-    queryFn: () => api.memoryBriefings(windowDays),
-    meta: { errorTitle: "Load memory health" },
-  });
-
-  // The global query toast stays quiet when stale data is on screen, so an
-  // explicit refresh reports its own failure — otherwise a click that failed
-  // would look exactly like one that found nothing new.
-  const refresh = async () => {
-    const result = await stats.refetch();
-    if (result.error && result.data !== undefined) {
-      pushToast({
-        tone: "error",
-        title: "Refresh memory health failed",
-        message: describeError(result.error, "The request failed"),
-      });
-    }
-  };
-
-  const checkedAt = stats.dataUpdatedAt ? new Date(stats.dataUpdatedAt).toISOString() : null;
-
-  return (
-    <div className="screen-view screen-view--memory">
-      <PageTopbar title="Memory">
-        <span className="memory-checked" aria-live="polite">
-          Last checked {checkedAt ? formatLocalTimestamp(checkedAt) : "—"}
-        </span>
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={stats.isFetching}
-          onClick={() => void refresh()}
-        >
-          {stats.isFetching ? "Refreshing…" : "Refresh"}
-        </button>
-      </PageTopbar>
-      <div className="memory-page-body">
-        <BriefingHealthPanel
-          stats={stats.data}
-          isLoading={stats.isLoading}
-          error={stats.error}
-          windowDays={windowDays}
-          onWindowChange={setWindowDays}
-          onRetry={() => void refresh()}
-        />
-        <WorkspaceMemory />
-      </div>
-    </div>
-  );
+/** `/knowledge[/:nodeId]` was the map's first home; send it to the map. */
+export function LegacyKnowledgeRedirect() {
+  const location = useLocation();
+  return <Navigate replace to={memoryPathForLegacyKnowledge(location.pathname)} />;
 }

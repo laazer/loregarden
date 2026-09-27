@@ -11,7 +11,6 @@ export type AppPage =
   | "branch-triage"
   | "mcp"
   | "memory"
-  | "knowledge"
   | "instances";
 
 export type ArtifactTab =
@@ -90,7 +89,6 @@ const PAGE_PATHS: Record<AppPage, string> = {
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
   memory: "/memory",
-  knowledge: "/knowledge",
   instances: "/instances",
 };
 
@@ -223,21 +221,40 @@ export function viewIdFromPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]) : null;
 }
 
-const KNOWLEDGE_PATH_RE = /^\/knowledge\/([^/]+)/;
+/** The Memory page's tabs, in the order they are drawn. The map is the default. */
+export const MEMORY_TABS = ["map", "records", "health"] as const;
+export type MemoryTab = (typeof MEMORY_TABS)[number];
 
-/** `/knowledge/:nodeId` for one memory record. */
-export function knowledgeNodePath(nodeId: string): string {
-  return `/knowledge/${encodeURIComponent(nodeId)}`;
+const MEMORY_TAB_PATH_RE = /^\/memory\/(records|health)(?:\/|$)/;
+const MEMORY_NODE_PATH_RE = /^\/memory\/map\/([^/]+)/;
+/** The browser's old home, kept so links and bookmarks into it still land. */
+const LEGACY_KNOWLEDGE_PATH_RE = /^\/knowledge(?:\/([^/]+))?\/?$/;
+
+/** A Memory tab's URL; on the map, optionally with one record selected. */
+export function memoryPath(tab: MemoryTab, nodeId?: string): string {
+  if (tab !== "map") return `/memory/${tab}`;
+  return nodeId ? `/memory/map/${encodeURIComponent(nodeId)}` : "/memory";
+}
+
+export function memoryTabFromPath(pathname: string): MemoryTab {
+  const match = pathname.match(MEMORY_TAB_PATH_RE);
+  return match ? (match[1] as MemoryTab) : "map";
 }
 
 /**
- * The record id a `/knowledge/:nodeId` URL names, or null on `/knowledge`.
- * Decoded through `decodeSegment`, so a stray `%` reads as itself rather than
- * throwing during render.
+ * The record a `/memory/map/:nodeId` URL names, or null. Decoded through
+ * `decodeSegment`, so a stray `%` reads as itself rather than throwing during
+ * render.
  */
-export function knowledgeNodeIdFromPath(pathname: string): string | null {
-  const match = pathname.match(KNOWLEDGE_PATH_RE);
+export function memoryNodeIdFromPath(pathname: string): string | null {
+  const match = pathname.match(MEMORY_NODE_PATH_RE);
   return match ? decodeSegment(match[1]) : null;
+}
+
+/** Where an old `/knowledge[/:nodeId]` URL now lives. */
+export function memoryPathForLegacyKnowledge(pathname: string): string {
+  const match = pathname.match(LEGACY_KNOWLEDGE_PATH_RE);
+  return memoryPath("map", match?.[1] ? decodeSegment(match[1]) : undefined);
 }
 
 export function pageFromPath(pathname: string): AppPage {
@@ -253,7 +270,7 @@ export function pageFromPath(pathname: string): AppPage {
   }
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
   if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
-  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "knowledge";
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "memory";
   if (pathname === "/instances" || pathname.startsWith("/instances/")) return "instances";
   // Ticket deep-links still live in the Console shell.
   if (pathname.startsWith("/tickets/")) return "dashboard";

@@ -6,7 +6,7 @@ import { api } from "../../api/client";
 import { ApiError } from "../../api/http";
 import type { GraphNode, KnowledgeGraph, MemoryNodeDetail } from "../../api/memoryApi";
 import { TopbarPageSlot, TopbarPageSlotProvider } from "../../components/TopbarPageSlot";
-import { KnowledgePage } from "../KnowledgePage";
+import { LegacyKnowledgeRedirect, MemoryPage } from "../MemoryPage";
 
 jest.mock("../../api/client");
 
@@ -84,7 +84,7 @@ function Where() {
   return <span data-testid="where">{useLocation().pathname}</span>;
 }
 
-function renderAt(path = "/knowledge") {
+function renderAt(path = "/memory") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -92,8 +92,8 @@ function renderAt(path = "/knowledge") {
         <TopbarPageSlotProvider>
           <TopbarPageSlot />
           <Routes>
-            <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route path="/knowledge/:nodeId" element={<KnowledgePage />} />
+            <Route path="/memory/*" element={<MemoryPage />} />
+            <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
           </Routes>
           <Where />
         </TopbarPageSlotProvider>
@@ -114,22 +114,26 @@ beforeEach(() => {
 });
 
 const toList = () => fireEvent.click(screen.getByRole("radio", { name: "List" }));
+const mapNodes = () => within(screen.getByTestId("knowledge-canvas")).getAllByTestId("mm-node");
 
 it("frames the canvas and skeletons the counts while loading", async () => {
   mockApi.memoryGraph.mockReturnValue(new Promise(() => {}));
   renderAt();
-  const skeleton = await screen.findByText("Loading the graph…");
-  expect(skeleton.closest(".kb-canvas")).not.toBeNull();
+  const skeleton = await screen.findByText("Loading the map…");
+  expect(skeleton.closest(".mm-canvas")).not.toBeNull();
   expect(screen.getByLabelText("Loading counts")).toBeInTheDocument();
 });
 
 it("draws the records, marks the discredited one, and states the legend", async () => {
   renderAt();
-  const canvas = await screen.findByTestId("knowledge-canvas");
-  expect(within(canvas).getAllByTestId("react-flow-node")).toHaveLength(2);
+  await screen.findByTestId("knowledge-canvas");
+  expect(mapNodes()).toHaveLength(2);
+  expect(screen.getByRole("button", { name: /Record n2 .*discredited/ })).toHaveClass(
+    "mm-node--discredited",
+  );
   expect(screen.getByText(/2 records · 1 links/)).toBeInTheDocument();
-  // The acceptance criterion: position carries no meaning, said in words.
-  expect(screen.getByLabelText("Legend")).toHaveTextContent(/visual grouping only/);
+  // Position is said in words to mean only "linked", never "similar".
+  expect(screen.getByLabelText("Legend")).toHaveTextContent(/distance is not similarity/);
 });
 
 it("says no memories exist, distinctly from not configured and from an error", async () => {
@@ -198,10 +202,11 @@ it("selecting a record does not refetch the graph", async () => {
   await screen.findByTestId("knowledge-canvas");
   toList();
   const calls = mockApi.memoryGraph.mock.calls.length;
-  fireEvent.click(screen.getByRole("button", { name: /record n1/i }));
+  const list = screen.getByRole("list", { name: "Records" });
+  fireEvent.click(within(list).getByRole("button", { name: /record n1/i }));
   expect(await screen.findByRole("heading", { name: "Record n1" })).toBeInTheDocument();
   expect(mockApi.memoryGraph.mock.calls.length).toBe(calls);
-  expect(screen.getByTestId("where")).toHaveTextContent("/knowledge/n1");
+  expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n1");
 });
 
 it("is operable from the list by keyboard, and Escape closes the panel", async () => {
@@ -217,11 +222,11 @@ it("is operable from the list by keyboard, and Escape closes the panel", async (
   expect(title.nextElementSibling).toHaveTextContent("Discredited");
   fireEvent.keyDown(document, { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(screen.getByTestId("where")).toHaveTextContent(/^\/knowledge$/);
+  expect(screen.getByTestId("where")).toHaveTextContent(/^\/memory$/);
 });
 
 it("selects the record a deep link names", async () => {
-  renderAt("/knowledge/n1");
+  renderAt("/memory/map/n1");
   const panel = await screen.findByRole("dialog");
   expect(await within(panel).findByRole("heading", { name: "Record n1" })).toBeInTheDocument();
   expect(mockApi.memoryNode).toHaveBeenCalledWith("n1", "lg");
@@ -229,44 +234,123 @@ it("selects the record a deep link names", async () => {
 
 it("names an unknown deep-link id and offers a way back", async () => {
   mockApi.memoryNode.mockRejectedValue(new ApiError(404, "No memory node"));
-  renderAt("/knowledge/missing%2Fid");
+  renderAt("/memory/map/missing%2Fid");
   const panel = await screen.findByRole("dialog");
   expect(
     await within(panel).findByRole("heading", { name: /record not found/i }),
   ).toBeInTheDocument();
   expect(within(panel).getByRole("link", { name: /back to all records/i })).toHaveAttribute(
     "href",
-    "/knowledge",
+    "/memory",
   );
   expect(mockApi.memoryNode).toHaveBeenCalledWith("missing/id", "lg");
 });
 
 it("a neighbour click moves the selection", async () => {
-  renderAt("/knowledge/n1");
+  renderAt("/memory/map/n1");
   const panel = await screen.findByRole("dialog");
   fireEvent.click(await within(panel).findByRole("button", { name: "Record n2" }));
-  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/knowledge/n2"));
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n2"));
   expect(mockApi.memoryNode).toHaveBeenCalledWith("n2", "lg");
 });
 
 it("says the origin is unknown when provenance was never recorded", async () => {
-  renderAt("/knowledge/n1");
+  renderAt("/memory/map/n1");
   const origin = await screen.findByTestId("kb-origin");
   expect(origin).toHaveTextContent(/^Origin unknown · recorded /);
 });
 
 it("shows a recorded agent origin, and that its reference is missing", async () => {
   mockApi.memoryNode.mockResolvedValue(record("n1", { origin_kind: "agent", origin_ref: null }));
-  renderAt("/knowledge/n1");
+  renderAt("/memory/map/n1");
   const origin = await screen.findByTestId("kb-origin");
   expect(origin).toHaveTextContent(/^Agent · reference not recorded · /);
 });
 
-it("a graph node click selects that record", async () => {
+it("a map node click selects that record", async () => {
   renderAt();
-  const canvas = await screen.findByTestId("knowledge-canvas");
-  fireEvent.click(within(canvas).getAllByTestId("react-flow-node")[0]);
-  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/knowledge/n1"));
+  await screen.findByTestId("knowledge-canvas");
+  fireEvent.click(mapNodes()[0]);
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n1"));
+});
+
+it("selects a map node from the keyboard", async () => {
+  renderAt();
+  await screen.findByTestId("knowledge-canvas");
+  const target = screen.getByRole("button", { name: /^Record n1 —/ });
+  target.focus();
+  fireEvent.keyDown(target, { key: "Enter" });
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n1"));
+});
+
+it("lights a record's neighbourhood on hover and dims the rest", async () => {
+  mockApi.memoryGraph.mockResolvedValue(graph({ nodes: [node("n1"), node("n2"), node("n3")] }));
+  renderAt();
+  await screen.findByTestId("knowledge-canvas");
+  fireEvent.mouseEnter(screen.getByRole("button", { name: /^Record n1 —/ }));
+  const dimmed = mapNodes().filter((el) => el.classList.contains("mm-dim"));
+  expect(dimmed.map((el) => el.getAttribute("data-node-id"))).toEqual(["n3"]);
+});
+
+it("hides a link type from the legend and says so", async () => {
+  renderAt();
+  await screen.findByTestId("knowledge-canvas");
+  expect(screen.getAllByTestId("mm-edge")).toHaveLength(1);
+  const toggle = screen.getByRole("button", { name: "Supports" });
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryAllByTestId("mm-edge")).toHaveLength(0);
+});
+
+it("gives an overview beside the map: contradictions, busiest and unlinked", async () => {
+  mockApi.memoryGraph.mockResolvedValue(
+    graph({
+      nodes: [node("n1"), node("n2"), node("n3")],
+      relations: [
+        {
+          id: "r1",
+          source_id: "n1",
+          target_id: "n2",
+          relation_type: "contradicts",
+          created_at: "2026-09-01T00:00:00",
+        },
+      ],
+    }),
+  );
+  renderAt();
+  const overview = await screen.findByRole("complementary", { name: "Map overview" });
+  const contradictions = within(overview).getByRole("heading", { name: "Contradictions" })
+    .parentElement!;
+  expect(within(contradictions).getByRole("button", { name: "Record n1" })).toBeInTheDocument();
+  expect(within(contradictions).getByRole("button", { name: "Record n2" })).toBeInTheDocument();
+  const unlinked = within(overview).getByRole("heading", { name: "Unlinked" }).parentElement!;
+  fireEvent.click(within(unlinked).getByRole("button", { name: "Record n3" }));
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n3"));
+  // The record's panel takes the overview's place.
+  expect(screen.queryByRole("complementary", { name: "Map overview" })).toBeNull();
+});
+
+it("says there are no contradictions rather than showing an empty list", async () => {
+  renderAt();
+  const overview = await screen.findByRole("complementary", { name: "Map overview" });
+  expect(overview).toHaveTextContent("No recorded contradictions among these records.");
+});
+
+it("sends an old /knowledge link to the same record on the map", async () => {
+  renderAt("/knowledge/n1");
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/memory/map/n1"));
+  expect(await screen.findByRole("dialog")).toBeInTheDocument();
+});
+
+it("switches tabs by link, with the current one marked", async () => {
+  renderAt();
+  const tabs = await screen.findByRole("navigation", { name: "Memory views" });
+  expect(within(tabs).getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page");
+  expect(within(tabs).getByRole("link", { name: "Health" })).toHaveAttribute(
+    "href",
+    "/memory/health",
+  );
 });
 
 it("asks for discredited records only when told to", async () => {
