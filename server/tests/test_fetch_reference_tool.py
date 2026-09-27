@@ -70,7 +70,7 @@ from loregarden.services import reference_cache
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 
-RESOLVER = "loregarden.services.reference_cache.socket.getaddrinfo"
+RESOLVER = "loregarden.services.reference_cache._getaddrinfo"
 
 HTML_PAGE = (
     b"<html><head><title>Array.prototype.map</title></head><body><main>"

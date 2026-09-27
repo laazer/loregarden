@@ -62,7 +62,7 @@ build = [
 # registry and router. Pinned to a commit on its main: lore-eden is consumed unpublished
 # while its API settles (its CONTRIBUTING, rule 3), and a moving branch would
 # change what this server runs without a commit here saying so.
-lore-eden = { git = "https://github.com/laazer/lore-eden", subdirectory = "python", rev = "495c035383047054b070fdaf17ba7711a7361e18" }
+lore-eden = { git = "https://github.com/laazer/lore-eden", subdirectory = "python", rev = "738d65a6580434e0775e6a95ac1b315ac5b3340d" }
 
 [tool.uv]
 default-groups = ["dev"]

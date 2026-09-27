@@ -366,7 +366,7 @@ def reference_network_refused(monkeypatch):
     untouched too: only the name `reference_cache` resolves is replaced.
     """
 
-    # DNS first. `_url_block_reason` calls socket.getaddrinfo as an SSRF guard
+    # DNS first. `_url_block_reason` resolves the host as an SSRF guard
     # BEFORE any request is built, so patching only httpx left every test in
     # test_search_reference_tool.py making a real lookup for devdocs.io — slow,
     # and dependent on someone else's uptime, which is the exact failure this
@@ -382,7 +382,11 @@ def reference_network_refused(monkeypatch):
     def _fake_getaddrinfo(host, port, *args, **kwargs):
         return [(2, 1, 6, "", ("93.184.216.34", port))]
 
-    monkeypatch.setattr(reference_cache.socket, "getaddrinfo", _fake_getaddrinfo)
+    #
+    # On the cache's own seam, not on `socket`: `reference_cache.socket` is the
+    # stdlib module, so patching `getaddrinfo` there faked DNS for every test in
+    # the suite — even `127.0.0.1` resolved to the address above.
+    monkeypatch.setattr(reference_cache, "_getaddrinfo", _fake_getaddrinfo)
 
     real = reference_cache.httpx
 
