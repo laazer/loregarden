@@ -18,7 +18,7 @@ vault runs memory notes at ~292B average / 3389B max and learnings at ~583B
 average / 4157B max, a better than tenfold spread, so a rambling weekly note
 beats a short precise one on sheer surface area. 600 characters covers the
 average note of either kind in full while capping the outliers at roughly a
-seventh of their text. Titles and tags are always scored whole; only the body
+seventh of their text. Titles, aliases and tags are always scored whole; only the body
 is truncated.
 
 `rank_by_overlap` returns ordered candidate *records*, never formatted lines
@@ -98,8 +98,9 @@ def terms(text: str) -> set[str]:
 def _scored_text(candidate: dict[str, Any]) -> str:
     title = candidate.get("title") or ""
     tags = " ".join(candidate.get("tags") or [])
+    aliases = " ".join(candidate.get("aliases") or [])
     body = (candidate.get("body") or "")[:_SCORED_BODY_CHARS]
-    return f"{title} {tags} {body}"
+    return f"{title} {aliases} {tags} {body}"
 
 
 def rank_by_overlap(

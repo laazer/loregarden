@@ -73,6 +73,10 @@ from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
 from loregarden.db.migrations_landing import m_ticket_landing_columns
+from loregarden.db.migrations_learning_applications import (
+    m_learning_applications_table,
+    m_memory_health_snapshots_table,
+)
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -1397,7 +1401,9 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # 0139, not 0138: the live database already carries an unmerged branch's 0138.
     ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
     ("0140_ticket_landing_columns", m_ticket_landing_columns),
-    ("0141_github_issue_links", m_github_issue_links),
+    ("0141_learning_applications_table", m_learning_applications_table),
+    ("0142_memory_health_snapshots_table", m_memory_health_snapshots_table),
+    ("0143_github_issue_links", m_github_issue_links),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

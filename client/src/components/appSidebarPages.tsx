@@ -136,6 +136,18 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "memory",
+    label: "Memory",
+    path: pathForPage("memory"),
+    ownsPage: ownsOnly("memory"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" />
+        <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />
+      </svg>
+    ),
+  },
+  {
     key: "branch-triage",
     label: "Branch Triage",
     path: pathForPage("branch-triage"),

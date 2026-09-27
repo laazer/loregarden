@@ -1,6 +1,7 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
+import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 
 export { API_BASE, ApiError } from "./http";
@@ -8,6 +9,7 @@ export { API_BASE, ApiError } from "./http";
 
 export type * from "./types";
 export type { InitiativeMilestone, InitiativeView } from "./initiativeApi";
+export type * from "./memoryApi";
 import type {
   WorkflowReassignmentPreview,
   TicketState,
@@ -397,6 +399,7 @@ export const api = {
     }),
   ...ticketEdgeApi,
   ...initiativeApi,
+  ...memoryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",
