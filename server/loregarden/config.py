@@ -77,6 +77,18 @@ class Settings(BaseSettings):
     permission_approval_timeout_seconds: float = 3600.0
     triage_timeout_seconds: int = 300
     mcp_url: str = "http://127.0.0.1:8000/mcp"
+    #: Where this process is serving, as `scripts/dev-server.sh` started it.
+    #: Unset (tests, the packaged sidecar) means "not a dev server", and the
+    #: process does not advertise itself in the local instance registry.
+    dev_host: str = "127.0.0.1"
+    dev_port: int | None = None
+    #: A branch instance launched from the Local instances panel: running on a
+    #: snapshot of main's database, beside main's live agents and worktrees.
+    #: Boot skips everything that acts on what the database *describes* —
+    #: adopting run processes, failing "interrupted" runs, pruning worktrees,
+    #: resuming orchestrations — because in a snapshot all of that describes
+    #: main's machinery, not this process's. See `local_instances`.
+    sandbox: bool = False
     # Vite dev server origins, plus Tauri's fixed webview origins for the
     # packaged desktop app (tauri://localhost on macOS/Linux, the
     # http(s)://tauri.localhost variants on Windows) — none of these are
@@ -218,7 +230,11 @@ _prime_cursor_api_key_env()
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 
-load_local_memory_config_into_settings()
+# A sandbox's database and memory come from its launcher's environment. The
+# local file could point either back at main's — it is in the checkout, and
+# the primary checkout is a legitimate thing to launch a sandbox from.
+if not settings.sandbox:
+    load_local_memory_config_into_settings()
 
 
 def resolved_icloud_root() -> Path | None:

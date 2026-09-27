@@ -58,6 +58,7 @@ from loregarden.models.domain import (
     BlockOrigin,
     ExternalHarness,
     HumanActionTier,
+    MemoryRelationType,
     OrchestrationRunStatus,
     WorkItemType,
 )
@@ -89,6 +90,14 @@ def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
         payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
 
 
+def _coerce_aliases(args: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Aliases arrive in the same shapes tags do."""
+    parsed: dict[str, Any] = {}
+    _coerce_tags({"tags": args.get("aliases")}, parsed)
+    if "tags" in parsed:
+        payload["aliases"] = parsed["tags"]
+
+
 def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "title": _coerce_string(args.get("title"), field="title"),
@@ -114,8 +123,10 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
             "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
             "content": _coerce_string(args.get("content"), field="content"),
+            "title": _coerce_optional_string(args.get("title")) or "",
         }
         _coerce_tags(args, payload)
+        _coerce_aliases(args, payload)
         return payload
 
     if name == "loregarden_upsert_memory":
@@ -908,6 +919,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "ticket_id": _string_prop("Ticket external id or UUID."),
                 "workspace_slug": _string_prop("Workspace slug."),
                 "content": _string_prop("Learning body (markdown)."),
+                "title": _string_prop(
+                    "What the learning says, as a canonical name (e.g. 'Use DELETE journal "
+                    "on iCloud SQLite'). Omitted: taken from the content's first line."
+                ),
+                "aliases": _string_prop("Other names for it: comma-separated or JSON array."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
             },
             required=["ticket_id", "workspace_slug", "content"],
@@ -1095,7 +1111,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             properties={
                 "source_id": _string_prop("Source memory node id."),
                 "target_id": _string_prop("Target memory node id."),
-                "relation_type": _string_prop("Relation label (default related)."),
+                "relation_type": _enum_string_prop(
+                    "What the edge asserts (default related, a plain mention). Type it only "
+                    "when the relationship is stated, never inferred.",
+                    [kind.value for kind in MemoryRelationType],
+                ),
                 "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
             },
             required=["source_id", "target_id", "workspace_slug"],

@@ -137,7 +137,7 @@ class TriageTurnExecutor:
         effective_workspace = apply_triage_runtime_overrides(workspace, ticket)
         stub = stub_response(TRIAGE_CLI_PROFILE)
         if stub is not None:
-            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=stub[:8000], stderr="")
+            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=stub, stderr="")
             return
 
         agent = get_agent(TRIAGE_AGENT_ID) or {}
@@ -185,7 +185,7 @@ class TriageTurnExecutor:
                     surface=ChatSurface.TICKET_TRIAGE,
                 )
             )
-            reply = turn.reply[:8000]
+            reply = turn.reply
             if acting:
                 reply += self._work_note(turn.run_id, ticket, effective_workspace)
             self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")

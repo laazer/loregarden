@@ -9,7 +9,8 @@ export type AppPage =
   | "editor"
   | "queue"
   | "branch-triage"
-  | "mcp";
+  | "mcp"
+  | "memory";
 
 export type ArtifactTab =
   | "diff"
@@ -86,6 +87,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   queue: "/queue",
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
+  memory: "/memory",
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
@@ -229,6 +231,7 @@ export function pageFromPath(pathname: string): AppPage {
     return "branch-triage";
   }
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
+  if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
   // Ticket deep-links still live in the Console shell.
   if (pathname.startsWith("/tickets/")) return "dashboard";
   return "home";

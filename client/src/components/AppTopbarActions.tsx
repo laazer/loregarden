@@ -11,6 +11,7 @@ import {
   TopbarDropdown,
   TopbarDropdownPaneRow,
 } from "./TopbarDropdown";
+import { LocalInstancesModal } from "./LocalInstancesModal";
 import { UsageModal } from "./UsageModal";
 
 const USAGE_REFRESH_MS = 30 * 60_000;
@@ -23,6 +24,7 @@ export function AppTopbarActions() {
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
 
   const [usageOpen, setUsageOpen] = useState(false);
+  const [instancesOpen, setInstancesOpen] = useState(false);
   // The snapshot is served from a short server-side cache so a page load never
   // blocks on the providers; the modal's Refresh button asks for live numbers.
   const forceUsageRefresh = useRef(false);
@@ -83,6 +85,19 @@ export function AppTopbarActions() {
         <div className="topbar-actions-core">
           <button
             type="button"
+            className="btn-secondary topbar-action-btn"
+            onClick={() => setInstancesOpen(true)}
+            aria-label="Open local instances: branch servers and clients on their own ports"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--bll)" strokeWidth="1.8" aria-hidden>
+              <rect x="3" y="4" width="18" height="7" rx="1.5" />
+              <rect x="3" y="13" width="18" height="7" rx="1.5" />
+              <path d="M7 7.5h.01M7 16.5h.01" />
+            </svg>
+            Instances
+          </button>
+          <button
+            type="button"
             className={`btn-secondary topbar-action-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
             onClick={() => setUsageOpen(true)}
             aria-label={
@@ -136,6 +151,7 @@ export function AppTopbarActions() {
         </div>
       </div>
 
+      <LocalInstancesModal open={instancesOpen} onClose={() => setInstancesOpen(false)} />
       <UsageModal
         open={usageOpen}
         snapshot={usage.data}

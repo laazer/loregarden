@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from loregarden.models.domain import MemoryRelationType
 from loregarden.services.memory_store import (
     CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
@@ -231,7 +232,9 @@ def test_memory_graph_upsert_and_relation(tmp_path):
     graph = MemoryGraphStore(db_path)
     a = graph.upsert_node(title="Pattern A", body="Use MCP for workflow state.")
     b = graph.upsert_node(title="Pattern B", body="Do not edit WORKFLOW STATE in markdown.")
-    rel = graph.create_relation(source_id=a["id"], target_id=b["id"], relation_type="supports")
+    rel = graph.create_relation(
+        source_id=a["id"], target_id=b["id"], relation_type=MemoryRelationType.SUPPORTS
+    )
     assert rel["source_id"] == a["id"]
     assert rel["target_id"] == b["id"]
     hits = graph.search("MCP for workflow")
@@ -661,6 +664,7 @@ def test_recall_related_shared_id_learning_appears_once(vault_dir, tmp_path):
         ticket_id="t-01",
         workspace_slug="lg",
         content="Throttle the trusted server before the retry loop consumes the budget.",
+        title="Learning — t-01",
     )
     assert result["obsidian"]["id"] == result["graph"]["id"]
 

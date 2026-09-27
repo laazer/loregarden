@@ -7,7 +7,7 @@ from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
-from loregarden.services import docker_capacity, reference_cache
+from loregarden.services import docker_capacity, local_instances, reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
@@ -225,6 +225,24 @@ def git_repo_fixture(tmp_path):
     git("add", "-A")
     git("commit", "-q", "-m", "seed")
     return root
+
+
+@pytest.fixture(autouse=True)
+def isolated_instance_registry(tmp_path_factory, monkeypatch):
+    """Keep the suite out of the developer's real `~/.lore-eden/instances`.
+
+    Every app lifespan may advertise itself there (`register_main`), and the
+    instances endpoints read and launch from it. A shell that exported
+    LOREGARDEN_DEV_PORT would otherwise have the suite registering test apps as
+    the developer's main server, which every branch client then proxies to.
+    """
+    monkeypatch.setenv("LORE_EDEN_INSTANCES_DIR", str(tmp_path_factory.mktemp("instances")))
+    monkeypatch.setattr(settings, "dev_port", None)
+    local_instances.get_registry.cache_clear()
+    local_instances.get_instance_manager.cache_clear()
+    yield
+    local_instances.get_registry.cache_clear()
+    local_instances.get_instance_manager.cache_clear()
 
 
 @pytest.fixture(autouse=True)

@@ -17,7 +17,9 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.models.domain import MemoryRelationType
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
+from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 
@@ -62,6 +64,8 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
             workspace_slug=arguments["workspace_slug"],
             content=arguments["content"],
             tags=arguments.get("tags"),
+            title=arguments.get("title", ""),
+            aliases=arguments.get("aliases"),
         )
         return json.dumps(result, indent=2)
 
@@ -124,7 +128,10 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
     result = memory.create_relation(
         source_id=arguments["source_id"],
         target_id=arguments["target_id"],
-        relation_type=arguments.get("relation_type", "related"),
+        # Parsed at the boundary: an unknown label is refused naming the vocabulary.
+        relation_type=parse_relation_type(
+            arguments.get("relation_type", MemoryRelationType.RELATED.value)
+        ),
         workspace_slug=arguments["workspace_slug"],
     )
     return json.dumps(result, indent=2)
