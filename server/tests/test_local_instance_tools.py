@@ -7,7 +7,6 @@ real launch goes all the way through here too.
 """
 
 import json
-import socket
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -39,15 +38,6 @@ def test_offered_to_every_stage_and_never_waits_on_the_inbox(tool) -> None:
     assert not is_orchestrated_agent_denied_mcp_tool(tool.value)
 
 
-#: Captured at import, before any fixture runs. conftest's
-#: `reference_network_refused` fakes DNS by patching `socket.getaddrinfo` on the
-#: module `reference_cache` imports — which is the global `socket` module, so
-#: during every test even `127.0.0.1` "resolves" to a public address and a
-#: loopback probe dials the internet. The instance here is on loopback and
-#: nothing leaves the machine, so this test puts the real resolver back.
-_REAL_GETADDRINFO = socket.getaddrinfo
-
-
 @pytest.fixture(name="http_manager")
 def http_manager_fixture(tmp_path: Path):
     """A manager whose one template serves a directory with the stdlib."""
@@ -64,10 +54,7 @@ def http_manager_fixture(tmp_path: Path):
         )
     )
     manager = InstanceManager(FileInstanceRegistry(tmp_path / "registry"), catalog)
-    with (
-        patch.object(local_instance_tools, "get_instance_manager", return_value=manager),
-        patch.object(socket, "getaddrinfo", _REAL_GETADDRINFO),
-    ):
+    with patch.object(local_instance_tools, "get_instance_manager", return_value=manager):
         yield manager
     for view in manager.list().instances:
         manager.stop(view.id)
