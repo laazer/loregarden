@@ -26,6 +26,7 @@ from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
 )
+from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTANCE_TOOL_DEFINITIONS
 from loregarden.mcp.memory_tools import MEMORY_TOOL_NAMES, execute_memory_tool
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
@@ -1131,6 +1132,7 @@ TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):

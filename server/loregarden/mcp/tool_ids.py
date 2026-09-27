@@ -58,6 +58,10 @@ class McpTool(StrEnum):
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
     DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
     FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
+    LIST_INSTANCES = "loregarden_list_instances"
+    LAUNCH_INSTANCE = "loregarden_launch_instance"
+    INSTANCE_STATUS = "loregarden_instance_status"
+    STOP_INSTANCE = "loregarden_stop_instance"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -105,6 +109,21 @@ DOCKER_CAPACITY_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.DOCKER_CAPACITY_STATUS,
 )
 
+#: Local instances: a branch server or dev client on a free port, launched from
+#: the templates in `services/local_instances.py` (the tools themselves are
+#: lore-eden's, adapted in `mcp/local_instance_tools.py`).
+#:
+#: Offered to every stage, like docker capacity, for the same reason: a verify
+#: or visual_qa stage that could exercise the change it reviews, and is told
+#: how, but cannot, is the worst of both. A stage that does not need them
+#: simply does not call them.
+LOCAL_INSTANCE_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.LIST_INSTANCES,
+    McpTool.LAUNCH_INSTANCE,
+    McpTool.INSTANCE_STATUS,
+    McpTool.STOP_INSTANCE,
+)
+
 STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.GET_TICKET,
     McpTool.LIST_TICKETS,
@@ -123,6 +142,7 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # Docker capacity, offered to every stage — see DOCKER_CAPACITY_MCP_TOOLS
     # below for why this reverses the first cut.
     *DOCKER_CAPACITY_MCP_TOOLS,
+    *LOCAL_INSTANCE_MCP_TOOLS,
 )
 
 MEMORY_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
@@ -159,6 +179,10 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
         McpTool.DOCKER_CAPACITY_STATUS,
+        McpTool.LIST_INSTANCES,
+        # Also stamps `ready_at` the first time an instance answers — the
+        # registry's own bookkeeping, not a change to anything it describes.
+        McpTool.INSTANCE_STATUS,
     }
 )
 
@@ -210,6 +234,22 @@ CAPACITY_LEASE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 )
 
 
+#: Launch and stop on local instances. Auto-approved, and in a set of their own
+#: because neither fits the promises the sets above make: launch starts a
+#: process, stop ends one.
+#:
+#: The argument mirrors `CAPACITY_LEASE_MCP_TOOLS`. Launch can only run the
+#: host's templates — no command reaches the tool — and a branch server boots
+#: sandboxed on a database snapshot, so the worst an agent can start is a copy
+#: of this control plane on a spare port. Gating *stop* would leak: an agent
+#: that must wait on a human to clean up will not, and the instance holds its
+#: port and its snapshot until someone notices. Stop cannot reach main, which
+#: registered itself; the manager refuses with `not_managed`.
+LOCAL_INSTANCE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {McpTool.LAUNCH_INSTANCE, McpTool.STOP_INSTANCE}
+)
+
+
 #: Tools that reach the network. Auto-approved, but kept out of the two sets
 #: above rather than folded into them: `CONTROL_PLANE_WRITE_MCP_TOOLS` promises
 #: its members "cannot touch the repo, the filesystem outside the vault, or
@@ -229,6 +269,7 @@ AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
     | CONTROL_PLANE_WRITE_MCP_TOOLS
     | NETWORK_EGRESS_MCP_TOOLS
     | CAPACITY_LEASE_MCP_TOOLS
+    | LOCAL_INSTANCE_WRITE_MCP_TOOLS
 )
 
 #: Tools whose safety depends on *which* action was asked for, not just the tool
