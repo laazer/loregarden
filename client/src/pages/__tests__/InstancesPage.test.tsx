@@ -2,7 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { localInstancesApi } from "../../api/localInstancesApi";
-import type { LocalInstance, WorkspaceTemplates } from "../../api/localInstancesTypes";
+import type {
+  LocalInstance,
+  TemplateSpec,
+  WorkspaceIntegration,
+  WorkspaceTemplates,
+} from "../../api/localInstancesTypes";
+import { useToastStore } from "../../state/toastStore";
 import { InstancesPage } from "../InstancesPage";
 
 jest.mock("../../api/localInstancesApi", () => ({
@@ -16,6 +22,9 @@ jest.mock("../../api/localInstancesApi", () => ({
     createTemplate: jest.fn(),
     replaceTemplate: jest.fn(),
     deleteTemplate: jest.fn(),
+    writeTemplateFile: jest.fn(),
+    integration: jest.fn(),
+    install: jest.fn(),
   },
 }));
 
@@ -47,6 +56,7 @@ const workspace = (overrides: Partial<WorkspaceTemplates> = {}): WorkspaceTempla
   name: "Shop",
   repo_root: "/w/shop",
   template_file: "/w/shop/.loregarden/instances.yaml",
+  file_exists: true,
   file_error: "",
   conflicts: [],
   entries: [
@@ -82,7 +92,36 @@ beforeEach(() => {
   ]);
   mockApi.workspaceTemplates.mockResolvedValue([workspace(), workspace({ slug: "blog", name: "Blog", entries: [] })]);
   jest.spyOn(window, "confirm").mockReturnValue(true);
+  mockApi.integration.mockImplementation((slug) => Promise.resolve(integration(slug)));
 });
+
+const integration = (slug: string, overrides: Partial<WorkspaceIntegration> = {}): WorkspaceIntegration => ({
+  slug,
+  repo_root: `/w/${slug}`,
+  installers: [
+    { installer: "hooks", state: "unavailable", detail: `/w/${slug} has no lefthook.yml (install lefthook there first)` },
+    { installer: "docs", state: "missing", detail: `missing file: /w/${slug}/AGENTS.md managed section` },
+  ],
+  ...overrides,
+});
+
+const SPEC: TemplateSpec = {
+  name: "docs",
+  kind: "server",
+  description: "",
+  command: ["x"],
+  cwd: ".",
+  env: {},
+  health_path: "/",
+  ready_timeout_seconds: 120,
+  port_range: [8100, 8999],
+  params: [],
+  target: null,
+};
+
+async function setupPanel(name = "Shop"): Promise<HTMLElement> {
+  return (await screen.findByRole("heading", { name: `${name} setup` })).closest("section") as HTMLElement;
+}
 
 it("groups running instances by workspace", async () => {
   mockApi.list.mockResolvedValue({
@@ -225,4 +264,84 @@ it("edits and deletes only templates saved here", async () => {
   expect(within(apiRow).queryByRole("button")).not.toBeInTheDocument();
   fireEvent.click(within(docsRow).getByRole("button", { name: "Delete" }));
   await waitFor(() => expect(mockApi.deleteTemplate).toHaveBeenCalledWith("shop", "docs"));
+});
+
+describe("workspace setup", () => {
+  beforeEach(() => {
+    mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
+    useToastStore.setState({ toasts: [] });
+  });
+
+  it("offers what can be installed and says why the rest cannot", async () => {
+    renderPage();
+    const panel = await setupPanel();
+    const hooks = (await within(panel).findByText("Pre-commit gates")).closest("tr") as HTMLElement;
+    expect(await within(hooks).findByText("Cannot install")).toBeInTheDocument();
+    expect(within(hooks).getByText(/has no lefthook.yml/)).toBeInTheDocument();
+    expect(within(hooks).queryByRole("button")).not.toBeInTheDocument();
+    const docs = within(panel).getByText("Agent instructions").closest("tr") as HTMLElement;
+    expect(within(docs).getByRole("button", { name: "Install" })).toBeEnabled();
+  });
+
+  it("installs only after confirming, and blocks a second click while it runs", async () => {
+    let finish: (value: WorkspaceIntegration) => void = () => {};
+    mockApi.install.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    renderPage();
+    const panel = await setupPanel();
+    const install = await within(panel).findByRole("button", { name: "Install" });
+
+    (window.confirm as jest.Mock).mockReturnValueOnce(false);
+    fireEvent.click(install);
+    expect(mockApi.install).not.toHaveBeenCalled();
+
+    fireEvent.click(install);
+    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("AGENTS.md in /w/shop"));
+    const running = await within(panel).findByRole("button", { name: "Installing…" });
+    expect(running).toBeDisabled();
+    expect(mockApi.install).toHaveBeenCalledTimes(1);
+    expect(mockApi.install).toHaveBeenCalledWith("shop", "docs");
+
+    const done = integration("shop");
+    done.installers[1] = { installer: "docs", state: "current", detail: "ok" };
+    finish(done);
+    expect(await within(panel).findByText("Installed")).toBeInTheDocument();
+  });
+
+  it("reports a refused install", async () => {
+    mockApi.install.mockRejectedValue(new Error("AGENTS.md is not writable"));
+    renderPage();
+    const panel = await setupPanel();
+    fireEvent.click(await within(panel).findByRole("button", { name: "Install" }));
+    await waitFor(() => expect(within(panel).getByRole("button", { name: "Install" })).toBeEnabled());
+    expect(useToastStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ tone: "error", title: "Install Agent instructions failed", message: "AGENTS.md is not writable" }),
+    );
+  });
+
+  it("says when the check itself failed, instead of showing nothing installed", async () => {
+    mockApi.integration.mockRejectedValue(new Error("server unreachable"));
+    renderPage();
+    const panel = await setupPanel();
+    expect(await within(panel).findByRole("alert")).toHaveTextContent("server unreachable");
+    expect(within(panel).queryByText("Not installed")).not.toBeInTheDocument();
+  });
+
+  it("writes saved templates to the repo file when there is none", async () => {
+    const stored = { ...workspace().entries[0], name: "docs", qualified_name: "shop/docs", origin: "stored" as const, spec: SPEC };
+    mockApi.workspaceTemplates.mockResolvedValue([workspace({ file_exists: false, entries: [stored] })]);
+    mockApi.writeTemplateFile.mockResolvedValue(workspace());
+    renderPage();
+    const panel = await setupPanel();
+    expect(await within(panel).findByText(/1 saved here can be written/)).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("button", { name: "Write file" }));
+    await waitFor(() => expect(mockApi.writeTemplateFile).toHaveBeenCalledWith("shop"));
+  });
+
+  it("offers no file write when the repo already has one", async () => {
+    renderPage();
+    const panel = await setupPanel();
+    const row = (await within(panel).findByText("Launch templates")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Present")).toBeInTheDocument();
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
 });

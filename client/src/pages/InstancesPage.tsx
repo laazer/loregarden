@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useMemo, useState } from "react";
 
 import { localInstancesApi } from "../api/localInstancesApi";
 import type { LocalInstance, LocalInstanceState } from "../api/localInstancesTypes";
+import { WorkspaceIntegrationPanel } from "../components/instances/WorkspaceIntegrationPanel";
 import { WorkspaceTemplatesPanel } from "../components/instances/WorkspaceTemplatesPanel";
 import { LocalInstanceLaunchForm } from "../components/LocalInstanceLaunchForm";
 import { LocalInstanceRow } from "../components/LocalInstanceRow";
 import { PageTopbar } from "../components/TopbarPageSlot";
-import { useLocalInstances, WORKSPACE_TEMPLATES_KEY } from "../hooks/useLocalInstances";
+import { INTEGRATION_KEY, useLocalInstances, WORKSPACE_TEMPLATES_KEY } from "../hooks/useLocalInstances";
 import "../components/LocalInstancesModal.css";
 import "./InstancesPage.css";
 
@@ -18,14 +19,16 @@ const STATES: LocalInstanceState[] = ["starting", "ready", "stalled", "exited"];
  * Every workspace's local instances, launch, and the templates behind them.
  *
  * The topbar modal is the quick view of the same data. Here: filter across
- * workspaces, launch from any workspace's templates, and define templates —
- * committed in a workspace's `.loregarden/instances.yaml`, or saved here.
+ * workspaces, launch from any workspace's templates, define templates —
+ * committed in a workspace's `.loregarden/instances.yaml`, or saved here — and
+ * install loregarden's gates and agent instructions into each workspace.
  */
 export function InstancesPage() {
   const workspaceFilterId = useId();
   const stateFilterId = useId();
   const [workspace, setWorkspace] = useState(ALL);
   const [state, setState] = useState<LocalInstanceState | typeof ALL>(ALL);
+  const queryClient = useQueryClient();
   const { instances, templates, launch, stop, stopping, targetName } = useLocalInstances(true);
   const workspaces = useQuery({
     queryKey: WORKSPACE_TEMPLATES_KEY,
@@ -60,6 +63,7 @@ export function InstancesPage() {
           onClick={() => {
             void instances.refetch();
             void workspaces.refetch();
+            void queryClient.invalidateQueries({ queryKey: INTEGRATION_KEY });
           }}
         >
           {instances.isFetching ? "Refreshing…" : "Refresh"}
@@ -166,7 +170,7 @@ export function InstancesPage() {
         </section>
 
         <section className="instances-template-list" aria-labelledby="instances-templates-title" aria-busy={workspaces.isPending}>
-          <h2 id="instances-templates-title">Templates</h2>
+          <h2 id="instances-templates-title">Workspaces</h2>
           {workspaces.error ? (
             <p className="instances-error" role="alert">
               Could not load workspace templates: {workspaces.error.message}
@@ -178,7 +182,12 @@ export function InstancesPage() {
           ) : (
             (workspaces.data ?? [])
               .filter((w) => workspace === ALL || w.slug === workspace)
-              .map((w) => <WorkspaceTemplatesPanel key={w.slug} workspace={w} />)
+              .map((w) => (
+                <div key={w.slug} className="instances-workspace">
+                  <WorkspaceIntegrationPanel workspace={w} />
+                  <WorkspaceTemplatesPanel workspace={w} />
+                </div>
+              ))
           )}
         </section>
       </div>

@@ -11,6 +11,8 @@ const IDLE_POLL_MS = 5000;
 export const INSTANCES_KEY = ["local-instances"] as const;
 /** Under INSTANCES_KEY, so anything that refreshes instances refreshes this too. */
 export const WORKSPACE_TEMPLATES_KEY = [...INSTANCES_KEY, "workspace-templates"] as const;
+/** Not under INSTANCES_KEY: each check runs two installer scripts, and instances poll. */
+export const INTEGRATION_KEY = ["workspace-integration"] as const;
 
 /**
  * Instances, launchable templates, and launch/stop — shared by the topbar

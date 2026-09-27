@@ -12,11 +12,14 @@ import type {
   LocalInstanceLogs,
   LocalInstanceTemplate,
   TemplateSpec,
+  WorkspaceInstaller,
+  WorkspaceIntegration,
   WorkspaceTemplates,
 } from "./localInstancesTypes";
 
 const BASE = "/api/instances";
 const TEMPLATES = "/api/instance-templates";
+const INTEGRATION = "/api/workspace-integration";
 
 export const localInstancesApi = {
   /** Every workspace's instances. */
@@ -42,4 +45,12 @@ export const localInstancesApi = {
     }),
   deleteTemplate: (slug: string, name: string): Promise<void> =>
     request<void>(`${TEMPLATES}/${encodeURIComponent(slug)}/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /** Writes the saved templates as the workspace's `.loregarden/instances.yaml`; refused if it exists. */
+  writeTemplateFile: (slug: string): Promise<WorkspaceTemplates> =>
+    request<WorkspaceTemplates>(`${TEMPLATES}/${encodeURIComponent(slug)}/file`, { method: "POST" }),
+  /** Whether the workspace carries loregarden's pre-commit gates and AGENTS.md section. */
+  integration: (slug: string): Promise<WorkspaceIntegration> =>
+    request<WorkspaceIntegration>(`${INTEGRATION}/${encodeURIComponent(slug)}`),
+  install: (slug: string, installer: WorkspaceInstaller): Promise<WorkspaceIntegration> =>
+    request<WorkspaceIntegration>(`${INTEGRATION}/${encodeURIComponent(slug)}/${installer}`, { method: "POST" }),
 };

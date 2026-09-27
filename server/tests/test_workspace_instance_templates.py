@@ -159,3 +159,41 @@ def test_a_stored_template_launches_from_the_workspace(client: TestClient, repo:
     assert instance["cwd"] == str(repo.resolve())
     assert get_instance_manager().wait_ready(instance["id"], timeout=15).state == "ready"
     assert client.delete(f"/api/instances/{instance['id']}").status_code == 204
+
+
+def test_saved_templates_are_written_out_as_the_repo_file(client: TestClient, repo: Path) -> None:
+    spec = _spec(description="served", health_path=None, target={"env": "API_URL"})
+    assert client.post("/api/instance-templates/loregarden", json=spec).status_code == 201
+    assert _workspace(client)["file_exists"] is False
+
+    written = client.post("/api/instance-templates/loregarden/file")
+    assert written.status_code == 200, written.text
+    assert written.json()["file_exists"] is True
+    docs = _entries(written.json())["docs"]
+    # One copy, now from the file: the stored row went with the move.
+    assert (docs["origin"], docs["launchable"]) == ("file", True)
+    assert [e["name"] for e in written.json()["entries"]].count("docs") == 1
+    assert docs["spec"]["health_path"] is None
+    assert docs["spec"]["target"] == {"env": "API_URL", "allow_main": True}
+    text = (repo / ".loregarden" / "instances.yaml").read_text(encoding="utf-8")
+    assert text.startswith("#")
+    # Defaults are left out, the way a person would write it.
+    assert "ready_timeout_seconds" not in text
+
+
+def test_the_repo_file_is_never_overwritten(client: TestClient, repo: Path) -> None:
+    _write_file(repo, "# mine\nversion: 1\ntemplates: []\n")
+    assert client.post("/api/instance-templates/loregarden", json=_spec()).status_code == 201
+    response = client.post("/api/instance-templates/loregarden/file")
+    assert response.status_code == 409
+    assert "already exists" in response.json()["detail"]
+    assert (
+        (repo / ".loregarden" / "instances.yaml").read_text(encoding="utf-8").startswith("# mine")
+    )
+    assert _entries(_workspace(client))["docs"]["origin"] == "stored"
+
+
+def test_there_is_no_file_to_write_without_saved_templates(client: TestClient, repo: Path) -> None:
+    response = client.post("/api/instance-templates/loregarden/file")
+    assert response.status_code == 409
+    assert not (repo / ".loregarden" / "instances.yaml").exists()
