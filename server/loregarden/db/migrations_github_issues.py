@@ -6,7 +6,7 @@ sync compares both sides against (see `models.domain.github_issue_tables`).
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import index_exists, table_exists
+from loregarden.db.migration_utils import add_columns_if_missing, index_exists, table_exists
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -73,4 +73,18 @@ def m_github_sync_settings(conn: Connection) -> None:
             )
             """
         )
+    )
+
+
+def m_github_push_on_edit(conn: Connection) -> None:
+    """Per-workspace switch: sync a linked ticket as soon as it is edited. Off."""
+    add_columns_if_missing(
+        conn,
+        "github_sync_settings",
+        {
+            "push_on_edit": (
+                "ALTER TABLE github_sync_settings "
+                "ADD COLUMN push_on_edit BOOLEAN NOT NULL DEFAULT 0"
+            )
+        },
     )

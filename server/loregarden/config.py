@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # background sync is due. Each workspace sets its own interval; this is
     # only the resolution. 0 disables the scheduler entirely.
     github_sync_tick_seconds: float = 60.0
+    # Push-on-edit: how often the worker drains edited tickets (0 disables the
+    # worker), and how long an edit waits for more before it is pushed.
+    github_push_poll_seconds: float = 0.5
+    github_push_debounce_seconds: float = 2.0
     #: How long shutdown waits for in-flight agent runs to land before handing
     #: what is left to the interruption path. Short by default: a silent hang on
     #: shutdown is worse than the interruption it is trying to avoid. 0 disables

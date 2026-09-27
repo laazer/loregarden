@@ -92,6 +92,9 @@ class GithubSyncSettings(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", primary_key=True)
     enabled: bool = Field(default=False)
     interval_minutes: int = Field(default=DEFAULT_SYNC_INTERVAL_MINUTES)
+    #: Sync a linked ticket with its issue as soon as the ticket is edited,
+    #: rather than waiting for the schedule. Independent of `enabled`.
+    push_on_edit: bool = Field(default=False)
     #: Import unlinked open issues under this ticket on each run. Blank: links only.
     import_parent_ticket_id: str = ""
     import_label: str = ""
@@ -105,6 +108,7 @@ class GithubSyncSettingsView(BaseModel):
     workspace_slug: str
     enabled: bool = False
     interval_minutes: int = DEFAULT_SYNC_INTERVAL_MINUTES
+    push_on_edit: bool = False
     import_parent_ticket_id: str = ""
     import_label: str = ""
     last_run_at: datetime | None = None
@@ -118,6 +122,7 @@ class UpdateGithubSyncSettings(BaseModel):
         ge=MIN_SYNC_INTERVAL_MINUTES,
         le=MAX_SYNC_INTERVAL_MINUTES,
     )
+    push_on_edit: bool = False
     import_parent_ticket_id: str = ""
     import_label: str = ""
 

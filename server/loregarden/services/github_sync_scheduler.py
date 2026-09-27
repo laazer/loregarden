@@ -68,6 +68,7 @@ def update_sync_settings(
     row = _row(session, workspace) or GithubSyncSettings(workspace_id=workspace.id)
     row.enabled = body.enabled
     row.interval_minutes = body.interval_minutes
+    row.push_on_edit = body.push_on_edit
     row.import_parent_ticket_id = parent_id
     row.import_label = body.import_label.strip()
     session.add(row)

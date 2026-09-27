@@ -34,14 +34,17 @@ export function GithubBackgroundSync({
   const qc = useQueryClient();
   const toggleId = useId();
   const intervalId = useId();
+  const pushId = useId();
   const saved = settings.data;
   const [enabled, setEnabled] = useState(false);
   const [interval, setIntervalMinutes] = useState(15);
+  const [pushOnEdit, setPushOnEdit] = useState(false);
 
   useEffect(() => {
     if (!saved) return;
     setEnabled(saved.enabled);
     setIntervalMinutes(saved.interval_minutes);
+    setPushOnEdit(saved.push_on_edit);
   }, [saved]);
 
   const save = useMutation({
@@ -63,13 +66,14 @@ export function GithubBackgroundSync({
     !saved ||
     saved.enabled !== enabled ||
     saved.interval_minutes !== interval ||
+    saved.push_on_edit !== pushOnEdit ||
     saved.import_parent_ticket_id !== importParentTicketId ||
     saved.import_label !== importLabel;
   const intervals = INTERVALS.includes(interval) ? INTERVALS : [...INTERVALS, interval].sort((a, b) => a - b);
 
   return (
     <div className="state-card">
-      <div className="state-label">Background sync</div>
+      <div className="state-label">Automatic sync</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
         <input
           id={toggleId}
@@ -105,6 +109,23 @@ export function GithubBackgroundSync({
           </p>
         </div>
       )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <input
+          id={pushId}
+          type="checkbox"
+          checked={pushOnEdit}
+          disabled={save.isPending}
+          onChange={(e) => setPushOnEdit(e.target.checked)}
+        />
+        <label htmlFor={pushId}>Push ticket edits to GitHub as they happen</label>
+      </div>
+      {pushOnEdit && (
+        <p className="modal-hint" style={{ marginTop: 4 }}>
+          A linked ticket's title, description or state is synced a couple of seconds after it
+          changes. An issue edited on GitHub meanwhile is still reported as a conflict, not
+          overwritten.
+        </p>
+      )}
       {saved?.last_run_at && (
         <p className="modal-hint" style={{ marginTop: 6 }}>
           Last background run {new Date(saved.last_run_at).toLocaleString()}
@@ -125,12 +146,13 @@ export function GithubBackgroundSync({
           save.mutate({
             enabled,
             interval_minutes: interval,
+            push_on_edit: pushOnEdit,
             import_parent_ticket_id: importParentTicketId,
             import_label: importLabel,
           })
         }
       >
-        {save.isPending ? "Saving…" : dirty ? "Save schedule" : "Saved"}
+        {save.isPending ? "Saving…" : dirty ? "Save settings" : "Saved"}
       </button>
     </div>
   );

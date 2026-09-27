@@ -59,6 +59,7 @@ from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
+from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
@@ -153,6 +154,7 @@ async def lifespan(app: FastAPI):
     # Never in a sandbox: it runs on a snapshot of main's database, and pushing
     # that snapshot's tickets to GitHub would overwrite real edits.
     github_sync_task = None if settings.sandbox else start_github_sync_loop()
+    github_push_task = None if settings.sandbox else start_push_worker()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
     try:
@@ -174,6 +176,8 @@ async def lifespan(app: FastAPI):
             reconcile_task.cancel()
         if github_sync_task is not None:
             github_sync_task.cancel()
+        if github_push_task is not None:
+            github_push_task.cancel()
         # The drain is over, so stop advertising it. A real process exits here
         # and nobody reads the flag again; a test process keeps going, and a
         # flag left set refuses work in every test that follows — which is

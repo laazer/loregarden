@@ -39,6 +39,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.ticket_studio_run_service.engine",
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
+    "loregarden.services.github_push_on_edit.engine",
 )
 
 
@@ -62,6 +63,22 @@ def _no_shutdown_drain_in_tests():
     settings.drain_timeout_seconds = 0
     yield
     settings.drain_timeout_seconds = previous
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_github_push_worker_in_tests():
+    """No background push-on-edit worker in apps the suite builds.
+
+    Every app lifespan would otherwise start one, and it would drain edits from
+    whichever test happened to be running on a thread nobody awaits. The push
+    tests drive `process_due_pushes` themselves.
+    """
+    from loregarden.config import settings
+
+    previous = settings.github_push_poll_seconds
+    settings.github_push_poll_seconds = 0
+    yield
+    settings.github_push_poll_seconds = previous
 
 
 @pytest.fixture(autouse=True)
