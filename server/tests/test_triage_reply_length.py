@@ -12,10 +12,8 @@ cut, and the two executor paths themselves. Each drives a reply well past the
 old cap and accepts either fix: the reply is kept whole (its tail survives), or
 the cut is visible in the text itself.
 
-The tests are `xfail(strict=True)` until the fix lands, following
-`test_open_defect_repros.py`: the suite stays green while the cap exists, and
-the fix's branch goes red on XPASS until it deletes the markers here. Setup
-lives in fixtures so a broken harness errors instead of passing as XFAIL.
+Setup lives in fixtures, so a broken harness errors rather than failing on the
+assertion.
 """
 
 from __future__ import annotations
@@ -37,11 +35,6 @@ from loregarden.services.cli_agent_runner import run_cli_agent_turn
 from loregarden.services.triage_run_service import TriageTurnExecutor, start_triage_run
 from loregarden.services.triage_service import TRIAGE_CLI_PROFILE
 from sqlmodel import Session, select
-
-OPEN_DEFECT = pytest.mark.xfail(
-    strict=True,
-    reason="open: triage replies are cut at 8,000 chars with no marker (reply_cap / [:8000])",
-)
 
 TAIL = "END-OF-TRIAGE-REPLY"
 LONG_REPLY = ("Baxter explains the ticket at length. " * 600) + TAIL
@@ -162,7 +155,6 @@ def cli_answering_long():
         p.stop()
 
 
-@OPEN_DEFECT
 def test_acting_turn_keeps_a_long_reply_above_its_work_note(
     client: TestClient, db_session: Session, ticket: Ticket, long_acting_turn
 ):
@@ -172,7 +164,6 @@ def test_acting_turn_keeps_a_long_reply_above_its_work_note(
     assert _kept_whole_or_marked(_last_triage_message(db_session, ticket.id))
 
 
-@OPEN_DEFECT
 def test_permission_bridge_returns_a_long_reply_whole(
     db_session: Session, workspace: Workspace, bridge_answering_long
 ):
@@ -193,7 +184,6 @@ def test_permission_bridge_returns_a_long_reply_whole(
     assert _kept_whole_or_marked(result.reply)
 
 
-@OPEN_DEFECT
 def test_oneshot_cli_returns_a_long_reply_whole(
     workspace: Workspace, tmp_path: Path, cli_answering_long
 ):
