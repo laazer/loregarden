@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     #: to notice; 0 or less turns the timer off and leaves repair to startup,
     #: which is the cadence this replaced.
     reconcile_interval_seconds: float = 30.0
+    # How often the GitHub issue scheduler looks for a workspace whose
+    # background sync is due. Each workspace sets its own interval; this is
+    # only the resolution. 0 disables the scheduler entirely.
+    github_sync_tick_seconds: float = 60.0
     #: How long shutdown waits for in-flight agent runs to land before handing
     #: what is left to the interruption path. Short by default: a silent hang on
     #: shutdown is worse than the interruption it is trying to avoid. 0 disables

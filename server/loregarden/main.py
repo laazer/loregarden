@@ -23,6 +23,7 @@ from loregarden.api import (
     docker_capacity,
     editor,
     events,
+    github_issues,
     inbox,
     initiatives,
     local_instances,
@@ -58,6 +59,7 @@ from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
+from loregarden.services.github_sync_scheduler import start_github_sync_loop
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
@@ -148,6 +150,9 @@ async def lifespan(app: FastAPI):
     # Repair on a clock from here, not only at the next boot and not only while
     # someone has the dashboard open.
     reconcile_task = None if settings.sandbox else start_reconcile_loop()
+    # Never in a sandbox: it runs on a snapshot of main's database, and pushing
+    # that snapshot's tickets to GitHub would overwrite real edits.
+    github_sync_task = None if settings.sandbox else start_github_sync_loop()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
     try:
@@ -167,6 +172,8 @@ async def lifespan(app: FastAPI):
             )
         if reconcile_task is not None:
             reconcile_task.cancel()
+        if github_sync_task is not None:
+            github_sync_task.cancel()
         # The drain is over, so stop advertising it. A real process exits here
         # and nobody reads the flag again; a test process keeps going, and a
         # flag left set refuses work in every test that follows — which is
@@ -248,6 +255,7 @@ app.include_router(reference_repos.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
+app.include_router(github_issues.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_lanes.router)
 app.include_router(queue_management.router)

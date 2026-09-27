@@ -58,6 +58,7 @@ class McpTool(StrEnum):
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
     DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
     FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
+    SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -248,6 +249,9 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.PIN_STAGE_AGENT,
     McpTool.LAND_TICKET,
     McpTool.SUPERSEDE_TICKET,
+    # Publishes to, and pulls from, a GitHub repository: an operator move on a
+    # ticket, never something a stage does to the ticket it was dispatched for.
+    McpTool.SYNC_GITHUB_ISSUES,
 )
 
 #: Tools an orchestrated pipeline agent may not call. Interactive chat is exempt.
