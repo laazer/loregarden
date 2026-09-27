@@ -7,6 +7,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -80,11 +81,50 @@ def build_gate_context(
     # Defaults to the shared checkout for callers with no ticket tree in hand;
     # the orchestration paths pass the ticket's worktree, which is where the
     # edits a gate is meant to judge actually are.
-    repo_root = repo_root or resolve_workspace_root(workspace)
+    return _gate_context(
+        workspace=workspace,
+        ticket_id=ticket.id,
+        external_id=ticket.external_id,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        repo_root=repo_root or resolve_workspace_root(workspace),
+    )
+
+
+#: Stand-in ticket identity for a gate evaluated outside any run — the Studio
+#: preview and its "Test checks" button. A command keyed on the ticket sees
+#: an id that matches nothing, which is the honest answer for a dry run.
+SAMPLE_TICKET_ID = "sample-ticket-id"
+SAMPLE_EXTERNAL_ID = "SAMPLE-1"
+
+
+def sample_gate_context(
+    workspace: Workspace, *, from_stage: str = "implement", to_stage: str = "verify"
+) -> dict[str, str]:
+    """Every placeholder a gate command may reference, filled for no ticket."""
+    return _gate_context(
+        workspace=workspace,
+        ticket_id=SAMPLE_TICKET_ID,
+        external_id=SAMPLE_EXTERNAL_ID,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        repo_root=resolve_workspace_root(workspace),
+    )
+
+
+def _gate_context(
+    *,
+    workspace: Workspace,
+    ticket_id: str,
+    external_id: str,
+    from_stage: str,
+    to_stage: str,
+    repo_root: Path,
+) -> dict[str, str]:
     transition = transition_name(from_stage, to_stage)
     return {
-        "ticket_id": ticket.id,
-        "external_id": ticket.external_id,
+        "ticket_id": ticket_id,
+        "external_id": external_id,
         "transition": transition,
         "from_stage": from_stage,
         "to_stage": to_stage,
@@ -118,6 +158,14 @@ def _resolve_transition_script(gates: GatesConfig, repo_root: Path) -> Path | No
         if path.is_file():
             return path
     return None
+
+
+def resolved_transition_script(profile: OrchestrationProfile, workspace: Workspace) -> str:
+    """The transition script a gate evaluation would run, relative to the
+    workspace root, or "" when neither the configured nor the default path exists."""
+    repo_root = resolve_workspace_root(workspace)
+    script = _resolve_transition_script(profile.gates, repo_root)
+    return str(script.relative_to(repo_root)) if script is not None else ""
 
 
 def _run_command(command: str, cwd: Path) -> GateRunResult:
@@ -408,3 +456,52 @@ def run_gate_autofix(
             chunks.append(f"$ {command}\n{strip_ansi(body)}")
 
     return GateAutofixResult(ran=bool(commands), commands=commands, output="\n\n".join(chunks))
+
+
+@dataclass(frozen=True)
+class GateDryRun:
+    template: str
+    command: str
+    result: GateRunResult
+    duration_ms: int
+
+
+def dry_run_gate_commands(
+    workspace: Workspace,
+    templates: list[str],
+    *,
+    from_stage: str,
+    to_stage: str,
+) -> list[GateDryRun]:
+    """Run draft gate commands in the workspace's shared checkout, every one of
+    them, so an operator sees each command's verdict before a ticket does.
+
+    Unlike `run_transition_gates` this does not stop at the first failure — the
+    point is to see them all — and it runs no transition script, which needs a
+    real ticket's exported handoff to judge anything. Blank entries are
+    dropped, as the real run drops them.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    repo_exists = repo_root.is_dir()
+    context = sample_gate_context(workspace, from_stage=from_stage, to_stage=to_stage)
+    runs: list[GateDryRun] = []
+    for template in templates:
+        if not template.strip():
+            continue
+        command = format_gate_command(template, context)
+        started = time.monotonic()
+        result = (
+            _run_command(command, repo_root)
+            if repo_exists
+            else GateRunResult(
+                ok=False,
+                outcome=GateOutcome.UNAVAILABLE,
+                message=f"Workspace repo path does not exist: {repo_root}",
+                command=command,
+            )
+        )
+        elapsed = int((time.monotonic() - started) * 1000)
+        runs.append(
+            GateDryRun(template=template, command=command, result=result, duration_ms=elapsed)
+        )
+    return runs

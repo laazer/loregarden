@@ -649,18 +649,6 @@ export interface MemoryConfigResponse {
   };
 }
 
-export interface OrchestrationProfileView {
-  slug: string;
-  name: string;
-  driver: string;
-  workflow_template: string;
-  orchestrator_skill: string;
-  gates_enabled: boolean;
-  gates_commands: string[];
-  gates_transition_script: string;
-  max_stages_per_run: number;
-}
-
 /**
  * What a queue is allowed to do with a finished run's work.
  *
@@ -1162,3 +1150,5 @@ export interface WorkflowReassignmentPreview {
   completed_stages: string[];
   resets_to_stage_key: string;
 }
+
+export type * from "./gateTypes";

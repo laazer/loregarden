@@ -223,3 +223,93 @@ def test_gates_enabled_false_when_config_off_even_with_commands(
     )
     assert res.status_code == 200
     assert res.json()["gates_enabled"] is False
+
+
+# --- the Studio editor's view and its "Test checks" dry run ---
+
+
+def test_profile_view_reports_raw_switch_resolved_script_and_placeholders(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = Workspace(slug="gates-view-test", name="Gates View Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+
+    res = client.put(
+        "/api/orchestration/workspaces/gates-view-test/profile/gates",
+        json={"enabled": True, "commands": [], "transition_script": ""},
+    )
+    body = res.json()
+    # On but nothing runnable: the toggle must still read as on.
+    assert body["gates_configured"] is True
+    assert body["gates_enabled"] is False
+    assert body["gates_transition_script_resolved"] == ""
+    assert body["gates_placeholders"]["external_id"] == "SAMPLE-1"
+    assert body["gates_placeholders"]["transition"] == "implement_to_verify"
+    assert set(body["gates_placeholders"]) >= {"workspace_root", "loregarden_root"}
+
+
+def test_update_gates_writes_autofix_only_when_supplied(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = Workspace(slug="gates-autofix-test", name="Gates Autofix Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+    url = "/api/orchestration/workspaces/gates-autofix-test/profile/gates"
+
+    client.put(
+        url,
+        json={
+            "enabled": True,
+            "commands": ["true"],
+            "transition_script": "",
+            "autofix_commands": ["ruff format ."],
+            "autofix_agent_fallback": False,
+            "autofix_max_agent_attempts": 1,
+        },
+    )
+    # A client that omits the autofix fields leaves them as they were.
+    res = client.put(url, json={"enabled": True, "commands": ["false"], "transition_script": ""})
+    body = res.json()
+    assert body["gates_commands"] == ["false"]
+    assert body["gates_autofix_commands"] == ["ruff format ."]
+    assert body["gates_autofix_agent_fallback"] is False
+    assert body["gates_autofix_max_agent_attempts"] == 1
+
+
+def test_gate_test_endpoint_runs_every_command_and_saves_nothing(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ws = Workspace(slug="gates-dry-run-test", name="Gates Dry Run", repo_path=str(repo))
+    db_session.add(ws)
+    db_session.commit()
+
+    res = client.post(
+        "/api/orchestration/workspaces/gates-dry-run-test/profile/gates/test",
+        json={
+            "commands": ["false", "  ", "echo {external_id} {transition}", "no-such-binary-xyz"],
+            "from_stage": "plan",
+            "to_stage": "spec",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["transition"] == "plan_to_spec"
+    # The first failure does not stop the run, and the blank entry is dropped.
+    assert [r["outcome"] for r in body["results"]] == ["failed", "passed", "unavailable"]
+    assert body["results"][1]["stdout"] == "SAMPLE-1 plan_to_spec"
+    assert body["results"][1]["template"] == "echo {external_id} {transition}"
+    assert not (orchestration_dir() / "gates-dry-run-test.yaml").exists()
+
+
+def test_gate_test_endpoint_unknown_workspace(client: TestClient):
+    res = client.post(
+        "/api/orchestration/workspaces/does-not-exist/profile/gates/test",
+        json={"commands": ["true"]},
+    )
+    assert res.status_code == 404

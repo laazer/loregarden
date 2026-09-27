@@ -264,6 +264,15 @@ def resolve_orchestration_profile(workspace: Workspace) -> OrchestrationProfile:
     return OrchestrationProfile(slug="default", name="Default Builtin Autopilot")
 
 
+def default_gate_commands() -> list[str]:
+    """The workspace-agnostic checks the fallback profile ships with — what the
+    Gates editor offers as one-click additions. Empty when there is no default."""
+    path = orchestration_dir() / "default.yaml"
+    if not path.is_file():
+        return []
+    return list(load_profile_from_path(path).gates.commands)
+
+
 def list_profiles(workspace: Workspace) -> list[OrchestrationProfile]:
     root = orchestration_dir()
     profiles: list[OrchestrationProfile] = []
@@ -321,19 +330,31 @@ def _merge_block(raw: dict, key: str, values: dict) -> None:
         block[name] = value
 
 
-def update_gates_config(workspace: Workspace, gates: GatesConfig) -> OrchestrationProfile:
+AUTOFIX_GATE_KEYS = frozenset(
+    {"autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"}
+)
+
+
+def update_gates_config(
+    workspace: Workspace,
+    gates: GatesConfig,
+    *,
+    preserve: frozenset[str] = AUTOFIX_GATE_KEYS,
+) -> OrchestrationProfile:
     """Persist `gates` into the workspace's orchestration profile YAML, leaving
     every other field in that file untouched (or creating a minimal file with
-    just slug + gates if none existed yet)."""
+    just slug + gates if none existed yet).
+
+    Keys in `preserve` keep whatever the file already holds — by default the
+    autofix_* settings, so a caller that edits only enabled/commands/
+    transition_script doesn't silently wipe a hand-configured self-fix policy.
+    """
     path = _profile_path_for_write(workspace)
     raw = _load_yaml(path) if path.is_file() else {}
     raw.setdefault("slug", workspace.orchestration_profile_slug or workspace.slug)
     existing_gates = raw.get("gates") or {}
     new_gates = gates.model_dump(mode="json")
-    # The Gates editor only manages enabled/commands/transition_script; preserve
-    # any autofix_* settings already in the file so saving from the UI doesn't
-    # silently wipe a hand-configured self-fix policy.
-    for key in ("autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"):
+    for key in preserve:
         if key in existing_gates:
             new_gates[key] = existing_gates[key]
     _merge_block(raw, "gates", new_gates)

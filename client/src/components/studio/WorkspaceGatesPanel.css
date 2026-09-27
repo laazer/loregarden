@@ -1,0 +1,662 @@
+/* Gate Studio — the transition-gates editor. */
+
+.studio-editor-inner--gates {
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 0;
+}
+
+/* The save bar sticks to the scrollport's bottom; padding there would show content beneath it. */
+.studio-editor--gates {
+  padding-bottom: 0;
+}
+
+.gate-rail-explainer {
+  margin-top: 20px;
+}
+
+.gate-rail-explainer p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--txm);
+}
+
+/* --- header, status, flow ------------------------------------------------ */
+
+.gate-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gate-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gate-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.gate-subtitle {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.gate-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  font-size: 13px;
+}
+
+.gate-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+  background: var(--txl);
+}
+
+.gate-status-hint {
+  color: var(--txm);
+  font-size: 12.5px;
+}
+
+.gate-status--on {
+  border-color: color-mix(in srgb, var(--grn) 40%, var(--bd));
+}
+.gate-status--on .gate-status-dot {
+  background: var(--grn);
+}
+.gate-status--warn {
+  border-color: color-mix(in srgb, var(--amb) 50%, var(--bd));
+}
+.gate-status--warn .gate-status-dot {
+  background: var(--amb);
+}
+
+.gate-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.gate-flow--off {
+  opacity: 0.5;
+}
+
+.gate-flow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.gate-flow-row--fail {
+  padding-left: 14px;
+}
+
+.gate-flow-label {
+  color: var(--txl);
+  font-style: italic;
+}
+
+.gate-flow-node {
+  padding: 3px 9px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--tx);
+  white-space: nowrap;
+}
+
+.gate-flow-node--edge {
+  color: var(--txm);
+  border-style: dashed;
+}
+.gate-flow-node--pass {
+  border-color: color-mix(in srgb, var(--grn) 45%, var(--bd2));
+  color: var(--grl);
+}
+.gate-flow-node--fail {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd2));
+  color: var(--rdl);
+}
+
+.gate-flow-arrow {
+  color: var(--txl);
+}
+
+/* --- switches ------------------------------------------------------------ */
+
+.gate-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gate-switch-label--main {
+  padding: 7px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  background: var(--bg1);
+  font-weight: 500;
+}
+
+.gate-switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--bg4);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.gate-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--tx);
+  transition: transform 0.15s;
+}
+
+.gate-switch:checked {
+  background: var(--ac);
+}
+
+.gate-switch:checked::after {
+  transform: translateX(14px);
+  background: var(--onac);
+}
+
+.gate-switch:focus-visible,
+.gate-icon-btn:focus-visible,
+.gate-chip:focus-visible,
+.gate-suggestion:focus-visible {
+  outline: 2px solid var(--bll);
+  outline-offset: 2px;
+}
+
+/* --- cards --------------------------------------------------------------- */
+
+.gate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gate-body--off .gate-card {
+  opacity: 0.62;
+}
+
+.gate-body--off .gate-card:focus-within {
+  opacity: 1;
+}
+
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: var(--bg1);
+  transition: opacity 0.15s;
+}
+
+.gate-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.gate-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gate-card-meta {
+  font-size: 12px;
+  color: var(--txl);
+}
+
+.gate-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.gate-hint code,
+.gate-resolve code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gate-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--txm);
+}
+
+.gate-field-label--spaced {
+  margin-top: 8px;
+}
+
+.gate-mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.gate-resolve {
+  margin: 0;
+  font-size: 12px;
+  color: var(--txm);
+}
+.gate-resolve--ok {
+  color: var(--grl);
+}
+.gate-resolve--none {
+  color: var(--aml);
+}
+
+/* --- placeholder chips & suggestions ------------------------------------- */
+
+.gate-chips,
+.gate-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.gate-chips-label {
+  margin-right: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.gate-chip,
+.gate-suggestion {
+  padding: 3px 8px;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--txm);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.gate-chip {
+  font-family: var(--mono);
+  color: var(--vil);
+}
+
+.gate-chip:hover,
+.gate-suggestion:hover {
+  border-color: var(--ac);
+  color: var(--tx);
+}
+
+.gate-suggestion {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- command list -------------------------------------------------------- */
+
+.gate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gate-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gate-list-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--bd2);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--txm);
+  text-align: center;
+}
+
+.gate-list-add {
+  align-self: flex-start;
+}
+
+.gate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg2);
+}
+
+.gate-row:focus-within {
+  border-color: var(--bd2);
+}
+
+.gate-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gate-row-index {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg4);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.gate-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gate-row-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.gate-icon-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--txm);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gate-icon-btn:hover:not(:disabled) {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.gate-icon-btn--danger:hover:not(:disabled) {
+  color: var(--rdl);
+}
+
+.gate-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gate-row-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg1);
+  color: var(--tx);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  word-break: break-all;
+}
+
+.gate-row-input:focus {
+  border-color: var(--ac);
+}
+
+.gate-row-warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--aml);
+}
+
+.gate-row-warn--error {
+  color: var(--rdl);
+}
+
+.gate-row-details summary {
+  font-size: 12px;
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.gate-row-code,
+.gate-row-output {
+  display: block;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg0);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--txm);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.gate-row-output {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.gate-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg4);
+  color: var(--txm);
+}
+.gate-badge--passed {
+  background: color-mix(in srgb, var(--grn) 18%, transparent);
+  color: var(--grl);
+}
+.gate-badge--failed {
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--rdl);
+}
+.gate-badge--unavailable {
+  background: color-mix(in srgb, var(--amb) 18%, transparent);
+  color: var(--aml);
+}
+
+/* --- test, banners, save bar --------------------------------------------- */
+
+.gate-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bd);
+}
+
+.gate-test-status {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.gate-banner,
+.gate-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--amb) 50%, var(--bd));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amb) 8%, var(--bg1));
+  font-size: 13px;
+}
+
+.gate-load-error {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--bd));
+  background: color-mix(in srgb, var(--red) 8%, var(--bg1));
+}
+
+.gate-load-error p {
+  margin: 0;
+}
+
+.gate-banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gate-btn-danger {
+  color: var(--rdl);
+}
+
+.gate-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.gate-attempts {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--txm);
+}
+
+.gate-attempts-input {
+  width: 64px;
+  height: 32px;
+}
+
+.gate-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 -4px;
+  padding: 12px 4px 16px;
+  border-top: 1px solid var(--bd);
+  background: var(--bg0);
+}
+
+.gate-savebar-status {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+/* --- loading skeleton ---------------------------------------------------- */
+
+.gate-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gate-skeleton-bar,
+.gate-skeleton-card {
+  border-radius: 8px;
+  background: var(--bg2);
+  animation: gate-shimmer 1.4s ease-in-out infinite;
+}
+
+.gate-skeleton-bar {
+  width: 60%;
+  height: 14px;
+}
+
+.gate-skeleton-bar--title {
+  width: 40%;
+  height: 22px;
+}
+
+.gate-skeleton-card {
+  height: 120px;
+  border-radius: 14px;
+}
+
+@keyframes gate-shimmer {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-skeleton-bar,
+  .gate-skeleton-card {
+    animation: none;
+  }
+}
