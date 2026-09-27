@@ -258,9 +258,11 @@ def isolated_instance_registry(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(settings, "dev_port", None)
     local_instances.get_registry.cache_clear()
     local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
     yield
     local_instances.get_registry.cache_clear()
     local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
 
 
 @pytest.fixture(autouse=True)

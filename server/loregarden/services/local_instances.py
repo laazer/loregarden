@@ -34,11 +34,11 @@ from lore_eden.instances import (
     InstanceKind,
     InstanceManager,
     InstanceRecord,
+    InstanceTemplate,
     LaunchContext,
     LaunchRequest,
     LaunchSpec,
     SelfRegistration,
-    TemplateCatalog,
     TemplateInfo,
     TemplateParam,
     TemplateParamError,
@@ -48,6 +48,7 @@ from lore_eden.instances import (
 from loregarden.config import settings
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_resolve import resolve_sqlite_path, sqlite_url_for_path
+from loregarden.services.workspace_instance_templates import WorkspaceTemplateSource
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ class ServerTemplate:
     def _info(self) -> tuple[TemplateInfo, dict[str, Worktree]]:
         worktree, trees = _worktree_param()
         info = TemplateInfo(
-            name="server",
+            name=f"{PROJECT}/server",
             kind=InstanceKind.SERVER,
             description="A control plane from a worktree, on its own port and database (sandboxed).",
             params=[
@@ -212,7 +213,7 @@ class ClientTemplate:
             if record.kind == InstanceKind.SERVER and record.managed and registry.is_alive(record)
         ]
         info = TemplateInfo(
-            name="client",
+            name=f"{PROJECT}/client",
             kind=InstanceKind.CLIENT,
             description="A dev client from a worktree, pointed at main or at a branch server.",
             params=[
@@ -279,12 +280,19 @@ def get_registry() -> FileInstanceRegistry:
     return FileInstanceRegistry()
 
 
+def _code_templates() -> dict[str, list[InstanceTemplate]]:
+    """Loregarden's own templates, which only its own workspace has."""
+    return {PROJECT: [ClientTemplate(), ServerTemplate()]}
+
+
+@lru_cache(maxsize=1)
+def get_template_source() -> WorkspaceTemplateSource:
+    return WorkspaceTemplateSource(get_registry(), _code_templates)
+
+
 @lru_cache(maxsize=1)
 def get_instance_manager() -> InstanceManager:
-    catalog = TemplateCatalog()
-    catalog.register(ClientTemplate())
-    catalog.register(ServerTemplate())
-    return InstanceManager(get_registry(), catalog)
+    return InstanceManager(get_registry(), get_template_source())
 
 
 def register_main() -> SelfRegistration | None:

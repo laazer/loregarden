@@ -7,6 +7,7 @@ import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
+import { InstancesPage } from "./pages/InstancesPage";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
@@ -112,6 +113,7 @@ export function AppShell() {
             <Route path="/queue/*" element={<QueuePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/instances" element={<InstancesPage />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
             {/* Before the catch-all, which would otherwise bounce every view

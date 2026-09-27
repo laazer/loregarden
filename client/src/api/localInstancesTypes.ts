@@ -62,3 +62,52 @@ export interface LocalInstanceLogs {
   lines: string[];
   truncated: boolean;
 }
+
+/** Where a workspace template is defined. */
+export type TemplateOrigin = "code" | "file" | "stored";
+
+export interface TemplateParamSpec {
+  key: string;
+  label: string;
+  description?: string;
+  required?: boolean;
+  default?: string | null;
+  choices?: string[] | null;
+}
+
+/** lore-eden's `TemplateSpec`: what a stored template or a file entry declares. */
+export interface TemplateSpec {
+  name: string;
+  kind: LocalInstanceKind;
+  description: string;
+  command: string[];
+  cwd: string;
+  env: Record<string, string>;
+  health_path: string | null;
+  ready_timeout_seconds: number;
+  port_range: [number, number];
+  params: TemplateParamSpec[];
+  target: { env: string; allow_main: boolean } | null;
+}
+
+export interface WorkspaceTemplateEntry {
+  name: string;
+  qualified_name: string;
+  origin: TemplateOrigin;
+  kind: LocalInstanceKind | null;
+  description: string;
+  spec: TemplateSpec | null;
+  shadowed_by: TemplateOrigin | null;
+  error: string;
+  launchable: boolean;
+}
+
+export interface WorkspaceTemplates {
+  slug: string;
+  name: string;
+  repo_root: string;
+  template_file: string;
+  file_error: string;
+  conflicts: string[];
+  entries: WorkspaceTemplateEntry[];
+}

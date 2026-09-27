@@ -86,6 +86,7 @@ const TOOL_LABELS = [
   "Studios",
   "Parallel Execution",
   "MCP Gateway",
+  "Instances",
   "Memory",
   "Branch Triage",
 ];
