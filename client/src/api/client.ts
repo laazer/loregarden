@@ -37,6 +37,8 @@ import type {
   MemoryStatus,
   MemoryConfigResponse,
   OrchestrationProfileView,
+  GatesConfigUpdate,
+  GateTestReport,
   GitAutomationView,
   WorkspaceWorkflow,
   Approval,
@@ -330,12 +332,17 @@ export const api = {
     request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
-  updateWorkspaceGates: (
-    slug: string,
-    body: { enabled: boolean; commands: string[]; transition_script: string },
-  ) =>
+  updateWorkspaceGates: (slug: string, body: GatesConfigUpdate) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile/gates`, {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  testWorkspaceGates: (
+    slug: string,
+    body: { commands: string[]; from_stage?: string; to_stage?: string },
+  ) =>
+    request<GateTestReport>(`/api/orchestration/workspaces/${slug}/profile/gates/test`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   gitAutomation: (slug: string) =>
