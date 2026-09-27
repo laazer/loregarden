@@ -8,11 +8,9 @@ import type {
   WorkspaceIntegration,
   WorkspaceTemplates,
 } from "../../api/localInstancesTypes";
-import { INSTANCES_KEY } from "../../hooks/useLocalInstances";
+import { INSTANCES_KEY, INTEGRATION_KEY } from "../../hooks/useLocalInstances";
 import { pushToast, toastActionFailed } from "../../state/toastStore";
 
-/** Not under INSTANCES_KEY: each check runs two scripts, and instances poll. */
-export const INTEGRATION_KEY = ["workspace-integration"] as const;
 const CHECK_STALE_MS = 60_000;
 
 const INSTALLERS: Record<WorkspaceInstaller, { label: string; file: string; what: string }> = {

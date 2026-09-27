@@ -3,12 +3,12 @@ import { useId, useMemo, useState } from "react";
 
 import { localInstancesApi } from "../api/localInstancesApi";
 import type { LocalInstance, LocalInstanceState } from "../api/localInstancesTypes";
-import { INTEGRATION_KEY, WorkspaceIntegrationPanel } from "../components/instances/WorkspaceIntegrationPanel";
+import { WorkspaceIntegrationPanel } from "../components/instances/WorkspaceIntegrationPanel";
 import { WorkspaceTemplatesPanel } from "../components/instances/WorkspaceTemplatesPanel";
 import { LocalInstanceLaunchForm } from "../components/LocalInstanceLaunchForm";
 import { LocalInstanceRow } from "../components/LocalInstanceRow";
 import { PageTopbar } from "../components/TopbarPageSlot";
-import { useLocalInstances, WORKSPACE_TEMPLATES_KEY } from "../hooks/useLocalInstances";
+import { INTEGRATION_KEY, useLocalInstances, WORKSPACE_TEMPLATES_KEY } from "../hooks/useLocalInstances";
 import "../components/LocalInstancesModal.css";
 import "./InstancesPage.css";
 
