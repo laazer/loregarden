@@ -1,21 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-
-import { localInstancesApi } from "../api/localInstancesApi";
-import type { LocalInstance, LocalInstanceLaunch } from "../api/localInstancesTypes";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
-import { pushToast, toastActionFailed } from "../state/toastStore";
+import { useLocalInstances } from "../hooks/useLocalInstances";
+import { navigateToPage } from "../lib/useAppNavigation";
 import { IconCloseButton } from "./IconCloseButton";
 import { LocalInstanceLaunchForm } from "./LocalInstanceLaunchForm";
 import { LocalInstanceRow } from "./LocalInstanceRow";
 
 import "./LocalInstancesModal.css";
-
-/** Faster while anything is starting: listing is what advances it to ready. */
-const BUSY_POLL_MS = 1500;
-const IDLE_POLL_MS = 5000;
-const INSTANCES_KEY = ["local-instances"] as const;
 
 interface LocalInstancesModalProps {
   open: boolean;
@@ -32,54 +23,11 @@ interface LocalInstancesModalProps {
 export function LocalInstancesModal({ open, onClose }: LocalInstancesModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   useDialogDismiss(open ? onClose : null);
-  const queryClient = useQueryClient();
-  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
-
-  const instances = useQuery({
-    queryKey: INSTANCES_KEY,
-    queryFn: localInstancesApi.list,
-    enabled: open,
-    refetchInterval: (query) =>
-      query.state.data?.instances.some((i) => i.state === "starting") ? BUSY_POLL_MS : IDLE_POLL_MS,
-  });
-  const instanceIds = (instances.data?.instances ?? []).map((i) => i.id).join(",");
-  const templates = useQuery({
-    // A client's choice of server lists the running branch servers, so the
-    // templates follow the set of instances — not every poll of it.
-    queryKey: [...INSTANCES_KEY, "templates", instanceIds],
-    queryFn: localInstancesApi.templates,
-    enabled: open,
-    placeholderData: (previous) => previous,
-  });
-
-  const launch = useMutation({
-    mutationFn: (body: LocalInstanceLaunch) => localInstancesApi.launch(body),
-    onSuccess: (created) => {
-      pushToast({ tone: "success", title: `Launching ${created.name}`, message: created.url });
-      void queryClient.invalidateQueries({ queryKey: INSTANCES_KEY });
-    },
-    onError: (error) => toastActionFailed("Launch instance", error),
-  });
-
-  const stop = (instance: LocalInstance) => {
-    setStopping((prev) => new Set(prev).add(instance.id));
-    localInstancesApi
-      .stop(instance.id)
-      .then(() => queryClient.invalidateQueries({ queryKey: INSTANCES_KEY }))
-      .catch((error: unknown) => toastActionFailed(`Stop ${instance.name}`, error))
-      .finally(() =>
-        setStopping((prev) => {
-          const next = new Set(prev);
-          next.delete(instance.id);
-          return next;
-        }),
-      );
-  };
+  const { instances, templates, launch, stop, stopping, targetName } = useLocalInstances(open);
 
   if (!open) return null;
 
   const listing = instances.data;
-  const names = new Map((listing?.instances ?? []).map((i) => [i.id, i.name]));
 
   return (
     <>
@@ -134,11 +82,7 @@ export function LocalInstancesModal({ open, onClose }: LocalInstancesModalProps)
                 <LocalInstanceRow
                   key={instance.id}
                   instance={instance}
-                  targetName={
-                    instance.target_instance_id
-                      ? (names.get(instance.target_instance_id) ?? `${instance.target_instance_id} (gone)`)
-                      : undefined
-                  }
+                  targetName={targetName(instance)}
                   stopping={stopping.has(instance.id)}
                   onStop={stop}
                 />
@@ -163,6 +107,16 @@ export function LocalInstancesModal({ open, onClose }: LocalInstancesModalProps)
         <div className="modal-footer">
           <button type="button" className="btn-secondary" onClick={onClose}>
             Close
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              onClose();
+              navigateToPage("instances");
+            }}
+          >
+            All workspaces and templates
           </button>
           <button
             type="button"

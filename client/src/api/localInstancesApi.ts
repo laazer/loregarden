@@ -11,12 +11,16 @@ import type {
   LocalInstanceListing,
   LocalInstanceLogs,
   LocalInstanceTemplate,
+  TemplateSpec,
+  WorkspaceTemplates,
 } from "./localInstancesTypes";
 
 const BASE = "/api/instances";
+const TEMPLATES = "/api/instance-templates";
 
 export const localInstancesApi = {
-  list: (): Promise<LocalInstanceListing> => request<LocalInstanceListing>(`${BASE}?project=loregarden`),
+  /** Every workspace's instances. */
+  list: (): Promise<LocalInstanceListing> => request<LocalInstanceListing>(BASE),
   templates: (): Promise<LocalInstanceTemplate[]> => request<LocalInstanceTemplate[]>(`${BASE}/templates`),
   launch: (body: LocalInstanceLaunch): Promise<LocalInstance> =>
     request<LocalInstance>(BASE, { method: "POST", body: JSON.stringify(body) }),
@@ -24,4 +28,18 @@ export const localInstancesApi = {
     request<LocalInstanceLogs>(`${BASE}/${encodeURIComponent(id)}/logs?tail=120`),
   /** Stops a running instance, or dismisses one that already exited. */
   stop: (id: string): Promise<void> => request<void>(`${BASE}/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Each workspace's templates, where each came from, and what is wrong with any. */
+  workspaceTemplates: (): Promise<WorkspaceTemplates[]> => request<WorkspaceTemplates[]>(TEMPLATES),
+  createTemplate: (slug: string, spec: TemplateSpec): Promise<WorkspaceTemplates> =>
+    request<WorkspaceTemplates>(`${TEMPLATES}/${encodeURIComponent(slug)}`, {
+      method: "POST",
+      body: JSON.stringify(spec),
+    }),
+  replaceTemplate: (slug: string, spec: TemplateSpec): Promise<WorkspaceTemplates> =>
+    request<WorkspaceTemplates>(`${TEMPLATES}/${encodeURIComponent(slug)}/${encodeURIComponent(spec.name)}`, {
+      method: "PUT",
+      body: JSON.stringify(spec),
+    }),
+  deleteTemplate: (slug: string, name: string): Promise<void> =>
+    request<void>(`${TEMPLATES}/${encodeURIComponent(slug)}/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };

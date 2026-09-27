@@ -26,6 +26,7 @@ from loregarden.api import (
     github_issues,
     inbox,
     initiatives,
+    instance_templates,
     local_instances,
     mcp,
     mcp_servers,
@@ -249,6 +250,7 @@ app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")
 app.include_router(local_instances.router, prefix="/api/instances")
+app.include_router(instance_templates.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(workflow_monitor.router, prefix="/api")
