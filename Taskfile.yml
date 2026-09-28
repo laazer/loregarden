@@ -65,6 +65,16 @@ tasks:
       - server
       - client
 
+  sandbox:
+    desc: >-
+      Run this checkout's server (:8123) and client (:5174) on a copy of production
+      data — database and memory graphs, sandboxed. Look at UI work here before
+      merging it. `-- --keep` reuses the last snapshot.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/sandbox.sh {{.CLI_ARGS}}
+    interactive: true
+
   tauri:dev:
     desc: Launch the desktop app in dev mode (starts Vite + FastAPI automatically)
     dir: "{{.ROOT_DIR}}"

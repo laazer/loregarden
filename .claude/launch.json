@@ -12,6 +12,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22.21.0 && cd client && npm run dev"],
       "port": 5173
+    },
+    {
+      "name": "sandbox",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22.21.0 && ./scripts/sandbox.sh"],
+      "port": 5174
     }
   ]
 }

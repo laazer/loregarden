@@ -9,6 +9,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden mcp call loregarden_get_ticket ticket_id=42
     loregarden mcp serve
     loregarden db init
+    loregarden sandbox snapshot --into data/sandbox
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from loregarden.cli import init_db, mcp_server, mcp_tools
+from loregarden.cli import init_db, mcp_server, mcp_tools, sandbox
 from loregarden.cli.errors import EXIT_ERROR, EXIT_OK, EXIT_USAGE, UsageError
 
 
@@ -35,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     db_group = groups.add_parser("db", help="Database setup and maintenance.")
     db_commands = db_group.add_subparsers(dest="command", required=True)
     init_db.register(db_commands)
+
+    sandbox_group = groups.add_parser("sandbox", help="Copies of production data for UI work.")
+    sandbox_commands = sandbox_group.add_subparsers(dest="command", required=True)
+    sandbox.register(sandbox_commands)
 
     return parser
 
