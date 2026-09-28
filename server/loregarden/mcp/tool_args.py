@@ -122,6 +122,22 @@ def coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
     raise ValueError(f"{field} must be an integer")
 
 
+def _json_string_list(text: str, *, field: str) -> list[Any]:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field} looks like JSON but is not valid JSON: {text[:80]!r}") from exc
+    if not isinstance(value, list):  # py-org: allow-isinstance
+        raise ValueError(f"{field} must be a JSON array of strings, got {text[:80]!r}")
+    return value
+
+
+def _clean_items(value: Any, *, field: str) -> list[str]:
+    if not isinstance(value, list):  # py-org: allow-isinstance
+        raise ValueError(f"{field} must be a list of strings")
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def coerce_string_list(value: Any, *, field: str) -> list[str]:
     """Accept a list, a JSON-encoded list, or newline/bullet text as a list of strings.
 
@@ -133,15 +149,33 @@ def coerce_string_list(value: Any, *, field: str) -> list[str]:
         if not text:
             return []
         if text.startswith("["):
-            try:
-                value = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{field} is not valid JSON") from exc
+            value = _json_string_list(text, field=field)
         else:
             value = [line.lstrip("-*").strip() for line in text.splitlines()]
-    if not isinstance(value, list):  # py-org: allow-isinstance
-        raise ValueError(f"{field} must be a list of strings")
-    return [str(item).strip() for item in value if str(item).strip()]
+    return _clean_items(value, field=field)
+
+
+#: A tag never legitimately starts with one of these; text that does was meant
+#: as JSON, and splitting it on commas is how `'["routing", "rework"]'` became
+#: the tags `'["routing"'` and `'"rework"]'` on the live memory graph.
+_JSON_OPENERS = ("[", "{", '"')
+
+
+def coerce_tag_list(value: Any, *, field: str) -> list[str]:
+    """Tags or aliases: a list, a JSON-encoded list, or comma-separated text.
+
+    JSON-looking text must parse as an array or the call is rejected — never
+    split on commas, which stores fragments of the JSON as tags.
+    """
+    if isinstance(value, str):  # py-org: allow-isinstance
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith(_JSON_OPENERS):
+            value = _json_string_list(text, field=field)
+        else:
+            value = text.split(",")
+    return _clean_items(value, field=field)
 
 
 def coerce_optional_bool(value: Any) -> bool:
