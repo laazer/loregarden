@@ -1,4 +1,4 @@
-import { conditionLabel, groupFindings } from "../monitorFindings";
+import { conditionLabel, groupFindings, isAwaitingSamples } from "../monitorFindings";
 import type { MonitorFinding } from "../../api/types";
 
 /**
@@ -122,4 +122,25 @@ it("returns nothing for nothing", () => {
 it("renders a condition slug as prose", () => {
   expect(conditionLabel("unbudgeted_repeat")).toBe("Unbudgeted repeat");
   expect(conditionLabel("stage_thrash")).toBe("Stage thrash");
+});
+
+it("can group by condition alone, keeping each finding's own stage", () => {
+  const groups = groupFindings(
+    [
+      finding({ condition: "timeout_floor_stale", stage_key: "plan", ticket_id: "" }),
+      finding({ condition: "timeout_floor_stale", stage_key: "review", ticket_id: "" }),
+    ],
+    { byStage: false },
+  );
+
+  expect(groups).toHaveLength(1);
+  expect(groups[0].findings.map((f) => f.stage_key)).toEqual(["plan", "review"]);
+});
+
+it("tells a finding still awaiting samples from one to act on", () => {
+  expect(isAwaitingSamples(finding({ evidence: { sample_count: "0", min_samples: "3" } }))).toBe(true);
+  expect(
+    isAwaitingSamples(finding({ evidence: { sample_count: "124", min_samples: "3", measured_p95_seconds: "2945" } })),
+  ).toBe(false);
+  expect(isAwaitingSamples(finding({ evidence: {} }))).toBe(false);
 });

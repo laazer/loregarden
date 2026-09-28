@@ -34,16 +34,19 @@ export interface FindingGroup {
  * What the number was reaching for is duration, and `firstSeen`/`lastSeen` say
  * that in a unit a reader can act on.
  */
-export function groupFindings(findings: MonitorFinding[]): FindingGroup[] {
+export function groupFindings(
+  findings: MonitorFinding[],
+  { byStage = true }: { byStage?: boolean } = {},
+): FindingGroup[] {
   const groups = new Map<string, FindingGroup>();
   for (const finding of findings) {
-    const key = `${finding.condition}:${finding.stage_key}`;
+    const key = byStage ? `${finding.condition}:${finding.stage_key}` : finding.condition;
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
         key,
         condition: finding.condition,
-        stageKey: finding.stage_key,
+        stageKey: byStage ? finding.stage_key : "",
         findings: [finding],
         tickets: 0,
         firstSeen: finding.first_seen,
@@ -169,4 +172,17 @@ export function groupByTicket(findings: MonitorFinding[]): TicketFindings[] {
     }
   }
   return [...tickets.values()].sort((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""));
+}
+
+/**
+ * A finding that says only "not enough runs yet to judge" — its evidence
+ * carries `sample_count` below `min_samples`. On the live database 38 of the 40
+ * `timeout_floor_stale` findings were this: nothing to act on, and listed one
+ * per line they buried the 2 that were (a stage whose timeout sits below its
+ * measured p95).
+ */
+export function isAwaitingSamples(finding: MonitorFinding): boolean {
+  const samples = Number(finding.evidence.sample_count);
+  const needed = Number(finding.evidence.min_samples);
+  return Number.isFinite(samples) && Number.isFinite(needed) && samples < needed;
 }

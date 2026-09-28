@@ -215,6 +215,16 @@ it("discredits a learning only after a confirm step with a reason", async () => 
   expect(await screen.findByRole("button", { name: "Restore" })).toBeInTheDocument();
 });
 
+it("lists only learnings in use until discredited ones are asked for", async () => {
+  renderPage("/memory/records");
+  await screen.findByRole("button", { name: /use delete journal on icloud/i });
+  expect(mockApi.memoryNodes).toHaveBeenLastCalledWith("lg", false);
+
+  fireEvent.click(screen.getByRole("checkbox", { name: /show discredited/i }));
+
+  await waitFor(() => expect(mockApi.memoryNodes).toHaveBeenLastCalledWith("lg", true));
+});
+
 it("closes the confirm dialog on Escape without writing", async () => {
   renderPage("/memory/records");
   fireEvent.click(await screen.findByRole("button", { name: /use delete journal on icloud/i }));

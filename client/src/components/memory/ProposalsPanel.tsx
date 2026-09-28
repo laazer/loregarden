@@ -34,26 +34,67 @@ function ProposalRow({
   onOpen: (nodeId: string) => void;
   onAct: () => void;
 }) {
-  const { label, action } = KIND_LABELS[proposal.kind];
+  const { action } = KIND_LABELS[proposal.kind];
   return (
     <li className={`memory-proposal memory-proposal--${proposal.kind}`}>
-      <div className="memory-proposal-head">
-        <span className="state-label">
-          {label}
-          {proposal.similarity !== null ? ` · ${Math.round(proposal.similarity * 100)}% alike` : ""}
-        </span>
-        <button type="button" className="btn-secondary btn-compact" onClick={onAct}>
-          {action}…
-        </button>
-      </div>
       <div className="memory-proposal-titles">
         {proposal.node_ids.map((id, index) => (
           <button key={id} type="button" className="memory-link-button" onClick={() => onOpen(id)}>
             {proposal.titles[index]}
           </button>
         ))}
+        {proposal.similarity !== null && (
+          <span className="memory-muted">{Math.round(proposal.similarity * 100)}% alike</span>
+        )}
+        {proposal.suggested_title && (
+          <span className="memory-muted">→ {proposal.suggested_title}</span>
+        )}
       </div>
-      <p className="memory-muted">{proposal.reason}</p>
+      <button type="button" className="btn-secondary btn-compact" onClick={onAct}>
+        {action}…
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Proposals of one kind under one heading, the reason said once.
+ *
+ * One card per proposal repeated "Titled by its ticket, not by what it says…"
+ * 26 times on the seeded graph (and would on the live one): the reason is the
+ * kind's, not the row's. What differs per row — which learning, what it could
+ * be called — is what the row shows.
+ */
+function ProposalGroup({
+  kind,
+  proposals,
+  onOpen,
+  onAct,
+}: {
+  kind: ProposalKind;
+  proposals: MemoryProposal[];
+  onOpen: (nodeId: string) => void;
+  onAct: (proposal: MemoryProposal) => void;
+}) {
+  return (
+    <li className="memory-proposal-group">
+      <details open={proposals.length <= 5}>
+        <summary>
+          <span className="state-label">{KIND_LABELS[kind].label}</span>
+          <span className="memory-muted"> · {proposals.length}</span>
+        </summary>
+        <p className="memory-muted">{proposals[0].reason}</p>
+        <ul className="memory-proposals">
+          {proposals.map((proposal) => (
+            <ProposalRow
+              key={`${proposal.kind}:${proposal.node_ids.join(":")}`}
+              proposal={proposal}
+              onOpen={onOpen}
+              onAct={() => onAct(proposal)}
+            />
+          ))}
+        </ul>
+      </details>
     </li>
   );
 }
@@ -169,14 +210,19 @@ export function ProposalsPanel({
       </p>
     );
   } else {
+    const byKind = new Map<ProposalKind, MemoryProposal[]>();
+    for (const proposal of proposals.data) {
+      byKind.set(proposal.kind, [...(byKind.get(proposal.kind) ?? []), proposal]);
+    }
     body = (
-      <ul className="memory-proposals" aria-label="Maintenance proposals">
-        {proposals.data.map((proposal) => (
-          <ProposalRow
-            key={`${proposal.kind}:${proposal.node_ids.join(":")}`}
-            proposal={proposal}
+      <ul className="memory-proposal-groups" aria-label="Maintenance proposals">
+        {[...byKind.entries()].map(([kind, group]) => (
+          <ProposalGroup
+            key={kind}
+            kind={kind}
+            proposals={group}
             onOpen={onOpen}
-            onAct={() => setPending({ proposal, choice: 0, title: proposal.suggested_title ?? "" })}
+            onAct={(proposal) => setPending({ proposal, choice: 0, title: proposal.suggested_title ?? "" })}
           />
         ))}
       </ul>
