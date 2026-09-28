@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     #: shutdown is worse than the interruption it is trying to avoid. 0 disables
     #: the wait, restoring the pre-drain behaviour of exiting immediately.
     drain_timeout_seconds: float = 20.0
+    #: Files attached to Home chat turns, one directory per conversation.
+    #: Relative paths resolve against ``repo_root``, beside the database.
+    chat_attachments_dir: Path = Path("data/chat-attachments")
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"

@@ -1,0 +1,238 @@
+.chat-side-card {
+  flex: none;
+  width: 320px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 16px 18px;
+  border-left: 1px solid var(--bd);
+  background: var(--bg1);
+  overflow: auto;
+}
+
+.chat-side-card-head,
+.chat-side-card-row,
+.chat-side-card-stage-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-side-card-head h2 {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--tx);
+}
+
+.chat-side-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-side-card-section h3,
+.chat-side-card-subhead {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.chat-side-card-subhead {
+  margin-top: 4px;
+}
+
+.chat-side-card-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.chat-side-card-icon-btn:hover {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.chat-side-card-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ac2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-side-card-link:hover {
+  text-decoration: underline;
+}
+
+.chat-side-suggestions,
+.chat-side-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-side-suggestion {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  background: var(--bg2);
+  color: var(--tx);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-side-suggestion:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.chat-side-suggestion:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-side-card-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 12px;
+  background: var(--bg0);
+}
+
+.chat-side-card-stage-meta span {
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+/* Primitives size against their container; here that is the card, not the thread. */
+.chat-side-card-primitive {
+  container-type: inline-size;
+  min-width: 0;
+  --lg-primitive-regular: 100%;
+  --lg-primitive-wide: 100%;
+  --lg-primitive-full: 100%;
+  --lg-primitive-breakout-max: 100%;
+  max-height: 420px;
+  /* Every visible part fits at this width; what overflowed sideways was
+     invisible (measured: nothing painted past the edge), and a horizontal
+     scrollbar for it read as a broken card. */
+  overflow: hidden auto;
+}
+
+.chat-side-card-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 2px 2px;
+}
+
+.chat-side-card-summary strong {
+  font-size: 13px;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.chat-side-card-summary span {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.chat-side-history-entry {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-side-history-entry:hover,
+.chat-side-history-entry[aria-current="true"] {
+  border-color: color-mix(in srgb, var(--ac) 50%, var(--bd2));
+  background: var(--bg2);
+}
+
+.chat-side-history-kind {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.chat-side-history-label {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-side-card-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+/* Collapsed: a slim tab on the page's right edge brings the card back. */
+.chat-side-card-reopen {
+  position: absolute;
+  top: 14px;
+  right: 0;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--bd2);
+  border-right: none;
+  border-radius: 9px 0 0 9px;
+  background: var(--bg1);
+  color: var(--txm);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-side-card-reopen:hover {
+  color: var(--tx);
+}
+
+/* A narrow window gives the thread the width; the card overlays when opened. */
+@media (max-width: 1100px) {
+  .chat-side-card {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    width: min(340px, calc(100% - 24px));
+    box-shadow: -24px 0 60px rgba(0, 0, 0, 0.4);
+  }
+}

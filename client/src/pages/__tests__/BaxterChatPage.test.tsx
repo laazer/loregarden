@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ApiError, api, type BaxterChatSnapshot } from "../../api/client";
@@ -28,6 +28,7 @@ jest.mock("../../api/client", () => {
       setBaxterChatRuntime: jest.fn(),
       sendBaxterChatMessage: jest.fn(),
       stopBaxterChatTurn: jest.fn(),
+      uploadBaxterChatAttachment: jest.fn(),
       resolveApproval: jest.fn(),
     },
   };
@@ -174,6 +175,8 @@ async function renderChatReady() {
 describe("BaxterChatPage", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    // The workbench remembers being hidden; one test must not hide it for the next.
+    localStorage.clear();
     // Call history leaks between tests otherwise, so per-workspace assertions
     // would see requests another test made.
     jest.clearAllMocks();
@@ -254,6 +257,7 @@ describe("BaxterChatPage", () => {
         "s1",
         "Hello Baxter",
         "",
+        [],
       );
     });
     await waitFor(() => {
@@ -332,6 +336,7 @@ describe("BaxterChatPage", () => {
         "s1",
         "What is next here?",
         "",
+        [],
       );
     });
   });
@@ -593,7 +598,9 @@ describe("BaxterChatPage", () => {
     act(() => useUiStore.getState().setBaxterHistoryOpen(true));
 
     // The row also holds a delete control naming the same thread, so anchor the match.
-    const entry = await screen.findByRole("button", { name: /^Triage the stuck tickets/ });
+    // The workbench offers the same words as a suggestion, so look in the archive.
+    const archive = await screen.findByRole("complementary", { name: "Chat history" });
+    const entry = await within(archive).findByRole("button", { name: /^Triage the stuck tickets/ });
     fireEvent.click(entry);
 
     await waitFor(() => {
@@ -620,7 +627,7 @@ describe("BaxterChatPage", () => {
   });
 
   it("opens the fallback history and loads the primitive gallery", async () => {
-    renderChat();
+    const { container } = renderChat();
 
     act(() => useUiStore.getState().setBaxterHistoryOpen(true));
     expect(await screen.findByRole("complementary", { name: "Chat history" })).toBeInTheDocument();
@@ -634,7 +641,10 @@ describe("BaxterChatPage", () => {
     });
     expect(screen.getByText("Thinking")).toBeInTheDocument();
     expect(screen.getAllByText("client · npm test").length).toBeGreaterThan(0);
-    expect(screen.getByText("Workspace schedule")).toBeInTheDocument();
+    // In the thread; the workbench shows the newest card as well.
+    const thread = container.querySelector<HTMLElement>(".baxter-chat-thread");
+    expect(thread).not.toBeNull();
+    expect(within(thread!).getByText("Workspace schedule")).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Chat history" })).not.toBeInTheDocument();
     // The gallery is a rendering reference, not a conversation — nothing saved.
     expect(mockedApi.createBaxterChatSession).not.toHaveBeenCalled();
@@ -671,5 +681,120 @@ describe("BaxterChatPage", () => {
     // scrollport; one without the other either veils the last card or does nothing.
     expect(container.querySelector(".baxter-chat-thread--faded")).not.toBeNull();
     expect(container.querySelector(".baxter-chat-dock--fade")).not.toBeNull();
+  });
+  it("uploads attached files before the turn and sends their ids with it", async () => {
+    mockedApi.uploadBaxterChatAttachment.mockImplementation(async (_slug, _id, file) => ({
+      id: `att-${file.name}`,
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+      kind: "text",
+    }));
+    const { container } = await renderChatReady();
+    const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(picker).not.toBeNull();
+    const file = new File(["boom at line 42"], "trace.log", { type: "text/plain" });
+    fireEvent.change(picker!, { target: { files: [file] } });
+    expect(await screen.findByRole("button", { name: "Remove trace.log" })).toBeInTheDocument();
+
+    // Files alone are enough to send.
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith(
+        "loregarden",
+        "s1",
+        "",
+        "",
+        ["att-trace.log"],
+      ),
+    );
+    expect(mockedApi.uploadBaxterChatAttachment).toHaveBeenCalledWith("loregarden", "s1", file);
+    // Sent: the tray is cleared for the next message.
+    expect(screen.queryByRole("button", { name: "Remove trace.log" })).not.toBeInTheDocument();
+  });
+
+  it("refuses a file the server would refuse, without sending anything", async () => {
+    const { container } = await renderChatReady();
+    const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const archive = new File(["PK"], "bundle.zip", { type: "application/zip" });
+    fireEvent.change(picker!, { target: { files: [archive] } });
+
+    expect(screen.queryByRole("button", { name: "Remove bundle.zip" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ask Baxter/i })).toBeDisabled();
+    expect(mockedApi.uploadBaxterChatAttachment).not.toHaveBeenCalled();
+  });
+
+  it("offers the most valuable ticket from the workbench, and sends it in one click", async () => {
+    await renderChatReady();
+    const workbench = screen.getByRole("complementary", { name: "Suggestions and cards" });
+
+    fireEvent.click(
+      within(workbench).getByRole("button", { name: "Find the most valuable ticket" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith(
+        "loregarden",
+        "s1",
+        "Find the most valuable ticket",
+        "",
+        [],
+      ),
+    );
+  });
+
+  it("collects the thread's cards in the workbench, newest first", async () => {
+    const { container } = renderChat();
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    await screen.findByRole("complementary", { name: "Chat history" });
+    fireEvent.click(screen.getByRole("button", { name: /UI Primitive gallery/i }));
+
+    const workbench = await screen.findByRole("complementary", { name: "Suggestions and cards" });
+    await waitFor(() =>
+      expect(workbench.querySelectorAll(".chat-side-history-entry").length).toBeGreaterThan(1),
+    );
+    const entries = workbench.querySelectorAll<HTMLButtonElement>(".chat-side-history-entry");
+    // Newest first: the card on show is the last assistant turn's.
+    expect(entries[0].getAttribute("aria-current")).toBe("true");
+    const turns = container.querySelectorAll<HTMLElement>(".lg-chat-turn--assistant[data-message-id]");
+    const lastTurn = turns[turns.length - 1];
+
+    // jsdom has no scrollIntoView; stand one in for this assertion only.
+    const original = Element.prototype.scrollIntoView;
+    const scrolled = jest.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      fireEvent.click(within(workbench).getByRole("button", { name: "Show in thread" }));
+      expect(scrolled.mock.instances[0]).toBe(lastTurn);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+
+    // Picking an older card puts that one on show.
+    fireEvent.click(entries[entries.length - 1]);
+    expect(entries[entries.length - 1].getAttribute("aria-current")).toBe("true");
+    expect(entries[0].getAttribute("aria-current")).toBeNull();
+  });
+
+  it("hides the workbench and brings it back", async () => {
+    await renderChatReady();
+    fireEvent.click(screen.getByRole("button", { name: "Hide the workbench" }));
+    expect(
+      screen.queryByRole("complementary", { name: "Suggestions and cards" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+    expect(screen.getByRole("complementary", { name: "Suggestions and cards" })).toBeInTheDocument();
+  });
+
+  it("keeps the chat's actions in the composer", async () => {
+    await renderChatReady();
+    const composer = screen.getByPlaceholderText("What should we ship today?").closest(
+      ".lg-chat-composer",
+    ) as HTMLElement;
+    fireEvent.click(within(composer).getByRole("button", { name: "Chat actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /History/ }));
+    expect(useUiStore.getState().baxterHistoryOpen).toBe(true);
   });
 });

@@ -1185,6 +1185,8 @@ class BaxterChatMessage(SQLModel, table=True):
     # or "" for an ordinary message. Recorded on the user row because that is
     # whose choice it was; the assistant row is what the choice produced.
     skill_name: str = ""
+    # Files uploaded with a user turn (see services.chat_attachments), as JSON.
+    attachments_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 

@@ -204,6 +204,7 @@ def build_interactive_invocation(
     mcp_enabled: bool = True,
     surface: ChatSurface = ChatSurface.HOME,
     agent_slug: str = "",
+    extra_dirs: Sequence[Path | str] = (),
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -223,6 +224,9 @@ def build_interactive_invocation(
     ``orchestrated`` defaults True for stage runs. Chat surfaces (triage / Home /
     branch) must pass False so create_ticket and other interactive MCP tools are
     not denied at the MCP dispatch layer.
+
+    ``extra_dirs`` are granted read access beside the workspace root — the
+    files a chat turn attached, for instance.
     """
     cwd = str(workspace_root)
 
@@ -247,6 +251,8 @@ def build_interactive_invocation(
             argv.append("--include-partial-messages")
         _append_model_flag(argv, claude_model)
         _append_claude_effort_flag(argv, claude_effort)
+        for extra in extra_dirs:
+            argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
         argv.extend(

@@ -133,14 +133,29 @@ export function useBaxterChatSessionAt(
 
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },
-    mutationFn: async ({ content, skill = "" }: { content: string; skill?: string }) => {
+    mutationFn: async ({
+      content,
+      skill = "",
+      files = [],
+    }: {
+      content: string;
+      skill?: string;
+      files?: File[];
+    }) => {
       let id = sessionId;
       if (!id) {
         const created = await api.createBaxterChatSession(workspaceSlug);
         id = created.id;
         setSessionId(id);
       }
-      return api.sendBaxterChatMessage(workspaceSlug, id, content, skill);
+      // Uploaded one at a time, before the turn: the turn names files by id,
+      // and a failed upload rejects the whole send rather than a thinner one.
+      const attachmentIds: string[] = [];
+      for (const file of files) {
+        const stored = await api.uploadBaxterChatAttachment(workspaceSlug, id, file);
+        attachmentIds.push(stored.id);
+      }
+      return api.sendBaxterChatMessage(workspaceSlug, id, content, skill, attachmentIds);
     },
     onSuccess: (result) => {
       // The POST returns the thread with the user turn already on it, so the
@@ -280,7 +295,7 @@ export function useBaxterChatSessionAt(
         ? (saveRuntime.error as Error)?.message || "Failed to save model settings"
       : null,
     send: (content: string, options) =>
-      sendMessage.mutateAsync({ content, skill: options?.skill }),
+      sendMessage.mutateAsync({ content, skill: options?.skill, files: options?.files }),
     sendInNewChat: (content: string) => sendInNewChat.mutateAsync(content),
     forkSession: (body = "") => forkSession.mutateAsync({ body }),
     forkFromMessage: (messageId: string) =>

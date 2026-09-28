@@ -239,6 +239,9 @@ class AgentTurnRequest:
     surface: ChatSurface = ChatSurface.HOME
     """Which operator rail this turn is for — selects the shared prompt blocks
     and labels the tool-grant log line."""
+    extra_dirs: tuple[Path, ...] = ()
+    """Directories outside the checkout the agent may read — a chat turn's
+    attachments. Only claude honours the grant; callers check the adapter."""
 
 
 @dataclass
@@ -400,6 +403,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
                 surface=request.surface,
                 agent_slug=request.agent.get("slug") or request.agent_id,
+                extra_dirs=request.extra_dirs,
             )
             bridge_kwargs: dict = {
                 "run_id": run.id,
@@ -470,6 +474,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             thinking_sink=thinking,
             workspace_root=root,
             surface=request.surface,
+            extra_dirs=request.extra_dirs,
         )
     except Exception as exc:
         if run is not None:
