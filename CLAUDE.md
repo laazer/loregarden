@@ -165,6 +165,27 @@ So a change to a user-facing surface first states three things, as acceptance cr
 of production (`loregarden_launch_instance`, template `loregarden/server`, database `snapshot`).
 Never point a second server at the live database — the sandbox exists so nothing has to.
 
+### Real data, or its shape
+
+- **Where the live database exists, look at it:** `task sandbox` runs this checkout on a copy
+  of the database and memory graphs (sandboxed, source read-only).
+- **Where it does not — CI, cloud sessions, other workspaces — use its shape:** `task sandbox
+  -- --seeded` (automatic when no live database is found). That is
+  `loregarden.testing.prod_shape`: built from the same factories as the integration tests
+  (`loregarden.testing.factories`, re-exported as `tests.factories`), deterministic, and
+  calibrated from the live database in `CALIBRATION`, dated.
+- **Frontend tests render at that volume.** `server/tests/test_prod_shape_fixtures.py` records the
+  API's responses over the scenario to `client/src/test/fixtures/prod-shape/` and fails when they
+  go stale (re-record with `LOREGARDEN_RECORD_FIXTURES=1`). Jest renders data-heavy surfaces over
+  them and runs `findUsabilityProblems` (`client/src/lib/usabilityCheck.ts`) — walls of repeated
+  text, lists with nothing to click, graphs with no edges, long lists with no filter. `npm run
+  visual-qa` runs the same check inside every page of a running sandbox.
+
+So: a new data-heavy surface gets a prod-shape test; a new kind of data gets a place in the
+scenario; and when the live shape drifts, re-measure `CALIBRATION` rather than let the scenario
+become a fixture again. A scenario that disagrees with production is worse than none — it once
+claimed 20 near-duplicate learnings that production did not have.
+
 ### The five states
 
 A change to a user-facing surface is not specified until all five are decided. A ticket that
