@@ -467,18 +467,36 @@
 .memory-proposal {
   border: 1px solid var(--bd);
   border-radius: 6px;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.memory-proposal-head {
+  padding: 6px 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
+
+.memory-proposal-groups {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memory-proposal-group summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.memory-proposal-group summary:focus-visible {
+  outline: 2px solid var(--ac, #6aa9ff);
+  outline-offset: 2px;
+}
+
+.memory-proposal-group > details > p {
+  margin: 2px 0 8px;
+}
+
 
 .memory-proposal-titles {
   display: flex;

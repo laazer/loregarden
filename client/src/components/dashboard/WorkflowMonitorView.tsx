@@ -10,6 +10,7 @@ import {
   conditionMeaning,
   groupByTicket,
   groupFindings,
+  isAwaitingSamples,
   isLiveFinding,
   type FindingGroup,
   type TicketFindings,
@@ -114,26 +115,40 @@ function RecurringRow({ group, tickets }: { group: FindingGroup; tickets: Ticket
 
 function WorkspaceRow({ group }: { group: FindingGroup }) {
   const meaning = conditionMeaning(group.condition);
+  const waiting = group.findings.filter(isAwaitingSamples);
+  const actionable = group.findings.filter((finding) => !isAwaitingSamples(finding));
+  const counts = [
+    actionable.length > 0 && `${actionable.length} to act on`,
+    waiting.length > 0 && `${waiting.length} awaiting data`,
+  ].filter(Boolean);
   return (
     <li className="wm-recurring">
       <details>
         <summary>
-          <span className="wm-recurring-title">
-            {conditionLabel(group.condition)}
-            {group.stageKey && <code>{group.stageKey}</code>}
-          </span>
-          <span className="wm-recurring-count">
-            {group.findings.length} {group.findings.length === 1 ? "finding" : "findings"}
-          </span>
+          <span className="wm-recurring-title">{conditionLabel(group.condition)}</span>
+          <span className="wm-recurring-count">{counts.join(" · ")}</span>
           {meaning && <span className="wm-meaning">{meaning}</span>}
         </summary>
-        <ul className="wm-lines">
-          {group.findings.map((finding, index) => (
-            <li key={index} className="wm-line">
-              <span className="wm-line-summary">{finding.summary}</span>
-            </li>
-          ))}
-        </ul>
+        {actionable.length > 0 && (
+          <ul className="wm-lines">
+            {actionable.map((finding, index) => (
+              <li key={index} className="wm-line">
+                {finding.stage_key && (
+                  <span className="wm-line-condition">
+                    <code>{finding.stage_key}</code>
+                  </span>
+                )}
+                <span className="wm-line-summary">{finding.summary}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {waiting.length > 0 && (
+          <p className="wm-waiting">
+            Not enough runs yet to judge {waiting.length === 1 ? "this stage" : `these ${waiting.length} stages`}:{" "}
+            {waiting.map((finding) => finding.stage_key || "(workspace)").join(", ")}.
+          </p>
+        )}
       </details>
     </li>
   );
@@ -166,9 +181,10 @@ function arrange(findings: MonitorFinding[], ticketId: string | null) {
     current: ticketId ? (ticketsById.get(ticketId) ?? null) : null,
     others: byTicket.filter((ticket) => ticket.ticketId !== ticketId),
     recurring,
-    // One row per condition: fourteen "timeout floor stale" rows, one per
-    // stage, said the same thing fourteen times. The summaries name the stage.
-    workspace: groupFindings(workspaceFindings.map((finding) => ({ ...finding, stage_key: "" }))),
+    // One row per condition — forty "timeout floor stale" rows, one per stage,
+    // said the same thing forty times. Inside, WorkspaceRow separates the few
+    // to act on from the many only awaiting data.
+    workspace: groupFindings(workspaceFindings, { byStage: false }),
   };
 }
 

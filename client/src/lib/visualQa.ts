@@ -15,6 +15,8 @@ export interface VisualQaResult {
   errors: string[];
   /** Set when the surface could not be reached at all. */
   loadError?: string;
+  /** Unusable shapes found in the rendered page (see `usabilityCheck`). */
+  usability?: { kind: string; detail: string }[];
 }
 
 export interface VisualQaSummary {
@@ -28,7 +30,7 @@ export interface VisualQaSummary {
 export const VISUAL_QA_ROUTES: VisualQaRoute[] = routes;
 
 export function surfaceFailed(result: VisualQaResult): boolean {
-  return Boolean(result.loadError) || result.errors.length > 0;
+  return Boolean(result.loadError) || result.errors.length > 0 || (result.usability?.length ?? 0) > 0;
 }
 
 /**

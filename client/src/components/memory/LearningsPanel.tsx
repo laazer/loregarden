@@ -12,6 +12,7 @@ import type { MemoryNode } from "../../api/memoryApi";
 import { describeError } from "../../state/toastStore";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { LearningDetail } from "./LearningDetail";
+import { recordTitle } from "../../lib/memoryInferred";
 
 function NodeRow({
   node,
@@ -31,7 +32,7 @@ function NodeRow({
         aria-pressed={selected}
         onClick={onSelect}
       >
-        <span className="memory-node-title">{node.title}</span>
+        <span className="memory-node-title">{recordTitle({ title: node.title, excerpt: node.body })}</span>
         <span className="memory-node-meta">
           {node.discredited
             ? "discredited"
@@ -126,7 +127,10 @@ export function LearningsPanel({
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
 }) {
-  const [includeDiscredited, setIncludeDiscredited] = useState(true);
+  // Off by default, as on the map and on every agent read path. On the live
+  // loregarden graph 268 of 302 records were discredited — 181 of them smoke
+  // records — and listing them by default buried the 34 that are in use.
+  const [includeDiscredited, setIncludeDiscredited] = useState(false);
   return (
     <section className="memory-panel" aria-labelledby="memory-learnings-title">
       <header className="memory-panel-header">
