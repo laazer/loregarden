@@ -132,6 +132,7 @@ def memory_knowledge_graph(
     q: str = "",
     limit: int = Query(default=300, ge=1, le=500),
     include_discredited: bool = False,
+    session: Session = Depends(get_session),
 ) -> KnowledgeGraph:
     """A window of the workspace graph for the knowledge browser (766).
 
@@ -142,6 +143,7 @@ def memory_knowledge_graph(
     """
     service = AgentMemoryService.from_settings()
     return knowledge_graph(
+        session,
         service,
         workspace_slug=workspace_slug,
         node_type=node_type,

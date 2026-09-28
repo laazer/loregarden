@@ -539,3 +539,75 @@
   border-radius: 2px;
   background: var(--ac);
 }
+
+/* Inferred groupings: faint and dotted so they never read as a recorded
+   relationship. Kind is carried by tone, and by the legend's toggles. */
+.mm-inferred {
+  stroke-width: 1.2;
+  stroke-opacity: 0.45;
+  transition: stroke-opacity 120ms ease;
+}
+
+.mm-inferred--same_ticket {
+  stroke: var(--ac2);
+}
+
+.mm-inferred--same_milestone {
+  stroke: var(--bll);
+}
+
+.mm-inferred--shared_tag {
+  stroke: var(--txl);
+}
+
+.mm-inferred.mm-dim {
+  stroke-opacity: 0.08;
+}
+
+.mm-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mm-group summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.mm-group summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.mm-group-kind {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+.mm-group ul {
+  list-style: none;
+  margin: 6px 0 4px 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kb-shared-group + .kb-shared-group {
+  margin-top: 8px;
+}
+
+.kb-shared-label {
+  font-size: 11.5px;
+  color: var(--txm);
+  margin-bottom: 4px;
+}

@@ -1,0 +1,83 @@
+import { useQuery } from "@tanstack/react-query";
+
+import { localInstancesApi } from "../../api/localInstancesApi";
+import type { InstallState, WorkspaceTemplates } from "../../api/localInstancesTypes";
+import { INTEGRATION_KEY } from "../../hooks/useLocalInstances";
+import { WorkspaceIntegrationPanel } from "./WorkspaceIntegrationPanel";
+import { WorkspaceTemplatesPanel } from "./WorkspaceTemplatesPanel";
+
+const CHECK_STALE_MS = 60_000;
+
+type Tone = "ok" | "warn" | "muted";
+
+const INSTALL_TONE: Record<InstallState, Tone> = {
+  current: "ok",
+  missing: "warn",
+  outdated: "warn",
+  unavailable: "muted",
+};
+
+const INSTALL_WORD: Record<InstallState, string> = {
+  current: "installed",
+  missing: "missing",
+  outdated: "outdated",
+  unavailable: "n/a",
+};
+
+function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return <span className={`instances-chip instances-chip--${tone}`}>{children}</span>;
+}
+
+/**
+ * One workspace's loregarden setup, folded to a single row.
+ *
+ * The page used to render every workspace's setup table *and* template table
+ * open, one after another — eight full-width panels to scroll past before
+ * anything answered "is this workspace set up?". The summary answers that in
+ * chips; the panels are one click away and unchanged. Shares the integration
+ * query (and its cache) with `WorkspaceIntegrationPanel`, so opening a card
+ * does not re-check.
+ */
+export function WorkspaceSetupCard({ workspace }: { workspace: WorkspaceTemplates }) {
+  const status = useQuery({
+    queryKey: [...INTEGRATION_KEY, workspace.slug],
+    queryFn: () => localInstancesApi.integration(workspace.slug),
+    staleTime: CHECK_STALE_MS,
+  });
+  const launchable = workspace.entries.filter((entry) => entry.launchable).length;
+
+  return (
+    <li className="instances-setup">
+      <details>
+        <summary>
+          <span className="instances-setup-name">
+            {workspace.name}
+            <span className="instances-setup-path">{workspace.repo_root}</span>
+          </span>
+          <span className="instances-setup-chips">
+            {status.isPending ? (
+              <Chip tone="muted">checking…</Chip>
+            ) : status.error ? (
+              <Chip tone="warn">check failed</Chip>
+            ) : status.data.installers.length === 0 ? (
+              <Chip tone="muted">no installers reported</Chip>
+            ) : (
+              status.data.installers.map((installer) => (
+                <Chip key={installer.installer} tone={INSTALL_TONE[installer.state]}>
+                  {installer.installer === "hooks" ? "gates" : "AGENTS.md"} {INSTALL_WORD[installer.state]}
+                </Chip>
+              ))
+            )}
+            <Chip tone={workspace.file_error ? "warn" : launchable ? "ok" : "muted"}>
+              {workspace.file_error ? "templates broken" : `${launchable} ${launchable === 1 ? "template" : "templates"}`}
+            </Chip>
+          </span>
+        </summary>
+        <div className="instances-setup-body">
+          <WorkspaceIntegrationPanel workspace={workspace} />
+          <WorkspaceTemplatesPanel workspace={workspace} />
+        </div>
+      </details>
+    </li>
+  );
+}

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { WorkflowMonitorView } from "../WorkflowMonitorView";
 import type { MonitorFinding } from "../../../api/types";
@@ -28,17 +29,23 @@ const finding = (over: Partial<MonitorFinding> = {}): MonitorFinding => ({
   occurrences: 1,
   first_seen: null,
   last_seen: null,
+  ticket_title: "Fix the flaky review",
+  ticket_external_id: "lor-x-1",
+  ticket_state: "in_progress",
+  workspace_slug: "loregarden",
   ...over,
 });
 
-function renderView() {
+function renderView(ticketId: string | null = null) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return render(
-    <QueryClientProvider client={client}>
-      <WorkflowMonitorView />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <WorkflowMonitorView ticketId={ticketId} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -53,18 +60,72 @@ it("asks for every finding, with no ticket id", async () => {
   expect(monitorFindings).toHaveBeenCalledWith(undefined);
 });
 
-it("groups recurrence and says how many tickets it spans", async () => {
+it("groups recurrence across tickets and says how many it spans", async () => {
   monitorFindings.mockResolvedValue([
-    finding({ ticket_id: "t1" }),
-    finding({ ticket_id: "t2" }),
-    finding({ ticket_id: "t3" }),
+    finding({ ticket_id: "t1", ticket_external_id: "lor-x-1" }),
+    finding({ ticket_id: "t2", ticket_external_id: "lor-x-2" }),
+    finding({ ticket_id: "t3", ticket_external_id: "lor-x-3" }),
   ]);
 
   renderView();
 
-  expect(await screen.findByText("Stage thrash")).toBeInTheDocument();
-  expect(screen.getByText(/3 tickets/)).toBeInTheDocument();
-  expect(screen.getByText(/1 condition across 3 findings/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Recurring across tickets" })).toBeInTheDocument();
+  expect(screen.getByText("3 tickets")).toBeInTheDocument();
+});
+
+it("names each ticket and links to it", async () => {
+  monitorFindings.mockResolvedValue([finding({ ticket_id: "t1" })]);
+
+  renderView();
+
+  const link = await screen.findByRole("link", { name: /lor-x-1.*Fix the flaky review/ });
+  expect(link).toHaveAttribute("href", expect.stringContaining("/tickets/t1"));
+});
+
+it("folds the same condition from several runs of one ticket into one line", async () => {
+  monitorFindings.mockResolvedValue([finding(), finding(), finding()]);
+
+  renderView();
+
+  expect(await screen.findByText(/· 3 runs/)).toBeInTheDocument();
+  expect(screen.getAllByText(/attempted 12x/)).toHaveLength(1);
+});
+
+it("hides findings on finished tickets until asked for everything", async () => {
+  monitorFindings.mockResolvedValue([
+    finding({ ticket_id: "live", ticket_external_id: "lor-live-1" }),
+    finding({ ticket_id: "old", ticket_external_id: "lor-old-2", ticket_state: "done" }),
+  ]);
+
+  renderView();
+
+  expect(await screen.findByText("lor-live-1")).toBeInTheDocument();
+  expect(screen.queryByText("lor-old-2")).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: /everything/i }));
+
+  expect(screen.getAllByText("lor-old-2").length).toBeGreaterThan(0);
+});
+
+it("says so when every finding is on a finished ticket, rather than looking empty", async () => {
+  monitorFindings.mockResolvedValue([finding({ ticket_state: "done" })]);
+
+  renderView();
+
+  expect(await screen.findByText("Nothing on live tickets")).toBeInTheDocument();
+});
+
+it("puts the selected ticket's own findings first", async () => {
+  monitorFindings.mockResolvedValue([
+    finding({ ticket_id: "other", ticket_external_id: "lor-other-9" }),
+    finding({ ticket_id: "mine", ticket_external_id: "lor-mine-4" }),
+  ]);
+
+  renderView("mine");
+
+  const section = await screen.findByRole("heading", { name: "On this ticket" });
+  expect(section.parentElement).toHaveTextContent("lor-mine-4");
+  expect(section.parentElement).not.toHaveTextContent("lor-other-9");
 });
 
 it("never renders the occurrences count, which counts sweep ticks", async () => {
@@ -78,7 +139,6 @@ it("never renders the occurrences count, which counts sweep ticks", async () => 
 
   await screen.findByText("Stage thrash");
   expect(screen.queryByText(/5989/)).not.toBeInTheDocument();
-  expect(screen.getByText(/first seen/)).toBeInTheDocument();
 });
 
 it("names the stage alongside the condition", async () => {
@@ -86,9 +146,7 @@ it("names the stage alongside the condition", async () => {
 
   renderView();
 
-  // The stage appears twice by design — once as the group's own label and once
-  // inside the summary sentence — so this asserts the label element itself.
-  expect(await screen.findByText("· script_review")).toBeInTheDocument();
+  expect(await screen.findByText("script_review")).toBeInTheDocument();
   expect(screen.getByText(/attempted 12x/)).toBeInTheDocument();
 });
 

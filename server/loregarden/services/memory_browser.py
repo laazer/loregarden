@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.learning_confidence import LearningConfidence
 from loregarden.services.learning_outcomes import confidence_for, ladder_counts
+from loregarden.services.memory_inferred_groups import GroupableNode, InferredGroup, inferred_groups
 from loregarden.services.memory_store import AgentMemoryService
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -96,6 +97,9 @@ class KnowledgeGraph(BaseModel):
     nodes: list[GraphNode]
     #: Only edges whose source and target are both in `nodes`.
     relations: list[GraphRelation]
+    #: Records grouped by a ticket, milestone or tag they share — derived on
+    #: read, never stored as relations. See `services.memory_inferred_groups`.
+    inferred: list[InferredGroup]
     counts: GraphCounts
     #: Live nodes per type across the whole workspace, for the type chips.
     type_counts: dict[str, int]
@@ -157,6 +161,7 @@ def _graph_node(row: dict) -> GraphNode:
 
 
 def knowledge_graph(
+    session: Session,
     memory: AgentMemoryService,
     *,
     workspace_slug: str,
@@ -176,6 +181,7 @@ def knowledge_graph(
         include_discredited=include_discredited,
         nodes=[],
         relations=[],
+        inferred=[],
         counts=GraphCounts(entities=0, links=0),
         type_counts={},
         truncated=False,
@@ -206,10 +212,12 @@ def knowledge_graph(
         )
     nodes = [_graph_node(row) for row in rows]
     relations = [GraphRelation(**edge) for edge in graph.list_relations([n.id for n in nodes])]
+    groupable = [GroupableNode(id=n.id, ticket_id=n.ticket_id, tags=n.tags) for n in nodes]
     return empty.model_copy(
         update={
             "nodes": nodes,
             "relations": relations,
+            "inferred": inferred_groups(session, groupable, workspace_slug=workspace_slug),
             "counts": GraphCounts(entities=len(nodes), links=len(relations)),
             "type_counts": graph.node_type_counts(workspace_slug),
             "truncated": len(nodes) >= limit,

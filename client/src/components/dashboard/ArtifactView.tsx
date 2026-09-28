@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
 import type { ContextSection, TransientRetryNotice } from "../../api/types";
 import { formatLocalTimestamp, formatRelativeAge, runTimestamp } from "../../lib/timestamps";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 import { RunLedgerPanel } from "../RunLedgerPanel";
 import { StageFanoutPanel } from "../StageFanoutPanel";
@@ -325,21 +326,9 @@ export function ArtifactView({
           </a>
         </div>
         {pr.body && (
-          <pre
-            style={{
-              margin: 0,
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid var(--bd)",
-              background: "var(--bg2)",
-              fontFamily: "var(--mono)",
-              fontSize: 11,
-              lineHeight: 1.55,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {pr.body}
-          </pre>
+          <div className="list-btn" style={{ padding: "12px 16px" }}>
+            <MarkdownContent content={pr.body} normalize={false} readerTitle={`PR #${pr.number}`} />
+          </div>
         )}
       </div>
     );

@@ -105,6 +105,20 @@ export interface GraphRelation {
   created_at: string;
 }
 
+/** Why records are shown together without a recorded edge (server `InferredGroupKind`). */
+export type InferredGroupKind = "same_ticket" | "same_milestone" | "shared_tag";
+
+/**
+ * Records that share a ticket, a milestone or a specific tag. Derived on read
+ * and never stored, so the map draws these apart from recorded relations.
+ */
+export interface InferredGroup {
+  kind: InferredGroupKind;
+  key: string;
+  label: string;
+  node_ids: string[];
+}
+
 /**
  * A window of one workspace's memory graph. `configured: false` is the setup
  * state — no graph exists — and is not the same as a graph with no nodes.
@@ -120,6 +134,7 @@ export interface KnowledgeGraph {
   include_discredited: boolean;
   nodes: GraphNode[];
   relations: GraphRelation[];
+  inferred: InferredGroup[];
   counts: { entities: number; links: number };
   type_counts: Partial<Record<NodeType, number>>;
   truncated: boolean;

@@ -51,7 +51,7 @@ export function ArtifactPaneBody({
 }) {
   // Before the ticket guards: a finding is about a ticket the reader has no
   // reason to have selected, which is exactly why this view exists.
-  if (artifactTab === "monitor") return <WorkflowMonitorView />;
+  if (artifactTab === "monitor") return <WorkflowMonitorView ticketId={selectedId} />;
 
   if (artifactTab === "logs" && ticket) return <LogsPanel ticket={ticket} />;
 

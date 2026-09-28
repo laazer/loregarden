@@ -13,20 +13,20 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
-import remarkGfm from "remark-gfm";
 
 import { api } from "../../api/client";
-import type { MemoryNodeDetail } from "../../api/memoryApi";
+import type { GraphNode, InferredGroup, MemoryNodeDetail } from "../../api/memoryApi";
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
+import { groupsFor, INFERRED_KIND_LABELS, recordTitle } from "../../lib/memoryInferred";
 import { formatLocalTimestamp } from "../../lib/timestamps";
 import { LearningConfidenceReadout } from "../memory/LearningConfidenceReadout";
 import { describeError, errorStatus, toastActionFailed } from "../../state/toastStore";
 import { IconCloseButton } from "../IconCloseButton";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 
 const ORIGIN_LABELS = { agent: "Agent", human: "Human", import: "Import" } as const;
@@ -81,19 +81,73 @@ function Neighbours({
   );
 }
 
+/**
+ * The records this one is grouped with by a shared ticket, milestone or tag —
+ * the answer to "what else do we know about this?" when no agent recorded an
+ * edge, which on the live graph was every time.
+ */
+function SharedWith({
+  nodeId,
+  groups,
+  nodes,
+  onSelect,
+}: {
+  nodeId: string;
+  groups: InferredGroup[];
+  nodes: GraphNode[];
+  onSelect: (nodeId: string) => void;
+}) {
+  const mine = groupsFor(nodeId, groups);
+  if (mine.length === 0) {
+    return <p className="kb-muted">Shares no ticket, milestone or specific tag with the records on the map.</p>;
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return (
+    <>
+      {mine.map((group) => (
+        <div key={`${group.kind}:${group.key}`} className="kb-shared-group">
+          <div className="kb-shared-label">
+            {INFERRED_KIND_LABELS[group.kind]}: {group.label}
+          </div>
+          <ul className="kb-neighbours">
+            {group.node_ids
+              .filter((id) => id !== nodeId)
+              .map((id) => {
+                const node = byId.get(id);
+                return (
+                  <li key={id}>
+                    <button type="button" className="kb-link-button" onClick={() => onSelect(id)}>
+                      {node ? recordTitle(node) : id}
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function Record({
   record,
+  groups,
+  nodes,
   onSelect,
 }: {
   record: MemoryNodeDetail;
+  groups: InferredGroup[];
+  nodes: GraphNode[];
   onSelect: (nodeId: string) => void;
 }) {
+  const title = recordTitle({ title: record.title, excerpt: record.body.replace(/\s+/g, " ") });
   return (
     <>
       <div className="state-label">{NODE_TYPE_LABELS[record.node_type]}</div>
       <h2 id="kb-panel-title" className="kb-panel-title">
-        {record.title}
+        {title}
       </h2>
+      {title !== record.title && <p className="kb-meta">{record.title}</p>}
       {record.discredited && <span className="kb-pill">Discredited</span>}
       {record.superseded_by.length > 0 && (
         <p className="kb-superseded">
@@ -110,7 +164,7 @@ function Record({
       )}
       <div className="kb-body">
         {record.body ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{record.body}</ReactMarkdown>
+          <MarkdownContent content={record.body} normalize={false} readerTitle={title} />
         ) : (
           <p className="kb-muted">This record has no body.</p>
         )}
@@ -136,8 +190,10 @@ function Record({
           <LearningConfidenceReadout confidence={record.confidence} ladder={record.ladder} />
         </>
       )}
-      <h3 className="kb-section-title">Related</h3>
+      <h3 className="kb-section-title">Recorded relationships</h3>
       <Neighbours record={record} onSelect={onSelect} />
+      <h3 className="kb-section-title">Shares a ticket, milestone or tag with</h3>
+      <SharedWith nodeId={record.id} groups={groups} nodes={nodes} onSelect={onSelect} />
       <Origin record={record} />
     </>
   );
@@ -146,11 +202,16 @@ function Record({
 export function KnowledgePanel({
   nodeId,
   workspaceSlug,
+  groups,
+  nodes,
   onSelect,
   onClose,
 }: {
   nodeId: string;
   workspaceSlug: string;
+  /** The map's inferred groups and records, for "shares a … with". */
+  groups: InferredGroup[];
+  nodes: GraphNode[];
   onSelect: (nodeId: string) => void;
   onClose: () => void;
 }) {
@@ -176,7 +237,7 @@ export function KnowledgePanel({
   if (record.isLoading) {
     body = <PaneSkeleton variant="list" rows={6} label="Loading record…" />;
   } else if (record.data) {
-    body = <Record record={record.data} onSelect={onSelect} />;
+    body = <Record record={record.data} groups={groups} nodes={nodes} onSelect={onSelect} />;
   } else if (notFound) {
     body = (
       <div className="kb-state" role="status">

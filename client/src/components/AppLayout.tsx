@@ -11,6 +11,7 @@ import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
 import { QueueNotificationsHost } from "./QueueNotificationsHost";
 import { ToastHost } from "./ToastHost";
+import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -144,6 +145,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           }}
         />
 
+        <ReaderHost />
         <ToastHost />
         <QueueNotificationsHost />
       </div>

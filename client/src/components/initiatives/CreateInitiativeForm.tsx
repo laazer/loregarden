@@ -1,13 +1,17 @@
 import { useState } from "react";
 
+import type { InitiativeMilestone } from "../../api/client";
+
 interface CreateInitiativeFormProps {
+  /** Milestones ticked on the page; they are attached as soon as the initiative exists. */
+  milestones: InitiativeMilestone[];
   isSaving: boolean;
   onCreate: (draft: { title: string; description: string }) => Promise<unknown>;
   onCancel: () => void;
 }
 
 /** Inline, not a modal: creating one is two fields, and the list it lands in stays visible. */
-export function CreateInitiativeForm({ isSaving, onCreate, onCancel }: CreateInitiativeFormProps) {
+export function CreateInitiativeForm({ milestones, isSaving, onCreate, onCancel }: CreateInitiativeFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const canSubmit = title.trim().length > 0 && !isSaving;
@@ -50,9 +54,24 @@ export function CreateInitiativeForm({ isSaving, onCreate, onCancel }: CreateIni
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      <p className="modal-hint">
-        Initiatives span workspaces. Attach milestones from any workspace once it exists.
-      </p>
+      {milestones.length > 0 ? (
+        <div className="initiative-create-picked">
+          <span className="modal-field-label">
+            Attaches {milestones.length} {milestones.length === 1 ? "milestone" : "milestones"}
+          </span>
+          <ul>
+            {milestones.map((m) => (
+              <li key={m.id}>
+                <span className="initiative-ws-pill">{m.workspace_slug}</span> {m.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="modal-hint">
+          Tick milestones below to attach them on creation, or attach them to the initiative afterwards.
+        </p>
+      )}
       <div className="initiative-create-actions">
         <button type="button" className="btn-secondary" disabled={isSaving} onClick={onCancel}>
           Cancel

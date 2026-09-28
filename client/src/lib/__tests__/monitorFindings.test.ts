@@ -21,6 +21,10 @@ const finding = (over: Partial<MonitorFinding> = {}): MonitorFinding => ({
   occurrences: 1,
   first_seen: null,
   last_seen: null,
+  ticket_title: "",
+  ticket_external_id: "",
+  ticket_state: "in_progress",
+  workspace_slug: "",
   ...over,
 });
 

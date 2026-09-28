@@ -201,7 +201,12 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
+        <MarkdownContent
+          content={impactText ?? approval.impact}
+          className="approval-impact"
+          readerTitle={approval.title}
+          readerSubtitle={approval.workspace_slug ?? undefined}
+        />
 
         {isHumanAction && approval.prepared_action && (
           <PreparedActionPanel

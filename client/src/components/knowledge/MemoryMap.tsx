@@ -15,10 +15,15 @@ import { select } from "d3-selection";
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
-import type { GraphNode, GraphRelation, NodeType, RelationType } from "../../api/memoryApi";
+import type { GraphNode, GraphRelation, InferredGroupKind, NodeType, RelationType } from "../../api/memoryApi";
 import { RELATION_TYPES } from "../../api/memoryApi";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
+import { INFERRED_KIND_LABELS, recordTitle, type InferredEdge } from "../../lib/memoryInferred";
 import { layoutMemoryMap, neighbourhood } from "../../lib/memoryMapLayout";
+
+const INFERRED_KINDS: InferredGroupKind[] = ["same_ticket", "same_milestone", "shared_tag"];
+/** Inferred lines are drawn faint and finely dashed: a grouping, never an assertion. */
+const INFERRED_DASH = "2 3";
 
 const TYPE_COLOURS: Record<NodeType, string> = {
   memory: "var(--blue)",
@@ -62,11 +67,17 @@ function Legend({
   relations,
   hidden,
   onToggle,
+  inferredKinds,
+  hiddenInferred,
+  onToggleInferred,
 }: {
   types: NodeType[];
   relations: RelationType[];
   hidden: Set<RelationType>;
   onToggle: (relation: RelationType) => void;
+  inferredKinds: InferredGroupKind[];
+  hiddenInferred: Set<InferredGroupKind>;
+  onToggleInferred: (kind: InferredGroupKind) => void;
 }) {
   return (
     <div className="mm-legend" aria-label="Legend">
@@ -118,9 +129,32 @@ function Legend({
           })}
         </ul>
       )}
+      {inferredKinds.length > 0 && (
+        <ul className="mm-legend-row" aria-label="Inferred groupings">
+          {inferredKinds.map((kind) => {
+            const shown = !hiddenInferred.has(kind);
+            return (
+              <li key={kind}>
+                <button
+                  type="button"
+                  className="mm-link-toggle"
+                  aria-pressed={shown}
+                  title={shown ? `Hide ${INFERRED_KIND_LABELS[kind]} groupings` : `Show ${INFERRED_KIND_LABELS[kind]} groupings`}
+                  onClick={() => onToggleInferred(kind)}
+                >
+                  <svg width="22" height="8" aria-hidden>
+                    <line x1="1" y1="4" x2="21" y2="4" className={`mm-inferred mm-inferred--${kind}`} strokeDasharray={INFERRED_DASH} />
+                  </svg>
+                  {INFERRED_KIND_LABELS[kind]}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <p>
-        Size is how many links a record has. Linked records pull together, so clusters are real
-        connections — but distance is not similarity.
+        Solid lines are relationships an agent recorded. Dotted lines group records that share a
+        ticket, milestone or tag. Grouped records pull together; distance is not similarity.
       </p>
     </div>
   );
@@ -129,11 +163,13 @@ function Legend({
 export function MemoryMap({
   nodes,
   relations,
+  inferred,
   selectedId,
   onSelect,
 }: {
   nodes: GraphNode[];
   relations: GraphRelation[];
+  inferred: InferredEdge[];
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
 }) {
@@ -142,11 +178,16 @@ export function MemoryMap({
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<RelationType>>(() => new Set());
+  const [hiddenInferred, setHiddenInferred] = useState<Set<InferredGroupKind>>(() => new Set());
 
-  const layout = useMemo(() => layoutMemoryMap(nodes, relations), [nodes, relations]);
+  const layout = useMemo(() => layoutMemoryMap(nodes, [...relations, ...inferred]), [nodes, relations, inferred]);
   const visible = useMemo(
     () => relations.filter((edge) => !hidden.has(relationKey(edge.relation_type))),
     [relations, hidden],
+  );
+  const visibleInferred = useMemo(
+    () => inferred.filter((edge) => !hiddenInferred.has(edge.kind)),
+    [inferred, hiddenInferred],
   );
   const labelled = useMemo(() => {
     const ranked = [...layout.points.values()]
@@ -158,8 +199,8 @@ export function MemoryMap({
 
   const focusId = hoverId ?? selectedId;
   const lit = useMemo(
-    () => (focusId ? neighbourhood(focusId, visible) : null),
-    [focusId, visible],
+    () => (focusId ? neighbourhood(focusId, [...visible, ...visibleInferred]) : null),
+    [focusId, visible, visibleInferred],
   );
 
   useEffect(() => {
@@ -208,6 +249,7 @@ export function MemoryMap({
   const drawn = new Set(relations.map((edge) => relationKey(edge.relation_type)));
   const legendRelations = RELATION_TYPES.filter((relation) => drawn.has(relation));
   const types = [...new Set(nodes.map((node) => node.node_type))];
+  const inferredKinds = INFERRED_KINDS.filter((kind) => inferred.some((edge) => edge.kind === kind));
   const { viewBox } = layout;
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
@@ -220,9 +262,32 @@ export function MemoryMap({
           viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
           preserveAspectRatio="xMidYMid meet"
           role="group"
-          aria-label={`Memory map: ${nodes.length} records, ${relations.length} links`}
+          aria-label={`Memory map: ${nodes.length} records, ${relations.length} recorded links`}
         >
           <g transform={transform.toString()}>
+            <g>
+              {visibleInferred.map((edge) => {
+                const from = layout.points.get(edge.source_id);
+                const to = layout.points.get(edge.target_id);
+                if (!from || !to) return null;
+                const dim = focusId !== null && edge.source_id !== focusId && edge.target_id !== focusId;
+                return (
+                  <line
+                    key={edge.id}
+                    data-testid="mm-inferred-edge"
+                    className={`mm-inferred mm-inferred--${edge.kind}${dim ? " mm-dim" : ""}`}
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    strokeDasharray={INFERRED_DASH}
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <title>{`${INFERRED_KIND_LABELS[edge.kind]}: ${edge.label}`}</title>
+                  </line>
+                );
+              })}
+            </g>
             <g>
               {visible.map((edge) => {
                 const from = layout.points.get(edge.source_id);
@@ -253,7 +318,7 @@ export function MemoryMap({
                 if (!record) return null;
                 const selected = point.id === selectedId;
                 const dim = lit !== null && !lit.has(point.id);
-                const links = `${point.degree} ${point.degree === 1 ? "link" : "links"}`;
+                const links = `${point.degree} ${point.degree === 1 ? "connection" : "connections"}`;
                 return (
                   <g
                     key={point.id}
@@ -266,7 +331,7 @@ export function MemoryMap({
                     role="button"
                     tabIndex={0}
                     aria-pressed={selected}
-                    aria-label={`${record.title} — ${NODE_TYPE_LABELS[record.node_type]}, ${links}${
+                    aria-label={`${recordTitle(record)} — ${NODE_TYPE_LABELS[record.node_type]}, ${links}${
                       record.discredited ? ", discredited" : ""
                     }`}
                     onClick={() => onSelect(point.id)}
@@ -283,7 +348,7 @@ export function MemoryMap({
                       fill={record.discredited ? "none" : TYPE_COLOURS[record.node_type]}
                       stroke={TYPE_COLOURS[record.node_type]}
                     />
-                    <title>{record.title}</title>
+                    <title>{recordTitle(record)}</title>
                   </g>
                 );
               })}
@@ -304,7 +369,7 @@ export function MemoryMap({
                     y={point.y + point.r + 13}
                     textAnchor="middle"
                   >
-                    {clip(record.title)}
+                    {clip(recordTitle(record))}
                   </text>
                 );
               })}
@@ -327,6 +392,16 @@ export function MemoryMap({
         types={types}
         relations={legendRelations}
         hidden={hidden}
+        inferredKinds={inferredKinds}
+        hiddenInferred={hiddenInferred}
+        onToggleInferred={(kind) =>
+          setHiddenInferred((current) => {
+            const next = new Set(current);
+            if (next.has(kind)) next.delete(kind);
+            else next.add(kind);
+            return next;
+          })
+        }
         onToggle={(relation) =>
           setHidden((current) => {
             const next = new Set(current);

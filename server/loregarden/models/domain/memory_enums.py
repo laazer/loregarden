@@ -81,6 +81,19 @@ class MemoryNodeType(str, Enum):
     LEARNING = "learning"
 
 
+class InferredGroupKind(str, Enum):
+    """Why the knowledge browser shows records together without a recorded edge.
+
+    Derived on read from facts the records already carry, never written back as
+    `memory_relations`: an inferred group is a *reading aid*, and storing it as
+    an edge would make a guess look like something an agent asserted.
+    """
+
+    SAME_TICKET = "same_ticket"  # written while working the same ticket
+    SAME_MILESTONE = "same_milestone"  # different tickets under one milestone
+    SHARED_TAG = "shared_tag"  # a tag specific enough to mean something
+
+
 class KnowledgeGraphSource(str, Enum):
     """Which reader produced a knowledge-graph response, so the UI labels it honestly."""
 
