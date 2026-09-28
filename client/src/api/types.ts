@@ -699,6 +699,7 @@ export type {
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
   ChatAdvisoryCause,
+  ChatAttachment,
   ChatIntent,
   ChatMode,
   ChatModeName,

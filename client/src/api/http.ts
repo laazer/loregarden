@@ -45,8 +45,12 @@ export class ApiError extends Error {
 /** The one fetch wrapper every endpoint goes through: JSON in, JSON out, and a
  * server `detail` message surfaced as the thrown error rather than raw text. */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // A multipart body carries its own Content-Type, boundary included; naming
+  // JSON over it would make the server read the upload as a broken JSON body.
+  const jsonHeader: Record<string, string> =
+    init?.body instanceof FormData ? {} : { "Content-Type": "application/json" };
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { ...jsonHeader, ...init?.headers },
     ...init,
   });
   if (!res.ok) {

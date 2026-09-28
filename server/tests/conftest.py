@@ -144,6 +144,8 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     SQLModel.metadata.create_all(engine)
     for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
+    # Chat attachments are files beside the database; keep them beside this one.
+    monkeypatch.setattr(settings, "chat_attachments_dir", tmp_path / "chat-attachments")
     return engine
 
 

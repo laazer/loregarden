@@ -44,6 +44,7 @@ import type {
   Approval,
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
+  ChatAttachment,
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
@@ -539,11 +540,29 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
-  sendBaxterChatMessage: (slug: string, sessionId: string, content: string, skill = "") =>
+  sendBaxterChatMessage: (
+    slug: string,
+    sessionId: string,
+    content: string,
+    skill = "",
+    attachmentIds: string[] = [],
+  ) =>
     request<BaxterChatSnapshot>(
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
-      { method: "POST", body: JSON.stringify({ content, skill }) },
+      {
+        method: "POST",
+        body: JSON.stringify({ content, skill, attachment_ids: attachmentIds }),
+      },
     ),
+  /** Store one file for the next turn in this conversation. */
+  uploadBaxterChatAttachment: (slug: string, sessionId: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    return request<ChatAttachment>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/attachments`,
+      { method: "POST", body },
+    );
+  },
   /** Settles the pending turn immediately so the composer unlocks. */
   stopBaxterChatTurn: (slug: string, sessionId: string) =>
     request<BaxterChatSnapshot>(

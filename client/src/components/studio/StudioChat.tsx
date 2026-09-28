@@ -268,6 +268,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         return (
           <div
             key={message.id}
+            data-message-id={message.id}
             className={[
               "lg-chat-turn",
               "lg-chat-turn--assistant",
@@ -399,6 +400,9 @@ export function StudioChatComposer({
   iconOnlySend,
   commands,
   dense = false,
+  accessory,
+  onFiles,
+  canSendEmpty = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -437,9 +441,16 @@ export function StudioChatComposer({
    * `.lg-chat-composer` from its own stylesheet, which is how this started.
    */
   dense?: boolean;
+  /** Rendered inside the box above the input — the attachment tray, today. */
+  accessory?: ReactNode;
+  /** Files pasted or dropped onto the box. Absent, both behave as before. */
+  onFiles?: (files: File[]) => void;
+  /** Allow sending with no text — when files are attached, say. */
+  canSendEmpty?: boolean;
 }) {
+  const [dropActive, setDropActive] = useState(false);
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
-  const canSend = value.trim().length > 0 && !isSending && !disabled;
+  const canSend = (value.trim().length > 0 || canSendEmpty) && !isSending && !disabled;
   const showStop = Boolean(isSending && onStop);
   // Round icon-only is fine for Send; Stop must read as Stop — a square swap
   // on the same accent chip is too easy to miss mid-stream.
@@ -470,7 +481,33 @@ export function StudioChatComposer({
         .join(" ")}
     >
       {commands ? <ComposerNotes commands={commands} /> : null}
-      <div className="lg-chat-composer">
+      <div
+        className={["lg-chat-composer", dropActive ? "lg-chat-composer--drop" : ""]
+          .filter(Boolean)
+          .join(" ")}
+        onDragOver={
+          onFiles
+            ? (e) => {
+                if (!e.dataTransfer.types.includes("Files")) return;
+                e.preventDefault();
+                setDropActive(true);
+              }
+            : undefined
+        }
+        onDragLeave={onFiles ? () => setDropActive(false) : undefined}
+        onDrop={
+          onFiles
+            ? (e) => {
+                setDropActive(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (!files.length) return;
+                e.preventDefault();
+                onFiles(files);
+              }
+            : undefined
+        }
+      >
+        {accessory}
         <div className="lg-composer-commands">
           {commands ? (
             <ComposerCommandMenu
@@ -490,6 +527,17 @@ export function StudioChatComposer({
               commands ? commands.handleChange(e.target.value, e.target) : onChange(e.target.value)
             }
             onBlur={() => commands?.close()}
+            onPaste={
+              onFiles
+                ? (e) => {
+                    // Only files; pasted text keeps the textarea's own handling.
+                    const files = Array.from(e.clipboardData.files);
+                    if (!files.length) return;
+                    e.preventDefault();
+                    onFiles(files);
+                  }
+                : undefined
+            }
             placeholder={placeholder}
             disabled={disabled}
             rows={variant === "dock" ? 1 : 2}

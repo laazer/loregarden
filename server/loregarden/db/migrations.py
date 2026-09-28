@@ -38,6 +38,7 @@ from loregarden.db.migrations_btw import (
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
+    m_chat_message_attachments,
     m_chat_message_parts,
     m_chat_session_worktrees,
     m_chat_turn_answer,
@@ -1412,6 +1413,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0144_github_sync_settings", m_github_sync_settings),
     ("0145_github_push_on_edit", m_github_push_on_edit),
     ("0146_instance_templates", m_instance_templates),
+    ("0147_chat_message_attachments", m_chat_message_attachments),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

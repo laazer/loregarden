@@ -88,6 +88,18 @@ class TicketActivity(StrEnum):
     IDLE = "idle"
 
 
+class ChatAttachmentKind(StrEnum):
+    """How a file attached to a chat turn reaches the agent.
+
+    ``TEXT`` is inlined into the prompt, so every adapter can read it. ``IMAGE``
+    is handed over by path and needs an adapter that can open files outside the
+    workspace — today that is only claude, via ``--add-dir``.
+    """
+
+    TEXT = "text"
+    IMAGE = "image"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 
