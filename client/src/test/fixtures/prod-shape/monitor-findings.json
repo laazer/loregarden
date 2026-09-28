@@ -1,0 +1,2740 @@
+[
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-01T00:00:00Z",
+  "last_seen": "2026-09-21T00:00:00Z",
+  "occurrences": 4000,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m2-55",
+  "ticket_id": "b8514434-fd53-5745-96e4-7c170dd0014a",
+  "ticket_state": "done",
+  "ticket_title": "Cache the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-01T05:00:00Z",
+  "last_seen": "2026-09-21T05:00:00Z",
+  "occurrences": 4001,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m3-56",
+  "ticket_id": "8dc7b2d9-9bba-5673-a46c-42d19c1a1f6e",
+  "ticket_state": "done",
+  "ticket_title": "Surface the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-01T10:00:00Z",
+  "last_seen": "2026-09-21T10:00:00Z",
+  "occurrences": 4002,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 6 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m8-61",
+  "ticket_id": "255ad082-19c6-53e2-bd1e-160c4522f449",
+  "ticket_state": "done",
+  "ticket_title": "Fix the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-01T15:00:00Z",
+  "last_seen": "2026-09-21T15:00:00Z",
+  "occurrences": 4003,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m18-71",
+  "ticket_id": "6569f242-eced-5de5-be1f-fd37f96e5387",
+  "ticket_state": "done",
+  "ticket_title": "Cache branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-01T20:00:00Z",
+  "last_seen": "2026-09-21T20:00:00Z",
+  "occurrences": 4004,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m21-74",
+  "ticket_id": "814cd55d-8e75-50c5-b7c2-e36719e63a5a",
+  "ticket_state": "done",
+  "ticket_title": "Fix stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-02T01:00:00Z",
+  "last_seen": "2026-09-22T01:00:00Z",
+  "occurrences": 4005,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 4 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m24-77",
+  "ticket_id": "9cbdab4f-3778-56fa-9754-7bb0290e8dbd",
+  "ticket_state": "done",
+  "ticket_title": "Show the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-02T06:00:00Z",
+  "last_seen": "2026-09-22T06:00:00Z",
+  "occurrences": 4006,
+  "stage_key": "review",
+  "summary": "Run has been RUNNING for 0.5h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m26-79",
+  "ticket_id": "c1ad35b0-d994-5548-bfda-ac86dc9cf693",
+  "ticket_state": "done",
+  "ticket_title": "Split docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-02T11:00:00Z",
+  "last_seen": "2026-09-22T11:00:00Z",
+  "occurrences": 4007,
+  "stage_key": "implement",
+  "summary": "Run has been RUNNING for 0.4h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m28-81",
+  "ticket_id": "bd9fba61-e9d8-5aed-95f2-397418f5da1c",
+  "ticket_state": "done",
+  "ticket_title": "Route initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-02T16:00:00Z",
+  "last_seen": "2026-09-22T16:00:00Z",
+  "occurrences": 4008,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' was attempted 4 times with no orchestration run.",
+  "ticket_external_id": "lg-m37-90",
+  "ticket_id": "38d5a4d7-567b-592a-a9f0-e524b5ed2ce7",
+  "ticket_state": "done",
+  "ticket_title": "Retry docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-02T21:00:00Z",
+  "last_seen": "2026-09-22T21:00:00Z",
+  "occurrences": 4009,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m39-92",
+  "ticket_id": "89c70b74-fc6b-58bc-9115-7f7acfb7e27f",
+  "ticket_state": "done",
+  "ticket_title": "Retry the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-03T02:00:00Z",
+  "last_seen": "2026-09-23T02:00:00Z",
+  "occurrences": 4010,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m49-102",
+  "ticket_id": "80ff191f-f77c-51c0-bd82-5a57057b758a",
+  "ticket_state": "done",
+  "ticket_title": "Cache GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-03T07:00:00Z",
+  "last_seen": "2026-09-23T07:00:00Z",
+  "occurrences": 4011,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m54-107",
+  "ticket_id": "9b278b7b-0a5b-50a1-8ce9-f4837e907583",
+  "ticket_state": "done",
+  "ticket_title": "Surface stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-03T12:00:00Z",
+  "last_seen": "2026-09-23T12:00:00Z",
+  "occurrences": 4012,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m2-109",
+  "ticket_id": "7a7a8ac8-e7a3-5aa7-a26a-a8250b44e97a",
+  "ticket_state": "done",
+  "ticket_title": "Show worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-03T17:00:00Z",
+  "last_seen": "2026-09-23T17:00:00Z",
+  "occurrences": 4013,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m12-119",
+  "ticket_id": "8b65cab0-997d-5fe9-993a-f3edd6137699",
+  "ticket_state": "done",
+  "ticket_title": "Retry initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-03T22:00:00Z",
+  "last_seen": "2026-09-23T22:00:00Z",
+  "occurrences": 4014,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m15-122",
+  "ticket_id": "e96c7f6c-bac5-5660-aca5-c376063cd94c",
+  "ticket_state": "done",
+  "ticket_title": "Fix the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-04T03:00:00Z",
+  "last_seen": "2026-09-24T03:00:00Z",
+  "occurrences": 4015,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m22-129",
+  "ticket_id": "7ff43984-00a0-5313-b919-776bf7c4c74b",
+  "ticket_state": "done",
+  "ticket_title": "Retry stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-04T08:00:00Z",
+  "last_seen": "2026-09-24T08:00:00Z",
+  "occurrences": 4016,
+  "stage_key": "script_review",
+  "summary": "Run has been RUNNING for 0.5h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m32-139",
+  "ticket_id": "3781e465-8ed1-5f5c-9c24-14c6608488bd",
+  "ticket_state": "done",
+  "ticket_title": "Show the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-04T13:00:00Z",
+  "last_seen": "2026-09-24T13:00:00Z",
+  "occurrences": 4017,
+  "stage_key": "test-design",
+  "summary": "Run has been RUNNING for 1.1h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m37-144",
+  "ticket_id": "7c18e35a-2531-595b-9354-6ae0ff11b0f0",
+  "ticket_state": "done",
+  "ticket_title": "Make memory recall ranking",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-04T18:00:00Z",
+  "last_seen": "2026-09-24T18:00:00Z",
+  "occurrences": 4018,
+  "stage_key": "review",
+  "summary": "Stage 'review' was attempted 6 times with no orchestration run.",
+  "ticket_external_id": "lg-m48-155",
+  "ticket_id": "7ff24d9b-f406-53ed-a83e-61b9549e73ae",
+  "ticket_state": "done",
+  "ticket_title": "Split the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-04T23:00:00Z",
+  "last_seen": "2026-09-24T23:00:00Z",
+  "occurrences": 4019,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m49-156",
+  "ticket_id": "98c2a1f7-c8ec-5fdf-8eb4-d4f14dc686e4",
+  "ticket_state": "done",
+  "ticket_title": "Retry the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-05T04:00:00Z",
+  "last_seen": "2026-09-25T04:00:00Z",
+  "occurrences": 4020,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m1-162",
+  "ticket_id": "e93ecfa9-cc7d-5a74-981e-64f440aa03cb",
+  "ticket_state": "done",
+  "ticket_title": "Route initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-05T09:00:00Z",
+  "last_seen": "2026-09-25T09:00:00Z",
+  "occurrences": 4021,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m3-164",
+  "ticket_id": "c1134565-180c-59ac-86c1-c809c39639bc",
+  "ticket_state": "done",
+  "ticket_title": "Cache GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-05T14:00:00Z",
+  "last_seen": "2026-09-25T14:00:00Z",
+  "occurrences": 4022,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m7-168",
+  "ticket_id": "6a78e1d6-2ba9-54ed-8b6d-a55a0e5b105e",
+  "ticket_state": "done",
+  "ticket_title": "Cache the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-05T19:00:00Z",
+  "last_seen": "2026-09-25T19:00:00Z",
+  "occurrences": 4023,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m9-170",
+  "ticket_id": "e0da509d-603d-52dc-84a4-8f59174b09e3",
+  "ticket_state": "done",
+  "ticket_title": "Retry worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-06T00:00:00Z",
+  "last_seen": "2026-09-26T00:00:00Z",
+  "occurrences": 4024,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m10-171",
+  "ticket_id": "2fb9627c-4b5f-5f2a-9d90-8524643cc730",
+  "ticket_state": "done",
+  "ticket_title": "Split the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-06T05:00:00Z",
+  "last_seen": "2026-09-26T05:00:00Z",
+  "occurrences": 4025,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 4 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m12-173",
+  "ticket_id": "7534f2fe-5776-521f-ad64-37fad69b5aa5",
+  "ticket_state": "done",
+  "ticket_title": "Show gate outcomes on stage transitions",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-06T10:00:00Z",
+  "last_seen": "2026-09-26T10:00:00Z",
+  "occurrences": 4026,
+  "stage_key": "spec",
+  "summary": "Run has been RUNNING for 0.9h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m23-184",
+  "ticket_id": "81662794-b77f-5f56-87bf-fa22f6118b68",
+  "ticket_state": "done",
+  "ticket_title": "Add the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-06T15:00:00Z",
+  "last_seen": "2026-09-26T15:00:00Z",
+  "occurrences": 4027,
+  "stage_key": "plan",
+  "summary": "Run has been RUNNING for 1.0h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m32-193",
+  "ticket_id": "9065b947-52ab-5309-be85-bf0f3575f62e",
+  "ticket_state": "done",
+  "ticket_title": "Retry GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-06T20:00:00Z",
+  "last_seen": "2026-09-26T20:00:00Z",
+  "occurrences": 4028,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' was attempted 4 times with no orchestration run.",
+  "ticket_external_id": "lg-m44-205",
+  "ticket_id": "ba7c42bb-e628-5232-b1fc-15a84623df20",
+  "ticket_state": "done",
+  "ticket_title": "Make the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-07T01:00:00Z",
+  "last_seen": "2026-09-27T01:00:00Z",
+  "occurrences": 4029,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m45-206",
+  "ticket_id": "5c3736fc-87c7-56f3-bd14-c47160b09f4d",
+  "ticket_state": "done",
+  "ticket_title": "Fix the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-07T06:00:00Z",
+  "last_seen": "2026-09-27T06:00:00Z",
+  "occurrences": 4030,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m50-211",
+  "ticket_id": "e78b554f-dee3-5957-9b38-9113b3c88345",
+  "ticket_state": "done",
+  "ticket_title": "Cache the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-07T11:00:00Z",
+  "last_seen": "2026-09-27T11:00:00Z",
+  "occurrences": 4031,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m53-214",
+  "ticket_id": "0b81aeea-e57c-526b-97e2-4c0e4b27a840",
+  "ticket_state": "done",
+  "ticket_title": "Make the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-07T16:00:00Z",
+  "last_seen": "2026-09-27T16:00:00Z",
+  "occurrences": 4032,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m8-223",
+  "ticket_id": "32b1db72-6246-54bf-b0b6-d59013fbca55",
+  "ticket_state": "done",
+  "ticket_title": "Show worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-07T21:00:00Z",
+  "last_seen": "2026-09-27T21:00:00Z",
+  "occurrences": 4033,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m11-226",
+  "ticket_id": "3fa5388a-a5ae-52b2-a879-d8b59dc24a78",
+  "ticket_state": "done",
+  "ticket_title": "Cache branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-08T02:00:00Z",
+  "last_seen": "2026-09-28T02:00:00Z",
+  "occurrences": 4034,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m2-55",
+  "ticket_id": "b8514434-fd53-5745-96e4-7c170dd0014a",
+  "ticket_state": "done",
+  "ticket_title": "Cache the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-08T07:00:00Z",
+  "last_seen": "2026-09-28T07:00:00Z",
+  "occurrences": 4035,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m3-56",
+  "ticket_id": "8dc7b2d9-9bba-5673-a46c-42d19c1a1f6e",
+  "ticket_state": "done",
+  "ticket_title": "Surface the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-08T12:00:00Z",
+  "last_seen": "2026-09-28T12:00:00Z",
+  "occurrences": 4036,
+  "stage_key": "review",
+  "summary": "Run has been RUNNING for 1.0h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m8-61",
+  "ticket_id": "255ad082-19c6-53e2-bd1e-160c4522f449",
+  "ticket_state": "done",
+  "ticket_title": "Fix the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-08T17:00:00Z",
+  "last_seen": "2026-09-28T17:00:00Z",
+  "occurrences": 4037,
+  "stage_key": "implement",
+  "summary": "Run has been RUNNING for 0.7h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m18-71",
+  "ticket_id": "6569f242-eced-5de5-be1f-fd37f96e5387",
+  "ticket_state": "done",
+  "ticket_title": "Cache branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-08T22:00:00Z",
+  "last_seen": "2026-09-28T22:00:00Z",
+  "occurrences": 4038,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' was attempted 12 times with no orchestration run.",
+  "ticket_external_id": "lg-m21-74",
+  "ticket_id": "814cd55d-8e75-50c5-b7c2-e36719e63a5a",
+  "ticket_state": "done",
+  "ticket_title": "Fix stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-09T03:00:00Z",
+  "last_seen": "2026-09-29T03:00:00Z",
+  "occurrences": 4039,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m24-77",
+  "ticket_id": "9cbdab4f-3778-56fa-9754-7bb0290e8dbd",
+  "ticket_state": "done",
+  "ticket_title": "Show the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-09T08:00:00Z",
+  "last_seen": "2026-09-29T08:00:00Z",
+  "occurrences": 4040,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m26-79",
+  "ticket_id": "c1ad35b0-d994-5548-bfda-ac86dc9cf693",
+  "ticket_state": "done",
+  "ticket_title": "Split docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-09T13:00:00Z",
+  "last_seen": "2026-09-29T13:00:00Z",
+  "occurrences": 4041,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m28-81",
+  "ticket_id": "bd9fba61-e9d8-5aed-95f2-397418f5da1c",
+  "ticket_state": "done",
+  "ticket_title": "Route initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-09T18:00:00Z",
+  "last_seen": "2026-09-29T18:00:00Z",
+  "occurrences": 4042,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m37-90",
+  "ticket_id": "38d5a4d7-567b-592a-a9f0-e524b5ed2ce7",
+  "ticket_state": "done",
+  "ticket_title": "Retry docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-09T23:00:00Z",
+  "last_seen": "2026-09-29T23:00:00Z",
+  "occurrences": 4043,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m39-92",
+  "ticket_id": "89c70b74-fc6b-58bc-9115-7f7acfb7e27f",
+  "ticket_state": "done",
+  "ticket_title": "Retry the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-10T04:00:00Z",
+  "last_seen": "2026-09-30T04:00:00Z",
+  "occurrences": 4044,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 4 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m49-102",
+  "ticket_id": "80ff191f-f77c-51c0-bd82-5a57057b758a",
+  "ticket_state": "done",
+  "ticket_title": "Cache GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-10T09:00:00Z",
+  "last_seen": "2026-09-30T09:00:00Z",
+  "occurrences": 4045,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m54-107",
+  "ticket_id": "9b278b7b-0a5b-50a1-8ce9-f4837e907583",
+  "ticket_state": "done",
+  "ticket_title": "Surface stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-10T14:00:00Z",
+  "last_seen": "2026-09-30T14:00:00Z",
+  "occurrences": 4046,
+  "stage_key": "script_review",
+  "summary": "Run has been RUNNING for 1.1h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m2-109",
+  "ticket_id": "7a7a8ac8-e7a3-5aa7-a26a-a8250b44e97a",
+  "ticket_state": "done",
+  "ticket_title": "Show worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-10T19:00:00Z",
+  "last_seen": "2026-09-30T19:00:00Z",
+  "occurrences": 4047,
+  "stage_key": "test-design",
+  "summary": "Run has been RUNNING for 0.5h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m12-119",
+  "ticket_id": "8b65cab0-997d-5fe9-993a-f3edd6137699",
+  "ticket_state": "done",
+  "ticket_title": "Retry initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-11T00:00:00Z",
+  "last_seen": "2026-10-01T00:00:00Z",
+  "occurrences": 4048,
+  "stage_key": "review",
+  "summary": "Stage 'review' was attempted 7 times with no orchestration run.",
+  "ticket_external_id": "lg-m15-122",
+  "ticket_id": "e96c7f6c-bac5-5660-aca5-c376063cd94c",
+  "ticket_state": "done",
+  "ticket_title": "Fix the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-11T05:00:00Z",
+  "last_seen": "2026-10-01T05:00:00Z",
+  "occurrences": 4049,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m22-129",
+  "ticket_id": "7ff43984-00a0-5313-b919-776bf7c4c74b",
+  "ticket_state": "done",
+  "ticket_title": "Retry stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-11T10:00:00Z",
+  "last_seen": "2026-10-01T10:00:00Z",
+  "occurrences": 4050,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 6 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m32-139",
+  "ticket_id": "3781e465-8ed1-5f5c-9c24-14c6608488bd",
+  "ticket_state": "done",
+  "ticket_title": "Show the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-11T15:00:00Z",
+  "last_seen": "2026-10-01T15:00:00Z",
+  "occurrences": 4051,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m37-144",
+  "ticket_id": "7c18e35a-2531-595b-9354-6ae0ff11b0f0",
+  "ticket_state": "done",
+  "ticket_title": "Make memory recall ranking",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-11T20:00:00Z",
+  "last_seen": "2026-10-01T20:00:00Z",
+  "occurrences": 4052,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m48-155",
+  "ticket_id": "7ff24d9b-f406-53ed-a83e-61b9549e73ae",
+  "ticket_state": "done",
+  "ticket_title": "Split the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-12T01:00:00Z",
+  "last_seen": "2026-10-02T01:00:00Z",
+  "occurrences": 4053,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m49-156",
+  "ticket_id": "98c2a1f7-c8ec-5fdf-8eb4-d4f14dc686e4",
+  "ticket_state": "done",
+  "ticket_title": "Retry the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-12T06:00:00Z",
+  "last_seen": "2026-10-02T06:00:00Z",
+  "occurrences": 4054,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m1-162",
+  "ticket_id": "e93ecfa9-cc7d-5a74-981e-64f440aa03cb",
+  "ticket_state": "done",
+  "ticket_title": "Route initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-12T11:00:00Z",
+  "last_seen": "2026-10-02T11:00:00Z",
+  "occurrences": 4055,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m3-164",
+  "ticket_id": "c1134565-180c-59ac-86c1-c809c39639bc",
+  "ticket_state": "done",
+  "ticket_title": "Cache GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-12T16:00:00Z",
+  "last_seen": "2026-10-02T16:00:00Z",
+  "occurrences": 4056,
+  "stage_key": "spec",
+  "summary": "Run has been RUNNING for 0.7h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m7-168",
+  "ticket_id": "6a78e1d6-2ba9-54ed-8b6d-a55a0e5b105e",
+  "ticket_state": "done",
+  "ticket_title": "Cache the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-12T21:00:00Z",
+  "last_seen": "2026-10-02T21:00:00Z",
+  "occurrences": 4057,
+  "stage_key": "plan",
+  "summary": "Run has been RUNNING for 1.2h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m9-170",
+  "ticket_id": "e0da509d-603d-52dc-84a4-8f59174b09e3",
+  "ticket_state": "done",
+  "ticket_title": "Retry worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-13T02:00:00Z",
+  "last_seen": "2026-10-03T02:00:00Z",
+  "occurrences": 4058,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' was attempted 11 times with no orchestration run.",
+  "ticket_external_id": "lg-m10-171",
+  "ticket_id": "2fb9627c-4b5f-5f2a-9d90-8524643cc730",
+  "ticket_state": "done",
+  "ticket_title": "Split the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-13T07:00:00Z",
+  "last_seen": "2026-10-03T07:00:00Z",
+  "occurrences": 4059,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m12-173",
+  "ticket_id": "7534f2fe-5776-521f-ad64-37fad69b5aa5",
+  "ticket_state": "done",
+  "ticket_title": "Show gate outcomes on stage transitions",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-13T12:00:00Z",
+  "last_seen": "2026-10-03T12:00:00Z",
+  "occurrences": 4060,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 4 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m23-184",
+  "ticket_id": "81662794-b77f-5f56-87bf-fa22f6118b68",
+  "ticket_state": "done",
+  "ticket_title": "Add the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-13T17:00:00Z",
+  "last_seen": "2026-10-03T17:00:00Z",
+  "occurrences": 4061,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m32-193",
+  "ticket_id": "9065b947-52ab-5309-be85-bf0f3575f62e",
+  "ticket_state": "done",
+  "ticket_title": "Retry GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-13T22:00:00Z",
+  "last_seen": "2026-10-03T22:00:00Z",
+  "occurrences": 4062,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 4 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m44-205",
+  "ticket_id": "ba7c42bb-e628-5232-b1fc-15a84623df20",
+  "ticket_state": "done",
+  "ticket_title": "Make the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-14T03:00:00Z",
+  "last_seen": "2026-10-04T03:00:00Z",
+  "occurrences": 4063,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m45-206",
+  "ticket_id": "5c3736fc-87c7-56f3-bd14-c47160b09f4d",
+  "ticket_state": "done",
+  "ticket_title": "Fix the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-14T08:00:00Z",
+  "last_seen": "2026-10-04T08:00:00Z",
+  "occurrences": 4064,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m50-211",
+  "ticket_id": "e78b554f-dee3-5957-9b38-9113b3c88345",
+  "ticket_state": "done",
+  "ticket_title": "Cache the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-14T13:00:00Z",
+  "last_seen": "2026-10-04T13:00:00Z",
+  "occurrences": 4065,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m53-214",
+  "ticket_id": "0b81aeea-e57c-526b-97e2-4c0e4b27a840",
+  "ticket_state": "done",
+  "ticket_title": "Make the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-14T18:00:00Z",
+  "last_seen": "2026-10-04T18:00:00Z",
+  "occurrences": 4066,
+  "stage_key": "review",
+  "summary": "Run has been RUNNING for 1.1h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m8-223",
+  "ticket_id": "32b1db72-6246-54bf-b0b6-d59013fbca55",
+  "ticket_state": "done",
+  "ticket_title": "Show worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-14T23:00:00Z",
+  "last_seen": "2026-10-04T23:00:00Z",
+  "occurrences": 4067,
+  "stage_key": "implement",
+  "summary": "Run has been RUNNING for 0.7h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m11-226",
+  "ticket_id": "3fa5388a-a5ae-52b2-a879-d8b59dc24a78",
+  "ticket_state": "done",
+  "ticket_title": "Cache branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-15T04:00:00Z",
+  "last_seen": "2026-10-05T04:00:00Z",
+  "occurrences": 4068,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' was attempted 10 times with no orchestration run.",
+  "ticket_external_id": "lg-m2-55",
+  "ticket_id": "b8514434-fd53-5745-96e4-7c170dd0014a",
+  "ticket_state": "done",
+  "ticket_title": "Cache the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-15T09:00:00Z",
+  "last_seen": "2026-10-05T09:00:00Z",
+  "occurrences": 4069,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m3-56",
+  "ticket_id": "8dc7b2d9-9bba-5673-a46c-42d19c1a1f6e",
+  "ticket_state": "done",
+  "ticket_title": "Surface the rework ledger's loop cap",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-15T14:00:00Z",
+  "last_seen": "2026-10-05T14:00:00Z",
+  "occurrences": 4070,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 10 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m8-61",
+  "ticket_id": "255ad082-19c6-53e2-bd1e-160c4522f449",
+  "ticket_state": "done",
+  "ticket_title": "Fix the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-15T19:00:00Z",
+  "last_seen": "2026-10-05T19:00:00Z",
+  "occurrences": 4071,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m18-71",
+  "ticket_id": "6569f242-eced-5de5-be1f-fd37f96e5387",
+  "ticket_state": "done",
+  "ticket_title": "Cache branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-16T00:00:00Z",
+  "last_seen": "2026-10-06T00:00:00Z",
+  "occurrences": 4072,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 6 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m21-74",
+  "ticket_id": "814cd55d-8e75-50c5-b7c2-e36719e63a5a",
+  "ticket_state": "done",
+  "ticket_title": "Fix stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-16T05:00:00Z",
+  "last_seen": "2026-10-06T05:00:00Z",
+  "occurrences": 4073,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m24-77",
+  "ticket_id": "9cbdab4f-3778-56fa-9754-7bb0290e8dbd",
+  "ticket_state": "done",
+  "ticket_title": "Show the queue board's stalled lane",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-16T10:00:00Z",
+  "last_seen": "2026-10-06T10:00:00Z",
+  "occurrences": 4074,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m26-79",
+  "ticket_id": "c1ad35b0-d994-5548-bfda-ac86dc9cf693",
+  "ticket_state": "done",
+  "ticket_title": "Split docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "12",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-16T15:00:00Z",
+  "last_seen": "2026-10-06T15:00:00Z",
+  "occurrences": 4075,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 12 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m28-81",
+  "ticket_id": "bd9fba61-e9d8-5aed-95f2-397418f5da1c",
+  "ticket_state": "done",
+  "ticket_title": "Route initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-16T20:00:00Z",
+  "last_seen": "2026-10-06T20:00:00Z",
+  "occurrences": 4076,
+  "stage_key": "script_review",
+  "summary": "Run has been RUNNING for 0.8h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m37-90",
+  "ticket_id": "38d5a4d7-567b-592a-a9f0-e524b5ed2ce7",
+  "ticket_state": "done",
+  "ticket_title": "Retry docker capacity leases",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-17T01:00:00Z",
+  "last_seen": "2026-10-07T01:00:00Z",
+  "occurrences": 4077,
+  "stage_key": "test-design",
+  "summary": "Run has been RUNNING for 0.5h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m39-92",
+  "ticket_id": "89c70b74-fc6b-58bc-9115-7f7acfb7e27f",
+  "ticket_state": "done",
+  "ticket_title": "Retry the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-17T06:00:00Z",
+  "last_seen": "2026-10-07T06:00:00Z",
+  "occurrences": 4078,
+  "stage_key": "review",
+  "summary": "Stage 'review' was attempted 5 times with no orchestration run.",
+  "ticket_external_id": "lg-m49-102",
+  "ticket_id": "80ff191f-f77c-51c0-bd82-5a57057b758a",
+  "ticket_state": "done",
+  "ticket_title": "Cache GitHub issue two-way sync",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "4",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-17T11:00:00Z",
+  "last_seen": "2026-10-07T11:00:00Z",
+  "occurrences": 4079,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m54-107",
+  "ticket_id": "9b278b7b-0a5b-50a1-8ce9-f4837e907583",
+  "ticket_state": "done",
+  "ticket_title": "Surface stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-17T16:00:00Z",
+  "last_seen": "2026-10-07T16:00:00Z",
+  "occurrences": 4080,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m2-109",
+  "ticket_id": "7a7a8ac8-e7a3-5aa7-a26a-a8250b44e97a",
+  "ticket_state": "done",
+  "ticket_title": "Show worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-17T21:00:00Z",
+  "last_seen": "2026-10-07T21:00:00Z",
+  "occurrences": 4081,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 6 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m12-119",
+  "ticket_id": "8b65cab0-997d-5fe9-993a-f3edd6137699",
+  "ticket_state": "done",
+  "ticket_title": "Retry initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-18T02:00:00Z",
+  "last_seen": "2026-10-08T02:00:00Z",
+  "occurrences": 4082,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m15-122",
+  "ticket_id": "e96c7f6c-bac5-5660-aca5-c376063cd94c",
+  "ticket_state": "done",
+  "ticket_title": "Fix the run log's live tail",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-18T07:00:00Z",
+  "last_seen": "2026-10-08T07:00:00Z",
+  "occurrences": 4083,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m22-129",
+  "ticket_id": "7ff43984-00a0-5313-b919-776bf7c4c74b",
+  "ticket_state": "done",
+  "ticket_title": "Retry stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "6",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-18T12:00:00Z",
+  "last_seen": "2026-10-08T12:00:00Z",
+  "occurrences": 4084,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 6 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m32-139",
+  "ticket_id": "3781e465-8ed1-5f5c-9c24-14c6608488bd",
+  "ticket_state": "done",
+  "ticket_title": "Show the approval inbox for parked stages",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-18T17:00:00Z",
+  "last_seen": "2026-10-08T17:00:00Z",
+  "occurrences": 4085,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 5 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m13-66",
+  "ticket_id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+  "ticket_state": "in_progress",
+  "ticket_title": "Retry stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "10",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-18T22:00:00Z",
+  "last_seen": "2026-10-08T22:00:00Z",
+  "occurrences": 4086,
+  "stage_key": "spec",
+  "summary": "Run has been RUNNING for 1.0h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m50-103",
+  "ticket_id": "bb1e09fe-3cfc-5050-befe-9640ca2f2f62",
+  "ticket_state": "in_progress",
+  "ticket_title": "Retry initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stalled_run",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-19T03:00:00Z",
+  "last_seen": "2026-10-09T03:00:00Z",
+  "occurrences": 4087,
+  "stage_key": "plan",
+  "summary": "Run has been RUNNING for 1.1h, past the 0.3h bound for this stage.",
+  "ticket_external_id": "lg-m26-133",
+  "ticket_id": "22c9e0fd-e1bd-5e29-ae0f-1e161f5f3467",
+  "ticket_state": "in_progress",
+  "ticket_title": "Add worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unbudgeted_repeat",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-19T08:00:00Z",
+  "last_seen": "2026-10-09T08:00:00Z",
+  "occurrences": 4088,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' was attempted 11 times with no orchestration run.",
+  "ticket_external_id": "lg-m47-154",
+  "ticket_id": "57fe6c45-c2c2-542f-b08c-64db6cd247d6",
+  "ticket_state": "in_progress",
+  "ticket_title": "Split branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "unsettled_stage",
+  "evidence": {
+   "attempts": "5",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-19T13:00:00Z",
+  "last_seen": "2026-10-09T13:00:00Z",
+  "occurrences": 4089,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' is blocked, but its last run recorded success.",
+  "ticket_external_id": "lg-m48-209",
+  "ticket_id": "df5070f6-73d8-5e74-9fd7-825f8f0bf48b",
+  "ticket_state": "in_progress",
+  "ticket_title": "Retry branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "9",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-19T18:00:00Z",
+  "last_seen": "2026-10-09T18:00:00Z",
+  "occurrences": 4090,
+  "stage_key": "review",
+  "summary": "Stage 'review' ran 9 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m13-66",
+  "ticket_id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+  "ticket_state": "in_progress",
+  "ticket_title": "Retry stage timeout budgets",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "7",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-19T23:00:00Z",
+  "last_seen": "2026-10-09T23:00:00Z",
+  "occurrences": 4091,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' ran 7 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m50-103",
+  "ticket_id": "bb1e09fe-3cfc-5050-befe-9640ca2f2f62",
+  "ticket_state": "in_progress",
+  "ticket_title": "Retry initiative progress rollup",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "11",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-20T04:00:00Z",
+  "last_seen": "2026-10-10T04:00:00Z",
+  "occurrences": 4092,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' ran 11 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m26-133",
+  "ticket_id": "22c9e0fd-e1bd-5e29-ae0f-1e161f5f3467",
+  "ticket_state": "in_progress",
+  "ticket_title": "Add worktree isolation for chat turns",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "stage_thrash",
+  "evidence": {
+   "attempts": "8",
+   "threshold": "4"
+  },
+  "first_seen": "2026-09-20T09:00:00Z",
+  "last_seen": "2026-10-10T09:00:00Z",
+  "occurrences": 4093,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' ran 8 times in one orchestration run (baseline 1.58 attempts per stage).",
+  "ticket_external_id": "lg-m47-154",
+  "ticket_id": "57fe6c45-c2c2-542f-b08c-64db6cd247d6",
+  "ticket_state": "in_progress",
+  "ticket_title": "Split branch cleanup after a squash merge",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loregarden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "loremaker"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ }
+]

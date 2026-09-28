@@ -14,20 +14,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # to reach the live database was to `cd` into the main checkout, which silently ran
 # whatever branch that checkout happened to be on — and a build that predates a
 # migration writes rows the current code cannot spell.
-resolve_primary_checkout() {
-  local common
-  common="$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null)" || return 1
-  case "$common" in
-    /*) ;;
-    *) common="$ROOT/$common" ;;
-  esac
-  local primary
-  primary="$(cd "$common/.." 2>/dev/null && pwd)" || return 1
-  # Only trust it if it looks like this project and actually holds the database.
-  [ -d "$primary/agent_context" ] && [ -d "$primary/server" ] || return 1
-  [ -f "$primary/data/loregarden.db" ] || return 1
-  printf '%s' "$primary"
-}
+# shellcheck source=lib/primary-checkout.sh
+source "$ROOT/scripts/lib/primary-checkout.sh"
 
 if [ -z "${LOREGARDEN_REPO_ROOT:-}" ]; then
   if primary="$(resolve_primary_checkout)"; then
