@@ -55,13 +55,56 @@ test("an empty list says what an initiative is and offers to create one", async 
   const user = userEvent.setup();
   renderPage();
 
-  await user.click(await screen.findByRole("button", { name: "Create the first initiative" }));
+  await user.click(await screen.findByRole("button", { name: "create an empty one" }));
   await user.type(screen.getByRole("textbox", { name: "Title" }), "  Q4 goal ");
   await user.click(screen.getByRole("button", { name: "Create initiative" }));
 
   await waitFor(() =>
     expect(mockApi.createInitiative).toHaveBeenCalledWith({ title: "Q4 goal", description: "" }),
   );
+  expect(mockApi.setMilestoneInitiative).not.toHaveBeenCalled();
+});
+
+test("milestones with no initiative are listed by workspace, finished ones hidden", async () => {
+  mockApi.initiatives.mockResolvedValue([]);
+  mockApi.attachableMilestones.mockResolvedValue([
+    milestone({ id: "a", title: "Open loregarden work", state: "in_progress" }),
+    milestone({ id: "b", title: "Open blobert work", state: "backlog", workspace_slug: "blobert" }),
+    milestone({ id: "c", title: "Finished work", state: "done" }),
+  ]);
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(await screen.findByRole("heading", { name: "blobert" })).toBeInTheDocument();
+  expect(screen.getByText("Open loregarden work")).toBeInTheDocument();
+  expect(screen.queryByText("Finished work")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("checkbox", { name: /Show finished/ }));
+
+  expect(screen.getByText("Finished work")).toBeInTheDocument();
+});
+
+test("ticked milestones are attached to the initiative created from them", async () => {
+  mockApi.initiatives.mockResolvedValue([]);
+  mockApi.attachableMilestones.mockResolvedValue([
+    milestone({ id: "a", title: "Server half", state: "in_progress" }),
+    milestone({ id: "b", title: "Client half", state: "backlog", workspace_slug: "blobert" }),
+  ]);
+  mockApi.createInitiative.mockResolvedValue({ id: "new-init" } as never);
+  mockApi.setMilestoneInitiative.mockResolvedValue({} as never);
+  const user = userEvent.setup();
+  renderPage();
+
+  await user.click(await screen.findByRole("checkbox", { name: /Server half/ }));
+  await user.click(screen.getByRole("checkbox", { name: /Client half/ }));
+  await user.click(screen.getByRole("button", { name: "Group 2 into initiative" }));
+  expect(screen.getByText("Attaches 2 milestones")).toBeInTheDocument();
+  await user.type(screen.getByRole("textbox", { name: "Title" }), "Auth");
+  await user.click(screen.getByRole("button", { name: "Create initiative" }));
+
+  await waitFor(() => expect(mockApi.setMilestoneInitiative).toHaveBeenCalledTimes(2));
+  expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("a", "new-init");
+  expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("b", "new-init");
 });
 
 test("an initiative shows its milestones across workspaces with progress", async () => {

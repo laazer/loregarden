@@ -48,6 +48,7 @@ function graph(overrides: Partial<KnowledgeGraph> = {}): KnowledgeGraph {
         created_at: "2026-09-01T00:00:00",
       },
     ],
+    inferred: [],
     counts: { entities: nodes.length, links: 1 },
     type_counts: { learning: nodes.length },
     truncated: false,
@@ -131,7 +132,7 @@ it("draws the records, marks the discredited one, and states the legend", async 
   expect(screen.getByRole("button", { name: /Record n2 .*discredited/ })).toHaveClass(
     "mm-node--discredited",
   );
-  expect(screen.getByText(/2 records · 1 links/)).toBeInTheDocument();
+  expect(screen.getByText(/2 records · 1 recorded links · 0 groups/)).toBeInTheDocument();
   // Position is said in words to mean only "linked", never "similar".
   expect(screen.getByLabelText("Legend")).toHaveTextContent(/distance is not similarity/);
 });

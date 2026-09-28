@@ -1,0 +1,247 @@
+/* Reader dialog — above every other modal, since it opens from inside them
+   (an approval card in the inbox, a finding in the run log). Toasts stay on top. */
+.modal-overlay.reader-overlay {
+  z-index: 2000;
+}
+
+.modal-panel.reader-panel {
+  z-index: 2001;
+  width: min(920px, calc(100vw - 32px));
+  height: min(90vh, 1100px);
+  max-height: min(90vh, 1100px);
+  overflow: hidden;
+}
+
+.reader-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px 14px 28px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.reader-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.reader-subtitle {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.reader-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px 40px;
+}
+
+.reader-measure {
+  max-width: 76ch;
+  margin: 0 auto;
+}
+
+/* Reading size. The inline surfaces keep 12px for a glance; here the whole
+   point is the long read, so the body steps up and the lines open out. */
+.reader-measure .markdown-preview {
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+.reader-measure .markdown-preview pre code {
+  font-size: 12.5px;
+}
+
+.reader-measure .sc-facts {
+  font-size: 13px;
+}
+
+.reader-source {
+  font-size: 12.5px;
+  max-height: none;
+}
+
+/* ── StructuredContent ──────────────────────────────────────────────── */
+
+.sc-root,
+.sc-record {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.sc-fact {
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  min-width: 0;
+}
+
+.sc-fact dt {
+  font-size: 10.5px;
+  color: var(--txl);
+  margin-bottom: 2px;
+}
+
+.sc-fact dd {
+  margin: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.sc-section {
+  min-width: 0;
+}
+
+.sc-heading {
+  margin: 0 0 6px;
+  font-family: var(--dp);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+h3.sc-heading {
+  font-size: 1.05em;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--bd);
+}
+
+h4.sc-heading {
+  font-size: 0.95em;
+  color: var(--txm);
+}
+
+.sc-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.sc-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-card {
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg1);
+  min-width: 0;
+}
+
+.sc-card-label {
+  font-weight: 600;
+  color: var(--tx);
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.sc-scalar {
+  color: var(--tx);
+}
+
+.sc-raw {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--bg2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--tx);
+}
+
+.sc-empty {
+  margin: 0;
+  color: var(--txl);
+}
+
+/* ── "Open" affordance on long inline markdown ─────────────────────── */
+
+.md-expandable {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.md-open-btn {
+  align-self: flex-end;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--bd2);
+  background: var(--bg3);
+  color: var(--txm);
+  font-family: var(--ui);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.md-open-btn:hover,
+.md-open-btn:focus-visible {
+  color: var(--tx);
+  border-color: var(--ac);
+}
+
+@media (max-width: 640px) {
+  .reader-header {
+    padding: 14px 14px 10px 16px;
+  }
+
+  .reader-body {
+    padding: 16px 16px 32px;
+  }
+
+  .reader-measure .markdown-preview {
+    font-size: 14px;
+  }
+}
+
+/* An artifact expanded inline in the Artifacts tab: formatted, bounded, with
+   the reader one click away for anything longer than the box. */
+.artifact-body {
+  max-height: 460px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--bg2);
+}

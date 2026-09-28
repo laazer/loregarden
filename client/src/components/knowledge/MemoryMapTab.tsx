@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "../../api/client";
@@ -7,6 +7,7 @@ import type { KnowledgeGraph, NodeType } from "../../api/memoryApi";
 import { NODE_TYPES } from "../../api/memoryApi";
 import { memoryNodeIdFromPath, memoryPath } from "../../lib/appNavigation";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
+import { inferredEdges } from "../../lib/memoryInferred";
 import { formatLocalTimestamp } from "../../lib/timestamps";
 import { describeError, pushToast } from "../../state/toastStore";
 import { PageTopbar } from "../TopbarPageSlot";
@@ -120,6 +121,8 @@ function Records({
   onSelect: (nodeId: string) => void;
   onClearFilter: () => void;
 }) {
+  // Memoised: a fresh array each render would re-run the map's force layout.
+  const inferred = useMemo(() => inferredEdges(graph.inferred), [graph.inferred]);
   if (!graph.configured) {
     return (
       <div className="kb-state" role="status">
@@ -163,6 +166,7 @@ function Records({
     <MemoryMap
       nodes={graph.nodes}
       relations={graph.relations}
+      inferred={inferred}
       selectedId={selectedId}
       onSelect={onSelect}
     />
@@ -221,6 +225,8 @@ export function MemoryMapTab({ slug }: { slug: string }) {
         key={selectedId}
         nodeId={selectedId}
         workspaceSlug={slug}
+        groups={graph.data?.inferred ?? []}
+        nodes={records}
         onSelect={onSelect}
         onClose={() => navigate(memoryPath("map"))}
       />
@@ -230,6 +236,7 @@ export function MemoryMapTab({ slug }: { slug: string }) {
       <MapOverview
         nodes={records}
         relations={graph.data.relations}
+        inferred={graph.data.inferred}
         truncated={graph.data.truncated}
         onSelect={onSelect}
       />
@@ -273,7 +280,7 @@ export function MemoryMapTab({ slug }: { slug: string }) {
       <PageTopbar title="Memory">
         <span className="kb-counts" aria-live="polite">
           {graph.data ? (
-            `${graph.data.counts.entities} records · ${graph.data.counts.links} links`
+            `${graph.data.counts.entities} records · ${graph.data.counts.links} recorded links · ${graph.data.inferred.length} groups`
           ) : (
             <span className="kb-count-skeleton" aria-label="Loading counts" />
           )}

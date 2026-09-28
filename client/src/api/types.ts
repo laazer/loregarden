@@ -924,6 +924,11 @@ export interface MonitorFinding {
   occurrences: number;
   first_seen: string | null;
   last_seen: string | null;
+  /** The ticket the finding is about; blank/null for a workspace-scoped finding. */
+  ticket_title: string;
+  ticket_external_id: string;
+  ticket_state: TicketState | null;
+  workspace_slug: string;
 }
 
 /**

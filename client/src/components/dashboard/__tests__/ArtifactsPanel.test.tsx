@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { api } from "../../../api/client";
+import { useReaderStore } from "../../../state/readerStore";
 import { ArtifactsPanel } from "../ArtifactsPanel";
 
 jest.mock("../../../api/client");
@@ -63,7 +64,7 @@ it("lists artifacts newest-first with kind filter", async () => {
   expect(screen.queryByText("gate_runner.py")).not.toBeInTheDocument();
 });
 
-it("expands content JSON on click", async () => {
+it("expands content as a readable document, not a JSON dump", async () => {
   mockApi.ticketArtifacts.mockResolvedValue({
     total: 1,
     items: [
@@ -85,8 +86,35 @@ it("expands content JSON on click", async () => {
   expect(await screen.findByText(/1 artifact · live/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /Plan/ }));
-  await waitFor(() => {
-    expect(screen.getByText(/"note": "local model dump"/)).toBeInTheDocument();
+  expect(await screen.findByText("local model dump")).toBeInTheDocument();
+  expect(screen.queryByText(/"note":/)).not.toBeInTheDocument();
+});
+
+it("opens an artifact in the reader", async () => {
+  mockApi.ticketArtifacts.mockResolvedValue({
+    total: 1,
+    items: [
+      {
+        id: "a1",
+        kind: "review",
+        title: "Architecture review",
+        run_id: null,
+        evidence_kind: "",
+        commit_sha: "",
+        created_at: "2026-07-28T11:55:58Z",
+        content_bytes: 40,
+        content: { verdict: "pass", summary: "Looks right." },
+      },
+    ],
+  });
+
+  renderPanel(true);
+  fireEvent.click(await screen.findByRole("button", { name: /Architecture review/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Open ↗" }));
+
+  expect(useReaderStore.getState().document).toMatchObject({
+    title: "Architecture review",
+    content: { verdict: "pass", summary: "Looks right." },
   });
 });
 

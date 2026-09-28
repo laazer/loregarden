@@ -164,7 +164,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0144_github_sync_settings",
     "0145_github_push_on_edit",
     "0146_instance_templates",
-    "0147_chat_message_attachments",
+    "0147_ux_purpose_in_design_lanes",
+    "0148_chat_message_attachments",
 )
 
 

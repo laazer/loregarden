@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { CreateInitiativeForm } from "../components/initiatives/CreateInitiativeForm";
 import { InitiativeCard } from "../components/initiatives/InitiativeCard";
+import { UnassignedMilestones } from "../components/initiatives/UnassignedMilestones";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/Initiatives.css";
@@ -19,6 +20,7 @@ export function InitiativesPage() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
 
   const initiatives = useQuery({
     queryKey: INITIATIVES_KEY,
@@ -40,11 +42,29 @@ export function InitiativesPage() {
 
   const create = useMutation({
     meta: { errorTitle: "Create initiative" },
-    mutationFn: (draft: { title: string; description: string }) => api.createInitiative(draft),
+    // Attach sequentially: each is a PATCH that re-derives the parent's rollup,
+    // and SQLite serialises the writes anyway. A failure part-way leaves the
+    // initiative with the milestones attached so far, and the error toast (via
+    // `meta.errorTitle`) says which one stopped it.
+    mutationFn: async (draft: { title: string; description: string }) => {
+      const created = await api.createInitiative(draft);
+      for (const milestoneId of picked) {
+        const milestone = attachable.data?.find((m) => m.id === milestoneId);
+        try {
+          await api.setMilestoneInitiative(milestoneId, created.id);
+        } catch (error) {
+          throw new Error(
+            `Created “${draft.title}”, but attaching ${milestone?.external_id ?? milestoneId} failed: ${describeError(error)}`,
+          );
+        }
+      }
+      return created;
+    },
     onSuccess: () => {
       setCreating(false);
-      refresh();
+      setPicked(new Set());
     },
+    onSettled: refresh,
   });
 
   const reparent = useMutation({
@@ -85,6 +105,7 @@ export function InitiativesPage() {
 
       {creating && (
         <CreateInitiativeForm
+          milestones={(attachable.data ?? []).filter((m) => picked.has(m.id))}
           isSaving={create.isPending}
           onCreate={(draft) => create.mutateAsync(draft)}
           onCancel={() => setCreating(false)}
@@ -106,17 +127,14 @@ export function InitiativesPage() {
         </div>
       ) : list.length === 0 ? (
         !creating && (
-          <div className="queue-page-empty">
-            <div>
-              <p>
-                No initiatives yet. An initiative groups milestones from any workspace under one
-                goal and rolls up their progress.
-              </p>
-              <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
-                Create the first initiative
-              </button>
-            </div>
-          </div>
+          <p className="initiative-intro">
+            No initiatives yet. An initiative is one goal that spans workspaces — its milestones can live in any repo,
+            and their progress rolls up here. Start from the milestones below, or{" "}
+            <button type="button" className="initiative-link-btn" onClick={() => setCreating(true)}>
+              create an empty one
+            </button>
+            .
+          </p>
         )
       ) : (
         list.map((initiative) => (
@@ -130,6 +148,33 @@ export function InitiativesPage() {
             onDelete={() => remove.mutate(initiative.id)}
           />
         ))
+      )}
+
+      {attachable.isError ? (
+        <p className="initiative-hint" role="alert">
+          Milestones could not be loaded: {describeError(attachable.error)}{" "}
+          <button type="button" className="initiative-link-btn" onClick={() => void attachable.refetch()}>
+            Retry
+          </button>
+        </p>
+      ) : attachable.isPending ? (
+        <div className="initiative-skeleton" aria-busy="true" aria-label="Loading milestones" />
+      ) : (
+        <UnassignedMilestones
+          milestones={attachable.data}
+          selected={picked}
+          disabled={create.isPending || busyId !== null}
+          onToggle={(id) =>
+            setPicked((current) => {
+              const next = new Set(current);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          // The form's title field autofocuses on mount, which scrolls it into view.
+          onGroup={() => setCreating(true)}
+        />
       )}
     </div>
   );

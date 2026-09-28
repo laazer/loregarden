@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
 import type { TicketArtifactItem } from "../../api/types";
+import { openReader } from "../../state/readerStore";
+import { StructuredContent } from "../reader/StructuredContent";
 
 /**
  * Shared by header + every row. Time is 24h (no AM/PM) so it fits;
@@ -57,14 +59,6 @@ function ArtifactRow({
   onToggle: () => void;
   onOpenRunLog?: (runId: string) => void;
 }) {
-  const preview = useMemo(() => {
-    try {
-      return JSON.stringify(item.content, null, 2);
-    } catch {
-      return String(item.content);
-    }
-  }, [item.content]);
-
   return (
     <li style={{ paddingTop: 6 }}>
       <button
@@ -126,26 +120,24 @@ function ArtifactRow({
             ) : null}
             {item.evidence_kind ? <span>evidence {item.evidence_kind}</span> : null}
             {item.commit_sha ? <span>sha {item.commit_sha.slice(0, 8)}</span> : null}
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: 10.5, padding: "2px 8px", marginLeft: "auto" }}
+              onClick={() =>
+                openReader({
+                  title: item.title || item.kind,
+                  subtitle: `${item.kind} · ${formatWhen(item.created_at)} · ${formatBytes(item.content_bytes)}`,
+                  content: item.content,
+                })
+              }
+            >
+              Open ↗
+            </button>
           </div>
-          <pre
-            style={{
-              margin: 0,
-              padding: 12,
-              borderRadius: 6,
-              background: "var(--bg2, rgba(0,0,0,.2))",
-              border: "1px solid var(--bd)",
-              fontFamily: "var(--mono)",
-              fontSize: 11.5,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 360,
-              overflow: "auto",
-              color: "var(--tx)",
-            }}
-          >
-            {preview}
-          </pre>
+          <div className="artifact-body">
+            <StructuredContent value={item.content} />
+          </div>
         </div>
       )}
     </li>

@@ -150,6 +150,7 @@ from loregarden.db.migrations_ticket_studio import (
 from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
 from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
+from loregarden.db.migrations_ux_purpose import m_ux_purpose_in_design_lanes
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
 from loregarden.db.migrations_views import (
     m_sidebar_entry_pinned,
@@ -1413,7 +1414,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0144_github_sync_settings", m_github_sync_settings),
     ("0145_github_push_on_edit", m_github_push_on_edit),
     ("0146_instance_templates", m_instance_templates),
-    ("0147_chat_message_attachments", m_chat_message_attachments),
+    ("0147_ux_purpose_in_design_lanes", m_ux_purpose_in_design_lanes),
+    ("0148_chat_message_attachments", m_chat_message_attachments),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

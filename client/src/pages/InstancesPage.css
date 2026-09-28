@@ -182,3 +182,186 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* ── Layout ─────────────────────────────────────────────────────────────
+   What is running and the launch form side by side on a wide screen, so the
+   page opens on the two things people come here for; setup sits below as one
+   folded row per workspace. The form keeps a form's width instead of
+   stretching its selects across 1400px. */
+.instances-page-body {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.instances-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .instances-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.instances-running,
+.instances-launch {
+  padding: 16px;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg1);
+}
+
+.instances-running-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.instances-running-head h2 {
+  margin: 0;
+}
+
+.instances-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--txl);
+  margin-left: 4px;
+}
+
+.instances-running-head .instances-filters {
+  grid-template-columns: minmax(140px, 200px) minmax(120px, 160px);
+  gap: 8px;
+}
+
+.instances-page-body h2 + .instances-meta,
+.instances-launch h2 + .instances-meta {
+  margin: -6px 0 4px;
+}
+
+.instances-running .local-instances-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.instances-running .local-instances-row {
+  background: var(--bg2);
+  border-radius: 10px;
+}
+
+.instances-setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.instances-setup {
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg1);
+}
+
+.instances-setup summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.instances-setup summary::-webkit-details-marker {
+  display: none;
+}
+
+.instances-setup summary::before {
+  content: "▸";
+  color: var(--txl);
+  font-size: 11px;
+  margin-right: -4px;
+}
+
+.instances-setup details[open] > summary::before {
+  content: "▾";
+}
+
+.instances-setup summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+
+.instances-setup-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--tx);
+}
+
+.instances-setup-path {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--txl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instances-setup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.instances-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+  white-space: nowrap;
+}
+
+.instances-chip--ok {
+  color: var(--grl);
+  border-color: rgba(53, 196, 106, 0.4);
+}
+
+.instances-chip--warn {
+  color: var(--aml);
+  border-color: rgba(229, 167, 44, 0.5);
+}
+
+.instances-chip--muted {
+  color: var(--txl);
+}
+
+.instances-setup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.instances-running .local-instances-row a {
+  color: var(--ac2);
+  font-family: var(--mono);
+  font-size: 12px;
+}

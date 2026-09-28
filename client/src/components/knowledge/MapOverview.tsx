@@ -7,7 +7,8 @@
  * Contradictions come first because they are the ones a person should act on.
  */
 
-import type { GraphNode, GraphRelation } from "../../api/memoryApi";
+import type { GraphNode, GraphRelation, InferredGroup } from "../../api/memoryApi";
+import { INFERRED_KIND_LABELS, inferredEdges, recordTitle } from "../../lib/memoryInferred";
 import { graphShape } from "../../lib/memoryMapLayout";
 
 const LIST_LIMIT = 5;
@@ -22,7 +23,7 @@ function RecordButton({
   if (!node) return null;
   return (
     <button type="button" className="kb-link-button" onClick={() => onSelect(node.id)}>
-      {node.title}
+      {recordTitle(node)}
     </button>
   );
 }
@@ -30,15 +31,20 @@ function RecordButton({
 export function MapOverview({
   nodes,
   relations,
+  inferred,
   truncated,
   onSelect,
 }: {
   nodes: GraphNode[];
   relations: GraphRelation[];
+  inferred: InferredGroup[];
   truncated: boolean;
   onSelect: (nodeId: string) => void;
 }) {
-  const shape = graphShape(nodes, relations);
+  // Recorded and inferred together: a record grouped with others by its ticket
+  // is not "unlinked" to anyone reading the map, whatever the edge table says.
+  const shape = graphShape(nodes, [...relations, ...inferredEdges(inferred)]);
+  const groups = [...inferred].sort((a, b) => b.node_ids.length - a.node_ids.length);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const contradictions = relations.filter((edge) => edge.relation_type === "contradicts");
   const busiest = shape.mostConnected.slice(0, LIST_LIMIT);
@@ -52,8 +58,12 @@ export function MapOverview({
           <dd>{nodes.length}</dd>
         </div>
         <div>
-          <dt>Links</dt>
+          <dt>Recorded links</dt>
           <dd>{relations.length}</dd>
+        </div>
+        <div>
+          <dt>Groups</dt>
+          <dd>{inferred.length}</dd>
         </div>
         <div>
           <dt>Clusters</dt>
@@ -69,6 +79,37 @@ export function MapOverview({
           Showing the newest {nodes.length} records. Filter by type or text to see others.
         </p>
       )}
+
+      <section aria-labelledby="mm-groups">
+        <h3 id="mm-groups" className="kb-section-title">
+          Groups
+        </h3>
+        {groups.length === 0 ? (
+          <p className="kb-muted">No two records here share a ticket, milestone or specific tag.</p>
+        ) : (
+          <ul className="mm-list mm-groups">
+            {groups.slice(0, LIST_LIMIT * 2).map((group) => (
+              <li key={`${group.kind}:${group.key}`} className="mm-group">
+                <details>
+                  <summary>
+                    <span>{group.label}</span>
+                    <span className="mm-group-kind">
+                      {INFERRED_KIND_LABELS[group.kind].toLowerCase()} · {group.node_ids.length}
+                    </span>
+                  </summary>
+                  <ul>
+                    {group.node_ids.map((id) => (
+                      <li key={id}>
+                        <RecordButton node={byId.get(id)} onSelect={onSelect} />
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section aria-labelledby="mm-contradictions">
         <h3 id="mm-contradictions" className="kb-section-title">
@@ -96,7 +137,7 @@ export function MapOverview({
           Most connected
         </h3>
         {busiest.length === 0 ? (
-          <p className="kb-muted">No record has a recorded link yet.</p>
+          <p className="kb-muted">No record is linked or grouped with another yet.</p>
         ) : (
           <ol className="mm-list">
             {busiest.map((entry) => (
@@ -109,7 +150,7 @@ export function MapOverview({
                     aria-hidden
                   />
                   <span>
-                    {entry.degree} {entry.degree === 1 ? "link" : "links"}
+                    {entry.degree} {entry.degree === 1 ? "connection" : "connections"}
                   </span>
                 </span>
               </li>
@@ -123,7 +164,7 @@ export function MapOverview({
           Unlinked
         </h3>
         {shape.unlinked.length === 0 ? (
-          <p className="kb-muted">Every record here is linked to another.</p>
+          <p className="kb-muted">Every record here is linked or grouped with another.</p>
         ) : (
           <>
             <p className="kb-muted">
