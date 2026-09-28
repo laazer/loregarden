@@ -20,18 +20,22 @@ store, however it got its path, may address the real vault or the iCloud root.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.services.memory_config import read_local_memory_config
-from loregarden.services.path_resolve import detect_icloud_root, expand_path
+from loregarden.services.path_resolve import detect_icloud_root, expand_path, resolve_sqlite_path
 
 #: Config keys naming a root the suite must never write inside.
 FORBIDDEN_CONFIG_KEYS = ("obsidian_vault_dir", "icloud_root")
+#: Where an explicit live graph URL can come from besides `memory.local.json`.
+#: `Settings` reads it under the `LOREGARDEN_` prefix.
+MEMORY_SQLITE_URL_ENV = "LOREGARDEN_MEMORY_SQLITE_URL"
 
 
 def forbidden_memory_roots() -> tuple[Path, ...]:
-    """The real vault and iCloud root, read from disk and from autodetection.
+    """The real vault, iCloud root and live graph dir, from disk, env and autodetection.
 
     Read through `read_local_memory_config`, which reads
     `data/memory.local.json`, rather than through `settings` — `settings` is what
@@ -49,11 +53,28 @@ def forbidden_memory_roots() -> tuple[Path, ...]:
         for key in FORBIDDEN_CONFIG_KEYS
         if (raw := (local.get(key) or "").strip())
     ]
+    roots.extend(_live_graph_roots(local))
     detected = detect_icloud_root()
     if detected:
         roots.append(detected)
     # dict.fromkeys rather than a set: order is what the failure message reads.
     return tuple(dict.fromkeys(roots))
+
+
+def _live_graph_roots(local: dict[str, str]) -> list[Path]:
+    """The directory holding the live memory graphs, when set explicitly.
+
+    With `memory_sqlite_url` empty the graph lives under the vault, which the
+    vault root already covers. Set, it can sit anywhere — and the vault/iCloud
+    roots would then forbid nothing that reaches it. Per-workspace graphs are
+    `<base.parent>/<slug>/<base.name>`, so the root is `base.parent`, not the
+    file. The environment is read directly for the same reason the local config
+    is: `settings` has already been redirected by the time a test runs.
+    """
+    urls = (local.get("memory_sqlite_url") or "", os.environ.get(MEMORY_SQLITE_URL_ENV, ""))
+    return [
+        resolve_sqlite_path(url, settings.repo_root).parent for raw in urls if (url := raw.strip())
+    ]
 
 
 def reject_if_forbidden(label: str, path: Path | str, roots: tuple[Path, ...]) -> None:
