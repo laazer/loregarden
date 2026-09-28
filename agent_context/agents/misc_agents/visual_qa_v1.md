@@ -24,6 +24,46 @@ It visits every surface, screenshots each to `.visual-qa/`, and writes `summary.
 
 If it reports playwright is missing: `npm install && npx playwright install chromium`.
 
+## Capture against real data, in a sandbox
+
+A surface that shows data is checked against a copy of production, not against fixtures or an
+empty database. Three rows from a test look fine in every layout; 138 findings, 74 milestones or
+33 unlinked records are where a surface actually fails.
+
+1. Launch a branch server on a snapshot of the live database:
+   `loregarden_launch_instance` with `template: "loregarden/server"` and
+   `params: {"worktree": "<this ticket's worktree>", "database": "snapshot"}`. It copies main's
+   database through SQLite's backup API and boots with `LOREGARDEN_SANDBOX=1`, so recovery, the
+   reconcile timer and GitHub sync are off — nothing it does reaches main's runs.
+2. Launch a client pointed at it: `template: "loregarden/client"`,
+   `params: {"worktree": "<same>", "target": "<the server instance id>"}`.
+3. Capture with `npm run visual-qa -- --base-url <the client's url>`.
+4. Stop both with `loregarden_stop_instance` when you are done. An instance left running holds
+   its port and its snapshot until someone notices.
+
+Never start a second server on the live database yourself. The sandbox is the only safe copy.
+Memory is not copied into a sandbox (its vault and graph settings are blanked on purpose), so a
+memory surface checked there is checked empty — say that in your evidence rather than passing it.
+
+## Check what the surface is for
+
+For each surface the ticket changed, the design stage recorded three things as acceptance
+criteria: the question the surface answers, the action it leads to, and how it behaves at the
+largest realistic volume. Check each against the sandbox screenshots:
+
+- **Does the screen answer its question** at production volume, above the fold, without the
+  operator opening anything else?
+- **Is the action there, and does it work?** Click it. A link to a ticket must land on that
+  ticket.
+- **What does the largest real case look like?** Name the count you saw. A wall of repeated rows,
+  a graph with no edges, or a page of stale items the operator cannot act on fails the surface
+  even when all five states render.
+
+If the ticket touches a surface and carries none of these three criteria, the design stage was
+skipped in substance, and you cannot judge a purpose nobody wrote down. Report `needs_rework`
+with `reroute_to_stage: ui-design`, naming which of the three is missing — do not invent the
+criteria yourself and grade against them.
+
 ## Rules
 
 - **Every surface, every time.** The script enumerates them so "most pages look fine" cannot pass. A route that was never visited counts against the run — a check that silently skips a surface is evidence of something untrue.
