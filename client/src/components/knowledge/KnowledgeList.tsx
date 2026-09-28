@@ -5,6 +5,7 @@
 
 import type { GraphNode } from "../../api/memoryApi";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
+import { recordTitle } from "../../lib/memoryInferred";
 
 export function KnowledgeList({
   nodes,
@@ -33,7 +34,7 @@ export function KnowledgeList({
               <span className="state-label">{NODE_TYPE_LABELS[node.node_type]}</span>
               {node.discredited && <span className="kb-pill">Discredited</span>}
             </span>
-            <span className="kb-row-title">{node.title}</span>
+            <span className="kb-row-title">{recordTitle(node)}</span>
             {node.excerpt && <span className="kb-row-excerpt">{node.excerpt}</span>}
           </button>
         </li>

@@ -48,6 +48,7 @@ from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
 from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
 from loregarden.mcp.tool_args import coerce_string as _coerce_string
 from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
+from loregarden.mcp.tool_args import coerce_tag_list as _coerce_tag_list
 from loregarden.mcp.tool_args import reject_truncated_call as _reject_truncated_call
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
@@ -83,21 +84,14 @@ from loregarden.services.ticket_service import TicketService
 
 
 def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
-    tags = args.get("tags")
-    if tags is None:
-        return
-    if isinstance(tags, str):
-        payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    elif isinstance(tags, list):
-        payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+    if args.get("tags") is not None:
+        payload["tags"] = _coerce_tag_list(args["tags"], field="tags")
 
 
 def _coerce_aliases(args: dict[str, Any], payload: dict[str, Any]) -> None:
     """Aliases arrive in the same shapes tags do."""
-    parsed: dict[str, Any] = {}
-    _coerce_tags({"tags": args.get("aliases")}, parsed)
-    if "tags" in parsed:
-        payload["aliases"] = parsed["tags"]
+    if args.get("aliases") is not None:
+        payload["aliases"] = _coerce_tag_list(args["aliases"], field="aliases")
 
 
 def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:

@@ -27,6 +27,9 @@ import {
 
 import type { GraphNode, GraphRelation } from "../api/memoryApi";
 
+/** What the layout needs of an edge — a recorded relation or an inferred one. */
+export type EdgeLike = Pick<GraphRelation, "id" | "source_id" | "target_id">;
+
 const TICKS = 300;
 const MIN_RADIUS = 5;
 const MAX_RADIUS = 18;
@@ -53,7 +56,7 @@ interface SimNode extends SimulationNodeDatum {
   linked: boolean;
 }
 
-export function degrees(nodes: GraphNode[], relations: GraphRelation[]): Map<string, number> {
+export function degrees(nodes: GraphNode[], relations: EdgeLike[]): Map<string, number> {
   const counts = new Map(nodes.map((node) => [node.id, 0]));
   for (const edge of relations) {
     if (edge.source_id === edge.target_id) continue;
@@ -67,7 +70,7 @@ export function radiusFor(degree: number): number {
   return Math.min(MAX_RADIUS, MIN_RADIUS + Math.sqrt(degree) * 3.5);
 }
 
-export function layoutMemoryMap(nodes: GraphNode[], relations: GraphRelation[]): MapLayout {
+export function layoutMemoryMap(nodes: GraphNode[], relations: EdgeLike[]): MapLayout {
   const degree = degrees(nodes, relations);
   // Sorted by id so the seed spiral does not depend on the order the server
   // happened to return the window in (newest first shifts with every write).
@@ -138,7 +141,7 @@ export interface GraphShape {
   mostConnected: { id: string; degree: number }[];
 }
 
-export function graphShape(nodes: GraphNode[], relations: GraphRelation[]): GraphShape {
+export function graphShape(nodes: GraphNode[], relations: EdgeLike[]): GraphShape {
   const degree = degrees(nodes, relations);
   const parent = new Map(nodes.map((node) => [node.id, node.id]));
   const find = (id: string): string => {
@@ -171,7 +174,7 @@ export function graphShape(nodes: GraphNode[], relations: GraphRelation[]): Grap
 }
 
 /** The ids one record is linked to, either direction. */
-export function neighbourhood(id: string, relations: GraphRelation[]): Set<string> {
+export function neighbourhood(id: string, relations: EdgeLike[]): Set<string> {
   const near = new Set([id]);
   for (const edge of relations) {
     if (edge.source_id === id) near.add(edge.target_id);

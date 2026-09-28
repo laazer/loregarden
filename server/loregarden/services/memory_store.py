@@ -42,6 +42,7 @@ from loregarden.services.memory_links import (
     relations_of,
     superseded_by,
 )
+from loregarden.services.memory_tag_repair import repair_split_json_tags
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
@@ -610,6 +611,7 @@ class MemoryGraphStore:
             self._ensure_node_columns(conn)
             self._ensure_origin_columns(conn)
             ensure_history_schema(conn)
+            repair_split_json_tags(conn)
 
     @staticmethod
     def _ensure_node_columns(conn: sqlite3.Connection) -> None:

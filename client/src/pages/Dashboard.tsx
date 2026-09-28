@@ -9,6 +9,7 @@ import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
 import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
+import { ReworkRequiredNotice } from "../components/dashboard/ReworkRequiredNotice";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions, orchestrateBody } from "../components/AgentsAssembleModal";
@@ -1275,22 +1276,7 @@ export function Dashboard() {
                     {sel.compatibility_posture_source ? ` · ${sel.compatibility_posture_source}` : ""}
                   </div>
                 </div>
-                {sel.blocking_issues?.trim() && (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: "10px 12px",
-                      borderRadius: 11,
-                      background: "rgba(199,125,45,.08)",
-                      border: "1px solid rgba(199,125,45,.28)",
-                      fontSize: 12,
-                      color: "var(--orl, #c77d2d)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Rework required</div>
-                    <div style={{ whiteSpace: "pre-wrap" }}>{sel.blocking_issues}</div>
-                  </div>
-                )}
+                <ReworkRequiredNotice text={sel.blocking_issues} />
 
                 {hasRunErrors && (
                   <div
