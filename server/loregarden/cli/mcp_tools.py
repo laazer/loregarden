@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.db.migrations import MIGRATIONS
 from loregarden.db.migrations_runner import unknown_migration_ids
+from loregarden.mcp.caller import orchestrated_from_env, run_id_from_env
 from loregarden.mcp.tool_ids import READ_ONLY_MCP_TOOLS, McpTool
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
 from sqlmodel import Session
@@ -165,7 +167,7 @@ def _is_read_only(name: str) -> bool:
         return False
 
 
-def refuse_stale_write(name: str, *, allow_stale: bool) -> None:
+def refuse_stale_write(name: str, *, allow_stale: bool, supervised: bool) -> None:
     """Refuse a write from a build older than the database it would write to.
 
     Reading from a database migrated by newer code is survivable; writing to it
@@ -177,30 +179,54 @@ def refuse_stale_write(name: str, *, allow_stale: bool) -> None:
     The drift was detectable the whole time: the runner logs it on every startup.
     Logging it left the decision to whoever read the scrollback, so this is the
     same fact with the decision made.
+
+    A supervised run cannot waive it: ``allow_stale`` is ignored there and the
+    check runs anyway. The waiver exists for a person who has confirmed the
+    write is unaffected; agents told about it by the refusal took it on 251 of
+    the 364 runs that used it (30 days to 2026-09-30), which made the guard a
+    speed bump. Ignored rather than rejected, because agents also pass it out of
+    habit, and a write against a current database should still go through.
     """
-    if allow_stale or _is_read_only(name):
+    if _is_read_only(name):
+        return
+    if allow_stale and not supervised:
         return
     unknown = unknown_migration_ids(db_session.engine, {mid for mid, _ in MIGRATIONS})
     if not unknown:
         return
-    raise UsageError(
+    detail = (
         f"Refusing to run {name}: this build does not know "
         f"{len(unknown)} migration(s) already applied to the database "
         f"({', '.join(unknown[:3])}"
         + (", …" if len(unknown) > 3 else "")
         + "). Writing from a build older than the database produces rows the "
-        "current code cannot spell. Update this checkout, or pass --allow-stale "
-        "if you have confirmed the write is unaffected."
+        "current code cannot spell."
+    )
+    if supervised:
+        raise UsageError(
+            f"{detail} --allow-stale does not apply to a supervised run, and this "
+            "run cannot fix the build: report this refusal in your stage output so "
+            "the operator can update the checkout that runs this CLI. Read-only "
+            "tools still work."
+        )
+    raise UsageError(
+        f"{detail} Update this checkout, or pass --allow-stale if you have "
+        "confirmed the write is unaffected."
     )
 
 
 def _run_tool(
-    name: str, arguments: dict[str, Any], *, orchestrated: bool, allow_stale: bool = False
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    orchestrated: bool,
+    run_id: str,
+    allow_stale: bool,
 ) -> str:
     db_session.init_db()
-    refuse_stale_write(name, allow_stale=allow_stale)
+    refuse_stale_write(name, allow_stale=allow_stale, supervised=orchestrated)
     with Session(db_session.engine) as session:
-        return execute_tool(session, name, arguments, orchestrated=orchestrated)
+        return execute_tool(session, name, arguments, orchestrated=orchestrated, run_id=run_id)
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -285,9 +311,14 @@ def _run_describe(args: argparse.Namespace) -> str:
 def _run_call(args: argparse.Namespace) -> str:
     tool = _tool_def(args.tool)
     arguments = build_arguments(tool, json_arg=args.json_args, pairs=args.args)
+    # A supervised run's process carries its identity (see `mcp.caller`), so an
+    # agent falling back to this CLI gets the pipeline policy without having to
+    # remember a flag. `--orchestrated` can only add the policy, never remove it.
+    orchestrated = args.orchestrated or orchestrated_from_env(os.environ)
     return _run_tool(
         tool["name"],
         arguments,
-        orchestrated=args.orchestrated,
+        orchestrated=orchestrated,
+        run_id=run_id_from_env(os.environ),
         allow_stale=args.allow_stale,
     )

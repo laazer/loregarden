@@ -8,8 +8,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from loregarden.agents.cli_adapters import build_interactive_invocation, resolve_cli_invocation
-from loregarden.mcp.caller import ORCHESTRATED_HEADER, RUN_ID_ENV, RUN_ID_HEADER
+from loregarden.agents.cli_adapters import (
+    build_interactive_invocation,
+    invocation_env,
+    resolve_cli_invocation,
+)
+from loregarden.cli.main import main
+from loregarden.mcp.caller import ORCHESTRATED_ENV, ORCHESTRATED_HEADER, RUN_ID_ENV, RUN_ID_HEADER
 from loregarden.mcp.protocol import handle_message
 from loregarden.models.domain import Workspace
 from tests.factories import make_agent_run, make_workspace
@@ -62,6 +67,30 @@ def test_an_opencode_stage_run_sends_its_run_id_as_a_header(tmp_path):
     invocation = _stage(tmp_path, adapter="opencode")
     entry = json.loads(invocation.env["OPENCODE_CONFIG_CONTENT"])["mcp"]["loregarden"]
     assert entry["headers"][RUN_ID_HEADER] == RUN
+
+
+@pytest.mark.parametrize("adapter", ["claude", "cursor", "codex", "opencode"])
+def test_every_stage_run_process_carries_its_identity(tmp_path, adapter):
+    """The agent's own shell inherits it, so a CLI fallback is still this run —
+    including cursor, whose MCP config cannot carry it at all."""
+    env = invocation_env(_stage(tmp_path, adapter=adapter))
+    assert env[ORCHESTRATED_ENV] == "1"
+    assert env[RUN_ID_ENV] == RUN
+
+
+def test_a_chat_session_never_inherits_a_run_identity(tmp_path):
+    """A process spawned by one that itself carries an identity must not claim it."""
+    invocation = build_interactive_invocation(
+        adapter="claude",
+        prompt_file=tmp_path / "prompt.md",
+        workspace_root=tmp_path,
+        orchestrated=False,
+        run_id=RUN,
+    )
+    with patch.dict(os.environ, {ORCHESTRATED_ENV: "1", RUN_ID_ENV: "inherited"}):
+        env = invocation_env(invocation)
+    assert ORCHESTRATED_ENV not in env
+    assert RUN_ID_ENV not in env
 
 
 def test_a_chat_session_never_claims_a_run(tmp_path):
@@ -136,3 +165,25 @@ def test_the_stdio_path_records_the_run_too(db_session, run_id):
     result = handle_message(db_session, body, orchestrated=True, run_id=run_id)["result"]
     node = json.loads(result["content"][0]["text"])["graph"]
     assert node["origin_ref"] == run_id
+
+
+def _upsert_via_cli(capsys, env: dict[str, str]) -> dict:
+    argv = ["mcp", "call", "loregarden_upsert_memory", "title=T", "body=b", f"workspace_slug={WS}"]
+    with patch.dict(os.environ, env):
+        for name in (ORCHESTRATED_ENV, RUN_ID_ENV):
+            if name not in env:
+                os.environ.pop(name, None)
+        assert main(argv) == 0, capsys.readouterr().err
+    return json.loads(capsys.readouterr().out)["graph"]
+
+
+def test_the_cli_fallback_records_the_run_from_its_environment(db_session, run_id, capsys):
+    """An agent with no MCP tools falls back to `loregarden mcp call` from its own
+    shell; it passes no flag, and the write must still name its run."""
+    node = _upsert_via_cli(capsys, {ORCHESTRATED_ENV: "1", RUN_ID_ENV: run_id})
+    assert (node["origin_kind"], node["origin_ref"]) == ("agent", run_id)
+
+
+def test_the_cli_outside_a_supervised_run_claims_nothing(db_session, run_id, capsys):
+    node = _upsert_via_cli(capsys, {})
+    assert (node["origin_kind"], node["origin_ref"]) == (None, None)

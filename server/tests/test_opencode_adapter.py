@@ -25,6 +25,7 @@ from loregarden.agents.cli_adapters import (
     resolve_cli_invocation,
     resolve_terminal_handoff_invocation,
 )
+from loregarden.mcp.caller import ORCHESTRATED_ENV
 from loregarden.models.domain import Workspace
 from loregarden.services.cli_settings import (
     OPENCODE_EFFORT_OPTIONS,
@@ -161,8 +162,11 @@ def test_disabling_mcp_injection_clears_the_environment(tmp_path, monkeypatch):
 
     invocation = _stage_invocation(tmp_path, _workspace())
 
-    assert invocation.env == {}
+    assert "OPENCODE_CONFIG_CONTENT" not in invocation.env
     assert "OPENCODE_CONFIG_CONTENT" not in invocation_env(invocation)
+    # The run's identity stays: with no MCP wired, its CLI fallback is the only
+    # channel it has, and that is exactly where the identity is read.
+    assert invocation.env[ORCHESTRATED_ENV] == "1"
 
 
 def test_invocation_env_overlays_rather_than_replaces_the_environment(tmp_path):

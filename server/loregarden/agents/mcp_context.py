@@ -214,6 +214,18 @@ def _orchestration_headers(*, orchestrated: bool, run_id: str) -> dict[str, str]
     return headers
 
 
+def supervised_run_env(run_id: str) -> dict[str, str]:
+    """The environment that marks a process as belonging to supervised run ``run_id``.
+
+    Read back by `mcp.caller.orchestrated_from_env` — in the stdio server, and in
+    `loregarden mcp call` when an agent falls back to the CLI from its own shell.
+    """
+    env = {ORCHESTRATED_ENV: "1"}
+    if run_id:
+        env[RUN_ID_ENV] = run_id
+    return env
+
+
 def _stdio_server_env(*, orchestrated: bool, run_id: str) -> dict[str, str]:
     """The stdio counterpart of `_orchestration_headers`, plus the in-process wiring."""
     env = {
@@ -221,9 +233,7 @@ def _stdio_server_env(*, orchestrated: bool, run_id: str) -> dict[str, str]:
         "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
     }
     if orchestrated:
-        env[ORCHESTRATED_ENV] = "1"
-        if run_id:
-            env[RUN_ID_ENV] = run_id
+        env.update(supervised_run_env(run_id))
     return env
 
 
