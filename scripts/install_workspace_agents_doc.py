@@ -116,6 +116,7 @@ def render_block(loregarden_root: Path, workspace_slug: str) -> list[str]:
         "| Read framework or library docs (cached; cheaper than WebFetch) | `loregarden_search_reference`, then `loregarden_fetch_reference` |",
         "| Starting containers outside a stage that declared a footprint | `loregarden_reserve_docker_capacity`, then release it |",
         "| Prior art from other tickets, memory | `loregarden_search_prior_work`, `loregarden_search_memory` |",
+        "| The plan your ticket was cut from: architecture, decisions on its milestone or initiative | `documents` in `loregarden_get_ticket`, then `loregarden_read_artifact` |",
         "",
         "### Gates",
         "",
