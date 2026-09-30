@@ -18,7 +18,19 @@ Stdlib only — this runs against arbitrary workspaces, which may have no venv.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# A sibling module, found the same way whether this runs as a script (where the
+# script's directory is already on sys.path) or is loaded by path in a test.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from managed_block import (  # noqa: E402
+    RefusedError,
+    read_lines,
+    refuse_symlink,
+    split_block,
+    write_lines,
+)
 
 BEGIN_MARKER = "<!-- >>> loregarden control plane (managed) >>> -->"
 END_MARKER = "<!-- <<< loregarden control plane (managed) <<< -->"
@@ -121,24 +133,6 @@ def render_block(loregarden_root: Path, workspace_slug: str) -> list[str]:
     ]
 
 
-def strip_managed_block(lines: list[str]) -> tuple[list[str], list[str]]:
-    """Split out the existing managed block, if any. Returns (rest, block)."""
-    out: list[str] = []
-    block: list[str] = []
-    inside = False
-    for line in lines:
-        if line.strip() == BEGIN_MARKER:
-            inside = True
-            block.append(line)
-            continue
-        if line.strip() == END_MARKER:
-            inside = False
-            block.append(line)
-            continue
-        (block if inside else out).append(line)
-    return out, block
-
-
 def slug_in(block: list[str]) -> str | None:
     """The slug an existing block was installed with, if it records one."""
     for line in block:
@@ -174,20 +168,33 @@ def main() -> int:
     )
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    try:
+        return _install(
+            Path(args.agents_file),
+            Path(args.loregarden_root),
+            args.workspace_slug,
+            check=args.check,
+        )
+    except RefusedError as exc:
+        print(f"skip: {exc}", file=sys.stderr)
+        return 1
 
-    target = Path(args.agents_file)
+
+def _install(
+    target: Path, loregarden_root: Path, workspace_slug: str | None, *, check: bool
+) -> int:
+    refuse_symlink(target)
     existed = target.exists()
-    original = target.read_text(encoding="utf-8").splitlines() if existed else list(NEW_FILE_HEADER)
-    rest, existing = strip_managed_block(original)
-
-    slug = args.workspace_slug or slug_in(existing) or SLUG_PLACEHOLDER
-    block = render_block(Path(args.loregarden_root), slug)
+    original, newline = read_lines(target) if existed else (list(NEW_FILE_HEADER), "\n")
+    rest, existing = split_block(original, BEGIN_MARKER, END_MARKER, path=target)
+    slug = workspace_slug or slug_in(existing) or SLUG_PLACEHOLDER
+    block = render_block(loregarden_root, slug)
     updated = compose(rest, block)
 
     if existed and updated == original:
         print(f"ok: {target} already current")
         return 0
-    if args.check:
+    if check:
         if not existed:
             state = "missing file"
         elif existing:
@@ -197,7 +204,7 @@ def main() -> int:
         print(f"{state}: {target} managed section")
         return 1
 
-    target.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    write_lines(target, updated, newline)
     if not existed:
         print(f"created: {target}")
     else:

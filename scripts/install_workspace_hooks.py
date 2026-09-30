@@ -16,6 +16,11 @@ import argparse
 import sys
 from pathlib import Path
 
+# A sibling module, found the same way whether this runs as a script (where the
+# script's directory is already on sys.path) or is loaded by path in a test.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from managed_block import RefusedError, read_lines, split_block, write_lines  # noqa: E402
+
 BEGIN_MARKER = "# >>> loregarden organization guardrails (managed) >>>"
 END_MARKER = "# <<< loregarden organization guardrails (managed) <<<"
 
@@ -138,24 +143,6 @@ def find_commands_map(lines: list[str]) -> tuple[int, str] | None:
     return commands, entry_indent
 
 
-def strip_managed_block(lines: list[str]) -> tuple[list[str], list[str]]:
-    """Split out the existing managed block, if any. Returns (rest, block)."""
-    out: list[str] = []
-    block: list[str] = []
-    inside = False
-    for line in lines:
-        if line.strip() == BEGIN_MARKER:
-            inside = True
-            block.append(line)
-            continue
-        if line.strip() == END_MARKER:
-            inside = False
-            block.append(line)
-            continue
-        (block if inside else out).append(line)
-    return out, block
-
-
 def end_of_commands_map(lines: list[str], commands_index: int, entry_indent: str) -> int:
     """First line after the commands map ends."""
     map_indent = len(lines[commands_index]) - len(lines[commands_index].lstrip())
@@ -180,10 +167,16 @@ def main() -> int:
     parser.add_argument("--loregarden-root", required=True)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    try:
+        return _install(Path(args.config), Path(args.loregarden_root), check=args.check)
+    except RefusedError as exc:
+        print(f"skip: {exc}", file=sys.stderr)
+        return 1
 
-    config = Path(args.config)
-    original = config.read_text(encoding="utf-8").splitlines()
-    rest, existing = strip_managed_block(original)
+
+def _install(config: Path, loregarden_root: Path, *, check: bool) -> int:
+    original, newline = read_lines(config)
+    rest, existing = split_block(original, BEGIN_MARKER, END_MARKER, path=config)
 
     located = find_commands_map(rest)
     if located is None:
@@ -200,19 +193,18 @@ def main() -> int:
         return 1
 
     commands_index, entry_indent = located
-    block = render_block(Path(args.loregarden_root), entry_indent)
+    block = render_block(loregarden_root, entry_indent)
 
     if existing == block:
         print(f"ok: {config.parent} already current")
         return 0
-    if args.check:
+    if check:
         state = "outdated" if existing else "missing"
         print(f"{state}: {config.parent} managed block")
         return 1
 
     insert = end_of_commands_map(rest, commands_index, entry_indent)
-    updated = [*rest[:insert], *block, *rest[insert:]]
-    config.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    write_lines(config, [*rest[:insert], *block, *rest[insert:]], newline)
     print(f"{'refreshed' if existing else 'installed'}: {config.parent}")
     return 0
 
