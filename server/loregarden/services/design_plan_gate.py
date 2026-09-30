@@ -1,11 +1,11 @@
 """Which stages produce a design plan, and whether a run may sign one off.
 
-`gate_required` on `plan-synthesis` / `ui-design` (migration 0133) makes a
-review point exist between a plan and its implementation. Whether a person or
-the orchestrator sits at that point is the run's `approve_design_plans` dial —
-on by default, turned off in the run modal when someone wants to see the plan
-first. Nothing here touches any other gate: `auto_approve` remains the only
-thing that signs off the final quality gate on the run's behalf.
+Exit-action operator judgment on `plan-synthesis` / `ui-design` (migration 0133,
+later migrated by runtime exit actions) makes a review point exist between a
+plan and its implementation. Whether a person or the orchestrator sits at that
+point is the run's `approve_design_plans` dial — on by default, turned off in
+the run modal when someone wants to see the plan first. `auto_approve` does
+not bypass human-required exit actions.
 """
 
 from __future__ import annotations
@@ -40,12 +40,11 @@ def orchestrator_may_sign_off(
 ) -> bool:
     """Whether this run resolves the awaiting gate on `stage` itself.
 
-    `auto_approve` signs off every gate, as it always has. Without it, only a
-    design-plan stage's gate, and only when the run was started with
-    `approve_design_plans` (the default).
+    Only a design-plan stage's gate, and only when the run was started with
+    `approve_design_plans` (the default). `auto_approve` never bypasses
+    human-required exit actions (AC-6).
     """
-    if auto_approve:
-        return True
+    del auto_approve  # retained for call-site compatibility; never a bypass
     return bool(orch_run.approve_design_plans) and is_design_plan_stage(stage)
 
 

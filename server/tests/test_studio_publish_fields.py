@@ -26,7 +26,17 @@ RICH_STAGE = {
     "stage_type": "agent",
     "agent_id": "planner",
     "optional": True,
-    "gate_required": True,
+    "exit_actions_enabled": True,
+    "exit_actions": [
+        {
+            "key": "legacy-stage-sign-off",
+            "label": "Approve completion",
+            "requirement": {
+                "kind": "operator_judgment",
+                "decision_prompt": "Approve completion of stage.",
+            },
+        }
+    ],
     "skip_when": "has_description",
     "model": "claude-opus-5",
     "required_evidence": ["real_surface"],

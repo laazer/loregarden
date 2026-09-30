@@ -90,6 +90,13 @@ stages:
     skill_name: ""
     optional: true
     order: 9
+    exit_actions_enabled: true
+    exit_actions:
+      - key: legacy-stage-sign-off
+        label: "Approve Playtest completion"
+        requirement:
+          kind: operator_judgment
+          decision_prompt: "Approve completion of stage 'Playtest'."
     checklist:
       - "{{playtest_scenes}}"
       - "{{ticket_intent}}"

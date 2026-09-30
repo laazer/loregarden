@@ -39,6 +39,7 @@ export function LearningLineage({
   }
   return (
     <ol className="memory-lineage" aria-label="Lineage, oldest first">
+      {/* ux-ok: fewer than two steps returns the "nothing replaced this" line above */}
       {steps.map((step, index) => {
         const note = step.versions.at(-1)?.change_note;
         return (

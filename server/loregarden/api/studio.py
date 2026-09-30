@@ -12,6 +12,7 @@ from loregarden.models.domain import (
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
+from loregarden.services.exit_actions import requirement_catalog
 from loregarden.services.studio_drift import (
     StageRemovalNeedsConfirmation,
     detect_all_drift,
@@ -21,6 +22,11 @@ from loregarden.services.studio_service import StudioService
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/studio", tags=["studio"])
+
+
+@router.get("/exit-action-requirements")
+def exit_action_requirements() -> dict:
+    return requirement_catalog().model_dump(mode="json")
 
 
 @router.get("/mcp-tools")
