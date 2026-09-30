@@ -15,8 +15,10 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.mcp_context import (
     CLAUDE_MCP_TOOL_PREFIX,
     CLI_TOOL_COMMAND,
+    load_loregarden_mcp_doc,
     resolve_control_plane_transport,
 )
+from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
     ControlPlaneTransport,
@@ -27,6 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.code_map import MAP_FILENAME
 from loregarden.services.seed import seed_database
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
@@ -124,21 +127,23 @@ def test_transport_is_read_off_the_wiring_not_off_the_kind_of_run():
     with mock.patch.dict(os.environ, {}, clear=False):
         os.environ.pop("LOREGARDEN_DISABLE_MCP_CLI", None)
         assert (
-            resolve_control_plane_transport(run=_run(), adapter="claude")
+            resolve_control_plane_transport(run=_run(), adapter="claude", project_root=Path("."))
             is ControlPlaneTransport.MCP
         )
         assert (
-            resolve_control_plane_transport(run=_run(), adapter="lmstudio")
+            resolve_control_plane_transport(run=_run(), adapter="lmstudio", project_root=Path("."))
             is ControlPlaneTransport.CLI
         )
         assert (
-            resolve_control_plane_transport(run=_run(), adapter="not-a-runner")
+            resolve_control_plane_transport(
+                run=_run(), adapter="not-a-runner", project_root=Path(".")
+            )
             is ControlPlaneTransport.CLI
         )
 
     with mock.patch.dict(os.environ, {"LOREGARDEN_DISABLE_MCP_CLI": "1"}):
         assert (
-            resolve_control_plane_transport(run=_run(), adapter="claude")
+            resolve_control_plane_transport(run=_run(), adapter="claude", project_root=Path("."))
             is ControlPlaneTransport.CLI
         )
 
@@ -186,3 +191,93 @@ def test_the_repository_map_is_reachable_where_the_prompt_points():
     assert "## WHERE TO LOOK" in text
     # …and the map itself is no longer copied in beside the pointer.
     assert "### Repository structure" not in prompt
+
+
+def _cursor_transport(project_root: Path, home: Path) -> ControlPlaneTransport:
+    with mock.patch.dict(os.environ, {"HOME": str(home)}):
+        os.environ.pop("LOREGARDEN_DISABLE_MCP_CLI", None)
+        return resolve_control_plane_transport(
+            run=_run(), adapter="cursor", project_root=project_root
+        )
+
+
+def _write_cursor_config(root: Path, body: str) -> None:
+    (root / ".cursor").mkdir(parents=True, exist_ok=True)
+    (root / ".cursor" / "mcp.json").write_text(body, encoding="utf-8")
+
+
+def test_a_cursor_run_with_no_loregarden_config_gets_the_cli_transport(tmp_path):
+    """cursor-agent reads only its own mcp.json files, so neither naming the
+    server means the run has no MCP tools — blobert's case, where every run was
+    told the server was pre-configured and got "MCP server does not exist"."""
+    project, home = tmp_path / "project", tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    _write_cursor_config(home, '{"mcpServers": {"github": {"type": "http", "url": "x"}}}')
+
+    assert _cursor_transport(project, home) is ControlPlaneTransport.CLI
+
+
+def test_a_cursor_run_gets_mcp_when_either_config_names_the_server(tmp_path):
+    entry = '{"mcpServers": {"loregarden": {"type": "http", "url": "http://127.0.0.1:8000/mcp"}}}'
+    in_project, bare_home = tmp_path / "p1", tmp_path / "h1"
+    bare_project, in_home = tmp_path / "p2", tmp_path / "h2"
+    for d in (in_project, bare_home, bare_project, in_home):
+        d.mkdir()
+    _write_cursor_config(in_project, entry)
+    _write_cursor_config(in_home, entry)
+
+    assert _cursor_transport(in_project, bare_home) is ControlPlaneTransport.MCP
+    assert _cursor_transport(bare_project, in_home) is ControlPlaneTransport.MCP
+
+
+def test_an_unreadable_cursor_config_falls_back_to_cli_and_says_so(tmp_path, caplog):
+    """cursor cannot load a broken file either, so CLI is the true answer — but
+    the operator has to hear that their config is broken."""
+    project, home = tmp_path / "project", tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    _write_cursor_config(project, '{"mcpServers": ["loregarden"]}')
+
+    with caplog.at_level("WARNING", logger="loregarden.agents.mcp_context"):
+        assert _cursor_transport(project, home) is ControlPlaneTransport.CLI
+    assert any(".cursor/mcp.json" in r.getMessage() for r in caplog.records)
+
+
+def test_the_cursor_check_reads_the_root_the_run_executes_in():
+    """The prompt is built for the ticket's own root, where cursor-agent runs."""
+    seen: list[Path] = []
+
+    def _record(project_root: Path) -> bool:
+        seen.append(project_root)
+        return False
+
+    with (
+        mock.patch.dict(os.environ, {"LOREGARDEN_CLI_ADAPTER": "cursor"}),
+        mock.patch(
+            "loregarden.agents.mcp_context.cursor_config_names_loregarden", side_effect=_record
+        ),
+        _session() as session,
+    ):
+        prompt = _render(session, harness=None)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
+        ).first()
+        assert ticket
+        expected = resolve_ticket_root(session, ticket, session.get(Workspace, ticket.workspace_id))
+
+    assert seen == [expected]
+    assert CLI_TOOL_COMMAND in prompt
+    assert "MCP server is **pre-configured**" not in prompt
+
+
+def test_the_mcp_module_comes_from_the_control_plane_not_the_workspace(tmp_path):
+    """A workspace's copy is a stale fork: blobert's had no CLI fallback at all."""
+    doc = tmp_path / "agents" / "common_assets" / "loregarden_mcp_v1.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text(
+        "shared\n<!-- loregarden:transport=cli -->\nCONTROL-PLANE-CLI\n<!-- /loregarden:transport -->\n",
+        encoding="utf-8",
+    )
+    with mock.patch.object(settings, "agent_context_dir", tmp_path):
+        assert "CONTROL-PLANE-CLI" in load_loregarden_mcp_doc(transport=ControlPlaneTransport.CLI)

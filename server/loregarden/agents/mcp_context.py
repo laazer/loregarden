@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.mcp_registry import cli_server_entries
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,10 @@ CLAUDE_MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
 #: How a CLI-transport run invokes a control-plane tool from Bash. The wrapper
 #: runs the tool in-process against the database, so it needs no server.
 CLI_TOOL_COMMAND = "./scripts/loregarden-cli.sh mcp call"
+
+#: Where cursor-agent looks for MCP servers, relative to its project root and to
+#: the home directory. It has no flag for any other location.
+CURSOR_MCP_CONFIG_REL = Path(".cursor/mcp.json")
 
 #: The adapters this process actually wires its MCP server into — the union of
 #: what ``append_mcp_cli_args`` and ``mcp_cli_env`` configure. Both read it, so
@@ -72,10 +77,12 @@ def _adapter_or_none(adapter: str) -> CliAdapter | None:
         return None
 
 
-def resolve_control_plane_transport(*, run: AgentRun, adapter: str) -> ControlPlaneTransport:
+def resolve_control_plane_transport(
+    *, run: AgentRun, adapter: str, project_root: Path
+) -> ControlPlaneTransport:
     """The channel ``run`` will actually reach the control plane through.
 
-    Read off the wiring, never off a preference. Three things decide it, and
+    Read off the wiring, never off a preference. Four things decide it, and
     each is a fact about this run rather than a policy about a kind of run:
 
     - An externally driven run is executed by a harness this process never
@@ -86,14 +93,68 @@ def resolve_control_plane_transport(*, run: AgentRun, adapter: str) -> ControlPl
     - ``LOREGARDEN_DISABLE_MCP_CLI`` turns the injection off wholesale.
     - Only ``MCP_WIRED_ADAPTERS`` get an MCP server wired in at all; a run on any
       other runner reaches the database through the CLI wrapper.
+    - cursor is wired only by its own config files (see
+      ``cursor_config_names_loregarden``), so a cursor run started in
+      ``project_root`` has MCP tools only when one of them names the server.
     """
     if run.external_harness is not None:
         return ControlPlaneTransport.CLI
     if not mcp_cli_injection_enabled():
         return ControlPlaneTransport.CLI
-    if _adapter_or_none(adapter) not in MCP_WIRED_ADAPTERS:
+    resolved = _adapter_or_none(adapter)
+    if resolved not in MCP_WIRED_ADAPTERS:
+        return ControlPlaneTransport.CLI
+    if resolved is CliAdapter.CURSOR and not cursor_config_names_loregarden(project_root):
         return ControlPlaneTransport.CLI
     return ControlPlaneTransport.MCP
+
+
+class _CursorMcpConfig(BaseModel):
+    """The one part of cursor's ``mcp.json`` this process reads."""
+
+    mcpServers: dict[str, dict[str, Any]] = {}  # noqa: N815 - cursor's own key
+
+
+def cursor_config_names_loregarden(project_root: Path) -> bool:
+    """Whether cursor-agent started in ``project_root`` will load this server.
+
+    cursor-agent takes no MCP config flag: it reads ``.cursor/mcp.json`` in its
+    project root and in the home directory, and nothing else (``--add-dir`` and
+    ``--plugin-dir`` do not register servers for it). ``append_mcp_cli_args``
+    can only pre-approve what those files already name. Blobert has neither, so
+    every blobert cursor run was told its MCP tools were pre-configured, got
+    "MCP server does not exist: loregarden", and improvised raw JSON-RPC.
+    """
+    return any(
+        _names_loregarden(path)
+        for path in (project_root / CURSOR_MCP_CONFIG_REL, Path.home() / CURSOR_MCP_CONFIG_REL)
+    )
+
+
+def _names_loregarden(config_path: Path) -> bool:
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except FileNotFoundError:  # silent-ok: no file is cursor's own "no servers here" answer
+        return False
+    except OSError:
+        logger.warning(
+            "Could not read cursor MCP config %s; this run gets the CLI transport",
+            config_path,
+            exc_info=True,
+        )
+        return False
+    try:
+        config = _CursorMcpConfig.model_validate_json(text)
+    except ValidationError:
+        # cursor cannot load it either, so the CLI transport is the true answer;
+        # the warning is what tells the operator their config is broken.
+        logger.warning(
+            "Cursor MCP config %s is not valid; this run gets the CLI transport",
+            config_path,
+            exc_info=True,
+        )
+        return False
+    return MCP_SERVER_NAME in config.mcpServers
 
 
 def tool_reference(name: str, transport: ControlPlaneTransport) -> str:
@@ -379,10 +440,17 @@ def select_transport_blocks(text: str, transport: ControlPlaneTransport) -> str:
     return _TRANSPORT_BLOCK_RE.sub(_keep, text).strip()
 
 
-def load_loregarden_mcp_doc(agent_context_dir: Path, *, transport: ControlPlaneTransport) -> str:
-    """The MCP module, rendered for the channel this run actually has."""
-    path = agent_context_dir / MCP_DOC_REL
+def load_loregarden_mcp_doc(*, transport: ControlPlaneTransport) -> str:
+    """The MCP module, rendered for the channel this run actually has.
+
+    Read from this control plane's own ``agent_context``, never the workspace's:
+    it documents this server's tools and transports, so a workspace copy can
+    only be a stale fork of it. Blobert's was — no transport blocks and no CLI
+    fallback — so its cursor runs were never told the CLI existed.
+    """
+    path = settings.agent_context_dir / MCP_DOC_REL
     if not path.is_file():
+        logger.warning("Loregarden MCP module missing at %s; prompts will omit it", path)
         return ""
     return select_transport_blocks(path.read_text(encoding="utf-8"), transport)
 

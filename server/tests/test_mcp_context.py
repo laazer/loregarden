@@ -158,12 +158,7 @@ def test_cli_prompt_includes_mcp_module():
         assert "Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt
         assert "Memory protocol module" in prompt
         assert "loregarden_get_ticket" in prompt
-        assert (
-            load_loregarden_mcp_doc(
-                resolve_agent_context_dir(workspace), transport=ControlPlaneTransport.MCP
-            )[:200]
-            in prompt
-        )
+        assert load_loregarden_mcp_doc(transport=ControlPlaneTransport.MCP)[:200] in prompt
         assert load_memory_protocol_doc(resolve_agent_context_dir(workspace))[:200] in prompt
 
 
