@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
 from loregarden.services.orchestration import (
@@ -30,6 +31,7 @@ from loregarden.services.orchestration import (
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.process_identity import still_running
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
@@ -286,6 +288,17 @@ def settle_stranded_stages(
                 "settled it as blocked so it stops reporting an agent that is not there."
             ),
         )
+        # The run behind this stage is already gone, so nothing can spend a
+        # repair turn on it; the settlement records that alongside the kind, so
+        # a stranded stage does not read as one somebody dealt with (802).
+        settle_block(
+            session,
+            ticket,
+            instance=instance,
+            stages=stages,
+            stage_key=stage_key,
+            message=message,
+        )
         session.add(ticket)
         session.add(instance)
         settled.append(ticket)
@@ -318,9 +331,25 @@ def fail_interrupted_orchestration_runs(
     if ticket_id:
         query = query.where(OrchestrationRun.ticket_id == ticket_id)
 
+    # 757. The 470 guard, one level up: an orchestration whose agent process is
+    # verifiably alive is not orphaned, whatever this process's own history. The
+    # child reaper skips such a run; failing its parent here would have the
+    # parent's completion fail that same child as an orphan of a terminal
+    # orchestration — the reaper killing a working agent's row by a second route.
+    supervising = {
+        run.orchestration_run_id for run in surviving_runs(session) if run.orchestration_run_id
+    }
     callbacks = OrchestrationCallbackService(session)
     failed: list[OrchestrationRun] = []
     for run in session.exec(query).all():
+        if run.id in supervising:
+            logger.warning(
+                "Not failing orchestration %s (ticket %s): an agent run beneath it "
+                "still has a live process",
+                run.run_code,
+                run.ticket_id,
+            )
+            continue
         # An external-harness run has no process here to be orphaned by a
         # reload: it lives in someone's own terminal, which is the reason to use
         # one. Failing it on startup would end the run mid-ticket every time
@@ -474,6 +503,20 @@ def settle_orphaned_agent_runs(
     for run in candidates:
         parent = session.get(OrchestrationRun, run.orchestration_run_id)
         if parent is None or parent.status in LIVE_ORCHESTRATION_STATUSES:
+            continue
+        if still_running(run.agent_pid, run.agent_pid_identity):
+            # Residue is a row with nothing behind it. A process still working
+            # under a parent that went terminal without it (757) is not residue:
+            # let it finish, and let its completion say what it found.
+            logger.warning(
+                "Not settling agent run %s (ticket %s): parent orchestration %s is %s "
+                "but pid %s is still its process",
+                run.run_code,
+                run.ticket_id,
+                parent.run_code,
+                parent.status.value,
+                run.agent_pid,
+            )
             continue
         logger.warning(
             "Settling agent run %s (ticket %s): parent orchestration %s is %s",

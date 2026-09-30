@@ -353,6 +353,7 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   height: 34px;
   padding: 0 12px;
   font-size: 12.5px;
@@ -388,6 +389,24 @@ textarea::placeholder {
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* The select names a workspace on its own; below this width the label is the
+   first thing the row can give back without a control losing its words. */
+@media (max-width: 1100px) {
+  .topbar-workspace-picker-label {
+    display: none;
+  }
+
+  /* Icon-only; each keeps its name in `aria-label`. */
+  .topbar-action-btn--collapsible .topbar-action-label {
+    display: none;
+  }
+}
+
+/* The chat's picker holds its width; it has nothing to give back. */
+.topbar-workspace-picker--fixed {
+  flex: none;
 }
 
 .topbar-workspace-picker-select.btn-secondary {
@@ -745,10 +764,6 @@ textarea::placeholder {
 
 .studio-editor-inner--workflow {
   max-width: 820px;
-}
-
-.studio-editor-inner--gates {
-  max-width: 760px;
 }
 
 .studio-card {

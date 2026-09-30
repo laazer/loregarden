@@ -12,8 +12,7 @@ import json
 import logging
 from collections.abc import Callable
 
-from loregarden.models.domain import WorkItemType
-from loregarden.models.domain.enums import VALID_HIERARCHY
+from loregarden.models.domain import VALID_HIERARCHY, WorkItemType
 from loregarden.models.domain.schemas import HierarchyWorkItem
 from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
 

@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     TicketState,
 )
 from loregarden.services.interruption_messages import (
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -64,12 +65,14 @@ _HARNESS_SIGNATURES = (
     STRANDED_STAGE_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     "Orchestration lease expired",
     "Agent run lease expired",
     "Agent run exited successfully but emitted no parseable",
     "Environment preflight failed",
     "Baxter was interrupted by a server restart",
     "died of an infrastructure failure",
+    "Workspace Trust Required",
     "usage limit",
     "could not examine",
 )
@@ -145,6 +148,16 @@ def _raise_decision(
     return approval
 
 
+def _how_classified(declared: BlockKind | None, kind_as_written: str) -> str:
+    if declared:
+        return ""
+    if kind_as_written:
+        return (
+            f" (the agent named an unknown kind {kind_as_written!r}; classified from the message)"
+        )
+    return " (the agent named no kind; classified from the message)"
+
+
 def record_block(
     session: Session,
     ticket: Ticket,
@@ -153,18 +166,25 @@ def record_block(
     message: str,
     declared: BlockKind | None = None,
     options: list[str] | None = None,
+    kind_as_written: str = "",
 ) -> BlockKind:
     """Stamp the kind on the ticket, say so in the history, and act on it.
 
     `declared` is the agent's own word from its stage report; without one the
     message decides. A `decision` raises the approval that asks the question.
+
+    Call it through `block_settlement.settle_block`, never directly —
+    `test_block_settlement` fails any other caller. Classifying without
+    offering the repair turn is what made every block look handled while three
+    call sites out of twenty-five offered one, so the two halves are no longer
+    separable in practice even though Python cannot say so (802).
     """
     kind = declared or classify_block_message(message)
     ticket.block_kind = kind
     session.add(ticket)
     reason = (
         f"Block on '{stage_key}' classified as {kind.value}"
-        + ("" if declared else " (the agent named no kind; classified from the message)")
+        + _how_classified(declared, kind_as_written)
         + "."
     )
     record_orchestrator_decision(
@@ -183,23 +203,29 @@ def record_block(
     return kind
 
 
-def sweep_unclassified_blocks(session: Session) -> int:
-    """Classify every blocked ticket the writers did not — run by the reconciler.
+#: What `record_blocking_issue` leaves inline when the real message went to an
+#: error artifact — classifying this text would call every long block `work`.
+_ERRORS_TAB_POINTER = "hit a blocking issue — see the Errors tab"
 
-    Most block writers predate the kind and are not touched (there are ~30);
-    this is what makes "every block has a kind" true without editing each one.
-    """
-    stale = session.exec(
-        select(Ticket).where(Ticket.blocking_issues != "", Ticket.block_kind.is_(None))
-    ).all()
-    for ticket in stale:
-        record_block(
-            session,
-            ticket,
-            stage_key=ticket.workflow_stage_key or "",
-            message=ticket.blocking_issues,
-        )
-    return len(stale)
+
+def block_message_for(session: Session, ticket: Ticket) -> str:
+    """The block's own words: the inline text, or the artifact it points at."""
+    inline = ticket.blocking_issues or ""
+    if _ERRORS_TAB_POINTER not in inline:
+        return inline
+    artifact = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.ERROR)
+        .order_by(Artifact.created_at.desc())
+    ).first()
+    if artifact is None:
+        return inline
+    try:
+        message = json.loads(artifact.content_json or "{}").get("message")
+    except json.JSONDecodeError:
+        logger.warning("error artifact %s on %s is unreadable", artifact.id, ticket.external_id)
+        return inline
+    return str(message or inline)
 
 
 def chosen_option(approval: Approval, answers: dict[str, str | list[str]] | None) -> str:

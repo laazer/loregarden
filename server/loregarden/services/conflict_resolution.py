@@ -196,11 +196,10 @@ def _dispatch_resolver(session: Session, run: AgentRun, ticket: Ticket, stage_ke
     Returns whether a resolver was dispatched. This is a standalone dispatch —
     no orchestration run behind it — so it goes through the stage retry budget,
     which refuses a stage that has already spent it. That refusal is caught
-    here and reported as "no resolver ran" rather than raised: the only caller
-    is `ParallelRunService._publish_run_work`, which promises "a failure here is
-    reported, never raised" because the slot-freeing in
-    `on_parallel_run_complete` happens *after* it. An exception escaping this
-    function strands a parallel execution slot over a conflict.
+    here and reported as "no resolver ran" rather than raised: the caller is
+    the landing at a ticket's terminal stage (`landing._hand_to_resolver`),
+    which turns a refusal into a block naming the files — an exception there
+    would leave the ticket neither done, blocked, nor resolving.
 
     Refusing is also the honest outcome on its own terms: a stage that has
     already burned its whole dispatch budget is the last thing that should be

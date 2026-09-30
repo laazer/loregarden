@@ -23,7 +23,11 @@ from loregarden.api import (
     docker_capacity,
     editor,
     events,
+    github_issues,
     inbox,
+    initiatives,
+    instance_templates,
+    local_instances,
     mcp,
     mcp_servers,
     memory,
@@ -45,6 +49,7 @@ from loregarden.api import (
     views,
     workflow_monitor,
     workflows,
+    workspace_integration,
     workspaces,
 )
 from loregarden.config import settings
@@ -56,6 +61,9 @@ from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
+from loregarden.services.github_push_on_edit import start_push_worker
+from loregarden.services.github_sync_scheduler import start_github_sync_loop
+from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
 from loregarden.services.reconciliation import reconcile_once
@@ -73,6 +81,49 @@ from loregarden.services.worktree_lifecycle import reconcile_worktrees
 logger = logging.getLogger(__name__)
 
 
+def _recover_previous_boot(session: Session) -> None:
+    """Settle what the last process left running, and resume what it was doing."""
+    # Before the reapers, and before anything reads a run's status: since
+    # 317 detaches the agent, a run at RUNNING here may have a live process
+    # behind it. Adopting it keeps its row and starts renewing its lease in
+    # this process; the reapers below skip exactly what this adopted (470).
+    reattach_surviving_runs(session)
+    fail_interrupted_runs(session)
+    fail_interrupted_orchestration_runs(session)
+    fail_interrupted_triage_turns(session)
+    fail_interrupted_branch_triage_turns(session)
+    fail_interrupted_baxter_chat_turns(session)
+    fail_interrupted_studio_turns(session)
+    # An aside has no run row of its own, so nothing above would ever reach it.
+    fail_interrupted_asides(session)
+    # The turns those four just settled are exactly the ones whose live
+    # thinking rows outlived them; nothing is left watching for that text.
+    clear_orphaned_chat_turn_thinking(session)
+    # Last: the reaps above settle stages as they complete their runs, so this
+    # only sees stages no run will ever account for.
+    settle_stranded_stages(session)
+    # The trees those dead runs were working in. After the reaps, so a
+    # ticket the crash left mid-stage counts as unfinished and keeps its
+    # worktree for the resume below. Startup only: it is the one sweep that
+    # deletes, and boot is the only moment nothing is in flight.
+    reconcile_worktrees(session)
+    # The chat rail's equivalent, and startup-only for the same reason. It
+    # walks the trees `reconcile_worktrees` cannot judge — a chat thread has
+    # no ticket whose state could say it is finished — and removes only the
+    # branches whose content is already in base, where the ref was keeping
+    # nothing reachable. Opt-in per workspace; see `chat_branch_sweep`.
+    sweep_all_chat_branches(session)
+    # Lanes and parents, from the same pass the timer runs. After the reaps,
+    # so the runs they just failed count as finished and the slots they held
+    # come back rather than staying claimed by a run this process will never
+    # hear from again — and so every child has reached the state it will
+    # actually be in before its parents are summarised from it.
+    reconcile_once(session)
+    # Resume only after every orphan row and stranded stage has been made
+    # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
+    resume_interrupted_orchestrations(session)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not settings.api_token:
@@ -88,52 +139,31 @@ async def lifespan(app: FastAPI):
     init_db()
     with Session(engine) as session:
         seed_database(session)
-        # Before the reapers, and before anything reads a run's status: since
-        # 317 detaches the agent, a run at RUNNING here may have a live process
-        # behind it. Adopting it keeps its row and starts renewing its lease in
-        # this process; the reapers below skip exactly what this adopted (470).
-        reattach_surviving_runs(session)
-        fail_interrupted_runs(session)
-        fail_interrupted_orchestration_runs(session)
-        fail_interrupted_triage_turns(session)
-        fail_interrupted_branch_triage_turns(session)
-        fail_interrupted_baxter_chat_turns(session)
-        fail_interrupted_studio_turns(session)
-        # An aside has no run row of its own, so nothing above would ever reach it.
-        fail_interrupted_asides(session)
-        # The turns those four just settled are exactly the ones whose live
-        # thinking rows outlived them; nothing is left watching for that text.
-        clear_orphaned_chat_turn_thinking(session)
-        # Last: the reaps above settle stages as they complete their runs, so this
-        # only sees stages no run will ever account for.
-        settle_stranded_stages(session)
-        # The trees those dead runs were working in. After the reaps, so a
-        # ticket the crash left mid-stage counts as unfinished and keeps its
-        # worktree for the resume below. Startup only: it is the one sweep that
-        # deletes, and boot is the only moment nothing is in flight.
-        reconcile_worktrees(session)
-        # The chat rail's equivalent, and startup-only for the same reason. It
-        # walks the trees `reconcile_worktrees` cannot judge — a chat thread has
-        # no ticket whose state could say it is finished — and removes only the
-        # branches whose content is already in base, where the ref was keeping
-        # nothing reachable. Opt-in per workspace; see `chat_branch_sweep`.
-        sweep_all_chat_branches(session)
-        # Lanes and parents, from the same pass the timer runs. After the reaps,
-        # so the runs they just failed count as finished and the slots they held
-        # come back rather than staying claimed by a run this process will never
-        # hear from again — and so every child has reached the state it will
-        # actually be in before its parents are summarised from it.
-        reconcile_once(session)
-        # Resume only after every orphan row and stranded stage has been made
-        # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
-        resume_interrupted_orchestrations(session)
+        if settings.sandbox:
+            # Everything the recovery pass acts on — run processes, worktrees,
+            # orchestrations — is main's, described by a snapshot of main's
+            # database. See `Settings.sandbox`.
+            logger.warning(
+                "sandbox instance: startup recovery and the reconcile timer are off; "
+                "this database is a snapshot and its runs belong to another server"
+            )
+        else:
+            _recover_previous_boot(session)
 
     # Repair on a clock from here, not only at the next boot and not only while
     # someone has the dashboard open.
-    reconcile_task = start_reconcile_loop()
+    reconcile_task = None if settings.sandbox else start_reconcile_loop()
+    # Never in a sandbox: it runs on a snapshot of main's database, and pushing
+    # that snapshot's tickets to GitHub would overwrite real edits.
+    github_sync_task = None if settings.sandbox else start_github_sync_loop()
+    github_push_task = None if settings.sandbox else start_push_worker()
+    # After boot, so nothing finds this server before it can answer.
+    advertised = register_main()
     try:
         yield
     finally:
+        if advertised is not None:
+            advertised.release()
         # Draining before anything else is torn down: the point is to stop
         # starting work and give what is running a bounded chance to land.
         # Whatever misses the window is settled by the interruption path on the
@@ -146,6 +176,10 @@ async def lifespan(app: FastAPI):
             )
         if reconcile_task is not None:
             reconcile_task.cancel()
+        if github_sync_task is not None:
+            github_sync_task.cancel()
+        if github_push_task is not None:
+            github_push_task.cancel()
         # The drain is over, so stop advertising it. A real process exits here
         # and nobody reads the flag again; a test process keeps going, and a
         # flag left set refuses work in every test that follows — which is
@@ -200,6 +234,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 
 
 app.include_router(tickets.router, prefix="/api")
+app.include_router(initiatives.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(calendar_events.router, prefix="/api")
@@ -215,6 +250,9 @@ app.include_router(docker_capacity.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")
+app.include_router(local_instances.router, prefix="/api/instances")
+app.include_router(instance_templates.router, prefix="/api")
+app.include_router(workspace_integration.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(workflow_monitor.router, prefix="/api")
@@ -225,6 +263,7 @@ app.include_router(reference_repos.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
+app.include_router(github_issues.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_lanes.router)
 app.include_router(queue_management.router)

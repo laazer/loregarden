@@ -143,6 +143,49 @@ three reviewers → gate without one agent looking at what a person would see. M
 `0123_ux_lanes_in_v3` closes that: the stage now runs the design agent and is required, and
 `visual_qa` is a fourth review lane beside architecture, static and security.
 
+### What it is for — before the states
+
+The five states below are shape, and shape is not enough. The old Monitor tab handled all five
+and printed 138 findings as a wall of "Stage 'review' ran 4 times…" with no ticket named and no
+link — 85 of the 94 on tickets finished weeks earlier. The Memory map drew a force graph over 33
+records and 0 links. Initiatives was one centred sentence while 74 milestones waited for one.
+Every gate passed; nobody could use any of them.
+
+So a change to a user-facing surface first states three things, as acceptance criteria:
+
+1. **The question it answers** for the operator, in one sentence from their side of the screen
+   — "which tickets need me now, and why?", not "shows monitor findings".
+2. **The action it leads to** — the link, button or filter the operator uses next. A surface
+   that ends in text ends there.
+3. **What it looks like on real data** — the typical and the largest realistic volume, measured
+   from the live database (read-only), not a fixture: what is stale, what is grouped, what is
+   hidden by default.
+
+`ui-design` decides them before the work; `visual_qa` checks them after, on a sandbox snapshot
+of production (`loregarden_launch_instance`, template `loregarden/server`, database `snapshot`).
+Never point a second server at the live database — the sandbox exists so nothing has to.
+
+### Real data, or its shape
+
+- **Where the live database exists, look at it:** `task sandbox` runs this checkout on a copy
+  of the database and memory graphs (sandboxed, source read-only).
+- **Where it does not — CI, cloud sessions, other workspaces — use its shape:** `task sandbox
+  -- --seeded` (automatic when no live database is found). That is
+  `loregarden.testing.prod_shape`: built from the same factories as the integration tests
+  (`loregarden.testing.factories`, re-exported as `tests.factories`), deterministic, and
+  calibrated from the live database in `CALIBRATION`, dated.
+- **Frontend tests render at that volume.** `server/tests/test_prod_shape_fixtures.py` records the
+  API's responses over the scenario to `client/src/test/fixtures/prod-shape/` and fails when they
+  go stale (re-record with `LOREGARDEN_RECORD_FIXTURES=1`). Jest renders data-heavy surfaces over
+  them and runs `findUsabilityProblems` (`client/src/lib/usabilityCheck.ts`) — walls of repeated
+  text, lists with nothing to click, graphs with no edges, long lists with no filter. `npm run
+  visual-qa` runs the same check inside every page of a running sandbox.
+
+So: a new data-heavy surface gets a prod-shape test; a new kind of data gets a place in the
+scenario; and when the live shape drifts, re-measure `CALIBRATION` rather than let the scenario
+become a fixture again. A scenario that disagrees with production is worse than none — it once
+claimed 20 near-duplicate learnings that production did not have.
+
 ### The five states
 
 A change to a user-facing surface is not specified until all five are decided. A ticket that
@@ -178,7 +221,7 @@ Three of the four are shapes a screenshot review passes without noticing, becaus
 already knows what the icon does and already has a mouse.
 
 A gate can only see shape. It cannot tell you the empty state you wrote says the right thing,
-or that the loading state matches the wait. That judgment is the `ui-design` stage's before the
+that the loading state matches the wait, or that the surface answers a question anyone has. That judgment is the `ui-design` stage's before the
 work and `visual_qa`'s after it — and yours in between.
 
 ## Verify, don't infer

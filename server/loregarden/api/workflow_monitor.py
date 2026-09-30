@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 from loregarden.db.session import get_session
+from loregarden.services.monitor_finding_context import attach_ticket_context
 from loregarden.services.workflow_monitor import list_findings, scan
 from sqlmodel import Session
 
@@ -25,9 +26,8 @@ def monitor_findings(
     recomputed ones — a half-answer shaped exactly like a whole one. The client
     built that URL whenever its ticket id was empty.
     """
-    return [
-        item.model_dump(mode="json") for item in list_findings(session, ticket_id=ticket_id or None)
-    ]
+    findings = attach_ticket_context(session, list_findings(session, ticket_id=ticket_id or None))
+    return [item.model_dump(mode="json") for item in findings]
 
 
 @router.get("/scan")

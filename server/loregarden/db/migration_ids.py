@@ -149,10 +149,26 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0128_chat_session_worktrees",
     "0129_blobert_backend_lane",
     "0130_retire_unmerged_branch_ledger_ids",
+    "0131_tickets_workspace_binding",
     "0132_approve_design_plans_columns",
     "0133_design_plan_gates",
+    "0134_initiative_number_pool",
     "0135_ticket_block_kind",
     "0136_auto_repair_columns",
+    "0137_block_kind_in_role_prompts",
+    "0139_block_kind_in_role_prompts_again",
+    "0140_ticket_landing_columns",
+    "0141_learning_applications_table",
+    "0142_memory_health_snapshots_table",
+    "0143_github_issue_links",
+    "0144_github_sync_settings",
+    "0145_github_push_on_edit",
+    "0146_instance_templates",
+    "0147_ux_purpose_in_design_lanes",
+    "0148_chat_message_attachments",
+    # Out of numeric order: see the note beside it in MIGRATIONS.
+    "0138_runtime_exit_actions",
+    "0149_agentless_stage_exit_actions",
 )
 
 

@@ -34,16 +34,19 @@ export interface FindingGroup {
  * What the number was reaching for is duration, and `firstSeen`/`lastSeen` say
  * that in a unit a reader can act on.
  */
-export function groupFindings(findings: MonitorFinding[]): FindingGroup[] {
+export function groupFindings(
+  findings: MonitorFinding[],
+  { byStage = true }: { byStage?: boolean } = {},
+): FindingGroup[] {
   const groups = new Map<string, FindingGroup>();
   for (const finding of findings) {
-    const key = `${finding.condition}:${finding.stage_key}`;
+    const key = byStage ? `${finding.condition}:${finding.stage_key}` : finding.condition;
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
         key,
         condition: finding.condition,
-        stageKey: finding.stage_key,
+        stageKey: byStage ? finding.stage_key : "",
         findings: [finding],
         tickets: 0,
         firstSeen: finding.first_seen,
@@ -78,4 +81,108 @@ export function groupFindings(findings: MonitorFinding[]): FindingGroup[] {
 /** Turns the condition slug into something a person reads. */
 export function conditionLabel(condition: string): string {
   return condition.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
+/**
+ * What each condition means for the person reading it, in one sentence. The
+ * slug says what the detector measured; this says why anyone should care.
+ */
+const CONDITION_MEANINGS: Record<string, string> = {
+  stage_thrash: "A stage ran far more times than usual in one run — usually a review ↔ implement rework loop.",
+  unbudgeted_repeat: "A stage was retried with no orchestration run behind it, so no retry cap applied.",
+  failure_cluster: "This stage fails much more often than the rest of its workspace — look at its agent or template.",
+  stalled_run: "A run is still going well past the longest this stage has ever taken.",
+  draft_drift: "A Studio draft no longer matches the template it publishes to.",
+  skip_condition_rot: "A skip_when names a condition nothing resolves, so the stage is never skipped.",
+  stale_cursor: "The ticket's stage cursor points at a stage its workflow does not have.",
+  emptied_group: "Every alternative in a stage group was pruned, so the group finished with no work.",
+  unsettled_stage: "The stage is blocked even though its agent run succeeded.",
+  timeout_floor_stale: "This stage's timeout is below how long it really takes (measured p95).",
+  harness_failure_cluster: "Most recent failures are harness interruptions, not the agents' work.",
+};
+
+export function conditionMeaning(condition: string): string | null {
+  return CONDITION_MEANINGS[condition] ?? null;
+}
+
+/**
+ * Whether a finding is about something that can still be acted on.
+ *
+ * A finding persists after its ticket finishes — a `stage_thrash` recorded in
+ * a run three weeks ago is still "observed" on every sweep, because the run's
+ * history does not change. On the live database (2026-09-28) 85 of the 94
+ * ticket findings sat on done tickets, burying the nine about work still moving.
+ * Workspace-scoped findings (no ticket) are recomputed per request, so they
+ * are always current.
+ */
+export function isLiveFinding(finding: MonitorFinding): boolean {
+  if (!finding.ticket_id) return true;
+  return finding.ticket_state !== "done" && finding.ticket_state !== "wont_do";
+}
+
+export interface TicketFindings {
+  ticketId: string;
+  externalId: string;
+  title: string;
+  state: MonitorFinding["ticket_state"];
+  workspaceSlug: string;
+  /** One line per (condition, stage), however many runs reported it. */
+  lines: { key: string; condition: string; stageKey: string; summary: string; count: number }[];
+  lastSeen: string | null;
+}
+
+/**
+ * Findings folded under the ticket they are about. The same condition on the
+ * same stage across several runs of one ticket is one line with a count — the
+ * old list printed "Stage 'review' ran 4 times…" once per run, a dozen times.
+ * Newest-seen ticket first.
+ */
+export function groupByTicket(findings: MonitorFinding[]): TicketFindings[] {
+  const tickets = new Map<string, TicketFindings>();
+  for (const finding of findings) {
+    if (!finding.ticket_id) continue;
+    let entry = tickets.get(finding.ticket_id);
+    if (!entry) {
+      entry = {
+        ticketId: finding.ticket_id,
+        externalId: finding.ticket_external_id,
+        title: finding.ticket_title,
+        state: finding.ticket_state,
+        workspaceSlug: finding.workspace_slug,
+        lines: [],
+        lastSeen: finding.last_seen,
+      };
+      tickets.set(finding.ticket_id, entry);
+    }
+    if (finding.last_seen && (!entry.lastSeen || finding.last_seen > entry.lastSeen)) {
+      entry.lastSeen = finding.last_seen;
+    }
+    const key = `${finding.condition}:${finding.stage_key}`;
+    const line = entry.lines.find((existing) => existing.key === key);
+    if (line) {
+      line.count += 1;
+    } else {
+      entry.lines.push({
+        key,
+        condition: finding.condition,
+        stageKey: finding.stage_key,
+        summary: finding.summary,
+        count: 1,
+      });
+    }
+  }
+  return [...tickets.values()].sort((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""));
+}
+
+/**
+ * A finding that says only "not enough runs yet to judge" — its evidence
+ * carries `sample_count` below `min_samples`. On the live database 38 of the 40
+ * `timeout_floor_stale` findings were this: nothing to act on, and listed one
+ * per line they buried the 2 that were (a stage whose timeout sits below its
+ * measured p95).
+ */
+export function isAwaitingSamples(finding: MonitorFinding): boolean {
+  const samples = Number(finding.evidence.sample_count);
+  const needed = Number(finding.evidence.min_samples);
+  return Number.isFinite(samples) && Number.isFinite(needed) && samples < needed;
 }

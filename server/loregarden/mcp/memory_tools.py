@@ -13,13 +13,18 @@ module decides what a tool call means, not where the store lives
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.models.domain import AgentRun, MemoryOriginKind, MemoryRelationType
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
+from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+logger = logging.getLogger(__name__)
 
 #: The tools this module owns. Kept beside the dispatch it gates rather than in
 #: `mcp.tools`, so adding a memory tool touches one file.
@@ -36,7 +41,39 @@ MEMORY_TOOL_NAMES = frozenset(
 )
 
 
-def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) -> str | None:
+def _write_origin(
+    session: Session, *, orchestrated: bool, run_id: str
+) -> tuple[MemoryOriginKind | None, str | None]:
+    """Who produced a memory write arriving over MCP — as far as the transport knows.
+
+    `orchestrated` is set only by Loregarden's own supervised agent CLI runs,
+    so it is a real signal of an agent. Anything else (an operator's terminal,
+    `curl`, an external orchestrator, the in-process CLI) cannot be told apart
+    and is recorded as unknown rather than guessed.
+
+    `run_id` rides beside it (`mcp/caller.py`) and becomes the `origin_ref`
+    only when it names a real run: a reference to a run that does not exist
+    would send the operator looking for it. An unknown id is still an agent
+    write, with the reference left unknown and the mismatch logged.
+    """
+    if not orchestrated:
+        return None, None
+    if not run_id:
+        return MemoryOriginKind.AGENT, None
+    if session.get(AgentRun, run_id) is None:
+        logger.warning("memory write names unknown run %r; origin_ref left unset", run_id)
+        return MemoryOriginKind.AGENT, None
+    return MemoryOriginKind.AGENT, run_id
+
+
+def execute_memory_tool(
+    session: Session,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    orchestrated: bool = False,
+    run_id: str = "",
+) -> str | None:
     """This module's entry point: run `name` if it is a memory tool, else None.
 
     Dispatch loregarden's memory/learnings/blog-post/checkpoint tools.
@@ -57,15 +94,21 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
         )
 
     if name == "loregarden_append_learning":
+        origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.append_learning(
             ticket_id=arguments["ticket_id"],
             workspace_slug=arguments["workspace_slug"],
             content=arguments["content"],
             tags=arguments.get("tags"),
+            title=arguments.get("title", ""),
+            aliases=arguments.get("aliases"),
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         return json.dumps(result, indent=2)
 
     if name == "loregarden_upsert_memory":
+        origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.upsert_memory(
             node_id=arguments.get("node_id", ""),
             title=arguments["title"],
@@ -74,6 +117,8 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
             ticket_id=arguments.get("ticket_id", ""),
             workspace_slug=arguments["workspace_slug"],
             discredited=arguments.get("discredited"),
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
         )
         return json.dumps(result, indent=2)
 
@@ -124,7 +169,10 @@ def execute_memory_tool(session: Session, name: str, arguments: dict[str, Any]) 
     result = memory.create_relation(
         source_id=arguments["source_id"],
         target_id=arguments["target_id"],
-        relation_type=arguments.get("relation_type", "related"),
+        # Parsed at the boundary: an unknown label is refused naming the vocabulary.
+        relation_type=parse_relation_type(
+            arguments.get("relation_type", MemoryRelationType.RELATED.value)
+        ),
         workspace_slug=arguments["workspace_slug"],
     )
     return json.dumps(result, indent=2)

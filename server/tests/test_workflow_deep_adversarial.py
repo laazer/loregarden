@@ -234,6 +234,10 @@ class TestWorkflowInitializationMutations:
         assert len(WORKFLOW_WORK_ITEM_TYPES) == 5, (
             f"WORKFLOW_WORK_ITEM_TYPES has {len(WORKFLOW_WORK_ITEM_TYPES)} types, expected 5"
         )
+        # INITIATIVE (lg-initiatives-cross-731) must never auto-join this set.
+        initiative = getattr(WorkItemType, "INITIATIVE", None)
+        assert initiative is not None, "WorkItemType.INITIATIVE missing — R1 / AC1"
+        assert initiative not in WORKFLOW_WORK_ITEM_TYPES
 
 
 class TestSerializationEdgeCases:

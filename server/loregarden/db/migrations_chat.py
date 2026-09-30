@@ -185,3 +185,21 @@ def m_chat_session_worktrees(conn: Connection) -> None:
         conn.execute(
             text("CREATE INDEX ix_worktrees_chat_session_id ON worktrees (chat_session_id)")
         )
+
+
+def m_chat_message_attachments(conn: Connection) -> None:
+    """Let a Home chat user turn name the files uploaded with it.
+
+    JSON on the message rather than a table: attachments are read only with
+    their message, never queried on their own, and a fork copies them with it.
+    """
+    add_columns_if_missing(
+        conn,
+        "baxter_chat_messages",
+        {
+            "attachments_json": (
+                "ALTER TABLE baxter_chat_messages ADD COLUMN attachments_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )

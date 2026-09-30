@@ -3,7 +3,12 @@
 from unittest.mock import Mock, patch
 
 import pytest
-from loregarden.agents.inherited_wisdom import build_inherited_wisdom
+from loregarden.agents.inherited_wisdom import (
+    _MAX_CHECKPOINTS,
+    _MAX_MEMORY_HITS,
+    MAX_WISDOM_CHARS,
+    build_inherited_wisdom,
+)
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
@@ -132,14 +137,13 @@ def _both(tmp_path) -> AgentMemoryService:
     )
 
 
-_SERVICE_SHAPES = [_obsidian_only, _graph_only, _both]
+_SERVICE_SHAPES = [_graph_only, _both]
 
 
 @pytest.mark.parametrize("build_service", _SERVICE_SHAPES)
 def test_a_learning_sharing_distinctive_terms_is_surfaced(tmp_path, build_service):
     """AC1 / AC4.1 — the regression this ticket exists for, run against
-    obsidian-only, graph-only and both. The graph-only case is the one a test
-    copied from the fixtures above physically cannot fail."""
+    graph-only and both. Vault-only memory writes fail closed after cutover."""
     memory = build_service(tmp_path)
     memory.upsert_memory(
         title="Retry budget for throttled tools",
@@ -217,67 +221,67 @@ def test_a_short_distinctive_note_outranks_a_long_generic_one(tmp_path):
     assert text.index("Retry budget for throttled tools") < text.index("Weekly notes")
 
 
-def test_a_dual_written_learning_appears_once(tmp_path):
-    """AC4.5 — append_learning writes the same content to both stores under two
-    different uuid4s. Without a content-keyed dedupe the same learning burns two
-    of the five briefing slots."""
+def test_a_shared_id_learning_appears_once(tmp_path):
+    """AC4.5 / Cutover R2 — append_learning shares one node_id across graph and
+    export, so recall surfaces a single briefing slot."""
     memory = _both(tmp_path)
     memory.append_learning(
         ticket_id="t-01",
         workspace_slug="lg",
         content=_MATCHING_BODY,
+        title="Learning — t-01",
     )
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert text.count("- **Learning — t-01**") == 1
 
 
-def test_a_dual_written_learning_whose_body_opens_with_a_heading_appears_once(tmp_path):
-    """AC4.7 — the heading-free fixtures above cannot see this. `upsert_note`
-    injects a `# <title>` line the graph copy lacks, so a dedupe that strips
-    "the first heading, whatever it is" over-strips the Obsidian side of a body
-    that opens with its own `## Context`: the keys diverge and one learning
-    burns two of the five slots. Agent-written memory routinely opens with a
-    heading."""
+def test_a_learning_whose_body_opens_with_a_heading_appears_once(tmp_path):
+    """AC4.7 — agent-written memory routinely opens with a heading. Shared-id
+    export must still brief once."""
     memory = _both(tmp_path)
     memory.append_learning(
         ticket_id="t-02",
         workspace_slug="lg",
         content=_HEADED_BODY,
+        title="Learning — t-02",
     )
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert text.count("- **Learning — t-02**") == 1
 
 
-def test_both_copies_of_a_dual_written_learning_read_back_identically(tmp_path):
-    """The dedupe collapses two records but keeps only one of them, and which
-    one is a uuid4 coin flip. That only produces stable briefings if the two
-    copies carry the same body — so pin the bodies, not just the key."""
+def test_graph_record_and_vault_export_bodies_match(tmp_path):
+    """Cutover R2/R3 — export body matches the graph record (search returns the
+    durable hit in graph[]; vault memory/learning peers are filtered from
+    obsidian[])."""
     memory = _both(tmp_path)
-    memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
+    written = memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
 
     found = memory.search("throttled", workspace_slug="lg")
-    assert [n["body"] for n in found["obsidian"]] == [_HEADED_BODY]
+    assert found["obsidian"] == []
     assert [n["body"] for n in found["graph"]] == [_HEADED_BODY]
+    assert found["graph"][0]["id"] == written["graph"]["id"]
+    export_path = (tmp_path / "vault") / written["obsidian"]["path"]
+    assert _HEADED_BODY in export_path.read_text(encoding="utf-8")
 
 
-def test_the_briefing_reads_the_same_whichever_store_the_dedupe_kept(tmp_path):
-    """The surviving record must not repeat its own title inside its summary.
-    Running the two single-store shapes is the deterministic way to ask this:
-    against `_both` the winner is drawn by uuid4, so the defect shows up in
-    only about half of the runs."""
-    obsidian = _obsidian_only(tmp_path / "o")
+def test_the_briefing_reads_the_graph_record_with_or_without_vault(tmp_path):
+    """Cutover R5 — durable briefing comes from GRAPH. Graph-only and both
+    shapes must agree; vault-only writes fail closed."""
     graph = _graph_only(tmp_path / "g")
-    for memory in (obsidian, graph):
-        memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
+    both = _both(tmp_path / "b")
+    for memory in (graph, both):
+        memory.append_learning(
+            ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY, title="Learning — t-02"
+        )
 
     ticket = _ticket(title=_REALISTIC_TITLE)
-    from_obsidian = build_inherited_wisdom(ticket, "lg", memory=obsidian).text
     from_graph = build_inherited_wisdom(ticket, "lg", memory=graph).text
+    from_both = build_inherited_wisdom(ticket, "lg", memory=both).text
 
-    assert from_obsidian == from_graph
-    assert from_obsidian.count("Learning — t-02") == 1
+    assert from_graph == from_both
+    assert from_graph.count("Learning — t-02") == 1
 
 
 def test_the_newer_of_two_equally_matching_notes_comes_first(tmp_path):
@@ -317,25 +321,18 @@ def test_an_all_stopword_query_surfaces_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_an_unreadable_obsidian_vault_costs_only_the_section(tmp_path):
-    """AC5.2 — the seeded note WOULD be surfaced, so its absence proves the
-    raise really happened and _safely swallowed it. Asserting only that the
-    result is a string passes even when nothing raised.
-
-    The service here has BOTH backends, and the note is written to both, so the
-    still-readable graph copy could have been returned. Its absence is deliberate,
-    not an oversight: AC5.2 puts the guard at the section, so one unreadable store
-    costs the whole section. Do not 'fix' this into a per-store try/except that
-    lets the surviving half through — that is a different behaviour than the one
-    the spec pins, and this assertion is what says so."""
+def test_an_unreadable_obsidian_vault_does_not_block_graph_recall(tmp_path):
+    """Cutover R5 — durable recall is GRAPH-only. A vault list_notes failure
+    must not take the learnings section down when the graph record is readable.
+    """
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("vault unavailable")):
         text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
 
-    assert "Retry budget" not in text
-    assert "### Related learnings" not in text
+    assert "Retry budget" in text
+    assert "### Related learnings" in text
 
 
 def test_an_unreadable_memory_graph_costs_only_the_section(tmp_path):
@@ -371,3 +368,197 @@ def test_a_discredited_learning_is_absent_from_the_briefing(tmp_path, build_serv
 
     text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Retry budget for throttled tools" not in text
+
+
+#: The checkpoint protocol's own entry template, written the way an agent does
+#: when it emits markdown rather than the template's `\n`-joined literal. Four
+#: fields separated by blank lines — which was four entries until they were
+#: delimited.
+def _protocol_entry(label: str) -> str:
+    return (
+        f"### [42-add-rate-limiting] Implement — {label}\n\n"
+        f"**Would have asked:** what should the {label} bound be?\n\n"
+        f"**Assumption made:** the conservative one\n\n"
+        "**Confidence:** high"
+    )
+
+
+def test_a_multi_paragraph_checkpoint_is_one_entry(tmp_path):
+    """A blank line inside an entry is not an entry boundary.
+
+    It was: `append_checkpoint` separated entries with a blank line and the read
+    split on one, so a protocol-shaped checkpoint arrived as four entries — a
+    bare `###` heading, two fields, and `**Confidence:** high` — three of which
+    carry no information and all four of which spend a slot of the cap.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run_1",
+        entry=_protocol_entry("token bucket"),
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 1
+    assert "**Confidence:** high" in result.text
+
+
+def test_the_cap_counts_checkpoints_not_paragraphs(tmp_path):
+    """Six protocol-shaped checkpoints all reach the prompt.
+
+    Splitting on blank lines spent the whole six-slot cap on the first one and a
+    half, so the five earlier decisions this exists to carry were evicted by
+    fragments of the sixth.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    labels = [f"decision-{i}" for i in range(6)]
+    for i, label in enumerate(labels):
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=_protocol_entry(label),
+        )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=100_000)
+    assert result.checkpoints_injected == 6
+    for label in labels:
+        assert label in result.text
+
+
+def test_a_log_written_before_entries_were_delimited_still_reads(tmp_path):
+    """The 815 logs already in the vault carry no delimiter.
+
+    They are split on blank lines as before — imperfectly, which is what they
+    were written as, and better than reading them as one blob or not at all.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    log = tmp_path / "Loregarden" / "Checkpoints" / "lg" / "42-add-rate-limiting" / "run-old.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '---\ntype: "checkpoint"\n---\n\n'
+        "# Checkpoint log — 42-add-rate-limiting / run-old\n\n"
+        "Chose a token bucket.\n\nChose a 60s window.\n\n",
+        encoding="utf-8",
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 2
+    assert "token bucket" in result.text
+    assert "60s window" in result.text
+
+
+def test_a_log_open_across_the_change_keeps_both_halves(tmp_path):
+    """A run in flight when the delimiter landed has an undelimited prefix.
+
+    That prefix is the earlier stages of the run being briefed — the most
+    valuable part — so it is split the old way rather than dropped or returned
+    as one blob with the delimited entries.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    log = tmp_path / "Loregarden" / "Checkpoints" / "lg" / "42-add-rate-limiting" / "run-mixed.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '---\ntype: "checkpoint"\n---\n\n'
+        "# Checkpoint log — 42-add-rate-limiting / run-mixed\n\n"
+        "Written before the delimiter.\n\n",
+        encoding="utf-8",
+    )
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run-mixed",
+        entry=_protocol_entry("written after"),
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == 2
+    assert "Written before the delimiter." in result.text
+    assert "written after" in result.text
+
+
+def test_checkpoints_under_two_slugs_order_by_recency_not_by_directory(tmp_path):
+    """23 tickets in the live vault have logs under both an id and an external-id
+    directory, from either side of the id restructure. The cap used to be filled
+    from whichever directory the candidate *set* yielded first, so which run
+    reached the prompt was set ordering — not recency, and not stable."""
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    for i in range(_MAX_CHECKPOINTS):
+        memory.append_checkpoint(
+            ticket_id=ticket.id,
+            workspace_slug="lg",
+            run_id=f"old_run_{i}",
+            entry=f"older decision {i}",
+        )
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="new_run",
+        entry="newest decision",
+    )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=100_000)
+    assert result.text.index("newest decision") < result.text.index("older decision")
+
+
+def test_each_checkpoint_renders_as_one_list_item(tmp_path):
+    """Continuation lines are indented under the bullet.
+
+    A multi-line entry with unindented continuations ends the markdown list, and
+    its fields read as prose belonging to nothing.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket()
+    memory.append_checkpoint(
+        ticket_id=ticket.external_id,
+        workspace_slug="lg",
+        run_id="run_1",
+        entry=_protocol_entry("token bucket"),
+    )
+
+    body = build_inherited_wisdom(ticket, "lg", memory=memory).text
+    section = body.split("### Checkpoints from earlier stages\n", 1)[1]
+    assert section.startswith("- ### [42-add-rate-limiting]")
+    assert "\n  **Confidence:** high" in section
+    assert section.count("\n- ") == 0
+
+
+def test_the_default_char_cap_does_not_bind_on_a_saturated_briefing(tmp_path):
+    """Six checkpoints and five learnings, each the size real ones run to.
+
+    The entry counts are what bound this section; `MAX_WISDOM_CHARS` is a
+    backstop behind them. At 3000 it was the binding constraint instead — it cut
+    81 of the vault's 927 real briefings — so a saturated briefing of
+    realistically sized entries must survive it intact.
+    """
+    memory = _memory(tmp_path)
+    ticket = _ticket(title=_REALISTIC_TITLE, description=_MATCHING_BODY)
+    for i in range(_MAX_CHECKPOINTS):
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=f"### [42] Implement — decision {i}\n\n" + "x" * 800,
+        )
+    for i in range(_MAX_MEMORY_HITS + 2):
+        memory.append_learning(
+            ticket_id=f"other-{i}",
+            workspace_slug="lg",
+            content=f"{_MATCHING_BODY}\n\n" + "y" * 800,
+            title=f"Throttled retry lesson {i}",
+        )
+
+    result = build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert result.checkpoints_injected == _MAX_CHECKPOINTS
+    assert result.learnings_injected == _MAX_MEMORY_HITS
+    assert not result.truncated, (
+        f"{result.pre_truncation_chars} chars exceeded MAX_WISDOM_CHARS={MAX_WISDOM_CHARS}"
+    )
+    for i in range(_MAX_CHECKPOINTS):
+        assert f"decision {i}" in result.text

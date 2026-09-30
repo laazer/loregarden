@@ -97,12 +97,23 @@ export interface Approval {
   allowed_actions?: ApprovalResolutionAction[];
 }
 
+/** A file uploaded with a Home chat turn. Text is inlined for the agent; images go by path. */
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: "text" | "image";
+}
+
 export interface TriageMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   /** Resolved at write time and stored, so cards survive a reload. */
   parts?: ChatPart[];
+  /** Home chat user turns only; absent on every other surface. */
+  attachments?: ChatAttachment[];
   created_at: string;
 }
 

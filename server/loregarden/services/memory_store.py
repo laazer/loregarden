@@ -17,7 +17,32 @@ from loregarden.config import (
     settings,
 )
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.models.domain.memory_enums import (
+    MemoryNodeType,
+    MemoryOriginKind,
+    MemoryRelationType,
+    RelationDirection,
+)
 from loregarden.services import term_overlap
+from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
+from loregarden.services.memory_export import export_node_to_vault
+from loregarden.services.memory_history import (
+    ChangeAttribution,
+    NodeContent,
+    ensure_history_schema,
+    list_versions,
+    record_superseded,
+)
+from loregarden.services.memory_links import (
+    LEGACY_LEARNING_TITLE_PREFIX,
+    insert_relation,
+    learning_title,
+    lineage,
+    relations_among,
+    relations_of,
+    superseded_by,
+)
+from loregarden.services.memory_tag_repair import repair_split_json_tags
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
@@ -29,6 +54,32 @@ from loregarden.services.path_resolve import (
 # graph side mirrors it so it cannot become the new cost centre. Cited by name
 # in `list_nodes` and `recall_related`; there is no second literal.
 RECALL_CANDIDATE_CAP = 500
+
+
+#: Introduces each checkpoint entry inside a ticket+run log.
+#:
+#: Leading rather than trailing, which is what makes a log written across the
+#: change readable: everything before the first marker is undelimited legacy
+#: text and everything after one is exactly one entry. A terminator cannot say
+#: that — the text before the first terminator is either a legacy prefix or the
+#: first entry, with nothing to tell them apart.
+#:
+#: The boundary used to be a blank line, which is not a boundary: the checkpoint
+#: protocol's own entry template is four fields, and an agent that writes them
+#: with blank lines between — rather than the `\n`-joined form the template shows
+#: — had its one checkpoint read back as four. Measured across the vault, 198 of
+#: the 1662 entries the stage briefing injected were fragments of a split entry
+#: carrying no information: a bare `### [id] Stage — label`, or `**Confidence:**
+#: high` on its own. Each one also spent a slot of `_MAX_CHECKPOINTS`, evicting a
+#: real prior decision, and was counted in `memory_briefings.checkpoints_injected`
+#: as though continuity had worked.
+#:
+#: An HTML comment because the vault is read by humans in Obsidian, where it is
+#: invisible: the marker must be something no author would write and no renderer
+#: would show. `---` was the other candidate and is unusable — it is a thematic
+#: break an entry may legitimately contain, and at the top of a file it is
+#: frontmatter.
+CHECKPOINT_ENTRY_DELIMITER = "<!-- checkpoint-entry -->"
 
 
 class MemoryStoreReadError(Exception):
@@ -43,6 +94,30 @@ class MemoryStoreReadError(Exception):
     def __init__(self, store: MemoryStoreKind) -> None:
         super().__init__(f"{store.value} read failed")
         self.store = store
+
+
+def clean_aliases(aliases: list[str], title: str) -> list[str]:
+    """Distinct, non-blank aliases that are not the title itself, in given order."""
+    seen = {title.casefold()}
+    kept: list[str] = []
+    for alias in aliases:
+        name = " ".join(alias.split())
+        if name and name.casefold() not in seen:
+            seen.add(name.casefold())
+            kept.append(name)
+    return kept
+
+
+class MemoryNodeNotFoundError(LookupError):
+    """No graph node has this id in this workspace's shard."""
+
+
+class MemoryWriteNotAppliedError(RuntimeError):
+    """A write returned but the row read back does not carry it.
+
+    Raised rather than returning the unchanged row: a 200 describing a flag
+    that was never set is the failure an operator can least afford to miss.
+    """
 
 
 def _utcnow_iso() -> str:
@@ -159,6 +234,8 @@ class ObsidianMemoryStore:
         workspace_slug: str = "",
         note_type: str = "memory",
         discredited: bool | None = None,
+        derived: bool = False,
+        aliases: list[str] | None = None,
     ) -> MemoryNote:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
@@ -186,11 +263,15 @@ class ObsidianMemoryStore:
                 "type": note_type,
                 "title": title,
                 "tags": tags,
+                # Obsidian resolves links through `aliases`, so an export
+                # carrying them links the way the graph recalls.
+                "aliases": list(aliases or []),
                 "ticket_id": ticket_id,
                 "workspace": workspace_slug,
                 "created": created_at,
                 "updated": now,
                 "discredited": True if flag else None,
+                "derived": True if derived else None,
             }
         )
         path.write_text(f"{frontmatter}\n\n# {title}\n\n{body.strip()}\n", encoding="utf-8")
@@ -216,7 +297,7 @@ class ObsidianMemoryStore:
         content: str,
         tags: list[str] | None = None,
     ) -> MemoryNote:
-        title = f"Learning — {ticket_id}"
+        title = f"{LEGACY_LEARNING_TITLE_PREFIX}{ticket_id}"
         merged_tags = ["learning", "loregarden", *(tags or [])]
         return self.upsert_note(
             title=title,
@@ -260,7 +341,18 @@ class ObsidianMemoryStore:
         it (with a frontmatter header) on first write. Unlike upsert_note's
         one-file-per-call notes, multiple entries accumulate in one file across
         a run — matching the checkpoint protocol's <ticket-id>/<run-id>.md log.
+
+        Each entry is introduced by `CHECKPOINT_ENTRY_DELIMITER`, so a
+        multi-paragraph entry survives the read back as one entry.
         """
+        if CHECKPOINT_ENTRY_DELIMITER in entry:
+            # Loud rather than lenient, per `reject_truncated_call`: an entry
+            # carrying the marker would split itself on read, and the halves
+            # would look exactly like two checkpoints someone meant to write.
+            raise ValueError(
+                f"checkpoint entry contains {CHECKPOINT_ENTRY_DELIMITER!r}, which is "
+                "reserved as the entry separator. Remove it and re-send the entry."
+            )
         base = self.checkpoints_dir(workspace_slug)
         ticket_slug = slugify(ticket_id) if ticket_id.strip() else "ticket"
         run_slug = slugify(run_id) if run_id.strip() else "run"
@@ -282,7 +374,7 @@ class ObsidianMemoryStore:
             )
 
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(entry.strip() + "\n\n")
+            handle.write(f"{CHECKPOINT_ENTRY_DELIMITER}\n\n{entry.strip()}\n\n")
 
         return {
             "path": str(path.relative_to(self.vault_dir)),
@@ -296,33 +388,74 @@ class ObsidianMemoryStore:
         note_type: str = "",
         workspace_slug: str = "",
         limit: int = 50,
+        include_checkpoints: bool = False,
     ) -> list[MemoryNote]:
+        # Checkpoint-only filter: walk Checkpoints alone so a shared limit with
+        # Memory/Learnings/BlogPosts cannot starve the root search needs.
+        if include_checkpoints and note_type == "checkpoint":
+            roots = self._checkpoint_roots(workspace_slug)
+        elif note_type == "checkpoint":
+            roots = []
+        else:
+            roots = self._standard_note_roots(
+                workspace_slug, include_checkpoints=include_checkpoints
+            )
+        notes: list[MemoryNote] = []
+        for path in self._iter_note_paths(roots):
+            note = self._read_note(path)
+            if note and self._note_visible(
+                note, note_type=note_type, workspace_slug=workspace_slug
+            ):
+                notes.append(note)
+            if len(notes) >= limit:
+                return notes
+        return notes
+
+    @staticmethod
+    def _iter_note_paths(roots: list[Path]):
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+                if "_orphans" not in path.parts:
+                    yield path
+
+    @staticmethod
+    def _note_visible(
+        note: MemoryNote,
+        *,
+        note_type: str,  # py-org: allow-string — open filter; "" means any note type
+        workspace_slug: str,
+    ) -> bool:
+        if note_type and note.note_type != note_type:
+            return False
+        if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
+            return False
+        return not note.discredited
+
+    def _standard_note_roots(self, workspace_slug: str, *, include_checkpoints: bool) -> list[Path]:
         if workspace_slug.strip():
             roots = [
                 self.memory_dir(workspace_slug),
                 self.learnings_dir(workspace_slug),
                 self.blogposts_dir(workspace_slug),
             ]
-        else:
-            memory_root = self.vault_dir / self._memory_subdir
-            learnings_root = self.vault_dir / self._learnings_subdir
-            blogposts_root = self.vault_dir / self._blogposts_subdir
-            roots = [p for p in (memory_root, learnings_root, blogposts_root) if p.is_dir()]
-        notes: list[MemoryNote] = []
-        for root in roots:
-            if not root.is_dir():
-                continue
-            for path in sorted(root.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-                note = self._read_note(path)
-                if note and (not note_type or note.note_type == note_type):
-                    if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
-                        continue
-                    if note.discredited:
-                        continue
-                    notes.append(note)
-                if len(notes) >= limit:
-                    return notes
-        return notes
+            if include_checkpoints:
+                roots.extend(self._checkpoint_roots(workspace_slug))
+            return roots
+        memory_root = self.vault_dir / self._memory_subdir
+        learnings_root = self.vault_dir / self._learnings_subdir
+        blogposts_root = self.vault_dir / self._blogposts_subdir
+        roots = [p for p in (memory_root, learnings_root, blogposts_root) if p.is_dir()]
+        if include_checkpoints:
+            roots.extend(self._checkpoint_roots(""))
+        return roots
+
+    def _checkpoint_roots(self, workspace_slug: str) -> list[Path]:
+        if workspace_slug.strip():
+            return [self.checkpoints_dir(workspace_slug)]
+        checkpoints_root = self.vault_dir / self._checkpoints_subdir
+        return [checkpoints_root] if checkpoints_root.is_dir() else []
 
     def search(
         self,
@@ -334,13 +467,30 @@ class ObsidianMemoryStore:
         needle = query.strip().lower()
         if not needle:
             return []
-        hits: list[MemoryNote] = []
-        for note in self.list_notes(workspace_slug=workspace_slug, limit=500):
-            haystack = f"{note.title}\n{note.body}\n{' '.join(note.tags)}".lower()
-            if needle in haystack:
-                hits.append(note)
-            if len(hits) >= limit:
-                break
+
+        def _matches(notes: list[MemoryNote]) -> list[MemoryNote]:
+            found: list[MemoryNote] = []
+            for note in notes:
+                haystack = f"{note.title}\n{note.body}\n{' '.join(note.tags)}".lower()
+                if needle in haystack:
+                    found.append(note)
+            return found
+
+        # Two passes: default roots stay checkpoint-blind; checkpoints get their
+        # own walk so a Memory-filled list_notes(limit=500) cannot starve them.
+        non_checkpoint = _matches(self.list_notes(workspace_slug=workspace_slug, limit=500))
+        checkpoints = _matches(
+            self.list_notes(
+                workspace_slug=workspace_slug,
+                include_checkpoints=True,
+                note_type="checkpoint",
+                limit=500,
+            )
+        )
+        hits = non_checkpoint[:limit]
+        remaining = limit - len(hits)
+        if remaining > 0:
+            hits.extend(checkpoints[:remaining])
         return hits
 
     def _read_note(self, path: Path) -> MemoryNote | None:
@@ -350,13 +500,22 @@ class ObsidianMemoryStore:
         fm_match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
         body = text
         fields: dict[str, str] = {}
+        lists: dict[str, list[str]] = {}
         if fm_match:
             body = text[fm_match.end() :].strip()
+            current = ""
             for line in fm_match.group(1).splitlines():
-                if ":" not in line or line.strip().startswith("- "):
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    # A list item belongs to the key above it. Collecting every
+                    # item as a tag made an exported `aliases:` read back as tags.
+                    lists.setdefault(current, []).append(stripped[2:].strip())
+                    continue
+                if ":" not in line:
                     continue
                 key, value = line.split(":", 1)
-                fields[key.strip()] = value.strip().strip('"')
+                current = key.strip()
+                fields[current] = value.strip().strip('"')
 
         title_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         title = title_match.group(1).strip() if title_match else path.stem
@@ -368,11 +527,7 @@ class ObsidianMemoryStore:
             # which carries no such line. Only a match at position 0 is that
             # injected heading; a `#` heading further down is the author's.
             body = body[title_match.end() :].lstrip("\n")
-        tags: list[str] = []
-        for line in fm_match.group(1).splitlines() if fm_match else []:
-            stripped = line.strip()
-            if stripped.startswith("- "):
-                tags.append(stripped[2:].strip())
+        tags = lists.get("tags", [])
 
         return MemoryNote(
             id=fields.get("id", path.stem),
@@ -394,7 +549,8 @@ class MemoryGraphStore:
 
     _NODE_COLUMNS = (
         "id, title, body, tags_json, ticket_id, workspace_slug, "
-        "node_type, created_at, updated_at, discredited"
+        "node_type, created_at, updated_at, discredited, aliases_json, "
+        "origin_kind, origin_ref"
     )
     _VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
@@ -452,15 +608,45 @@ class MemoryGraphStore:
                 CREATE INDEX IF NOT EXISTS ix_memory_relations_source ON memory_relations(source_id);
                 """
             )
-            self._ensure_discredited_column(conn)
+            self._ensure_node_columns(conn)
+            self._ensure_origin_columns(conn)
+            ensure_history_schema(conn)
+            repair_split_json_tags(conn)
 
     @staticmethod
-    def _ensure_discredited_column(conn: sqlite3.Connection) -> None:
+    def _ensure_node_columns(conn: sqlite3.Connection) -> None:
+        """Columns added after `memory_nodes` shipped, migrated on open.
+
+        `aliases_json` defaults to `'[]'` honestly: a node written before
+        aliases existed has none, which is a fact rather than an unknown.
+        """
         columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
         if "discredited" not in columns:
             conn.execute(
                 "ALTER TABLE memory_nodes ADD COLUMN discredited INTEGER NOT NULL DEFAULT 0"
             )
+        if "aliases_json" not in columns:
+            conn.execute(
+                "ALTER TABLE memory_nodes ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]'"
+            )
+
+    @staticmethod
+    def _ensure_origin_columns(conn: sqlite3.Connection) -> None:
+        """Provenance columns (766), nullable on purpose.
+
+        A row written before provenance existed has no known origin, and NULL
+        is how it says so. A default — `human`, or `agent` inferred from
+        `node_type` — would be a guess stored as a fact on every old row.
+        """
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
+        for column in ("origin_kind", "origin_ref"):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE memory_nodes ADD COLUMN {column} TEXT NULL")
+
+    def connection(self) -> sqlite3.Connection:
+        """A configured connection, for the graph modules that read and write
+        beside this class (`memory_links`, `memory_curation`)."""
+        return self._connect()
 
     @staticmethod
     def _node_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -475,6 +661,9 @@ class MemoryGraphStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "discredited": bool(row["discredited"]),
+            "aliases": json.loads(row["aliases_json"] or "[]"),
+            "origin_kind": row["origin_kind"],
+            "origin_ref": row["origin_ref"],
         }
 
     def upsert_node(
@@ -488,26 +677,69 @@ class MemoryGraphStore:
         workspace_slug: str = "",
         node_type: str = "memory",
         discredited: bool | None = None,
+        attribution: ChangeAttribution | None = None,
+        aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
+        """Create or replace a node, preserving the version an update replaces.
+
+        `aliases` and `discredited` follow the same rule: None keeps what the
+        node already has, a value replaces it.
+
+        Origin is who produced the node, so it is set by the write that has
+        one and kept by every later write that does not: an operator's retitle
+        leaves an agent-written learning agent-written. `origin_kind` and
+        `origin_ref` are kept or replaced together.
+
+        The prior version is written to `memory_node_versions` inside the same
+        transaction as the update, so an update cannot land without its history
+        (see `services.memory_history`). A create writes no history row.
+        """
         node_id = node_id.strip() or str(uuid4())
         now = _utcnow_iso()
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT created_at, discredited FROM memory_nodes WHERE id = ?",
+                "SELECT title, body, tags_json, updated_at, created_at, discredited, aliases_json, "
+                "origin_kind, origin_ref FROM memory_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
+            if origin_kind is None:
+                origin = (row["origin_kind"], row["origin_ref"]) if row else (None, None)
+            else:
+                origin = (origin_kind.value, origin_ref)
+            if aliases is None:
+                aliases_json = row["aliases_json"] if row else "[]"
+            else:
+                aliases_json = json.dumps(clean_aliases(aliases, title))
             if discredited is None:
                 flag = int(row["discredited"]) if row else 0
             else:
                 flag = 1 if discredited else 0
+            if row:
+                record_superseded(
+                    conn,
+                    node_id=node_id,
+                    prior=row,
+                    incoming=NodeContent(
+                        title=title,
+                        body=body,
+                        tags_json=tags_json,
+                        discredited=bool(flag),
+                        aliases_json=aliases_json,
+                    ),
+                    superseded_at=now,
+                    attribution=attribution or ChangeAttribution(),
+                )
             conn.execute(
                 """
                 INSERT INTO memory_nodes (
                     id, title, body, tags_json, ticket_id, workspace_slug,
-                    node_type, created_at, updated_at, discredited
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    node_type, created_at, updated_at, discredited, aliases_json,
+                    origin_kind, origin_ref
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     body = excluded.body,
@@ -516,7 +748,10 @@ class MemoryGraphStore:
                     workspace_slug = excluded.workspace_slug,
                     node_type = excluded.node_type,
                     updated_at = excluded.updated_at,
-                    discredited = excluded.discredited
+                    discredited = excluded.discredited,
+                    aliases_json = excluded.aliases_json,
+                    origin_kind = excluded.origin_kind,
+                    origin_ref = excluded.origin_ref
                 """,
                 (
                     node_id,
@@ -529,6 +764,8 @@ class MemoryGraphStore:
                     created_at,
                     now,
                     flag,
+                    aliases_json,
+                    *origin,
                 ),
             )
         return {
@@ -542,6 +779,9 @@ class MemoryGraphStore:
             "created_at": created_at,
             "updated_at": now,
             "discredited": bool(flag),
+            "aliases": json.loads(aliases_json),
+            "origin_kind": origin[0],
+            "origin_ref": origin[1],
             "sqlite_path": str(self.db_path),
         }
 
@@ -550,33 +790,79 @@ class MemoryGraphStore:
         *,
         source_id: str,
         target_id: str,
-        relation_type: str = "related",
+        relation_type: MemoryRelationType = MemoryRelationType.RELATED,
     ) -> dict[str, Any]:
-        relation_id = str(uuid4())
-        now = _utcnow_iso()
+        """Write a typed edge (see `memory_links.insert_relation` for the rules)."""
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO memory_relations (id, source_id, target_id, relation_type, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (relation_id, source_id, target_id, relation_type, now),
+            return insert_relation(
+                conn,
+                source_id=source_id,
+                target_id=target_id,
+                relation_type=relation_type,
+                created_at=_utcnow_iso(),
             )
-        return {
-            "id": relation_id,
-            "source_id": source_id,
-            "target_id": target_id,
-            "relation_type": relation_type,
-            "created_at": now,
-        }
+
+    def get_node(self, node_id: str) -> dict[str, Any] | None:
+        """One node by id, discredited or not — None only when it does not exist.
+
+        An operator read: the discredit control acts on exactly the rows
+        `_VISIBLE_NODES` hides, so this must not filter them.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT {self._NODE_COLUMNS} FROM memory_nodes WHERE id = ?", (node_id,)
+            ).fetchone()
+        return self._node_row(row) if row else None
+
+    def related_nodes(self, node_ids: list[str]) -> list[dict[str, Any]]:
+        """Every visible node one `memory_relations` edge away, in both directions.
+
+        A reader only (179): `memory_relations` is the sole edge store, and this
+        writes nothing. Each row names the surfaced node it hangs off
+        (`anchor_id`), the neighbour's title and `updated_at`, the edge's
+        `relation_type`, and `direction` — ``out`` when the anchor is the
+        edge's source, ``in`` when it is the target. No bodies: a digest that
+        carried them would be a second briefing.
+
+        Discredited neighbours are excluded here, like every other read path
+        (182). Ranking and capping are the caller's — see
+        `inherited_wisdom.rank_related`.
+        """
+        if not node_ids:
+            return []
+        marks = ", ".join("?" for _ in node_ids)
+        visible = "COALESCE(n.discredited, 0) = 0"
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT r.source_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+                       r.relation_type, 'out' AS direction
+                FROM memory_relations r JOIN memory_nodes n ON n.id = r.target_id
+                WHERE r.source_id IN ({marks}) AND {visible}
+                UNION ALL
+                SELECT r.target_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+                       r.relation_type, 'in' AS direction
+                FROM memory_relations r JOIN memory_nodes n ON n.id = r.source_id
+                WHERE r.target_id IN ({marks}) AND {visible}
+                """,
+                (*node_ids, *node_ids),
+            ).fetchall()
+        return [{**dict(row), "direction": RelationDirection(row["direction"])} for row in rows]
+
+    def node_versions(self, node_id: str) -> list[dict[str, Any]]:
+        """The retained superseded versions of a node, oldest first."""
+        with self._connect() as conn:
+            return list_versions(conn, node_id)
 
     def list_nodes(
         self,
         *,
         workspace_slug: str = "",
         limit: int = RECALL_CANDIDATE_CAP,
+        include_discredited: bool = False,
+        node_type: MemoryNodeType | None = None,
     ) -> list[dict[str, Any]]:
-        """Visible nodes in the workspace, newest first — enumeration, not matching.
+        """Nodes in the workspace, newest first — enumeration, not matching.
 
         `search()` is the other reader of this table, and it is a
         `LIKE '%query%'` match. Ranking its output would rank whatever survived
@@ -584,32 +870,30 @@ class MemoryGraphStore:
         needs a surface that filters on nothing except the discredited flag.
         The default is `RECALL_CANDIDATE_CAP`, mirroring the Obsidian side so
         the graph cannot become the new cost centre.
+
+        `include_discredited` is for the operator surface only, which has to
+        show the rows it can restore. Every agent read path takes the default.
         """
         slug = workspace_slug.strip()
+        clauses = ["workspace_slug = ?"] if slug else []
+        params: list[Any] = [slug] if slug else []
+        if not include_discredited:
+            clauses.append(self._VISIBLE_NODES)
+        if node_type is not None:
+            clauses.append("node_type = ?")
+            params.append(node_type.value)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._connect() as conn:
-            if slug:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE workspace_slug = ?
-                      AND {self._VISIBLE_NODES}
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (slug, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE {self._VISIBLE_NODES}
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT {self._NODE_COLUMNS}
+                FROM memory_nodes
+                {where}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
         return [self._node_row(row) for row in rows]
 
     def search(
@@ -618,38 +902,60 @@ class MemoryGraphStore:
         *,
         workspace_slug: str = "",
         limit: int = 20,
+        node_type: MemoryNodeType | None = None,
+        include_discredited: bool = False,
     ) -> list[dict[str, Any]]:
-        needle = f"%{query.strip()}%"
+        """Visible nodes whose title, body, tags or aliases contain `query`.
+
+        `include_discredited` is for the operator surfaces only; every agent
+        read path takes the default.
+        """
         if query.strip() == "":
             return []
+        needle = f"%{query.strip()}%"
         slug = workspace_slug.strip()
+        clauses = ["workspace_slug = ?"] if slug else []
+        params: list[Any] = [slug] if slug else []
+        if not include_discredited:
+            clauses.append(self._VISIBLE_NODES)
+        clauses.append("(title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)")
+        params.extend([needle] * 4)
+        if node_type is not None:
+            clauses.append("node_type = ?")
+            params.append(node_type.value)
         with self._connect() as conn:
-            if slug:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE workspace_slug = ?
-                      AND {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (slug, needle, needle, needle, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"""
-                    SELECT {self._NODE_COLUMNS}
-                    FROM memory_nodes
-                    WHERE {self._VISIBLE_NODES}
-                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    (needle, needle, needle, limit),
-                ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT {self._NODE_COLUMNS}
+                FROM memory_nodes
+                WHERE {" AND ".join(clauses)}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
         return [self._node_row(row) for row in rows]
+
+    def list_relations(self, node_ids: list[str]) -> list[dict[str, Any]]:
+        """Edges whose source and target are both in `node_ids` (766).
+
+        Both ends, deliberately: an edge to a node the caller did not load is
+        an edge it cannot draw, and dropping it later in a client would be a
+        second, invisible filter. See `memory_links.relations_among`.
+        """
+        with self._connect() as conn:
+            return relations_among(conn, node_ids)
+
+    def node_type_counts(self, workspace_slug: str) -> dict[str, int]:
+        """Visible nodes per `node_type` in the workspace."""
+        slug = workspace_slug.strip()
+        where = f"WHERE {self._VISIBLE_NODES}" + (" AND workspace_slug = ?" if slug else "")
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT node_type, COUNT(*) FROM memory_nodes {where} GROUP BY node_type",
+                (slug,) if slug else (),
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
 
     def sqlite_url(self) -> str:
         return sqlite_url_for_path(self.db_path)
@@ -681,6 +987,14 @@ class AgentMemoryService:
         if not slug:
             return base
         return base.parent / slug / base.name
+
+    def graph_path(self, workspace_slug: str) -> Path | None:
+        """Where the workspace's graph lives, or None when none is configured.
+
+        Answers without opening the file: constructing a `MemoryGraphStore`
+        creates it, and a read must not.
+        """
+        return self._graph_path_for_workspace(workspace_slug)
 
     def _graph_for_workspace(self, workspace_slug: str) -> MemoryGraphStore | None:
         path = self._graph_path_for_workspace(workspace_slug)
@@ -776,36 +1090,48 @@ class AgentMemoryService:
         workspace_slug: str,
         content: str,
         tags: list[str] | None = None,
+        title: str = "",
+        aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
+        """Record a learning under a real title (see `memory_links.learning_title`).
+
+        `title_derived` in the result says when the title was taken from the
+        content's first line because the caller sent none, so the writer can
+        see what its learning will be called and correct it.
+        """
+        # Cutover R2 — GRAPH is the record; vault is a labelled export. Fail closed
+        # without a graph: vault-only peer writes are not a valid path.
         graph = self._graph_for_workspace(workspace_slug)
-        if not self.obsidian and not graph:
+        if not graph:
             raise ValueError(
-                "No memory backend configured. Set LOREGARDEN_OBSIDIAN_VAULT_DIR and/or "
-                "LOREGARDEN_MEMORY_SQLITE_URL (or enable iCloud defaults)."
+                "Memory graph SQLite is not configured. Durable learnings require "
+                "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
+                "are not allowed."
             )
-        result: dict[str, Any] = {"ticket_id": ticket_id, "workspace_slug": workspace_slug}
+        name, derived = learning_title(title, content)
+        result: dict[str, Any] = {
+            "ticket_id": ticket_id,
+            "workspace_slug": workspace_slug,
+            "title_derived": derived,
+        }
+        node = graph.upsert_node(
+            title=name,
+            body=content,
+            tags=["learning", "loregarden", *(tags or [])],
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            node_type="learning",
+            aliases=aliases or [],
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
+        )
+        result["graph"] = node
         if self.obsidian:
-            note = self.obsidian.append_learning(
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                content=content,
-                tags=tags,
-            )
-            result["obsidian"] = {
-                "id": note.id,
-                "path": note.path,
-                "updated_at": note.updated_at,
-            }
-        if graph:
-            node = graph.upsert_node(
-                title=f"Learning — {ticket_id}",
-                body=content,
-                tags=["learning", "loregarden", *(tags or [])],
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                node_type="learning",
-            )
-            result["graph"] = node
+            exported = export_node_to_vault(self, node=node)
+            if exported:
+                result["obsidian"] = exported
         return result
 
     def upsert_memory(
@@ -818,36 +1144,124 @@ class AgentMemoryService:
         ticket_id: str = "",
         workspace_slug: str = "",
         discredited: bool | None = None,
+        aliases: list[str] | None = None,
+        origin_kind: MemoryOriginKind | None = None,
+        origin_ref: str | None = None,
     ) -> dict[str, Any]:
         graph = self._graph_for_workspace(workspace_slug)
-        if not self.obsidian and not graph:
-            raise ValueError("No memory backend configured.")
+        if not graph:
+            raise ValueError(
+                "Memory graph SQLite is not configured. Durable memory requires "
+                "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
+                "are not allowed."
+            )
         node_id = node_id.strip() or str(uuid4())
         result: dict[str, Any] = {}
+        node = graph.upsert_node(
+            node_id=node_id,
+            title=title,
+            body=body,
+            tags=tags,
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            node_type="memory",
+            discredited=discredited,
+            aliases=aliases,
+            origin_kind=origin_kind,
+            origin_ref=origin_ref,
+        )
+        result["graph"] = node
         if self.obsidian:
-            note = self.obsidian.upsert_note(
-                note_id=node_id,
-                title=title,
-                body=body,
-                tags=tags,
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                note_type="memory",
-                discredited=discredited,
-            )
-            result["obsidian"] = {"id": note.id, "path": note.path, "updated_at": note.updated_at}
-        if graph:
-            result["graph"] = graph.upsert_node(
-                node_id=node_id,
-                title=title,
-                body=body,
-                tags=tags,
-                ticket_id=ticket_id,
-                workspace_slug=workspace_slug,
-                node_type="memory",
-                discredited=discredited,
-            )
+            exported = export_node_to_vault(self, node=node)
+            if exported:
+                result["obsidian"] = exported
         return result
+
+    def require_graph(self, workspace_slug: str) -> MemoryGraphStore:
+        """The workspace's graph store; raises ValueError when none is configured."""
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph:
+            raise ValueError("Memory graph SQLite is not configured.")
+        return graph
+
+    def list_graph_nodes(
+        self, *, workspace_slug: str, limit: int, include_discredited: bool
+    ) -> list[dict[str, Any]]:
+        """Operator listing of graph nodes. Agents use `recall_related`/`search`."""
+        return self.require_graph(workspace_slug).list_nodes(
+            workspace_slug=workspace_slug,
+            limit=limit,
+            include_discredited=include_discredited,
+        )
+
+    def node_detail(self, *, node_id: str, workspace_slug: str) -> dict[str, Any]:
+        """One node, discredited or not, with its history, edges and successors."""
+        graph = self.require_graph(workspace_slug)
+        node = graph.get_node(node_id)
+        if node is None:
+            raise MemoryNodeNotFoundError(node_id)
+        with graph.connection() as conn:
+            edges = relations_of(conn, node_id)
+            successors = superseded_by(conn, [node_id]).get(node_id, [])
+        return {
+            **node,
+            "versions": graph.node_versions(node_id),
+            "relations": edges,
+            "superseded_by": successors,
+        }
+
+    def lineage(self, *, node_id: str, workspace_slug: str) -> list[dict[str, Any]]:
+        """The supersession chain through a node, oldest first, each step with its
+        own version history — what the position was, what replaced it, and the
+        change notes recorded along the way (`memory_links.lineage`)."""
+        graph = self.require_graph(workspace_slug)
+        if graph.get_node(node_id) is None:
+            raise MemoryNodeNotFoundError(node_id)
+        with graph.connection() as conn:
+            chain = lineage(conn, node_id)
+        steps = []
+        for step_id in chain:
+            node = graph.get_node(step_id)
+            if node is not None:
+                steps.append({**node, "versions": graph.node_versions(step_id)})
+        return steps
+
+    def set_discredited(
+        self,
+        *,
+        node_id: str,
+        workspace_slug: str,
+        discredited: bool,
+        reason: str,
+        writer: str,
+    ) -> dict[str, Any]:
+        """Mark a node wrong (or restore it), recording who and why.
+
+        Goes through `upsert_node` like every other graph write, so the version
+        it replaces — and the reason — land in `memory_node_versions`. The row
+        is read back afterwards: a write that did not stick raises.
+        """
+        graph = self.require_graph(workspace_slug)
+        node = graph.get_node(node_id)
+        if node is None:
+            raise MemoryNodeNotFoundError(node_id)
+        graph.upsert_node(
+            node_id=node_id,
+            title=node["title"],
+            body=node["body"],
+            tags=node["tags"],
+            ticket_id=node["ticket_id"],
+            workspace_slug=node["workspace_slug"],
+            node_type=node["node_type"],
+            discredited=discredited,
+            attribution=ChangeAttribution(writer=writer, note=reason),
+        )
+        stored = graph.get_node(node_id)
+        if stored is None or stored["discredited"] is not discredited:
+            raise MemoryWriteNotAppliedError(f"discredited={discredited} did not persist")
+        if self.obsidian:
+            export_node_to_vault(self, node=stored)
+        return {**stored, "versions": graph.node_versions(node_id)}
 
     def upsert_blog_post(
         self,
@@ -907,16 +1321,11 @@ class AgentMemoryService:
         *,
         source_id: str,
         target_id: str,
-        relation_type: str = "related",
+        relation_type: MemoryRelationType = MemoryRelationType.RELATED,
         workspace_slug: str = "",
     ) -> dict[str, Any]:
-        graph = self._graph_for_workspace(workspace_slug)
-        if not graph:
-            raise ValueError("Memory graph SQLite is not configured.")
-        return graph.create_relation(
-            source_id=source_id,
-            target_id=target_id,
-            relation_type=relation_type,
+        return self.require_graph(workspace_slug).create_relation(
+            source_id=source_id, target_id=target_id, relation_type=relation_type
         )
 
     def search(
@@ -926,6 +1335,8 @@ class AgentMemoryService:
         workspace_slug: str = "",
         limit: int = 20,
     ) -> dict[str, Any]:
+        # Cutover R6 — envelope unchanged; membership filtered by kind.
+        # Vault hits: blog_post | checkpoint only. Graph hits: memory | learning.
         obsidian_hits: list[dict[str, Any]] = []
         graph_hits: list[dict[str, Any]] = []
         graph = self._graph_for_workspace(workspace_slug)
@@ -943,11 +1354,13 @@ class AgentMemoryService:
                     "source": "obsidian",
                 }
                 for n in self.obsidian.search(query, workspace_slug=workspace_slug, limit=limit)
+                if n.note_type in SEARCH_OBSIDIAN_KINDS
             ]
         if graph:
             graph_hits = [
                 {**row, "source": "sqlite"}
                 for row in graph.search(query, workspace_slug=workspace_slug, limit=limit)
+                if row.get("node_type") in SEARCH_GRAPH_KINDS
             ]
         return {
             "query": query,
@@ -963,18 +1376,11 @@ class AgentMemoryService:
 
     @staticmethod
     def _content_key(title: str, body: str) -> tuple[str, str]:
-        """Identify one piece of remembered content across both stores.
+        """Identify one piece of remembered content for recall ranking.
 
-        `append_learning` and `upsert_memory` dual-write the same text to
-        Obsidian and to the graph under two different uuid4s, so ids cannot
-        answer "is this the same learning twice?" — only the content can.
-
-        The two copies read back byte-identical (`_read_note` returns the body
-        its writer passed, not the file's rendering of it), so this only has to
-        absorb whitespace and case. It deliberately does not strip markdown:
-        a key that reinterprets the text is a key that can disagree with itself
-        on content it was not anticipating, which is exactly how the leading-
-        heading strip this replaced broke on bodies opening with `## Context`.
+        Shared node_ids mean vault export and graph share an id after cutover,
+        but content-key dedupe remains for any pre-cutover residue still in a
+        candidate list.
         """
         return (
             (title or "").strip().casefold(),
@@ -988,38 +1394,19 @@ class AgentMemoryService:
         workspace_slug: str = "",
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Notes and nodes whose wording overlaps `query_text`, best match first.
+        """GRAPH-only durable knowledge whose wording overlaps ``query_text``.
 
-        This is the automatic inherited-wisdom briefing's read path
-        (`agents/inherited_wisdom._memory_hits`), where the query is a whole
-        ticket title and description — prose, not keywords. `search()` above
-        stays a substring match because it answers a different question: an
-        agent calling `loregarden_search_memory` passes a short deliberate
-        keyword, and there substring is exactly right. The two policies sit on
-        one screen so nobody discovers a year from now that they drifted.
-
-        Returns candidate records, not briefing lines: the sibling Reciprocal
-        Rank Fusion ticket fuses this list with another ranker's, keyed on
-        `(source, id)`. Each row carries `id`, `source` (`"obsidian"` or
-        `"sqlite"`), `title`, `body`, `tags`, `updated_at`, and the `overlap`
-        count `rank_by_overlap` adds — the shared-term score the order is built
-        from, which the RRF ticket reads to weigh this ranker against another.
+        Cutover R5 — candidates come from SQLite alone. Blog posts and vault
+        memory/learning exports are never recall inputs; hand-edits cannot
+        change ranking. ``search()`` above stays a kind-filtered substring match
+        for deliberate agent queries.
         """
         wanted = term_overlap.terms(query_text)
         if not wanted:
-            # No terms, no hits — and crucially no vault read and no graph file
-            # opened. An all-stopword title must cost nothing at all.
+            # No terms, no hits — and crucially no graph file opened.
             return []
 
         candidates: list[dict[str, Any]] = []
-        # Each read is labelled at its raise point. A caller that catches the
-        # failure further up cannot tell an unopenable vault from an unopenable
-        # graph, and an unlabelled failure sends an operator to restart iCloud
-        # when the SQLite file is the broken thing.
-        try:
-            candidates += self._obsidian_candidates(workspace_slug)
-        except Exception as exc:
-            raise MemoryStoreReadError(MemoryStoreKind.VAULT) from exc
         try:
             candidates += self._graph_candidates(workspace_slug)
         except Exception as exc:
@@ -1033,31 +1420,41 @@ class AgentMemoryService:
                 continue
             seen.add(key)
             deduped.append(row)
-        # Truncate after ranking, never before: `limit` must drop the weakest
-        # candidates, not whichever ones the stores happened to enumerate last.
-        return deduped[:limit]
+        return self._superseded_last(deduped, workspace_slug)[:limit]
 
-    def _obsidian_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
-        if not self.obsidian:
-            return []
-        return [
-            {
-                "id": n.id,
-                "source": "obsidian",
-                "title": n.title,
-                "body": n.body,
-                "tags": n.tags,
-                "updated_at": n.updated_at,
-            }
-            # The one call site carrying AC5's budget. When `list_notes`
-            # grows a `NotePage(notes, truncated)` return, read `truncated`
-            # here rather than reflexively taking `.notes` — it is the only
-            # signal that the vault has outgrown RECALL_CANDIDATE_CAP and
-            # the briefing is now ranking a prefix of it.
-            for n in self.obsidian.list_notes(
-                workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
-            )
-        ]
+    def _superseded_last(
+        self, rows: list[dict[str, Any]], workspace_slug: str
+    ) -> list[dict[str, Any]]:
+        """Label superseded rows with their successors and move them after the rest.
+
+        Stable, so relevance order holds within each group. A superseded
+        learning is still recalled — it is history, not an error — but it
+        should not take a slot its replacement could have had.
+        """
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph or not rows:
+            return rows
+        try:
+            with graph.connection() as conn:
+                successors = superseded_by(conn, [row["id"] for row in rows])
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
+        labelled = [{**row, "superseded_by": successors.get(row["id"], [])} for row in rows]
+        return sorted(labelled, key=lambda row: bool(row["superseded_by"]))
+
+    def related_digest_rows(
+        self, node_ids: list[str], *, workspace_slug: str = ""
+    ) -> list[dict[str, Any]]:
+        """`MemoryGraphStore.related_nodes` for the workspace's graph, read-labelled.
+
+        No graph configured means no edges to read, which is `[]` — the same
+        answer `recall_related` gives, since no hits could have come from it.
+        """
+        try:
+            graph = self._graph_for_workspace(workspace_slug)
+            return graph.related_nodes(node_ids) if graph else []
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
 
     def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
         graph = self._graph_for_workspace(workspace_slug)
@@ -1070,6 +1467,7 @@ class AgentMemoryService:
                 "title": row["title"],
                 "body": row["body"],
                 "tags": row["tags"],
+                "aliases": row["aliases"],
                 "updated_at": row["updated_at"],
             }
             for row in graph.list_nodes(workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP)

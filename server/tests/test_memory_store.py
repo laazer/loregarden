@@ -3,8 +3,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from loregarden.models.domain import MemoryRelationType
 from loregarden.services.memory_store import (
-    RECALL_CANDIDATE_CAP,
+    CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
@@ -120,6 +121,47 @@ def test_obsidian_append_checkpoint_accumulates_entries_in_one_file(vault_dir):
     assert other_run["path"] != first["path"]
 
 
+def test_obsidian_append_checkpoint_marks_each_entry_boundary(vault_dir):
+    """Each entry is introduced by the reserved marker, whatever it contains.
+
+    The boundary used to be a blank line, which an entry may contain — so a
+    multi-paragraph checkpoint was read back as several, and the fragments spent
+    the stage briefing's slots. `_split_entries` in `agents/inherited_wisdom`
+    reads what this writes.
+    """
+    store = ObsidianMemoryStore(vault_dir)
+    written = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="### heading\n\n**Assumption made:** the conservative one",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="A second entry.",
+    )
+    text = (vault_dir / written["path"]).read_text(encoding="utf-8")
+    assert text.count(CHECKPOINT_ENTRY_DELIMITER) == 2
+    # Leading, not trailing: the marker must precede the entry it introduces, or
+    # the text before the first one cannot be told from a pre-marker legacy log.
+    assert f"{CHECKPOINT_ENTRY_DELIMITER}\n\n### heading" in text
+
+
+def test_obsidian_append_checkpoint_refuses_an_entry_carrying_the_marker(vault_dir):
+    """Loud rather than lenient: an entry holding the marker would split itself,
+    and the halves would look exactly like two checkpoints someone wrote."""
+    store = ObsidianMemoryStore(vault_dir)
+    with pytest.raises(ValueError, match="reserved as the entry separator"):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-checkpoint",
+            run_id="run-1",
+            entry=f"Decided X.\n\n{CHECKPOINT_ENTRY_DELIMITER}\n\nDecided Y.",
+        )
+
+
 def test_agent_memory_service_append_checkpoint_obsidian_only(vault_dir):
     service = AgentMemoryService(obsidian=ObsidianMemoryStore(vault_dir))
     result = service.append_checkpoint(
@@ -190,7 +232,9 @@ def test_memory_graph_upsert_and_relation(tmp_path):
     graph = MemoryGraphStore(db_path)
     a = graph.upsert_node(title="Pattern A", body="Use MCP for workflow state.")
     b = graph.upsert_node(title="Pattern B", body="Do not edit WORKFLOW STATE in markdown.")
-    rel = graph.create_relation(source_id=a["id"], target_id=b["id"], relation_type="supports")
+    rel = graph.create_relation(
+        source_id=a["id"], target_id=b["id"], relation_type=MemoryRelationType.SUPPORTS
+    )
     assert rel["source_id"] == a["id"]
     assert rel["target_id"] == b["id"]
     hits = graph.search("MCP for workflow")
@@ -210,7 +254,12 @@ def test_memory_graph_uses_delete_journal_in_icloud(tmp_path, monkeypatch):
     assert mode.lower() == "delete"
 
 
-def test_agent_memory_service_dual_write(vault_dir, tmp_path):
+def test_agent_memory_service_graph_then_export_shared_id(vault_dir, tmp_path):
+    """Cutover R2/R6/R9 — GRAPH is the record; vault is labelled export.
+
+    Replaces the peer dual-write assertion: learning lands in graph[], not as a
+    vault memory/learning peer in obsidian[], and ids match.
+    """
     service = AgentMemoryService(
         obsidian=ObsidianMemoryStore(vault_dir),
         graph_sqlite_base=tmp_path / "Loregarden" / "memory.db",
@@ -218,15 +267,16 @@ def test_agent_memory_service_dual_write(vault_dir, tmp_path):
     result = service.append_learning(
         ticket_id="t-01",
         workspace_slug="loregarden",
-        content="Dual-write learning test.",
+        content="Graph-then-export learning test.",
     )
     assert "obsidian" in result
     assert "graph" in result
+    assert result["obsidian"]["id"] == result["graph"]["id"]
     assert "loregarden" in result["obsidian"]["path"]
-    search = service.search("dual-write", workspace_slug="loregarden")
-    assert len(search["obsidian"]) == 1
+    search = service.search("Graph-then-export", workspace_slug="loregarden")
     assert len(search["graph"]) == 1
-    other_search = service.search("dual-write", workspace_slug="other")
+    assert search["obsidian"] == []
+    other_search = service.search("Graph-then-export", workspace_slug="other")
     assert len(other_search["obsidian"]) == 0
     assert len(other_search["graph"]) == 0
 
@@ -294,6 +344,7 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         )
         assert "obsidian" in upsert
         assert "graph" in upsert
+        assert upsert["obsidian"]["id"] == upsert["graph"]["id"]
 
         search = json.loads(
             execute_tool(
@@ -302,8 +353,10 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
                 {"query": "checkpoint", "workspace_slug": "loregarden"},
             )
         )
-        assert len(search["obsidian"]) >= 1
+        # Cutover R6: durable memory is graph-only; vault export peers are filtered.
         assert len(search["graph"]) >= 1
+        assert all(row.get("note_type") != "memory" for row in search["obsidian"])
+        assert all(row.get("node_type") in {"memory", "learning"} for row in search["graph"])
 
         checkpoint = json.loads(
             execute_tool(
@@ -436,7 +489,8 @@ def test_sqlite_db_in_icloud_dir(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------------------
 # R2 — MemoryGraphStore.list_nodes: enumeration surface for the graph half.
-# R3 — AgentMemoryService.recall_related: the both-stores term-overlap read.
+# R3 — AgentMemoryService.recall_related: GRAPH-only term-overlap read
+#      (lg-improved-memory-662 cutover; vault is export, not a recall peer).
 #
 # The briefing path used to query both stores with the whole ticket title as one
 # contiguous substring, which essentially never matched. These tests pin the
@@ -547,25 +601,27 @@ def test_recall_related_returns_nothing_at_zero_io_for_empty_queries(vault_dir, 
     assert list_nodes.call_count == 0
 
 
-def test_recall_related_reads_both_stores(vault_dir, tmp_path):
-    """AC3.2 — the graph half holds 285 live nodes. Catches an implementation
-    that ranks the Obsidian half only, which passes every test copied from the
-    existing graph_sqlite_base=None fixtures."""
+def test_recall_related_reads_graph_and_ignores_vault_memory(vault_dir, tmp_path):
+    """AC3.2 / Cutover R5 — durable recall is GRAPH-only. A vault memory peer
+    that would have ranked under the old both-stores path must not appear."""
     service = _both_backends(vault_dir, tmp_path)
     service.obsidian.upsert_note(
         title="Trusted server throttle",
         body="Cap the call rate per tool.",
         workspace_slug="lg",
+        note_type="memory",
     )
     graph = service._graph_for_workspace("lg")
     graph.upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
+        node_type="memory",
     )
 
-    titles = {row["title"] for row in service.recall_related("trusted server", workspace_slug="lg")}
-    assert titles == {"Trusted server throttle", "Retry budget"}
+    ranked = service.recall_related("trusted server", workspace_slug="lg")
+    assert [row["title"] for row in ranked] == ["Retry budget"]
+    assert all(row["source"] == "sqlite" for row in ranked)
 
 
 def test_recall_related_works_with_the_graph_alone(tmp_path):
@@ -582,61 +638,78 @@ def test_recall_related_works_with_the_graph_alone(tmp_path):
     assert [row["title"] for row in ranked] == ["Retry budget"]
 
 
-def test_recall_related_works_with_obsidian_alone(vault_dir):
-    """AC3.3 — the mirror case, and the shape every existing inherited-wisdom
-    test uses."""
+def test_recall_related_ignores_vault_only_memory_notes(vault_dir):
+    """AC3.3 / Cutover R5 — vault-only memory is no longer a recall source.
+
+    Writes of memory/learning without a graph fail closed (R2); leftover vault
+    notes from before cutover must not leak into recall either.
+    """
     service = AgentMemoryService(obsidian=ObsidianMemoryStore(vault_dir), graph_sqlite_base=None)
     service.obsidian.upsert_note(
         title="Trusted server throttle",
         body="Cap the call rate per tool.",
         workspace_slug="lg",
+        note_type="memory",
     )
 
     ranked = service.recall_related("trusted server", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Trusted server throttle"]
+    assert ranked == []
 
 
-def test_recall_related_deduplicates_a_dual_written_learning(vault_dir, tmp_path):
-    """AC3.4 — append_learning writes the same title+body to both stores under
-    two different uuid4s, so a dedupe keyed on id sees two records and burns two
-    of the five briefing slots on one learning."""
+def test_recall_related_shared_id_learning_appears_once(vault_dir, tmp_path):
+    """AC3.4 / Cutover R2 — shared node_id means one recall row, not a content-key
+    dedupe papering over dual uuid4s."""
     service = _both_backends(vault_dir, tmp_path)
-    service.append_learning(
+    result = service.append_learning(
         ticket_id="t-01",
         workspace_slug="lg",
         content="Throttle the trusted server before the retry loop consumes the budget.",
+        title="Learning — t-01",
     )
+    assert result["obsidian"]["id"] == result["graph"]["id"]
 
     ranked = service.recall_related("trusted server throttle", workspace_slug="lg")
     assert [row["title"] for row in ranked] == ["Learning — t-01"]
+    assert ranked[0]["id"] == result["graph"]["id"]
+    assert ranked[0]["source"] == "sqlite"
 
 
-def test_recall_related_ranks_across_the_two_stores_together(vault_dir, tmp_path):
-    """AC3.5 — catches an implementation that concatenates per-store ranked
-    lists instead of ranking the union: there the Obsidian note always leads,
-    whatever it scored."""
+def test_recall_related_ranks_graph_nodes_only(vault_dir, tmp_path):
+    """AC3.5 / Cutover R5 — vault notes are not in the candidate pool, so ranking
+    is among graph nodes alone."""
     service = _both_backends(vault_dir, tmp_path)
     service.obsidian.upsert_note(
         title="Weekly notes",
         body="A throttled endpoint came up.",
         workspace_slug="lg",
+        note_type="memory",
     )
     service._graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
+        node_type="memory",
+    )
+    service._graph_for_workspace("lg").upsert_node(
+        title="Weak throttle mention",
+        body="throttled once.",
+        workspace_slug="lg",
+        node_type="memory",
     )
 
     ranked = service.recall_related("trusted server throttled", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Retry budget", "Weekly notes"]
+    assert [row["title"] for row in ranked] == ["Retry budget", "Weak throttle mention"]
+    assert all(row["source"] == "sqlite" for row in ranked)
 
 
-def test_recall_related_ranks_a_newer_note_above_an_equally_matching_older_one(vault_dir, tmp_path):
-    """AC3.5 / AC2 — the recency tiebreak, verified across the two stores."""
+def test_recall_related_ranks_a_newer_graph_node_above_an_equally_matching_older_one(
+    vault_dir, tmp_path
+):
+    """AC3.5 / AC2 — the recency tiebreak among GRAPH candidates."""
     service = _both_backends(vault_dir, tmp_path)
     with frozen_clock("2026-01-01T00:00:00+00:00"):
-        service.obsidian.upsert_note(
-            title="Older throttle note", body="trusted server", workspace_slug="lg"
+        service._graph_for_workspace("lg").upsert_node(
+            title="Older throttle node", body="trusted server", workspace_slug="lg"
         )
     with frozen_clock("2026-02-01T00:00:00+00:00"):
         service._graph_for_workspace("lg").upsert_node(
@@ -644,7 +717,7 @@ def test_recall_related_ranks_a_newer_note_above_an_equally_matching_older_one(v
         )
 
     ranked = service.recall_related("trusted server", workspace_slug="lg")
-    assert [row["title"] for row in ranked] == ["Newer throttle node", "Older throttle note"]
+    assert [row["title"] for row in ranked] == ["Newer throttle node", "Older throttle node"]
 
 
 def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir, tmp_path):
@@ -654,13 +727,14 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
     passes the whole suite. End to end it is hidden too, because _memory_hits
     stops at its own _MAX_MEMORY_HITS.
 
-    Three candidates with overlaps 3, 2 and 1 make the assertion independent of
-    the recency tiebreak: truncation must drop the WEAKEST, not the last one
+    Three graph candidates with overlaps 3, 2 and 1 make the assertion independent
+    of the recency tiebreak: truncation must drop the WEAKEST, not the last one
     enumerated, so a limit applied before ranking fails here as well."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(title="Weakest throttle note", body="Body.", workspace_slug="lg")
-    service.obsidian.upsert_note(title="Trusted server", body="Body.", workspace_slug="lg")
-    service.obsidian.upsert_note(title="Trusted server throttle", body="Body.", workspace_slug="lg")
+    graph = service._graph_for_workspace("lg")
+    graph.upsert_node(title="Weakest throttle note", body="Body.", workspace_slug="lg")
+    graph.upsert_node(title="Trusted server", body="Body.", workspace_slug="lg")
+    graph.upsert_node(title="Trusted server throttle", body="Body.", workspace_slug="lg")
 
     unlimited = service.recall_related("trusted server throttle", workspace_slug="lg")
     assert [row["title"] for row in unlimited] == [
@@ -673,12 +747,10 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
     assert [row["title"] for row in ranked] == ["Trusted server throttle", "Trusted server"]
 
 
-def test_recall_related_makes_exactly_one_obsidian_pass_of_five_hundred(vault_dir, tmp_path):
-    """AC3.6 / AC5 — the cost proof, and the only assertion that can make it. A
-    results assertion passes whether the vault was read once or once per note,
-    so AC5 is a call-count criterion by construction."""
+def test_recall_related_does_not_enumerate_obsidian(vault_dir, tmp_path):
+    """AC3.6 / Cutover R5 — vault list_notes is off the durable recall path."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
+    service._graph_for_workspace("lg").upsert_node(
         title="Trusted server throttle", body="Cap the rate.", workspace_slug="lg"
     )
 
@@ -687,8 +759,7 @@ def test_recall_related_makes_exactly_one_obsidian_pass_of_five_hundred(vault_di
     ) as list_notes:
         service.recall_related("trusted server", workspace_slug="lg")
 
-    assert list_notes.call_count == 1
-    assert list_notes.call_args.kwargs["limit"] == RECALL_CANDIDATE_CAP
+    assert list_notes.call_count == 0
 
 
 def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
@@ -696,11 +767,6 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
     whatever survived the whole-query substring match, i.e. almost always
     nothing. Neither store's search may be touched."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
-        title="Trusted server throttle",
-        body="Cap the call rate per tool.",
-        workspace_slug="lg",
-    )
     service._graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
@@ -716,18 +782,505 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
 
     assert obsidian_search.call_count == 0
     assert graph_search.call_count == 0
-    assert len(ranked) == 2
+    assert len(ranked) == 1
 
 
 def test_service_search_still_substring_matches_and_keeps_its_envelope(vault_dir, tmp_path):
-    """AC3.8 — guard. search() stays the loregarden_search_memory tool path;
-    its envelope keys are read by mcp/tools.py and api/memory.py."""
+    """AC3.8 / Cutover R6 — search() stays the loregarden_search_memory tool path;
+    envelope keys unchanged; vault memory peers are not in obsidian[]."""
     service = _both_backends(vault_dir, tmp_path)
-    service.obsidian.upsert_note(
-        title="Trusted server throttle", body="Cap the call rate.", workspace_slug="lg"
+    service.upsert_memory(
+        title="Trusted server throttle",
+        body="Cap the call rate.",
+        workspace_slug="lg",
+    )
+    service.upsert_blog_post(
+        ticket_id="t-blog",
+        workspace_slug="lg",
+        title="Blog about Cap the call",
+        body="Cap the call in a retrospective.",
     )
 
     found = service.search("Cap the call", workspace_slug="lg")
     assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
-    assert [row["title"] for row in found["obsidian"]] == ["Trusted server throttle"]
-    assert service.search("throttle rate", workspace_slug="lg")["obsidian"] == []
+    assert [row["title"] for row in found["graph"]] == ["Trusted server throttle"]
+    assert all(row.get("note_type") == "blog_post" for row in found["obsidian"])
+    assert service.search("throttle rate", workspace_slug="lg")["graph"] == []
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint discoverability via search_memory (R1–R3)
+#
+# Checkpoints already write to Obsidian; list_notes' default roots omit them, so
+# search returns []. These tests lock: search includes checkpoints; default
+# list_notes and recall_related stay checkpoint-blind; fill order prefers
+# non-checkpoint hits.
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_NEEDLE = "checkpoint-discoverability-needle-718xyz"
+
+
+def test_obsidian_list_notes_default_excludes_checkpoints(vault_dir):
+    """R1/R3 — default list_notes (include_checkpoints omitted/False) never
+    walks Checkpoints, scoped or unscoped."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-default",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+    store.upsert_note(
+        title="Ordinary memory",
+        body="Not a checkpoint.",
+        workspace_slug="loregarden",
+    )
+
+    scoped = store.list_notes(workspace_slug="loregarden")
+    assert all(n.note_type != "checkpoint" for n in scoped)
+    assert not any("Checkpoints" in n.path for n in scoped)
+
+    unscoped = store.list_notes()
+    assert all(n.note_type != "checkpoint" for n in unscoped)
+    assert not any("Checkpoints" in n.path for n in unscoped)
+
+
+def test_obsidian_list_notes_include_checkpoints_walks_checkpoints_root(vault_dir):
+    """R1 — include_checkpoints=True walks Checkpoints like other note roots,
+    scoped and unscoped."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-include",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    scoped = store.list_notes(workspace_slug="loregarden", include_checkpoints=True)
+    scoped_cps = [n for n in scoped if n.note_type == "checkpoint"]
+    assert len(scoped_cps) == 1
+    assert "Checkpoints" in scoped_cps[0].path
+
+    unscoped = store.list_notes(include_checkpoints=True)
+    assert any(n.note_type == "checkpoint" and "Checkpoints" in n.path for n in unscoped)
+
+
+def test_obsidian_search_includes_checkpoints(vault_dir):
+    """R2 — ObsidianMemoryStore.search returns file-level MemoryNote hits with
+    note_type=checkpoint under the Checkpoints path."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-discover",
+        run_id="run-cp-search",
+        entry=(
+            f"### [feat-cp-discover] plan — {_CHECKPOINT_NEEDLE}\n"
+            "**Assumption made:** Keep Obsidian-only store.\n"
+            "**Confidence:** High"
+        ),
+    )
+
+    hits = store.search(_CHECKPOINT_NEEDLE, workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert "Checkpoints" in hits[0].path
+
+
+def test_obsidian_search_fills_non_checkpoint_hits_before_checkpoints(vault_dir):
+    """R2 — when limit would starve mixed results, non-checkpoint matches fill
+    first, then checkpoint hits until limit."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "fill-order-needle-718abc"
+    for index in range(3):
+        store.upsert_note(
+            title=f"Memory hit {index}",
+            body=f"{needle} in memory note {index}",
+            workspace_slug="loregarden",
+        )
+    for index in range(3):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-cp-fill",
+            run_id=f"run-fill-{index}",
+            entry=f"### Assumption\n{needle} in checkpoint {index}",
+        )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=4)
+    assert len(hits) == 4
+    assert all(hit.note_type != "checkpoint" for hit in hits[:3])
+    assert hits[3].note_type == "checkpoint"
+    assert "Checkpoints" in hits[3].path
+
+
+def test_agent_memory_service_search_includes_checkpoints(vault_dir, tmp_path):
+    """R2 — AgentMemoryService.search (MCP search_memory path) inherits checkpoint
+    hits via ObsidianMemoryStore.search; envelope unchanged."""
+    service = _both_backends(vault_dir, tmp_path)
+    service.append_checkpoint(
+        ticket_id="feat-cp-discover",
+        workspace_slug="loregarden",
+        run_id="run-cp-svc",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    found = service.search(_CHECKPOINT_NEEDLE, workspace_slug="loregarden")
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    checkpoint_hits = [
+        row
+        for row in found["obsidian"]
+        if row["note_type"] == "checkpoint" and "Checkpoints" in row["path"]
+    ]
+    assert len(checkpoint_hits) == 1
+    assert found["graph"] == []
+
+
+def test_recall_related_stays_checkpoint_blind(vault_dir, tmp_path):
+    """R3 / Cutover R5 — recall never walks vault notes (checkpoints or memory)."""
+    service = _both_backends(vault_dir, tmp_path)
+    blind_needle = "trusted server throttle checkpointblind718"
+    service.append_checkpoint(
+        ticket_id="feat-cp-blind",
+        workspace_slug="loregarden",
+        run_id="run-cp-blind",
+        entry=f"### Assumption\nAssumption about {blind_needle}.",
+    )
+    service.obsidian.upsert_note(
+        title="Unrelated memory",
+        body="Sprite batching lease renewal.",
+        workspace_slug="loregarden",
+    )
+
+    with patch.object(
+        service.obsidian, "list_notes", wraps=service.obsidian.list_notes
+    ) as list_notes:
+        ranked = service.recall_related(blind_needle, workspace_slug="loregarden")
+
+    assert list_notes.call_count == 0
+    assert ranked == []
+
+
+# ---------------------------------------------------------------------------
+# Adversarial / edge mutations on R1–R3 (test-break)
+#
+# Designer coverage locks the happy path. These pin seams a naive
+# include_checkpoints walk or shared list_notes budget would miss.
+# ---------------------------------------------------------------------------
+
+
+def test_obsidian_list_notes_explicit_false_excludes_checkpoints(vault_dir):
+    """R1 mutation — include_checkpoints=False is identical to the default:
+    Checkpoints must not appear even when the flag is passed explicitly."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-false",
+        run_id="run-cp-false",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    notes = store.list_notes(workspace_slug="loregarden", include_checkpoints=False)
+    assert all(n.note_type != "checkpoint" for n in notes)
+    assert not any("Checkpoints" in n.path for n in notes)
+
+
+def test_obsidian_list_notes_include_checkpoints_note_type_filter(vault_dir):
+    """R1 edge — note_type='checkpoint' with include_checkpoints=True returns only
+    checkpoints; note_type='memory' still excludes them even when the flag is on."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-type",
+        run_id="run-cp-type",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+    store.upsert_note(
+        title="Ordinary memory",
+        body="memory body",
+        workspace_slug="loregarden",
+    )
+
+    only_cp = store.list_notes(
+        workspace_slug="loregarden",
+        include_checkpoints=True,
+        note_type="checkpoint",
+    )
+    assert only_cp
+    assert all(n.note_type == "checkpoint" for n in only_cp)
+
+    only_mem = store.list_notes(
+        workspace_slug="loregarden",
+        include_checkpoints=True,
+        note_type="memory",
+    )
+    assert only_mem
+    assert all(n.note_type == "memory" for n in only_mem)
+
+
+def test_obsidian_list_notes_include_checkpoints_workspace_isolation(vault_dir):
+    """R1 edge — scoped include_checkpoints must not leak another workspace's
+    Checkpoints tree into the result set."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="blobert",
+        ticket_id="feat-other-ws",
+        run_id="run-other",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE} other-ws",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-this-ws",
+        run_id="run-this",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE} this-ws",
+    )
+
+    scoped = store.list_notes(workspace_slug="loregarden", include_checkpoints=True)
+    paths = [n.path for n in scoped if n.note_type == "checkpoint"]
+    assert paths
+    assert all("/loregarden/" in p.replace("\\", "/") for p in paths)
+    assert not any("/blobert/" in p.replace("\\", "/") for p in paths)
+
+
+def test_obsidian_search_pure_checkpoint_query_fills_limit(vault_dir):
+    """R2 edge — when only checkpoints match, fill the limit with checkpoint
+    hits (do not return [] just because non-checkpoint bucket is empty)."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "pure-checkpoint-needle-718def"
+    for index in range(5):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-cp-pure",
+            run_id=f"run-pure-{index}",
+            entry=f"### Assumption\n{needle} entry {index}",
+        )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=3)
+    assert len(hits) == 3
+    assert all(hit.note_type == "checkpoint" for hit in hits)
+
+
+def test_obsidian_search_file_level_hit_not_per_entry(vault_dir):
+    """R2 mutation — multiple Assumption entries in one run log are still one
+    file-level MemoryNote hit (entry split stays in absorb-adapt)."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "file-level-needle-718ghi"
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-entries",
+        run_id="run-multi-entry",
+        entry=f"### Assumption one\n{needle} first",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-entries",
+        run_id="run-multi-entry",
+        entry=f"### Assumption two\n{needle} second",
+    )
+
+    hits = store.search(needle, workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert needle in hits[0].body
+    assert "first" in hits[0].body and "second" in hits[0].body
+
+
+def test_obsidian_search_case_insensitive_checkpoint_match(vault_dir):
+    """R2 edge — needle case must not hide a checkpoint body match (search
+    already lowercases non-checkpoint haystacks)."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-case",
+        run_id="run-case",
+        entry="### Assumption\nMiXeD-CaSe-Needle-718JKL was assumed.",
+    )
+
+    hits = store.search("mixed-case-needle-718jkl", workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+
+
+def test_obsidian_search_empty_and_whitespace_query_ignores_checkpoints(vault_dir):
+    """Null/empty mutation — blank query returns [] even when checkpoints exist;
+    must not dump the Checkpoints root."""
+    store = ObsidianMemoryStore(vault_dir)
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-blank",
+        run_id="run-blank",
+        entry=f"### Assumption\n{_CHECKPOINT_NEEDLE}",
+    )
+
+    assert store.search("", workspace_slug="loregarden") == []
+    assert store.search("   ", workspace_slug="loregarden") == []
+
+
+def test_obsidian_search_fill_order_includes_learnings_and_blog_before_checkpoints(
+    vault_dir,
+):
+    """R2 combinatorial — non-checkpoint-first fill covers learnings and blog
+    posts, not only memory notes."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "mixed-types-needle-718mno"
+    store.append_learning(
+        ticket_id="feat-learn",
+        workspace_slug="loregarden",
+        content=f"{needle} in a learning",
+    )
+    store.upsert_blog_post(
+        ticket_id="feat-blog",
+        workspace_slug="loregarden",
+        title="Blog hit",
+        body=f"{needle} in a blog post",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-mixed",
+        run_id="run-mixed",
+        entry=f"### Assumption\n{needle} in checkpoint",
+    )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=3)
+    assert len(hits) == 3
+    assert all(hit.note_type != "checkpoint" for hit in hits[:2])
+    assert {hit.note_type for hit in hits[:2]} == {"learning", "blog_post"}
+    assert hits[2].note_type == "checkpoint"
+
+
+def test_obsidian_search_survives_memory_walk_budget_before_checkpoints(vault_dir):
+    """R2 adversarial — a shared list_notes(limit=N) that walks Memory before
+    Checkpoints and stops at N will never see a matching checkpoint once N
+    non-matching memory notes exist. Search must still return the checkpoint.
+
+    Uses N=500 to match the pre-change search enumeration budget.
+    """
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "budget-starve-needle-718pqr"
+    for index in range(500):
+        store.upsert_note(
+            title=f"Filler {index}",
+            body="unrelated filler body without the needle",
+            workspace_slug="loregarden",
+        )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-budget",
+        run_id="run-budget",
+        entry=f"### Assumption\n{needle} must remain findable",
+    )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=5)
+    assert any(hit.note_type == "checkpoint" and "Checkpoints" in hit.path for hit in hits), (
+        "matching checkpoint starved by non-matching memory walk budget"
+    )
+
+
+def test_obsidian_search_workspace_isolation_for_checkpoints(vault_dir):
+    """R2 edge — search scoped to workspace A must not return workspace B's
+    checkpoint even when the needle matches both."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "ws-iso-needle-718stu"
+    store.append_checkpoint(
+        workspace_slug="blobert",
+        ticket_id="feat-b",
+        run_id="run-b",
+        entry=f"### Assumption\n{needle}",
+    )
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-a",
+        run_id="run-a",
+        entry=f"### Assumption\n{needle}",
+    )
+
+    hits = store.search(needle, workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert "/loregarden/" in hits[0].path.replace("\\", "/")
+
+
+def test_agent_memory_service_search_checkpoints_absent_from_graph(vault_dir, tmp_path):
+    """R2/R6 — checkpoint hits stay Obsidian-only; graph array must stay empty
+    for a checkpoint-only needle (no dual-write to SQLite)."""
+    service = _both_backends(vault_dir, tmp_path)
+    needle = "no-graph-needle-718vwx"
+    service.append_checkpoint(
+        ticket_id="feat-cp-nograph",
+        workspace_slug="loregarden",
+        run_id="run-nograph",
+        entry=f"### Assumption\n{needle}",
+    )
+
+    found = service.search(needle, workspace_slug="loregarden")
+    assert found["graph"] == []
+    assert any(row["note_type"] == "checkpoint" for row in found["obsidian"])
+
+
+def test_obsidian_search_non_checkpoint_fill_does_not_displace_for_checkpoints(vault_dir):
+    """R2 inverse — when non-checkpoint matches already fill limit, checkpoints
+    must not displace them (append-only after the non-cp bucket is full)."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "no-displace-needle-718yz0"
+    for index in range(4):
+        store.upsert_note(
+            title=f"Memory fill {index}",
+            body=f"{needle} memory {index}",
+            workspace_slug="loregarden",
+        )
+    for index in range(4):
+        store.append_checkpoint(
+            workspace_slug="loregarden",
+            ticket_id="feat-cp-nodisp",
+            run_id=f"run-nodisp-{index}",
+            entry=f"### Assumption\n{needle} checkpoint {index}",
+        )
+
+    hits = store.search(needle, workspace_slug="loregarden", limit=3)
+    assert len(hits) == 3
+    assert all(hit.note_type != "checkpoint" for hit in hits)
+
+
+def test_obsidian_search_unscoped_includes_checkpoints(vault_dir):
+    """R2 edge — unscoped search (no workspace_slug) still returns checkpoint
+    hits once include_checkpoints walks the Checkpoints root."""
+    store = ObsidianMemoryStore(vault_dir)
+    needle = "unscoped-cp-needle-718ab1"
+    store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-cp-unscoped",
+        run_id="run-unscoped",
+        entry=f"### Assumption\n{needle}",
+    )
+
+    hits = store.search(needle)
+    assert len(hits) == 1
+    assert hits[0].note_type == "checkpoint"
+    assert "Checkpoints" in hits[0].path
+
+
+def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_dir, tmp_path):
+    """R3 / Cutover R5 — a vault flooded with checkpoints must not be opened
+    for durable recall; only GRAPH candidates rank."""
+    service = _both_backends(vault_dir, tmp_path)
+    for index in range(30):
+        service.append_checkpoint(
+            ticket_id=f"feat-flood-{index}",
+            workspace_slug="loregarden",
+            run_id=f"run-flood-{index}",
+            entry=f"### Assumption\nflood entry {index} trusted server throttle",
+        )
+    service._graph_for_workspace("loregarden").upsert_node(
+        title="Trusted server throttle",
+        body="Cap the call rate.",
+        workspace_slug="loregarden",
+        node_type="memory",
+    )
+
+    with patch.object(
+        service.obsidian, "list_notes", wraps=service.obsidian.list_notes
+    ) as list_notes:
+        ranked = service.recall_related("trusted server throttle", workspace_slug="loregarden")
+
+    assert list_notes.call_count == 0
+    assert any(row["title"] == "Trusted server throttle" for row in ranked)
+    assert all(row["source"] == "sqlite" for row in ranked)
+    assert not any(str(row.get("title", "")).startswith("Checkpoint log") for row in ranked)

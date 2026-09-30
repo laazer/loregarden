@@ -3,7 +3,7 @@ import { MarkdownContent } from "./chat/MarkdownContent";
 
 function FieldValue({ field }: { field: PermissionField }) {
   if (field.markdown) {
-    return <MarkdownContent content={field.value} className="permission-details-markdown" />;
+    return <MarkdownContent content={field.value} className="permission-details-markdown" readerTitle={field.label} />;
   }
   if (field.multiline) {
     return (

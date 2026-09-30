@@ -96,6 +96,11 @@ export interface ChatSendOptions {
    * it, which is why their composers do not offer skills in the first place.
    */
   skill?: string;
+  /**
+   * Files to upload with this turn. Home Baxter only, for the same reason as
+   * `skill`: the other threads have no attachments endpoint.
+   */
+  files?: File[];
 }
 
 /**

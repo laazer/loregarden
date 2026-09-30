@@ -46,11 +46,22 @@ class Settings(BaseSettings):
     #: to notice; 0 or less turns the timer off and leaves repair to startup,
     #: which is the cadence this replaced.
     reconcile_interval_seconds: float = 30.0
+    # How often the GitHub issue scheduler looks for a workspace whose
+    # background sync is due. Each workspace sets its own interval; this is
+    # only the resolution. 0 disables the scheduler entirely.
+    github_sync_tick_seconds: float = 60.0
+    # Push-on-edit: how often the worker drains edited tickets (0 disables the
+    # worker), and how long an edit waits for more before it is pushed.
+    github_push_poll_seconds: float = 0.5
+    github_push_debounce_seconds: float = 2.0
     #: How long shutdown waits for in-flight agent runs to land before handing
     #: what is left to the interruption path. Short by default: a silent hang on
     #: shutdown is worse than the interruption it is trying to avoid. 0 disables
     #: the wait, restoring the pre-drain behaviour of exiting immediately.
     drain_timeout_seconds: float = 20.0
+    #: Files attached to Home chat turns, one directory per conversation.
+    #: Relative paths resolve against ``repo_root``, beside the database.
+    chat_attachments_dir: Path = Path("data/chat-attachments")
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"
@@ -77,6 +88,18 @@ class Settings(BaseSettings):
     permission_approval_timeout_seconds: float = 3600.0
     triage_timeout_seconds: int = 300
     mcp_url: str = "http://127.0.0.1:8000/mcp"
+    #: Where this process is serving, as `scripts/dev-server.sh` started it.
+    #: Unset (tests, the packaged sidecar) means "not a dev server", and the
+    #: process does not advertise itself in the local instance registry.
+    dev_host: str = "127.0.0.1"
+    dev_port: int | None = None
+    #: A branch instance launched from the Local instances panel: running on a
+    #: snapshot of main's database, beside main's live agents and worktrees.
+    #: Boot skips everything that acts on what the database *describes* —
+    #: adopting run processes, failing "interrupted" runs, pruning worktrees,
+    #: resuming orchestrations — because in a snapshot all of that describes
+    #: main's machinery, not this process's. See `local_instances`.
+    sandbox: bool = False
     # Vite dev server origins, plus Tauri's fixed webview origins for the
     # packaged desktop app (tauri://localhost on macOS/Linux, the
     # http(s)://tauri.localhost variants on Windows) — none of these are
@@ -218,7 +241,11 @@ _prime_cursor_api_key_env()
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 
-load_local_memory_config_into_settings()
+# A sandbox's database and memory come from its launcher's environment. The
+# local file could point either back at main's — it is in the checkout, and
+# the primary checkout is a legitimate thing to launch a sandbox from.
+if not settings.sandbox:
+    load_local_memory_config_into_settings()
 
 
 def resolved_icloud_root() -> Path | None:

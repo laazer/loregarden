@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from loregarden.agents.cli_adapters import (
+    STATE_BINDING_ENV_VARS,
     CliInvocation,
     build_triage_invocation,
     invocation_env,
@@ -161,7 +162,7 @@ def test_disabling_mcp_injection_clears_the_environment(tmp_path, monkeypatch):
     invocation = _stage_invocation(tmp_path, _workspace())
 
     assert invocation.env == {}
-    assert invocation_env(invocation) is None
+    assert "OPENCODE_CONFIG_CONTENT" not in invocation_env(invocation)
 
 
 def test_invocation_env_overlays_rather_than_replaces_the_environment(tmp_path):
@@ -172,6 +173,22 @@ def test_invocation_env_overlays_rather_than_replaces_the_environment(tmp_path):
     assert "OPENCODE_CONFIG_CONTENT" in resolved
     # Everything the supervising process exports must survive the overlay, or the
     # agent loses PATH and the CLI cannot spawn its own tools.
+    assert resolved["PATH"] == os.environ["PATH"]
+
+
+def test_invocation_env_drops_the_bindings_to_this_servers_state(tmp_path, monkeypatch):
+    """An agent that boots the app itself must not land on the production DB."""
+    monkeypatch.setenv("LOREGARDEN_REPO_ROOT", "/srv/loregarden")
+    monkeypatch.setenv("LOREGARDEN_DATABASE_URL", "sqlite:////srv/loregarden/data/loregarden.db")
+    monkeypatch.setenv("LOREGARDEN_MEMORY_SQLITE_URL", "sqlite:////srv/loregarden/data/memory.db")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_MODEL", "claude-sonnet-5")
+
+    resolved = invocation_env(_stage_invocation(tmp_path, _workspace()))
+
+    for name in STATE_BINDING_ENV_VARS:
+        assert name not in resolved
+    # Only the state bindings go; the adapter knobs an agent's CLI reads stay.
+    assert resolved["LOREGARDEN_CLAUDE_MODEL"] == "claude-sonnet-5"
     assert resolved["PATH"] == os.environ["PATH"]
 
 

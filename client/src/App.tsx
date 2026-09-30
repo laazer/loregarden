@@ -7,12 +7,15 @@ import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
+import { InstancesPage } from "./pages/InstancesPage";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
+import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
+import { InitiativesPage } from "./pages/InitiativesPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { ViewPage } from "./pages/ViewPage";
@@ -93,6 +96,7 @@ export function AppShell() {
             <Route path="/" element={<HomePage />} />
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
+            <Route path="/initiatives" element={<InitiativesPage />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
             <Route
               path="/tickets/:ticketId/:artifactTab"
@@ -108,6 +112,9 @@ export function AppShell() {
             <Route path="/editor/*" element={<EditorPage />} />
             <Route path="/queue/*" element={<QueuePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
+            <Route path="/memory/*" element={<MemoryPage />} />
+            <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
+            <Route path="/instances" element={<InstancesPage />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
             {/* Before the catch-all, which would otherwise bounce every view

@@ -359,12 +359,15 @@ def drain_waiters(session: Session) -> list[str]:
     Returns the ids promoted, so a caller can tell an operator what its release
     set moving.
     """
-    # The pool moves under this session whenever anything else grants or
-    # releases; a promotion decided from a cached read would compare against a
-    # revision that no longer exists and give up believing the pool was full.
-    session.expire_all()
     promoted: list[str] = []
-    for lease in _waiters(session):
+    # The head is re-read on every pass rather than walked from one snapshot of
+    # the line. A snapshot misses a claimant that arrived during this drain —
+    # and one that arrived while this drain held a booking it was about to
+    # refund saw the pool full, was refused by its own drain, and stopped. After
+    # the refund this drain was the only one left to promote it, and it walked a
+    # list that did not contain it: a free slot beside a waiting lease, with
+    # nobody left to drain ("3 fit; 2 are held", 3 of 40 eight-way runs).
+    while (lease := _head_waiter(session)) is not None:
         # Capacity first, then the row — and the order is the whole correctness
         # argument, arrived at by getting it wrong twice.
         #
@@ -386,12 +389,31 @@ def drain_waiters(session: Session) -> list[str]:
             break  # the head does not fit, which is what head-of-line means
 
         if not _claim_promotion(session, lease):
+            # A peer took this head, so it is no longer WAITING and the next
+            # read returns whoever is first now — including anyone refused while
+            # this booking made the pool look full.
             _return_capacity(session, cpus=lease.cpus, memory_mb=lease.memory_mb)
             session.commit()
             continue
 
         promoted.append(lease.id)
     return promoted
+
+
+def _head_waiter(session: Session) -> DockerLease | None:
+    """The front of the line as it stands now, not as a cached read had it.
+
+    The pool and the queue move under this session whenever anything else
+    grants or releases; a promotion decided from a cached read would compare
+    against state that no longer exists.
+    """
+    session.expire_all()
+    return session.exec(
+        select(DockerLease)
+        .where(DockerLease.status == DockerLeaseStatus.WAITING)
+        .order_by(DockerLease.position)
+        .limit(1)
+    ).first()
 
 
 def _claim_promotion(session: Session, lease: DockerLease) -> bool:

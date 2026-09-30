@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
@@ -389,3 +391,189 @@ class TestBackfillMigration:
             m_structured_ticket_ids(connection)
             second = self._rows(connection)
         assert first == second
+
+
+# --- Initiative shareable ids (lg-initiatives-cross-733 / R1–R2 / R4) ----------
+
+
+def _initiative_helpers():
+    """Import the 733 helpers, or fail with a clear implement signal."""
+    try:
+        from loregarden.services import ticket_ids as tid
+    except ImportError as exc:  # pragma: no cover
+        raise AssertionError("ticket_ids missing") from exc
+    missing = [
+        name
+        for name in (
+            "spell_initiative_external_id",
+            "derive_initiative_slug",
+            "next_initiative_number",
+        )
+        if not hasattr(tid, name)
+    ]
+    if missing:
+        raise AssertionError(
+            f"ticket_ids missing {missing} — implement R1/R2 initiative id helpers"
+        )
+    return tid
+
+
+class TestInitiativeSpelling:
+    """R2 — pure spell/derive helpers; no Session I/O."""
+
+    def test_spell_uses_literal_init_prefix(self):
+        tid = _initiative_helpers()
+        assert tid.spell_initiative_external_id("cross-workspace", 7) == ("init-cross-workspace-7")
+
+    def test_derive_slug_deduplicates_like_milestone_codes(self):
+        tid = _initiative_helpers()
+        first = tid.derive_initiative_slug("Cross Workspace Resolve", taken=frozenset())
+        second = tid.derive_initiative_slug("Cross Workspace Resolve", taken=frozenset({first}))
+        assert first
+        assert second != first
+        assert second.startswith(first) or second.endswith("-2")
+
+    def test_derive_slug_never_yields_empty_middle_segment(self):
+        tid = _initiative_helpers()
+        slug = tid.derive_initiative_slug("---", taken=frozenset())
+        assert slug
+        spelled = tid.spell_initiative_external_id(slug, 1)
+        assert re.match(r"^init-[a-z0-9-]+-\d+$", spelled), spelled
+
+    def test_module_documents_reserved_init_prefix(self):
+        """R2.AC3 — scheme + reserved prefix live beside spell_external_id docs."""
+        from loregarden.services import ticket_ids as tid
+
+        doc = (tid.__doc__ or "") + "\n" + (tid.spell_external_id.__doc__ or "")
+        assert "init-" in doc.lower() or "init-<" in doc.lower()
+        assert "initiative" in doc.lower()
+
+
+class TestInitiativeNumbering:
+    """R1 — global initiative_number_pool + delete-safe next_initiative_number."""
+
+    def test_pool_singleton_exists_on_test_engine(self, db_session: Session):
+        """R1.AC1 — create_all/test engines lazy-create or migrate the global row."""
+        tid = _initiative_helpers()
+        n = tid.next_initiative_number(db_session)
+        assert n >= 1
+        row = db_session.execute(
+            text(
+                "SELECT id, last_initiative_number FROM initiative_number_pool WHERE id = 'global'"
+            )
+        ).first()
+        assert row is not None
+        assert row[0] == "global"
+        assert int(row[1]) >= n
+
+    def test_successive_calls_advance_the_pool(self, db_session: Session):
+        """R1.AC2"""
+        tid = _initiative_helpers()
+        first = tid.next_initiative_number(db_session)
+        second = tid.next_initiative_number(db_session)
+        assert second == first + 1
+        last = db_session.execute(
+            text("SELECT last_initiative_number FROM initiative_number_pool WHERE id='global'")
+        ).scalar()
+        assert int(last) == second
+
+    def test_numbers_survive_deleting_the_newest_initiative(self, db_session: Session):
+        """R1.AC3 — high-water, not max(live)."""
+        tid = _initiative_helpers()
+        try:
+            initiative_type = WorkItemType.INITIATIVE
+        except AttributeError as exc:
+            raise AssertionError(
+                "WorkItemType.INITIATIVE missing — merge lg-initiatives-cross-732 first (R0)"
+            ) from exc
+
+        issued = tid.next_initiative_number(db_session)
+        ticket = Ticket(
+            external_id=tid.spell_initiative_external_id("delete-safe", issued),
+            workspace_id=None,
+            title="Delete-safe initiative",
+            work_item_type=initiative_type,
+            ticket_number=issued,
+        )
+        db_session.add(ticket)
+        db_session.commit()
+
+        db_session.delete(ticket)
+        db_session.commit()
+        assert tid.next_initiative_number(db_session) > issued
+
+
+class TestInitiativeResolveInclude:
+    """R4 — by_spelling INCLUDE null-workspace; number path never returns INITIATIVE.
+
+    False-green guard: every INCLUDE assertion calls resolve(..., workspace_id=)
+    directly — do not substitute get_ticket (OrchestrationCallbacks falls back to
+    unscoped resolve).
+    """
+
+    def _seed_initiative(self, session: Session, *, title: str, number: int, legacy: str = ""):
+        tid = _initiative_helpers()
+        try:
+            initiative_type = WorkItemType.INITIATIVE
+        except AttributeError as exc:
+            raise AssertionError(
+                "WorkItemType.INITIATIVE missing — merge lg-initiatives-cross-732 first (R0)"
+            ) from exc
+        slug = tid.derive_initiative_slug(title, taken=frozenset())
+        external_id = tid.spell_initiative_external_id(slug, number)
+        ticket = Ticket(
+            external_id=external_id,
+            legacy_external_id=legacy,
+            workspace_id=None,
+            title=title,
+            work_item_type=initiative_type,
+            ticket_number=number,
+        )
+        session.add(ticket)
+        session.commit()
+        session.refresh(ticket)
+        return ticket
+
+    def test_scoped_resolve_returns_null_workspace_initiative(self, db_session: Session):
+        """R4.AC1 — direct resolve with workspace_id set."""
+        workspace = make_workspace(db_session, slug="init-resolve-ws")
+        initiative = self._seed_initiative(db_session, title="Scoped Resolve", number=901)
+        found = resolve(db_session, initiative.external_id, workspace_id=workspace.id)
+        assert found is not None
+        assert found.id == initiative.id
+
+    def test_unscoped_resolve_still_finds_initiative(self, db_session: Session):
+        """R4.AC2"""
+        initiative = self._seed_initiative(db_session, title="Unscoped Resolve", number=902)
+        found = resolve(db_session, initiative.external_id)
+        assert found is not None
+        assert found.id == initiative.id
+
+    def test_bare_number_never_returns_initiative(self, db_session: Session):
+        """R4.AC3"""
+        workspace = make_workspace(db_session, slug="init-bare-num")
+        initiative = self._seed_initiative(db_session, title="Bare Number", number=903)
+        found = resolve(db_session, str(initiative.ticket_number), workspace_id=workspace.id)
+        assert found is None or found.id != initiative.id
+        assert found is None or found.work_item_type != WorkItemType.INITIATIVE
+
+    def test_workspace_structured_number_path_never_returns_initiative(self, db_session: Session):
+        """R4.AC4 — trailing number under a workspace prefix stays workspace-ticket only."""
+        workspace = make_workspace(db_session, slug="init-trail-num")
+        workspace.ticket_prefix = "itn"
+        db_session.add(workspace)
+        db_session.commit()
+        initiative = self._seed_initiative(db_session, title="Trailing Number", number=904)
+        ref = f"{workspace.ticket_prefix}-anything-{initiative.ticket_number}"
+        found = resolve(db_session, ref, workspace_id=workspace.id)
+        assert found is None or found.id != initiative.id
+
+    def test_legacy_spelling_include_matches_like_external_id(self, db_session: Session):
+        """R4.AC5"""
+        workspace = make_workspace(db_session, slug="init-legacy-res")
+        initiative = self._seed_initiative(
+            db_session, title="Legacy Resolve", number=905, legacy="old-init-key-905"
+        )
+        found = resolve(db_session, "old-init-key-905", workspace_id=workspace.id)
+        assert found is not None
+        assert found.id == initiative.id

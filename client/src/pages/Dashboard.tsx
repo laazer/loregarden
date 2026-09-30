@@ -9,6 +9,7 @@ import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
 import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
+import { ReworkRequiredNotice } from "../components/dashboard/ReworkRequiredNotice";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions, orchestrateBody } from "../components/AgentsAssembleModal";
@@ -30,7 +31,7 @@ import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmMod
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
 import { RunLogModal } from "../components/RunLogModal";
-import { canHaveChildren } from "../lib/workItemHierarchy";
+import { canHaveChildren, isWorkspaceless } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
 import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
@@ -678,7 +679,7 @@ export function Dashboard() {
       workspaceSlug: string;
     }) =>
       api.createTicket({
-        workspace_slug: workspaceSlug,
+        workspace_slug: isWorkspaceless(draft.work_item_type) ? "" : workspaceSlug,
         title: draft.title.trim(),
         work_item_type: draft.work_item_type,
         parent_ticket_id: draft.parent_ticket_id || null,
@@ -725,9 +726,9 @@ export function Dashboard() {
   );
 
   const activeWorkspaceSlug =
-    workspace === "all" ? (sel?.workspace_slug ?? workspaces.data?.[0]?.slug ?? "loregarden") : workspace;
+    workspace === "all" ? (sel?.workspace_slug || workspaces.data?.[0]?.slug || "loregarden") : workspace;
   const defaultCreateWorkspaceSlug =
-    sel?.workspace_slug ?? workspaces.data?.[0]?.slug ?? "loregarden";
+    sel?.workspace_slug || workspaces.data?.[0]?.slug || "loregarden";
   const activeWorkspaceRecord = workspaces.data?.find((w) => w.slug === activeWorkspaceSlug);
   const activeWorkspaceRuntime = runtimeFromWorkspace(activeWorkspaceRecord);
   const importWorkspaceSlug = importTargetWorkspace || defaultCreateWorkspaceSlug;
@@ -1275,22 +1276,7 @@ export function Dashboard() {
                     {sel.compatibility_posture_source ? ` · ${sel.compatibility_posture_source}` : ""}
                   </div>
                 </div>
-                {sel.blocking_issues?.trim() && (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: "10px 12px",
-                      borderRadius: 11,
-                      background: "rgba(199,125,45,.08)",
-                      border: "1px solid rgba(199,125,45,.28)",
-                      fontSize: 12,
-                      color: "var(--orl, #c77d2d)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Rework required</div>
-                    <div style={{ whiteSpace: "pre-wrap" }}>{sel.blocking_issues}</div>
-                  </div>
-                )}
+                <ReworkRequiredNotice text={sel.blocking_issues} />
 
                 {hasRunErrors && (
                   <div
@@ -1594,7 +1580,7 @@ export function Dashboard() {
       <CreateWorkItemModal
         open={createWorkItemOpen}
         workspaceSlug={createTargetWorkspace}
-        workspacePicker={workspace === "all" && !createParentTicket}
+        workspacePicker={createParentTicket ? isWorkspaceless(createParentTicket.type) : workspace === "all"}
         workspaces={(workspaces.data ?? []).map((w) => ({ slug: w.slug, name: w.name }))}
         onWorkspaceSlugChange={setCreateTargetWorkspace}
         tickets={createTickets.data ?? []}

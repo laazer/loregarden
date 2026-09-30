@@ -51,7 +51,7 @@ function useTicketBucket(ticketIds: string[] | undefined, workspaceSlug: string 
 }
 
 /** Board tile: the v6 list card compacted to a column's width. */
-function TicketMini({ ticket }: { ticket: TicketSummary }) {
+export function TicketMini({ ticket }: { ticket: TicketSummary }) {
   const progress = stageProgressSegments(ticket.stages);
 
   return (
@@ -70,6 +70,50 @@ function TicketMini({ ticket }: { ticket: TicketSummary }) {
       <div className="lg-primitive-ticket-tile-action">
         <OpenTicketButton ticketId={ticket.id} compact label={`Open ${ticket.title}`} />
       </div>
+    </div>
+  );
+}
+
+export interface KanbanColumn {
+  status: TicketState;
+  tickets: TicketSummary[];
+  /**
+   * How many tickets the column really holds, when that is more than it drew.
+   * Absent means `tickets` is the whole column — a board that fetched every
+   * row must not claim it truncated one.
+   */
+  total?: number;
+}
+
+/** The columns themselves, shared by the chat primitive and the queue board. */
+export function KanbanColumns({ columns }: { columns: KanbanColumn[] }) {
+  return (
+    <div className="lg-primitive-kanban">
+      {columns.map((col) => {
+        const total = col.total ?? col.tickets.length;
+        const hidden = Math.max(0, total - col.tickets.length);
+        return (
+          <div key={col.status} className="lg-primitive-kanban-col">
+            <p className="lg-primitive-kanban-col-title">
+              <span
+                className="lg-primitive-ticket-state-dot"
+                style={{ background: ticketStateColor(col.status) }}
+                aria-hidden
+              />
+              {ticketStateLabel(col.status)}
+              <span className="lg-primitive-kanban-col-count">{total}</span>
+            </p>
+            {col.tickets.length === 0 ? (
+              <p className="lg-primitive-kanban-col-empty">Nothing here</p>
+            ) : (
+              col.tickets.map((t) => <TicketMini key={t.id} ticket={t} />)
+            )}
+            {hidden > 0 ? (
+              <p className="lg-primitive-kanban-col-more">+{hidden} more</p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -147,24 +191,7 @@ export function KanbanPrimitive({
           ))}
         </div>
       ) : null}
-      <div className="lg-primitive-kanban">
-        {columns.map((col) => (
-          <div key={col.status} className="lg-primitive-kanban-col">
-            <p className="lg-primitive-kanban-col-title">
-              <span
-                className="lg-primitive-ticket-state-dot"
-                style={{ background: ticketStateColor(col.status) }}
-                aria-hidden
-              />
-              {ticketStateLabel(col.status)}
-              <span className="lg-primitive-kanban-col-count">{col.tickets.length}</span>
-            </p>
-            {col.tickets.map((t) => (
-              <TicketMini key={t.id} ticket={t} />
-            ))}
-          </div>
-        ))}
-      </div>
+      <KanbanColumns columns={columns} />
     </PrimitiveCard>
   );
 }

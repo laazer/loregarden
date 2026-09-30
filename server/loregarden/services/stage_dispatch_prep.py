@@ -37,7 +37,12 @@ def resolve_run_agent(
     resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
     chosen_agent = agent_id or resolved_agent_id
     chosen_skill = skill_name or resolved_skill or stage_def.skill_name
-    if is_agentless_stage(stage_def):
+    if is_agentless_stage(stage_def) and not chosen_agent:
+        # "Names no agent" and "nobody will run it" are different claims, and
+        # this used to conflate them: a terminal stage carrying the landing
+        # resolver's pin resolved an agent and was still refused as a human
+        # gate (801). A stage with nothing pinned and nothing declared is the
+        # human gate this message means.
         raise ValueError(
             f"Stage '{stage_def.key}' is a human approval gate — it does not run an agent CLI."
         )

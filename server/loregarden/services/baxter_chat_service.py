@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -37,6 +38,7 @@ from loregarden.models.domain import (
     BaxterChatMessage,
     BaxterChatSession,
     ChatSurface,
+    CliAdapter,
     OrchestrationRun,
     RunStatus,
     Ticket,
@@ -56,6 +58,16 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.chat_attachments import (
+    ChatAttachment,
+    copy_session_attachments,
+    delete_session_attachments,
+    has_image,
+    image_adapter_refusal,
+    load_attachments_json,
+    render_attachments_for_prompt,
+    session_attachments_dir,
+)
 from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json, parse_primitive_parts
 from loregarden.services.cli_agent_runner import stub_response
@@ -377,10 +389,12 @@ def fork_chat_session(
                 status=message.status,
                 parts_json=message.parts_json,
                 skill_name=message.skill_name,
+                attachments_json=message.attachments_json,
                 created_at=message.created_at,
             )
         )
 
+    copy_session_attachments(source.id, row.id)
     session.commit()
     session.refresh(row)
     return row
@@ -423,6 +437,7 @@ def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> No
         session.delete(message)
     session.delete(chat_session)
     session.commit()
+    delete_session_attachments(chat_session.id)
 
 
 def touch_chat_session(session: Session, chat_session: BaxterChatSession) -> None:
@@ -514,6 +529,9 @@ def _message_view(message: BaxterChatMessage) -> dict:
         "parts": load_parts_json(message.parts_json),
         # "" on every turn sent without a `/skill`, which is most of them.
         "skill_name": message.skill_name,
+        "attachments": [
+            a.model_dump(mode="json") for a in load_attachments_json(message.attachments_json)
+        ],
         "created_at": message.created_at.isoformat(),
     }
 
@@ -739,6 +757,15 @@ class BaxterChatConflictError(ValueError):
     """Raised when a Home chat turn can't start because one is already running."""
 
 
+def home_chat_adapter(workspace: Workspace, chat_session: BaxterChatSession) -> str:
+    """The adapter this conversation's next turn would run on."""
+    agent = get_agent(TRIAGE_AGENT_ID) or {}
+    return resolve_effective_adapter(
+        agent_adapter=agent.get("adapter", "claude"),
+        workspace=apply_runtime_overrides(workspace, chat_session.runtime_json),
+    )
+
+
 def invoke_baxter_chat_model(
     session: Session,
     workspace: Workspace,
@@ -748,6 +775,7 @@ def invoke_baxter_chat_model(
     history: list[BaxterChatMessage] | None = None,
     turn_id: str = "",
     skill_name: str = "",
+    attachments: Sequence[ChatAttachment] = (),
 ) -> ChatTurnOutcome:
     """Run one Home chat turn against the workspace's current CLI/model runtime.
 
@@ -763,10 +791,18 @@ def invoke_baxter_chat_model(
     an acting turn its own worktree and a branch to publish from; without it the
     turn falls back to writing in the shared workspace checkout, which is what
     every Home chat turn used to do.
+
+    ``attachments`` are the files uploaded with this turn. Text is inlined into
+    the prompt; images are named by path and their directory granted to claude.
+    They stay out of ``message`` itself, which also decides the turn's intent
+    and its ``@`` references — a pasted log must not read as "run the plan".
     """
     message = (content or "").strip()
-    if not message:
+    if not message and not attachments:
         raise ValueError("Message content is required")
+    session_id = chat_session.id if chat_session else ""
+    if attachments and not session_id:
+        raise ValueError("Attachments belong to a conversation; none was given")
 
     stub = stub_response(BAXTER_CHAT_CLI_PROFILE)
     if stub is not None:
@@ -786,10 +822,12 @@ def invoke_baxter_chat_model(
     )
     interactive = intent == "execute"
 
+    if has_image(list(attachments)) and selected != CliAdapter.CLAUDE:
+        raise ValueError(image_adapter_refusal(selected))
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
         history=list(history or []),
-        latest_user_message=message,
+        latest_user_message=message + render_attachments_for_prompt(session_id, list(attachments)),
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
         agent=agent,
@@ -819,6 +857,7 @@ def invoke_baxter_chat_model(
             f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
         ),
         track_workflow_stage=False,
+        extra_dirs=(session_attachments_dir(session_id),) if has_image(list(attachments)) else (),
     )
 
     def outcome(turn: AgentTurnResult) -> ChatTurnOutcome:

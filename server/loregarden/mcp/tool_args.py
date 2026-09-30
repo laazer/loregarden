@@ -122,6 +122,22 @@ def coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
     raise ValueError(f"{field} must be an integer")
 
 
+def _json_string_list(text: str, *, field: str) -> list[Any]:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field} looks like JSON but is not valid JSON: {text[:80]!r}") from exc
+    if not isinstance(value, list):  # py-org: allow-isinstance
+        raise ValueError(f"{field} must be a JSON array of strings, got {text[:80]!r}")
+    return value
+
+
+def _clean_items(value: Any, *, field: str) -> list[str]:
+    if not isinstance(value, list):  # py-org: allow-isinstance
+        raise ValueError(f"{field} must be a list of strings")
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def coerce_string_list(value: Any, *, field: str) -> list[str]:
     """Accept a list, a JSON-encoded list, or newline/bullet text as a list of strings.
 
@@ -133,15 +149,33 @@ def coerce_string_list(value: Any, *, field: str) -> list[str]:
         if not text:
             return []
         if text.startswith("["):
-            try:
-                value = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{field} is not valid JSON") from exc
+            value = _json_string_list(text, field=field)
         else:
             value = [line.lstrip("-*").strip() for line in text.splitlines()]
-    if not isinstance(value, list):  # py-org: allow-isinstance
-        raise ValueError(f"{field} must be a list of strings")
-    return [str(item).strip() for item in value if str(item).strip()]
+    return _clean_items(value, field=field)
+
+
+#: A tag never legitimately starts with one of these; text that does was meant
+#: as JSON, and splitting it on commas is how `'["routing", "rework"]'` became
+#: the tags `'["routing"'` and `'"rework"]'` on the live memory graph.
+_JSON_OPENERS = ("[", "{", '"')
+
+
+def coerce_tag_list(value: Any, *, field: str) -> list[str]:
+    """Tags or aliases: a list, a JSON-encoded list, or comma-separated text.
+
+    JSON-looking text must parse as an array or the call is rejected — never
+    split on commas, which stores fragments of the JSON as tags.
+    """
+    if isinstance(value, str):  # py-org: allow-isinstance
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith(_JSON_OPENERS):
+            value = _json_string_list(text, field=field)
+        else:
+            value = text.split(",")
+    return _clean_items(value, field=field)
 
 
 def coerce_optional_bool(value: Any) -> bool:
@@ -253,6 +287,31 @@ def normalize_force_release_docker_lease(args: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def normalize_list_instances(args: dict[str, Any]) -> dict[str, Any]:
+    return {"project": coerce_optional_string(args.get("project"))}
+
+
+def normalize_launch_instance(args: dict[str, Any]) -> dict[str, Any]:
+    params = coerce_mapping(args.get("params"))
+    return {
+        "template": coerce_string(args.get("template"), field="template"),
+        "params": {str(key): str(value) for key, value in params.items()},
+        "name": coerce_optional_string(args.get("name")),
+        "wait_seconds": coerce_optional_int(args.get("wait_seconds"), field="wait_seconds"),
+    }
+
+
+def normalize_instance_status(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "instance_id": coerce_string(args.get("instance_id"), field="instance_id"),
+        "log_lines": coerce_optional_int(args.get("log_lines"), field="log_lines"),
+    }
+
+
+def normalize_stop_instance(args: dict[str, Any]) -> dict[str, Any]:
+    return {"instance_id": coerce_string(args.get("instance_id"), field="instance_id")}
+
+
 #: Normalizers dispatched by table instead of another branch in the chain below.
 #:
 #: `execute_tool` got this seam first, as `EXTENDED_TOOLS` — the chain was past
@@ -270,4 +329,8 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.RELEASE_DOCKER_CAPACITY.value: normalize_release_docker_capacity,
     McpTool.DOCKER_CAPACITY_STATUS.value: normalize_docker_capacity_status,
     McpTool.FORCE_RELEASE_DOCKER_LEASE.value: normalize_force_release_docker_lease,
+    McpTool.LIST_INSTANCES.value: normalize_list_instances,
+    McpTool.LAUNCH_INSTANCE.value: normalize_launch_instance,
+    McpTool.INSTANCE_STATUS.value: normalize_instance_status,
+    McpTool.STOP_INSTANCE.value: normalize_stop_instance,
 }

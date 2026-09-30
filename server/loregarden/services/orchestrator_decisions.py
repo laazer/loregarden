@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def record_orchestrator_decision(
     session: Session,
-    ticket: Ticket,
+    ticket: Ticket | None,
     *,
     decision: OrchestratorDecision,
     stage_key: str,
@@ -41,15 +41,23 @@ def record_orchestrator_decision(
     what was decided and why in one sentence. `evidence` is the rows that
     justify it — run codes, the pair, the parent's status — for anyone who
     wants to check the sentence against the data.
+
+    `ticket` is None only for a decision about the pool itself — a lane held by
+    nothing names no ticket. The event still lands in the installation-wide
+    log; it just has no history rail to appear on.
     """
     logger.warning(
-        "orchestrator %s on %s/%s: %s", decision.value, ticket.external_id, stage_key, reason
+        "orchestrator %s on %s/%s: %s",
+        decision.value,
+        ticket.external_id if ticket else "(no ticket)",
+        stage_key,
+        reason,
     )
     event_bus.publish(
         session,
         EventType.ORCHESTRATOR_DECISION,
-        workspace_id=ticket.workspace_id,
-        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id if ticket else None,
+        ticket_id=ticket.id if ticket else None,
         run_id=run_id,
         payload={
             "decision": decision.value,

@@ -154,6 +154,7 @@ def _args_for(
     external_id: str,
     run_id: str,
     memory_id: str,
+    other_memory_id: str,
     stage_key: str,
     prereq_id: str,
     optional_stage_key: str,
@@ -173,6 +174,13 @@ def _args_for(
         "loregarden_search_reference": {"query": "smoke"},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
+        "loregarden_land_ticket": {"ticket_id": ticket_id},
+        "loregarden_pin_stage_agent": {
+            "ticket_id": ticket_id,
+            "agent_id": "backend_implementer",
+            "stage_key": "implement",
+            "reason": "smoke",
+        },
         "loregarden_supersede_ticket": {
             "ticket_id": prereq_id,
             "title": "smoke replacement",
@@ -193,7 +201,7 @@ def _args_for(
         },
         "loregarden_create_memory_relation": {
             "source_id": memory_id,
-            "target_id": memory_id,
+            "target_id": other_memory_id,
             "workspace_slug": ws,
         },
         "loregarden_append_learning": {
@@ -238,6 +246,12 @@ def _args_for(
         "loregarden_renew_docker_lease": {"lease_id": "smoke-no-such-lease"},
         "loregarden_release_docker_capacity": {"lease_id": "smoke-no-such-lease"},
         "loregarden_docker_capacity_status": {},
+        # Instances: every call answers with a structured payload and none of
+        # these starts a process — an unknown template is refused before spawn.
+        "loregarden_list_instances": {},
+        "loregarden_launch_instance": {"template": "smoke-no-such-template"},
+        "loregarden_instance_status": {"instance_id": "smoke-no-such-instance"},
+        "loregarden_stop_instance": {"instance_id": "smoke-no-such-instance"},
         "loregarden_force_release_docker_lease": {
             "lease_id": "smoke-no-such-lease",
             "reason": "smoke",
@@ -249,6 +263,8 @@ def _args_for(
         # The two config checks only read the environment; the rest shell out to
         # git over the whole workspace or stat every backend source, which is
         # more than a smoke test needs to prove the tool is wired up.
+        # status only reads the link table; every other action shells out to gh.
+        "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -288,6 +304,21 @@ def _args_for(
     return table.get(tool)
 
 
+def _memory_node_id(client, title: str) -> str:
+    """Upsert a memory node over MCP and return its graph id."""
+    mem = _call(
+        client,
+        "loregarden_upsert_memory",
+        {"title": title, "workspace_slug": "loregarden", "body": "anchor"},
+    )
+    assert "error" not in mem and not mem.get("result", {}).get("isError"), mem
+    # upsert_memory returns {"obsidian": {"id": ...}, "graph": {"id": ...}} — no top-level id.
+    payload = json.loads(mem["result"]["content"][0]["text"])
+    node_id = (payload.get("graph") or {}).get("id", "")
+    assert node_id, f"could not resolve a memory node id from upsert_memory: {mem}"
+    return node_id
+
+
 def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     """Call each tool once with well-formed args; none may return a JSON-RPC error.
 
@@ -324,25 +355,9 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     optional_stage_key = next((s["key"] for s in detail.get("stages", []) if s.get("optional")), "")
     assert optional_stage_key, "seed workflow has no optional stage for skip_stage to skip"
 
-    # create_memory_relation needs real node ids; make one to point at.
-    mem = _call(
-        client,
-        "loregarden_upsert_memory",
-        {"title": "smoke-anchor", "workspace_slug": "loregarden", "body": "anchor"},
-    )
-    # upsert_memory returns {"obsidian": {"id": ...}, "graph": {"id": ...}} — no top-level id.
-    memory_id = ""
-    if "error" not in mem and not mem.get("result", {}).get("isError"):
-        try:
-            payload = json.loads(mem["result"]["content"][0]["text"])
-            for backend in ("graph", "obsidian"):
-                node = payload.get(backend) or {}
-                if isinstance(node, dict) and node.get("id"):
-                    memory_id = node["id"]
-                    break
-        except (ValueError, KeyError, IndexError):
-            memory_id = ""
-    assert memory_id, f"could not resolve a memory node id from upsert_memory: {mem}"
+    # create_memory_relation needs two real node ids: a self-edge is refused.
+    memory_id = _memory_node_id(client, "smoke-anchor")
+    other_memory_id = _memory_node_id(client, "smoke-anchor-2")
 
     # A distinct ticket to depend on (self-links are rejected).
     all_tickets = client.get("/api/tickets").json()
@@ -368,6 +383,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",
+        "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
         "loregarden_request_approval",
@@ -378,6 +394,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_block_ticket",
         "loregarden_set_ticket_workflow",
         "loregarden_requeue_ticket",
+        "loregarden_pin_stage_agent",
+        "loregarden_land_ticket",
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
         "loregarden_search_reference",
@@ -386,6 +404,10 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_release_docker_capacity",
         "loregarden_docker_capacity_status",
         "loregarden_force_release_docker_lease",
+        "loregarden_list_instances",
+        "loregarden_launch_instance",
+        "loregarden_instance_status",
+        "loregarden_stop_instance",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)
@@ -408,6 +430,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             external_id,
             run_id,
             memory_id,
+            other_memory_id,
             stage_key,
             prereq_id,
             optional_stage_key,

@@ -142,3 +142,63 @@ def test_ensure_ticket_branch_refuses_to_remove_primary_lock(tmp_path, monkeypat
     monkeypatch.setattr(git_branch_mod, "_checkout_branch", boom)
     with pytest.raises(ValueError, match="already checked out in another worktree"):
         ensure_ticket_branch(repo_root, ticket)
+
+
+def test_ensure_ticket_branch_never_resets_an_existing_branch(tmp_path, monkeypatch):
+    """A retried ticket keeps its commits (lg-milestone-that-772).
+
+    `checkout -B` resets an existing branch to HEAD. Re-dispatching a ticket
+    after HEAD had moved to another branch left every earlier commit on the
+    ticket branch unreachable, and the tree looked like a first attempt.
+    """
+    repo_root = tmp_path / "loregarden"
+    repo_root.mkdir()
+    _init_repo(repo_root)
+    monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo_root))
+    monkeypatch.setattr("loregarden.config.settings.repo_root", repo_root.resolve())
+
+    ticket = Ticket(
+        external_id="772-keeps-its-commits",
+        branch="loregarden/772-keeps-its-commits",
+        work_item_type=WorkItemType.TASK,
+        title="Retry",
+        workspace_id="w",
+    )
+    ensure_ticket_branch(repo_root, ticket)
+    (repo_root / "work.txt").write_text("first round\n", encoding="utf-8")
+    _git(["add", "."], cwd=repo_root)
+    _git(["commit", "-m", "first round"], cwd=repo_root)
+    first_round = _git(["rev-parse", "HEAD"], cwd=repo_root).stdout.strip()
+
+    # Something else moves HEAD — another ticket, a chat turn, a person.
+    _git(["checkout", "-b", "elsewhere", "main"], cwd=repo_root)
+
+    ensure_ticket_branch(repo_root, ticket)
+
+    assert _git(["rev-parse", "HEAD"], cwd=repo_root).stdout.strip() == first_round
+    assert (repo_root / "work.txt").exists()
+
+
+def test_ensure_ticket_branch_cuts_a_missing_branch_from_the_start_point(tmp_path, monkeypatch):
+    repo_root = tmp_path / "loregarden"
+    repo_root.mkdir()
+    _init_repo(repo_root)
+    monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo_root))
+    monkeypatch.setattr("loregarden.config.settings.repo_root", repo_root.resolve())
+    main_sha = _git(["rev-parse", "main"], cwd=repo_root).stdout.strip()
+    _git(["checkout", "-b", "elsewhere"], cwd=repo_root)
+    (repo_root / "noise.txt").write_text("not the base\n", encoding="utf-8")
+    _git(["add", "."], cwd=repo_root)
+    _git(["commit", "-m", "noise"], cwd=repo_root)
+
+    ticket = Ticket(
+        external_id="772-from-start-point",
+        branch="loregarden/772-from-start-point",
+        work_item_type=WorkItemType.TASK,
+        title="Cut",
+        workspace_id="w",
+    )
+    ensure_ticket_branch(repo_root, ticket, start_point="main")
+
+    assert _git(["rev-parse", "HEAD"], cwd=repo_root).stdout.strip() == main_sha
+    assert not (repo_root / "noise.txt").exists()

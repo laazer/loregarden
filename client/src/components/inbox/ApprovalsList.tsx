@@ -38,6 +38,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import type { ApprovalResolutionAction } from "../../api/chatTypes";
 import { api, type Approval } from "../../api/client";
 import { hasHumanCriteria } from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
@@ -88,7 +89,7 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
       route_to_stage_key,
     }: {
       id: string;
-      action: "approve" | "reject";
+      action: ApprovalResolutionAction;
       answers?: Record<string, string | string[]>;
       response?: string;
       always_allow?: boolean;

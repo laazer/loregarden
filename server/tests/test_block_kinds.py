@@ -14,7 +14,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -23,7 +22,6 @@ from loregarden.models.domain import (
     Artifact,
     ArtifactKind,
     BlockKind,
-    EventType,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -36,12 +34,10 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.block_classification import (
-    classify_block_message,
-    record_block,
-    sweep_unclassified_blocks,
-)
+from loregarden.services.block_classification import classify_block_message
+from loregarden.services.block_settlement import settle_block, sweep_unclassified_blocks
 from loregarden.services.interruption_messages import (
+    DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -50,6 +46,7 @@ from loregarden.services.orchestration import ApprovalService, OrchestrationServ
 from loregarden.services.run_service import AGENT_LEASE_EXPIRED_MESSAGE, EXPIRED_LEASE_MESSAGE
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds, decision_payloads
 
 IMPLEMENT = "implement"
 STAGES = [
@@ -76,6 +73,9 @@ SDF_39_OPTIONS = ["Relax the bar to 0.5", "Try approach B", "Accept and continue
         "Agent run exited successfully but emitted no parseable <<<LOREGARDEN_STAGE_REPORT>>> block.",
         "Environment preflight failed before this stage could run.\n  git_core_bare: ...",
         "Run run_abc — usage limit reached (Pro usage limit)",
+        # lg-bug-hole-574, 2026-09-16 23:48: the stage passed, its parent had
+        # been failed under it, and this refusal was filed as work.
+        f"{DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX} orch_b1622f is failed",
     ],
 )
 def test_the_control_plane_names_its_own_failures_harness(message):
@@ -170,14 +170,6 @@ def _complete_blocked(session: Session, ticket: Ticket, stdout: str) -> None:
     session.commit()
 
 
-def _decisions(session: Session, ticket: Ticket) -> list[dict]:
-    return [
-        json.loads(e.payload_json or "{}")
-        for e in event_bus.ticket_history(session, ticket.id)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
 def _pending_decision(session: Session, ticket: Ticket) -> Approval | None:
     return session.exec(
         select(Approval).where(
@@ -200,7 +192,9 @@ def test_a_decision_block_becomes_one_question_with_the_agents_options(db_sessio
     question = json.loads(approval.tool_input_json)["questions"][0]
     assert question["question"] == SDF_39_MESSAGE
     assert [o["label"] for o in question["options"]] == SDF_39_OPTIONS
-    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
     assert classified and classified[0]["block_kind"] == "decision"
 
 
@@ -232,7 +226,7 @@ def test_answering_the_question_requeues_the_stage_with_no_manual_step(db_sessio
     ).one()
     assert "Try approach B" in decision_note.content_json
     assert scheduled.called, "the run resumes itself after the answer, as a gate would"
-    kinds = [d["decision"] for d in _decisions(db_session, ticket)]
+    kinds = decision_kinds(db_session, ticket.id)
     assert "requeued_after_decision" in kinds
 
 
@@ -256,7 +250,9 @@ def test_an_unnamed_kind_is_work_and_the_history_says_the_agent_did_not_say(db_s
     db_session.refresh(ticket)
     assert ticket.block_kind is BlockKind.WORK
     assert _pending_decision(db_session, ticket) is None
-    classified = [d for d in _decisions(db_session, ticket) if d["decision"] == "classified_block"]
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
     assert "named no kind" in classified[0]["reason"]
 
 
@@ -273,23 +269,16 @@ def test_the_sweep_classifies_blocks_the_writers_did_not(db_session, ticket):
     assert sweep_unclassified_blocks(db_session) == 0  # idempotent
 
 
-def test_record_block_does_not_raise_a_second_question_for_the_same_stage(db_session, ticket):
-    record_block(
-        db_session,
-        ticket,
-        stage_key=IMPLEMENT,
-        message="pick one",
-        declared=BlockKind.DECISION,
-        options=["a", "b"],
-    )
-    record_block(
-        db_session,
-        ticket,
-        stage_key=IMPLEMENT,
-        message="pick one",
-        declared=BlockKind.DECISION,
-        options=["a", "b"],
-    )
+def test_settling_a_block_does_not_raise_a_second_question_for_the_same_stage(db_session, ticket):
+    for _ in range(2):
+        settle_block(
+            db_session,
+            ticket,
+            stage_key=IMPLEMENT,
+            message="pick one",
+            declared=BlockKind.DECISION,
+            options=["a", "b"],
+        )
 
     pending = db_session.exec(
         select(Approval).where(
@@ -297,3 +286,65 @@ def test_record_block_does_not_raise_a_second_question_for_the_same_stage(db_ses
         )
     ).all()
     assert len(pending) == 1
+
+
+def test_the_sweep_reads_the_error_artifact_behind_an_errors_tab_pointer(db_session, ticket):
+    """A long block leaves only a pointer inline; classifying the pointer would
+    call every such block `work`. The sdf-39 shape: the real message names a
+    person."""
+    from loregarden.services.artifact_service import record_blocking_issue
+
+    long_message = "Needs a person to choose: " + "x" * 600
+    ticket.blocking_issues = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key=IMPLEMENT, message=long_message
+    )
+    ticket.workflow_stage_status = StageStatus.BLOCKED
+    db_session.add(ticket)
+    db_session.commit()
+    assert "see the Errors tab" in ticket.blocking_issues  # the pointer, not the words
+
+    assert sweep_unclassified_blocks(db_session) == 1
+    db_session.refresh(ticket)
+    assert ticket.block_kind is BlockKind.HUMAN_ACTION
+
+
+def test_an_editor_trust_refusal_is_harness():
+    assert (
+        classify_block_message("⚠ Workspace Trust Required   Cursor Agent can execute code…")
+        is BlockKind.HARNESS
+    )
+
+
+def test_the_kind_clears_when_the_stage_leaves_blocked(db_session, ticket):
+    """574 sat at a legitimate test-break sign-off still badged `work`."""
+    from loregarden.services.orchestration import OrchestrationService
+    from loregarden.services.workflow_state import set_stage_status
+
+    ticket.block_kind = BlockKind.WORK
+    instance, stages = OrchestrationService(db_session)._resolve_stages(ticket)
+    set_stage_status(ticket, instance, stages, IMPLEMENT, StageStatus.AWAITING)
+    assert ticket.block_kind is None
+
+
+def test_an_invented_kind_is_named_in_the_history(db_session, ticket):
+    """sdf-39's rerun wrote `blocked_kind: "awaiting_human"`. Not a kind — but
+    a different mistake from naming none, and the history should say which."""
+    _complete_blocked(
+        db_session,
+        ticket,
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        + json.dumps(
+            {
+                "status": "blocked",
+                "confidence": 0.9,
+                "reroute_context": "pick one",
+                "blocked_kind": "awaiting_human",
+            }
+        )
+        + "\n<<<END_STAGE_REPORT>>>\n",
+    )
+
+    classified = [
+        d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
+    ]
+    assert "unknown kind 'awaiting_human'" in classified[0]["reason"]

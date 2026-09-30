@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from sqlmodel import Session
 
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
+from loregarden.services.tool_call_ledger import record_dispatch
+from loregarden.services.tool_telemetry import DECISION_EXECUTED, DECISION_FAILED
 
 SERVER_INFO = {"name": "loregarden", "version": "0.1.0"}
 PROTOCOL_VERSION = "2024-11-05"
 
 
 def handle_request(
-    session: Session, req: dict[str, Any], *, orchestrated: bool = False
+    session: Session, req: dict[str, Any], *, orchestrated: bool = False, run_id: str = ""
 ) -> dict[str, Any] | None:
     method = req.get("method")
     req_id = req.get("id")
@@ -40,14 +43,22 @@ def handle_request(
         params = req.get("params") or {}
         name = params.get("name")
         arguments = params.get("arguments") or {}
+        started = time.monotonic()
         try:
-            result = execute_tool(session, name, arguments, orchestrated=orchestrated)
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"content": [{"type": "text", "text": result}]},
-            }
+            result = execute_tool(
+                session, name, arguments, orchestrated=orchestrated, run_id=run_id
+            )
         except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: any tool failure becomes an isError result
+            # The failed tool may have left writes pending on this session; a
+            # ledger commit must not carry them through.
+            session.rollback()
+            record_dispatch(
+                session,
+                name=name,
+                arguments=arguments,
+                decision=DECISION_FAILED,
+                decision_ms=int((time.monotonic() - started) * 1000),
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -56,6 +67,18 @@ def handle_request(
                     "isError": True,
                 },
             }
+        record_dispatch(
+            session,
+            name=name,
+            arguments=arguments,
+            decision=DECISION_EXECUTED,
+            decision_ms=int((time.monotonic() - started) * 1000),
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"content": [{"type": "text", "text": result}]},
+        }
 
     if method == "notifications/initialized":
         return None
@@ -70,18 +93,20 @@ def handle_request(
     }
 
 
-def handle_message(session: Session, body: Any, *, orchestrated: bool = False) -> Any:
+def handle_message(
+    session: Session, body: Any, *, orchestrated: bool = False, run_id: str = ""
+) -> Any:
     """Accept a single JSON-RPC object or a batch array."""
     if isinstance(body, list):
         responses = []
         for item in body:
             if not isinstance(item, dict):
                 continue
-            resp = handle_request(session, item, orchestrated=orchestrated)
+            resp = handle_request(session, item, orchestrated=orchestrated, run_id=run_id)
             if resp is not None:
                 responses.append(resp)
         return responses
     if isinstance(body, dict):
-        resp = handle_request(session, body, orchestrated=orchestrated)
+        resp = handle_request(session, body, orchestrated=orchestrated, run_id=run_id)
         return resp if resp is not None else {}
     raise ValueError("Invalid MCP message body")

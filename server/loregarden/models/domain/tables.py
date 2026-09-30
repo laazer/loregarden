@@ -32,10 +32,10 @@ from loregarden.models.domain.enums import (
     TicketState,
     TicketStudioSessionStatus,
     ViewKind,
-    WorkItemType,
     str_enum_column,
     utcnow,
 )
+from loregarden.models.domain.work_item_types import WorkItemType
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
@@ -129,6 +129,13 @@ class WorkflowTemplateVersion(SQLModel, table=True):
 
 class Ticket(SQLModel, table=True):
     __tablename__ = "tickets"
+    __table_args__ = (
+        # workspace_id is NULL iff work_item_type is initiative (lg-initiatives-cross-732).
+        CheckConstraint(
+            "(workspace_id IS NULL) = (work_item_type = 'initiative')",
+            name="ck_tickets_workspace_binding",
+        ),
+    )
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     # The shareable id: "<workspace prefix>-<milestone code>-<ticket_number>", e.g.
@@ -148,7 +155,8 @@ class Ticket(SQLModel, table=True):
     # the learning vault, none of which this rename can reach; resolution accepts it
     # forever. Blank for tickets created after the restructure.
     legacy_external_id: str = Field(default="", index=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    # Null only for initiatives — CHECK ck_tickets_workspace_binding enforces the pair.
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id", index=True)
     title: str
     description: str = ""
     state: TicketState = Field(
@@ -157,6 +165,11 @@ class Ticket(SQLModel, table=True):
     )
     priority: int = Field(default=3, ge=1, le=3)
     branch: str = ""
+    # Where this ticket's work landed: the commit on `landed_branch` that
+    # contains it, written by `land_ticket` at the terminal stage. Empty means
+    # not landed — which is not "done": a dependent's readiness reads this.
+    landed_sha: str = ""
+    landed_branch: str = ""
     milestone: str = ""
     work_item_type: WorkItemType = Field(
         default=WorkItemType.TASK,
@@ -357,7 +370,7 @@ class AgentRun(SQLModel, table=True):
     #: hold it: looked-and-found-nothing, never-looked, and (before PR #254) the
     #: read failed. That is why lg-workflow-integrity-406 could not be measured
     #: twice running. Rows written before this stay ambiguous — their meaning is
-    #: unknown and inventing one would be worse (lg-workflow-integrity-675).
+    #: unknown and inventing one would be worse (lg-workflow-integrity-676).
     changed_paths_recorded_at: datetime | None = None
     #: What this run READ, as a JSON list of repo-relative paths. Recovered from
     #: the CLI transcript, which carries the tool calls in two schemas — see
@@ -1182,6 +1195,8 @@ class BaxterChatMessage(SQLModel, table=True):
     # or "" for an ordinary message. Recorded on the user row because that is
     # whose choice it was; the assistant row is what the choice produced.
     skill_name: str = ""
+    # Files uploaded with a user turn (see services.chat_attachments), as JSON.
+    attachments_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 

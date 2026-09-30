@@ -13,7 +13,6 @@ import json
 from uuid import uuid4
 
 import pytest
-from loregarden.core.event_bus import event_bus
 from loregarden.db.migrations_design_plan_gate import (
     DESIGN_PLAN_STAGES,
     m_design_plan_gates,
@@ -23,7 +22,6 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
-    EventType,
     OrchestrationRun,
     OrchestrationRunStatus,
     ParallelAgentSpec,
@@ -43,6 +41,7 @@ from loregarden.services.subtree_auto_run import resolve_gate_if_permitted
 from loregarden.services.workflow_state import initial_stages_json
 from sqlalchemy import text
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds
 
 DESIGN = WorkflowStageDef.model_validate(
     {
@@ -222,14 +221,6 @@ def gated_fixture(db_session: Session, tmp_path):
     return ticket, park
 
 
-def _decisions(session: Session, ticket: Ticket) -> list[str]:
-    return [
-        json.loads(e.payload_json or "{}").get("decision")
-        for e in event_bus.ticket_history(session, ticket.id)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
 def test_the_run_signs_off_a_design_plan_and_says_so(db_session, gated):
     ticket, park = gated
     run, approval = park(DESIGN.key, approve_design_plans=True)
@@ -239,7 +230,7 @@ def test_the_run_signs_off_a_design_plan_and_says_so(db_session, gated):
     db_session.refresh(approval)
     assert approval.status is ApprovalStatus.APPROVED
     assert approval.resolved_by == "automation"
-    assert _decisions(db_session, ticket) == ["approved_design_plan"]
+    assert decision_kinds(db_session, ticket.id) == ["approved_design_plan"]
 
 
 def test_unticked_the_gate_waits_for_a_person(db_session, gated):
@@ -250,7 +241,7 @@ def test_unticked_the_gate_waits_for_a_person(db_session, gated):
 
     db_session.refresh(approval)
     assert approval.status is ApprovalStatus.PENDING
-    assert _decisions(db_session, ticket) == []
+    assert decision_kinds(db_session, ticket.id) == []
 
 
 def test_the_flag_never_touches_another_gate(db_session, gated):
@@ -272,7 +263,7 @@ def test_auto_approve_does_not_bypass_a_non_design_gate(db_session, gated):
 
     db_session.refresh(approval)
     assert approval.status is ApprovalStatus.PENDING
-    assert _decisions(db_session, ticket) == []
+    assert decision_kinds(db_session, ticket.id) == []
 
 
 _PASS_REPORT = (
@@ -320,7 +311,7 @@ def test_the_post_run_gate_follows_the_flag(db_session, gated, flag):
     ).one()
     expected = ApprovalStatus.APPROVED if flag else ApprovalStatus.PENDING
     assert gate.status is expected
-    assert _decisions(db_session, ticket) == (["approved_design_plan"] if flag else [])
+    assert decision_kinds(db_session, ticket.id) == (["approved_design_plan"] if flag else [])
 
 
 def _live_shapes() -> list[dict]:

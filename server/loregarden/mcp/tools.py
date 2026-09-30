@@ -26,6 +26,8 @@ from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
 )
+from loregarden.mcp.github_issue_tool import TOOL_DEFINITION as GITHUB_ISSUE_TOOL_DEFINITION
+from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTANCE_TOOL_DEFINITIONS
 from loregarden.mcp.memory_tools import MEMORY_TOOL_NAMES, execute_memory_tool
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
@@ -46,6 +48,7 @@ from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
 from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
 from loregarden.mcp.tool_args import coerce_string as _coerce_string
 from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
+from loregarden.mcp.tool_args import coerce_tag_list as _coerce_tag_list
 from loregarden.mcp.tool_args import reject_truncated_call as _reject_truncated_call
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
@@ -58,6 +61,7 @@ from loregarden.models.domain import (
     BlockOrigin,
     ExternalHarness,
     HumanActionTier,
+    MemoryRelationType,
     OrchestrationRunStatus,
     WorkItemType,
 )
@@ -80,13 +84,14 @@ from loregarden.services.ticket_service import TicketService
 
 
 def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
-    tags = args.get("tags")
-    if tags is None:
-        return
-    if isinstance(tags, str):
-        payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    elif isinstance(tags, list):
-        payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+    if args.get("tags") is not None:
+        payload["tags"] = _coerce_tag_list(args["tags"], field="tags")
+
+
+def _coerce_aliases(args: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Aliases arrive in the same shapes tags do."""
+    if args.get("aliases") is not None:
+        payload["aliases"] = _coerce_tag_list(args["aliases"], field="aliases")
 
 
 def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
@@ -114,8 +119,10 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
             "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
             "content": _coerce_string(args.get("content"), field="content"),
+            "title": _coerce_optional_string(args.get("title")) or "",
         }
         _coerce_tags(args, payload)
+        _coerce_aliases(args, payload)
         return payload
 
     if name == "loregarden_upsert_memory":
@@ -305,9 +312,8 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return _normalize_get_ticket(args)
 
     if name == "loregarden_list_tickets":
-        payload = {
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-        }
+        # Optional: listing initiatives is global; list_tickets_mcp owns the error.
+        payload = {"workspace_slug": _coerce_optional_string(args.get("workspace_slug")) or ""}
         for field in (
             "state",
             "work_item_type",
@@ -479,10 +485,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.LIST_TICKETS,
-        "description": "Search and list tickets in a workspace (flat results for discovery).",
+        "description": (
+            "Search and list tickets in a workspace (flat results for discovery). "
+            "With work_item_type=initiative, lists initiatives across all workspaces."
+        ),
         "inputSchema": _tool_schema(
             properties={
-                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug, e.g. loregarden. Required unless listing initiatives."
+                ),
                 "search": _string_prop("Optional title or external_id substring search."),
                 "state": _enum_string_prop(
                     "Optional ticket state filter.",
@@ -490,7 +501,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "work_item_type": _enum_string_prop(
                     "Optional work item type filter.",
-                    ["milestone", "feature", "capability", "task", "bug"],
+                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
                 ),
                 "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
                 "parent_external_id": _string_prop("Optional parent external id."),
@@ -500,7 +511,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 },
                 "limit": _integer_prop("Max results (default 50, max 100)."),
             },
-            required=["workspace_slug"],
+            required=[],
         ),
     },
     {
@@ -849,17 +860,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.CREATE_TICKET,
         "description": (
             "Create a new ticket. Mirrors the TicketCreate schema — validation "
-            "(including milestone-cannot-have-parent and hierarchy rules) is owned "
+            "(hierarchy rules: initiatives are parentless and own milestones) is owned "
             "by TicketService.create_ticket, not reimplemented here. Returns the "
             "created ticket's id, external_id, and title."
         ),
         "inputSchema": _tool_schema(
             properties={
-                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug, e.g. loregarden. Omit for an initiative, which "
+                    "spans workspaces; required for every other type."
+                ),
                 "title": _string_prop("Ticket title."),
                 "work_item_type": _enum_string_prop(
                     "Work item type (default task).",
-                    ["milestone", "feature", "capability", "task", "bug"],
+                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
                 ),
                 "description": _string_prop("Ticket description (default empty)."),
                 "acceptance_criteria": {
@@ -876,7 +890,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "way loregarden_get_ticket resolves ticket_id."
                 ),
             },
-            required=["workspace_slug", "title"],
+            required=["title"],
         ),
     },
     {
@@ -901,6 +915,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "ticket_id": _string_prop("Ticket external id or UUID."),
                 "workspace_slug": _string_prop("Workspace slug."),
                 "content": _string_prop("Learning body (markdown)."),
+                "title": _string_prop(
+                    "What the learning says, as a canonical name (e.g. 'Use DELETE journal "
+                    "on iCloud SQLite'). Omitted: taken from the content's first line."
+                ),
+                "aliases": _string_prop("Other names for it: comma-separated or JSON array."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
             },
             required=["ticket_id", "workspace_slug", "content"],
@@ -1088,7 +1107,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             properties={
                 "source_id": _string_prop("Source memory node id."),
                 "target_id": _string_prop("Target memory node id."),
-                "relation_type": _string_prop("Relation label (default related)."),
+                "relation_type": _enum_string_prop(
+                    "What the edge asserts (default related, a plain mention). Type it only "
+                    "when the relationship is stated, never inferred.",
+                    [kind.value for kind in MemoryRelationType],
+                ),
                 "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
             },
             required=["source_id", "target_id", "workspace_slug"],
@@ -1099,11 +1122,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(GITHUB_ISSUE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):
@@ -1138,7 +1163,7 @@ def _create_ticket(
             raise ValueError(f"Parent ticket not found: {parent}") from exc
 
     ticket = TicketService(session).create_ticket(
-        workspace_slug=arguments["workspace_slug"],
+        workspace_slug=arguments.get("workspace_slug"),
         title=arguments["title"],
         work_item_type=work_item_type,
         parent_ticket_id=parent_ticket_id,
@@ -1211,8 +1236,9 @@ def execute_tool(
     arguments: dict[str, Any] | Any,
     *,
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> str:
-    """Dispatch a tool call.
+    """Dispatch a tool call. `run_id` names the orchestrated run, when known.
 
     `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
     supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
@@ -1251,7 +1277,7 @@ def execute_tool(
         return json.dumps(
             list_tickets_mcp(
                 session,
-                workspace_slug=arguments["workspace_slug"],
+                workspace_slug=arguments.get("workspace_slug") or "",
                 state=arguments.get("state"),
                 work_item_type=arguments.get("work_item_type"),
                 search=arguments.get("search"),
@@ -1303,7 +1329,9 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = execute_memory_tool(session, name, arguments)
+    memory_result = execute_memory_tool(
+        session, name, arguments, orchestrated=orchestrated, run_id=run_id
+    )
     if memory_result is not None:
         return memory_result
 

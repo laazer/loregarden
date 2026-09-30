@@ -16,20 +16,17 @@ function stage(overrides: Partial<StudioWorkflowStage> = {}): StudioWorkflowStag
 
 describe("WorkflowPreviewPanel exit-action preview (AC-3/AC-11)", () => {
   it("does not render the retired gate · human approval badge from gate_required", () => {
+    // Legacy field on a stale payload; the type no longer has it, so it arrives
+    // as an extra property — which the preview must ignore.
+    const legacy = {
+      ...stage({ name: "Verify", exit_actions_enabled: false, exit_actions: [] }),
+      gate_required: true,
+    };
     render(
       <WorkflowPreviewPanel
         name="Exit actions"
         slug="exit-actions"
-        stages={[
-          stage({
-            name: "Verify",
-            // Legacy field still present on some fixtures until callers migrate —
-            // preview must ignore it.
-            gate_required: true,
-            exit_actions_enabled: false,
-            exit_actions: [],
-          } as StudioWorkflowStage),
-        ]}
+        stages={[legacy]}
         agentLabel={(id) => id || "No agent runtime"}
       />,
     );

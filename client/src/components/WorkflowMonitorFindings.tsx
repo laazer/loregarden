@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import { formatRelativeAge } from "../lib/timestamps";
 
 interface WorkflowMonitorFindingsProps {
   ticketId: string;
@@ -16,7 +17,8 @@ interface WorkflowMonitorFindingsProps {
  *
  * The summary carries the numbers — attempts against baseline, failure rate
  * against the workspace — because a reader who has to go and run the query
- * themselves will not.
+ * themselves will not. Duration since first_seen is the secondary line;
+ * occurrences (reconcile-sweep ticks) stay unread.
  */
 export function WorkflowMonitorFindings({ ticketId }: WorkflowMonitorFindingsProps) {
   const { data: findings } = useQuery({
@@ -34,8 +36,11 @@ export function WorkflowMonitorFindings({ ticketId }: WorkflowMonitorFindingsPro
         {findings.map((finding) => (
           <li key={`${finding.condition}:${finding.stage_key}`}>
             {finding.summary}
-            {finding.occurrences > 1 && (
-              <span className="monitor-findings-count"> seen {finding.occurrences}×</span>
+            {finding.first_seen && (
+              <span className="monitor-findings-count">
+                {" "}
+                first seen {formatRelativeAge(finding.first_seen)}
+              </span>
             )}
           </li>
         ))}

@@ -116,6 +116,21 @@ class ExitActionsStage(SQLModel):
     exit_actions_enabled: bool = False
     exit_actions: list[WorkflowExitAction] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_gate_flag(cls, data: object) -> object:
+        # SQLModel ignores unknown keys, so a stage still spelled with the
+        # retired `gate_required` would validate as ungated and advance with no
+        # gate — indistinguishable afterwards from one a person approved.
+        # Migration 0138 rewrites every persisted stage; anything that still
+        # carries the flag is a writer this change missed, and must fail loudly.
+        if isinstance(data, dict) and "gate_required" in data:  # py-org: allow-isinstance
+            raise ValueError(
+                "gate_required was replaced by exit_actions_enabled/exit_actions "
+                "(migration 0138_runtime_exit_actions)"
+            )
+        return data
+
     @model_validator(mode="after")
     def _validate_exit_actions(self):
         if self.exit_actions and not self.exit_actions_enabled:

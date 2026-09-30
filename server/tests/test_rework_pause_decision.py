@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.parallel_stage import member_result
@@ -172,6 +173,11 @@ def test_unreadable_reviewer_does_not_spend_the_loop_budget(
 
     Three rounds of this is what took the real ticket to its cap while every
     reviewer that managed to report said pass.
+
+    The stage is now re-armed for its one repair turn rather than parked for a
+    person (802), which changes what `_execute_parallel_stage` returns but not
+    what this test is about: a re-run is not a verdict, and the loop budget is
+    untouched either way.
     """
     from loregarden.agents.executors.cli import CliAgentExecutor
 
@@ -187,12 +193,16 @@ def test_unreadable_reviewer_does_not_spend_the_loop_budget(
 
     monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
 
-    ok, _ = BuiltinOrchestrator(db_session)._execute_parallel_stage(
+    BuiltinOrchestrator(db_session)._execute_parallel_stage(
         ticket, orch_run, review_def, "script_review"
     )
     db_session.refresh(ticket)
 
-    assert ok is False, "a stage nobody reported on has not passed"
+    # Asserted directly rather than through the return value: that boolean means
+    # "the caller need not block", which a repair re-arm also satisfies. The
+    # invariant is that a stage nobody reported on has not *passed*.
+    assert ticket.workflow_stage_status is not StageStatus.DONE
+    assert repair_pinned(ticket, "script_review"), "re-armed to run again, not parked"
     assert rework_reroute_count(db_session, ticket, "implement") == 0
     assert ticket.workflow_stage_key == "script_review", "the work was not sent back"
 

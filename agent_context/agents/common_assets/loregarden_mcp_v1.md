@@ -196,12 +196,15 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 |-----------|------|
 | Read current stage map, blocking issues, active orchestration | `loregarden_get_ticket` or `loregarden_get_ticket_by_external` |
 | Find tickets by title/slug, list siblings/children, browse workspace | `loregarden_list_tickets` |
+| List initiatives (cross-workspace parents of milestones; `init-*` ids) | `loregarden_list_tickets` with `work_item_type=initiative`, no `workspace_slug` |
+| Create an initiative / attach a milestone to one | `loregarden_create_ticket` with `work_item_type=initiative`, no `workspace_slug`; then `loregarden_update_ticket` on the milestone with `parent=<init-id>` (`""` detaches) |
 | Unrecoverable failure | `loregarden_block_ticket` |
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Find the right documentation page | `loregarden_search_reference` — not a guessed URL |
 | Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
+| Run the change you are checking (a branch server or client) | `loregarden_launch_instance`, then `loregarden_instance_status`, then `loregarden_stop_instance` |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
 | Inspect memory backend config | `loregarden_memory_status` |

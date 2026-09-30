@@ -39,6 +39,22 @@ def validate_parent_child(parent_type: WorkItemType, child_type: WorkItemType) -
         )
 
 
+#: Types that may sit at the forest root (parent_ticket_id is None).
+_PARENTLESS_TYPES = frozenset({WorkItemType.INITIATIVE, WorkItemType.MILESTONE})
+
+
+def validate_parent_assignment(child_type: WorkItemType, parent_type: WorkItemType | None) -> None:
+    """Pure parent-link rules for create / reparent / import / finalize.
+
+    Load, same-workspace, and cycle checks stay at the Session call site.
+    """
+    if parent_type is None:
+        if child_type not in _PARENTLESS_TYPES:
+            raise ValueError(f"{child_type.value} requires a parent work item")
+        return
+    validate_parent_child(parent_type, child_type)
+
+
 def build_tree(
     session: Session,
     tickets: list[Ticket],
@@ -48,11 +64,13 @@ def build_tree(
     """Assemble a forest from a flat ticket list (roots = no parent)."""
     stage_names = stage_names or {}
     by_id = {t.id: t for t in tickets}
-    workspace_slugs: dict[str, str] = {}
+    workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
-        if ticket.workspace_id not in workspace_slugs:
-            ws = session.get(Workspace, ticket.workspace_id)
-            workspace_slugs[ticket.workspace_id] = ws.slug if ws else ""
+        wid = ticket.workspace_id
+        if wid is None or wid in workspace_slugs:
+            continue
+        ws = session.get(Workspace, wid)
+        workspace_slugs[wid] = ws.slug if ws else ""
     children_map: dict[str | None, list[Ticket]] = {}
     for t in tickets:
         pid = t.parent_ticket_id
@@ -62,11 +80,12 @@ def build_tree(
 
     def sort_key(t: Ticket) -> tuple:
         type_order = {
-            WorkItemType.MILESTONE: 0,
-            WorkItemType.FEATURE: 1,
-            WorkItemType.CAPABILITY: 2,
-            WorkItemType.TASK: 3,
-            WorkItemType.BUG: 4,
+            WorkItemType.INITIATIVE: 0,
+            WorkItemType.MILESTONE: 1,
+            WorkItemType.FEATURE: 2,
+            WorkItemType.CAPABILITY: 3,
+            WorkItemType.TASK: 4,
+            WorkItemType.BUG: 5,
         }
         return (type_order.get(t.work_item_type, 9), t.priority, t.external_id)
 
@@ -124,26 +143,26 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
     method on that service through a function-local import, which this repo
     treats as a cycle to fix rather than a cycle to dodge.
 
-    The rules are creation's rules: a milestone takes no parent, everything else
-    requires one, and `validate_parent_child` decides which pairs are legal. The
-    one rule creation does not need is the cycle check — a ticket being created
-    has no descendants, so only a move can put a ticket underneath itself.
+    The rules are creation's rules: `validate_parent_assignment` owns parentless
+    allowlist and type-pair legality. The one rule creation does not need is the
+    cycle check — a ticket being created has no descendants, so only a move can
+    put a ticket underneath itself.
     """
-    if ticket.work_item_type == WorkItemType.MILESTONE:
-        if parent_ticket_id:
-            raise ValueError("Milestones cannot have a parent")
+    if parent_ticket_id is None:
+        validate_parent_assignment(ticket.work_item_type, None)
         ticket.parent_ticket_id = None
     else:
-        if not parent_ticket_id:
-            raise ValueError(f"{ticket.work_item_type.value} requires a parent work item")
         parent = session.get(Ticket, parent_ticket_id)
-        if not parent or parent.workspace_id != ticket.workspace_id:
+        if not parent:
+            raise ValueError("Parent work item not found in workspace")
+        # Null-workspace INITIATIVE parents may own a workspace-bound child.
+        if parent.workspace_id is not None and parent.workspace_id != ticket.workspace_id:
             raise ValueError("Parent work item not found in workspace")
         if parent.id == ticket.id:
             raise ValueError("A work item cannot be its own parent")
         if _is_descendant(session, candidate=parent, ancestor=ticket):
             raise ValueError("Cannot reparent a work item beneath one of its own descendants")
-        validate_parent_child(parent.work_item_type, ticket.work_item_type)
+        validate_parent_assignment(ticket.work_item_type, parent.work_item_type)
         ticket.parent_ticket_id = parent.id
 
     ticket.revision += 1

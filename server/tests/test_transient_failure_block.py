@@ -1,7 +1,10 @@
 """A transient/infrastructure agent failure (API/usage limit, overload) during a
-parallel review stage must PAUSE the stage for a human/resume — not be treated as
-a rework rejection and rerouted upstream, which wastes a cycle and (with the
-rework loop cap) inches toward blocking for the wrong reason.
+parallel review stage must not be treated as a rework rejection and rerouted
+upstream, which wastes a cycle and (with the rework loop cap) inches toward
+blocking for the wrong reason.
+
+It now takes the stage's one repair turn instead of parking the ticket (802);
+with `auto_repair` off it still pauses for a human, and says that it did.
 """
 
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
@@ -17,11 +20,13 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.rework_feedback import rework_reroute_count
 from loregarden.services.stage_report import is_transient_failure
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds
 
 # A Claude CLI final result line for an API/usage-limit death: FAILED, no report.
 API_ERROR_STDOUT = (
@@ -135,7 +140,14 @@ def _setup_review(db_session: Session):
     return ticket, orch_run, review_def
 
 
-def test_transient_only_failure_blocks_stage_not_reroute(db_session: Session, monkeypatch):
+def test_transient_only_failure_takes_its_repair_turn_not_a_reroute(
+    db_session: Session, monkeypatch
+):
+    """A fan-out that lost a member to infrastructure re-runs the stage under the
+    repair agent. Before 802 this was the one shape a repair could never reach —
+    `repair_pin_applies` excluded parallel stages — so it went to a person every
+    time. What must NOT change: no reroute to the implementer, and no charge
+    against the rework loop budget."""
     from loregarden.agents.executors.cli import CliAgentExecutor
 
     ticket, orch_run, review_def = _setup_review(db_session)
@@ -158,13 +170,55 @@ def test_transient_only_failure_blocks_stage_not_reroute(db_session: Session, mo
     builtin = BuiltinOrchestrator(db_session)
     ok, _ = builtin._execute_parallel_stage(ticket, orch_run, review_def, "script_review")
 
-    assert ok is False
+    assert ok is True  # settled by re-arming the stage, not by parking the ticket
     db_session.refresh(ticket)
-    # Paused for a human, NOT rerouted to implementation.
-    assert ticket.state == TicketState.BLOCKED
+    assert repair_pinned(ticket, "script_review")
     assert ticket.workflow_stage_key == "script_review"
     assert "transient" in ticket.blocking_issues.lower()
+    assert decision_kinds(db_session, ticket.id).count("dispatched_repair") == 1
     # The loop budget must be untouched — no rework-ledger entry was recorded.
+    assert rework_reroute_count(db_session, ticket, "implement") == 0
+
+
+def test_transient_only_failure_still_pauses_for_a_human_with_auto_repair_off(
+    db_session: Session, monkeypatch
+):
+    """The repair turn is the run's own dial. With it off, the pre-802 behaviour
+    is what the operator asked for — and the block says so rather than going
+    quiet."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    ticket, orch_run, review_def = _setup_review(db_session)
+    orch_run.auto_repair = False
+    db_session.add(orch_run)
+    db_session.commit()
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        if run.agent_id == "static_qa":
+            run.status = RunStatus.FAILED
+            run.stdout = API_ERROR_STDOUT
+            run.stderr = ""
+        else:
+            run.status = RunStatus.SUCCEEDED
+            run.stdout = _report("pass", 0.95)
+            run.stderr = ""
+        self.session.add(run)
+        self.session.commit()
+        return run
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    ok, _ = BuiltinOrchestrator(db_session)._execute_parallel_stage(
+        ticket, orch_run, review_def, "script_review"
+    )
+
+    assert ok is False
+    db_session.refresh(ticket)
+    assert ticket.state == TicketState.BLOCKED
+    assert ticket.workflow_stage_key == "script_review"
+    assert not repair_pinned(ticket, "script_review")
+    # Classified is not handled: the block says out loud that it got no repair.
+    assert "repair_escalated" in decision_kinds(db_session, ticket.id)
     assert rework_reroute_count(db_session, ticket, "implement") == 0
 
 

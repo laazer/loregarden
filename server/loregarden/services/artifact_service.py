@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.ticket_state_service import choose
@@ -1003,6 +1004,10 @@ def block_ticket_for_unresolved_blocker(
     choose(session, ticket, TicketState.BLOCKED, actor="agent", emit=True)
     session.add(ticket)
     session.commit()
+    # Ticket-level, so there is no run to spend a repair turn on — the same
+    # reason this function does not end one. Settled regardless, so the block
+    # leaves with a kind and a recorded reason it got no repair (802).
+    settle_block(session, ticket, stage_key=stage_key, message=entry)
     return ticket.blocking_issues
 
 

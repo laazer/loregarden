@@ -16,15 +16,15 @@ from uuid import uuid4
 import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.registry import REPAIR_AGENT_ID
-from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     AgentRun,
     Approval,
     ApprovalKind,
     BlockKind,
-    EventType,
+    OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
+    StageStatus,
     Ticket,
     TicketState,
     WorkflowInstance,
@@ -33,11 +33,13 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds
 
 IMPLEMENT = "implement"
 REVIEW = "review"
@@ -128,14 +130,6 @@ def _script(monkeypatch, outcomes: dict[str, Outcome | list[Outcome]]) -> list[s
     return dispatched
 
 
-def _decisions(session: Session, ticket: Ticket) -> list[str]:
-    return [
-        json.loads(e.payload_json or "{}")["decision"]
-        for e in event_bus.ticket_history(session, ticket.id)
-        if e.type == EventType.ORCHESTRATOR_DECISION
-    ]
-
-
 def _runs(session: Session, ticket: Ticket) -> list[AgentRun]:
     return list(
         session.exec(
@@ -165,7 +159,7 @@ def test_a_work_block_gets_one_repair_turn_and_the_rerun_passing_is_the_fix(
     assert ticket.blocking_issues == ""
     assert ticket.block_kind is None
     assert orch_run.status is OrchestrationRunStatus.SUCCEEDED
-    kinds = _decisions(db_session, ticket)
+    kinds = decision_kinds(db_session, ticket.id)
     assert "dispatched_repair" in kinds
     assert "repaired" in kinds
     # The repair run saw the block in its brief.
@@ -194,7 +188,7 @@ def test_a_harness_failure_gets_the_environment_retries_first_then_one_repair_tu
     assert dispatched == [WORKER] * (retries + 1) + [REPAIR_AGENT_ID, REVIEWER]
     assert ticket.state is not TicketState.BLOCKED
     assert ticket.block_kind is None
-    kinds = _decisions(db_session, ticket)
+    kinds = decision_kinds(db_session, ticket.id)
     assert "dispatched_repair" in kinds and "repaired" in kinds
 
 
@@ -211,7 +205,7 @@ def test_with_auto_repair_off_the_block_waits_for_a_person(db_session, ticket, m
     assert dispatched == [WORKER]
     assert ticket.state is TicketState.BLOCKED
     assert ticket.block_kind is BlockKind.WORK
-    assert "dispatched_repair" not in _decisions(db_session, ticket)
+    assert "dispatched_repair" not in decision_kinds(db_session, ticket.id)
 
 
 def test_a_decision_never_gets_a_repair_turn(db_session, ticket, monkeypatch):
@@ -268,7 +262,7 @@ def test_a_repair_that_blocks_escalates_and_is_never_repaired_again(
     assert dispatched == [WORKER, REPAIR_AGENT_ID]  # and no third
     assert ticket.state is TicketState.BLOCKED
     assert ticket.block_kind is BlockKind.DECISION
-    kinds = _decisions(db_session, ticket)
+    kinds = decision_kinds(db_session, ticket.id)
     assert kinds.count("dispatched_repair") == 1
     assert "repair_escalated" in kinds
 
@@ -307,7 +301,7 @@ def test_a_stage_never_gets_a_second_repair_until_a_person_requeues(
     db_session.refresh(ticket)
     assert dispatched == [WORKER, REPAIR_AGENT_ID, WORKER]
     assert ticket.state is TicketState.BLOCKED
-    kinds = _decisions(db_session, ticket)
+    kinds = decision_kinds(db_session, ticket.id)
     assert kinds.count("dispatched_repair") == 1
     assert "repair_escalated" in kinds
 
@@ -372,4 +366,149 @@ def test_a_control_plane_death_is_left_to_the_resume_not_repaired(db_session, ti
     db_session.refresh(ticket)
     assert REPAIR_AGENT_ID not in dispatched
     assert ticket.block_kind is BlockKind.HARNESS
-    assert "dispatched_repair" not in _decisions(db_session, ticket)
+    assert "dispatched_repair" not in decision_kinds(db_session, ticket.id)
+
+
+def test_a_gate_stage_is_not_offered_a_repair_turn(db_session, monkeypatch, tmp_path):
+    """A gate runs its own checker, so the pin cannot take it over: the stage
+    would re-arm with the gatekeeper and the pin never be consumed. The live
+    case was a `gate` blocked on a missing handoff check
+    (lg-initiatives-cross-747). A parallel stage *is* offered one as of 802 —
+    the driver dispatches it sequentially under the pin."""
+
+    ws = Workspace(slug=f"gate-{uuid4()}", name="G", repo_path=str(tmp_path))
+    db_session.add(ws)
+    db_session.commit()
+    db_session.refresh(ws)
+    stages = [
+        WorkflowStageDef(
+            key="gate", name="Gate", order=1, stage_type="gate", agent_id="gatekeeper"
+        ),
+        WorkflowStageDef(key="done", name="Done", order=2, terminal=True),
+    ]
+    template = WorkflowTemplate(
+        slug=f"gate-tpl-{uuid4()}",
+        name="G",
+        stages_json=json.dumps([s.model_dump(mode="json") for s in stages]),
+        transitions_json="[]",
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+    ticket = Ticket(
+        external_id=f"gate-{uuid4()}",
+        workspace_id=ws.id,
+        title="gated",
+        state=TicketState.BLOCKED,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="gate",
+        workflow_stage_status=StageStatus.BLOCKED,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    instance = WorkflowInstance(
+        ticket_id=ticket.id,
+        template_id=template.id,
+        current_stage_key="gate",
+        stages_json=initial_stages_json(stages),
+    )
+    parent = OrchestrationRun(
+        run_code="orch_gate",
+        ticket_id=ticket.id,
+        workspace_id=ws.id,
+        status=OrchestrationRunStatus.RUNNING,
+    )
+    db_session.add_all([instance, parent])
+    db_session.commit()
+    db_session.refresh(instance)
+    db_session.refresh(parent)
+
+    settlement = settle_block(
+        db_session,
+        ticket,
+        parent,
+        instance=instance,
+        stages=stages,
+        transitions=[],
+        stage_key="gate",
+        message="no handoff gate",
+        failed_agent="gatekeeper",
+        declared=BlockKind.WORK,
+    )
+
+    assert settlement.repair_armed is False
+    assert "gate" in settlement.reason
+    assert ticket.next_agent != REPAIR_AGENT_ID
+    assert "repair_escalated" in decision_kinds(db_session, ticket.id)
+
+
+def test_a_classify_stage_gets_its_repair_turn_and_never_spins(db_session, monkeypatch, tmp_path):
+    """The live shape that spent 12 dispatches in a minute: `implement` is a
+    classify stage, classify routing ran before the pin was consulted, the
+    worker reran, the pin was never consumed, and every failure re-armed it.
+    Now: worker fails → one repair turn → repair fails → a person."""
+    from loregarden.models.domain import ClassifyRoute
+
+    ws = Workspace(slug=f"cls-{uuid4()}", name="C", repo_path=str(tmp_path))
+    db_session.add(ws)
+    db_session.commit()
+    db_session.refresh(ws)
+    stages = [
+        WorkflowStageDef(
+            key=IMPLEMENT,
+            name="Implement",
+            order=1,
+            stage_type="classify",
+            agent_id=WORKER,
+            classify_routes=[ClassifyRoute(agent_id=WORKER, default=True)],
+        ),
+        WorkflowStageDef(key="done", name="Done", order=2, terminal=True),
+    ]
+    template = WorkflowTemplate(
+        slug=f"cls-tpl-{uuid4()}",
+        name="C",
+        stages_json=json.dumps([s.model_dump(mode="json") for s in stages]),
+        transitions_json=json.dumps([{"from": IMPLEMENT, "to": "done", "when": "pass"}]),
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+    ticket = Ticket(
+        external_id=f"cls-{uuid4()}",
+        workspace_id=ws.id,
+        title="classified",
+        state=TicketState.BACKLOG,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key=IMPLEMENT,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    db_session.add(
+        WorkflowInstance(
+            ticket_id=ticket.id,
+            template_id=template.id,
+            current_stage_key=IMPLEMENT,
+            stages_json=initial_stages_json(stages),
+        )
+    )
+    db_session.commit()
+    dispatched = _script(
+        monkeypatch,
+        {
+            WORKER: (RunStatus.FAILED, "", "the tests are red and I could not see why"),
+            REPAIR_AGENT_ID: (RunStatus.FAILED, "", "still red; the fixture is wrong"),
+        },
+    )
+
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="repair-test"), max_stages=20
+    )
+
+    db_session.refresh(ticket)
+    assert dispatched == [WORKER, REPAIR_AGENT_ID]
+    assert ticket.state is TicketState.BLOCKED
+    kinds = decision_kinds(db_session, ticket.id)
+    assert kinds.count("dispatched_repair") == 1
+    assert "repair_escalated" in kinds

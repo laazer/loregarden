@@ -20,6 +20,8 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
+from loregarden.services import workspace_integration as integration
+from loregarden.services.workspace_integration import Installer, InstallerError, InstallState
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -159,17 +161,15 @@ def check_workspace(workspace: Workspace, scope: OrganizationScope) -> list[Chec
 
 
 def hooks_result(workspace: Workspace, *, install: bool) -> CheckerResult:
-    root = resolve_workspace_root(workspace)
-    argv = [str(settings.repo_root / "scripts" / "install-workspace-hooks.sh")]
-    if not install:
-        argv.append("--check")
-    argv.append(str(root))
     try:
-        completed = _run(argv)
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        status = (
+            integration.install(workspace, Installer.HOOKS)
+            if install
+            else integration.installer_status(workspace, Installer.HOOKS)
+        )
+    except InstallerError as exc:
         return CheckerResult("hooks", ok=False, message=str(exc))
-    detail = (completed.stdout.strip() or completed.stderr.strip()).split("\n")[0]
-    return CheckerResult("hooks", ok=completed.returncode == 0, message=detail)
+    return CheckerResult("hooks", ok=status.state is InstallState.CURRENT, message=status.detail)
 
 
 class UnknownWorkspaceError(ValueError):

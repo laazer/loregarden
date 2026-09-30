@@ -1,4 +1,5 @@
 import subprocess
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,10 +7,12 @@ from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
-from loregarden.services import reference_cache
+from loregarden.services import docker_capacity, local_instances, reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
+from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
+from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.worktree_helpers import seed_stage_report_contract
 
 # Every module that binds the DB engine at import time via
@@ -35,6 +38,8 @@ _ENGINE_BINDINGS = (
     "loregarden.services.baxter_chat_run_service.engine",
     "loregarden.services.ticket_studio_run_service.engine",
     "loregarden.services.btw_run_service.engine",
+    "loregarden.services.github_sync_scheduler.engine",
+    "loregarden.services.github_push_on_edit.engine",
 )
 
 
@@ -60,6 +65,22 @@ def _no_shutdown_drain_in_tests():
     settings.drain_timeout_seconds = previous
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _no_github_push_worker_in_tests():
+    """No background push-on-edit worker in apps the suite builds.
+
+    Every app lifespan would otherwise start one, and it would drain edits from
+    whichever test happened to be running on a thread nobody awaits. The push
+    tests drive `process_due_pushes` themselves.
+    """
+    from loregarden.config import settings
+
+    previous = settings.github_push_poll_seconds
+    settings.github_push_poll_seconds = 0
+    yield
+    settings.github_push_poll_seconds = previous
+
+
 @pytest.fixture(autouse=True)
 def scrub_ambient_git_env(monkeypatch):
     """Keep this suite's own git calls resolving through `cwd`.
@@ -83,6 +104,18 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+
+
+@pytest.fixture(autouse=True)
+def _forget_docker_probe():
+    """The `docker info` cache is one module-global value with no key. A probe
+    another test cached — `NCPU: 0` from the doctor tests — leaked into the
+    reaper test on the same xdist worker, and that test's fixed clock made it
+    look fresh forever (`now - at` negative), so a 4-cpu waiter never fit and
+    was never promoted. Every test starts with no cached probe."""
+    docker_capacity.clear_probe_cache()
+    yield
+    docker_capacity.clear_probe_cache()
 
 
 @pytest.fixture(name="isolated_db", autouse=True)
@@ -111,6 +144,8 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     SQLModel.metadata.create_all(engine)
     for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
+    # Chat attachments are files beside the database; keep them beside this one.
+    monkeypatch.setattr(settings, "chat_attachments_dir", tmp_path / "chat-attachments")
     return engine
 
 
@@ -213,6 +248,26 @@ def git_repo_fixture(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def isolated_instance_registry(tmp_path_factory, monkeypatch):
+    """Keep the suite out of the developer's real `~/.lore-eden/instances`.
+
+    Every app lifespan may advertise itself there (`register_main`), and the
+    instances endpoints read and launch from it. A shell that exported
+    LOREGARDEN_DEV_PORT would otherwise have the suite registering test apps as
+    the developer's main server, which every branch client then proxies to.
+    """
+    monkeypatch.setenv("LORE_EDEN_INSTANCES_DIR", str(tmp_path_factory.mktemp("instances")))
+    monkeypatch.setattr(settings, "dev_port", None)
+    local_instances.get_registry.cache_clear()
+    local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
+    yield
+    local_instances.get_registry.cache_clear()
+    local_instances.get_instance_manager.cache_clear()
+    local_instances.get_template_source.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def isolated_memory_store(tmp_path_factory, monkeypatch):
     """Keep the suite out of the real Obsidian vault.
 
@@ -233,6 +288,43 @@ def isolated_memory_store(tmp_path_factory, monkeypatch):
         settings, "memory_sqlite_url", f"sqlite:///{root / 'memory.db'}", raising=False
     )
     monkeypatch.setattr(settings, "icloud_root", "", raising=False)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _real_vault_is_off_limits():
+    """Every memory store built during the suite, checked at construction.
+
+    `isolated_memory_store` redirects the settings a store resolves its path
+    from; this refuses the path itself, wherever it came from. See
+    `tests/memory_guard.py` for why the rule is "not the real vault" rather than
+    "must be under tmp".
+
+    Session-scoped and patching `__init__` rather than wrapping each call site:
+    the leak came from a path nobody was looking at, so the check has to sit
+    where every path arrives.
+    """
+    roots = forbidden_memory_roots()
+    if not roots:
+        # No vault on this machine — CI, a fresh checkout — so nothing to guard.
+        yield
+        return
+
+    real_obsidian = ObsidianMemoryStore.__init__
+    real_graph = MemoryGraphStore.__init__
+
+    def guarded_obsidian(self, vault_dir):
+        reject_if_forbidden("An Obsidian memory store", vault_dir, roots)
+        real_obsidian(self, vault_dir)
+
+    def guarded_graph(self, db_path):
+        reject_if_forbidden("A memory graph store", db_path, roots)
+        real_graph(self, db_path)
+
+    with (
+        patch.object(ObsidianMemoryStore, "__init__", guarded_obsidian),
+        patch.object(MemoryGraphStore, "__init__", guarded_graph),
+    ):
+        yield
 
 
 class _RefusingHttpx:
@@ -278,7 +370,7 @@ def reference_network_refused(monkeypatch):
     untouched too: only the name `reference_cache` resolves is replaced.
     """
 
-    # DNS first. `_url_block_reason` calls socket.getaddrinfo as an SSRF guard
+    # DNS first. `_url_block_reason` resolves the host as an SSRF guard
     # BEFORE any request is built, so patching only httpx left every test in
     # test_search_reference_tool.py making a real lookup for devdocs.io — slow,
     # and dependent on someone else's uptime, which is the exact failure this
@@ -294,7 +386,11 @@ def reference_network_refused(monkeypatch):
     def _fake_getaddrinfo(host, port, *args, **kwargs):
         return [(2, 1, 6, "", ("93.184.216.34", port))]
 
-    monkeypatch.setattr(reference_cache.socket, "getaddrinfo", _fake_getaddrinfo)
+    #
+    # On the cache's own seam, not on `socket`: `reference_cache.socket` is the
+    # stdlib module, so patching `getaddrinfo` there faked DNS for every test in
+    # the suite — even `127.0.0.1` resolved to the address above.
+    monkeypatch.setattr(reference_cache, "_getaddrinfo", _fake_getaddrinfo)
 
     real = reference_cache.httpx
 

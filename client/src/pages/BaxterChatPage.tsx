@@ -1,10 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
+import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
+import { ChatSideCard } from "../components/chat/ChatSideCard";
+import {
+  ComposerAttachButton,
+  ComposerAttachmentTray,
+  MessageAttachments,
+} from "../components/chat/ComposerAttachments";
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
+import { primitiveHistory } from "../components/chat/primitiveHistory";
 import { PendingApprovalsSection } from "../components/PendingApprovalsSection";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
@@ -15,14 +23,15 @@ import {
   useComposerCommands,
   type UseComposerCommandsOptions,
 } from "../hooks/useComposerCommands";
+import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
+import { pushToast } from "../state/toastStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import "./BaxterChatPage.css";
-import { AddToTabMenu } from "../components/AddToTabMenu";
 
 /**
  * Everything a composer needs for `/` and `@` except its own draft.
@@ -31,6 +40,9 @@ import { AddToTabMenu } from "../components/AddToTabMenu";
  * re-render the thread; the rest is the page's, and identical for both.
  */
 type ComposerHostOptions = Omit<UseComposerCommandsOptions, "value" | "onChange">;
+
+/** Sends a turn: the draft's text and whatever files are attached to it. */
+type ComposerSend = (text: string, files: File[]) => void;
 
 type ChatRole = "user" | "assistant";
 
@@ -42,7 +54,11 @@ type ChatTurn = {
   suggestions?: string[];
 };
 
+/** Always offered: the question the workbench exists to make one click. */
+const MOST_VALUABLE_TICKET = "Find the most valuable ticket";
+
 const EMPTY_CHIPS = [
+  MOST_VALUABLE_TICKET,
   "What should we ship today?",
   "What should I look at first?",
   "Review what's waiting on me",
@@ -71,12 +87,101 @@ function formatDateLine(now: Date): string {
 function suggestionChips(approvals: Approval[], tickets: TicketSummary[]): string[] {
   const blocked = tickets.filter((t) => t.state === "blocked");
   if (approvals.length) {
-    return ["Review the first approval", "Which is most urgent?", "Open the Console"];
+    return [
+      MOST_VALUABLE_TICKET,
+      "Review the first approval",
+      "Which is most urgent?",
+      "Open the Console",
+    ];
   }
   if (blocked.length) {
-    return ["Open the blocked ticket", "What's blocking us?", "Show in-progress work"];
+    return [
+      MOST_VALUABLE_TICKET,
+      "Open the blocked ticket",
+      "What's blocking us?",
+      "Show in-progress work",
+    ];
   }
-  return ["What should we ship today?", "Open the Console", "Start a Ticket Studio session"];
+  return [
+    MOST_VALUABLE_TICKET,
+    "What should we ship today?",
+    "Open the Console",
+    "Start a Ticket Studio session",
+  ];
+}
+
+const WORKBENCH_STORAGE_KEY = "loregarden.chat.workbenchOpen";
+
+/** Remembered per browser; a wide window opens with it, a narrow one without. */
+function initialWorkbenchOpen(): boolean {
+  try {
+    const saved = window.localStorage.getItem(WORKBENCH_STORAGE_KEY);
+    if (saved === "1" || saved === "0") return saved === "1";
+  } catch {
+    /* silent-ok: storage blocked (private window); fall through to the width default */
+  }
+  return window.matchMedia?.("(min-width: 1101px)").matches ?? true;
+}
+
+function rememberWorkbenchOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(WORKBENCH_STORAGE_KEY, open ? "1" : "0");
+  } catch {
+    /* silent-ok: a preference that cannot be saved still applies for this visit */
+  }
+}
+
+/**
+ * One Baxter composer's local state: its draft, its attachments, its `/` menu,
+ * and the props that wire all three into `StudioChatComposer`.
+ *
+ * Local to each composer so typing does not re-render the thread.
+ */
+function useBaxterComposer({
+  commandOptions,
+  onSend,
+  busy,
+  blocked,
+  menu,
+}: {
+  commandOptions: ComposerHostOptions;
+  onSend: ComposerSend;
+  busy: boolean;
+  blocked: boolean;
+  menu: ReactNode;
+}) {
+  const [draft, setDraft] = useState("");
+  const attachments = useComposerAttachments();
+  const commands = useComposerCommands({
+    ...commandOptions,
+    value: draft,
+    onChange: setDraft,
+  });
+
+  const submit = () => {
+    const text = draft.trim();
+    const files = attachments.items.map((item) => item.file);
+    if ((!text && !files.length) || busy || blocked) return;
+    setDraft("");
+    attachments.clear();
+    onSend(text, files);
+  };
+
+  return {
+    value: draft,
+    onChange: setDraft,
+    onSubmit: submit,
+    commands,
+    canSendEmpty: attachments.items.length > 0,
+    onFiles: attachments.add,
+    accessory: <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />,
+    toolbar: (
+      <>
+        <ComposerAttachButton onFiles={attachments.add} disabled={blocked} />
+        {menu}
+      </>
+    ),
+  };
 }
 
 /** Owns draft locally so typing does not re-render the whole chat page. */
@@ -87,28 +192,18 @@ function BaxterHeroAsk({
   stopping = false,
   blocked = false,
   commandOptions,
+  menu,
 }: {
-  onSend: (text: string) => void;
+  onSend: ComposerSend;
   onStop?: () => void;
   busy: boolean;
   stopping?: boolean;
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
+  menu: ReactNode;
 }) {
-  const [draft, setDraft] = useState("");
-  const commands = useComposerCommands({
-    ...commandOptions,
-    value: draft,
-    onChange: setDraft,
-  });
-
-  const submit = () => {
-    const text = draft.trim();
-    if (!text || busy || blocked) return;
-    setDraft("");
-    onSend(text);
-  };
+  const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
   return (
     <section className="baxter-chat-hero" aria-label="Ask Baxter">
@@ -117,9 +212,7 @@ function BaxterHeroAsk({
       </div>
       <div className="baxter-chat-hero-body">
         <StudioChatComposer
-          value={draft}
-          onChange={setDraft}
-          onSubmit={submit}
+          {...composer}
           onStop={onStop}
           placeholder="What should we ship today?"
           sendLabel="Ask Baxter"
@@ -128,21 +221,7 @@ function BaxterHeroAsk({
           disabled={blocked}
           variant="dock"
           iconOnlySend={false}
-          commands={commands}
         />
-        <div className="lg-chat-chip-row" role="list">
-          {EMPTY_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              className="lg-chat-chip"
-              role="listitem"
-              onClick={() => setDraft(chip)}
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -154,54 +233,25 @@ function BaxterReplyDock({
   onStop,
   busy,
   stopping = false,
-  suggestions,
   blocked = false,
   commandOptions,
+  menu,
 }: {
-  onSend: (text: string) => void;
+  onSend: ComposerSend;
   onStop?: () => void;
   busy: boolean;
   stopping?: boolean;
-  suggestions?: string[];
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
+  menu: ReactNode;
 }) {
-  const [draft, setDraft] = useState("");
-  const commands = useComposerCommands({
-    ...commandOptions,
-    value: draft,
-    onChange: setDraft,
-  });
-
-  const submit = () => {
-    const text = draft.trim();
-    if (!text || busy || blocked) return;
-    setDraft("");
-    onSend(text);
-  };
+  const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
   return (
     <div className="baxter-chat-dock baxter-chat-dock--fade">
-      {suggestions && suggestions.length > 0 && !busy ? (
-        <div className="lg-chat-chip-row baxter-chat-suggestions">
-          {suggestions.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              className="lg-chat-chip"
-              onClick={() => onSend(chip)}
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       <StudioChatComposer
-        value={draft}
-        onChange={setDraft}
-        onSubmit={submit}
+        {...composer}
         onStop={onStop}
         placeholder="Reply to Baxter…"
         sendLabel="Send"
@@ -209,8 +259,6 @@ function BaxterReplyDock({
         isStopping={stopping}
         disabled={blocked}
         variant="dock"
-        showShortcut
-        commands={commands}
       />
     </div>
   );
@@ -266,7 +314,7 @@ export function BaxterChatPage() {
       pendingApprovals(approvalsQ.data).filter((a) => a.workspace_slug === workspaceSlug),
     [approvalsQ.data, workspaceSlug],
   );
-  const tickets = ticketsQ.data ?? [];
+  const tickets = useMemo(() => ticketsQ.data ?? [], [ticketsQ.data]);
 
   const inGallery = galleryTurns !== null;
   const turnApprovals = inGallery ? [] : chat.pendingApprovals;
@@ -290,13 +338,13 @@ export function BaxterChatPage() {
     return parts.join(" · ");
   }, [approvals.length, tickets]);
 
-  const respond = (prompt: string, skill = "") => {
+  const respond = (prompt: string, skill = "", files: File[] = []) => {
     const content = prompt.trim();
-    if (!content || busy || !workspaceSlug) return;
+    if ((!content && !files.length) || busy || !workspaceSlug) return;
     // Sending from the gallery leaves it: the canned thread is a reference, not
     // a conversation to continue.
     setGalleryTurns(null);
-    void chat.send(content, { skill }).catch(() => {
+    void chat.send(content, { skill, files }).catch(() => {
       // silent-ok: `chat.error` renders the failure as `sendError` on this
       // page, and send carries meta.errorTitle so the global toast fires too.
     });
@@ -431,15 +479,70 @@ export function BaxterChatPage() {
     [galleryTurns, chat.messages],
   );
 
-  const latestSuggestions = useMemo(() => {
+  const sideSuggestions = useMemo<readonly string[]>(() => {
     if (galleryTurns) {
-      return [...galleryTurns]
-        .reverse()
-        .find((t) => t.role === "assistant" && t.suggestions?.length)?.suggestions;
+      return (
+        [...galleryTurns]
+          .reverse()
+          .find((t) => t.role === "assistant" && t.suggestions?.length)?.suggestions ??
+        EMPTY_CHIPS
+      );
     }
-    const last = threadMessages[threadMessages.length - 1];
-    return last?.role === "assistant" ? suggestionChips(approvals, tickets) : undefined;
-  }, [galleryTurns, threadMessages, approvals, tickets]);
+    return hasThread ? suggestionChips(approvals, tickets) : EMPTY_CHIPS;
+  }, [galleryTurns, hasThread, approvals, tickets]);
+
+  const primitives = useMemo(() => primitiveHistory(threadMessages), [threadMessages]);
+
+  // The server's attachments per user turn; the thread view does not carry them.
+  const attachmentsByMessage = useMemo(
+    () =>
+      new Map(
+        inGallery
+          ? []
+          : (chat.snapshot?.messages ?? [])
+              .filter((m) => m.attachments?.length)
+              .map((m) => [m.id, m.attachments ?? []] as const),
+      ),
+    [inGallery, chat.snapshot?.messages],
+  );
+
+  const [workbenchOpen, setWorkbenchOpenState] = useState(initialWorkbenchOpen);
+  const setWorkbenchOpen = useCallback((open: boolean) => {
+    setWorkbenchOpenState(open);
+    rememberWorkbenchOpen(open);
+  }, []);
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const node = document.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(messageId)}"]`,
+    );
+    if (!node) {
+      pushToast({
+        tone: "warning",
+        title: "Card not in view",
+        message: "That turn isn't loaded in this thread any more.",
+      });
+      return;
+    }
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+    node.classList.remove("lg-chat-turn--flash");
+    // Restarts the highlight when the same card is picked twice in a row.
+    void node.offsetWidth;
+    node.classList.add("lg-chat-turn--flash");
+  }, []);
+
+  const composerMenu = (
+    <ChatComposerMenu
+      workspaceSlug={workspaceSlug}
+      sessionId={inGallery ? "" : chat.sessionId}
+      title={chat.title}
+      workbenchOpen={workbenchOpen}
+      onToggleWorkbench={() => setWorkbenchOpen(!workbenchOpen)}
+      onOpenHistory={() => setHistoryOpen(true)}
+      onNewChat={startNewChat}
+      onOpenGallery={openPrimitiveGallery}
+    />
+  );
 
   /**
    * A failed send, shown as chrome rather than as a reply.
@@ -454,124 +557,139 @@ export function BaxterChatPage() {
     </p>
   ) : null;
 
+  const stopTurn = () =>
+    void chat.stop().catch(() => {
+      // silent-ok: stop is a mutation with meta.errorTitle, so the
+      // global MutationCache toast reports a stop that did not take.
+    });
+
   return (
-    <div className="baxter-chat lg-chat-surface">
-      {isEmpty ? (
-        <div className="baxter-chat-welcome">
-          <header className="baxter-chat-intro">
-            <p className="baxter-chat-kicker">{formatDateLine(now)}</p>
-            <h1 className="baxter-chat-greeting">{greetingFor(now)}</h1>
-            <p className="baxter-chat-summary">{summaryLine}</p>
-          </header>
+    <div className="baxter-chat-layout">
+      <div className="baxter-chat lg-chat-surface">
+        {isEmpty ? (
+          <div className="baxter-chat-welcome">
+            <header className="baxter-chat-intro">
+              <p className="baxter-chat-kicker">{formatDateLine(now)}</p>
+              <h1 className="baxter-chat-greeting">{greetingFor(now)}</h1>
+              <p className="baxter-chat-summary">{summaryLine}</p>
+            </header>
 
-          <BaxterHeroAsk
-            onSend={(text) => void respond(text)}
-            onStop={() =>
-              void chat.stop().catch(() => {
-                // silent-ok: stop is a mutation with meta.errorTitle, so the
-                // global MutationCache toast reports a stop that did not take.
-              })
-            }
-            busy={busy}
-            stopping={chat.isStopping}
-            blocked={!workspaceSlug}
-            commandOptions={commandOptions}
-          />
-          {sendError}
-        </div>
-      ) : (
-        <>
-          <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
-            <StudioChatMessages
-              messages={threadMessages}
-              isThinking={busy && !awaitingInput && turnApprovals.length === 0}
-              activeTurnId={inGallery ? null : chat.activeTurnId}
-              thinkingMessage="Baxter is looking…"
-              thinkingSub="Fetching a reply from your workspace model"
-              thinkingActivity="typing"
-              assistantLabel="Baxter"
-              showAssistantAvatar={false}
-              messageActions={messageActions}
-              onPrimitiveSubmit={(content) => void respond(content)}
-              // AskUserQuestion / permissions arrive as approvals, not messages.
-              // Render them as the agent's ask at the end of the thread — not a
-              // chrome strip layered above the conversation.
-              trailingAsk={
-                turnApprovals.length ? (
-                  <PendingApprovalsSection
-                    variant="ask"
-                    approvals={turnApprovals}
-                    submittingApprovalId={
-                      resolveApproval.isPending
-                        ? resolveApproval.variables?.id ?? null
-                        : null
-                    }
-                    submitError={
-                      resolveApproval.isError
-                        ? formatApprovalResolveError(resolveApproval.error)
-                        : null
-                    }
-                    onApprove={(approval, payload) =>
-                      resolveApproval.mutate({
-                        id: approval.id,
-                        action: "approve",
-                        ...payload,
-                      })
-                    }
-                    onRecheck={(approval, payload) =>
-                      resolveApproval.mutate({
-                        id: approval.id,
-                        action: "recheck",
-                        ...payload,
-                      })
-                    }
-                    onReject={(approval, payload) =>
-                      resolveApproval.mutate({
-                        id: approval.id,
-                        action: "reject",
-                        ...payload,
-                      })
-                    }
-                  />
-                ) : null
-              }
+            <BaxterHeroAsk
+              onSend={(text, files) => respond(text, "", files)}
+              onStop={stopTurn}
+              busy={busy}
+              stopping={chat.isStopping}
+              blocked={!workspaceSlug}
+              commandOptions={commandOptions}
+              menu={composerMenu}
             />
+            {sendError}
           </div>
-
-          {sendError}
-          {chat.sessionId ? (
-            /* The conversation on screen, as a pane. Offered where the thread
-               is chosen rather than on Home, which holds one but does not pick
-               it — and only once there is a thread to send anywhere. */
-            <div className="baxter-chat-send-to-tab">
-              <AddToTabMenu
-                primitiveId="chat_session"
-                values={
-                  new Map([
-                    ["workspace_slug", workspaceSlug],
-                    ["session_id", chat.sessionId],
-                  ])
+        ) : (
+          <>
+            <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
+              <StudioChatMessages
+                messages={threadMessages}
+                isThinking={busy && !awaitingInput && turnApprovals.length === 0}
+                activeTurnId={inGallery ? null : chat.activeTurnId}
+                thinkingMessage="Baxter is looking…"
+                thinkingSub="Fetching a reply from your workspace model"
+                thinkingActivity="typing"
+                assistantLabel="Baxter"
+                showAssistantAvatar={false}
+                messageActions={messageActions}
+                onPrimitiveSubmit={(content) => void respond(content)}
+                renderAfterMessage={(message) => {
+                  const sent = attachmentsByMessage.get(message.id);
+                  return sent ? (
+                    <MessageAttachments
+                      attachments={sent}
+                      workspaceSlug={workspaceSlug}
+                      sessionId={chat.sessionId}
+                    />
+                  ) : null;
+                }}
+                // AskUserQuestion / permissions arrive as approvals, not messages.
+                // Render them as the agent's ask at the end of the thread — not a
+                // chrome strip layered above the conversation.
+                trailingAsk={
+                  turnApprovals.length ? (
+                    <PendingApprovalsSection
+                      variant="ask"
+                      approvals={turnApprovals}
+                      submittingApprovalId={
+                        resolveApproval.isPending
+                          ? resolveApproval.variables?.id ?? null
+                          : null
+                      }
+                      submitError={
+                        resolveApproval.isError
+                          ? formatApprovalResolveError(resolveApproval.error)
+                          : null
+                      }
+                      onApprove={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "approve",
+                          ...payload,
+                        })
+                      }
+                      onRecheck={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "recheck",
+                          ...payload,
+                        })
+                      }
+                      onReject={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "reject",
+                          ...payload,
+                        })
+                      }
+                    />
+                  ) : null
                 }
-                title={chat.title || "Conversation"}
-                label="Add this conversation to a tab"
               />
             </div>
-          ) : null}
-          <BaxterReplyDock
-            onSend={(text) => void respond(text)}
-            onStop={() =>
-              void chat.stop().catch(() => {
-                // silent-ok: stop is a mutation with meta.errorTitle, so the
-                // global MutationCache toast reports a stop that did not take.
-              })
-            }
-            busy={busy}
-            stopping={chat.isStopping}
-            suggestions={latestSuggestions}
-            blocked={!workspaceSlug}
-            commandOptions={commandOptions}
-          />
-        </>
+
+            {sendError}
+            <BaxterReplyDock
+              onSend={(text, files) => respond(text, "", files)}
+              onStop={stopTurn}
+              busy={busy}
+              stopping={chat.isStopping}
+              blocked={!workspaceSlug}
+              commandOptions={commandOptions}
+              menu={composerMenu}
+            />
+          </>
+        )}
+      </div>
+      {workbenchOpen ? (
+        <ChatSideCard
+          suggestions={sideSuggestions}
+          onSuggestion={(text) => respond(text)}
+          suggestionsDisabled={busy || !workspaceSlug}
+          primitives={primitives}
+          onJumpTo={jumpToMessage}
+          onPrimitiveSubmit={(content) => respond(content)}
+          onOpenGallery={openPrimitiveGallery}
+          onCollapse={() => setWorkbenchOpen(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="chat-side-card-reopen"
+          aria-label="Show the workbench"
+          onClick={() => setWorkbenchOpen(true)}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+          Workbench
+        </button>
       )}
       <ChatHistorySidebar
         open={historyOpen}

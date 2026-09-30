@@ -3,8 +3,46 @@
 from __future__ import annotations
 
 import re
+import subprocess
+from enum import StrEnum
 
 TIMEOUT_HARD_CAP_MULTIPLIER = 4
+
+
+class RunTimeoutKind(StrEnum):
+    """Which of a run's two budgets killed it.
+
+    Both raise the same exception and both read as "timed out", but they are
+    opposite failures: one process said nothing, the other would not stop. An
+    operator reading only the elapsed seconds cannot tell a hang from a runaway,
+    and a test cannot either — which is why the idle-kill test was asserting
+    wall clock and failing under load (lg-workflow-integrity-736).
+    """
+
+    #: No output for the whole configured budget: a presumed hang.
+    IDLE = "idle"
+    #: Still streaming at `timeout * TIMEOUT_HARD_CAP_MULTIPLIER`: a runaway.
+    HARD_CAP = "hard_cap"
+
+
+class RunTimeout(subprocess.TimeoutExpired):
+    """A `TimeoutExpired` that says which deadline fired.
+
+    Subclasses rather than replaces it: every `except subprocess.TimeoutExpired`
+    on the call path keeps working, and only the handlers that care read `kind`.
+    """
+
+    def __init__(
+        self,
+        cmd,
+        timeout: float,
+        *,
+        kind: RunTimeoutKind,
+        output: str | None = None,
+    ) -> None:
+        super().__init__(cmd, timeout, output=output)
+        self.kind = kind
+
 
 _LEGACY_TIMEOUT_SUFFIX = re.compile(
     r"^(Agent timed out after \d+s): Command .* timed out after \d+ seconds?$",
@@ -12,9 +50,22 @@ _LEGACY_TIMEOUT_SUFFIX = re.compile(
 )
 
 
-def agent_timeout_message(timeout_seconds: int | float) -> str:
+def agent_timeout_message(
+    timeout_seconds: int | float,
+    kind: RunTimeoutKind | None = None,
+) -> str:
+    """Why a run was killed, naming the budget when the caller ran two.
+
+    `kind` is None for the call paths with a single deadline, where there is
+    nothing to disambiguate — not for a caller that knows and did not say.
+    """
     seconds = int(timeout_seconds)
-    return f"Agent timed out after {seconds}s"
+    message = f"Agent timed out after {seconds}s"
+    if kind is RunTimeoutKind.IDLE:
+        return f"{message} with no output — killed as a presumed hang"
+    if kind is RunTimeoutKind.HARD_CAP:
+        return f"{message} at the hard cap — it kept streaming and would not stop"
+    return message
 
 
 def normalize_timeout_stderr(

@@ -409,6 +409,15 @@
   font-weight: 650;
 }
 
+.lg-primitive-kanban-col-empty,
+.lg-primitive-kanban-col-more {
+  margin: 0;
+  padding: 6px 2px;
+  font-size: 11px;
+  color: var(--txl);
+  text-align: center;
+}
+
 .lg-primitive-kanban-col-count {
   margin-left: auto;
   padding: 0 5px;

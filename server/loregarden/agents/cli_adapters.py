@@ -72,16 +72,32 @@ class CliInvocation:
     effort: str = ""
 
 
-def invocation_env(invocation: CliInvocation) -> dict[str, str] | None:
-    """Full environment for spawning ``invocation``, or None to inherit unchanged.
+#: Settings that bind a process to THIS server's state. An agent subprocess
+#: inherits the server's environment, and with these in it any ad-hoc
+#: ``from loregarden.main import app`` the agent runs resolves the production
+#: database — the app lifespan then reaps the very orchestration that spawned
+#: it (lg-workflow-integrity-756: an implementer booted the app under
+#: ``TestClient`` to exercise an endpoint, and failed its own run). The paths an
+#: agent legitimately reaches the control plane through do not need them:
+#: ``scripts/loregarden-cli.sh`` resolves the primary checkout from the worktree's
+#: git common dir, and the stdio MCP entry (`mcp_context`) sets its own root.
+STATE_BINDING_ENV_VARS = (
+    "LOREGARDEN_REPO_ROOT",
+    "LOREGARDEN_DATABASE_URL",
+    "LOREGARDEN_MEMORY_SQLITE_URL",
+)
 
-    ``None`` rather than a copy of ``os.environ`` so a run with no overlay keeps
-    the pre-existing inherit-the-parent behaviour exactly, including any variable
-    the supervising process sets after import.
+
+def invocation_env(invocation: CliInvocation) -> dict[str, str]:
+    """Full environment for spawning ``invocation``.
+
+    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS``, plus
+    the invocation's own overlay. Taken at call time rather than import so a
+    variable the supervising process sets after import still reaches the agent.
     """
-    if not invocation.env:
-        return None
-    return {**os.environ, **invocation.env}
+    env = {k: v for k, v in os.environ.items() if k not in STATE_BINDING_ENV_VARS}
+    env.update(invocation.env)
+    return env
 
 
 def _bin(name: str, env_key: str) -> str:
@@ -147,6 +163,7 @@ def _codex_invocation(
     workspace_root: Path,
     codex_model: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> CliInvocation:
     # ``--json`` is the Codex equivalent of Claude/Cursor stream-json: events
     # land on stdout as the turn progresses. Without it, exec is silent until
@@ -160,7 +177,7 @@ def _codex_invocation(
         str(workspace_root),
     ]
     _append_model_flag(argv, codex_model)
-    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated)
+    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated, run_id=run_id)
     argv.append("-")
     return CliInvocation(
         argv=argv,
@@ -181,11 +198,13 @@ def build_interactive_invocation(
     partial_messages: bool = False,
     db_session=None,
     orchestrated: bool = True,
+    run_id: str = "",
     tool_grants: StudioAgentToolGrants | None = None,
     mcp_tools: Sequence[str] = (),
     mcp_enabled: bool = True,
     surface: ChatSurface = ChatSurface.HOME,
     agent_slug: str = "",
+    extra_dirs: Sequence[Path | str] = (),
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -205,6 +224,9 @@ def build_interactive_invocation(
     ``orchestrated`` defaults True for stage runs. Chat surfaces (triage / Home /
     branch) must pass False so create_ticket and other interactive MCP tools are
     not denied at the MCP dispatch layer.
+
+    ``extra_dirs`` are granted read access beside the workspace root — the
+    files a chat turn attached, for instance.
     """
     cwd = str(workspace_root)
 
@@ -229,6 +251,8 @@ def build_interactive_invocation(
             argv.append("--include-partial-messages")
         _append_model_flag(argv, claude_model)
         _append_claude_effort_flag(argv, claude_effort)
+        for extra in extra_dirs:
+            argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
         argv.extend(
@@ -245,6 +269,7 @@ def build_interactive_invocation(
             adapter="claude",
             session=db_session,
             orchestrated=orchestrated,
+            run_id=run_id,
             granted_servers=(list(tool_grants.mcp_servers) or None) if tool_grants else None,
         )
         return CliInvocation(
@@ -438,6 +463,7 @@ def _claude_print_invocation(
     workspace_root: Path,
     claude_model: str = "",
     claude_effort: str = "",
+    run_id: str = "",
 ) -> CliInvocation:
     output_format = os.environ.get("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", settings.claude_output_format)
     argv = [
@@ -459,7 +485,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
-    append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
+    append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
 
@@ -520,6 +546,7 @@ def _opencode_invocation(
     opencode_model: str = "",
     opencode_effort: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
     read_only: bool = False,
     prompt_file: Path | None = None,
 ) -> CliInvocation:
@@ -566,7 +593,7 @@ def _opencode_invocation(
     extra = os.environ.get("LOREGARDEN_OPENCODE_ARGS")
     if extra:
         argv[2:2] = shlex.split(extra)
-    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated)
+    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated, run_id=run_id)
     if prompt_file is not None:
         argv.extend(
             [
@@ -746,6 +773,7 @@ def resolve_cli_invocation(
             resume_session_id=resume_session_id,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CLAUDE:
         invocation = _claude_print_invocation(
@@ -753,6 +781,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CURSOR:
         invocation = _cursor_print_invocation(
@@ -767,6 +796,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             codex_model=model,
             orchestrated=True,
+            run_id=run_id,
         )
     elif selected == CliAdapter.LMSTUDIO:
         invocation = _lmstudio_invocation(
@@ -787,6 +817,7 @@ def resolve_cli_invocation(
             opencode_model=model,
             opencode_effort=effort,
             orchestrated=True,
+            run_id=run_id,
         )
     else:
         raise ValueError(f"Unknown CLI adapter: {selected}")

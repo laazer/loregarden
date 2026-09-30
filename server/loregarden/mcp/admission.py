@@ -3,7 +3,10 @@
 Both `loregarden_start_orchestration` and `loregarden_start_stage` need the
 same three beats — reserve a slot, start the work, bind the slot to it or give
 it back — and inlining that twice pushed `tools.py` past the organization
-gate's line cap and its own statement cap. It is one shape, so it lives once.
+gate's line cap and its own statement cap. They differ in one place: a stage
+binds to what `start` produced, an orchestration claims its run and binds to
+it before `start`, because the builtin driver does not return until the run
+is over.
 
 See `services.queue_admission` for why the gate exists: these tools used to
 reach the orchestrator directly, so an agent with MCP access could start
@@ -21,6 +24,7 @@ from sqlmodel import Session, col, select
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRun,
+    OrchestrationRunStatus,
     Ticket,
     Workspace,
 )
@@ -45,36 +49,31 @@ def run_admitted(
     session: Session,
     ticket: Ticket,
     *,
-    stage_key: str | None,
+    stage_key: str,
     start: Callable[[], Any],
-    driver: str = "",
-    max_stages: int | None = None,
     force: bool = False,
     orchestration_run_id: str = "",
 ) -> tuple[Reservation, Any]:
-    """Reserve, run `start`, and release the slot if it raised.
+    """Reserve a stage's slot, run `start`, and release the slot if it raised.
 
     Returns the reservation and whatever `start` produced, or the reservation
     alone when there was no capacity — the caller checks `admitted` and renders
     `queued_response` in that case. Binding is left to the caller because only
     it knows whether it produced an agent run or an orchestration run.
+
+    Stages only. An orchestration start binds *before* it runs (see
+    `start_orchestration_admitted`), which this reserve-start-bind shape cannot
+    express.
     """
     admission = QueueAdmissionService(session)
-    reservation = (
-        admission.reserve_stage(
-            ticket,
-            stage_key=stage_key,
-            force=force,
-            # The orchestration this stage belongs to, so an externally driven
-            # run reuses the slot it was admitted with instead of claiming one
-            # per stage (lg-workflow-integrity-568).
-            orchestration_run_id=orchestration_run_id,
-        )
-        if stage_key is not None
-        # Carried for the parked case only: an entry is the whole record of the
-        # ask by the time a lane reaches it, and a dropped override is a
-        # different run from the one requested.
-        else admission.reserve_orchestration(ticket, driver=driver, max_stages=max_stages)
+    reservation = admission.reserve_stage(
+        ticket,
+        stage_key=stage_key,
+        force=force,
+        # The orchestration this stage belongs to, so an externally driven
+        # run reuses the slot it was admitted with instead of claiming one
+        # per stage (lg-workflow-integrity-568).
+        orchestration_run_id=orchestration_run_id,
     )
     if not reservation.admitted:
         return reservation, None
@@ -82,6 +81,32 @@ def run_admitted(
     try:
         return reservation, start()
     except Exception:
+        reservation.release()
+        raise
+
+
+def _run_on_bound_claim(
+    session: Session,
+    svc,
+    *,
+    reservation: Reservation,
+    claim: OrchestrationRun,
+    start: Callable[[], OrchestrationRun],
+) -> OrchestrationRun:
+    """Run `start` against a claim the slot already names; undo both if it raises.
+
+    The claim is abandoned only while it is still a claim. A builtin run that
+    adopted it and then failed has already reached its own terminal status,
+    and rewriting that would erase what actually happened.
+    """
+    try:
+        return start()
+    except Exception as exc:
+        session.rollback()
+        session.refresh(claim)
+        if claim.status == OrchestrationRunStatus.QUEUED:
+            # Never adopted, so nothing else will ever finish it.
+            svc.abandon_claim(claim, message=str(exc))
         reservation.release()
         raise
 
@@ -120,30 +145,46 @@ def start_orchestration_admitted(
     profile = resolve_orchestration_profile(ws)
     driver_name = arguments.get("driver") or profile.driver.value
     driver = OrchestrationDriver(driver_name)
+    if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
+        raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
+    active = svc.get_active_orchestration_run(ticket.id)
+    if active is not None:
+        # Before the reservation, so a refused start takes no slot; and before
+        # the claim, which would otherwise hand back this live run for the
+        # failure path below to abandon.
+        raise ValueError(f"Orchestration already running: {active.run_code}")
 
-    def _start():
+    admission = QueueAdmissionService(session)
+    # Carried for the parked case only: an entry is the whole record of the ask
+    # by the time a lane reaches it, and a dropped override is a different run
+    # from the one requested.
+    reservation = admission.reserve_orchestration(
+        ticket, driver=arguments.get("driver") or "", max_stages=arguments.get("max_stages")
+    )
+    if not reservation.admitted:
+        return reservation, None
+
+    # Claimed and bound *before* the work starts, not after it returns. The
+    # builtin driver runs the whole pipeline inside `execute`, so binding on
+    # return bound to a finished run: for the life of the orchestration the
+    # slot named nothing, the board drew a lane busy with nothing in it, and
+    # the reclaim sweep would have handed the lane to a second ticket (775).
+    # `start_orchestration_run` adopts the claim on either driver.
+    claim = svc.claim_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
+    reservation.bind(orchestration_run_id=claim.id)
+
+    def _start() -> OrchestrationRun:
         if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
             return BuiltinOrchestrator(session).execute(
                 ticket, profile, max_stages=arguments.get("max_stages")
             )
-        if driver == OrchestrationDriver.EXTERNAL_MCP:
-            return svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
-        raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
+        return svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
 
-    reservation, run = run_admitted(
-        session,
-        ticket,
-        stage_key=None,
-        start=_start,
-        driver=arguments.get("driver") or "",
-        max_stages=arguments.get("max_stages"),
-    )
-    if reservation.admitted:
-        reservation.bind(orchestration_run_id=run.id)
-        if idempotency_key and run is not None and not run.idempotency_key:
-            # Stamped after the run exists, so a start that raised leaves no key
-            # claiming a run that was never created.
-            run.idempotency_key = idempotency_key
-            session.add(run)
-            session.commit()
+    run = _run_on_bound_claim(session, svc, reservation=reservation, claim=claim, start=_start)
+    if idempotency_key and not run.idempotency_key:
+        # Stamped after the run exists, so a start that raised leaves no key
+        # claiming a run that was never created.
+        run.idempotency_key = idempotency_key
+        session.add(run)
+        session.commit()
     return reservation, run

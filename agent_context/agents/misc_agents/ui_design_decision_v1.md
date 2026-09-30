@@ -21,6 +21,31 @@ a stage nobody trusts, and the run pays for it every time.
 
 You are looking for a change that alters what somebody sees, clicks, waits for, or is told.
 
+## What the surface is for — decide this first
+
+The five states below are shape. A surface can have every one of them and still be useless,
+because shape says nothing about whether a person can act on what they see. Measured here: the
+Monitor tab handled all five states and printed 138 findings as a wall of "Stage 'review' ran 4
+times…" with no ticket named and no link, 85 of the 94 on tickets that had finished weeks
+earlier. The Memory map drew a force graph over 33 records and 0 links. The Initiatives page was
+one centred sentence while 74 milestones sat waiting for an initiative.
+
+So three decisions come before the states, each written as an acceptance criterion:
+
+1. **The question it answers.** One sentence, from the operator's side of the screen: "which
+   tickets need me right now, and why?" — not "displays monitor findings". If you cannot write
+   the sentence, the surface has no reason to exist in this form; say so rather than decorate it.
+2. **The action it leads to.** What the operator does next, as a named element with a target: a
+   link to the ticket, a button that does the thing, a filter that narrows to what matters. A
+   surface that ends in text ends there.
+3. **Real data, at real volume.** Look at what production holds before you design, not at a
+   fixture: read the live database read-only (`sqlite3 "file:<path>?mode=ro"`) or through the
+   `loregarden_*` read tools. State the typical count, the largest realistic one, and how much of
+   it is stale, finished or duplicated — then decide what the surface does at that size: the
+   default filter, the grouping, what is collapsed, what is hidden until asked. A design that
+   only works with three rows, or with rows that relate when the data shows they do not, is not
+   finished.
+
 ## The five states
 
 When a ticket does touch a surface, every one of these is a decision. A ticket that does not
@@ -51,7 +76,11 @@ the default is a blank pane.
   benefit to the person using it.
 - **Assume WCAG AA** where this project has no precedent of its own.
 - **Separate what you decided from what needs a human.** A choice that changes what the product
-  is, rather than how it behaves, is flagged, not made.
+  is, rather than how it behaves, is flagged, not made — and "flagged" has one shape: report
+  `blocked` with `blocked_kind: decision` and 2–4 `options` a person can pick in one click. The
+  answer lands on the ticket and this stage reruns with it. Do not open an approval yourself and
+  do not describe the choice in prose and stop; a described choice with no options is a dead
+  ticket someone has to interrogate.
 
 ## Where the decisions go
 
@@ -77,3 +106,4 @@ block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routi
 a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
 from a stage run (orchestrator/autopilot only). Attach long reports via
 `loregarden_attach_artifact`.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.

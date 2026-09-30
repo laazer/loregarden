@@ -64,12 +64,35 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     key: "dashboard",
     label: "Console",
     path: pathForPage("dashboard"),
-    // The editor and ticket deep links live in the Console shell.
-    ownsPage: (page) => page === "dashboard" || page === "editor",
+    ownsPage: ownsOnly("dashboard"),
     icon: (
       <svg {...STROKE} aria-hidden>
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <path d="M3 9h18M7 13l2 2-2 2M12 17h4" />
+      </svg>
+    ),
+  },
+  {
+    key: "initiatives",
+    label: "Initiatives",
+    path: pathForPage("initiatives"),
+    ownsPage: ownsOnly("initiatives"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M5 21V4" />
+        <path d="M5 4h11l-2 4 2 4H5" />
+      </svg>
+    ),
+  },
+  {
+    key: "editor",
+    label: "Editor",
+    path: pathForPage("editor"),
+    ownsPage: ownsOnly("editor"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11l1.8 2H18.5A1.5 1.5 0 0 1 20 7.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+        <path d="M9 15l2-2-2-2M13.5 16h3" />
       </svg>
     ),
   },
@@ -109,6 +132,31 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
         <path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21" />
         <circle cx="5" cy="5" r="1.6" />
         <circle cx="19" cy="19" r="1.6" />
+      </svg>
+    ),
+  },
+  {
+    key: "instances",
+    label: "Instances",
+    path: pathForPage("instances"),
+    ownsPage: ownsOnly("instances"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <rect x="3" y="4" width="18" height="7" rx="1.5" />
+        <rect x="3" y="13" width="18" height="7" rx="1.5" />
+        <path d="M7 7.5h.01M7 16.5h.01" />
+      </svg>
+    ),
+  },
+  {
+    key: "memory",
+    label: "Memory",
+    path: pathForPage("memory"),
+    ownsPage: ownsOnly("memory"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" />
+        <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />
       </svg>
     ),
   },

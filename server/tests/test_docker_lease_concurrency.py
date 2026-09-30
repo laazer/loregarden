@@ -18,6 +18,7 @@ grounds that the other one covers it — it does not.
 from __future__ import annotations
 
 import threading
+from unittest.mock import patch
 
 import pytest
 from loregarden.models.domain import (
@@ -237,3 +238,51 @@ def test_a_claimant_that_keeps_losing_the_race_is_granted_while_room_remains(
 
     assert losses["left"] == 0, "the claim stopped retrying before the forced losses ran out"
     assert reservation.granted, "a claimant that fit was queued after losing races, not the pool"
+
+
+def test_a_claimant_refused_during_a_peers_refund_window_is_still_promoted(isolated_db) -> None:
+    """The lost wakeup behind "3 fit; 2 are held", forced into one ordering.
+
+    A drain books capacity for the head of the line, then loses the row to a
+    peer that booked it too. Until it refunds, the pool over-counts and looks
+    full — deliberately, since refusing briefly is safer than double-granting.
+    A claimant arriving inside that window runs its own drain, is refused, and
+    stops. The drain that then refunds must notice it; walking the waiter list
+    it read before that claimant existed, it did not, and a free slot sat idle
+    beside a waiting lease with no one left to drain.
+
+    Seen under load at 3/40 eight-way runs; this pins the interleaving so the
+    test fails every time instead of sometimes.
+    """
+    with Session(isolated_db) as setup:
+        _set_ceiling(setup, cpus=2.0, memory_mb=2048, leases=2)
+
+    original_claim = docker_leases._claim_promotion
+    late: list = []
+
+    def claim_after_the_window(session: Session, lease: DockerLease) -> bool:
+        if not late:
+            # Inside the first drain's window: a peer books and takes this same
+            # waiter, and a new claimant arrives while the pool over-counts.
+            with Session(isolated_db) as peer:
+                peer_lease = peer.get(DockerLease, lease.id)
+                assert docker_leases._book_capacity_for(peer, peer_lease)
+                assert original_claim(peer, peer_lease)
+            with Session(isolated_db) as newcomer:
+                late.append(_reserve(newcomer, "newcomer", cpus=1.0, memory_mb=1024))
+        return original_claim(session, lease)
+
+    with (
+        patch.object(docker_leases, "_claim_promotion", claim_after_the_window),
+        Session(isolated_db) as session,
+    ):
+        _reserve(session, "first", cpus=1.0, memory_mb=1024)
+
+    assert late[0].state is DockerGrantState.QUEUED, "fixture: the newcomer arrived in the window"
+    with Session(isolated_db) as check:
+        pool = docker_leases.load_pool(check)
+        held = check.exec(
+            select(DockerLease).where(DockerLease.status == DockerLeaseStatus.HELD)
+        ).all()
+        assert pool.held_count == len(held), "the refund left the pool disagreeing with the ledger"
+        assert len(held) == 2, f"2 fit; {len(held)} are held — the newcomer was never promoted"

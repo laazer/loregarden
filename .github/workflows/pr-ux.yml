@@ -1,0 +1,33 @@
+name: PR UX section
+
+# Separate from ci.yml so that editing a PR description re-runs this cheap
+# check only, not the full suites.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: pr-ux-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ux-section:
+    name: PR UX section
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The body arrives through env, never interpolated into the script, so a
+      # PR description cannot inject shell.
+      - name: Changed user-facing surfaces state what they are for
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr_body.md"
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
+          python3 .github/scripts/pr_ux_section_check.py \
+            --body "$RUNNER_TEMP/pr_body.md" --changed "$RUNNER_TEMP/changed.txt"

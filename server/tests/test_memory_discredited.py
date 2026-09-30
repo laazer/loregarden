@@ -137,7 +137,11 @@ def test_undiscredit_restores_the_read_paths(vault_dir, tmp_path):
     graph_hits = service.search("Recoverable", workspace_slug="lg")["graph"]
     obsidian_hits = service.search("Recoverable", workspace_slug="lg")["obsidian"]
     assert [row["title"] for row in graph_hits] == ["Recoverable fact"]
-    assert [row["title"] for row in obsidian_hits] == ["Recoverable fact"]
+    # Cutover R6 — durable memory is graph-only in search; vault export is not a peer hit.
+    assert obsidian_hits == []
+    export_path = vault_dir / created["obsidian"]["path"]
+    assert "discredited: true" not in export_path.read_text(encoding="utf-8")
+    assert "Recoverable fact" in export_path.read_text(encoding="utf-8")
 
 
 def test_existing_sqlite_shard_gains_the_column_without_losing_rows(tmp_path):

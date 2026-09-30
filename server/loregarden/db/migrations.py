@@ -26,7 +26,9 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
+from loregarden.db.migrations_agentless_gates import m_agentless_stage_exit_actions
 from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
+from loregarden.db.migrations_block_kind_prompts import m_block_kind_in_role_prompts
 from loregarden.db.migrations_block_kinds import m_ticket_block_kind
 from loregarden.db.migrations_block_repair import m_auto_repair_columns
 from loregarden.db.migrations_blocked_run_reason import m_blocked_run_reason
@@ -37,6 +39,7 @@ from loregarden.db.migrations_btw import (
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
+    m_chat_message_attachments,
     m_chat_message_parts,
     m_chat_session_worktrees,
     m_chat_turn_answer,
@@ -68,8 +71,20 @@ from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
 )
+from loregarden.db.migrations_github_issues import (
+    m_github_issue_links,
+    m_github_push_on_edit,
+    m_github_sync_settings,
+)
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
+from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
+from loregarden.db.migrations_instances import m_instance_templates
+from loregarden.db.migrations_landing import m_ticket_landing_columns
+from loregarden.db.migrations_learning_applications import (
+    m_learning_applications_table,
+    m_memory_health_snapshots_table,
+)
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -134,8 +149,10 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
 from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
+from loregarden.db.migrations_ux_purpose import m_ux_purpose_in_design_lanes
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
 from loregarden.db.migrations_views import (
     m_sidebar_entry_pinned,
@@ -1382,11 +1399,32 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0128_chat_session_worktrees", m_chat_session_worktrees),
     ("0129_blobert_backend_lane", m_blobert_backend_lane),
     ("0130_retire_unmerged_branch_ledger_ids", m_retire_unmerged_branch_ledger_ids),
+    ("0131_tickets_workspace_binding", m_tickets_workspace_binding),
     ("0132_approve_design_plans_columns", m_approve_design_plans_columns),
     ("0133_design_plan_gates", m_design_plan_gates),
+    ("0134_initiative_number_pool", m_initiative_number_pool),
     ("0135_ticket_block_kind", m_ticket_block_kind),
     ("0136_auto_repair_columns", m_auto_repair_columns),
+    ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),
+    # Re-run: the first pass counted the automated reconciler as a human editor.
+    # 0139, not 0138: 0138 is `0138_runtime_exit_actions`, registered at the end.
+    ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
+    ("0140_ticket_landing_columns", m_ticket_landing_columns),
+    ("0141_learning_applications_table", m_learning_applications_table),
+    ("0142_memory_health_snapshots_table", m_memory_health_snapshots_table),
+    ("0143_github_issue_links", m_github_issue_links),
+    ("0144_github_sync_settings", m_github_sync_settings),
+    ("0145_github_push_on_edit", m_github_push_on_edit),
+    ("0146_instance_templates", m_instance_templates),
+    ("0147_ux_purpose_in_design_lanes", m_ux_purpose_in_design_lanes),
+    ("0148_chat_message_attachments", m_chat_message_attachments),
+    # Out of numeric order on purpose, and the id must never change: the live
+    # database applied 0138 from the branch that wrote it on 2026-09-16, before
+    # main had 0139..0148, so a renumbered id would run it a second time. On a
+    # fresh database it now runs after 0147 — which only edits a stage brief —
+    # and rewrites every `gate_required` the older migrations above wrote.
     ("0138_runtime_exit_actions", m_runtime_exit_actions),
+    ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

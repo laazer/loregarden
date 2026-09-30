@@ -14,6 +14,7 @@ unattended run wants to find in one place.
 from __future__ import annotations
 
 from loregarden.models.domain import OrchestrationRun, OrchestratorDecision, Ticket
+from loregarden.services.interruption_messages import DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from sqlmodel import Session
 
@@ -54,4 +55,6 @@ def refuse_dispatch_under_terminal_parent(
         evidence={"parent_run_code": parent.run_code, "parent_status": parent.status.value},
     )
     session.commit()
-    raise ValueError(f"Cannot start run: orchestration {parent.run_code} is {parent.status.value}")
+    raise ValueError(
+        f"{DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX} {parent.run_code} is {parent.status.value}"
+    )

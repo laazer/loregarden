@@ -52,5 +52,5 @@ Report the **cause**, the **evidence**, and the **fix** — in that order — in
 
 End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
 block (`pass` | `fail` | `needs_rework` | `blocked`). `pass` means the block is cleared AND the
-stage's own work is done. A `blocked` report must carry `blocked_kind`. Do **not** call
+stage's own work is done. A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say. Do **not** call
 `loregarden_complete_stage` from a stage run. Attach long reports via `loregarden_attach_artifact`.

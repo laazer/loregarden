@@ -8,16 +8,16 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 
-import type { StudioWorkflowStage } from "../../../api/client";
+import type { StudioExitActionRequirementCatalog, StudioWorkflowStage } from "../../../api/client";
 import { StudioStagesCard } from "../StudioStagesCard";
 import { emptyStage, type StudioWorkflowDraft } from "../studioWorkflowHelpers";
 
-const EXIT_ACTION_REQUIREMENTS = {
+const EXIT_ACTION_REQUIREMENTS: StudioExitActionRequirementCatalog = {
   requirement_kinds: ["runtime_capability", "credential", "authority", "operator_judgment"],
   capability_ids: ["http_test_client"],
   credential_keys: ["claude_profile"],
   authority_scopes: ["release:publish"],
-} as const;
+};
 
 const AGENTS = [
   { slug: "planner", name: "Planner", built_in: true, adapter: "claude" },
@@ -126,12 +126,12 @@ describe("Studio exit-action authoring (AC-1/AC-2 UI)", () => {
 
   it("derives selectable identifiers from the server-owned catalog", async () => {
     const user = userEvent.setup();
-    const customCatalog = {
+    const customCatalog: StudioExitActionRequirementCatalog = {
       ...EXIT_ACTION_REQUIREMENTS,
       capability_ids: ["custom_runtime_probe"],
       credential_keys: ["custom_usage_profile"],
       authority_scopes: ["custom:grant"],
-    } as const;
+    };
     const seen: StudioWorkflowDraft[] = [];
 
     function Host() {

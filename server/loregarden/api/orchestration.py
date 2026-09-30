@@ -8,11 +8,16 @@ from loregarden.models.domain import (
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
+    GateOutcome,
     GatesConfigUpdate,
+    GateTestCommandResult,
+    GateTestReport,
+    GateTestRequest,
     GitAutomationView,
     OrchestrationDriver,
     OrchestrationProfileView,
     OrchestrationRun,
+    OrchestrationRunStatus,
     OrchestrationRunView,
     RequestApprovalRequest,
     SkipStageRequest,
@@ -21,12 +26,21 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
-from loregarden.services.gate_runner import gates_can_run
+from loregarden.services.gate_runner import (
+    dry_run_gate_commands,
+    gates_can_run,
+    resolved_transition_script,
+    sample_gate_context,
+    strip_ansi,
+    transition_name,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
+    AUTOFIX_GATE_KEYS,
     GatesConfig,
     GitAutomationConfig,
+    default_gate_commands,
     list_profiles,
     resolve_orchestration_profile,
     update_gates_config,
@@ -66,8 +80,15 @@ def _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:
         # profile that is enabled but has nothing runnable configured gates
         # nothing, and must not read as green (ticket 88).
         gates_enabled=gates_can_run(profile, workspace),
+        gates_configured=profile.gates.enabled,
         gates_commands=profile.gates.commands,
         gates_transition_script=profile.gates.transition_script,
+        gates_transition_script_resolved=resolved_transition_script(profile, workspace),
+        gates_autofix_commands=profile.gates.autofix_commands,
+        gates_autofix_agent_fallback=profile.gates.autofix_agent_fallback,
+        gates_autofix_max_agent_attempts=profile.gates.autofix_max_agent_attempts,
+        gates_placeholders=sample_gate_context(workspace),
+        gates_suggested_commands=default_gate_commands(),
         max_stages_per_run=profile.max_stages_per_run,
     )
 
@@ -106,11 +127,43 @@ def update_workspace_gates(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    gates = GatesConfig(
-        enabled=body.enabled, commands=body.commands, transition_script=body.transition_script
+    supplied = body.model_dump(exclude_none=True)
+    profile = update_gates_config(
+        ws,
+        GatesConfig.model_validate(supplied),
+        preserve=AUTOFIX_GATE_KEYS - supplied.keys(),
     )
-    profile = update_gates_config(ws, gates)
     return _profile_view(profile, ws)
+
+
+@router.post("/workspaces/{slug}/profile/gates/test", response_model=GateTestReport)
+def test_workspace_gates(
+    slug: str, body: GateTestRequest, session: Session = Depends(get_session)
+) -> GateTestReport:
+    """Run draft gate commands against the workspace's shared checkout, with
+    sample ticket values, and report every command's verdict. Nothing is saved."""
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    runs = dry_run_gate_commands(
+        ws, body.commands, from_stage=body.from_stage, to_stage=body.to_stage
+    )
+    return GateTestReport(
+        repo_root=sample_gate_context(ws)["workspace_root"],
+        transition=transition_name(body.from_stage, body.to_stage),
+        results=[
+            GateTestCommandResult(
+                template=run.template,
+                command=run.command,
+                outcome=run.result.outcome or GateOutcome.FAILED,
+                message=run.result.message,
+                stdout=strip_ansi(run.result.stdout),
+                stderr=strip_ansi(run.result.stderr),
+                duration_ms=run.duration_ms,
+            )
+            for run in runs
+        ],
+    )
 
 
 @router.get("/workspaces/{slug}/profile/git", response_model=GitAutomationView)
@@ -150,6 +203,13 @@ def start_orchestration(
         raise HTTPException(404, "Workspace not found")
     profile = resolve_orchestration_profile(ws)
     driver = body.driver or profile.driver
+    if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
+        raise HTTPException(400, "Use POST /api/tickets/{id}/start for manual_stage driver")
+    active = svc.get_active_orchestration_run(ticket.id)
+    if active is not None:
+        # Before the reservation and the claim: `claim_orchestration_run` hands
+        # back a live run, and the failure path below must never abandon one.
+        raise HTTPException(400, f"Orchestration already running: {active.run_code}")
 
     # Same pool as /orchestrate and MCP: this path used to start work with no
     # slot, so the board showed idle lanes while agents ran.
@@ -170,6 +230,21 @@ def start_orchestration(
             detail={"status": "queued", **reservation.as_dict()},
         )
 
+    # Claimed and bound before the work starts. The builtin driver runs the
+    # whole pipeline inside `execute`, so binding on return bound to a finished
+    # run and the slot named nothing for as long as the ticket ran (775).
+    # `start_orchestration_run` adopts the claim on either driver.
+    claim = svc.claim_orchestration_run(
+        ticket,
+        driver=driver,
+        profile_slug=profile.slug,
+        auto_approve=body.auto_approve,
+        approve_design_plans=body.approve_design_plans,
+        auto_repair=body.auto_repair,
+        stop_at_stage_key=body.stop_at_stage_key or "",
+        timeout_override_seconds=body.timeout_seconds,
+    )
+    reservation.bind(orchestration_run_id=claim.id)
     try:
         if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
             run = BuiltinOrchestrator(session).execute(
@@ -182,7 +257,7 @@ def start_orchestration(
                 auto_repair=body.auto_repair,
                 timeout_seconds=body.timeout_seconds,
             )
-        elif driver == OrchestrationDriver.EXTERNAL_MCP:
+        else:
             run = svc.start_orchestration_run(
                 ticket,
                 driver=driver,
@@ -193,14 +268,15 @@ def start_orchestration(
                 stop_at_stage_key=body.stop_at_stage_key or "",
                 timeout_override_seconds=body.timeout_seconds,
             )
-        else:
-            reservation.release()
-            raise ValueError("Use POST /api/tickets/{id}/start for manual_stage driver")
     except ValueError as exc:
+        session.rollback()
+        session.refresh(claim)
+        if claim.status == OrchestrationRunStatus.QUEUED:
+            # Never adopted, so nothing else will ever finish it.
+            svc.abandon_claim(claim, message=str(exc))
         reservation.release()
         raise HTTPException(400, str(exc)) from exc
 
-    reservation.bind(orchestration_run_id=run.id)
     return _run_view(run)
 
 

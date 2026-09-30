@@ -82,11 +82,9 @@ from loregarden.models.domain import (
     Worktree,
 )
 from loregarden.services import conflict_resolution, queue_admission
-from loregarden.services.git_automation import AutomationResult
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.orchestration_profile import GitAutomationConfig, RetryBudgetConfig
-from loregarden.services.parallel_run_service import ParallelRunService
+from loregarden.services.orchestration_profile import RetryBudgetConfig
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.queue_dispatch import LaneDispatch
 from loregarden.services.run_lease import AGENT_RUN_LEASE
@@ -786,10 +784,9 @@ def _no_real_git():
 def test_an_exhausted_budget_does_not_raise_out_of_conflict_resolution(db_session: Session):
     """DEFECT 1. `_dispatch_resolver` calls `start_run` with no
     `orchestration_run_id`, so it now falls inside the standalone guard. Its
-    caller — `ParallelRunService._publish_run_work` — documents "a failure here
-    is reported, never raised", and the slot-freeing in
-    `on_parallel_run_complete` sits *after* the throw point, so a refusal
-    escaping here strands a parallel execution slot.
+    caller — the landing at a ticket's terminal stage — turns a refusal into a
+    block naming the files, so a refusal escaping here as an exception would
+    leave the ticket neither done, blocked, nor resolving.
 
     The refusal must therefore be caught and reported, not raised."""
     ticket = _build_ticket(db_session)
@@ -813,32 +810,6 @@ def test_an_exhausted_budget_does_not_raise_out_of_conflict_resolution(db_sessio
     assert report.resolution_attempted is False
     assert len(_agent_runs(db_session, ticket.id)) == runs_before
     schedule.assert_not_called()
-
-
-def test_a_refused_resolver_is_reported_as_a_failed_automation_result(db_session: Session):
-    """DEFECT 1, one level up. `_handle_merge_conflicts` must turn the refusal
-    into an `ok: False` result — that is the branch `on_parallel_run_complete`
-    reads to free the slot and drain the queue. An `ok: True` "resolution
-    dispatched" for a resolver that was never dispatched would be a lie, and an
-    exception would skip the slot-free entirely."""
-    ticket = _build_ticket(db_session)
-    run, worktree = _conflicted_worktree(db_session, ticket)
-    workspace = db_session.get(Workspace, ticket.workspace_id)
-    _seed_exhausted_budget(db_session, ticket.id)
-
-    files_patch, excerpt_patch, schedule_patch = _no_real_git()
-    with files_patch, excerpt_patch, schedule_patch:
-        outcome = ParallelRunService(db_session)._handle_merge_conflicts(
-            run,
-            ticket,
-            workspace,
-            worktree,
-            GitAutomationConfig(auto_resolve_conflicts=True, max_conflict_resolve_attempts=2),
-            AutomationResult(),
-        )
-
-    assert outcome["ok"] is False
-    assert outcome.get("resolving_conflicts") is not True
 
 
 # -- DEFECT 2: a deliberate fan-out costs exactly one attempt ------------------

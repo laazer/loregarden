@@ -1,6 +1,17 @@
 import { looksLikeTicketUuid } from "./ticketIds";
 
-export type AppPage = "home" | "chat" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
+export type AppPage =
+  | "home"
+  | "chat"
+  | "dashboard"
+  | "initiatives"
+  | "studio"
+  | "editor"
+  | "queue"
+  | "branch-triage"
+  | "mcp"
+  | "memory"
+  | "instances";
 
 export type ArtifactTab =
   | "diff"
@@ -71,11 +82,14 @@ const PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
   chat: "/chat",
   dashboard: "/console",
+  initiatives: "/initiatives",
   studio: "/studio/agents",
   editor: "/editor",
   queue: "/queue",
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
+  memory: "/memory",
+  instances: "/instances",
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
@@ -207,10 +221,47 @@ export function viewIdFromPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]) : null;
 }
 
+/** The Memory page's tabs, in the order they are drawn. The map is the default. */
+export const MEMORY_TABS = ["map", "records", "health"] as const;
+export type MemoryTab = (typeof MEMORY_TABS)[number];
+
+const MEMORY_TAB_PATH_RE = /^\/memory\/(records|health)(?:\/|$)/;
+const MEMORY_NODE_PATH_RE = /^\/memory\/map\/([^/]+)/;
+/** The browser's old home, kept so links and bookmarks into it still land. */
+const LEGACY_KNOWLEDGE_PATH_RE = /^\/knowledge(?:\/([^/]+))?\/?$/;
+
+/** A Memory tab's URL; on the map, optionally with one record selected. */
+export function memoryPath(tab: MemoryTab, nodeId?: string): string {
+  if (tab !== "map") return `/memory/${tab}`;
+  return nodeId ? `/memory/map/${encodeURIComponent(nodeId)}` : "/memory";
+}
+
+export function memoryTabFromPath(pathname: string): MemoryTab {
+  const match = pathname.match(MEMORY_TAB_PATH_RE);
+  return match ? (match[1] as MemoryTab) : "map";
+}
+
+/**
+ * The record a `/memory/map/:nodeId` URL names, or null. Decoded through
+ * `decodeSegment`, so a stray `%` reads as itself rather than throwing during
+ * render.
+ */
+export function memoryNodeIdFromPath(pathname: string): string | null {
+  const match = pathname.match(MEMORY_NODE_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
+}
+
+/** Where an old `/knowledge[/:nodeId]` URL now lives. */
+export function memoryPathForLegacyKnowledge(pathname: string): string {
+  const match = pathname.match(LEGACY_KNOWLEDGE_PATH_RE);
+  return memoryPath("map", match?.[1] ? decodeSegment(match[1]) : undefined);
+}
+
 export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/console" || pathname.startsWith("/console/")) return "dashboard";
+  if (pathname === "/initiatives" || pathname.startsWith("/initiatives/")) return "initiatives";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
   if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
@@ -218,6 +269,9 @@ export function pageFromPath(pathname: string): AppPage {
     return "branch-triage";
   }
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
+  if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "memory";
+  if (pathname === "/instances" || pathname.startsWith("/instances/")) return "instances";
   // Ticket deep-links still live in the Console shell.
   if (pathname.startsWith("/tickets/")) return "dashboard";
   return "home";

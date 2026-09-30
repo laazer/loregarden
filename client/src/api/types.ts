@@ -22,7 +22,7 @@ export type TicketState =
  */
 export type TicketActivity = "running" | "awaiting" | "queued" | "idle";
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
-export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
+export type WorkItemType = "initiative" | "milestone" | "feature" | "capability" | "task" | "bug";
 
 export interface TicketSummary {
   id: string;
@@ -656,18 +656,6 @@ export interface MemoryConfigResponse {
   };
 }
 
-export interface OrchestrationProfileView {
-  slug: string;
-  name: string;
-  driver: string;
-  workflow_template: string;
-  orchestrator_skill: string;
-  gates_enabled: boolean;
-  gates_commands: string[];
-  gates_transition_script: string;
-  max_stages_per_run: number;
-}
-
 /**
  * What a queue is allowed to do with a finished run's work.
  *
@@ -718,6 +706,7 @@ export type {
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
   ChatAdvisoryCause,
+  ChatAttachment,
   ChatIntent,
   ChatMode,
   ChatModeName,
@@ -958,6 +947,11 @@ export interface MonitorFinding {
   occurrences: number;
   first_seen: string | null;
   last_seen: string | null;
+  /** The ticket the finding is about; blank/null for a workspace-scoped finding. */
+  ticket_title: string;
+  ticket_external_id: string;
+  ticket_state: TicketState | null;
+  workspace_slug: string;
 }
 
 /**
@@ -1185,3 +1179,5 @@ export interface WorkflowReassignmentPreview {
   completed_stages: string[];
   resets_to_stage_key: string;
 }
+
+export type * from "./gateTypes";

@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from loregarden.db.migrations import apply_migrations
 from loregarden.db.migrations_exit_actions import (
     _migrate_legacy_stage,
     m_runtime_exit_actions,
 )
+from loregarden.models.domain import WorkflowStageDef
 from sqlalchemy import text
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel, create_engine
 
 
 def _legacy_stages() -> list[dict]:
@@ -136,3 +139,126 @@ def test_m_runtime_exit_actions_rewrites_persisted_legacy_stages(isolated_db):
             ).scalar_one()
         )
         _assert_migrated(json.loads(snapshot["stages_json"]))
+
+
+# --- 0138 runs last -------------------------------------------------------
+#
+# The live database applied `0138_runtime_exit_actions` from this branch before
+# main had 0139..0148, so its id is registered out of numeric order, after
+# 0148. On a fresh database it therefore runs after every migration that still
+# writes the retired flag — 0133 on older bodies, and 0147's version snapshot,
+# which records whatever the template held at the time. These apply the real
+# MIGRATIONS list over a pre-migration template to prove the order holds.
+
+_V3 = "studio-loregarden-tdd-v3"
+
+
+def _legacy_v3_stages() -> list[dict]:
+    return [
+        {"key": "plan-synthesis", "name": "Plan synthesis", "order": 1, "gate_required": False},
+        {"key": "ui-design", "name": "UI Design", "order": 2, "gate_required": False},
+        {"key": "gate", "name": "Quality Gate", "order": 3, "gate_required": True},
+        # Agentless: a human gate by construction before exit actions (0149).
+        {"key": "approval", "name": "Awaiting Approval", "order": 4, "agent_id": ""},
+        {"key": "done", "name": "Done", "order": 5, "terminal": True, "gate_required": False},
+    ]
+
+
+@pytest.fixture
+def fully_migrated_engine(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'ordering.db'}")
+    SQLModel.metadata.create_all(engine)
+    legacy = json.dumps(_legacy_v3_stages())
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO workflow_templates "
+                "(id, slug, name, description, stages_json, transitions_json, "
+                "source_path, version, built_in, created_at) "
+                "VALUES ('tpl-v3', :slug, 'v3', '', :stages, '[]', 'test:v3', 1, 0, "
+                "'2026-01-01')"
+            ),
+            {"slug": _V3, "stages": legacy},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO studio_workflows "
+                "(id, slug, name, description, stages_json, transitions_json, "
+                "created_at, updated_at) "
+                "VALUES ('draft-v3', 'loregarden-tdd-v3', 'v3', '', :stages, '[]', "
+                "'2026-01-01', '2026-01-01')"
+            ),
+            {"stages": legacy},
+        )
+    applied = apply_migrations(engine)
+    return engine, applied
+
+
+def _every_stage_list(engine) -> dict[str, list[dict]]:
+    """Every persisted stage list, keyed by where it lives."""
+    found: dict[str, list[dict]] = {}
+    with engine.connect() as conn:
+        for table in ("workflow_templates", "studio_workflows", "workflow_instances"):
+            for row_id, raw in conn.execute(text(f"SELECT id, stages_json FROM {table}")):
+                found[f"{table}:{row_id}"] = json.loads(raw or "[]")
+        for row_id, raw in conn.execute(
+            text("SELECT id, snapshot_json FROM workflow_template_versions")
+        ):
+            snapshot = json.loads(raw or "{}")
+            if "stages_json" in snapshot:
+                found[f"workflow_template_versions:{row_id}"] = json.loads(snapshot["stages_json"])
+    return found
+
+
+def _raw_rows(engine) -> dict[str, str]:
+    rows: dict[str, str] = {}
+    with engine.connect() as conn:
+        for table, column in (
+            ("workflow_templates", "stages_json"),
+            ("studio_workflows", "stages_json"),
+            ("workflow_instances", "stages_json"),
+            ("workflow_template_versions", "snapshot_json"),
+        ):
+            for row_id, raw in conn.execute(text(f"SELECT id, {column} FROM {table}")):
+                rows[f"{table}:{row_id}"] = raw
+    return rows
+
+
+def test_full_migration_list_leaves_no_stage_with_gate_required(fully_migrated_engine):
+    engine, applied = fully_migrated_engine
+
+    # Registered after 0148, and followed only by 0149, which depends on it.
+    assert applied[-2:] == ["0138_runtime_exit_actions", "0149_agentless_stage_exit_actions"]
+    assert applied.index("0148_chat_message_attachments") < applied.index(
+        "0138_runtime_exit_actions"
+    )
+
+    stage_lists = _every_stage_list(engine)
+    # The version snapshots are the case the ordering is really about: 0147
+    # snapshots the template while `gate` still carries the old flag.
+    assert any(key.startswith("workflow_template_versions:") for key in stage_lists)
+    for where, stages in stage_lists.items():
+        for stage in stages:
+            assert "gate_required" not in stage, f"{where} kept gate_required: {stage}"
+            if "name" in stage:  # instances store key/status only
+                WorkflowStageDef.model_validate(stage)
+
+    template = {stage["key"]: stage for stage in stage_lists["workflow_templates:tpl-v3"]}
+    # 0147 still extended the design brief before 0138 rewrote the gates...
+    assert "question it answers" in template["ui-design"].get("stage_brief", "")
+    # ...and every stage that gated before, or that 0133 gated, gates now.
+    for key in ("plan-synthesis", "ui-design", "gate", "approval"):
+        assert template[key]["exit_actions_enabled"] is True, key
+        assert [a["key"] for a in template[key]["exit_actions"]] == ["legacy-stage-sign-off"]
+    assert template["done"]["exit_actions_enabled"] is False
+    assert template["done"]["exit_actions"] == []
+
+
+def test_reapplying_0138_to_migrated_stages_changes_nothing(fully_migrated_engine):
+    engine, _ = fully_migrated_engine
+    before = _raw_rows(engine)
+
+    with engine.begin() as conn:
+        m_runtime_exit_actions(conn)
+
+    assert _raw_rows(engine) == before

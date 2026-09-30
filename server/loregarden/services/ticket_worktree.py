@@ -23,6 +23,7 @@ from pathlib import Path
 
 from loregarden.models.domain import AgentRun, Ticket, Workspace
 from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
@@ -68,8 +69,12 @@ def resolve_execution_root(
     if not config.worktree:
         return workspace_root
 
+    # Cut from the branch this ticket's work will land on, not from the base:
+    # a sibling's landed work lives on the integration branch and never on
+    # main until the tree completes (lg-milestone-that-769).
+    target = resolve_target_branch(session, ticket, workspace, repo_root=workspace_root)
     service = WorktreeService(session, repo_path=str(workspace_root))
-    worktree = service.get_or_create_for_ticket(ticket, run.id, parent_branch=config.base_branch)
+    worktree = service.get_or_create_for_ticket(ticket, run.id, parent_branch=target)
     if not worktree:
         logger.warning(
             "Could not create a worktree for ticket %s; running in the shared checkout %s",

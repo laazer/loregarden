@@ -16,6 +16,7 @@ Adapters that authenticate from a config file (`claude`) or not at all (`local`,
 from __future__ import annotations
 
 import threading
+from types import TracebackType
 
 _KEYCHAIN_ADAPTERS = frozenset({"cursor"})
 
@@ -41,6 +42,26 @@ class LaunchSlot:
         lock, self._lock = self._lock, None
         if lock is not None:
             lock.release()
+
+    def __enter__(self) -> LaunchSlot:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Release even when the block is leaving on an exception.
+
+        `_launch_lock` is a module global that nothing force-releases, so a
+        caller that raises between acquiring and releasing holds it for the
+        rest of the process. Every later `acquire_launch_slot("cursor")` then
+        blocks for `MAX_WAIT_SECONDS`, which is long enough to kill an
+        unrelated caller — and the one that dies is never the one that leaked.
+        Acquiring through `with` makes that unrepresentable (799).
+        """
+        self.release()
 
 
 def acquire_launch_slot(adapter: str) -> LaunchSlot:

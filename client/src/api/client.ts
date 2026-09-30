@@ -1,11 +1,15 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
+import { initiativeApi } from "./initiativeApi";
+import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 
 export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
+export type { InitiativeMilestone, InitiativeView } from "./initiativeApi";
+export type * from "./memoryApi";
 import type {
   WorkflowReassignmentPreview,
   TicketState,
@@ -33,11 +37,14 @@ import type {
   MemoryStatus,
   MemoryConfigResponse,
   OrchestrationProfileView,
+  GatesConfigUpdate,
+  GateTestReport,
   GitAutomationView,
   WorkspaceWorkflow,
   Approval,
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
+  ChatAttachment,
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
@@ -315,6 +322,8 @@ export const api = {
       stage_status?: StageStatus;
       stage_updates?: Record<string, StageStatus>;
       auto_state?: boolean;
+      /** Reparent; "" detaches (legal only for a milestone). */
+      parent_ticket_id?: string;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}`, {
@@ -325,12 +334,17 @@ export const api = {
     request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
-  updateWorkspaceGates: (
-    slug: string,
-    body: { enabled: boolean; commands: string[]; transition_script: string },
-  ) =>
+  updateWorkspaceGates: (slug: string, body: GatesConfigUpdate) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile/gates`, {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  testWorkspaceGates: (
+    slug: string,
+    body: { commands: string[]; from_stage?: string; to_stage?: string },
+  ) =>
+    request<GateTestReport>(`/api/orchestration/workspaces/${slug}/profile/gates/test`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   gitAutomation: (slug: string) =>
@@ -393,6 +407,8 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...initiativeApi,
+  ...memoryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",
@@ -525,11 +541,29 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
-  sendBaxterChatMessage: (slug: string, sessionId: string, content: string, skill = "") =>
+  sendBaxterChatMessage: (
+    slug: string,
+    sessionId: string,
+    content: string,
+    skill = "",
+    attachmentIds: string[] = [],
+  ) =>
     request<BaxterChatSnapshot>(
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
-      { method: "POST", body: JSON.stringify({ content, skill }) },
+      {
+        method: "POST",
+        body: JSON.stringify({ content, skill, attachment_ids: attachmentIds }),
+      },
     ),
+  /** Store one file for the next turn in this conversation. */
+  uploadBaxterChatAttachment: (slug: string, sessionId: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    return request<ChatAttachment>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/attachments`,
+      { method: "POST", body },
+    );
+  },
   /** Settles the pending turn immediately so the composer unlocks. */
   stopBaxterChatTurn: (slug: string, sessionId: string) =>
     request<BaxterChatSnapshot>(

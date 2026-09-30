@@ -44,4 +44,5 @@ again with the brief rather than recording the tick.
 Clear approve/reject decision with per-AC evidence table or gap list (prose or
 `loregarden_attach_artifact` for long reports). End with the required
 `<<<LOREGARDEN_STAGE_REPORT>>>` block. A clean exit without that block blocks the stage.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.
 

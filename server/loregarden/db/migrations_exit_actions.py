@@ -9,6 +9,19 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 
+def legacy_sign_off_action(stage: dict) -> dict:
+    """The operator-judgment action a pre-exit-actions human gate becomes."""
+    stage_name = str(stage.get("name") or stage.get("key") or "stage")
+    return {
+        "key": "legacy-stage-sign-off",
+        "label": f"Approve {stage_name} completion",
+        "requirement": {
+            "kind": "operator_judgment",
+            "decision_prompt": f"Approve completion of stage '{stage_name}'.",
+        },
+    }
+
+
 def _migrate_legacy_stage(stage: dict) -> dict:
     payload = dict(stage)
     if "gate_required" not in payload:
@@ -17,21 +30,7 @@ def _migrate_legacy_stage(stage: dict) -> dict:
         return payload
     gate_required = bool(payload.pop("gate_required", False))
     payload["exit_actions_enabled"] = gate_required
-    stage_name = str(payload.get("name") or payload.get("key") or "stage")
-    payload["exit_actions"] = (
-        [
-            {
-                "key": "legacy-stage-sign-off",
-                "label": f"Approve {stage_name} completion",
-                "requirement": {
-                    "kind": "operator_judgment",
-                    "decision_prompt": f"Approve completion of stage '{stage_name}'.",
-                },
-            }
-        ]
-        if gate_required
-        else []
-    )
+    payload["exit_actions"] = [legacy_sign_off_action(payload)] if gate_required else []
     return payload
 
 

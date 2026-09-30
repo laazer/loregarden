@@ -11,6 +11,7 @@ from loregarden.models.domain.enums import (
     DoctorStatus,
     EventType,
     ExternalHarness,
+    GateOutcome,
     OrchestrationDriver,
     OrchestrationRunStatus,
     RunStatus,
@@ -20,12 +21,12 @@ from loregarden.models.domain.enums import (
     TicketStudioSessionStatus,
     ToolGrantWarningCode,
     ToolPosture,
-    WorkItemType,
 )
 from loregarden.models.domain.enums_exit_actions import (
     ApprovalResolutionAction,
     ExitActionResolutionMode,
 )
+from loregarden.models.domain.work_item_types import WorkItemType
 from pydantic import ConfigDict, model_validator
 from sqlmodel import Field, SQLModel
 
@@ -586,9 +587,24 @@ class OrchestrationProfileView(SQLModel):
     driver: OrchestrationDriver
     workflow_template: str
     orchestrator_skill: str = ""
+    #: Whether gates *can actually run* — on, and something runnable resolves.
     gates_enabled: bool = False
+    #: The raw `gates.enabled` switch, which is what the editor's toggle edits.
+    #: It differs from `gates_enabled` when gates are on but nothing would run.
+    gates_configured: bool = False
     gates_commands: list[str] = Field(default_factory=list)
     gates_transition_script: str = ""
+    #: The transition script that will actually run, relative to the workspace
+    #: root — the configured one, else the default path — or "" when neither exists.
+    gates_transition_script_resolved: str = ""
+    gates_autofix_commands: list[str] = Field(default_factory=list)
+    gates_autofix_agent_fallback: bool = True
+    gates_autofix_max_agent_attempts: int = 3
+    #: Every placeholder a gate command may use, mapped to a sample value, so
+    #: the editor can offer, validate and preview them from one source.
+    gates_placeholders: dict[str, str] = Field(default_factory=dict)
+    #: The fallback profile's workspace-agnostic checks, offered as one-click adds.
+    gates_suggested_commands: list[str] = Field(default_factory=list)
     max_stages_per_run: int = 0
 
 
@@ -596,6 +612,35 @@ class GatesConfigUpdate(SQLModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
     transition_script: str = ""
+    # None leaves the saved value alone, so a client that edits only the three
+    # fields above cannot wipe a hand-configured self-repair policy.
+    autofix_commands: list[str] | None = None
+    autofix_agent_fallback: bool | None = None
+    autofix_max_agent_attempts: int | None = Field(default=None, ge=0, le=10)
+
+
+class GateTestRequest(SQLModel):
+    """Draft gate commands to try against the workspace before saving them."""
+
+    commands: list[str] = Field(default_factory=list)
+    from_stage: str = "implement"
+    to_stage: str = "verify"
+
+
+class GateTestCommandResult(SQLModel):
+    template: str
+    command: str
+    outcome: GateOutcome
+    message: str = ""
+    stdout: str = ""
+    stderr: str = ""
+    duration_ms: int = 0
+
+
+class GateTestReport(SQLModel):
+    repo_root: str
+    transition: str
+    results: list[GateTestCommandResult] = Field(default_factory=list)
 
 
 class GitAutomationView(SQLModel):
@@ -713,7 +758,8 @@ class UpdateTicketRequest(SQLModel):
 
 
 class TicketCreate(SQLModel):
-    workspace_slug: str
+    #: Omitted for an initiative, which spans workspaces and binds to none.
+    workspace_slug: str = ""
     title: str
     work_item_type: WorkItemType = WorkItemType.TASK
     parent_ticket_id: str | None = None

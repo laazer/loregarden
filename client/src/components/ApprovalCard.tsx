@@ -254,11 +254,21 @@ export function ApprovalCard({
             ))}
           </div>
         ) : (
-          <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
+          <MarkdownContent
+            content={impactText ?? approval.impact}
+            className="approval-impact"
+            readerTitle={approval.title}
+            readerSubtitle={approval.workspace_slug ?? undefined}
+          />
         )}
         {/* Narrative impact remains available under structured actions when both exist. */}
         {isExitActionGate && (impactText ?? approval.impact) ? (
-          <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
+          <MarkdownContent
+            content={impactText ?? approval.impact}
+            className="approval-impact"
+            readerTitle={approval.title}
+            readerSubtitle={approval.workspace_slug ?? undefined}
+          />
         ) : null}
 
         {isHumanAction && approval.prepared_action && (

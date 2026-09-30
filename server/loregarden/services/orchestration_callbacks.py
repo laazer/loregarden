@@ -32,12 +32,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
+from loregarden.services.block_settlement import BlockSettlement, settle_block
 from loregarden.services.gate_approvals import gate_would_skip_work
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
 )
+from loregarden.services.process_identity import still_running
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
@@ -220,6 +222,20 @@ class OrchestrationCallbackService:
             .where(col(AgentRun.status).in_(list(SUPERVISED)))
         ).all()
         for child in children:
+            if still_running(child.agent_pid, child.agent_pid_identity):
+                # A leftover is a row nobody is working under. A verified-live
+                # process is somebody working (757): its row stays, and its own
+                # completion — under a parent it will find terminal — says what
+                # came of it. The startup reaper skips its parent for the same
+                # reason; this is the same rule at the other end of the edge.
+                logger.warning(
+                    "Not failing agent run %s under terminal orchestration %s: pid %s "
+                    "is still its process",
+                    child.run_code,
+                    orch_run.run_code,
+                    child.agent_pid,
+                )
+                continue
             self.orch.complete_run(
                 child,
                 status=RunStatus.FAILED,
@@ -616,6 +632,7 @@ class OrchestrationCallbackService:
         stage_key: str = "",
         message: str,
         prepared_action: PreparedAction | None = None,
+        settlement: BlockSettlement | None = None,
     ) -> Ticket:
         """Stop this ticket, recording why.
 
@@ -623,6 +640,15 @@ class OrchestrationCallbackService:
         examined for a handover of human work — see `BlockOrigin`. It is required
         rather than defaulted so a new blocking path cannot inherit the wrong
         answer silently.
+
+        ``settlement`` is the caller's own, when it already classified this block
+        and decided about its repair turn (`parallel_stage` does). Left None,
+        this settles it here — with no orchestration run, which is the truth of
+        this function: it is the one that *ends* the run, so there is nothing
+        left to spend a repair turn on. A path that can still repair settles
+        before it reaches here. Either way the block leaves with a kind and a
+        recorded disposition, so nothing arrives on the board looking handled
+        when nothing handled it (802).
         """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -643,6 +669,13 @@ class OrchestrationCallbackService:
         if key:
             orch_run.current_stage_key = key
         self.session.add(ticket)
+        if settlement is None:
+            settle_block(
+                self.session,
+                ticket,
+                stage_key=key or "",
+                message=message,
+            )
         self._finish_orchestration_run(
             orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
         )

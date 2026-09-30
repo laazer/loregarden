@@ -38,6 +38,7 @@ from loregarden.services.chat_worktree import (
 )
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
+    cap_reply,
     resolve_agent_timeout,
     run_cli_agent_turn,
 )
@@ -238,6 +239,9 @@ class AgentTurnRequest:
     surface: ChatSurface = ChatSurface.HOME
     """Which operator rail this turn is for — selects the shared prompt blocks
     and labels the tool-grant log line."""
+    extra_dirs: tuple[Path, ...] = ()
+    """Directories outside the checkout the agent may read — a chat turn's
+    attachments. Only claude honours the grant; callers check the adapter."""
 
 
 @dataclass
@@ -399,6 +403,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
                 surface=request.surface,
                 agent_slug=request.agent.get("slug") or request.agent_id,
+                extra_dirs=request.extra_dirs,
             )
             bridge_kwargs: dict = {
                 "run_id": run.id,
@@ -423,7 +428,11 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
         if thinking:
             thinking.close()
 
-    reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
+    reply = cap_reply(
+        extract_triage_reply(result.stdout),
+        request.profile.reply_cap,
+        label=request.profile.assistant_label,
+    )
     if result.status != RunStatus.SUCCEEDED:
         _settle(request, run, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
@@ -465,6 +474,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             thinking_sink=thinking,
             workspace_root=root,
             surface=request.surface,
+            extra_dirs=request.extra_dirs,
         )
     except Exception as exc:
         if run is not None:

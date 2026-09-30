@@ -1,5 +1,16 @@
+/* The chat column and its workbench, side by side; overlays anchor here. */
+.baxter-chat-layout {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
 .baxter-chat {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -333,11 +344,6 @@
   );
 }
 
-.baxter-chat-suggestions {
-  max-width: var(--baxter-reading, 880px);
-  margin: 0 auto 10px;
-}
-
 .baxter-chat-dock .lg-chat-composer-wrap {
   max-width: var(--baxter-reading, 880px);
   margin: 0 auto;
@@ -658,9 +664,111 @@
   line-height: 1.45;
 }
 
-/* The send-to-tab control sits with the composer, right-aligned above it. */
-.baxter-chat-send-to-tab {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 4px 4px;
+/*
+ * The reply composer on one line: attach, input, menu, send.
+ *
+ * The stacked box spent a 44px input plus a 36px toolbar row on a line of
+ * text — about 110px of the window. Flattening the toolbar into the row brings
+ * it to about 50px; the attachment tray takes a row of its own only when there
+ * is something in it. `display: contents` lets the toolbar's children order
+ * themselves around the input without the shared composer knowing.
+ */
+.baxter-chat-dock .lg-chat-composer {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 6px 6px 6px;
+  border-radius: 14px;
+}
+
+.baxter-chat-dock .lg-chat-composer-toolbar {
+  display: contents;
+}
+
+.baxter-chat-dock .lg-attachment-tray {
+  order: -1;
+  flex: 1 0 100%;
+  padding: 2px 2px 4px;
+}
+
+.baxter-chat-dock .lg-composer-icon-btn {
+  order: 0;
+  margin-bottom: 2px;
+}
+
+.baxter-chat-dock .lg-composer-commands {
+  order: 1;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.baxter-chat-dock .lg-chat-composer-input {
+  min-height: 36px;
+  max-height: 200px;
+  padding: 7px 4px;
+  font-size: 14px;
+}
+
+.baxter-chat-dock .overflow-menu {
+  order: 2;
+  margin-bottom: 2px;
+}
+
+.baxter-chat-dock .lg-chat-composer-spacer {
+  display: none;
+}
+
+.baxter-chat-dock .lg-chat-composer-send {
+  order: 3;
+}
+
+.baxter-chat-dock .lg-chat-composer-error {
+  order: 4;
+  flex: 1 0 100%;
+  padding: 0 6px 2px;
+}
+
+/* The `⋯` reads as one of the composer's own controls, not a bordered button. */
+.lg-chat-composer .overflow-menu-trigger {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--txm);
+}
+
+.lg-chat-composer .overflow-menu-trigger:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+/* A user turn that sent files stacks them under its bubble. */
+.baxter-chat-thread .lg-chat-turn--user:has(.lg-attachment-tray--sent) {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* "Show in thread" from the workbench: a brief ring on the turn it landed on. */
+.lg-chat-turn--flash {
+  animation: baxter-turn-flash 1.4s ease-out;
+  border-radius: 12px;
+}
+
+@keyframes baxter-turn-flash {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-chat-turn--flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
 }

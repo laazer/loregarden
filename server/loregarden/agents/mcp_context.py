@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.config import settings
+from loregarden.mcp.caller import (
+    ORCHESTRATED_ENV,
+    ORCHESTRATED_HEADER,
+    RUN_ID_ENV,
+    RUN_ID_HEADER,
+)
 from loregarden.models.domain import (
     AgentRun,
     CliAdapter,
@@ -133,20 +139,43 @@ def _default_mcp_transport() -> str:
     return "http"
 
 
-def loregarden_mcp_server_entry(*, orchestrated: bool = False) -> dict[str, Any]:
-    transport = _default_mcp_transport()
-    if transport == "http":
-        entry: dict[str, Any] = {"type": "http", "url": resolve_mcp_url()}
-        if orchestrated:
-            entry["headers"] = {"X-Loregarden-Orchestrated": "1"}
-        return entry
-    script = settings.repo_root / "scripts" / "mcp-server.sh"
+def _orchestration_headers(*, orchestrated: bool, run_id: str) -> dict[str, str]:
+    """What an HTTP MCP client sends to say which supervised run it belongs to.
+
+    The run id rides only beside the orchestrated flag: a chat or terminal
+    session has no run whose memory writes it could claim.
+    """
+    if not orchestrated:
+        return {}
+    headers = {ORCHESTRATED_HEADER: "1"}
+    if run_id:
+        headers[RUN_ID_HEADER] = run_id
+    return headers
+
+
+def _stdio_server_env(*, orchestrated: bool, run_id: str) -> dict[str, str]:
+    """The stdio counterpart of `_orchestration_headers`, plus the in-process wiring."""
     env = {
         "LOREGARDEN_MCP_INPROCESS": "1",
         "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
     }
     if orchestrated:
-        env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
+        env[ORCHESTRATED_ENV] = "1"
+        if run_id:
+            env[RUN_ID_ENV] = run_id
+    return env
+
+
+def loregarden_mcp_server_entry(*, orchestrated: bool = False, run_id: str = "") -> dict[str, Any]:
+    transport = _default_mcp_transport()
+    if transport == "http":
+        entry: dict[str, Any] = {"type": "http", "url": resolve_mcp_url()}
+        headers = _orchestration_headers(orchestrated=orchestrated, run_id=run_id)
+        if headers:
+            entry["headers"] = headers
+        return entry
+    script = settings.repo_root / "scripts" / "mcp-server.sh"
+    env = _stdio_server_env(orchestrated=orchestrated, run_id=run_id)
     return {
         "type": "stdio",
         "command": str(script),
@@ -159,6 +188,7 @@ def loregarden_mcp_cli_config_json(
     session: Session | None = None,
     *,
     orchestrated: bool = False,
+    run_id: str = "",
     granted_servers: Sequence[str] | None = None,
 ) -> str:
     """Claude Code `--mcp-config` payload (full settings shape with mcpServers).
@@ -174,7 +204,8 @@ def loregarden_mcp_cli_config_json(
     `orchestrated` marks this config as belonging to a run Loregarden itself
     supervises (see `execute_tool`'s docstring in `mcp/tools.py`) — set it only for
     invocations built by `agents.cli_adapters.resolve_cli_invocation`, never for a
-    human terminal handoff or Ticket Studio chat.
+    human terminal handoff or Ticket Studio chat. `run_id` names that run, so a
+    memory the agent writes records it as its `origin_ref`.
 
     ``granted_servers`` restricts the registered servers to an agent's own grant.
     ``None`` means every enabled server, which is what every caller did before
@@ -197,7 +228,7 @@ def loregarden_mcp_cli_config_json(
                 logger.info("MCP servers withheld by agent grant: %s", ", ".join(dropped))
             registered = {name: entry for name, entry in registered.items() if name in allowed}
         servers.update(registered)
-    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated)
+    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated, run_id=run_id)
     return json.dumps({"mcpServers": servers})
 
 
@@ -205,7 +236,7 @@ def mcp_cli_injection_enabled() -> bool:
     return os.environ.get("LOREGARDEN_DISABLE_MCP_CLI", "").lower() not in {"1", "true", "yes"}
 
 
-def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
+def _opencode_mcp_server_entry(*, orchestrated: bool, run_id: str) -> dict[str, Any]:
     """Loregarden's entry in OpenCode's own MCP config vocabulary.
 
     OpenCode names the two transports ``remote``/``local`` and puts a stdio
@@ -213,7 +244,7 @@ def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
     none of which matches the shape ``loregarden_mcp_server_entry`` renders for
     Claude Code. Translating here keeps that difference in one place.
     """
-    entry = loregarden_mcp_server_entry(orchestrated=orchestrated)
+    entry = loregarden_mcp_server_entry(orchestrated=orchestrated, run_id=run_id)
     if entry["type"] == "http":
         remote: dict[str, Any] = {"type": "remote", "url": entry["url"], "enabled": True}
         if entry.get("headers"):
@@ -227,7 +258,7 @@ def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
     }
 
 
-def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False) -> str:
+def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False, run_id: str = "") -> str:
     """``OPENCODE_CONFIG_CONTENT`` payload wiring Loregarden's MCP server in.
 
     OpenCode has no ``--mcp-config`` flag; an inline config is the only per-run
@@ -238,11 +269,17 @@ def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False) -> str:
     and duplicating them here would fight that file rather than extend it.
     """
     return json.dumps(
-        {"mcp": {MCP_SERVER_NAME: _opencode_mcp_server_entry(orchestrated=orchestrated)}}
+        {
+            "mcp": {
+                MCP_SERVER_NAME: _opencode_mcp_server_entry(
+                    orchestrated=orchestrated, run_id=run_id
+                )
+            }
+        }
     )
 
 
-def mcp_cli_env(*, adapter: str, orchestrated: bool = False) -> dict[str, str]:
+def mcp_cli_env(*, adapter: str, orchestrated: bool = False, run_id: str = "") -> dict[str, str]:
     """Environment an agent subprocess needs to see Loregarden's MCP server.
 
     The argv-based counterpart is ``append_mcp_cli_args``; opencode is the one
@@ -252,7 +289,9 @@ def mcp_cli_env(*, adapter: str, orchestrated: bool = False) -> dict[str, str]:
     if not mcp_cli_injection_enabled() or adapter != "opencode":
         return {}
     return {
-        "OPENCODE_CONFIG_CONTENT": loregarden_mcp_opencode_config_json(orchestrated=orchestrated)
+        "OPENCODE_CONFIG_CONTENT": loregarden_mcp_opencode_config_json(
+            orchestrated=orchestrated, run_id=run_id
+        )
     }
 
 
@@ -262,6 +301,7 @@ def append_mcp_cli_args(
     adapter: str,
     session: Session | None = None,
     orchestrated: bool = False,
+    run_id: str = "",
     granted_servers: Sequence[str] | None = None,
 ) -> None:
     """Inject Loregarden MCP into headless Claude/Cursor/Codex agent subprocesses.
@@ -269,6 +309,9 @@ def append_mcp_cli_args(
     ``orchestrated=True`` marks pipeline stage runs (denies create_ticket at the
     MCP dispatch layer). Chat surfaces — triage, Home, branch triage, Ticket
     Studio — must pass ``orchestrated=False`` so interactive MCP stays open.
+    ``run_id`` names the supervised run, so memory writes record where they came
+    from. cursor cannot carry it: it reads its MCP servers from its own config,
+    and receives only ``--approve-mcps`` here.
 
     ``granted_servers`` is an agent's per-agent server grant; only the claude
     adapter can express it, because only claude receives the server list as argv.
@@ -285,7 +328,10 @@ def append_mcp_cli_args(
             [
                 "--mcp-config",
                 loregarden_mcp_cli_config_json(
-                    session, orchestrated=orchestrated, granted_servers=granted_servers
+                    session,
+                    orchestrated=orchestrated,
+                    run_id=run_id,
+                    granted_servers=granted_servers,
                 ),
             ]
         )
@@ -297,12 +343,7 @@ def append_mcp_cli_args(
         # Chat and stage runs share that need — only the orchestrated env flag
         # differs (pipeline deny list).
         script = settings.repo_root / "scripts" / "mcp-server.sh"
-        env = {
-            "LOREGARDEN_MCP_INPROCESS": "1",
-            "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
-        }
-        if orchestrated:
-            env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
+        env = _stdio_server_env(orchestrated=orchestrated, run_id=run_id)
         argv.extend(
             [
                 "-c",

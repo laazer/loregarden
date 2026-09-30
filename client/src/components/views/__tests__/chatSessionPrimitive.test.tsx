@@ -108,6 +108,7 @@ describe("a configured pane", () => {
         "s-1",
         "ship it",
         "",
+        [],
       ),
     );
     expect(box).toHaveValue("");
