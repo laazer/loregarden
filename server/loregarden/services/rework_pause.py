@@ -118,12 +118,10 @@ def file_rework_pause(
 
     The caller has already blocked the ticket; this is the half that gives the
     block an action. `REWORK_PAUSE` and not `WORKFLOW_GATE` because
-    `subtree_auto_run.auto_resolve_awaiting_gate` looks for a pending gate on the
-    stage and auto-approves it: an unattended run would sign off its own pause
-    and walk straight through the cap that exists to stop it looping. The kind is
-    the guard — `ApprovalService.auto_resolve` refuses anything that is not a
-    workflow gate, so the failure direction is a loud refusal rather than a
-    silent approval.
+    `subtree_auto_run.resolve_gate_if_permitted` only auto-signs design-plan
+    workflow gates — but a rework pause must never share that kind, or a future
+    unattended path that broadens gate sign-off would walk straight through the
+    cap that exists to stop a looping ticket. The kind is the guard.
     """
     approval = Approval(
         ticket_id=ticket.id,

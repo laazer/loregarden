@@ -513,6 +513,13 @@ export interface RuntimeOptions {
   effective?: RuntimeEffective;
 }
 
+export interface StudioExitActionRequirementCatalog {
+  requirement_kinds: StudioExitActionRequirement["kind"][];
+  capability_ids: string[];
+  credential_keys: string[];
+  authority_scopes: string[];
+}
+
 export interface WorkspaceRuntimeSettings {
   cli_adapter: string;
   claude_model: string;
@@ -845,6 +852,19 @@ export interface ParallelAgentSpec {
   skill_name: string;
 }
 
+export type StudioExitActionRequirement =
+  | { kind: "runtime_capability"; capability_id: string }
+  | { kind: "credential"; credential_key: string }
+  | { kind: "authority"; authority_scope: string }
+  | { kind: "operator_judgment"; decision_prompt: string };
+
+export interface StudioExitAction {
+  key: string;
+  label: string;
+  description?: string;
+  requirement: StudioExitActionRequirement;
+}
+
 export interface StudioWorkflowStage {
   key: string;
   name: string;
@@ -853,7 +873,10 @@ export interface StudioWorkflowStage {
   skill_name: string;
   optional: boolean;
   order: number;
-  gate_required: boolean;
+  /** When true, authored exit_actions are evaluated before leaving the stage. */
+  exit_actions_enabled: boolean;
+  /** Typed requirements; empty when exit_actions_enabled is false. */
+  exit_actions: StudioExitAction[];
   /** Reaching this stage ends the workflow. */
   terminal?: boolean;
   /** Condition under which this stage is passed over; values from StudioDefaults.skip_conditions. */

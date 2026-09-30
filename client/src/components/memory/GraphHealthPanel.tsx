@@ -92,6 +92,8 @@ export function GraphHealthPanel({ workspaceSlug }: { workspaceSlug: string }) {
             : ""}
         </p>
         <Shares report={report.data} />
+        {/* ux-ok: notes are optional remarks under the figures; zero is the normal case, and
+            load failure and an empty graph each render their own state above */}
         {notes.map((note) => (
           <p key={note} className="memory-note" role="status">
             {note}

@@ -1,4 +1,4 @@
-"""Migration 0149: workspaces can be archived."""
+"""Migration 0150: workspaces can be archived."""
 
 from __future__ import annotations
 

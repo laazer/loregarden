@@ -15,8 +15,16 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 
+import type { StudioExitActionRequirementCatalog } from "../../../api/client";
 import { StudioStagesCard } from "../StudioStagesCard";
 import { emptyStage, type StudioWorkflowDraft } from "../studioWorkflowHelpers";
+
+const EXIT_ACTION_REQUIREMENTS: StudioExitActionRequirementCatalog = {
+  requirement_kinds: ["runtime_capability", "credential", "authority", "operator_judgment"],
+  capability_ids: ["http_test_client"],
+  credential_keys: ["claude_profile"],
+  authority_scopes: ["release:publish"],
+};
 
 const AGENTS = [
   { slug: "planner", name: "Planner", built_in: true, adapter: "claude" },
@@ -47,6 +55,7 @@ function renderCard(initial: StudioWorkflowDraft, readOnly = false) {
         }))}
         agents={AGENTS}
         skills={["plan", "implement"]}
+        exitActionRequirements={EXIT_ACTION_REQUIREMENTS}
         runtimeOptions={undefined}
         skipConditions={["has_description", "routed_as_light_work"]}
         selectedWorkflow={null}

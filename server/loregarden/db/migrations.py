@@ -26,6 +26,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
+from loregarden.db.migrations_agentless_gates import m_agentless_stage_exit_actions
 from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
 from loregarden.db.migrations_block_kind_prompts import m_block_kind_in_role_prompts
 from loregarden.db.migrations_block_kinds import m_ticket_block_kind
@@ -63,6 +64,7 @@ from loregarden.db.migrations_doctor import (
     m_orchestration_run_lease,
     m_stage_park_approvals,
 )
+from loregarden.db.migrations_exit_actions import m_runtime_exit_actions
 from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
@@ -1406,7 +1408,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0136_auto_repair_columns", m_auto_repair_columns),
     ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),
     # Re-run: the first pass counted the automated reconciler as a human editor.
-    # 0139, not 0138: the live database already carries an unmerged branch's 0138.
+    # 0139, not 0138: 0138 is `0138_runtime_exit_actions`, registered at the end.
     ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
     ("0140_ticket_landing_columns", m_ticket_landing_columns),
     ("0141_learning_applications_table", m_learning_applications_table),
@@ -1417,7 +1419,14 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0146_instance_templates", m_instance_templates),
     ("0147_ux_purpose_in_design_lanes", m_ux_purpose_in_design_lanes),
     ("0148_chat_message_attachments", m_chat_message_attachments),
-    ("0149_workspace_archived_at", m_workspace_archived_at),
+    # Out of numeric order on purpose, and the id must never change: the live
+    # database applied 0138 from the branch that wrote it on 2026-09-16, before
+    # main had 0139..0148, so a renumbered id would run it a second time. On a
+    # fresh database it now runs after 0147 — which only edits a stage brief —
+    # and rewrites every `gate_required` the older migrations above wrote.
+    ("0138_runtime_exit_actions", m_runtime_exit_actions),
+    ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
+    ("0150_workspace_archived_at", m_workspace_archived_at),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

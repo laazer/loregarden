@@ -86,6 +86,9 @@ function GateApprovals({
           onApprove={(payload?: ApprovalResolvePayload) =>
             resolve.mutate({ id: approval.id, action: "approve", ...payload })
           }
+          onRecheck={(payload?: ApprovalResolvePayload) =>
+            resolve.mutate({ id: approval.id, action: "recheck", ...payload })
+          }
           onReject={(payload?: ApprovalResolvePayload) =>
             resolve.mutate({ id: approval.id, action: "reject", ...payload })
           }

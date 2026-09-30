@@ -395,6 +395,16 @@ class AgentRun(SQLModel, table=True):
     #: A list at exactly `read_paths.MAX_READ_PATHS` may be truncated and should
     #: be read as incomplete rather than exhaustive.
     read_paths_recorded_at: datetime | None = None
+    #: Secret-free snapshot of what this run's runtime could do at dispatch —
+    #: capability / credential / authority statuses only. Empty means no
+    #: snapshot was captured (pre-exit-actions runs, or a path that never
+    #: reached assign_dispatch_exit_actions).
+    runtime_exit_action_snapshot_json: str = ""
+    #: JSON list of exit-action keys this dispatch is expected to execute.
+    assigned_exit_action_keys_json: str = "[]"
+    #: JSON list of exit-action keys a passing stage report attested.
+    #: Clearing a requirement never writes here — only attest_assigned_actions.
+    completed_exit_action_keys_json: str = "[]"
     # The git boundary this run started from — see schemas.GitBoundary, which is
     # how these four are read and written. Recorded at dispatch, after the
     # execution root and branch are resolved, so it describes the tree the agent
