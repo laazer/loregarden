@@ -465,6 +465,11 @@ reasoned rather than observed.
   finishes gets swept into that ticket's commit — including work unrelated to the ticket. Do not
   hand-edit files while an orchestration runs; if you must, expect the sweep and check
   `git log -p` afterwards.
+- **A worktree build never migrates the live database.** Every entry point migrates what it
+  opens, and the CLI in a worktree opens the primary checkout's database — which is how
+  `0138` reached live two weeks before it merged and locked every main build out of writing.
+  `db/shared_database_guard.py` now refuses a migration `origin/main` does not ship. If it
+  refuses you, use the MCP tools or a checkout of main; never `--allow-stale` around it.
 - **Backend edits need a reload:** `touch server/.self-improve-restart`. The dev server ignores
   `.py` changes otherwise, and you will test stale code and believe your fix failed.
 - **Pushing from a worktree no longer breaks the pre-push suite.** Git exports an absolute
