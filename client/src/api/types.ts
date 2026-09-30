@@ -461,6 +461,8 @@ export interface WorkspaceSummary {
   ticket_count: number;
   blocked_count: number;
   workflow_template_slug: string;
+  /** ISO time the operator archived it; null while active. */
+  archived_at: string | null;
   cli_adapter: string;
   claude_model: string;
   cursor_model: string;

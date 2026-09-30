@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { localInstancesApi } from "../../api/localInstancesApi";
 import type { InstallState, WorkspaceTemplates } from "../../api/localInstancesTypes";
+import type { WorkspaceSummary } from "../../api/types";
 import { INTEGRATION_KEY } from "../../hooks/useLocalInstances";
 import { WorkspaceIntegrationPanel } from "./WorkspaceIntegrationPanel";
 import { WorkspaceTemplatesPanel } from "./WorkspaceTemplatesPanel";
@@ -38,7 +39,16 @@ function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
  * query (and its cache) with `WorkspaceIntegrationPanel`, so opening a card
  * does not re-check.
  */
-export function WorkspaceSetupCard({ workspace }: { workspace: WorkspaceTemplates }) {
+interface WorkspaceSetupCardProps {
+  workspace: WorkspaceTemplates;
+  /** Its row from `/api/workspaces`, for ticket counts and archive state; absent while loading. */
+  summary: WorkspaceSummary | undefined;
+  /** In flight for this workspace: the archive/restore button shows it and stays disabled. */
+  archiving: boolean;
+  onArchive: (archive: boolean) => void;
+}
+
+export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }: WorkspaceSetupCardProps) {
   const status = useQuery({
     queryKey: [...INTEGRATION_KEY, workspace.slug],
     queryFn: () => localInstancesApi.integration(workspace.slug),
@@ -68,12 +78,43 @@ export function WorkspaceSetupCard({ workspace }: { workspace: WorkspaceTemplate
                 </Chip>
               ))
             )}
+            {summary && !summary.repo_exists && <Chip tone="warn">repo missing</Chip>}
+            {summary && (
+              <Chip tone={summary.blocked_count > 0 ? "warn" : "muted"}>
+                {summary.ticket_count} {summary.ticket_count === 1 ? "ticket" : "tickets"}
+                {summary.blocked_count > 0 ? `, ${summary.blocked_count} blocked` : ""}
+              </Chip>
+            )}
             <Chip tone={workspace.file_error ? "warn" : launchable ? "ok" : "muted"}>
               {workspace.file_error ? "templates broken" : `${launchable} ${launchable === 1 ? "template" : "templates"}`}
             </Chip>
           </span>
         </summary>
         <div className="instances-setup-body">
+          {summary && (
+            <div className="instances-setup-actions">
+              <span className="instances-meta">
+                {summary.archived_at
+                  ? "Archived — listed apart from active workspaces. Its tickets and runs are unaffected."
+                  : "Archiving only moves it to the archived list; tickets, runs and instances are unaffected."}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={archiving}
+                aria-busy={archiving}
+                onClick={() => onArchive(!summary.archived_at)}
+              >
+                {summary.archived_at
+                  ? archiving
+                    ? "Restoring…"
+                    : `Restore ${workspace.name}`
+                  : archiving
+                    ? "Archiving…"
+                    : `Archive ${workspace.name}`}
+              </button>
+            </div>
+          )}
           <WorkspaceIntegrationPanel workspace={workspace} />
           <WorkspaceTemplatesPanel workspace={workspace} />
         </div>

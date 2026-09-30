@@ -77,6 +77,10 @@ class Workspace(SQLModel, table=True):
     # Workspace-wide default; a ticket or any of its ancestors may override it.
     compatibility_posture: str = DEFAULT_COMPATIBILITY_POSTURE.value
     created_at: datetime = Field(default_factory=utcnow)
+    # Set when the operator archives the workspace from the Workspaces page, which
+    # lists it apart from the active ones. Display only: its tickets, runs and
+    # instances are untouched, and restoring clears it.
+    archived_at: datetime | None = None
 
 
 class Cycle(SQLModel, table=True):

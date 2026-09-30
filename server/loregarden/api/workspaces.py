@@ -10,6 +10,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
     WorkspaceTemplateUpdate,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     runtime_options_payload,
@@ -33,28 +34,58 @@ def _template_slug(session: Session, workspace: Workspace) -> str:
     return tpl.slug if tpl else ""
 
 
+def _summary(session: Session, ws: Workspace) -> dict:
+    tickets = session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
+    blocked = sum(1 for t in tickets if t.state == TicketState.BLOCKED)
+    return {
+        "id": ws.id,
+        "slug": ws.slug,
+        "name": ws.name,
+        "repo_path": ws.repo_path,
+        "repo_root": str(resolve_workspace_root(ws)),
+        "repo_exists": workspace_repo_exists(ws),
+        "ticket_count": len(tickets),
+        "blocked_count": blocked,
+        "workflow_template_slug": _template_slug(session, ws),
+        "archived_at": ws.archived_at.isoformat() if ws.archived_at else None,
+        **workspace_cli_settings(ws).__dict__,
+    }
+
+
+def _workspace_or_404(session: Session, slug: str) -> Workspace:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    return ws
+
+
 @router.get("")
 def list_workspaces(session: Session = Depends(get_session)) -> list[dict]:
-    workspaces = session.exec(select(Workspace)).all()
-    result = []
-    for ws in workspaces:
-        tickets = session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
-        blocked = sum(1 for t in tickets if t.state == TicketState.BLOCKED)
-        result.append(
-            {
-                "id": ws.id,
-                "slug": ws.slug,
-                "name": ws.name,
-                "repo_path": ws.repo_path,
-                "repo_root": str(resolve_workspace_root(ws)),
-                "repo_exists": workspace_repo_exists(ws),
-                "ticket_count": len(tickets),
-                "blocked_count": blocked,
-                "workflow_template_slug": _template_slug(session, ws),
-                **workspace_cli_settings(ws).__dict__,
-            }
-        )
-    return result
+    return [_summary(session, ws) for ws in session.exec(select(Workspace)).all()]
+
+
+@router.post("/{slug}/archive")
+def archive_workspace(slug: str, session: Session = Depends(get_session)) -> dict:
+    """List the workspace apart from the active ones. Idempotent; keeps the first date."""
+    ws = _workspace_or_404(session, slug)
+    if ws.archived_at is None:
+        ws.archived_at = utcnow()
+        session.add(ws)
+        session.commit()
+        session.refresh(ws)
+    return _summary(session, ws)
+
+
+@router.post("/{slug}/restore")
+def restore_workspace(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Return an archived workspace to the active list. Idempotent."""
+    ws = _workspace_or_404(session, slug)
+    if ws.archived_at is not None:
+        ws.archived_at = None
+        session.add(ws)
+        session.commit()
+        session.refresh(ws)
+    return _summary(session, ws)
 
 
 @router.get("/runtime-options")

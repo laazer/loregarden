@@ -22,6 +22,7 @@ const mkWorkspace = (): apiClient.WorkspaceSummary => ({
   ticket_count: 0,
   blocked_count: 0,
   workflow_template_slug: '',
+  archived_at: null,
   cli_adapter: '',
   claude_model: '',
   cursor_model: '',

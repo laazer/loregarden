@@ -157,6 +157,7 @@ from loregarden.db.migrations_views import (
     m_view_store,
     m_view_viewport,
 )
+from loregarden.db.migrations_workspace_archive import m_workspace_archived_at
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1416,6 +1417,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0146_instance_templates", m_instance_templates),
     ("0147_ux_purpose_in_design_lanes", m_ux_purpose_in_design_lanes),
     ("0148_chat_message_attachments", m_chat_message_attachments),
+    ("0149_workspace_archived_at", m_workspace_archived_at),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
