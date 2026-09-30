@@ -48,6 +48,9 @@ NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
 #   loregarden_begin_external_stage / _finish_external_stage -> only meaningful on an
 #   orchestration run opened with external_harness set, and they check a real stage out
 #   to a caller outside this process. test_external_harness.py drives both over MCP.
+#   loregarden_read_artifact -> needs the id of a row written earlier in the same run,
+#   which the argument table is built before; test_mcp_documents writes one and reads it.
+NEEDS_A_WRITTEN_ARTIFACT = "loregarden_read_artifact"
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
@@ -227,6 +230,12 @@ def _args_for(
             "title": "smoke artifact",
             "content_json": json.dumps({"lines": []}),
         },
+        "loregarden_write_document": {
+            "ticket_id": ticket_id,
+            "title": "smoke document",
+            "body": "# Smoke\n\nwritten by the MCP smoke test",
+        },
+        "loregarden_list_artifacts": {"ticket_id": ticket_id},
         "loregarden_search_prior_work": {
             "query": "smoke prior work",
             "workspace_slug": "loregarden",
@@ -379,6 +388,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_append_checkpoint",
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
+        "loregarden_write_document",
+        "loregarden_list_artifacts",
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_check_organization",
@@ -414,6 +425,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     exempt = {
         SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
         NEEDS_A_SECOND_WORKSPACE,
+        NEEDS_A_WRITTEN_ARTIFACT,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
     }
     assert set(ordered) | exempt >= advertised, (

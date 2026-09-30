@@ -26,6 +26,9 @@ class McpTool(StrEnum):
     BLOCK_TICKET = "loregarden_block_ticket"
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
+    WRITE_DOCUMENT = "loregarden_write_document"
+    LIST_ARTIFACTS = "loregarden_list_artifacts"
+    READ_ARTIFACT = "loregarden_read_artifact"
     REQUEST_APPROVAL = "loregarden_request_approval"
     COMPLETE_ORCHESTRATION = "loregarden_complete_orchestration"
     UPDATE_TICKET = "loregarden_update_ticket"
@@ -129,6 +132,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.GET_TICKET,
     McpTool.LIST_TICKETS,
     McpTool.ATTACH_ARTIFACT,
+    # The documents its ancestors carry — the architecture and decisions an
+    # initiative or milestone was planned with — are part of a stage's brief.
+    McpTool.LIST_ARTIFACTS,
+    McpTool.READ_ARTIFACT,
     # A stage that must produce evidence needs the tool to record it, or it is
     # blocked with no way to comply.
     McpTool.ATTACH_EVIDENCE,
@@ -167,6 +174,10 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.UNLINK_RELATION,
     McpTool.SEARCH_PRIOR_WORK,
     McpTool.SUPERSEDE_TICKET,
+    # Scoping a brief produces the documents its tickets are planned against.
+    McpTool.WRITE_DOCUMENT,
+    McpTool.LIST_ARTIFACTS,
+    McpTool.READ_ARTIFACT,
 )
 
 # --- Permission-bridge policy (auto-approve vs inbox vs hard deny) ------------
@@ -176,6 +187,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.GET_TICKET,
         McpTool.GET_TICKET_BY_EXTERNAL,
         McpTool.LIST_TICKETS,
+        McpTool.LIST_ARTIFACTS,
+        McpTool.READ_ARTIFACT,
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
@@ -204,6 +217,7 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.CREATE_MEMORY_RELATION,
         McpTool.UPSERT_BLOG_POST,
         McpTool.ATTACH_ARTIFACT,
+        McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
     }

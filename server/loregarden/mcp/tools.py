@@ -22,6 +22,7 @@ from loregarden.mcp.docker_capacity_tool import (
     TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
 )
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
+from loregarden.mcp.document_tools import TOOL_DEFINITIONS as DOCUMENT_TOOL_DEFINITIONS
 from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
@@ -1129,6 +1130,7 @@ TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):
