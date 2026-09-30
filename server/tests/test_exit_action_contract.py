@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 from loregarden.core.workflow_loader import get_template_stages_at_version
 from loregarden.models.domain import (
     ApprovalAction,
@@ -399,3 +400,62 @@ def test_approval_view_serializes_only_structured_human_required_actions():
     payload = approval.model_dump(mode="json")
     assert payload["human_required_actions"] == [action]
     assert payload["allowed_actions"] == ["recheck", "reject"]
+
+
+def test_server_serves_the_requirement_catalog(client: TestClient):
+    """AC-2: the vocabularies come from the server; the client infers nothing."""
+    response = client.get("/api/studio/exit-action-requirements")
+
+    assert response.status_code == 200, response.text
+    catalog = response.json()
+    assert catalog["requirement_kinds"] == [
+        "runtime_capability",
+        "credential",
+        "authority",
+        "operator_judgment",
+    ]
+    for field in ("capability_ids", "credential_keys", "authority_scopes"):
+        assert catalog[field], field
+
+
+def _workflow_with_capability(slug: str, capability_id: str) -> dict:
+    return {
+        "slug": slug,
+        "name": slug,
+        "stages": [
+            {
+                "key": "verify",
+                "name": "Verify",
+                "agent_id": "verifier",
+                "order": 1,
+                "exit_actions_enabled": True,
+                "exit_actions": [
+                    {
+                        "key": "run-smoke",
+                        "label": "Run the smoke test",
+                        "requirement": {
+                            "kind": "runtime_capability",
+                            "capability_id": capability_id,
+                        },
+                    }
+                ],
+            },
+            {"key": "done", "name": "Done", "order": 2, "terminal": True},
+        ],
+    }
+
+
+def test_studio_rejects_an_identifier_outside_the_catalog(client: TestClient):
+    """AC-2: well-shaped but unknown is still unauthorable."""
+    known = client.get("/api/studio/exit-action-requirements").json()["capability_ids"][0]
+
+    rejected = client.post(
+        "/api/studio/workflows", json=_workflow_with_capability("unknown-cap", "no_such_probe")
+    )
+    accepted = client.post(
+        "/api/studio/workflows", json=_workflow_with_capability("known-cap", known)
+    )
+
+    assert 400 <= rejected.status_code < 500, rejected.text
+    assert "no_such_probe" in rejected.text
+    assert accepted.status_code in (200, 201), accepted.text
