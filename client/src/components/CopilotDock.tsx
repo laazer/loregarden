@@ -127,6 +127,13 @@ export function CopilotDock() {
                           ...payload,
                         })
                       }
+                      onRecheck={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "recheck",
+                          ...payload,
+                        })
+                      }
                       onReject={(approval, payload) =>
                         resolveApproval.mutate({
                           id: approval.id,

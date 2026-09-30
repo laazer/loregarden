@@ -277,7 +277,8 @@ def m_verify_stage_in_v3(conn: Connection) -> None:
             "classify_routes": [],
             "parallel_agents": [],
             "gate_commands": [],
-            "gate_required": False,
+            "exit_actions_enabled": False,
+            "exit_actions": [],
             "model": "",
         }
     )
@@ -620,7 +621,8 @@ def m_adversarial_planning(conn: Connection) -> None:
             "classify_routes": [],
             "parallel_agents": [],
             "gate_commands": [],
-            "gate_required": False,
+            "exit_actions_enabled": False,
+            "exit_actions": [],
             "model": "",
         }
     )
@@ -673,7 +675,8 @@ def _terminal_done_stage(order: int) -> dict:
         "classify_routes": [],
         "parallel_agents": [],
         "gate_commands": [],
-        "gate_required": False,
+        "exit_actions_enabled": False,
+        "exit_actions": [],
         "model": "",
     }
 

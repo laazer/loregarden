@@ -11,14 +11,19 @@ from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SkillNotFoundError
 
 
-def _ticket(workspace: Workspace) -> Ticket:
-    return Ticket(
+def _ticket(db_session, workspace: Workspace) -> Ticket:
+    # Persisted: building a dispatch prompt records the run's runtime snapshot,
+    # and foreign keys are enforced, so the run's ticket has to exist.
+    ticket = Ticket(
         title="Missing skill",
         description="",
         external_id="missing-skill",
         workspace_id=workspace.id,
         acceptance_criteria_json="[]",
     )
+    db_session.add(ticket)
+    db_session.commit()
+    return ticket
 
 
 def _stage(skill_name: str) -> WorkflowStageDef:
@@ -34,7 +39,7 @@ def _stage(skill_name: str) -> WorkflowStageDef:
 
 def test_build_prompt_rejects_declared_skill_that_resolves_nowhere(db_session):
     workspace = db_session.query(Workspace).filter_by(slug="loregarden").one()
-    ticket = _ticket(workspace)
+    ticket = _ticket(db_session, workspace)
     run = AgentRun(
         run_code="run_missing_skill",
         ticket_id=ticket.id,
@@ -64,7 +69,7 @@ def test_build_prompt_rejects_declared_skill_that_resolves_nowhere(db_session):
 
 def test_build_prompt_never_emits_empty_skill_block_for_declared_skill(db_session):
     workspace = db_session.query(Workspace).filter_by(slug="loregarden").one()
-    ticket = _ticket(workspace)
+    ticket = _ticket(db_session, workspace)
     run = AgentRun(
         run_code="run_plan_skill",
         ticket_id=ticket.id,
@@ -92,7 +97,7 @@ def test_build_prompt_never_emits_empty_skill_block_for_declared_skill(db_sessio
 
 def test_stage_with_no_skill_emits_no_skill_section(db_session):
     workspace = db_session.query(Workspace).filter_by(slug="loregarden").one()
-    ticket = _ticket(workspace)
+    ticket = _ticket(db_session, workspace)
     run = AgentRun(
         run_code="run_no_skill",
         ticket_id=ticket.id,
@@ -117,7 +122,7 @@ def test_stage_with_no_skill_emits_no_skill_section(db_session):
 
 def test_missing_agent_default_skill_uses_agent_message_prefix(db_session):
     workspace = db_session.query(Workspace).filter_by(slug="loregarden").one()
-    ticket = _ticket(workspace)
+    ticket = _ticket(db_session, workspace)
     run = AgentRun(
         run_code="run_missing_default_skill",
         ticket_id=ticket.id,

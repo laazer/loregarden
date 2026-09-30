@@ -2,8 +2,9 @@
 
 A parent ticket's auto_approve orchestration recurses through its whole
 descendant subtree. The pieces that make that safe live here: the shared
-subtree-wide stage budget, the auto-resolution of standard human gates (with
-an audit trail), and the child ordering for sequential subtree runs.
+subtree-wide stage budget, design-plan gate sign-off when the profile permits
+it (ordinary human-required exit actions are never auto-resolved — AC-6), and
+the child ordering for sequential subtree runs.
 """
 
 from __future__ import annotations
@@ -120,30 +121,6 @@ class SubtreeBudget:
         return f"Paused: subtree-wide stage bound ({self.limit}) reached"
 
 
-def auto_resolve_awaiting_gate(
-    session: Session, ticket: Ticket, orch_run: OrchestrationRun, stage_key: str
-) -> bool:
-    """Auto-resolve a pending WORKFLOW_GATE approval for ``stage_key`` under
-    auto_approve, leaving the audit trail ``ApprovalService.auto_resolve``
-    writes. Returns False (no-op) if there's no such pending approval — in
-    particular this never touches a CLI_QUESTION approval, so an agent's
-    clarifying question still pauses the run even in auto-mode.
-    """
-    approval = session.exec(
-        select(Approval).where(
-            Approval.ticket_id == ticket.id,
-            Approval.stage_key == stage_key,
-            Approval.status == ApprovalStatus.PENDING,
-            Approval.kind == ApprovalKind.WORKFLOW_GATE,
-        )
-    ).first()
-    if not approval:
-        return False
-    ApprovalService(session).auto_resolve(approval.id, orchestration_run_id=orch_run.id)
-    session.refresh(ticket)
-    return True
-
-
 def resolve_gate_if_permitted(
     session: Session,
     ticket: Ticket,
@@ -152,19 +129,34 @@ def resolve_gate_if_permitted(
     *,
     auto_approve: bool,
 ) -> bool:
-    """Auto-resolve the awaiting gate on `stage` when the run is allowed to.
+    """Resolve the awaiting gate on `stage` when the run is allowed to.
 
-    `auto_approve` signs off every gate as it always has. Without it, only a
-    design-plan stage's gate, and only under `approve_design_plans` — recorded
-    as an orchestrator decision so the history says who approved the plan.
-    Returns True when a gate was resolved and the loop may continue.
+    Only design-plan stages under `approve_design_plans`. `auto_approve` never
+    bypasses human-required exit actions (AC-6). Returns True when a gate was
+    resolved and the loop may continue.
     """
     if not orchestrator_may_sign_off(orch_run, stage, auto_approve=auto_approve):
         return False
-    resolved = auto_resolve_awaiting_gate(session, ticket, orch_run, stage.key)
-    if resolved and not auto_approve:
-        record_design_plan_sign_off(session, ticket, orch_run, stage.key)
-    return resolved
+    approval = session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.stage_key == stage.key,
+            Approval.status == ApprovalStatus.PENDING,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+        )
+    ).first()
+    if not approval:
+        return False
+    ApprovalService(session).resolve(approval.id, approved=True)
+    approval = session.get(Approval, approval.id)
+    if approval is not None:
+        approval.resolved_by = "automation"
+        approval.resolving_orchestration_run_id = orch_run.id
+        session.add(approval)
+        session.commit()
+    record_design_plan_sign_off(session, ticket, orch_run, stage.key)
+    session.refresh(ticket)
+    return True
 
 
 def ticket_workflow_complete(orch: OrchestrationService, ticket: Ticket) -> bool:

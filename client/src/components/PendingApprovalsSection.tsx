@@ -29,6 +29,7 @@ export function PendingApprovalsSection({
   submittingApprovalId,
   submitError,
   onApprove,
+  onRecheck,
   onReject,
   variant = "strip",
 }: {
@@ -37,6 +38,7 @@ export function PendingApprovalsSection({
   submittingApprovalId?: string | null;
   submitError?: string | null;
   onApprove: (approval: Approval, payload?: ApprovalResolvePayload) => void;
+  onRecheck?: (approval: Approval, payload?: ApprovalResolvePayload) => void;
   onReject: (approval: Approval, payload?: ApprovalResolvePayload) => void;
   variant?: "strip" | "ask";
 }) {
@@ -65,6 +67,9 @@ export function PendingApprovalsSection({
             compact
             isSubmitting={submittingApprovalId === approval.id}
             onApprove={(payload) => onApprove(approval, payload)}
+            onRecheck={
+              onRecheck ? (payload) => onRecheck(approval, payload) : undefined
+            }
             onReject={(payload) => onReject(approval, payload)}
           />
         </div>

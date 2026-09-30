@@ -4,6 +4,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalAction,
     ApprovalKind,
+    ApprovalResolutionAction,
     ApprovalStatus,
     ArtifactKind,
     Ticket,
@@ -50,8 +51,30 @@ def resolve_approval(
     session: Session = Depends(get_session),
 ) -> dict:
     svc = ApprovalService(session)
-    approved = body.action == "approve"
     try:
+        if body.action == ApprovalResolutionAction.RECHECK:
+            # Snapshot is probed server-side — never body.answers (clients send none,
+            # and a forged answers-shaped snapshot could mark credentials available).
+            result = svc.recheck(approval_id)
+            return {
+                "id": approval_id,
+                "status": "pending",
+                "newly_assigned_action_keys": result.newly_assigned_action_keys,
+            }
+        if body.action == ApprovalResolutionAction.APPROVE:
+            # Grantable authority must schedule a continuation, not mark the stage done.
+            continuation = svc.approve_exit_action_gate(approval_id)
+            if continuation is not None:
+                approval = session.get(Approval, approval_id)
+                status = (
+                    approval.status.value if approval is not None else ApprovalStatus.PENDING.value
+                )
+                return {
+                    "id": approval_id,
+                    "status": status,
+                    "newly_assigned_action_keys": continuation.newly_assigned_action_keys,
+                }
+        approved = body.action == ApprovalResolutionAction.APPROVE
         approval = svc.resolve(
             approval_id,
             approved=approved,
