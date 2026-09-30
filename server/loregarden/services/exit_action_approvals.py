@@ -35,6 +35,7 @@ from loregarden.services.exit_actions import (
     resolve_exit_actions,
 )
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.scheduling import schedule_orchestration
 from sqlmodel import col, select
 
 
@@ -89,11 +90,8 @@ class ExitActionApprovalMixin:
         self.session.commit()
 
     def _schedule_exit_action_continuation(self, approval: Approval, newly_assigned: list[str]):
-        # Lazy import: run_service → cli → permission_bridge → orchestration.
-        from loregarden.services import run_service
-
         if newly_assigned and approval.ticket_id:
-            run_service.schedule_orchestration(
+            schedule_orchestration(
                 approval.ticket_id,
                 stop_at_stage_key=approval.stage_key or None,
                 assigned_exit_action_keys=newly_assigned,

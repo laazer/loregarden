@@ -641,13 +641,10 @@ def execute_orchestration_background(
             if assigned_exit_action_keys:
                 # Continuation after a recheck/authority grant: pin the next
                 # dispatch to the newly executable subset before the loop runs.
-                from loregarden.models.domain import AgentRun as _AgentRun
-                from sqlmodel import select as _select
-
                 run = session.exec(
-                    _select(_AgentRun)
-                    .where(_AgentRun.ticket_id == ticket_id)
-                    .order_by(_AgentRun.created_at.desc())
+                    select(AgentRun)
+                    .where(AgentRun.ticket_id == ticket_id)
+                    .order_by(col(AgentRun.created_at).desc())
                 ).first()
                 if run is not None:
                     run.assigned_exit_action_keys_json = json.dumps(list(assigned_exit_action_keys))

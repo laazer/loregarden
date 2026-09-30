@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services import exit_actions
+from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.orchestration import ApprovalService
 from sqlmodel import Session, select
 
@@ -280,6 +281,29 @@ def test_server_rejects_approve_for_a_recheck_only_gate(db_session: Session):
 
     db_session.refresh(approval)
     assert approval.status == ApprovalStatus.PENDING
+
+
+def test_executable_actions_open_no_gate(db_session: Session):
+    """AC-6/AC-12: capability available, credential available, authority granted —
+    every action goes to the agent, and no approval row is written."""
+    ticket = db_session.exec(select(Ticket)).first()
+    assert ticket is not None
+    stage = _stage(_ACTIONS[:3])
+
+    resolution = exit_actions.resolve_exit_actions(stage, _snapshot())
+    approval = create_workflow_gate_approval(
+        db_session, ticket, "verify", "Verify", stage_def=stage, snapshot=_snapshot()
+    )
+
+    assert resolution.assigned_action_keys == ["run-smoke", "read-usage", "publish-release"]
+    assert resolution.human_required_actions == []
+    assert approval is None
+    assert (
+        db_session.exec(
+            select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "verify")
+        ).all()
+        == []
+    )
 
 
 def test_successful_recheck_schedules_only_newly_satisfied_actions(db_session: Session):

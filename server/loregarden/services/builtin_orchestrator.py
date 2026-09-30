@@ -28,6 +28,7 @@ from loregarden.services.dependency_readiness import (
     UnmetReason,
     unmet_prerequisites_for_start,
 )
+from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -558,10 +559,6 @@ class BuiltinOrchestrator:
             return None
         # Agentless stages with no human-required exit actions are not gates —
         # they complete and advance (AC-5).
-        from loregarden.models.domain import StageStatus
-        from loregarden.services.exit_actions import resolve_exit_actions
-        from loregarden.services.workflow_state import set_stage_status
-
         resolution = resolve_exit_actions(stage_def, None)
         if not resolution.human_required_actions:
             instance, stages = self.orch._resolve_stages(ticket)

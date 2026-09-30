@@ -312,9 +312,8 @@ def _sign_off_design_plan_if_permitted(
 ) -> None:
     """The post-run gate on a design plan, signed off by the run that reached it.
 
-    Same shape as the `auto_approve` pre-resolve above it, narrowed to the
-    design-plan stages and to a parent orchestration started with
-    `approve_design_plans` (746). A standalone run has no orchestrator to sign
+    Narrowed to the design-plan stages and to a parent orchestration started
+    with `approve_design_plans` (746); `auto_approve` alone never signs a gate. A standalone run has no orchestrator to sign
     for it, so its gate waits for a person. Recorded in the history either way.
     """
     if not run.orchestration_run_id:
@@ -325,9 +324,7 @@ def _sign_off_design_plan_if_permitted(
         return
     if not orchestrator_may_sign_off(parent, stage_def, auto_approve=False):
         return
-    from loregarden.services.orchestration import ApprovalService
-
-    ApprovalService(orch.session).resolve(gate_approval.id, approved=True)
+    orch.sign_off_gate_approval(gate_approval)
     record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
 
 

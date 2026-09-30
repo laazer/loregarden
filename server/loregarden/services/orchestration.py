@@ -39,6 +39,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
 from loregarden.services.exit_action_approvals import ExitActionApprovalMixin
+from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
 from loregarden.services.landing import land_before_done
 from loregarden.services.rework_feedback import reset_rework_budget
@@ -705,8 +706,6 @@ class OrchestrationService:
         self, ticket: Ticket, stage_def: WorkflowStageDef, target_key: str
     ) -> None:
         agent_id, _ = resolve_stage_execution(ticket, stage_def)
-        from loregarden.services.exit_actions import resolve_exit_actions
-
         human_actions = resolve_exit_actions(stage_def, None).human_required_actions
         if (agent_id or not is_agentless_stage(stage_def)) and not human_actions:
             raise ValueError(f"Stage '{target_key}' is not a human approval gate")
@@ -748,8 +747,6 @@ class OrchestrationService:
     def _ensure_exit_action_gate_approval(
         self, ticket: Ticket, stage_def: WorkflowStageDef, target_key: str
     ) -> None:
-        from loregarden.services.exit_actions import resolve_exit_actions
-
         human_actions = resolve_exit_actions(stage_def, None).human_required_actions
         template = self.get_template_for_ticket(ticket)
         stage_name = stage_display_name(template, target_key) if template else target_key
@@ -1060,6 +1057,14 @@ class OrchestrationService:
             # way. In the tail it was reachable only when nothing above it
             # failed, and every leaked slot took a lane off the board for good.
             release_execution_slot(self, run)
+
+    def sign_off_gate_approval(self, approval: Approval) -> None:
+        """Approve a workflow gate on the orchestrator's authority.
+
+        Lives here rather than in ``run_completion`` only because ``ApprovalService``
+        is defined in this module; importing it there would close a cycle.
+        """
+        ApprovalService(self.session).resolve(approval.id, approved=True)
 
     def finalize_stage(
         self,
