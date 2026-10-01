@@ -72,7 +72,7 @@ fi
 
 status=0
 for target in "${targets[@]}"; do
-  if [ ! -d "$target/.git" ]; then
+  if [ ! -e "$target/.git" ]; then  # a file, not a directory, in a linked worktree
     echo "skip: $target is not a git repository" >&2
     status=1
     continue

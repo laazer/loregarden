@@ -373,3 +373,25 @@ def test_installer_refuses_a_config_with_no_precommit_commands(tmp_path: Path):
     config = tmp_path / "lefthook.yml"
     config.write_text("pre-push:\n  commands:\n    tests:\n      run: echo t\n")
     assert _install(config) == 1
+
+
+def test_the_shell_installer_accepts_a_linked_worktree(repo: Path, tmp_path: Path):
+    """`.git` is a file in a linked worktree, and `git change-pr` installs into
+    one. A `-d .git` test refused it as "not a git repository"."""
+    (repo / "lefthook.yml").write_text(LEFTHOOK)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "-q", "-b", "side", str(linked))
+    assert (linked / ".git").is_file()
+
+    env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE")}
+    result = subprocess.run(
+        ["bash", str(_ROOT / "scripts" / "install-workspace-hooks.sh"), "--check", str(linked)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    # The first word is the protocol services/workspace_integration parses.
+    assert result.stdout.split(":", 1)[0] == "missing", result.stderr

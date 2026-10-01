@@ -93,6 +93,13 @@ workspace gates. Add, remove or re-flag a gate there and every workspace runs th
 its next commit and its next stage transition. Re-run the installer only when the block itself
 changes or this checkout moves.
 
+**When it does, land it as PRs, not in place.** `task workspace:hooks:pr [-- --gh-user
+<account>]` refreshes every workspace's block on its own branch and opens one PR per repo,
+in a throwaway worktree cut from the remote's default branch. The workspace's checkout is
+never touched — they usually sit on `main` with unrelated uncommitted work. The general form
+is `loregarden git change-pr (--repo <path>… | --all-workspaces) --branch B --title T --
+<command> {worktree}`; a failure keeps the worktree and names it.
+
 ## No silent failures
 
 A failure nobody sees is worse than a crash. This control plane runs agents

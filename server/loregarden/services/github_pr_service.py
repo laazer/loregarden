@@ -13,17 +13,25 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
 
-def run_gh(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+def run_gh(
+    args: list[str], *, cwd: Path, gh_token: str | None = None
+) -> subprocess.CompletedProcess[str]:
     """Shell out to `gh` from `cwd`, with git's repo bindings scrubbed.
 
     `gh` picks its target repository by shelling out to git, so an inherited
     GIT_DIR would open the PR against whatever repo the parent was bound to —
     and `cwd` decides which worktree's branch it reads.
+
+    `gh_token` acts as that account for this call only (`GH_TOKEN`), for a
+    machine whose active `gh` account cannot write to the repository.
     """
+    env = scrubbed_git_env()
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
     return subprocess.run(
         ["gh", *args],
         cwd=cwd,
-        env=scrubbed_git_env(),
+        env=env,
         capture_output=True,
         text=True,
     )
