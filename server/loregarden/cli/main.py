@@ -10,6 +10,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden mcp serve
     loregarden db init
     loregarden sandbox snapshot --into data/sandbox
+    loregarden eval gates --workspace blobert
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from loregarden.cli import init_db, mcp_server, mcp_tools, sandbox
+from loregarden.cli import gate_eval, init_db, mcp_server, mcp_tools, sandbox
 from loregarden.cli.errors import EXIT_ERROR, EXIT_OK, EXIT_USAGE, UsageError
 
 
@@ -40,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     sandbox_group = groups.add_parser("sandbox", help="Copies of production data for UI work.")
     sandbox_commands = sandbox_group.add_subparsers(dest="command", required=True)
     sandbox.register(sandbox_commands)
+
+    eval_group = groups.add_parser("eval", help="Read-only evaluations of agent performance.")
+    eval_commands = eval_group.add_subparsers(dest="command", required=True)
+    gate_eval.register(eval_commands)
 
     return parser
 

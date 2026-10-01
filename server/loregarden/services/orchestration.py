@@ -1124,6 +1124,9 @@ class ApprovalService(ExitActionApprovalMixin):
             raise ValueError("Approval already resolved")
 
         if approved:
+            # Work nobody did is the first refusal; then what the gate's own
+            # actions permit (an empty or unreadable gate permits nothing).
+            self._refuse_gate_that_skips_work(approval, approved=approved)
             self._reject_unsupported_approve(approval)
 
         rework_route_key = route_to_stage_key.strip()
@@ -1140,7 +1143,6 @@ class ApprovalService(ExitActionApprovalMixin):
                 allow_for_stage=allow_for_stage,
             )
 
-        self._refuse_gate_that_skips_work(approval, approved=approved)
         approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
         approval.resolved_at = datetime.now(timezone.utc)
         self.session.add(approval)
@@ -1406,7 +1408,7 @@ class ApprovalService(ExitActionApprovalMixin):
         if resume_now and resume:
             self._resume_orchestration(ticket)
 
-    def _resume_orchestration(self, ticket: Ticket) -> None:
+    def _resume_orchestration(self, ticket: Ticket, *, carry_driver: bool = False) -> None:
         """Carry on after an approval, rather than waiting to be told.
 
         Approving a gate leaves the ticket pointing at a stage ready to run, so
@@ -1421,6 +1423,11 @@ class ApprovalService(ExitActionApprovalMixin):
         `auto_approve` is carried over from the run that reached the gate.
         Resuming without it would silently downgrade an unattended run into one
         that stops at the next tool prompt.
+
+        ``carry_driver`` keeps the harness too, for an exit-action continuation:
+        it continues the stage the previous run was driving, and handing it to
+        the workspace's default driver instead could give it to a harness that
+        is not there. A manual run has no orchestration to carry.
         """
         if find_active_orchestration_run(self.session, ticket.id):
             return
@@ -1430,8 +1437,16 @@ class ApprovalService(ExitActionApprovalMixin):
             .where(OrchestrationRun.ticket_id == ticket.id)
             .order_by(OrchestrationRun.created_at.desc())
         ).first()
+        driver = (
+            previous.driver
+            if carry_driver
+            and previous is not None
+            and previous.driver != OrchestrationDriver.MANUAL_STAGE
+            else None
+        )
         schedule_orchestration(
             ticket.id,
+            driver=driver,
             auto_approve=bool(previous and previous.auto_approve),
             approve_design_plans=previous.approve_design_plans if previous else True,
             auto_repair=previous.auto_repair if previous else True,

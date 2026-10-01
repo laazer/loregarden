@@ -78,6 +78,17 @@ def unknown_migration_ids(engine: Engine, known_ids: set[str]) -> list[str]:
         return sorted(_applied_ids(conn) - known_ids)
 
 
+def pending_migration_ids(engine: Engine, registered: list[str]) -> list[str]:
+    """The registered ids this database has not applied yet, in registry order."""
+    if not str(engine.url).startswith("sqlite"):
+        return []
+    with engine.connect() as conn:
+        _ensure_migrations_table(conn)
+        conn.commit()
+        applied = _applied_ids(conn)
+    return [mid for mid in registered if mid not in applied]
+
+
 def apply_pending(engine: Engine, migrations: list[tuple[str, object]]) -> list[str]:
     """Apply pending migrations in order. Returns the ids that ran this call.
 

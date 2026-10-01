@@ -10,6 +10,8 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    ExitActionGateLedger,
+    StageStatus,
     Ticket,
     WorkflowStageDef,
 )
@@ -17,6 +19,7 @@ from loregarden.services import exit_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.orchestration import ApprovalService
 from sqlmodel import Session, select
+from tests.test_exit_action_inbox import gated_ticket_fixture  # noqa: F401 - pytest fixture
 
 _ACTIONS = [
     {
@@ -89,44 +92,6 @@ def _payload(value):
 def _resolution(stage: WorkflowStageDef, snapshot: dict) -> dict:
     resolver = getattr(exit_actions, "resolve_exit_actions")
     return _payload(resolver(stage, snapshot))
-
-
-@pytest.mark.parametrize("driver", ["builtin_autopilot", "manual_stage", "external_mcp"])
-def test_all_run_drivers_use_the_same_secret_free_runtime_snapshot(driver: str):
-    """AC-4: driver choice cannot change evaluation or persist a credential value."""
-    run = AgentRun(
-        run_code=f"run_{driver}",
-        workspace_id="ws",
-        agent_id="verifier",
-        agent_version=7,
-        stage_key="verify",
-    )
-    capture = getattr(exit_actions, "capture_runtime_snapshot")
-    snapshot = _payload(
-        capture(
-            run=run,
-            driver=driver,
-            adapter="codex",
-            capability_statuses={"http_test_client": "available"},
-            credential_preflight={"claude_profile": "available"},
-            authority_statuses={"release:publish": "granted"},
-        )
-    )
-    persisted = json.loads(run.runtime_exit_action_snapshot_json)
-    snapshot_json = json.dumps(persisted)
-
-    assert "secret" not in snapshot_json.lower()
-    assert "token" not in snapshot_json.lower()
-    assert "password" not in snapshot_json.lower()
-    assert persisted == snapshot
-    assert persisted["run_id"] == run.id
-    assert persisted["agent_version"] == 7
-    assert persisted["adapter"] == "codex"
-    assert _resolution(_stage(_ACTIONS[:3]), snapshot)["assigned_action_keys"] == [
-        "run-smoke",
-        "read-usage",
-        "publish-release",
-    ]
 
 
 def test_resolver_partitions_satisfied_and_human_required_actions():
@@ -306,22 +271,20 @@ def test_executable_actions_open_no_gate(db_session: Session):
     )
 
 
-def test_successful_recheck_schedules_only_newly_satisfied_actions(db_session: Session):
-    """AC-9: recheck resumes execution; it does not complete the underlying action."""
+def test_successful_recheck_schedules_only_newly_satisfied_actions(
+    db_session: Session, gated_ticket: Ticket
+):
+    """AC-9: recheck resumes execution; it does not complete the underlying action.
+
+    The cleared gate closes — it is never left pending and empty for an approve
+    to wave through — and the continuation pin is recorded on it.
+    """
     approval = _recheck_only_approval(db_session)
 
     with (
         patch(
-            "loregarden.services.exit_action_approvals.probe_credentials",
+            "loregarden.services.exit_action_dispatch.probe_credentials",
             return_value={"claude_profile": "available"},
-        ),
-        patch(
-            "loregarden.services.exit_action_approvals.probe_capabilities",
-            return_value={},
-        ),
-        patch(
-            "loregarden.services.exit_action_approvals.probe_authority",
-            return_value={},
         ),
         patch("loregarden.services.run_service.schedule_orchestration") as scheduled,
     ):
@@ -330,13 +293,16 @@ def test_successful_recheck_schedules_only_newly_satisfied_actions(db_session: S
     assert result.newly_assigned_action_keys == ["read-usage"]
     assert result.completed_action_keys == []
     scheduled.assert_called_once()
-    assert scheduled.call_args.kwargs["assigned_exit_action_keys"] == ["read-usage"]
     db_session.refresh(approval)
-    assert approval.status == ApprovalStatus.PENDING
+    assert approval.status == ApprovalStatus.APPROVED
+    ledger = ExitActionGateLedger.model_validate_json(approval.response_json)
+    assert ledger.continuation_action_keys == ["read-usage"]
+    assert ledger.continuation_run_id == ""
 
 
 def test_authority_grant_schedules_execution_without_completing_the_action(
     db_session: Session,
+    gated_ticket: Ticket,
 ):
     """AC-9: granting policy authority resumes the responsible stage."""
     approval = _recheck_only_approval(db_session)
@@ -366,11 +332,14 @@ def test_authority_grant_schedules_execution_without_completing_the_action(
     assert result.newly_assigned_action_keys == ["publish-release"]
     assert result.completed_action_keys == []
     scheduled.assert_called_once()
-    assert scheduled.call_args.kwargs["assigned_exit_action_keys"] == ["publish-release"]
+    db_session.refresh(approval)
+    ledger = ExitActionGateLedger.model_validate_json(approval.response_json)
+    assert ledger.granted_authority_scopes == ["release:publish"]
 
 
 def test_approve_exit_action_gate_grants_authority_instead_of_completing_stage(
     db_session: Session,
+    gated_ticket: Ticket,
 ):
     """AC-9: inbox approve of grantable authority schedules continuation, not stage DONE."""
     approval = _recheck_only_approval(db_session)
@@ -394,7 +363,6 @@ def test_approve_exit_action_gate_grants_authority_instead_of_completing_stage(
 
     ticket = db_session.get(Ticket, approval.ticket_id)
     assert ticket is not None
-    stage_before = ticket.workflow_stage_status
 
     with patch("loregarden.services.run_service.schedule_orchestration") as scheduled:
         result = ApprovalService(db_session).approve_exit_action_gate(approval.id)
@@ -406,4 +374,6 @@ def test_approve_exit_action_gate_grants_authority_instead_of_completing_stage(
     db_session.refresh(approval)
     db_session.refresh(ticket)
     assert approval.status == ApprovalStatus.APPROVED
-    assert ticket.workflow_stage_status == stage_before
+    # Out of AWAITING so the continuation dispatches; not DONE, because the
+    # stage still has to run the action it was granted.
+    assert ticket.workflow_stage_status == StageStatus.PENDING

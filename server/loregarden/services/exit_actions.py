@@ -18,14 +18,12 @@ from loregarden.models.domain import (
     ApprovalResolutionAction,
     AssignedExitAction,
     AuthorityStatus,
-    CliAdapter,
     ExitActionReasonCode,
     ExitActionRequirementCatalog,
     ExitActionRequirementKind,
     ExitActionResolution,
     ExitActionResolutionMode,
     HumanRequiredExitAction,
-    OrchestrationDriver,
     RuntimeAvailability,
     RuntimeExitActionSnapshot,
     StageReportStatus,
@@ -104,35 +102,15 @@ def validate_against_catalog(actions: list[WorkflowExitAction]) -> None:
             )
 
 
-def capture_runtime_snapshot(
-    *,
-    run: AgentRun,
-    driver: OrchestrationDriver,
-    adapter: CliAdapter,
-    capability_statuses: dict[str, RuntimeAvailability] | None = None,
-    credential_preflight: dict[str, RuntimeAvailability] | None = None,
-    authority_statuses: dict[str, AuthorityStatus] | None = None,
-    capability_data_fresh: bool = True,
-) -> RuntimeExitActionSnapshot:
-    """Record what this run's runtime can do, and persist it on the run.
+def record_runtime_snapshot(run: AgentRun, snapshot: RuntimeExitActionSnapshot) -> None:
+    """Persist the snapshot a run was dispatched with, on that run.
 
-    Every driver goes through here, so a built-in, manual, and external-MCP run
-    are evaluated from the same shape of evidence. Only statuses are stored —
-    never the credential material a preflight inspected.
+    Only statuses are stored — never the credential material a preflight
+    inspected. Written once per dispatch: a later recheck observes a fresh
+    snapshot of its own rather than rewriting the record of what was true when
+    this run started.
     """
-    snapshot = RuntimeExitActionSnapshot(
-        run_id=run.id,
-        agent_id=run.agent_id,
-        agent_version=run.agent_version,
-        adapter=adapter,
-        driver=driver,
-        capability_data_fresh=capability_data_fresh,
-        capabilities=capability_statuses or {},
-        credentials=credential_preflight or {},
-        authority=authority_statuses or {},
-    )
-    run.runtime_exit_action_snapshot_json = json.dumps(snapshot.model_dump(mode="json"))
-    return snapshot
+    run.runtime_exit_action_snapshot_json = snapshot.model_dump_json()
 
 
 def _unmet_capability(

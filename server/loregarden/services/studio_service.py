@@ -198,12 +198,15 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     ),
     StudioMcpToolGuide(
         name="loregarden_request_approval",
-        description="Open a human approval inbox item for a stage.",
+        description="Raise the workflow gate for a stage's outstanding exit actions.",
         when_to_use=(
-            "An agentless human gate, or a sign-off after this stage's own run succeeded. "
-            "Not to run a stage (start_stage / begin_external_stage) or waive one (skip_stage)."
+            "A stage whose exit actions still need a person: an agentless gate stage, or an "
+            "agent stage whose run left actions only a person can resolve. Refused when "
+            "nothing is outstanding; a sign-off is an operator_judgment exit action authored "
+            "on the stage. Not to run a stage (start_stage / begin_external_stage) or waive "
+            "one (skip_stage)."
         ),
-        example='tools/call loregarden_request_approval {"run_id": "<run id>", "stage_key": "review", "title": "Deploy to staging?", "impact": "Requires operator approval"}',
+        example='tools/call loregarden_request_approval {"run_id": "<run id>", "stage_key": "playtest"}',
         stage_agent=True,
     ),
     StudioMcpToolGuide(
