@@ -27,16 +27,20 @@ from loregarden.models.domain import (
     EventType,
     ExitActionGateLedger,
     RunStatus,
+    StageStatus,
     Ticket,
     WorkflowStageDef,
 )
+from loregarden.services.exit_action_ledger import outstanding_exit_actions
 from loregarden.services.exit_actions import (
     allowed_resolution_actions,
     resolve_exit_actions,
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
-from loregarden.services.studio_routing import is_agentless_stage
-from sqlmodel import Session, select
+from loregarden.services.studio_routing import is_agentless_stage, ticket_stage_definition
+from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_state import set_stage_status
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -162,3 +166,66 @@ def gate_would_skip_work(session: Session, ticket: Ticket, stage: WorkflowStageD
         "Run it (start_stage; begin_external_stage from an external driver, which "
         "fans out a parallel stage's members) or waive it with a reason (skip_stage)."
     )
+
+
+def request_exit_action_gate(
+    session: Session,
+    ticket: Ticket,
+    stage_key: str,
+    *,
+    title: str = "",
+    impact: str = "",
+) -> Approval:
+    """A gate asked for over MCP, raised from the stage's exit actions — never blank.
+
+    An agent may ask a person to look at a stage, but what the person may do is
+    the resolver's call, not the caller's: the gate lists the stage's
+    outstanding exit actions against the latest successful run, exactly as run
+    completion would have raised it. A stage with nothing outstanding has
+    nothing to approve, and a blank gate is refused rather than opened, because
+    approving one would mark the stage done on no one's evidence.
+    """
+    stage = ticket_stage_definition(session, ticket, stage_key)
+    if stage is None:
+        raise ValueError(f"Unknown stage key: {stage_key}")
+    reason = gate_would_skip_work(session, ticket, stage)
+    if reason:
+        raise ValueError(reason)
+    run = session.exec(
+        select(AgentRun)
+        .where(
+            AgentRun.ticket_id == ticket.id,
+            AgentRun.stage_key == stage.key,
+            AgentRun.status == RunStatus.SUCCEEDED,
+        )
+        .order_by(col(AgentRun.created_at).desc())
+    ).first()
+    outstanding, settled = outstanding_exit_actions(session, run, stage)
+    if not outstanding:
+        raise ValueError(
+            f"Stage '{stage.key}' has no unresolved exit actions, so there is nothing for a "
+            "person to approve. Finish it with complete_stage; a gate lists the exit actions "
+            "a person must resolve."
+        )
+    approval = create_workflow_gate_approval(
+        session,
+        ticket,
+        stage.key,
+        stage.name,
+        stage_def=stage,
+        human_required_actions=outstanding,
+        settled_action_keys=settled,
+        run_id=run.id if run is not None else None,
+        title=title,
+        impact=impact,
+    )
+    if approval is None:
+        raise ValueError(f"Stage '{stage.key}' raised no gate")
+    instance = workflow_instance_for(session, ticket.id)
+    _, stages = resolve_ticket_stages(session, ticket)
+    if instance is not None and stages:
+        set_stage_status(ticket, instance, stages, stage.key, StageStatus.AWAITING)
+        session.add(instance)
+        session.add(ticket)
+        session.commit()
+    return approval
