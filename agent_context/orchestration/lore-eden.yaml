@@ -14,9 +14,9 @@ gates:
   # pylint/shellcheck in python/.venv — the primary checkout's when an agent
   # worktree has none.
   #
-  # The TypeScript gates are loregarden's. lore-eden's load their parser from
-  # gates/node_modules, which an agent worktree does not have, so they would
-  # refuse every TypeScript change; loregarden's resolve it from this checkout.
+  # The TypeScript gates are lore-eden's own too. They load their parser from
+  # gates/node_modules — the primary checkout's when an agent worktree has none
+  # (laazer/lore-eden#62).
   #
   # Not here: the Ruff/Pylint growth filters take file lists, not --scope, and
   # ruff-policy.sh needs ruff from the worktree's own venv. Both run in
@@ -31,9 +31,9 @@ gates:
     - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/sh_shellcheck_check.py --repo {workspace_root} --scope worktree
     - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/data_format_check.py --repo {workspace_root} --scope worktree
     - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/gate_coverage_check.py --repo {workspace_root}
-    - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
-    - node {loregarden_root}/.lefthook/scripts/ts_no_silent_failures_check.cjs --repo {workspace_root} --scope worktree
-    - node {loregarden_root}/.lefthook/scripts/ts_ux_states_check.cjs --repo {workspace_root} --scope worktree
+    - node {workspace_root}/gates/lore_eden_gates/ts_organization_check.cjs --repo {workspace_root} --scope worktree
+    - node {workspace_root}/gates/lore_eden_gates/ts_no_silent_failures_check.cjs --repo {workspace_root} --scope worktree
+    - node {workspace_root}/gates/lore_eden_gates/ts_ux_states_check.cjs --repo {workspace_root} --scope worktree
 subagents:
   spawn_via: external
 callbacks:
