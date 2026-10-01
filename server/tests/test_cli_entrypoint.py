@@ -42,6 +42,7 @@ def test_every_console_script_resolves_to_a_callable(target):
         ["mcp", "call", "loregarden_get_ticket"],
         ["mcp", "serve"],
         ["db", "init", "--empty"],
+        ["local_main"],
     ],
 )
 def test_every_subcommand_parses_and_binds_a_runner(argv):
