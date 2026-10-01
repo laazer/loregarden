@@ -58,7 +58,25 @@ STAGES = [
     WorkflowStageDef(
         key="ac_gate", name="AC gate", order=4, stage_type="gate", agent_id="ac_gatekeeper"
     ),
-    WorkflowStageDef(key="playtest", name="Playtest", order=5),  # a person is the stage
+    # A person is the stage: an agentless stage gates by authoring an action for them.
+    WorkflowStageDef.model_validate(
+        {
+            "key": "playtest",
+            "name": "Playtest",
+            "order": 5,
+            "exit_actions_enabled": True,
+            "exit_actions": [
+                {
+                    "key": "legacy-stage-sign-off",
+                    "label": "Approve Playtest completion",
+                    "requirement": {
+                        "kind": "operator_judgment",
+                        "decision_prompt": "Approve completion of stage 'Playtest'.",
+                    },
+                }
+            ],
+        }
+    ),
     WorkflowStageDef(key="done", name="Done", order=6, terminal=True),
 ]
 
@@ -131,6 +149,17 @@ def test_every_shape_names_its_next_primitive(db_session, ticket):
     assert "nothing runs" in shapes["done"]
 
 
+def test_an_agentless_stage_with_no_exit_actions_is_not_called_a_gate(db_session, ticket):
+    """No agent is not, by itself, a reason to ask a person (AC-5)."""
+    bare = WorkflowStageDef(key="notes", name="Notes", order=7)
+
+    line = describe_stage_shape(db_session, ticket, bare)
+
+    assert "not a human gate" in line
+    assert "complete_stage" in line
+    assert "request_approval" not in line
+
+
 def test_the_shape_says_what_has_run(db_session, ticket):
     assert "none has run" in describe_stage_shape(db_session, ticket, _stage("spec"))
 
@@ -148,7 +177,9 @@ def test_the_shape_says_what_has_run(db_session, ticket):
 
     line = describe_stage_shape(db_session, ticket, _stage("spec"))
     assert "1 succeeded run" in line
-    assert "request_approval" in line  # a sign-off is now an honest move
+    assert "complete_stage" in line
+    # A sign-off is an authored exit action now; request_approval only re-raises one.
+    assert "request_approval" not in line
 
 
 def test_get_ticket_carries_the_current_stage_shape(db_session, ticket):
