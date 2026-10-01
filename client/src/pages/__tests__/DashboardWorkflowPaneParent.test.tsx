@@ -37,6 +37,7 @@ function mockTicket(over: Partial<apiClient.TicketDetail> = {}): apiClient.Ticke
     title: 'Child Ticket',
     description: '',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 2,
     workspace_slug: 'loregarden',

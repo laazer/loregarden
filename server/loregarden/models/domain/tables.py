@@ -182,6 +182,8 @@ class Ticket(SQLModel, table=True):
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
     acceptance_criteria_json: str = "[]"
+    #: The criteria an operator has ticked off, by text (services.acceptance_criteria).
+    checked_criteria_json: str = "[]"
     #: Free-form labels, a JSON array of strings (see services.ticket_tags for the
     #: one place they are normalized). Not a table: tags carry no attributes of
     #: their own and are only ever read alongside the ticket that owns them.

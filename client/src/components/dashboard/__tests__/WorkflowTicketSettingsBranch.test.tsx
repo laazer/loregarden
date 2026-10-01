@@ -26,6 +26,7 @@ const mkTicket = (): apiClient.TicketDetail => ({
   title: 'Branch field',
   description: '',
   acceptance_criteria: [],
+  checked_acceptance_criteria: [],
   state: 'in_progress',
   priority: 1,
   workspace_slug: 'loregarden',

@@ -11,7 +11,8 @@ until agents learned to pass `--allow-stale` past it.
 
 The rule: from a linked worktree, a migration may be applied to the primary
 checkout's database only once `origin/main` ships it. The primary checkout
-itself, sandboxes, test databases and anything main already has are untouched.
+itself, sandboxes, test databases and anything main already has are untouched;
+so is anything inside the worktree, which can itself sit inside the primary.
 A ledger this cannot read refuses too — guessing "shipped" is the failure this
 exists to stop.
 """
@@ -70,9 +71,14 @@ def assert_may_migrate(database: Path | None, pending: list[str], *, code_root: 
     if not pending or database is None:
         return
     primary = primary_checkout(code_root)
-    if primary == code_root.resolve():
+    worktree = code_root.resolve()
+    if primary == worktree:
         return
-    if not database.resolve().is_relative_to(primary):
+    target = database.resolve()
+    # Claude Code nests worktrees inside the primary (`.claude/worktrees/<name>`),
+    # so a path under the primary is not enough to call it live: the worktree's
+    # own files, such as the `task sandbox` copy in its data/, are the branch's.
+    if not target.is_relative_to(primary) or target.is_relative_to(worktree):
         return
     unshipped = [mid for mid in pending if mid not in shipped_migration_ids(code_root)]
     if not unshipped:

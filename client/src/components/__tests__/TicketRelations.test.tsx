@@ -23,6 +23,7 @@ function mockTicket(over: Partial<apiClient.TicketDetail> = {}): apiClient.Ticke
     title: 'Main',
     description: '',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 2,
     workspace_slug: 'loregarden',

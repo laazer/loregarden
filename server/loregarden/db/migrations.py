@@ -140,6 +140,7 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_criteria_checks import m_ticket_criteria_checked
 from loregarden.db.migrations_ticket_ids import (
     m_structured_ticket_ids,
     m_unique_ticket_number,
@@ -1428,6 +1429,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0138_runtime_exit_actions", m_runtime_exit_actions),
     ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
     ("0150_workspace_archived_at", m_workspace_archived_at),
+    ("0151_ticket_criteria_checked", m_ticket_criteria_checked),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

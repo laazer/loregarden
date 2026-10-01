@@ -287,6 +287,7 @@ function gateTicket(overrides?: Partial<TicketDetail>): TicketDetail {
     child_count: 0,
     description: "",
     acceptance_criteria: ["Diff reviewed", "CI green"],
+    checked_acceptance_criteria: [],
     revision: 1,
     last_updated_by: "baxter",
     current_stage_agent: "",
