@@ -25,6 +25,17 @@
  *      empty case. Zero rows and a blank pane are the same picture, and the
  *      user cannot tell "none yet" from "it broke".
  *
+ * 5–8 make a surface drivable by an agent granted permission to operate it,
+ * which reads the accessibility tree, acts by role and name, and reads state
+ * back to confirm the action landed:
+ *   5. A field (input, select, textarea, contentEditable, field role) with no
+ *      label, and a contentEditable with no role.
+ *   6. A widget role without its state attribute, aria-haspopup without
+ *      aria-expanded, or a click handler flipping a boolean that exposes none.
+ *   7. Hover with no focus equivalent; a drag source with no key handler; a drop
+ *      zone with no other way in.
+ *   8. A <canvas> that takes input — its targets exist only as pixels.
+ *
  * A case that is genuinely fine says so on the line, with a reason:
  *
  *     <div onClick={close} /> {/* ux-ok: backdrop; Esc closes and the dialog traps focus *\/}
@@ -469,6 +480,380 @@ function missingEmptyStateErrors(filePath, ast, lines, added, comments, content)
   return found;
 }
 
+// --------------------------------------------------------------------------- //
+// 5–8: drivable by an agent.
+//
+// An agent operating the app — a browser tool, an MCP-driven test, anything
+// granted permission to act — reads the accessibility tree, finds a control by
+// role and name, reads its state, and clicks or types. It does not see pixels it
+// can trust, it cannot reliably hover or drag, and a canvas is one opaque node.
+// Checks 1 and 2 already demand a name and keyboard reach; these demand the rest
+// of what that reader needs. A person on a screen reader needs exactly the same.
+// --------------------------------------------------------------------------- //
+
+// Inputs the browser names from their own attributes (`value`, `alt`), or that
+// are not in the tree at all.
+const SELF_NAMED_INPUT_TYPES = new Set(["hidden", "submit", "button", "reset", "image"]);
+
+// Roles that make an element a field someone types into or sets a value on.
+const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox", "slider", "spinbutton"]);
+
+// A widget role is a promise that the widget reports where it is. Without the
+// attribute a reader sees "tab" and cannot tell which one is open, or "switch"
+// and cannot tell whether it is on — so it cannot tell whether a click worked.
+const ROLE_STATE_ATTRS = new Map([
+  ["checkbox", ["aria-checked"]],
+  ["switch", ["aria-checked"]],
+  ["radio", ["aria-checked"]],
+  ["menuitemcheckbox", ["aria-checked"]],
+  ["menuitemradio", ["aria-checked"]],
+  ["tab", ["aria-selected"]],
+  ["option", ["aria-selected"]],
+  ["combobox", ["aria-expanded"]],
+  ["slider", ["aria-valuenow"]],
+  ["spinbutton", ["aria-valuenow"]],
+]);
+
+// Any of these lets a toggle say which way it is set.
+const TOGGLE_STATE_ATTRS = ["aria-pressed", "aria-expanded", "aria-checked", "aria-selected"];
+
+// Rows of a composite widget: hovering one moves the highlight, and the widget
+// already moves it from the keyboard (arrows, aria-activedescendant). The hover
+// is a pointer convenience, not the only way to the row.
+const HOVER_EXEMPT_ROLES = new Set([
+  "option",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "row",
+  "gridcell",
+  "treeitem",
+]);
+
+const HOVER_ATTRS = ["onMouseEnter", "onMouseOver"];
+const FOCUS_ATTRS = ["onFocus", "onFocusCapture"];
+const KEY_ATTRS = ["onKeyDown", "onKeyUp", "onKeyPress"];
+
+// Handlers that make a canvas something you operate rather than something you look at.
+const CANVAS_INPUT_ATTR = /^on(?:Click|DoubleClick|Pointer\w+|Mouse\w+|Touch\w+|Wheel|Key\w+|Drag\w*|Drop)$/;
+const CANVAS_LISTENER = /\.addEventListener\(\s*["'`](?:click|dblclick|pointer\w+|mouse\w+|touch\w+|wheel|key\w+|drag\w*|drop)["'`]/;
+
+/** Like `walk`, but hands each node the JSX elements that enclose it. */
+function walkElements(node, visit, ancestors = []) {
+  if (!node || typeof node.type !== "string") return;
+  const isElement = node.type === "JSXElement";
+  if (isElement) visit(node, ancestors);
+  const next = isElement ? [...ancestors, node] : ancestors;
+  for (const key of Object.keys(node)) {
+    if (key === "parent" || key === "loc") continue;
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const child of value) walkElements(child, visit, next);
+    } else if (value && typeof value.type === "string") {
+      walkElements(value, visit, next);
+    }
+  }
+}
+
+/** The attribute node itself, or null — for when presence and value both matter. */
+function attributeNode(opening, wanted) {
+  for (const attr of opening.attributes || []) {
+    if (attr.type === "JSXSpreadAttribute") continue;
+    if (attr.name && attr.name.name === wanted) return attr;
+  }
+  return null;
+}
+
+/** `false` only for an attribute written as literally false; present-and-unknown is true. */
+function attributeIsOn(opening, wanted) {
+  const attr = attributeNode(opening, wanted);
+  if (!attr) return false;
+  const value = attr.value;
+  if (!value) return true;
+  if (value.type === "Literal") return value.value !== "false" && value.value !== false;
+  if (value.type === "JSXExpressionContainer" && value.expression.type === "Literal") {
+    return value.expression.value !== false && value.expression.value !== "false";
+  }
+  return true;
+}
+
+/** Every literal `htmlFor`, and whether any is computed — the ids a <label> points at. */
+function labelTargets(ast) {
+  const literal = new Set();
+  let computed = false;
+  walk(ast, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const attr = attributeNode(node, "htmlFor");
+    if (!attr) return;
+    if (attr.value && attr.value.type === "Literal") literal.add(attr.value.value);
+    else computed = true;
+  });
+  return { literal, computed };
+}
+
+/** Whether a <label htmlFor> in this file can be pointing at this element's id. */
+function labelledById(opening, targets) {
+  const attr = attributeNode(opening, "id");
+  if (!attr) return false;
+  if (targets.computed) return true;
+  if (attr.value && attr.value.type === "Literal") return targets.literal.has(attr.value.value);
+  // A computed id with only literal htmlFors may still match; the gate cannot tell.
+  return targets.literal.size > 0;
+}
+
+/** What kind of field this element is, or "" when it is not one. */
+function fieldKind(node) {
+  const opening = node.openingElement;
+  const name = elementName(opening);
+  if (name === "input") {
+    return SELF_NAMED_INPUT_TYPES.has(attributeValue(opening, "type")) ? "" : "input";
+  }
+  if (name === "select" || name === "textarea") return name;
+  if (isIntrinsic(name) && attributeIsOn(opening, "contentEditable")) return "contentEditable";
+  if (FIELD_ROLES.has(attributeValue(opening, "role"))) return `role="${attributeValue(opening, "role")}"`;
+  return "";
+}
+
+/**
+ * 5. A field nothing names.
+ *
+ * `form_input` and `find` locate a field by its name. An input with only a
+ * placeholder has a hint that disappears on the first keystroke, and one with
+ * nothing has no handle at all — the agent is left guessing by position, and so
+ * is everyone else who cannot see the layout.
+ */
+function unlabelledFieldErrors(filePath, ast, lines, added, comments) {
+  const targets = labelTargets(ast);
+  const found = [];
+  walkElements(ast, (node, ancestors) => {
+    const kind = fieldKind(node);
+    if (!kind) return;
+
+    const start = node.loc.start.line;
+    const end = node.openingElement.loc.end.line;
+    if (!spanTouched(added, start, end)) return;
+    if (spanWaived(lines, start, end, comments)) return;
+
+    const opening = node.openingElement;
+    const { names, hasSpread } = attributeNames(opening);
+    if (hasSpread) return;
+
+    const named =
+      [...NAMING_ATTRS].some((attr) => names.has(attr)) ||
+      ancestors.some((el) => elementName(el.openingElement) === "label") ||
+      labelledById(opening, targets);
+
+    if (!named) {
+      found.push(
+        `${filePath}:${start}: <${elementName(opening)}> (${kind}) has no label — no ` +
+          `aria-label, no aria-labelledby, no wrapping <label>, no <label htmlFor> pointing ` +
+          `at its id; an agent or screen reader cannot find it by name; label it`,
+      );
+    }
+    if (kind === "contentEditable" && !names.has("role")) {
+      found.push(
+        `${filePath}:${start}: <${elementName(opening)} contentEditable> has no role — it ` +
+          `reaches the accessibility tree as a generic element, not a field; add ` +
+          `role="textbox" (and aria-multiline when it takes more than one line)`,
+      );
+    }
+  });
+  return found;
+}
+
+/** Local `const name = () => …` bodies, so `onClick={toggle}` can be read through. */
+function localFunctions(ast) {
+  const bodies = new Map();
+  walk(ast, (node) => {
+    if (node.type === "VariableDeclarator" && node.id && node.id.type === "Identifier") {
+      const init = node.init;
+      if (init && (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")) {
+        bodies.set(node.id.name, init);
+      }
+    }
+    if (node.type === "FunctionDeclaration" && node.id) bodies.set(node.id.name, node);
+  });
+  return bodies;
+}
+
+/** `!x`, or `(x) => !x` — the argument a setter gets when it is flipping a boolean. */
+function isNegation(arg) {
+  if (!arg) return false;
+  if (arg.type === "UnaryExpression" && arg.operator === "!") return true;
+  if (arg.type === "ArrowFunctionExpression") {
+    const body = arg.body;
+    if (body.type === "UnaryExpression" && body.operator === "!") return true;
+    if (body.type === "BlockStatement") {
+      const last = body.body[body.body.length - 1];
+      return Boolean(last && last.type === "ReturnStatement" && isNegation(last.argument));
+    }
+  }
+  return false;
+}
+
+/** Whether a handler flips a piece of boolean state: `setOpen(!open)`, `setOpen((o) => !o)`. */
+function handlerToggles(handler, functions) {
+  let fn = handler;
+  if (fn && fn.type === "Identifier") fn = functions.get(fn.name);
+  if (!fn) return false;
+  let toggles = false;
+  walk(fn, (node) => {
+    if (node.type !== "CallExpression" || node.callee.type !== "Identifier") return;
+    if (/^set[A-Z]/.test(node.callee.name) && isNegation(node.arguments[0])) toggles = true;
+  });
+  return toggles;
+}
+
+/**
+ * 6. A widget that does not say what state it is in.
+ *
+ * An agent that clicks a tab, a switch, or a disclosure button verifies the
+ * click by reading the state back. With no aria-selected / aria-checked /
+ * aria-expanded / aria-pressed there is nothing to read: the click may have
+ * worked, and nothing in the tree says so.
+ */
+function widgetStateErrors(filePath, ast, lines, added, comments) {
+  const functions = localFunctions(ast);
+  const found = [];
+  walk(ast, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const { names, hasSpread } = attributeNames(node);
+    if (hasSpread) return;
+
+    const start = node.loc.start.line;
+    const end = node.loc.end.line;
+    if (!spanTouched(added, start, end)) return;
+    if (spanWaived(lines, start, end, comments)) return;
+
+    const name = elementName(node);
+    // A native checkbox or radio reports `checked` itself, whatever its role says.
+    const nativeState =
+      name === "input" && ["checkbox", "radio"].includes(attributeValue(node, "type"));
+    if (nativeState) return;
+
+    const role = attributeValue(node, "role");
+    const required = ROLE_STATE_ATTRS.get(role);
+    if (required && !required.some((attr) => names.has(attr))) {
+      found.push(
+        `${filePath}:${start}: role="${role}" without ${required.join("/")} — a reader sees ` +
+          `the ${role} but not whether it is selected, checked or open, so it cannot confirm a ` +
+          `click landed; set ${required.join("/")} from the same state the styling reads`,
+      );
+      return;
+    }
+
+    if (names.has("aria-haspopup") && !names.has("aria-expanded")) {
+      found.push(
+        `${filePath}:${start}: aria-haspopup without aria-expanded — a reader is told this ` +
+          `opens something, never whether it is open; add aria-expanded`,
+      );
+      return;
+    }
+
+    const onClick = attributeNode(node, "onClick");
+    if (!onClick || !onClick.value || onClick.value.type !== "JSXExpressionContainer") return;
+    if (TOGGLE_STATE_ATTRS.some((attr) => names.has(attr))) return;
+    if (!handlerToggles(onClick.value.expression, functions)) return;
+
+    found.push(
+      `${filePath}:${start}: <${name}> flips state on click but exposes none of ` +
+        `${TOGGLE_STATE_ATTRS.join(", ")} — the toggle looks identical on and off to an ` +
+        `agent or screen reader; add aria-expanded for show/hide, aria-pressed for on/off`,
+    );
+  });
+  return found;
+}
+
+/**
+ * 7. An action behind a hover, or behind a drag.
+ *
+ * Pointer automation can hover, but it has to know to, and a keyboard cannot at
+ * all; whatever onMouseEnter reveals must also be revealed on focus. A drag is
+ * worse — synthesised drag events are unreliable across every driver, and HTML5
+ * drag-and-drop has no keyboard path — so a drag source needs a key handler that
+ * does the same move, and a drop zone for outside data needs a control that takes
+ * the same input.
+ */
+function pointerOnlyErrors(filePath, ast, lines, added, comments, content) {
+  const hasDragSource = /\bonDragStart\b/.test(content);
+  const hasFileInput = /type\s*=\s*["']file["']/.test(content);
+  const found = [];
+  walk(ast, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const { names, hasSpread } = attributeNames(node);
+    if (hasSpread) return;
+
+    const start = node.loc.start.line;
+    const end = node.loc.end.line;
+    if (!spanTouched(added, start, end)) return;
+    if (spanWaived(lines, start, end, comments)) return;
+
+    const name = elementName(node);
+    const role = attributeValue(node, "role");
+
+    const hover = HOVER_ATTRS.find((attr) => names.has(attr));
+    if (hover && !HOVER_EXEMPT_ROLES.has(role) && !FOCUS_ATTRS.some((attr) => names.has(attr))) {
+      found.push(
+        `${filePath}:${start}: <${name} ${hover}> with no onFocus — whatever the hover ` +
+          `reveals, a keyboard cannot reach and an agent has to guess to hover for; do the ` +
+          `same on focus (and undo it on blur)`,
+      );
+    }
+
+    const dragSource = names.has("onDragStart") || (names.has("draggable") && attributeIsOn(node, "draggable"));
+    if (dragSource && !KEY_ATTRS.some((attr) => names.has(attr))) {
+      found.push(
+        `${filePath}:${start}: <${name}> can be dragged but has no key handler — drag is ` +
+          `the only way to move it, and neither a keyboard nor an agent can drag reliably; ` +
+          `add onKeyDown doing the same move, or a control that does, and waive naming it`,
+      );
+    }
+
+    if (names.has("onDrop") && !hasDragSource && !hasFileInput) {
+      found.push(
+        `${filePath}:${start}: <${name} onDrop> takes dropped data, and nothing in this file ` +
+          `takes the same input another way — add an <input type="file"> beside it, or waive ` +
+          `with 'ux-ok:' naming the component that does (paste is no alternative: an agent ` +
+          `cannot paste a file)`,
+      );
+    }
+  });
+  return found;
+}
+
+/**
+ * 8. A canvas you operate.
+ *
+ * A canvas is one node in the accessibility tree; everything drawn inside it is
+ * pixels. Once it takes clicks, drags or keys, its targets exist for a mouse and
+ * for nothing else — an agent can only click coordinates it read off a
+ * screenshot, and verify nothing. The actions need DOM controls: buttons laid
+ * over it, or a list beside it, that do the same thing.
+ */
+function interactiveCanvasErrors(filePath, ast, lines, added, comments, content) {
+  const listens = CANVAS_LISTENER.test(content);
+  const found = [];
+  walk(ast, (node) => {
+    if (node.type !== "JSXOpeningElement" || elementName(node) !== "canvas") return;
+    const { names } = attributeNames(node);
+    const handler = [...names].find((attr) => CANVAS_INPUT_ATTR.test(attr));
+    if (!handler && !(listens && names.has("ref"))) return;
+
+    const start = node.loc.start.line;
+    const end = node.loc.end.line;
+    if (!spanTouched(added, start, end)) return;
+    if (spanWaived(lines, start, end, comments)) return;
+
+    found.push(
+      `${filePath}:${start}: <canvas> takes input (${handler || "addEventListener on its ref"}) ` +
+        `— what it draws is invisible to the accessibility tree, so an agent can neither find ` +
+        `nor verify its targets; expose each action as a DOM control, then waive with ` +
+        `'ux-ok:' naming where those controls are`,
+    );
+  });
+  return found;
+}
+
 /** A waiver too thin to have been thought about is itself the finding. */
 function shortWaiverErrors(filePath, lines, added, comments) {
   const found = [];
@@ -520,6 +905,10 @@ for (const filePath of args) {
   errors.push(...keyboardUnreachableErrors(filePath, ast, lines, added, comments));
   errors.push(...backdropWithoutEscapeErrors(filePath, ast, lines, added, comments, content));
   errors.push(...missingEmptyStateErrors(filePath, ast, lines, added, comments, content));
+  errors.push(...unlabelledFieldErrors(filePath, ast, lines, added, comments));
+  errors.push(...widgetStateErrors(filePath, ast, lines, added, comments));
+  errors.push(...pointerOnlyErrors(filePath, ast, lines, added, comments, content));
+  errors.push(...interactiveCanvasErrors(filePath, ast, lines, added, comments, content));
   errors.push(...shortWaiverErrors(filePath, lines, added, comments));
 }
 

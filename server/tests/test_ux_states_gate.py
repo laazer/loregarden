@@ -288,7 +288,7 @@ def test_select_options_are_not_a_missing_empty_state(repo: Path):
         "A.tsx",
         "export const A = () => {\n"
         "  const ws = useQuery(k, f).data ?? [];\n"
-        "  return <select>{ws.map((w) => <option key={w.slug}>{w.name}</option>)}</select>;\n"
+        "  return <select aria-label='Workspace'>{ws.map((w) => <option key={w.slug}>{w.name}</option>)}</select>;\n"
         "};\n",
     )
     result = _run(repo)
@@ -425,3 +425,281 @@ def test_an_untracked_file_is_read_under_worktree_scope(repo: Path):
     result = _run(repo, scope="worktree")
     assert result.returncode == 1
     assert "New.tsx" in _findings(result)
+
+
+# --------------------------------------------------------------------------- #
+# 5. a field nothing names — `form_input`/`find` locate fields by name
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "<input value={v} onChange={set} />",
+        '<input placeholder="Search…" value={v} onChange={set} />',
+        "<select value={v} onChange={set}>{opts}</select>",
+        "<textarea value={v} onChange={set} />",
+        '<div role="textbox" contentEditable aria-multiline="true" />',
+        '<div role="slider" aria-valuenow={3} tabIndex={0} />',
+    ],
+)
+def test_an_unlabelled_field_is_reported(repo: Path, field: str):
+    """A placeholder is a hint that vanishes on the first keystroke, not a name."""
+    _write(repo, "A.tsx", f"export const A = () => {field};\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "has no label" in _findings(result)
+
+
+def test_a_sibling_div_styled_as_a_label_is_not_a_label(repo: Path):
+    """The shape that accounts for most of the client: it reads as labelled and is not."""
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => (\n  <div>\n    <div className="field-label">Type</div>\n'
+        "    <select value={v} onChange={set}>{opts}</select>\n  </div>\n);\n",
+    )
+    assert "has no label" in _findings(_run(repo))
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<input aria-label="Search" />',
+        '<input aria-labelledby="h" />',
+        '<input title="Search" />',
+        "<label>Search <input /></label>",
+        '<><label htmlFor="q">Search</label><input id="q" /></>',
+        "<><label htmlFor={id}>Search</label><input id={id} /></>",
+        "<input {...field} />",
+        '<input type="hidden" name="t" />',
+        '<input type="submit" value="Save" />',
+    ],
+)
+def test_a_labelled_or_self_named_field_passes(repo: Path, markup: str):
+    _write(repo, "A.tsx", f"export const A = () => {markup};\n")
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_a_label_pointing_elsewhere_does_not_name_the_field(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <><label htmlFor="a">A</label><input id="b" /></>;\n',
+    )
+    assert "has no label" in _findings(_run(repo))
+
+
+def test_a_content_editable_region_needs_a_role_as_well_as_a_name(repo: Path):
+    _write(repo, "A.tsx", 'export const A = () => <div contentEditable aria-label="Notes" />;\n')
+    result = _run(repo)
+    assert result.returncode == 1
+    findings = _findings(result)
+    assert "has no role" in findings
+    assert "has no label" not in findings
+
+
+def test_content_editable_false_is_not_a_field(repo: Path):
+    _write(repo, "A.tsx", "export const A = () => <div contentEditable={false}>x</div>;\n")
+    assert _run(repo).returncode == 0
+
+
+# --------------------------------------------------------------------------- #
+# 6. a widget that does not say what state it is in
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("role", "attr"),
+    [
+        ("tab", "aria-selected"),
+        ("option", "aria-selected"),
+        ("switch", "aria-checked"),
+        ("checkbox", "aria-checked"),
+        ("radio", "aria-checked"),
+        ("menuitemradio", "aria-checked"),
+        ("combobox", "aria-expanded"),
+    ],
+)
+def test_a_widget_role_without_its_state_is_reported(repo: Path, role: str, attr: str):
+    _write(
+        repo, "A.tsx", f'export const A = () => <button role="{role}" aria-label="X">X</button>;\n'
+    )
+    result = _run(repo)
+    assert result.returncode == 1
+    assert f'role="{role}" without {attr}' in _findings(result)
+
+    _write(
+        repo,
+        "A.tsx",
+        f'export const A = () => <button role="{role}" aria-label="X" {attr}={{on}}>X</button>;\n',
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_a_native_checkbox_reports_its_own_state(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <label><input type="checkbox" role="switch" checked={on} />'
+        " On</label>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_a_popup_button_must_say_whether_it_is_open(repo: Path):
+    _write(repo, "A.tsx", 'export const A = () => <button aria-haspopup="menu">More</button>;\n')
+    assert "aria-haspopup without aria-expanded" in _findings(_run(repo))
+
+
+@pytest.mark.parametrize(
+    "handler",
+    ["() => setOpen(!open)", "() => setOpen((o) => !o)", "toggle"],
+)
+def test_a_button_that_flips_state_must_expose_it(repo: Path, handler: str):
+    """`toggle` is read through to its local definition."""
+    body = (
+        "const toggle = () => setOpen((o) => { return !o; });\n"
+        f"export const A = () => <button onClick={{{handler}}}>Details</button>;\n"
+    )
+    _write(repo, "A.tsx", body)
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "flips state on click" in _findings(result)
+
+    _write(repo, "A.tsx", body.replace("<button ", "<button aria-expanded={open} "))
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_a_setter_that_does_not_negate_is_not_a_toggle(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = () => <button onClick={() => setOpen(true)}>Open</button>;\n",
+    )
+    assert _run(repo).returncode == 0
+
+
+# --------------------------------------------------------------------------- #
+# 7. an action behind a hover, or behind a drag
+# --------------------------------------------------------------------------- #
+
+
+def test_hover_without_focus_is_reported(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = () => <nav onMouseEnter={show} onMouseLeave={hide}>x</nav>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "with no onFocus" in _findings(result)
+
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = () => <nav onMouseEnter={show} onFocus={show} onBlur={hide}>x</nav>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_hovering_a_listbox_row_is_not_the_only_way_to_it(repo: Path):
+    """The listbox moves the highlight from the keyboard already."""
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <button role="option" aria-selected={a} '
+        "onMouseEnter={hl}>x</button>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+@pytest.mark.parametrize("attrs", ["draggable", "draggable={canDrag}", "onDragStart={grab}"])
+def test_a_drag_source_without_a_key_handler_is_reported(repo: Path, attrs: str):
+    _write(repo, "A.tsx", f"export const A = () => <li {attrs}>x</li>;\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "can be dragged but has no key handler" in _findings(result)
+
+    _write(repo, "A.tsx", f"export const A = () => <li {attrs} onKeyDown={{move}}>x</li>;\n")
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_draggable_false_is_not_a_drag_source(repo: Path):
+    _write(repo, "A.tsx", 'export const A = () => <img alt="" draggable={false} />;\n')
+    assert _run(repo).returncode == 0
+
+
+def test_a_drop_zone_with_no_other_way_in_is_reported(repo: Path):
+    _write(repo, "A.tsx", "export const A = () => <div onDrop={take}>Drop files</div>;\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "onDrop> takes dropped data" in _findings(result)
+
+
+@pytest.mark.parametrize(
+    "alternative",
+    [
+        '<input type="file" aria-label="Attach" />',
+        "<li draggable onDragStart={g} onKeyDown={m}>r</li>",
+    ],
+)
+def test_a_drop_zone_with_another_way_in_passes(repo: Path, alternative: str):
+    """A file input is the other way in; a drag source in the file makes it an internal move."""
+    _write(
+        repo,
+        "A.tsx",
+        f"export const A = () => <div onDrop={{take}}>{alternative}</div>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+# --------------------------------------------------------------------------- #
+# 8. a canvas you operate
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("handler", ["onClick", "onPointerDown", "onWheel", "onMouseMove"])
+def test_a_canvas_with_input_handlers_is_reported(repo: Path, handler: str):
+    _write(repo, "A.tsx", f"export const A = () => <canvas {handler}={{go}} />;\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "<canvas> takes input" in _findings(result)
+
+
+def test_a_canvas_wired_through_add_event_listener_is_reported(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        "export function A() {\n"
+        "  useEffect(() => { ref.current.addEventListener('pointerdown', go); }, []);\n"
+        "  return <canvas ref={ref} />;\n"
+        "}\n",
+    )
+    assert "addEventListener on its ref" in _findings(_run(repo))
+
+
+def test_a_canvas_that_only_draws_passes(repo: Path):
+    _write(repo, "A.tsx", 'export const A = () => <canvas ref={ref} className="grid" />;\n')
+    assert _run(repo).returncode == 0
+
+
+def test_a_canvas_waiver_naming_its_dom_controls_clears_it(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = () => (\n"
+        "  // ux-ok: every node is also a button in the NodeList panel beside it\n"
+        "  <canvas onClick={go} />\n"
+        ");\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)

@@ -210,15 +210,28 @@ pane.
 `ts_ux_states_check.cjs` runs everywhere the other frontend gates run — pre-commit, every stage
 transition, and `loregarden_check_organization`. Diff-scoped, so inherited debt is not your
 commit's problem, and waived with `ux-ok:` plus a substantive reason on the line or in the
-comment block above it. It reports four things:
+comment block above it. It reports:
 
 - a `<button>`/`<a>` with no text, no `aria-label` and no `title`;
 - `onClick` on a non-interactive element with no `role`, `tabIndex` or key handler;
 - a dismiss backdrop in a file that never handles Escape;
 - a fetched list rendered with `.map()` where nothing handles the empty case.
 
-Three of the four are shapes a screenshot review passes without noticing, because the reviewer
+Most of these are shapes a screenshot review passes without noticing, because the reviewer
 already knows what the icon does and already has a mouse.
+
+The rest make a surface **drivable by an agent** — one granted permission to operate the UI
+reads the accessibility tree, finds a control by role and name, reads its state back, and
+clicks or types. It cannot reliably hover or drag, and a canvas is one opaque node to it:
+
+- an `input`/`select`/`textarea`/`contentEditable`/field role with no label (a placeholder,
+  or a sibling `<div>` styled as a label, is not one), and a `contentEditable` with no `role`;
+- a widget role without its state (`tab`/`option` → `aria-selected`, `switch`/`checkbox`/
+  `radio` → `aria-checked`, `combobox`/`aria-haspopup` → `aria-expanded`), or a button whose
+  `onClick` flips a boolean and exposes none of `aria-expanded`/`aria-pressed`;
+- `onMouseEnter` with no `onFocus`, a drag source with no key handler, a drop zone with no
+  `<input type="file">` in the file;
+- a `<canvas>` that takes input — waive it naming the DOM controls that do the same thing.
 
 A gate can only see shape. It cannot tell you the empty state you wrote says the right thing,
 that the loading state matches the wait, or that the surface answers a question anyone has. That judgment is the `ui-design` stage's before the
