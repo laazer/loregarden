@@ -389,6 +389,21 @@ A waiver asserting a control is decorative, or that a parent renders the empty s
 Beyond the gate, review what it cannot see: does the empty state say something useful, does the
 error name the thing that failed, does the loading state match the length of the wait.
 
+The `ts-theme` gate (`ts_theme_check.cjs`, loregarden only) keeps surfaces on the theme. Colours
+are defined once, as tokens on `:root` in `index.css`, and a light theme will arrive as a second
+token set under `[data-theme]`. A hardcoded colour is a place it will not reach. On changed lines
+in `.ts`/`.tsx`/`.css` the gate rejects:
+
+- raw `<button>`/`<input>`/`<select>`/`<textarea>`. Use `Button`/`Input`/`Select`/`Textarea`
+  from `components/ui`.
+- colour literals (hex, `rgb()`/`hsl()`/…, CSS colour names) outside a `:root`/`[data-theme]`
+  block, including in JSX `style` objects and SVG `fill`/`stroke`. Use `var(--…)`, or
+  `color-mix(in srgb, var(--ac) 30%, transparent)` for a tint.
+- `prefers-color-scheme`, as a CSS media query or a `matchMedia` call.
+
+Waive a case with `theme-ok:` plus a substantive reason; as with `ux-ok:`, the reason is a claim
+for the reviewer to check.
+
 ## Knowing when a ticket is done
 
 A ticket is done when its **acceptance criteria** are met — not when reviewers stop finding

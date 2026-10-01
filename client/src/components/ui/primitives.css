@@ -1,0 +1,31 @@
+/*
+ * The theme seam for the components/ui form primitives.
+ *
+ * Every colour here is a token, so a light theme lands by redefining the tokens
+ * under [data-theme], not by editing this file. Text-like fields need nothing
+ * here: the element-level floor in index.css already paints input, select and
+ * textarea from the tokens.
+ *
+ * Every selector is wrapped in :where() and scores zero. A caller's own class
+ * (`.tab-btn`, `.icon-close-btn`) always wins, so moving a raw element onto a
+ * primitive never changes which rule paints it.
+ */
+
+/* The browser's own button is a light-grey bevel with black text. */
+:where(.ui-button-plain) {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+:where(.ui-button-plain):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Native checks keep their shape; only their fill takes the accent. */
+:where(.ui-check) {
+  accent-color: var(--ac);
+}
