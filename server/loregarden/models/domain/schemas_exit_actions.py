@@ -215,6 +215,32 @@ class ExitActionContinuation(SQLModel):
     completed_action_keys: list[str] = Field(default_factory=list)
 
 
+class ExitActionGateLedger(SQLModel):
+    """What a workflow gate settled, stored on the gate row's ``response_json``.
+
+    The continuation a cleared gate schedules is a *new* run, so nothing the
+    person decided may live on the run that raised the gate. The dispatch reads
+    grants and the continuation pin from here, keyed by ticket and stage, and
+    run completion reads ``settled_action_keys`` so a continuation re-gates only
+    what is still outstanding.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Actions already attested by a passing report, or approved as operator
+    #: judgment, before this gate opened — carried along a continuation chain.
+    settled_action_keys: list[str] = Field(default_factory=list)
+    #: Operator-judgment actions a person approved on this gate.
+    approved_judgment_keys: list[str] = Field(default_factory=list)
+    #: Policy scopes a person granted on this gate; overlaid as GRANTED on every
+    #: later dispatch of the same ticket and stage.
+    granted_authority_scopes: list[str] = Field(default_factory=list)
+    #: The actions clearing this gate made executable, for the continuation.
+    continuation_action_keys: list[str] = Field(default_factory=list)
+    #: The run that picked the continuation up; empty until one dispatches.
+    continuation_run_id: str = ""
+
+
 class ExitActionRequirementCatalog(SQLModel):
     """Server-owned vocabularies Studio authors exit actions against."""
 

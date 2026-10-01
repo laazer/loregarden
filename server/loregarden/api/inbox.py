@@ -56,9 +56,16 @@ def resolve_approval(
             # Snapshot is probed server-side — never body.answers (clients send none,
             # and a forged answers-shaped snapshot could mark credentials available).
             result = svc.recheck(approval_id)
+            rechecked = session.get(Approval, approval_id)
             return {
                 "id": approval_id,
-                "status": "pending",
+                # Approved once a recheck cleared something: the gate closed and
+                # the stage continues. Still pending when nothing cleared.
+                "status": (
+                    rechecked.status.value
+                    if rechecked is not None
+                    else ApprovalStatus.PENDING.value
+                ),
                 "newly_assigned_action_keys": result.newly_assigned_action_keys,
             }
         if body.action == ApprovalResolutionAction.APPROVE:

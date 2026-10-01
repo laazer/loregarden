@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     EventType,
+    ExitActionGateLedger,
     RunStatus,
     Ticket,
     WorkflowStageDef,
@@ -70,8 +71,17 @@ def create_workflow_gate_approval(
     stage_def: WorkflowStageDef | None = None,
     snapshot: dict | None = None,
     human_required_actions: list | None = None,
+    settled_action_keys: list[str] | None = None,
+    run_id: str | None = None,
+    title: str = "",
+    impact: str = "",
 ) -> Approval | None:
-    """Create one pending gate for unresolved exit actions, or None when none remain."""
+    """Create one pending gate for unresolved exit actions, or None when none remain.
+
+    ``settled_action_keys`` is what the run that raised the gate (and its
+    continuation chain) already settled; it rides on the gate so the
+    continuation this gate may schedule does not re-run or re-ask it.
+    """
     if human_required_actions is None:
         resolution = resolve_exit_actions(stage_def, snapshot)
         human_required_actions = resolution.human_required_actions
@@ -96,10 +106,11 @@ def create_workflow_gate_approval(
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
         kind=ApprovalKind.WORKFLOW_GATE,
-        title=f"Resolve {stage_name} exit actions",
+        run_id=run_id,
+        title=title or f"Resolve {stage_name} exit actions",
         level="high" if ticket.priority == 1 else "medium",
         stage_key=stage_key,
-        impact=build_gate_impact(ticket, stage_name),
+        impact=impact or build_gate_impact(ticket, stage_name),
         checklist_json=json.dumps(checklist),
         tool_input_json=json.dumps(
             {
@@ -109,6 +120,9 @@ def create_workflow_gate_approval(
                 "allowed_actions": [action.value for action in allowed],
             }
         ),
+        response_json=ExitActionGateLedger(
+            settled_action_keys=list(settled_action_keys or [])
+        ).model_dump_json(),
         status=ApprovalStatus.PENDING,
     )
     session.add(approval)
