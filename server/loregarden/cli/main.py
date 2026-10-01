@@ -11,6 +11,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden db init
     loregarden sandbox snapshot --into data/sandbox
     loregarden eval gates --workspace blobert
+    loregarden git change-pr --all-workspaces --branch B --title T -- <command> {worktree}
     loregarden local_main
 """
 
@@ -19,7 +20,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from loregarden.cli import gate_eval, init_db, local_main, mcp_server, mcp_tools, sandbox
+from loregarden.cli import gate_eval, git_tools, init_db, local_main, mcp_server, mcp_tools, sandbox
 from loregarden.cli.errors import EXIT_ERROR, EXIT_OK, EXIT_USAGE, UsageError
 
 
@@ -46,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     eval_group = groups.add_parser("eval", help="Read-only evaluations of agent performance.")
     eval_commands = eval_group.add_subparsers(dest="command", required=True)
     gate_eval.register(eval_commands)
+
+    git_group = groups.add_parser("git", help="Git chores across managed workspaces.")
+    git_commands = git_group.add_subparsers(dest="command", required=True)
+    git_tools.register(git_commands)
 
     local_main.register(groups)
 

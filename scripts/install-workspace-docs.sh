@@ -94,7 +94,7 @@ status=0
 for i in "${!targets[@]}"; do
   target="${targets[$i]}"
   [ "$all" -eq 0 ] || slug="${slugs[$i]}"
-  if [ ! -d "$target/.git" ]; then
+  if [ ! -e "$target/.git" ]; then  # a file, not a directory, in a linked worktree
     echo "skip: $target is not a git repository" >&2
     status=1
     continue

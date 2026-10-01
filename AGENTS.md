@@ -112,6 +112,8 @@ scripts/install-workspace-hooks.sh [--check] (--all | <workspace-root>)   # same
 scripts/install-workspace-docs.sh [--check] (--all | [--slug <slug>] <workspace-root>)  # control-plane section in their AGENTS.md
 task workspace:hooks|docs|check -- (--all | <workspace-root>)             # the same two, plus a both-blocks report
 ./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check
+task workspace:hooks:pr [-- --gh-user <account>]                 # refresh every workspace's block, one PR each
+./scripts/loregarden-cli.sh git change-pr --repo <path> --branch B --title T -- <command> {worktree}
 
 # DB
 sqlite3 data/loregarden.db

@@ -115,7 +115,7 @@ _BUILT_IN_DETAIL = (
 )
 
 
-def _is_loregarden(workspace: Workspace, checkout: Path) -> bool:
+def is_loregarden(workspace: Workspace, checkout: Path) -> bool:
     """Whether the workspace is a checkout (primary or linked) of loregarden itself."""
     root = resolve_workspace_root(workspace)
     if not root.is_dir():
@@ -148,7 +148,7 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
             InstallState.UNAVAILABLE,
             "loregarden is not running from a git checkout, so there is no path to install",
         )
-    if _is_loregarden(workspace, checkout):
+    if is_loregarden(workspace, checkout):
         return InstallerStatus(installer, InstallState.BUILT_IN, _BUILT_IN_DETAIL)
     try:
         completed = subprocess.run(

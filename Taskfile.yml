@@ -209,6 +209,22 @@ tasks:
     cmds:
       - bash scripts/install-workspace-hooks.sh {{.CLI_ARGS}}
 
+  workspace:hooks:pr:
+    desc: >-
+      Refresh the hook block in every workspace as a pull request each, without
+      touching their checkouts — `task workspace:hooks:pr [-- --gh-user <account>]`
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      # One branch name per run, shared by every repo. `{worktree}` is filled in
+      # by change-pr with each repo's throwaway worktree.
+      - >-
+        ./scripts/loregarden-cli.sh git change-pr --all-workspaces
+        --branch "loregarden/refresh-hooks-$(date +%Y%m%d-%H%M%S)"
+        --title "chore: refresh loregarden's managed hook block"
+        --body "Written by loregarden's scripts/install-workspace-hooks.sh. The block runs .lefthook/scripts/workspace-gates.sh from loregarden, which holds the gate list."
+        {{.CLI_ARGS}}
+        -- bash {{.ROOT_DIR}}/scripts/install-workspace-hooks.sh {worktree}
+
   workspace:check:
     desc: >-
       Report whether a workspace carries both managed blocks, writing nothing —
