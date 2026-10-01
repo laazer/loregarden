@@ -1,9 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
+import { api } from "../../api/client";
 import { localInstancesApi } from "../../api/localInstancesApi";
 import type { InstallState, WorkspaceTemplates } from "../../api/localInstancesTypes";
 import type { WorkspaceSummary } from "../../api/types";
-import { INTEGRATION_KEY } from "../../hooks/useLocalInstances";
+import { INITIALIZABLE_REPOSITORY_STATES, type RepositoryState } from "../../api/workspaceRepositoryTypes";
+import { INTEGRATION_KEY, WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocalInstances";
+import { pushToast, toastActionFailed } from "../../state/toastStore";
+import { WorkspaceGatePresetsPanel } from "../workspaces/WorkspaceGatePresetsPanel";
 import { WorkspaceIntegrationPanel } from "./WorkspaceIntegrationPanel";
 import { WorkspaceTemplatesPanel } from "./WorkspaceTemplatesPanel";
 
@@ -16,6 +21,7 @@ const INSTALL_TONE: Record<InstallState, Tone> = {
   missing: "warn",
   outdated: "warn",
   unavailable: "muted",
+  built_in: "ok",
 };
 
 const INSTALL_WORD: Record<InstallState, string> = {
@@ -23,6 +29,27 @@ const INSTALL_WORD: Record<InstallState, string> = {
   missing: "missing",
   outdated: "outdated",
   unavailable: "n/a",
+  built_in: "built in",
+};
+
+/** What the card says when the workspace's path is not a repository; `repository` says nothing. */
+const REPO_PROBLEM: Record<Exclude<RepositoryState, "repository">, { chip: string; explain: string }> = {
+  missing: {
+    chip: "repo missing",
+    explain: "Nothing exists at this path yet. Create the repository here — with loregarden's gates and AGENTS.md committed — or point the workspace somewhere else.",
+  },
+  empty: {
+    chip: "repo empty",
+    explain: "This folder is empty. Create the repository here — with loregarden's gates and AGENTS.md committed.",
+  },
+  not_a_repository: {
+    chip: "not a git repo",
+    explain: "This folder has files but is not a git repository. Run `git init` there yourself; loregarden will not initialize a folder with someone's work in it.",
+  },
+  inside_repository: {
+    chip: "inside another repo",
+    explain: "This path is inside another git repository. Point the workspace at that repository's root instead.",
+  },
 };
 
 function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
@@ -55,10 +82,31 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
     staleTime: CHECK_STALE_MS,
   });
   const launchable = workspace.entries.filter((entry) => entry.launchable).length;
+  const [opened, setOpened] = useState(false);
+  const queryClient = useQueryClient();
+  const createRepository = useMutation({
+    // Its own toast names the step; the global one would say "Action failed" beside it.
+    meta: { suppressErrorToast: true },
+    mutationFn: () => api.createWorkspaceRepository(workspace.slug),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      void queryClient.invalidateQueries({ queryKey: [...INTEGRATION_KEY, workspace.slug] });
+      void queryClient.invalidateQueries({ queryKey: WORKSPACE_TEMPLATES_KEY });
+      pushToast(
+        created.follow_up
+          ? { tone: "warning", title: `Created ${workspace.name}'s repository`, message: created.follow_up }
+          : { tone: "success", title: `Created ${workspace.name}'s repository`, message: created.repo_root },
+      );
+    },
+    onError: (error) => toastActionFailed(`Create ${workspace.name}'s repository`, error),
+  });
+  const repoProblem = summary && summary.repo_state !== "repository" ? REPO_PROBLEM[summary.repo_state] : undefined;
+  const initializable = summary !== undefined && INITIALIZABLE_REPOSITORY_STATES.has(summary.repo_state);
 
   return (
     <li className="instances-setup">
-      <details>
+      {/* Opened once, the gates panel stays mounted: collapsing keeps unsaved ticks. */}
+      <details onToggle={(e) => e.currentTarget.open && setOpened(true)}>
         <summary>
           <span className="instances-setup-name">
             {workspace.name}
@@ -78,7 +126,7 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
                 </Chip>
               ))
             )}
-            {summary && !summary.repo_exists && <Chip tone="warn">repo missing</Chip>}
+            {repoProblem && <Chip tone="warn">{repoProblem.chip}</Chip>}
             {summary && (
               <Chip tone={summary.blocked_count > 0 ? "warn" : "muted"}>
                 {summary.ticket_count} {summary.ticket_count === 1 ? "ticket" : "tickets"}
@@ -91,6 +139,26 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
           </span>
         </summary>
         <div className="instances-setup-body">
+          {repoProblem && (
+            <div className="instances-setup-actions" role="status">
+              <span className="instances-meta instances-warning">{repoProblem.explain}</span>
+              {initializable && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={createRepository.isPending}
+                  aria-busy={createRepository.isPending}
+                  onClick={() => {
+                    if (createRepository.isPending) return;
+                    if (!window.confirm(`Create a git repository at ${workspace.repo_root} and commit loregarden's gates and AGENTS.md to it?`)) return;
+                    createRepository.mutate();
+                  }}
+                >
+                  {createRepository.isPending ? "Creating repository…" : "Create repository"}
+                </button>
+              )}
+            </div>
+          )}
           {summary && (
             <div className="instances-setup-actions">
               <span className="instances-meta">
@@ -116,6 +184,9 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
             </div>
           )}
           <WorkspaceIntegrationPanel workspace={workspace} />
+          {/* Mounted on first open: it scans the repository and reads the profile, which
+              every collapsed card on the page doing at load would be paying for nothing. */}
+          {opened && <WorkspaceGatePresetsPanel slug={workspace.slug} name={workspace.name} />}
           <WorkspaceTemplatesPanel workspace={workspace} />
         </div>
       </details>

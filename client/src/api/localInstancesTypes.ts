@@ -114,7 +114,8 @@ export interface WorkspaceTemplates {
 }
 
 export type WorkspaceInstaller = "hooks" | "docs";
-export type InstallState = "current" | "missing" | "outdated" | "unavailable";
+/** `built_in`: the workspace is loregarden's own repository, which carries both natively. */
+export type InstallState = "current" | "missing" | "outdated" | "unavailable" | "built_in";
 
 export interface WorkspaceInstallerStatus {
   installer: WorkspaceInstaller;

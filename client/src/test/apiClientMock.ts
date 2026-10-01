@@ -79,6 +79,8 @@ export const api = {
   setWorkspaceTemplate: jest.fn(),
   setWorkspaceRuntime: jest.fn(),
   createWorkspace: jest.fn(),
+  probeRepository: jest.fn(),
+  createWorkspaceRepository: jest.fn(),
   previewTicketImportPaths: jest.fn(),
   importTickets: jest.fn(),
   createTicket: jest.fn(),

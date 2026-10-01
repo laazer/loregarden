@@ -43,12 +43,16 @@ def resolve_run_root(session: Session, run: AgentRun, workspace_root: Path) -> P
     return path
 
 
-def resolve_workspace_root(workspace: Workspace) -> Path:
-    raw = (workspace.repo_path or ".").strip()
-    path = Path(raw)
+def resolve_repo_path(raw: str) -> Path:
+    """Where a workspace ``repo_path`` points: relative paths are from loregarden's own root."""
+    path = Path(raw.strip() or ".")
     if not path.is_absolute():
         path = settings.repo_root / path
     return path.resolve()
+
+
+def resolve_workspace_root(workspace: Workspace) -> Path:
+    return resolve_repo_path(workspace.repo_path or ".")
 
 
 def resolve_agent_context_dir(workspace: Workspace) -> Path:

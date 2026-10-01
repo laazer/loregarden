@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { useDebounced } from "./useDebounced";
+
 import {
   composerApi,
   type ComposerNote,
@@ -111,15 +113,6 @@ export interface ComposerCommandsBinding {
   /** Commands listed by `/help`, or null when the strip is closed. */
   helpCommands: ComposerCommand[] | null;
   closeHelp: () => void;
-}
-
-function useDebounced<T>(value: T, delay: number): T {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettled(value), delay);
-    return () => window.clearTimeout(timer);
-  }, [value, delay]);
-  return settled;
 }
 
 /**

@@ -11,6 +11,9 @@ import type {
   WorkspaceTemplates,
 } from "../../api/localInstancesTypes";
 import type { WorkspaceSummary } from "../../api/types";
+import type { RepositoryState } from "../../api/workspaceRepositoryTypes";
+import type { GatePresets } from "../../api/gatePresetTypes";
+import type { OrchestrationProfileView } from "../../api/gateTypes";
 import { useToastStore } from "../../state/toastStore";
 import { LegacyInstancesRedirect, WorkspacesPage } from "../WorkspacesPage";
 
@@ -36,6 +39,66 @@ jest.mock("../../api/localInstancesApi", () => ({
 const mockApi = localInstancesApi as jest.Mocked<typeof localInstancesApi>;
 const mockClient = api as jest.Mocked<typeof api>;
 
+const GUARDRAIL = "node {loregarden_root}/.lefthook/scripts/ts_ux_states_check.cjs --repo {workspace_root}";
+const RUFF = "uv run --directory server ruff check";
+const PYTEST = "uv run --directory server pytest -q";
+const CARGO = "cargo clippy --manifest-path Cargo.toml -- -D warnings";
+
+const PRESETS: GatePresets = {
+  repo_root: "/w/docs",
+  toolchains: [
+    {
+      key: "python",
+      label: "Python",
+      directory: "server",
+      detected: true,
+      note: "",
+      commands: [
+        { command: RUFF, label: "Ruff lint", kind: "lint", default_on: true },
+        { command: PYTEST, label: "pytest", kind: "test", default_on: false },
+      ],
+    },
+    {
+      key: "rust",
+      label: "Rust",
+      directory: ".",
+      detected: false,
+      note: "",
+      commands: [{ command: CARGO, label: "clippy", kind: "lint", default_on: false }],
+    },
+  ],
+};
+
+const profile = (commands: string[] = [GUARDRAIL]): OrchestrationProfileView => ({
+  slug: "shop",
+  name: "shop",
+  driver: "builtin",
+  workflow_template: "",
+  orchestrator_skill: "",
+  gates_enabled: true,
+  gates_configured: true,
+  gates_commands: commands,
+  gates_transition_script: "ci/gates.py",
+  gates_transition_script_resolved: "",
+  gates_autofix_commands: [],
+  gates_autofix_agent_fallback: false,
+  gates_autofix_max_agent_attempts: 0,
+  gates_placeholders: {},
+  gates_suggested_commands: [],
+  max_stages_per_run: 0,
+});
+
+const probeAs = (state: RepositoryState, detail = "") =>
+  mockClient.probeRepository.mockImplementation((path) => Promise.resolve({ repo_root: path, state, detail }));
+
+const openAddDialog = async (path: string) => {
+  fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
+  fireEvent.change(within(dialog).getByLabelText("Repo path"), { target: { value: path } });
+  return dialog;
+};
+
 const summary = (slug: string, name: string, overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary => ({
   id: `id-${slug}`,
   slug,
@@ -43,6 +106,7 @@ const summary = (slug: string, name: string, overrides: Partial<WorkspaceSummary
   repo_path: `/w/${slug}`,
   repo_root: `/w/${slug}`,
   repo_exists: true,
+  repo_state: "repository",
   ticket_count: 3,
   blocked_count: 0,
   workflow_template_slug: "loregarden-tdd",
@@ -130,6 +194,13 @@ beforeEach(() => {
   mockApi.workspaceTemplates.mockResolvedValue([workspace(), workspace({ slug: "blog", name: "Blog", entries: [] })]);
   mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("blog", "Blog")]);
   mockClient.workflowTemplates.mockResolvedValue([]);
+  mockClient.gatePresetsForPath.mockResolvedValue(PRESETS);
+  mockClient.gatePresetsForWorkspace.mockResolvedValue(PRESETS);
+  mockClient.orchestrationProfile.mockResolvedValue(profile());
+  mockClient.updateWorkspaceGates.mockImplementation((_slug, body) => Promise.resolve(profile(body.commands)));
+  mockClient.probeRepository.mockImplementation((path) =>
+    Promise.resolve({ repo_root: path, state: "repository", detail: `${path} is a git repository` }),
+  );
   mockClient.browseDirectory.mockResolvedValue({
     current_path: "/w",
     repo_path: ".",
@@ -362,6 +433,28 @@ describe("workspace setup", () => {
     );
   });
 
+  it("shows loregarden's own repository as built in, with nothing to install", async () => {
+    const detail = "This is loregarden's own repository";
+    mockApi.integration.mockResolvedValue(
+      integration("shop", {
+        installers: [
+          { installer: "hooks", state: "built_in", detail },
+          { installer: "docs", state: "built_in", detail },
+        ],
+      }),
+    );
+    renderPage();
+    const panel = await setupPanel();
+    expect(await within(panel).findAllByText("Built in")).toHaveLength(2);
+    for (const part of ["Pre-commit gates", "Agent instructions"]) {
+      const row = within(panel).getByText(part).closest("tr") as HTMLElement;
+      expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+      expect(within(row).getByText("Built in").closest("td")).not.toHaveClass("instances-warning");
+    }
+    const chips = screen.getAllByText((_, el) => el?.classList.contains("instances-chip") === true && el.textContent === "gates built in");
+    for (const chip of chips) expect(chip).toHaveClass("instances-chip--ok");
+  });
+
   it("says when the check itself failed, instead of showing nothing installed", async () => {
     mockApi.integration.mockRejectedValue(new Error("server unreachable"));
     renderPage();
@@ -387,6 +480,88 @@ describe("workspace setup", () => {
     const row = (await within(panel).findByText("Launch templates")).closest("tr") as HTMLElement;
     expect(within(row).getByText("Present")).toBeInTheDocument();
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("toolchain gates on the card", () => {
+  beforeEach(() => {
+    mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
+    useToastStore.setState({ toasts: [] });
+    mockClient.workspaces.mockResolvedValue([summary("shop", "Shop")]);
+    mockApi.workspaceTemplates.mockResolvedValue([workspace()]);
+  });
+
+  const gatesPanel = async () => {
+    fireEvent.click(await screen.findByText("Shop", { selector: ".instances-setup-name" }));
+    return (await screen.findByRole("heading", { name: "Shop toolchain gates" })).closest("section") as HTMLElement;
+  };
+
+  it("loads nothing for a card's gates until the card is opened", async () => {
+    renderPage();
+    await screen.findByText("Shop", { selector: ".instances-setup-name" });
+    expect(mockClient.gatePresetsForWorkspace).not.toHaveBeenCalled();
+    await gatesPanel();
+    expect(mockClient.gatePresetsForWorkspace).toHaveBeenCalledWith("shop");
+  });
+
+  const report = (outcome: "passed" | "failed", command = PYTEST) => ({
+    repo_root: "/w/shop",
+    transition: "implement→verify",
+    results: [{ template: command, command, outcome, message: "", stdout: "", stderr: "3 failed", duration_ms: 900 }],
+  });
+
+  it("ticks what is configured and saves an addition only after it passes on the current code", async () => {
+    mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, RUFF]));
+    mockClient.testWorkspaceGates.mockResolvedValue(report("passed"));
+    renderPage();
+    const panel = await gatesPanel();
+    expect(await within(panel).findByRole("checkbox", { name: /Ruff lint/ })).toBeChecked();
+    expect(within(panel).getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.click(within(panel).getByRole("checkbox", { name: /pytest/ }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Check and save" }));
+    await waitFor(() =>
+      expect(mockClient.updateWorkspaceGates).toHaveBeenCalledWith("shop", {
+        enabled: true,
+        commands: [GUARDRAIL, RUFF, PYTEST],
+        transition_script: "ci/gates.py",
+      }),
+    );
+    expect(mockClient.testWorkspaceGates).toHaveBeenCalledWith("shop", { commands: [PYTEST] });
+  });
+
+  it("holds a failing addition back and shows why, until saved anyway", async () => {
+    mockClient.testWorkspaceGates.mockResolvedValue(report("failed"));
+    renderPage();
+    const panel = await gatesPanel();
+    fireEvent.click(await within(panel).findByRole("checkbox", { name: /pytest/ }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Check and save" }));
+    const alert = await within(panel).findByRole("alert");
+    expect(within(alert).getByText("3 failed")).toBeInTheDocument();
+    expect(mockClient.updateWorkspaceGates).not.toHaveBeenCalled();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => expect(mockClient.updateWorkspaceGates).toHaveBeenCalledTimes(1));
+    expect(mockClient.testWorkspaceGates).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes an unticked preset without running anything, and leaves the guardrails", async () => {
+    mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, RUFF]));
+    renderPage();
+    const panel = await gatesPanel();
+    fireEvent.click(await within(panel).findByRole("checkbox", { name: /Ruff lint/ }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockClient.updateWorkspaceGates).toHaveBeenCalledWith("shop", expect.objectContaining({ commands: [GUARDRAIL] })),
+    );
+    expect(mockClient.testWorkspaceGates).not.toHaveBeenCalled();
+  });
+
+  it("says when the gates could not be loaded", async () => {
+    mockClient.gatePresetsForWorkspace.mockRejectedValue(new Error("server unreachable"));
+    renderPage();
+    const panel = await gatesPanel();
+    expect(await within(panel).findByRole("alert")).toHaveTextContent("server unreachable");
   });
 });
 
@@ -428,7 +603,7 @@ describe("workspace list", () => {
   it("summarises each workspace's tickets and a missing repo on its card", async () => {
     mockClient.workspaces.mockResolvedValue([
       summary("shop", "Shop", { ticket_count: 5, blocked_count: 2 }),
-      summary("blog", "Blog", { ticket_count: 1, repo_exists: false }),
+      summary("blog", "Blog", { ticket_count: 1, repo_exists: false, repo_state: "missing" }),
     ]);
     renderPage();
     expect(await screen.findByText("5 tickets, 2 blocked")).toBeInTheDocument();
@@ -521,7 +696,7 @@ describe("workspace list", () => {
 
     mockApi.workspaceTemplates.mockResolvedValue([workspace(), workspace({ slug: "docs", name: "Docs", entries: [] })]);
     mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("docs", "Docs")]);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Create workspace" }));
 
     await waitFor(() =>
       expect(mockClient.createWorkspace).toHaveBeenCalledWith(
@@ -535,10 +710,133 @@ describe("workspace list", () => {
   it("keeps the dialog open with the server's refusal", async () => {
     mockClient.createWorkspace.mockRejectedValue(new Error("slug already exists"));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    const dialog = await openAddDialog("/w/docs");
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Create workspace" }));
     expect(await within(dialog).findByText("slug already exists")).toBeInTheDocument();
+  });
+
+  it("creates the repository too when nothing is at the path", async () => {
+    probeAs("missing");
+    mockClient.createWorkspace.mockResolvedValue({ id: "id-docs", slug: "docs", name: "Docs", workflow_template_slug: "loregarden-tdd" });
+    mockClient.createWorkspaceRepository.mockResolvedValue({ ...summary("docs", "Docs"), follow_up: "" });
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    expect(await within(dialog).findByText(/a new git repository will be created/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace and repository" }));
+    await waitFor(() => expect(mockClient.createWorkspaceRepository).toHaveBeenCalledWith("docs"));
+    expect(mockClient.createWorkspace).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("registers an existing repository without creating one", async () => {
+    mockClient.createWorkspace.mockResolvedValue({ id: "id-docs", slug: "docs", name: "Docs", workflow_template_slug: "loregarden-tdd" });
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mockClient.createWorkspaceRepository).not.toHaveBeenCalled();
+  });
+
+  it("refuses a path that cannot be used, and says why", async () => {
+    probeAs("not_a_repository", "/w/docs has files but is not a git repository");
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    expect(await within(dialog).findByText(/has files but is not a git repository/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Create workspace" })).toBeDisabled();
+  });
+
+  it("asks for an absolute path rather than resolving a relative one", async () => {
+    renderPage();
+    const dialog = await openAddDialog("docs");
+    expect(within(dialog).getByText(/Enter an absolute path/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Create workspace" })).toBeDisabled();
+    expect(mockClient.probeRepository).not.toHaveBeenCalled();
+  });
+
+  it("closes and reports it when the workspace was added but its repository was not", async () => {
+    useToastStore.setState({ toasts: [] });
+    probeAs("missing");
+    mockClient.createWorkspace.mockResolvedValue({ id: "id-docs", slug: "docs", name: "Docs", workflow_template_slug: "loregarden-tdd" });
+    mockClient.createWorkspaceRepository.mockRejectedValue(new Error("git commit failed"));
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Create workspace and repository" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(useToastStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ tone: "error", message: "git commit failed" }),
+    );
+  });
+
+  it("offers to create a missing repository from the card, after confirming", async () => {
+    mockClient.workspaces.mockResolvedValue([
+      summary("shop", "Shop"),
+      summary("blog", "Blog", { repo_exists: false, repo_state: "missing" }),
+    ]);
+    let finish: () => void = () => {};
+    mockClient.createWorkspaceRepository.mockImplementation(
+      () => new Promise((resolve) => (finish = () => resolve({ ...summary("blog", "Blog"), follow_up: "" }))),
+    );
+    renderPage();
+    const create = await screen.findByRole("button", { name: "Create repository" });
+    (window.confirm as jest.Mock).mockReturnValueOnce(false);
+    fireEvent.click(create);
+    expect(mockClient.createWorkspaceRepository).not.toHaveBeenCalled();
+    fireEvent.click(create);
+    expect(await screen.findByRole("button", { name: "Creating repository…" })).toBeDisabled();
+    expect(mockClient.createWorkspaceRepository).toHaveBeenCalledTimes(1);
+    expect(mockClient.createWorkspaceRepository).toHaveBeenCalledWith("blog");
+    finish();
+    await waitFor(() => expect(mockClient.workspaces.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("adds the ticked toolchain gates to the new workspace's profile, keeping its guardrails", async () => {
+    mockClient.createWorkspace.mockResolvedValue({ id: "id-docs", slug: "docs", name: "Docs", workflow_template_slug: "loregarden-tdd" });
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    const ruff = await within(dialog).findByRole("checkbox", { name: /Ruff lint/ });
+    expect(ruff).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: /pytest/ })).not.toBeChecked();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /clippy/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockClient.updateWorkspaceGates).toHaveBeenCalledWith("docs", {
+        enabled: true,
+        commands: [GUARDRAIL, RUFF, CARGO],
+        transition_script: "ci/gates.py",
+      }),
+    );
+  });
+
+  it("saves no gates when none are ticked", async () => {
+    mockClient.createWorkspace.mockResolvedValue({ id: "id-docs", slug: "docs", name: "Docs", workflow_template_slug: "loregarden-tdd" });
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: /Ruff lint/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mockClient.updateWorkspaceGates).not.toHaveBeenCalled();
+  });
+
+  it("offers every toolchain open when nothing is detected at a new path", async () => {
+    probeAs("missing");
+    mockClient.gatePresetsForPath.mockResolvedValue({
+      ...PRESETS,
+      toolchains: PRESETS.toolchains.map((t) => ({ ...t, detected: false, commands: t.commands.map((c) => ({ ...c, default_on: false })) })),
+    });
+    renderPage();
+    const dialog = await openAddDialog("/w/docs");
+    expect(await within(dialog).findByText(/Nothing detected here yet/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: /Ruff lint/ })).toBeVisible();
+    expect(within(dialog).getByRole("checkbox", { name: /Ruff lint/ })).not.toBeChecked();
+  });
+
+  it("explains a folder it will not initialize, without offering to", async () => {
+    mockClient.workspaces.mockResolvedValue([
+      summary("shop", "Shop"),
+      summary("blog", "Blog", { repo_state: "not_a_repository" }),
+    ]);
+    renderPage();
+    expect(await screen.findByText("not a git repo")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create repository" })).not.toBeInTheDocument();
   });
 });

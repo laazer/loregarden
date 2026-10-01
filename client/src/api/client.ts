@@ -3,6 +3,8 @@ import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import type { GatePresets } from "./gatePresetTypes";
+import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
 export { API_BASE, ApiError } from "./http";
 
@@ -143,6 +145,12 @@ export const api = {
     request<WorkspaceCreateResponse>("/api/workspaces", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  probeRepository: (path: string) =>
+    request<RepositoryProbe>(`/api/workspaces/repository-probe?path=${encodeURIComponent(path)}`),
+  createWorkspaceRepository: (slug: string) =>
+    request<WorkspaceRepositoryCreated>(`/api/workspaces/${encodeURIComponent(slug)}/repository`, {
+      method: "POST",
     }),
   archiveWorkspace: (slug: string) =>
     request<WorkspaceSummary>(`/api/workspaces/${encodeURIComponent(slug)}/archive`, { method: "POST" }),
@@ -345,6 +353,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  gatePresetsForPath: (path: string) => request<GatePresets>(`/api/gate-presets?path=${encodeURIComponent(path)}`),
+  gatePresetsForWorkspace: (slug: string) =>
+    request<GatePresets>(`/api/gate-presets/workspaces/${encodeURIComponent(slug)}`),
   testWorkspaceGates: (
     slug: string,
     body: { commands: string[]; from_stage?: string; to_stage?: string },

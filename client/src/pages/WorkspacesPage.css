@@ -271,7 +271,7 @@
   background: var(--bg1);
 }
 
-.instances-setup summary {
+.instances-setup > details > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -282,22 +282,22 @@
   list-style: none;
 }
 
-.instances-setup summary::-webkit-details-marker {
+.instances-setup > details > summary::-webkit-details-marker {
   display: none;
 }
 
-.instances-setup summary::before {
+.instances-setup > details > summary::before {
   content: "▸";
   color: var(--txl);
   font-size: 11px;
   margin-right: -4px;
 }
 
-.instances-setup details[open] > summary::before {
+.instances-setup > details[open] > summary::before {
   content: "▾";
 }
 
-.instances-setup summary:focus-visible {
+.instances-setup > details > summary:focus-visible {
   outline: 2px solid var(--ac);
   outline-offset: -2px;
   border-radius: 12px;

@@ -123,7 +123,7 @@ export function WorkspacesTab() {
             pushToast({
               tone: "success",
               title: `Added ${created.name}`,
-              message: "Open it below to install loregarden's gates and agent instructions.",
+              message: "Its card below shows what it has of loregarden, and installs anything missing.",
             });
           }}
         />

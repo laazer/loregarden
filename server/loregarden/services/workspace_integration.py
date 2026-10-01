@@ -16,6 +16,11 @@ pointing at a directory that disappears when the branch merges.
 Each script reports one line per target, ``<state>: <path> …``; that first word
 is what is parsed here. A script that refuses (no `lefthook.yml`, not a git
 repository) says why on stderr, and that reason is what the page shows.
+
+Neither block belongs in loregarden itself: its own `lefthook.yml` runs the
+gates directly and its own AGENTS.md is what the docs block summarises. A
+workspace that is any checkout of loregarden's repository reports
+``BUILT_IN`` instead of asking to have them installed.
 """
 
 from __future__ import annotations
@@ -49,6 +54,8 @@ class InstallState(StrEnum):
     OUTDATED = "outdated"
     #: The installer cannot run here; ``detail`` says why.
     UNAVAILABLE = "unavailable"
+    #: The workspace is loregarden's own repository, which carries both natively.
+    BUILT_IN = "built_in"
 
 
 #: The first word of an installer's report line. Ours, but printed by a script.
@@ -78,15 +85,20 @@ class InstallerError(RuntimeError):
     """An install the script refused or could not run; the message says why."""
 
 
-def primary_checkout() -> Path | None:
-    """The checkout the installed blocks should point at, or None outside git."""
-    result = run_git(
+def _git_common_dir(path: Path) -> subprocess.CompletedProcess[str]:
+    """Ask git for the repository's shared ``.git`` directory, from any checkout of it."""
+    return run_git(
         ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=settings.repo_root,
+        cwd=path,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def primary_checkout() -> Path | None:
+    """The checkout the installed blocks should point at, or None outside git."""
+    result = _git_common_dir(settings.repo_root)
     if result.returncode != 0:
         logger.warning(
             "cannot find loregarden's primary checkout from %s: %s",
@@ -94,7 +106,24 @@ def primary_checkout() -> Path | None:
             result.stderr.strip(),
         )
         return None
-    return Path(result.stdout.strip()).parent
+    return Path(result.stdout.strip()).resolve().parent
+
+
+_BUILT_IN_DETAIL = (
+    "This is loregarden's own repository: its lefthook.yml runs these gates and its "
+    "AGENTS.md is the source of this section, so there is nothing to install."
+)
+
+
+def _is_loregarden(workspace: Workspace, checkout: Path) -> bool:
+    """Whether the workspace is a checkout (primary or linked) of loregarden itself."""
+    root = resolve_workspace_root(workspace)
+    if not root.is_dir():
+        return False
+    # A workspace that is not a git repository is not loregarden; the installer
+    # that runs next reports it as unavailable, with git's reason.
+    result = _git_common_dir(root)
+    return result.returncode == 0 and Path(result.stdout.strip()).resolve().parent == checkout
 
 
 def _argv(checkout: Path, installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
@@ -119,6 +148,8 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
             InstallState.UNAVAILABLE,
             "loregarden is not running from a git checkout, so there is no path to install",
         )
+    if _is_loregarden(workspace, checkout):
+        return InstallerStatus(installer, InstallState.BUILT_IN, _BUILT_IN_DETAIL)
     try:
         completed = subprocess.run(
             _argv(checkout, installer, workspace, check=check),
@@ -146,6 +177,6 @@ def installer_status(workspace: Workspace, installer: Installer) -> InstallerSta
 def install(workspace: Workspace, installer: Installer) -> InstallerStatus:
     """Write or refresh the block, then report what ``--check`` says now."""
     result = _run(installer, workspace, check=False)
-    if result.state is InstallState.UNAVAILABLE:
+    if result.state in (InstallState.UNAVAILABLE, InstallState.BUILT_IN):
         raise InstallerError(result.detail)
     return installer_status(workspace, installer)
