@@ -105,13 +105,12 @@ cd client && npm run lint      # oxlint
 # Organization guardrails against any workspace (what the orchestration gate runs).
 # Through server_python.sh, not a bare `python3`: the gate scripts need 3.11 and
 # refuse (exit 69, EX_UNAVAILABLE) on anything older rather than grading (657).
-bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py --repo <workspace-root> --scope worktree
-node .lefthook/scripts/ts_organization_check.cjs --repo <workspace-root> --scope worktree
-python3 .lefthook/scripts/py_silent_except_check.py --repo <workspace-root> --scope worktree
-node .lefthook/scripts/ts_no_silent_failures_check.cjs --repo <workspace-root> --scope worktree
-scripts/install-workspace-hooks.sh [--check] <workspace-root>   # same checks, their pre-commit
-scripts/install-workspace-docs.sh [--check] [--slug <slug>] <workspace-root>  # control-plane section in their AGENTS.md
-task workspace:hooks|docs|check -- <workspace-root>             # the same two, plus a both-blocks report
+# workspace-gates.sh is the one list of these gates; it runs each and exits 1 on a
+# failure, 69 when one could not run. --list prints them.
+bash .lefthook/scripts/workspace-gates.sh --repo <workspace-root> --scope worktree
+scripts/install-workspace-hooks.sh [--check] (--all | <workspace-root>)   # same gates, their pre-commit
+scripts/install-workspace-docs.sh [--check] (--all | [--slug <slug>] <workspace-root>)  # control-plane section in their AGENTS.md
+task workspace:hooks|docs|check -- (--all | <workspace-root>)             # the same two, plus a both-blocks report
 ./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check
 
 # DB

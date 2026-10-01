@@ -10,6 +10,7 @@
 # Usage:
 #   scripts/install-workspace-docs.sh /path/to/workspace [...]
 #   scripts/install-workspace-docs.sh --slug blobert /path/to/workspace
+#   scripts/install-workspace-docs.sh --all                      # every workspace in the database, each with its slug
 #   scripts/install-workspace-docs.sh --check /path/to/workspace   # report only
 #
 # --slug fills the workspace_slug in the rendered CLI examples; without it the
@@ -46,11 +47,15 @@ if primary="$(resolve_primary_checkout)" && [ "$primary" != "$SCRIPT_ROOT" ]; th
 fi
 
 check_only=0
+all=0
 slug=""
 targets=()
+#: Per-target slug, parallel to targets; only --all fills it.
+slugs=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) check_only=1 ;;
+    --all) all=1 ;;
     --slug)
       shift
       [ $# -gt 0 ] || { echo "--slug needs a value" >&2; exit 2; }
@@ -62,8 +67,22 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ "$all" -eq 1 ]; then
+  if [ ${#targets[@]} -gt 0 ] || [ -n "$slug" ]; then
+    echo "--all takes no paths and no --slug; each workspace gets its own" >&2
+    exit 2
+  fi
+  listing="$(python3 "$SCRIPT_ROOT/scripts/list_workspace_roots.py" --loregarden-root "$LOREGARDEN_ROOT")"
+  while IFS=$'\t' read -r ws_slug root; do
+    [ -n "$root" ] || continue
+    targets+=("$root")
+    slugs+=("$ws_slug")
+  done <<<"$listing"
+  [ ${#targets[@]} -gt 0 ] || { echo "no workspaces besides loregarden itself" >&2; exit 0; }
+fi
+
 if [ ${#targets[@]} -eq 0 ]; then
-  echo "usage: $0 [--check] [--slug <slug>] <workspace-root> [...]" >&2
+  echo "usage: $0 [--check] (--all | [--slug <slug>] <workspace-root> [...])" >&2
   exit 2
 fi
 if [ -n "$slug" ] && [ ${#targets[@]} -gt 1 ]; then
@@ -72,7 +91,9 @@ if [ -n "$slug" ] && [ ${#targets[@]} -gt 1 ]; then
 fi
 
 status=0
-for target in "${targets[@]}"; do
+for i in "${!targets[@]}"; do
+  target="${targets[$i]}"
+  [ "$all" -eq 0 ] || slug="${slugs[$i]}"
   if [ ! -d "$target/.git" ]; then
     echo "skip: $target is not a git repository" >&2
     status=1

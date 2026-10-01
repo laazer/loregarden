@@ -196,7 +196,7 @@ tasks:
   workspace:docs:
     desc: >-
       Install/refresh loregarden's control-plane section in a workspace's
-      AGENTS.md — `task workspace:docs -- [--check] [--slug <slug>] <workspace-root>`
+      AGENTS.md — `task workspace:docs -- [--check] (--all | [--slug <slug>] <workspace-root>)`
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash scripts/install-workspace-docs.sh {{.CLI_ARGS}}
@@ -204,7 +204,7 @@ tasks:
   workspace:hooks:
     desc: >-
       Install/refresh loregarden's organization guardrails in a workspace's
-      pre-commit — `task workspace:hooks -- [--check] <workspace-root>`
+      pre-commit — `task workspace:hooks -- [--check] (--all | <workspace-root>)`
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash scripts/install-workspace-hooks.sh {{.CLI_ARGS}}
@@ -212,7 +212,7 @@ tasks:
   workspace:check:
     desc: >-
       Report whether a workspace carries both managed blocks, writing nothing —
-      `task workspace:check -- <workspace-root>` (a path only; no other flags)
+      `task workspace:check -- (--all | <workspace-root>)` (no other flags)
     dir: "{{.ROOT_DIR}}"
     silent: true
     cmds:
