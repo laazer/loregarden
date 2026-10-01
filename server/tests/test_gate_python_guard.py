@@ -189,12 +189,10 @@ def test_orchestration_profiles_route_python_gates_through_the_wrapper(profile: 
     )
     commands = config["gates"]["commands"]
 
-    python_gates = [c for c in commands if ".lefthook/scripts/py_" in c]
-
-    assert python_gates, f"{profile}.yaml runs no Python gate"
-    for command in python_gates:
-        assert "server_python.sh" in command, command
-        assert not command.strip().startswith("python3 "), command
+    # The profiles reach the Python gates only through the dispatcher, which
+    # runs them under server_python.sh (pinned in test_workspace_gates_dispatcher).
+    assert not [c for c in commands if ".lefthook/scripts/py_" in c], commands
+    assert any("workspace-gates.sh" in c for c in commands), f"{profile}.yaml runs no gates"
 
 
 def _old_interpreters() -> list[str]:

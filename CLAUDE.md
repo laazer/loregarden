@@ -70,9 +70,9 @@ Writing real source code and real test files is, of course, still the job. The r
 
 Two installers, both idempotent, both marker-delimited, both `--check` for a read-only report:
 
-    task workspace:hooks -- [--check] <workspace-root>
-    task workspace:docs  -- [--check] [--slug <slug>] <workspace-root>
-    task workspace:check -- <workspace-root>          # both blocks, writes nothing
+    task workspace:hooks -- [--check] (--all | <workspace-root>)
+    task workspace:docs  -- [--check] (--all | [--slug <slug>] <workspace-root>)
+    task workspace:check -- (--all | <workspace-root>)   # both blocks, writes nothing
 
 wrapping `scripts/install-workspace-hooks.sh` and `scripts/install-workspace-docs.sh`.
 
@@ -80,9 +80,18 @@ The first carries loregarden's rules into that repo's pre-commit. The second car
 *tools* into that repo's `AGENTS.md` — the half that was missing. Everything above is true in
 blobert and lore-eden too, and an agent working there reads their AGENTS.md, not this file: it
 has no way to learn that the ticket it was handed lives in a database rather than a file it can
-grep for. Both bake absolute paths back into this checkout, so run them from the **primary**
-checkout — the docs installer resolves that itself and says so; the hooks installer does not,
-and installing it from a worktree strands every workspace when the branch merges.
+grep for. `--all` reads the workspace list from the database (read-only), skipping loregarden
+itself and archived workspaces.
+
+Both bake absolute paths back into this checkout, so both render against the **primary**
+checkout even when run from a worktree, and say so. The hooks installer also refuses to write
+a block naming a dispatcher the primary checkout does not have yet — merge first.
+
+**Changing a gate needs no reinstall.** The hook block and every orchestration profile call
+one dispatcher, `.lefthook/scripts/workspace-gates.sh`, which holds the only list of
+workspace gates. Add, remove or re-flag a gate there and every workspace runs the change on
+its next commit and its next stage transition. Re-run the installer only when the block itself
+changes or this checkout moves.
 
 ## No silent failures
 
@@ -344,11 +353,11 @@ around:
 
 - **Pre-commit**, on staged files — for loregarden via `lefthook.yml`, for other workspaces via
   `scripts/install-workspace-hooks.sh <workspace-root>`, which writes a marker-delimited block
-  into that repo's `lefthook.yml` pointing back at this checkout (`--check` reports drift
-  without writing).
-- **Orchestration gates**, on every stage transition in every workspace — the `gates.commands`
-  in `agent_context/orchestration/*.yaml`, including `default.yaml`, so a workspace with no
-  profile of its own still gets them. They run `--scope worktree`, because an agent's edits are
+  into that repo's `lefthook.yml` running `.lefthook/scripts/workspace-gates.sh` from this
+  checkout (`--check` reports drift without writing).
+- **Orchestration gates**, on every stage transition in every workspace — the same dispatcher,
+  from `gates.commands` in `agent_context/orchestration/*.yaml`, including `default.yaml`, so a
+  workspace with no profile of its own still gets them. They run `--scope worktree`, because an agent's edits are
   uncommitted when the gate fires, and that scope includes untracked files — a module the agent
   just wrote is the least-reviewed code in the run and `git diff` never lists it.
 
