@@ -829,9 +829,7 @@ export function Dashboard() {
                   onWorkflowChange={(template) => {
                     if (selectedId) void requestWorkflowChange(selectedId, template);
                   }}
-                  onSaveBranch={(branch) => {
-                    if (selectedId) void saveTicketBranch(selectedId, branch);
-                  }}
+                  onSaveBranch={(branch) => saveTicketBranch(sel.id, branch)}
                   onPostureChange={(posture) => setCompatibilityPosture.mutate(posture)}
                 />
                 <ReworkRequiredNotice text={sel.blocking_issues} />

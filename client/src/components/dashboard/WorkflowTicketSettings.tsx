@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import type { TicketDetail, WorkflowTemplateSummary, WorkspaceWorkflow } from "../../api/client";
 import { STATE_COLORS, STATE_LABELS } from "../UpdateStateModal";
@@ -12,7 +12,8 @@ interface WorkflowTicketSettingsProps {
   templatePending: boolean;
   postureSaving: boolean;
   onWorkflowChange: (template: string) => void;
-  onSaveBranch: (branch: string) => void;
+  /** Resolves once the ticket detail holds the server's answer; reports its own failure. */
+  onSaveBranch: (branch: string) => Promise<void>;
   onPostureChange: (posture: string) => void;
 }
 
@@ -31,7 +32,6 @@ export function WorkflowTicketSettings({
   onSaveBranch,
   onPostureChange,
 }: WorkflowTicketSettingsProps) {
-  const qc = useQueryClient();
   return (
     <>
       {workflowTemplates && workflowTemplates.length > 0 && (
@@ -65,43 +65,7 @@ export function WorkflowTicketSettings({
             )}
         </div>
       )}
-      <div style={{ marginBottom: 16 }}>
-        <div className="state-label" style={{ marginBottom: 6 }}>
-          Branch
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 360 }}>
-          <input
-            className="btn-secondary"
-            style={{ flex: 1, minWidth: 0, fontSize: 12, boxSizing: "border-box" }}
-            value={ticket.branch || ""}
-            placeholder={`loregarden/${ticket.external_id}`}
-            onChange={(e) => {
-              qc.setQueryData(["ticket", ticket.id], (current: TicketDetail | undefined) =>
-                current ? { ...current, branch: e.target.value } : current,
-              );
-            }}
-            onBlur={(e) => {
-              if (e.target.value === (ticket.branch ?? "")) return;
-              onSaveBranch(e.target.value.trim());
-            }}
-          />
-          <button
-            type="button"
-            className="btn-secondary btn-compact"
-            title="Set branch to main"
-            onClick={() => {
-              qc.setQueryData(["ticket", ticket.id], (current: TicketDetail | undefined) =>
-                current ? { ...current, branch: "main" } : current,
-              );
-              if ((ticket.branch ?? "") !== "main") {
-                onSaveBranch("main");
-              }
-            }}
-          >
-            Use main
-          </button>
-        </div>
-      </div>
+      <TicketBranchField key={ticket.id} ticket={ticket} onSaveBranch={onSaveBranch} />
       <div className="dual-state">
         <div className="state-card">
           <div className="state-label">Ticket state · WHAT</div>
@@ -156,5 +120,82 @@ export function WorkflowTicketSettings({
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The ticket's branch, edited in place.
+ *
+ * The edit is held here until the server answers, never written into the cached
+ * ticket: that cache is what blur compares against to decide whether to save,
+ * and what the run path compares against to decide whether to save first.
+ * Writing keystrokes into it made both comparisons always equal.
+ */
+function TicketBranchField({
+  ticket,
+  onSaveBranch,
+}: {
+  ticket: TicketDetail;
+  onSaveBranch: (branch: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const stored = ticket.branch ?? "";
+
+  const commit = async (branch: string) => {
+    if (branch === stored) {
+      setDraft(null);
+      return;
+    }
+    // Keep showing the new value until the refetched detail replaces it, so the
+    // field neither flickers back on success nor looks saved on failure.
+    setDraft(branch);
+    setSaving(true);
+    try {
+      await onSaveBranch(branch);
+    } finally {
+      setSaving(false);
+      setDraft(null);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="state-label" style={{ marginBottom: 6 }}>
+        Branch
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 360 }}>
+        <input
+          className="btn-secondary"
+          style={{ flex: 1, minWidth: 0, fontSize: 12, boxSizing: "border-box" }}
+          aria-label="Branch"
+          aria-busy={saving}
+          readOnly={saving}
+          value={draft ?? stored}
+          placeholder={`loregarden/${ticket.external_id}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape" && !saving) setDraft(null);
+          }}
+          onBlur={() => {
+            if (draft === null || saving) return;
+            void commit(draft.trim());
+          }}
+        />
+        <button
+          type="button"
+          className="btn-secondary btn-compact"
+          title="Set branch to main"
+          disabled={saving}
+          // Keep focus in the field, so a typed draft is not saved by the blur
+          // only to be overwritten by this click.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => void commit("main")}
+        >
+          Use main
+        </button>
+      </div>
+    </div>
   );
 }
