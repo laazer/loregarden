@@ -25,6 +25,7 @@ from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
 )
+from loregarden.services.exit_action_ledger import gate_is_operator_judgment_only
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.studio_routing import is_terminal_stage
@@ -146,6 +147,10 @@ def resolve_gate_if_permitted(
         )
     ).first()
     if not approval:
+        return False
+    # Operator judgment only: an authority grant or a recheck is never made
+    # unattended, so such a gate pauses the run for a person.
+    if not gate_is_operator_judgment_only(approval):
         return False
     ApprovalService(session).resolve(approval.id, approved=True)
     approval = session.get(Approval, approval.id)

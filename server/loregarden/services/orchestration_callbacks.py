@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
+    StageReportStatus,
     StageStatus,
     StageVerdictChannel,
     Ticket,
@@ -33,7 +34,10 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, settle_block
-from loregarden.services.gate_approvals import gate_would_skip_work
+from loregarden.services.gate_approvals import (
+    gate_on_orchestrator_pass,
+    request_exit_action_gate,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
@@ -52,7 +56,6 @@ from loregarden.services.stage_retry_budget import (
 from loregarden.services.studio_routing import (
     is_prunable_stage,
     prunable_stage_keys,
-    ticket_stage_definition,
 )
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
@@ -480,7 +483,19 @@ class OrchestrationCallbackService:
             message=blocking_issues,
         )
 
-        if advance:
+        gate = (
+            gate_on_orchestrator_pass(
+                self.session, ticket, next(s for s in stages if s.key == stage_key)
+            )
+            if advance and outcome == StageReportStatus.PASS
+            else None
+        )
+        if gate is not None:
+            # The stage is not the orchestrator's to finish: a person resolves
+            # the gate, and approving it advances the stage (AC-6).
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.AWAITING)
+            ticket.blocking_issues = short_blocking_issues
+        elif advance:
             transitions = self.orch._resolve_transitions(ticket)
             apply_stage_route(
                 ticket,
@@ -835,10 +850,11 @@ class OrchestrationCallbackService:
         kind: ApprovalKind = ApprovalKind.WORKFLOW_GATE,
     ) -> Approval:
         if kind is ApprovalKind.WORKFLOW_GATE:
-            stage = ticket_stage_definition(self.session, ticket, stage_key)
-            reason = gate_would_skip_work(self.session, ticket, stage) if stage else ""
-            if reason:
-                raise ValueError(reason)
+            # A workflow gate is the resolver's to shape, whoever asks for it.
+            # It publishes APPROVAL_REQUESTED itself when it opens a new gate.
+            return request_exit_action_gate(
+                self.session, ticket, stage_key, title=title, impact=impact
+            )
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,

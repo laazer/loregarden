@@ -20,6 +20,7 @@ from loregarden.models.domain import (
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from sqlmodel import Session, select
+from tests.factories import operator_judgment_gate_payload
 
 
 def _setup_playtest_ticket(db_session: Session):
@@ -64,6 +65,7 @@ def _setup_playtest_ticket(db_session: Session):
         stage_key="playtest",
         title="Playtest sign-off",
         impact="Human review required before the workflow advances.",
+        tool_input_json=operator_judgment_gate_payload("Playtest"),
         status=ApprovalStatus.PENDING,
     )
     db_session.add(approval)

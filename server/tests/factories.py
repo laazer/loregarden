@@ -12,6 +12,7 @@ from loregarden.testing.factories import (
     make_ticket,
     make_workspace,
     make_workspace_ticket,
+    operator_judgment_gate_payload,
     queued_run,
 )
 from sqlmodel import select
@@ -23,6 +24,7 @@ __all__ = [
     "make_ticket",
     "make_workspace",
     "make_workspace_ticket",
+    "operator_judgment_gate_payload",
     "queued_run",
     "select",
 ]

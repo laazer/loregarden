@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WorkflowExitAction,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowTemplate,
@@ -39,6 +40,16 @@ from sqlmodel import Session, select
 REVIEW = "script_review"
 HUMAN_GATE = "playtest"
 IMPLEMENT = "implement"
+_READ_USAGE = {
+    "key": "read-usage",
+    "label": "Read provider usage",
+    "requirement": {"kind": "credential", "credential_key": "github_token"},
+}
+_ACCEPT_RISK = {
+    "key": "accept-risk",
+    "label": "Accept residual risk",
+    "requirement": {"kind": "operator_judgment", "decision_prompt": "Acceptable?"},
+}
 
 
 @pytest.fixture(name="ticket")
@@ -62,9 +73,20 @@ def ticket_fixture(db_session: Session, tmp_path) -> Ticket:
                 ParallelAgentSpec(agent_id=a)
                 for a in ("gdscript_reviewer", "static_qa", "architecture_reviewer")
             ],
+            exit_actions_enabled=True,
+            exit_actions=[
+                WorkflowExitAction.model_validate(action) for action in (_READ_USAGE, _ACCEPT_RISK)
+            ],
         ),
-        # A person is the stage: no agent, default stage_type — the live `playtest` shape.
-        WorkflowStageDef(key=HUMAN_GATE, name="Playtest", order=3),
+        # A person is the stage: no agent, default stage_type — the live `playtest`
+        # shape, with the sign-off migration 0149 gives it.
+        WorkflowStageDef(
+            key=HUMAN_GATE,
+            name="Playtest",
+            order=3,
+            exit_actions_enabled=True,
+            exit_actions=[WorkflowExitAction.model_validate(_ACCEPT_RISK)],
+        ),
         WorkflowStageDef(key="done", name="Done", order=4, terminal=True),
     ]
     template = WorkflowTemplate(
@@ -174,6 +196,59 @@ def test_a_sign_off_after_the_run_still_opens(db_session: Session, ticket: Ticke
     approval = OrchestrationCallbackService(db_session).request_approval(ticket, stage_key=REVIEW)
 
     assert approval.status is ApprovalStatus.PENDING
+    assert _stage_status(db_session, ticket, REVIEW) == StageStatus.AWAITING
+
+
+def test_a_requested_gate_lists_the_stages_exit_actions(db_session: Session, ticket: Ticket):
+    """AC-6/AC-8: the resolver shapes a requested gate, so approve is governed."""
+    _succeeded_run(db_session, ticket, REVIEW)
+
+    approval = OrchestrationCallbackService(db_session).request_approval(ticket, stage_key=REVIEW)
+
+    payload = json.loads(approval.tool_input_json)
+    assert [a["action_key"] for a in payload["human_required_actions"]] == [
+        "read-usage",
+        "accept-risk",
+    ]
+    # Nothing observed the credential on that run, so it needs a recheck, and
+    # approve cannot stand in for one.
+    with pytest.raises(ValueError, match="recheck"):
+        ApprovalService(db_session).resolve(approval.id, approved=True)
+    assert _stage_status(db_session, ticket, REVIEW) == StageStatus.AWAITING
+
+
+def test_requesting_a_gate_beside_the_resolvers_returns_the_same_gate(
+    db_session: Session, ticket: Ticket
+):
+    """AC-6: at most one pending workflow gate per stage, whoever asks for it."""
+    _succeeded_run(db_session, ticket, REVIEW)
+    callbacks = OrchestrationCallbackService(db_session)
+    first = callbacks.request_approval(ticket, stage_key=REVIEW)
+
+    second = callbacks.request_approval(ticket, stage_key=REVIEW)
+
+    assert second.id == first.id
+    pending = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.stage_key == REVIEW,
+            Approval.status == ApprovalStatus.PENDING,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+        )
+    ).all()
+    assert [a.id for a in pending] == [first.id]
+
+
+def test_a_stage_with_nothing_outstanding_has_nothing_to_request(
+    db_session: Session, ticket: Ticket
+):
+    """AC-6: no unresolved actions means no gate row — a blank gate is never opened."""
+    _succeeded_run(db_session, ticket, IMPLEMENT)
+
+    with pytest.raises(ValueError, match="no unresolved exit actions"):
+        OrchestrationCallbackService(db_session).request_approval(ticket, stage_key=IMPLEMENT)
+
+    assert db_session.exec(select(Approval).where(Approval.ticket_id == ticket.id)).all() == []
 
 
 def test_resolving_a_gate_on_an_unrun_agent_stage_is_refused(db_session: Session, ticket: Ticket):

@@ -55,9 +55,14 @@ def describe_stage_shape(session: Session, ticket: Ticket, stage: WorkflowStageD
     if is_terminal_stage(stage):
         return f"{stage.key}: terminal — nothing runs; the workflow finishes here."
     if is_agentless_stage(stage):
+        if stage.exit_actions_enabled and stage.exit_actions:
+            return (
+                f"{stage.key}: human gate — no agent; request_approval opens the gate for "
+                "its exit actions and a person resolves it."
+            )
         return (
-            f"{stage.key}: human gate — no agent; request_approval opens the inbox "
-            "item and a person resolves it."
+            f"{stage.key}: no agent and no exit actions — not a human gate; "
+            "complete_stage advances it."
         )
     succeeded, running = _run_tally(session, ticket, stage.key)
     history = _history(succeeded, running)
@@ -79,7 +84,7 @@ def describe_stage_shape(session: Session, ticket: Ticket, stage: WorkflowStageD
     if stage.stage_type == VERIFY_STAGE_TYPE:
         return f"{stage.key}: verify — {stage.agent_id or 'verifier'} checks; {history}. {_RUN_IT}."
     tail = (
-        "complete_stage to advance, or request_approval for a sign-off."
+        "complete_stage to advance; the stage's exit actions decide whether a person is asked."
         if succeeded and not running
         else f"{_RUN_IT}."
     )
