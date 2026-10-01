@@ -6,6 +6,7 @@ name: a read auto-approves, the write that edits another repo does not.
 """
 
 import json
+import subprocess
 from unittest import mock
 
 import pytest
@@ -153,3 +154,88 @@ def test_payload_is_json_serializable():
 def test_unknown_slug_is_a_caller_error(db_session):
     with pytest.raises(UnknownWorkspaceError):
         workspace_for_slug(db_session, "nope-not-a-workspace")
+
+
+# --------------------------------------------------------------------------- #
+# the gate list comes from workspace-gates.sh
+# --------------------------------------------------------------------------- #
+
+
+def _dispatcher_list() -> list[str]:
+    """What pre-commit and orchestration run, asked of the real dispatcher."""
+    completed = subprocess.run(
+        ["bash", str(service._scripts_dir() / service.GATES_DISPATCHER), "--list"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.split()
+
+
+def _passing(argv: list[str]) -> mock.Mock:
+    return mock.Mock(returncode=0, stdout="", stderr="")
+
+
+def test_check_workspace_covers_every_gate_the_dispatcher_lists():
+    listed = _dispatcher_list()
+    assert listed, "workspace-gates.sh --list printed no gates"
+    gate_calls: list[list[str]] = []
+    real_run = service._run
+
+    def run(argv: list[str]):
+        if argv[-1] == "--list":
+            return real_run(argv)
+        gate_calls.append(argv)
+        return _passing(argv)
+
+    with (
+        mock.patch.object(service, "_run", side_effect=run),
+        mock.patch.object(service, "resolve_workspace_root", return_value="/tmp/demo"),
+    ):
+        results = service.check_workspace(_workspace(), OrganizationScope.WORKTREE)
+
+    assert [r.checker for r in results] == listed
+    assert all(r.ok for r in results), [r.message for r in results if not r.ok]
+    for argv in gate_calls:
+        assert argv[-4:] == ["--repo", "/tmp/demo", "--scope", "worktree"]
+        if argv[-5].endswith(".py"):
+            # Never a bare python3: that is 3.9 on macOS and the checkers need 3.11.
+            assert argv[:2] == ["bash", str(service._scripts_dir() / "server_python.sh")]
+
+
+def test_dispatcher_list_failure_is_a_failing_result_not_an_empty_one():
+    failed = mock.Mock(returncode=127, stdout="", stderr="bash: no such file")
+    with (
+        mock.patch.object(service, "_run", return_value=failed),
+        mock.patch.object(service, "resolve_workspace_root", return_value="/tmp/demo"),
+    ):
+        results = service.check_workspace(_workspace(), OrganizationScope.WORKTREE)
+    assert len(results) == 1
+    assert results[0].ok is False
+    assert results[0].checker == service.GATES_DISPATCHER
+
+
+def test_unknown_gate_kind_fails_instead_of_being_skipped():
+    def run(argv: list[str]):
+        if argv[-1] == "--list":
+            return mock.Mock(returncode=0, stdout="new_gate.rb\n", stderr="")
+        raise AssertionError(f"nothing should run: {argv}")
+
+    with (
+        mock.patch.object(service, "_run", side_effect=run),
+        mock.patch.object(service, "resolve_workspace_root", return_value="/tmp/demo"),
+    ):
+        results = service.check_workspace(_workspace(), OrganizationScope.WORKTREE)
+    assert [(r.checker, r.ok) for r in results] == [("new_gate.rb", False)]
+
+
+def test_unavailable_gate_is_distinguished_from_a_failing_one():
+    unavailable = mock.Mock(returncode=service.EX_UNAVAILABLE, stdout="", stderr="needs 3.11")
+    failing = mock.Mock(returncode=1, stdout=" - a.py:1: bad\n", stderr="")
+    with mock.patch.object(service, "_run", side_effect=[unavailable, failing]):
+        could_not_run = service._checker_result("a.py", ["x"])
+        failed = service._checker_result("b.py", ["x"])
+    assert could_not_run.ok is False
+    assert could_not_run.message.startswith("could not run")
+    assert failed.ok is False
+    assert failed.message.startswith("failed")

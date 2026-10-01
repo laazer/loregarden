@@ -8,7 +8,9 @@ The checkers themselves live in ``.lefthook/scripts`` and are deliberately
 stdlib-only, workspace-agnostic scripts rather than importable modules: they have
 to run inside a git hook in a repo that has no loregarden venv. This service is
 the thin adapter that resolves a workspace slug to a repo path and reports what
-they said.
+they said. Which gates exist, and how each one runs, come from
+``workspace-gates.sh`` — the same dispatcher pre-commit and orchestration call —
+so this cannot drift from what they enforce.
 """
 
 from __future__ import annotations
@@ -26,6 +28,11 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 CHECK_TIMEOUT_SECONDS = 300
+#: The one list of workspace-agnostic gates; pre-commit and orchestration run it too.
+GATES_DISPATCHER = "workspace-gates.sh"
+#: The gates' "could not run" exit (EX_UNAVAILABLE), distinct from "found violations".
+EX_UNAVAILABLE = 69
+FAILURE_DETAIL_CHARS = 2000
 
 
 class OrganizationAction(StrEnum):
@@ -120,6 +127,18 @@ def _parse_findings(stdout: str) -> list[str]:
     return [line[3:].strip() for line in stdout.splitlines() if line.startswith(" - ")]
 
 
+def _failure_message(completed: subprocess.CompletedProcess[str]) -> str:
+    # All of it, capped: a crash's first line is often just node's loader frame,
+    # with the actual cause ("Cannot find module …") a few lines below.
+    detail = completed.stderr.strip()[:FAILURE_DETAIL_CHARS]
+    verdict = (
+        f"could not run (exit {completed.returncode})"
+        if completed.returncode == EX_UNAVAILABLE
+        else f"failed (exit {completed.returncode})"
+    )
+    return f"{verdict}: {detail}" if detail else verdict
+
+
 def _checker_result(checker: str, argv: list[str]) -> CheckerResult:
     try:
         completed = _run(argv)
@@ -129,35 +148,65 @@ def _checker_result(checker: str, argv: list[str]) -> CheckerResult:
         # Missing interpreter (no node on this machine) is a real answer, not a
         # crash: report it instead of failing the whole call.
         return CheckerResult(checker, ok=False, message=str(exc))
-    findings = _parse_findings(completed.stdout)
+    ok = completed.returncode == 0
     return CheckerResult(
         checker,
-        ok=completed.returncode == 0,
-        findings=findings,
-        message=""
-        if completed.returncode == 0
-        else (completed.stderr.strip() or "").split("\n")[0],
+        ok=ok,
+        findings=_parse_findings(completed.stdout),
+        message="" if ok else _failure_message(completed),
     )
+
+
+def _gate_argv(scripts: Path, checker: str) -> list[str] | None:
+    """How ``workspace-gates.sh`` runs a gate; ``None`` for a kind it does not know.
+
+    Python goes through ``server_python.sh``: the checkers need >=3.11, and a bare
+    ``python3`` is whatever the host PATH resolves (3.9 on macOS).
+    """
+    runners = {
+        ".py": ["bash", str(scripts / "server_python.sh")],
+        ".cjs": ["node"],
+    }
+    runner = runners.get(Path(checker).suffix)
+    return None if runner is None else [*runner, str(scripts / checker)]
+
+
+class GateListError(RuntimeError):
+    """The dispatcher could not say which gates exist."""
+
+
+def list_gates() -> list[str]:
+    """The gates ``workspace-gates.sh --list`` names — the single list of them."""
+    completed = _run(["bash", str(_scripts_dir() / GATES_DISPATCHER), "--list"])
+    gates = completed.stdout.split()
+    if completed.returncode != 0 or not gates:
+        raise GateListError(
+            f"{GATES_DISPATCHER} --list exited {completed.returncode} "
+            f"with {len(gates)} gates: {completed.stderr.strip()}"
+        )
+    return gates
 
 
 def check_workspace(workspace: Workspace, scope: OrganizationScope) -> list[CheckerResult]:
     root = resolve_workspace_root(workspace)
     scripts = _scripts_dir()
     common = ["--repo", str(root), "--scope", scope.value]
-    return [
-        _checker_result("python", ["python3", str(scripts / "py_organization_check.py"), *common]),
-        _checker_result(
-            "typescript", ["node", str(scripts / "ts_organization_check.cjs"), *common]
-        ),
-        _checker_result(
-            "typescript-silent-failures",
-            ["node", str(scripts / "ts_no_silent_failures_check.cjs"), *common],
-        ),
-        _checker_result(
-            "typescript-user-experience",
-            ["node", str(scripts / "ts_ux_states_check.cjs"), *common],
-        ),
-    ]
+    try:
+        gates = list_gates()
+    except (GateListError, OSError, subprocess.TimeoutExpired) as exc:
+        # An empty list here would read as "every gate passed".
+        return [CheckerResult(GATES_DISPATCHER, ok=False, message=f"could not list gates: {exc}")]
+    results = []
+    for checker in gates:
+        argv = _gate_argv(scripts, checker)
+        results.append(
+            CheckerResult(
+                checker, ok=False, message=f"no runner for {checker!r} (unknown file type)"
+            )
+            if argv is None
+            else _checker_result(checker, [*argv, *common])
+        )
+    return results
 
 
 def hooks_result(workspace: Workspace, *, install: bool) -> CheckerResult:
