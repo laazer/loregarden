@@ -158,42 +158,34 @@ const ERROR_HELPER_NAMES = ["describeError", "errorMessage", "formatError", "toE
 
 let errorHelperCache;
 
+function isCatalogSource(full) {
+  if (!/\.(ts|tsx)$/.test(full) || isTestFile(full)) return false;
+  const segments = full.split(path.sep);
+  return !segments.includes("node_modules") && !segments.includes("__tests__");
+}
+
 /**
  * Find this repo's own error-narrowing helper, so the message points somewhere
  * that exists in the workspace being checked rather than naming loregarden's.
  * Returns `{ name, file }`, or null when the repo has no such helper yet — then
  * the advice is to extract one.
  */
-function findErrorHelper(sourceRoot) {
+function findErrorHelper(sourceRoot, sourceFiles) {
   if (errorHelperCache !== undefined) return errorHelperCache;
   const pattern = new RegExp(`export\\s+(?:async\\s+)?function\\s+(${ERROR_HELPER_NAMES.join("|")})\\b`);
   errorHelperCache = null;
   if (sourceRoot === null) return errorHelperCache;
-  const stack = [sourceRoot];
-  while (stack.length > 0 && errorHelperCache === null) {
-    const dir = stack.pop();
-    let entries;
+  for (const full of sourceFiles) {
+    let match;
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      match = pattern.exec(fs.readFileSync(full, "utf8"));
     } catch {
+      // silent-ok: only the advice's wording depends on this; a finding is reported either way.
       continue;
     }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== "node_modules" && entry.name !== "__tests__") stack.push(full);
-      } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name) && !isTestFile(full)) {
-        let match;
-        try {
-          match = pattern.exec(fs.readFileSync(full, "utf8"));
-        } catch {
-          continue;
-        }
-        if (match) {
-          errorHelperCache = { name: match[1], file: path.relative(sourceRoot, full) };
-          break;
-        }
-      }
+    if (match) {
+      errorHelperCache = { name: match[1], file: path.relative(sourceRoot, full) };
+      break;
     }
   }
   return errorHelperCache;
@@ -208,9 +200,9 @@ function findErrorHelper(sourceRoot) {
  * Error)) return …`) is how narrowing is supposed to work and stays legal — which
  * is also why the helper's own file is exempt.
  */
-function errorNarrowingErrors(filePath, ast, lines, added, sourceRoot) {
+function errorNarrowingErrors(filePath, ast, lines, added, { sourceRoot, sourceFiles }) {
   if (isTestFile(filePath)) return [];
-  const helper = findErrorHelper(sourceRoot);
+  const helper = findErrorHelper(sourceRoot, sourceFiles);
   if (helper && path.resolve(sourceRoot, helper.file) === path.resolve(filePath)) return [];
   const advice = helper
     ? `use \`${helper.name}(error, "fallback")\` from ${helper.file}`
@@ -497,6 +489,7 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
     touched,
     repoRoot: resolvedRoot,
     sourceRoot: payload.select_root ?? null,
+    sourceFiles: (payload.source_files ?? []).filter(isCatalogSource),
   };
 }
 
@@ -506,7 +499,7 @@ function wholeFile(lineCount) {
   return { added, addedCount: lineCount, deletedCount: 0 };
 }
 
-function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }) {
+function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot, sourceFiles }) {
   const fileErrors = [];
   const lineCount = lines.length;
 
@@ -546,7 +539,7 @@ function checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }) 
 
   const ast = parseGradedFile(filePath, content);
   {
-    fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, sourceRoot));
+    fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, { sourceRoot, sourceFiles }));
     const functions = extractFunctions(ast, lines);
     const seen = new Map();
     for (const fn of functions) {
@@ -631,7 +624,7 @@ function writeCatalogCache(cacheFile, byHash) {
  * is nearly free and mtime granularity stops being a question anyone has to
  * reason about.
  */
-function buildCatalog(changedSet, sourceRoot) {
+function buildCatalog(changedSet, sourceRoot, sourceFiles) {
   const catalog = new Map();
   const clientSrc = sourceRoot;
   if (clientSrc === null || !fs.existsSync(clientSrc)) return catalog;
@@ -649,46 +642,36 @@ function buildCatalog(changedSet, sourceRoot) {
     }
   }
 
-  function walk(dir) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name === "__tests__") continue;
-        walk(full);
-      } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
-        if (changedSet.has(full)) continue;
-        if (isTestFile(full)) continue;
-        try {
-          const content = fs.readFileSync(full, "utf8");
-          const hash = crypto.createHash("sha1").update(content).digest("hex");
-          const hit = cached[hash];
-          if (hit) {
-            fresh[hash] = hit;
-            record(full, hit);
-            continue;
-          }
-          const lines = content.split("\n");
-          const ast = parseFile(full, content);
-          if (!ast) continue;
-          const fns = extractFunctions(ast, lines).map((fn) => ({
-            key: fn.key,
-            name: fn.name,
-            line: fn.line,
-          }));
-          fresh[hash] = fns;
-          record(full, fns);
-        } catch (err) {
-          // Background for the DRY catalog, not a file this run grades, so it
-          // cannot make the run report a violation clean. It can still weaken a
-          // DRY match, so it is reported rather than dropped.
-          console.error(
-            `note: catalog skipped an unreadable file, so DRY matches may be incomplete: ${full}: ${err.message}`,
-          );
-        }
+  for (const full of sourceFiles) {
+    if (changedSet.has(full)) continue;
+    try {
+      const content = fs.readFileSync(full, "utf8");
+      const hash = crypto.createHash("sha1").update(content).digest("hex");
+      const hit = cached[hash];
+      if (hit) {
+        fresh[hash] = hit;
+        record(full, hit);
+        continue;
       }
+      const lines = content.split("\n");
+      const ast = parseFile(full, content);
+      if (!ast) continue;
+      const fns = extractFunctions(ast, lines).map((fn) => ({
+        key: fn.key,
+        name: fn.name,
+        line: fn.line,
+      }));
+      fresh[hash] = fns;
+      record(full, fns);
+    } catch (err) {
+      // Background for the DRY catalog, not a file this run grades, so it
+      // cannot make the run report a violation clean. It can still weaken a
+      // DRY match, so it is reported rather than dropped.
+      console.error(
+        `note: catalog skipped an unreadable file, so DRY matches may be incomplete: ${full}: ${err.message}`,
+      );
     }
   }
-  walk(clientSrc);
   writeCatalogCache(cacheFile, fresh);
   return catalog;
 }
@@ -751,6 +734,7 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
     touched,
     repoRoot,
     sourceRoot,
+    sourceFiles,
   } = resolveGateScope({
     label,
     repoRoot: requestedRoot,
@@ -770,7 +754,7 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
   // a map it never read (808). Memoised, so several graded files share one.
   let catalog = null;
   const catalogFor = () => {
-    if (catalog === null) catalog = buildCatalog(changedSet, sourceRoot);
+    if (catalog === null) catalog = buildCatalog(changedSet, sourceRoot, sourceFiles);
     return catalog;
   };
 
@@ -779,7 +763,7 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
     const lines = content.split("\n");
     const { added, addedCount, deletedCount } = touched(filePath, lines.length);
     const netGrowing = addedCount > deletedCount;
-    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, sourceRoot }));
+    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, sourceRoot, sourceFiles }));
     if (!isTestFile(filePath)) {
       errors.push(...crossDryErrors(filePath, content, lines, catalogFor));
     }

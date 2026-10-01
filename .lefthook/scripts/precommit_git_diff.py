@@ -432,6 +432,24 @@ def git_untracked_paths(repo: Path) -> List[str]:
     return decoded_git_paths(out)
 
 
+def git_source_paths(repo: Path, under: Path) -> List[str]:
+    """Repo-relative paths under `under` that git shows: tracked, plus untracked
+    files it does not ignore.
+
+    For a gate that reads *other* files for context — the TypeScript gate's DRY
+    catalog. A filesystem walk reads ignored trees too, and in a workspace whose
+    source root is the repository itself `.claude/worktrees/` holds a full
+    checkout per session: every staged function was reported as duplicating its
+    own copies there. Untracked-but-not-ignored stays in, for the same reason
+    `git_untracked_paths` exists.
+    """
+    out = _git(
+        ["ls-files", "--cached", "--others", "--exclude-standard", "--", str(under.relative_to(repo))],
+        repo,
+    )
+    return sorted(set(decoded_git_paths(out)))
+
+
 def git_has_head(repo: Path) -> bool:
     """False in a repository with no commits yet — an unborn HEAD.
 
@@ -1314,6 +1332,15 @@ def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
                 explicit_files=[located_path(Path(f)) for f in args.files],
                 select=selector,
             )
+        source_files = (
+            None
+            if repo is None or select_root is None
+            else [
+                str(repo / rel)
+                for rel in git_source_paths(repo, select_root)
+                if Path(rel).suffix in args.suffix
+            ]
+        )
     except UnexaminableError as exc:
         json.dump({"error": str(exc), "notices": captured.getvalue().splitlines()}, sys.stdout)
         sys.stdout.write("\n")
@@ -1333,6 +1360,9 @@ def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
             # caller does not re-derive it.
             "repo_root": str(repo) if repo is not None else None,
             "select_root": str(select_root) if select_root is not None else None,
+            # What a gate reading other files for context may read: the
+            # suffixed files under `select_root` that git does not ignore.
+            "source_files": source_files,
             "files": [str(path) for path in run.files],
             "untracked": sorted(run.untracked),
             # Graded whole: git changed them but produced no usable diff.

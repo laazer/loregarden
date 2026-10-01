@@ -1,0 +1,41 @@
+slug: lore-eden
+name: lore-eden
+driver: external_mcp
+workflow_template: loregarden-tdd
+orchestrator:
+  skill: autopilot
+  pipeline: agents/common_assets/pipeline_stages_v1.md
+gates:
+  # lore-eden ships its own copies of the gates default.yaml runs (extracted
+  # from here), plus CSS, shell, data-format and file-coverage gates. Its
+  # pre-commit runs those copies, so transitions do too: one rule set per check.
+  #
+  # The Python gates go through lore-eden's gate-python.sh, which finds
+  # pylint/shellcheck in python/.venv — the primary checkout's when an agent
+  # worktree has none.
+  #
+  # The TypeScript gates are lore-eden's own too. They load their parser from
+  # gates/node_modules — the primary checkout's when an agent worktree has none
+  # (laazer/lore-eden#62).
+  #
+  # Not here: the Ruff/Pylint growth filters take file lists, not --scope, and
+  # ruff-policy.sh needs ruff from the worktree's own venv. Both run in
+  # pre-commit and CI.
+  enabled: true
+  commands:
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/py_organization_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/py_silent_except_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/py_git_subprocess_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/py_defensive_normalization_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/css_organization_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/sh_shellcheck_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/data_format_check.py --repo {workspace_root} --scope worktree
+    - bash {workspace_root}/gates/scripts/gate-python.sh {workspace_root}/gates/lore_eden_gates/gate_coverage_check.py --repo {workspace_root}
+    - node {workspace_root}/gates/lore_eden_gates/ts_organization_check.cjs --repo {workspace_root} --scope worktree
+    - node {workspace_root}/gates/lore_eden_gates/ts_no_silent_failures_check.cjs --repo {workspace_root} --scope worktree
+    - node {workspace_root}/gates/lore_eden_gates/ts_ux_states_check.cjs --repo {workspace_root} --scope worktree
+subagents:
+  spawn_via: external
+callbacks:
+  mode: mcp
+max_stages_per_run: 0
