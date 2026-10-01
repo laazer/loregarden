@@ -107,3 +107,35 @@ def test_apply_migrations_consults_the_guard_before_migrating(tmp_path):
     assert pending == [mid for mid, _ in migrations.MIGRATIONS]
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT count(*) FROM schema_migrations").scalar() == 0
+
+
+@pytest.fixture
+def nested_worktree(checkouts) -> Path:
+    """A worktree where Claude Code puts them: inside the primary checkout."""
+    primary, _ = checkouts
+    worktree = primary / ".claude/worktrees/ticket-nested"
+    _git(primary, "worktree", "add", "-q", "-b", "nested", str(worktree))
+    return worktree.resolve()
+
+
+def test_a_nested_worktree_migrates_its_own_sandbox_copy(nested_worktree):
+    """`task sandbox` copies live into the worktree's own data/; that copy is the branch's."""
+    assert_may_migrate(
+        nested_worktree / "data/sandbox/loregarden.db", [UNSHIPPED], code_root=nested_worktree
+    )
+
+
+def test_a_nested_worktree_still_may_not_migrate_live(checkouts, nested_worktree):
+    primary, _ = checkouts
+
+    with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
+        assert_may_migrate(primary / "data/loregarden.db", [UNSHIPPED], code_root=nested_worktree)
+
+
+def test_a_nested_worktree_may_not_migrate_another_worktrees_database(checkouts, nested_worktree):
+    """Not live, but not this branch's either; the guard does not guess on someone else's data."""
+    primary, worktree = checkouts
+    sibling = primary / ".claude/worktrees/other/data/loregarden.db"
+
+    with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
+        assert_may_migrate(sibling, [UNSHIPPED], code_root=nested_worktree)
