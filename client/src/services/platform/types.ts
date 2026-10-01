@@ -29,4 +29,15 @@ export interface PlatformAdapter {
   clipboardRead(): Promise<string>;
   clipboardWrite(text: string): Promise<void>;
   openExternal(url: string): Promise<void>;
+  /**
+   * Whether `openInTab` can find a tab it opened before. A browser can, by
+   * window name; the desktop app hands URLs to the OS, which opens its own.
+   */
+  readonly reusesTabs: boolean;
+  /**
+   * Open `url` in the tab named `tabName`, reusing it when it is still open.
+   * Where tabs cannot be reused (`reusesTabs` false) this opens externally.
+   * Rejects when the URL could not be opened, e.g. a blocked pop-up.
+   */
+  openInTab(url: string, tabName: string): Promise<void>;
 }

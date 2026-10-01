@@ -61,6 +61,13 @@ export const tauriPlatform: PlatformAdapter = {
   async openExternal(url: string) {
     await openUrl(url);
   },
+
+  reusesTabs: false,
+
+  async openInTab(url: string) {
+    // The OS opener owns the browser's tabs; the most it can do is open the URL.
+    await openUrl(url);
+  },
 };
 
 export type { FilePickerOptions };

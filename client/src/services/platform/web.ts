@@ -45,4 +45,16 @@ export const webPlatform: PlatformAdapter = {
   async openExternal(url: string) {
     window.open(url, "_blank", "noopener,noreferrer");
   },
+
+  reusesTabs: true,
+
+  async openInTab(url: string, tabName: string) {
+    // No "noopener" feature: it puts the tab in a new browsing-context group,
+    // where the next open by this name can no longer find it. Severing
+    // `opener` afterwards still stops the page navigating this one.
+    const opened = window.open(url, tabName);
+    if (!opened) throw new Error("The browser blocked the tab — allow pop-ups for this site and try again.");
+    opened.opener = null;
+    opened.focus();
+  },
 };
