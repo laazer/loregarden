@@ -11,9 +11,11 @@ from loregarden.agents.mcp_context import (
     mcp_cli_env,
     resolve_api_base_url,
     resolve_mcp_url,
+    supervised_run_env,
 )
 from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
+from loregarden.mcp.caller import ORCHESTRATED_ENV, RUN_ID_ENV
 from loregarden.models.domain import ChatSurface, CliAdapter
 from loregarden.models.domain.schemas import StudioAgentToolGrants
 from loregarden.services.cli_settings import (
@@ -87,15 +89,23 @@ STATE_BINDING_ENV_VARS = (
     "LOREGARDEN_MEMORY_SQLITE_URL",
 )
 
+#: A supervised run's identity (see ``mcp.caller``). Stripped from what a
+#: subprocess inherits and set only by ``resolve_cli_invocation``, so a chat or
+#: terminal session spawned by a process that itself carries one never claims a
+#: run it is not.
+RUN_IDENTITY_ENV_VARS = (ORCHESTRATED_ENV, RUN_ID_ENV)
+
 
 def invocation_env(invocation: CliInvocation) -> dict[str, str]:
     """Full environment for spawning ``invocation``.
 
-    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS``, plus
-    the invocation's own overlay. Taken at call time rather than import so a
-    variable the supervising process sets after import still reaches the agent.
+    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS`` and
+    ``RUN_IDENTITY_ENV_VARS``, plus the invocation's own overlay. Taken at call
+    time rather than import so a variable the supervising process sets after
+    import still reaches the agent.
     """
-    env = {k: v for k, v in os.environ.items() if k not in STATE_BINDING_ENV_VARS}
+    stripped = {*STATE_BINDING_ENV_VARS, *RUN_IDENTITY_ENV_VARS}
+    env = {k: v for k, v in os.environ.items() if k not in stripped}
     env.update(invocation.env)
     return env
 
@@ -726,7 +736,7 @@ def resolve_cli_invocation(
         workspace_root=workspace_root,
     )
     if override is not None:
-        return override
+        return _as_supervised(override, run_id)
 
     selected = resolve_effective_adapter(
         agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
@@ -826,7 +836,18 @@ def resolve_cli_invocation(
     # question for every adapter, and the builders differ only in how they spell
     # it on the command line. `model` is the bare id — cursor's argv folds effort
     # into it, but the record keeps the two apart so both are queryable.
-    return replace(invocation, model=model, effort=effort)
+    return _as_supervised(replace(invocation, model=model, effort=effort), run_id)
+
+
+def _as_supervised(invocation: CliInvocation, run_id: str) -> CliInvocation:
+    """Mark ``invocation``'s process as supervised run ``run_id``.
+
+    Every adapter, not only the ones whose MCP config carries the flag: an agent
+    that falls back to ``loregarden mcp call`` from its own shell is still this
+    run, and the CLI reads the same variables. Without them 2,842 of 2,843 CLI
+    calls from stage runs (30 days to 2026-09-30) ran under the chat policy.
+    """
+    return replace(invocation, env={**invocation.env, **supervised_run_env(run_id)})
 
 
 def _claude_triage_invocation(

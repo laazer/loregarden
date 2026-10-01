@@ -801,6 +801,7 @@ class CliAgentExecutor:
         transport = resolve_control_plane_transport(
             run=run,
             adapter=adapter,
+            project_root=repo_root,
         )
         mcp_context = build_mcp_run_context(
             ticket=ticket,
@@ -809,7 +810,7 @@ class CliAgentExecutor:
             stage_def=stage_def,
             transport=transport,
         )
-        mcp_doc = load_loregarden_mcp_doc(agent_context_dir, transport=transport)
+        mcp_doc = load_loregarden_mcp_doc(transport=transport)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         ui_primitives_doc = load_ui_primitives_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
