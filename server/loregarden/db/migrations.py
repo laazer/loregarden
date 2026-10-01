@@ -15,6 +15,7 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
@@ -1429,11 +1430,26 @@ MIGRATIONS: list[tuple[str, Migration]] = [
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
-from loregarden.db.migrations_runner import apply_pending  # noqa: E402
+from loregarden.db.migrations_runner import (  # noqa: E402
+    apply_pending,
+    pending_migration_ids,
+)
+from loregarden.db.shared_database_guard import assert_may_migrate  # noqa: E402
+
+#: The checkout this registry was loaded from — `server/loregarden/db/` is three
+#: levels below it.
+_CODE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def apply_migrations(engine: Engine) -> list[str]:
-    """Apply every pending migration in this registry, in order."""
+    """Apply every pending migration in this registry, in order.
+
+    Refuses first when this is a worktree build about to migrate the shared
+    database ahead of main — see `shared_database_guard`.
+    """
+    database = Path(engine.url.database) if engine.url.database else None
+    pending = pending_migration_ids(engine, [mid for mid, _ in MIGRATIONS])
+    assert_may_migrate(database, pending, code_root=_CODE_ROOT)
     return apply_pending(engine, MIGRATIONS)
 
 
