@@ -47,6 +47,7 @@ def build_orchestration_context(
     stages: list[WorkflowStageDef] | None = None,
     posture: ResolvedPosture | None = None,
     session: Session | None = None,
+    assigned_exit_actions: list[dict] | list[object] | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -117,6 +118,9 @@ def build_orchestration_context(
             brief,
         ]
 
+    if assigned_exit_actions:
+        lines += _assigned_exit_action_lines(assigned_exit_actions)
+
     gate = gate_prep_target(stages, stage_key)
     if gate is not None:
         lines += [
@@ -162,3 +166,26 @@ def build_orchestration_context(
         ]
 
     return "\n".join(lines)
+
+
+def _assigned_exit_action_lines(assigned_exit_actions: list[dict] | list[object]) -> list[str]:
+    """Prompt lines naming the exit actions this run must execute."""
+    labels: list[str] = []
+    for action in assigned_exit_actions:
+        if isinstance(action, dict):  # py-org: allow-isinstance
+            label = str(action.get("action_label") or action.get("label") or "")
+        else:
+            label = str(action.action_label or "")
+        if label:
+            labels.append(label)
+    if not labels:
+        return []
+    return [
+        "",
+        "### Exit actions assigned to this run",
+        "These requirements are satisfied for your runtime. Execute each one before you "
+        "finish. A passing stage report attests that the assigned actions completed; a "
+        "failed or reworked report completes none of them.",
+        "",
+        *(f"- {label}" for label in labels),
+    ]

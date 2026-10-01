@@ -22,7 +22,6 @@ from loregarden.models.domain import (
 from loregarden.services.doctor import park_for_environment
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.stage_dispatch_prep import consume_dispatch_waiver
-from loregarden.services.subtree_auto_run import auto_resolve_awaiting_gate
 from loregarden.services.workflow_state import reconcile_workflow_state
 from sqlmodel import Session, select
 from tests.factories import make_orchestration_run
@@ -127,15 +126,20 @@ def test_a_park_cannot_be_rerouted_to_another_stage(db_session, parked):
 
 
 def test_autopilot_pauses_on_a_park_instead_of_approving_its_own(db_session, parked):
-    """The unattended half of the defect: `auto_resolve_awaiting_gate` selected
-    the park, auto-approved it, and the run continued past a stage nobody ran.
+    """The unattended half of the defect: auto_approve must not clear a park.
     No amount of auto_approve makes a broken box not broken."""
+    from loregarden.models.domain import WorkflowStageDef
+    from loregarden.services.subtree_auto_run import resolve_gate_if_permitted
+
     ticket, _, approval, stage_key = parked
     orch_run = make_orchestration_run(
         db_session, workspace_id=ticket.workspace_id, ticket_id=ticket.id
     )
+    stage = WorkflowStageDef(key=stage_key, name=stage_key, agent_id="")
 
-    assert auto_resolve_awaiting_gate(db_session, ticket, orch_run, stage_key) is False
+    assert (
+        resolve_gate_if_permitted(db_session, ticket, orch_run, stage, auto_approve=True) is False
+    )
 
     db_session.refresh(ticket)
     db_session.refresh(approval)

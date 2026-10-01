@@ -48,6 +48,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from loregarden.services.exit_actions import validate_against_catalog
 from loregarden.services.mcp_registry import registered_mcp_server_names
 from loregarden.services.skill_service import SkillService
 from loregarden.services.studio_agent_config import (
@@ -197,12 +198,15 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     ),
     StudioMcpToolGuide(
         name="loregarden_request_approval",
-        description="Open a human approval inbox item for a stage.",
+        description="Raise the workflow gate for a stage's outstanding exit actions.",
         when_to_use=(
-            "An agentless human gate, or a sign-off after this stage's own run succeeded. "
-            "Not to run a stage (start_stage / begin_external_stage) or waive one (skip_stage)."
+            "A stage whose exit actions still need a person: an agentless gate stage, or an "
+            "agent stage whose run left actions only a person can resolve. Refused when "
+            "nothing is outstanding; a sign-off is an operator_judgment exit action authored "
+            "on the stage. Not to run a stage (start_stage / begin_external_stage) or waive "
+            "one (skip_stage)."
         ),
-        example='tools/call loregarden_request_approval {"run_id": "<run id>", "stage_key": "review", "title": "Deploy to staging?", "impact": "Requires operator approval"}',
+        example='tools/call loregarden_request_approval {"run_id": "<run id>", "stage_key": "playtest"}',
         stage_agent=True,
     ),
     StudioMcpToolGuide(
@@ -622,8 +626,8 @@ _STORED_STAGE_DEFAULTS: dict[str, object] = {
     "classify_routes": list,
     "parallel_agents": list,
     "gate_commands": list,
-    "gate_required": False,
     "exit_actions_enabled": False,
+    "exit_actions": list,
 }
 
 
@@ -1160,6 +1164,8 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        for stage in stages:
+            validate_against_catalog(stage.exit_actions)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1194,6 +1200,8 @@ class StudioService:
             validate_has_terminal_stage(stages)
             validate_stage_skill_names(stages)
             validate_alternative_groups(stages)
+            for stage in stages:
+                validate_against_catalog(stage.exit_actions)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1256,6 +1264,8 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        for stage in stages:
+            validate_against_catalog(stage.exit_actions)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
@@ -1405,6 +1415,14 @@ class StudioService:
             select(StudioWorkflow).where(StudioWorkflow.slug == slug)
         ).first()
         if workflow:
+            workflow.name = template.name
+            workflow.description = template.description
+            workflow.stages_json = template.stages_json
+            workflow.transitions_json = template.transitions_json
+            workflow.updated_at = datetime.now(timezone.utc)
+            self.session.add(workflow)
+            self.session.commit()
+            self.session.refresh(workflow)
             return _workflow_view(self.session, workflow)
         return _template_workflow_view(template)
 

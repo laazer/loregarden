@@ -199,7 +199,7 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 | List initiatives (cross-workspace parents of milestones; `init-*` ids) | `loregarden_list_tickets` with `work_item_type=initiative`, no `workspace_slug` |
 | Create an initiative / attach a milestone to one | `loregarden_create_ticket` with `work_item_type=initiative`, no `workspace_slug`; then `loregarden_update_ticket` on the milestone with `parent=<init-id>` (`""` detaches) |
 | Unrecoverable failure | `loregarden_block_ticket` |
-| Human sign-off needed | `loregarden_request_approval` |
+| A stage's exit actions need a person | `loregarden_request_approval` (refused when nothing is outstanding; a sign-off is an `operator_judgment` exit action on the stage) |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Find the right documentation page | `loregarden_search_reference` — not a guessed URL |

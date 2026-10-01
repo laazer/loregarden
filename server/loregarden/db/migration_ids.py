@@ -166,6 +166,9 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0146_instance_templates",
     "0147_ux_purpose_in_design_lanes",
     "0148_chat_message_attachments",
+    # Out of numeric order: see the note beside it in MIGRATIONS.
+    "0138_runtime_exit_actions",
+    "0149_agentless_stage_exit_actions",
 )
 
 

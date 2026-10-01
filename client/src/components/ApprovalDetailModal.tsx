@@ -16,6 +16,7 @@ export function ApprovalDetailModal({
   isSubmitting,
   onClose,
   onApprove,
+  onRecheck,
   onReject,
   onOpenApprovalsTab,
 }: {
@@ -24,6 +25,7 @@ export function ApprovalDetailModal({
   isSubmitting?: boolean;
   onClose: () => void;
   onApprove: (payload?: ApprovalResolvePayload) => void;
+  onRecheck?: (payload?: ApprovalResolvePayload) => void;
   onReject: (payload?: ApprovalResolvePayload) => void;
   onOpenApprovalsTab?: () => void;
 }) {
@@ -62,6 +64,7 @@ export function ApprovalDetailModal({
             approval={approval}
             isSubmitting={isSubmitting}
             onApprove={onApprove}
+            onRecheck={onRecheck}
             onReject={onReject}
             onInspect={onOpenApprovalsTab}
             inspectLabel="Open Approvals tab"

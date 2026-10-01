@@ -4,6 +4,7 @@ import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
+import { exitActionCategoryLabel } from "./exitActionCategories";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
 
@@ -50,6 +51,7 @@ export function ApprovalCard({
   approval,
   onApprove,
   onReject,
+  onRecheck,
   onInspect,
   isSubmitting,
   compact = false,
@@ -61,6 +63,8 @@ export function ApprovalCard({
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
   onReject: (payload?: ApprovalResolvePayload) => void;
+  /** Prefer this for recheck-only exit-action gates; falls back to onApprove when omitted. */
+  onRecheck?: (payload?: ApprovalResolvePayload) => void;
   onInspect?: () => void;
   isSubmitting?: boolean;
   compact?: boolean;
@@ -168,8 +172,39 @@ export function ApprovalCard({
     });
   };
 
+  const humanRequired = approval.human_required_actions ?? [];
+  const allowedActions = approval.allowed_actions;
+  const isExitActionGate = approval.kind === "workflow_gate" && humanRequired.length > 0;
+  const allowApprove = Boolean(allowedActions?.includes("approve"));
+  const allowRecheck = Boolean(allowedActions?.includes("recheck"));
+  // Exit-action gates honour server allowed_actions; other kinds keep Approve.
+  const showApprove = isExitActionGate ? allowApprove : true;
+  const showRecheckPrimary = isExitActionGate && allowRecheck && !allowApprove;
+  const categoryLabels = (() => {
+    if (!isExitActionGate) return [] as string[];
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const action of humanRequired) {
+      const label = exitActionCategoryLabel(action);
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
+    }
+    return labels;
+  })();
+
   const submitApproval = () => {
     onApprove(resolvePayload());
+  };
+
+  const submitRecheck = () => {
+    const payload = resolvePayload();
+    if (onRecheck) {
+      onRecheck(payload);
+      return;
+    }
+    onApprove(payload);
   };
 
   return (
@@ -190,7 +225,13 @@ export function ApprovalCard({
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
           {approval.stage_name}
-          {approval.kind === "workflow_gate" && <span> · stage sign-off</span>}
+          {approval.kind === "workflow_gate" &&
+            categoryLabels.map((label) => (
+              <span key={label} role="status" aria-label={label}>
+                {" "}
+                · {label}
+              </span>
+            ))}
           {approval.kind === "rework_pause" && <span> · rework loop paused</span>}
           {approval.kind === "block_decision" && (
             <span> · decision needed; answering reruns the stage</span>
@@ -201,12 +242,34 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <MarkdownContent
-          content={impactText ?? approval.impact}
-          className="approval-impact"
-          readerTitle={approval.title}
-          readerSubtitle={approval.workspace_slug ?? undefined}
-        />
+        {isExitActionGate ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
+            {humanRequired.map((action) => (
+              <div key={action.action_key} style={{ fontSize: 12.5, color: "var(--txm)" }}>
+                <div style={{ fontWeight: 600, color: "var(--tx)", marginBottom: 2 }}>
+                  {action.action_label}
+                </div>
+                <div>{action.reason}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <MarkdownContent
+            content={impactText ?? approval.impact}
+            className="approval-impact"
+            readerTitle={approval.title}
+            readerSubtitle={approval.workspace_slug ?? undefined}
+          />
+        )}
+        {/* Narrative impact remains available under structured actions when both exist. */}
+        {isExitActionGate && (impactText ?? approval.impact) ? (
+          <MarkdownContent
+            content={impactText ?? approval.impact}
+            className="approval-impact"
+            readerTitle={approval.title}
+            readerSubtitle={approval.workspace_slug ?? undefined}
+          />
+        ) : null}
 
         {isHumanAction && approval.prepared_action && (
           <PreparedActionPanel
@@ -518,7 +581,17 @@ export function ApprovalCard({
               Submit answers
             </button>
           )
-        ) : (
+        ) : showRecheckPrimary ? (
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ flex: 1, borderRadius: 0, color: "var(--ac2)" }}
+            disabled={!canSubmit || isSubmitting}
+            onClick={submitRecheck}
+          >
+            Re-check
+          </button>
+        ) : showApprove ? (
           <button
             type="button"
             className="btn-secondary"
@@ -534,7 +607,7 @@ export function ApprovalCard({
                   ? "Approve & route back"
                   : "Approve"}
           </button>
-        )}
+        ) : null}
         <button
           type="button"
           className="btn-secondary"

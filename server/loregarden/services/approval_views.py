@@ -117,6 +117,16 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         checklist = json.loads(approval.checklist_json or "[]")
     except json.JSONDecodeError:
         checklist = []
+    human_required_actions = []
+    allowed_actions = []
+    if approval.kind == ApprovalKind.WORKFLOW_GATE:
+        try:
+            exit_action_payload = json.loads(approval.tool_input_json or "{}")
+            human_required_actions = exit_action_payload.get("human_required_actions", [])
+            allowed_actions = exit_action_payload.get("allowed_actions", [])
+        except json.JSONDecodeError:
+            human_required_actions = []
+            allowed_actions = []
     if ticket:
         # Gates recorded before the checklist was expanded still hold a raw
         # {{acceptance_criteria}} token; expand on read so it never reaches the UI.
@@ -149,6 +159,8 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "tool_name": approval.tool_name,
         "tool_input_json": approval.tool_input_json,
         "cli_adapter": approval.cli_adapter,
+        "human_required_actions": human_required_actions,
+        "allowed_actions": allowed_actions,
         "questions": questions,
         "resolved_answers": resolved_answers,
         "created_at": approval.created_at.isoformat() if approval.created_at else "",

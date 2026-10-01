@@ -41,7 +41,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
       payload,
     }: {
       id: string;
-      action: "approve" | "reject";
+      action: "approve" | "recheck" | "reject";
       payload?: ApprovalResolvePayload;
     }) => api.resolveApproval(id, { action, ...payload }),
     onSuccess: () => {
@@ -160,7 +160,7 @@ function ApprovalRow({
   /** Listed above the cards — what the brief and the checklist need not restate. */
   criteria: string[];
   isSubmitting: boolean;
-  onResolve: (action: "approve" | "reject", payload?: ApprovalResolvePayload) => void;
+      onResolve: (action: "approve" | "recheck" | "reject", payload?: ApprovalResolvePayload) => void;
 }) {
   const deduped = criteria.length > 0;
   return (
@@ -175,6 +175,7 @@ function ApprovalRow({
         impactText={deduped ? impactWithoutCriteria(approval.impact) : undefined}
         isSubmitting={isSubmitting}
         onApprove={(payload) => onResolve("approve", payload)}
+        onRecheck={(payload) => onResolve("recheck", payload)}
         onReject={(payload) => onResolve("reject", payload)}
       />
     </div>

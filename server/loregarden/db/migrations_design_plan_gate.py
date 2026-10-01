@@ -50,9 +50,30 @@ def m_approve_design_plans_columns(conn: Connection) -> None:
 def _gate_stages(stages: list[dict], keys: tuple[str, ...]) -> bool:
     changed = False
     for stage in stages:
-        if stage.get("key") in keys and not stage.get("gate_required"):
-            stage["gate_required"] = True
-            changed = True
+        if stage.get("key") not in keys:
+            continue
+        # Write the modern exit-actions shape. Rows that already carry a
+        # non-empty exit_actions list are left alone (idempotent). Legacy
+        # `gate_required` alone is converted here too so a fresh apply of this
+        # migration never leaves the retired flag behind; `m_runtime_exit_actions`
+        # still handles older databases that applied the original body.
+        if stage.get("exit_actions_enabled") and stage.get("exit_actions"):
+            stage.pop("gate_required", None)
+            continue
+        name = str(stage.get("name") or stage.get("key") or "stage")
+        stage["exit_actions_enabled"] = True
+        stage["exit_actions"] = [
+            {
+                "key": "legacy-stage-sign-off",
+                "label": f"Approve {name} completion",
+                "requirement": {
+                    "kind": "operator_judgment",
+                    "decision_prompt": f"Approve completion of stage '{name}'.",
+                },
+            }
+        ]
+        stage.pop("gate_required", None)
+        changed = True
     return changed
 
 

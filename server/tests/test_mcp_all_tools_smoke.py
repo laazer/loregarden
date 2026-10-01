@@ -19,6 +19,7 @@ from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
 
 MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
@@ -158,6 +159,7 @@ def _args_for(
     stage_key: str,
     prereq_id: str,
     optional_stage_key: str,
+    gate_stage_key: str,
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -283,7 +285,7 @@ def _args_for(
         },
         "loregarden_request_approval": {
             "run_id": run_id,
-            "stage_key": stage_key,
+            "stage_key": gate_stage_key,
             "title": "smoke approval",
         },
         "loregarden_write_handoff": {
@@ -354,6 +356,14 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     detail = client.get(f"/api/tickets/{ticket_id}").json()
     optional_stage_key = next((s["key"] for s in detail.get("stages", []) if s.get("optional")), "")
     assert optional_stage_key, "seed workflow has no optional stage for skip_stage to skip"
+    # A workflow gate lists exit actions a person must resolve; a stage with none
+    # has nothing to request (`gate_approvals.request_exit_action_gate`).
+    with Session(isolated_db) as session:
+        seeded = session.get(Ticket, ticket_id)
+        assert seeded is not None
+        _, seeded_stages = resolve_ticket_stages(session, seeded)
+    gate_stage_key = next((s.key for s in seeded_stages if s.exit_actions_enabled), "")
+    assert gate_stage_key, "seed workflow has no stage with exit actions to request a gate on"
 
     # create_memory_relation needs two real node ids: a self-edge is refused.
     memory_id = _memory_node_id(client, "smoke-anchor")
@@ -434,6 +444,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             stage_key,
             prereq_id,
             optional_stage_key,
+            gate_stage_key,
         )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")

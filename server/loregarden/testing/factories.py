@@ -24,13 +24,19 @@ from sqlmodel import Session, select
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    ExitActionRequirementKind,
+    ExitActionResolution,
+    OperatorJudgmentRequirement,
     OrchestrationRun,
     QueuedRun,
     Ticket,
     TicketState,
+    WorkflowExitAction,
+    WorkflowStageDef,
     WorkItemType,
     Workspace,
 )
+from loregarden.services.exit_actions import resolve_exit_actions
 
 # Where a workspace points when the test never said. Absolute and deliberately
 # nonexistent, because `resolve_workspace_root` resolves a *relative* path
@@ -228,3 +234,33 @@ def make_artifact(
     session.commit()
     session.refresh(artifact)
     return artifact
+
+
+def operator_judgment_gate_payload(stage_name: str = "stage") -> str:
+    """The exit-action payload of a sign-off gate, as the resolver writes it.
+
+    One operator-judgment action — the shape migrations 0138/0149 give every
+    human gate — resolved by the real resolver, so a test approving "a gate"
+    approves one the server would accept. A blank payload is refused: approving
+    it would attest nothing.
+    """
+    stage = WorkflowStageDef(
+        key="gate",
+        name=stage_name,
+        exit_actions_enabled=True,
+        exit_actions=[
+            WorkflowExitAction(
+                key="legacy-stage-sign-off",
+                label=f"Approve {stage_name} completion",
+                requirement=OperatorJudgmentRequirement(
+                    kind=ExitActionRequirementKind.OPERATOR_JUDGMENT,
+                    decision_prompt=f"Approve completion of stage '{stage_name}'.",
+                ),
+            )
+        ],
+    )
+    resolution = resolve_exit_actions(stage, None)
+    return ExitActionResolution(
+        human_required_actions=resolution.human_required_actions,
+        allowed_actions=resolution.allowed_actions,
+    ).model_dump_json()

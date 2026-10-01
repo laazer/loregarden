@@ -48,6 +48,11 @@ from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
 )
+from loregarden.services.exit_action_ledger import (
+    gate_is_operator_judgment_only,
+    outstanding_exit_actions,
+)
+from loregarden.services.exit_actions import attest_assigned_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
@@ -311,9 +316,8 @@ def _sign_off_design_plan_if_permitted(
 ) -> None:
     """The post-run gate on a design plan, signed off by the run that reached it.
 
-    Same shape as the `auto_approve` pre-resolve above it, narrowed to the
-    design-plan stages and to a parent orchestration started with
-    `approve_design_plans` (746). A standalone run has no orchestrator to sign
+    Narrowed to the design-plan stages and to a parent orchestration started
+    with `approve_design_plans` (746); `auto_approve` alone never signs a gate. A standalone run has no orchestrator to sign
     for it, so its gate waits for a person. Recorded in the history either way.
     """
     if not run.orchestration_run_id:
@@ -324,7 +328,22 @@ def _sign_off_design_plan_if_permitted(
         return
     if not orchestrator_may_sign_off(parent, stage_def, auto_approve=False):
         return
-    orch.auto_resolve_gate_approval(gate_approval, run)
+    # A sign-off answers operator judgment and nothing else: a grant or a
+    # recheck is a person's to make, and the gate stays in the inbox for them.
+    if not gate_is_operator_judgment_only(gate_approval):
+        return
+    try:
+        orch.sign_off_gate_approval(gate_approval)
+    except ValueError:
+        # Run completion must not raise past here: the run is already settled.
+        # The gate stays pending and visible in the inbox, which is the fallback.
+        logger.warning(
+            "Design-plan sign-off of gate %s on %s refused; left for a person",
+            gate_approval.id,
+            ticket.external_id,
+            exc_info=True,
+        )
+        return
     record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
 
 
@@ -540,6 +559,9 @@ def _advance_clean_exit(
     gate_approval: Approval | None = None
     stage_status = StageStatus.DONE
     stage_def = next((s for s in stages if s.key == run.stage_key), None)
+    if report is not None:
+        attest_assigned_actions(run, report_status=report.status)
+        orch.session.add(run)
     if stage_def and is_terminal_stage(stage_def):
         # A terminal stage's DONE is `_finish_workflow`'s to write, and only
         # after the landing: `set_stage_status` on the terminal stage derives
@@ -549,13 +571,23 @@ def _advance_clean_exit(
         # through the landing. Nothing ran here at all until the landing
         # resolver (801); this keeps that door shut.
         stage_status = StageStatus.PENDING
-    elif stage_def and stage_def.requires_human_sign_off:
-        stage_status = StageStatus.AWAITING
-        template = orch.get_template_for_ticket(ticket)
-        if template:
-            stage_name = stage_display_name(template, run.stage_key)
+    elif stage_def and stage_def.exit_actions_enabled and stage_def.exit_actions:
+        # Only what is still outstanding: a continuation's chain has already
+        # settled some actions (attested, or approved as judgment), and asking
+        # about them again would gate work that is done.
+        outstanding, settled = outstanding_exit_actions(orch.session, run, stage_def)
+        if outstanding:
+            stage_status = StageStatus.AWAITING
+            template = orch.get_template_for_ticket(ticket)
             gate_approval = create_workflow_gate_approval(
-                orch.session, ticket, run.stage_key, stage_name, stage_def=stage_def
+                orch.session,
+                ticket,
+                run.stage_key,
+                stage_display_name(template, run.stage_key) if template else stage_def.name,
+                stage_def=stage_def,
+                human_required_actions=outstanding,
+                settled_action_keys=settled,
+                run_id=run.id,
             )
     set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
     ticket.blocking_issues = ""
@@ -735,14 +767,9 @@ def advance_stage_after_run(
     orch.session.add(instance)
     orch.session.commit()
 
-    # A stage requiring sign-off reached under auto_approve resolves itself
-    # immediately instead of parking at AWAITING for a human — the
-    # approval row is still created above (audit trail), just pre-resolved.
-    # Delegated because ApprovalService lives in the orchestration module, and
-    # importing it here would close a cycle.
-    if gate_approval is not None and run.auto_approve:
-        orch.auto_resolve_gate_approval(gate_approval, run)
-    elif gate_approval is not None:
+    # Human-required exit actions never auto-resolve under auto_approve (AC-6).
+    # Design-plan stages may still be signed off when approve_design_plans is on.
+    if gate_approval is not None:
         _sign_off_design_plan_if_permitted(orch, ticket, run, stages, gate_approval)
         orch.session.refresh(ticket)
 

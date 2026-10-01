@@ -104,6 +104,10 @@ export function StudioPage() {
   }>({ slug: "", name: "", description: "", stages: [emptyStage(1)], transitions: [] });
 
   const mcpGuides = useQuery({ queryKey: ["studio-mcp-tool-guides"], queryFn: api.studioMcpToolGuides });
+  const exitActionRequirements = useQuery({
+    queryKey: ["studio-exit-action-requirements"],
+    queryFn: api.studioExitActionRequirements,
+  });
   const studioDefaults = useQuery({ queryKey: ["studio-defaults"], queryFn: api.studioDefaults });
   // Names the tool-access panel offers as server grants; the server warns
   // separately when a stored grant names one that is gone.
@@ -1060,6 +1064,7 @@ export function StudioPage() {
                 agentOptions={agentOptions}
                 agents={agents.data ?? []}
                 skills={skills.data ?? []}
+                exitActionRequirements={exitActionRequirements.data}
                 runtimeOptions={runtimeOptions.data}
                 skipConditions={studioDefaults.data?.skip_conditions ?? []}
                 selectedWorkflow={selectedWorkflow}
