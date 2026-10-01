@@ -18,29 +18,14 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createRequire } = require("module");
 const { spawnSync } = require("child_process");
 const os = require("os");
 const crypto = require("crypto");
 
-const clientRoot = path.resolve(__dirname, "../../client");
-const requireFromClient = createRequire(path.join(clientRoot, "package.json"));
-
-/** The TypeScript parser, loaded the first time something actually parses.
- *
- * Top-level, this `require` cost 455ms of every single run — including the runs
- * that grade nothing. `main` returns early when no `.ts`/`.tsx` file is staged,
- * which is the common case at a stage transition (a backend-only change), and
- * that early exit could not avoid a parser loaded before it was reached: 1.29s
- * to establish there was no work, at every transition in every workspace (808).
- */
-let parseImpl = null;
-function parse(content, options) {
-  if (parseImpl === null) {
-    parseImpl = requireFromClient("@typescript-eslint/typescript-estree").parse;
-  }
-  return parseImpl(content, options);
-}
+// Loaded the first time something actually parses: top-level, this `require`
+// cost 455ms of every run — including the common stage transition that grades
+// no `.ts`/`.tsx` file at all (808). gate_client_modules.cjs keeps it lazy.
+const { parse } = require("./gate_client_modules.cjs");
 
 const MAX_FILE_LINES = 1200;
 const MAX_TSX_FILE_LINES = 1200;

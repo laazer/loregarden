@@ -33,12 +33,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createRequire } = require("module");
 
-const clientRoot = path.resolve(__dirname, "../../client");
-const requireFromClient = createRequire(path.join(clientRoot, "package.json"));
-const { parse } = requireFromClient("@typescript-eslint/typescript-estree");
-const postcss = requireFromClient("postcss");
+const { parse, requireClientModule } = require("./gate_client_modules.cjs");
 
 const {
   untrackedPaths,
@@ -162,7 +158,7 @@ function inThemeBlock(node) {
 function cssErrors(filePath, content, lines, added, waivers) {
   let root;
   try {
-    root = postcss.parse(content, { from: filePath });
+    root = requireClientModule("postcss").parse(content, { from: filePath });
   } catch (err) {
     // Not a silent skip: a stylesheet this gate cannot read is one it did not check.
     return [

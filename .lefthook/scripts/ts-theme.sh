@@ -8,17 +8,12 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CLIENT_ROOT="$ROOT/client"
 
 # shellcheck source=ensure-node.sh
 source "$SCRIPT_DIR/ensure-node.sh"
 
-for dep in @typescript-eslint/typescript-estree postcss; do
-  if [ ! -d "$CLIENT_ROOT/node_modules/$dep" ]; then
-    echo "pre-commit: $dep missing (cd client && npm ci)." >&2
-    exit 1
-  fi
-done
+# A missing client toolchain is reported by the checker itself, as exit 69
+# ("could not run") — see gate_client_modules.cjs.
 
 cd "$ROOT"
 exec node "$SCRIPT_DIR/ts_theme_check.cjs" "$@"
