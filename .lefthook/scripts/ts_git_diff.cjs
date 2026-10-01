@@ -12,6 +12,9 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
+/** What the TypeScript gates read unless a gate asks for more (CSS, say). */
+const TS_SOURCE = /\.(ts|tsx)$/;
+
 function git(args, cwd) {
   try {
     return execFileSync("git", args, {
@@ -51,7 +54,7 @@ function untrackedPaths(repoRoot) {
  * gate includes them: a new file an agent just wrote is the least reviewed code
  * in the change, and `git diff` never lists it.
  */
-function changedPaths(repoRoot, diffScope, baseRef) {
+function changedPaths(repoRoot, diffScope, baseRef, sourcePattern = TS_SOURCE) {
   const out = git(
     ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR"],
     repoRoot,
@@ -61,7 +64,7 @@ function changedPaths(repoRoot, diffScope, baseRef) {
     .map((l) => l.trim())
     .filter(Boolean);
   if (diffScope === "worktree") paths.push(...untrackedPaths(repoRoot));
-  return [...new Set(paths)].filter((p) => /\.(ts|tsx)$/.test(p));
+  return [...new Set(paths)].filter((p) => sourcePattern.test(p));
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
@@ -117,7 +120,7 @@ function isTestFile(filePath) {
 }
 
 /** Shared argv shape for both gates: `--repo`, `--scope`, `--base`, positionals. */
-function parseArgv(argv) {
+function parseArgv(argv, sourcePattern = TS_SOURCE) {
   const files = [];
   let repoArg = null;
   let diffScope = "staged";
@@ -128,22 +131,22 @@ function parseArgv(argv) {
     else if (argv[i] === "--scope" && argv[i + 1]) diffScope = argv[(i += 1)];
     else if (argv[i] === "--base" && argv[i + 1]) baseRef = argv[(i += 1)];
     else if (argv[i] === "--all") scanAll = true;
-    else if (/\.(ts|tsx)$/.test(argv[i])) files.push(argv[i]);
+    else if (sourcePattern.test(argv[i])) files.push(argv[i]);
   }
   if (!["staged", "worktree", "branch"].includes(diffScope)) diffScope = "staged";
   const repoRoot = repoArg ? path.resolve(repoArg) : process.cwd();
   const label = diffScope === "staged" && !repoArg ? "pre-commit" : "gate";
-  return { files, repoRoot, diffScope, baseRef, label, scanAll };
+  return { files, repoRoot, diffScope, baseRef, label, scanAll, sourcePattern };
 }
 
-/** Every .ts/.tsx under a root, for `--all` audit runs. */
-function allSourceFiles(dir) {
+/** Every source file under a root, for `--all` audit runs. */
+function allSourceFiles(dir, sourcePattern = TS_SOURCE) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...allSourceFiles(full));
-    else if (/\.(ts|tsx)$/.test(entry.name)) out.push(full);
+    if (entry.isDirectory()) out.push(...allSourceFiles(full, sourcePattern));
+    else if (sourcePattern.test(entry.name)) out.push(full);
   }
   return out;
 }
@@ -152,16 +155,17 @@ function allSourceFiles(dir) {
  * The file list a gate should read: the explicit argv list, or the diff confined
  * to the repo's detected TypeScript root (mirroring the lefthook glob).
  */
-function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll }) {
+function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll, sourcePattern }) {
   if (files.length > 0) return files;
   const sourceRoot = tsSourceRoot(repoRoot);
-  if (scanAll) return allSourceFiles(sourceRoot);
-  return changedPaths(repoRoot, diffScope, baseRef)
+  if (scanAll) return allSourceFiles(sourceRoot, sourcePattern);
+  return changedPaths(repoRoot, diffScope, baseRef, sourcePattern)
     .map((rel) => path.resolve(repoRoot, rel))
     .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
 }
 
 module.exports = {
+  TS_SOURCE,
   git,
   scopeArgs,
   untrackedPaths,

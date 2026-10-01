@@ -32,6 +32,8 @@ gates:
     - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_no_silent_failures_check.cjs --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_ux_states_check.cjs --repo {workspace_root} --scope worktree
+    # loregarden only: it asks for loregarden's components/ui primitives and :root tokens.
+    - node {loregarden_root}/.lefthook/scripts/ts_theme_check.cjs --repo {workspace_root} --scope worktree
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."
     - bash -c "cd server && uv run ruff format ."

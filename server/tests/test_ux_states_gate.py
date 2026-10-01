@@ -103,6 +103,18 @@ def test_a_button_whose_child_is_an_expression_is_not_accused(repo: Path):
     assert _run(repo).returncode == 0
 
 
+def test_an_unnamed_themed_button_is_reported(repo: Path):
+    """`<Button>` renders a <button>; moving off the raw tag must not drop the check."""
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <Button variant="plain" onClick={go}><Icon /></Button>;\n',
+    )
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "<Button> has no text" in _findings(result)
+
+
 def test_spread_props_are_not_accused(repo: Path):
     """`aria-label` can arrive in the spread; the gate cannot see inside it."""
     _write(repo, "A.tsx", "export const A = () => <button {...rest}><Icon /></button>;\n")
