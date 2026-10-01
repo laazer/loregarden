@@ -110,3 +110,52 @@ def test_the_primary_checkout_is_found_from_a_linked_worktree(tmp_path: Path) ->
     git("worktree", "add", "-q", "-b", "feat", str(tmp_path / "feat"))
     with mock.patch.object(settings, "repo_root", tmp_path / "feat"):
         assert primary_checkout() == primary.resolve()
+
+
+@pytest.fixture(name="loregarden_repo")
+def loregarden_repo_fixture(repo: Path):
+    """Loregarden running from the seeded workspace's own repository, real installers and all.
+
+    The scripts are linked in so a missing guard would install rather than fail for want of one.
+    """
+    (repo / "scripts").symlink_to(Path(__file__).resolve().parents[2] / "scripts")
+    with mock.patch.object(settings, "repo_root", repo):
+        yield repo
+
+
+def _point_workspace_at(isolated_db, path: Path) -> None:
+    with Session(isolated_db) as session:
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+        workspace.repo_path = str(path)
+        session.add(workspace)
+        session.commit()
+
+
+def test_loregarden_itself_reports_both_parts_built_in(
+    client: TestClient, loregarden_repo: Path
+) -> None:
+    states = _states(client.get("/api/workspace-integration/loregarden"))
+    assert {state for state, _ in states.values()} == {"built_in"}
+
+
+def test_a_linked_worktree_of_loregarden_is_built_in_too(
+    client: TestClient, isolated_db, loregarden_repo: Path, tmp_path: Path
+) -> None:
+    linked = tmp_path / "linked"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "linked", str(linked)],
+        cwd=loregarden_repo,
+        check=True,
+        capture_output=True,
+    )
+    _point_workspace_at(isolated_db, linked)
+    states = _states(client.get("/api/workspace-integration/loregarden"))
+    assert {state for state, _ in states.values()} == {"built_in"}
+
+
+def test_installing_into_loregarden_itself_is_refused_and_writes_nothing(
+    client: TestClient, loregarden_repo: Path
+) -> None:
+    response = client.post("/api/workspace-integration/loregarden/docs")
+    assert response.status_code == 409
+    assert not (loregarden_repo / "AGENTS.md").exists()

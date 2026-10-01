@@ -74,6 +74,7 @@ const mkWorkspace = (over: Partial<apiClient.WorkspaceSummary> = {}): apiClient.
   repo_path: ".",
   repo_root: "/repo",
   repo_exists: true,
+  repo_state: "repository",
   ticket_count: 0,
   blocked_count: 0,
   workflow_template_slug: "",

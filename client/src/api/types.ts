@@ -1,3 +1,4 @@
+import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
 
 export type { TicketDependencyRef };
@@ -460,6 +461,8 @@ export interface WorkspaceSummary {
   repo_path: string;
   repo_root: string;
   repo_exists: boolean;
+  /** What is at `repo_root`; `missing` and `empty` can have a repository created there. */
+  repo_state: RepositoryState;
   ticket_count: number;
   blocked_count: number;
   workflow_template_slug: string;

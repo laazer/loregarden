@@ -21,6 +21,7 @@ const mkWorkspace = (slug: string, name: string, archived_at: string | null = nu
   repo_path: ".",
   repo_root: `/w/${slug}`,
   repo_exists: true,
+  repo_state: "repository",
   ticket_count: 1,
   blocked_count: 0,
   workflow_template_slug: "",

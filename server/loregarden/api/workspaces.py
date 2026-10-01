@@ -22,6 +22,13 @@ from loregarden.services.workspace_paths import (
     resolve_workspace_root,
     workspace_repo_exists,
 )
+from loregarden.services.workspace_repository import (
+    RepositoryInitError,
+    RepositoryInspection,
+    initialize_repository,
+    inspect_repo_path,
+    inspect_workspace,
+)
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -44,6 +51,7 @@ def _summary(session: Session, ws: Workspace) -> dict:
         "repo_path": ws.repo_path,
         "repo_root": str(resolve_workspace_root(ws)),
         "repo_exists": workspace_repo_exists(ws),
+        "repo_state": inspect_workspace(ws).state,
         "ticket_count": len(tickets),
         "blocked_count": blocked,
         "workflow_template_slug": _template_slug(session, ws),
@@ -62,6 +70,27 @@ def _workspace_or_404(session: Session, slug: str) -> Workspace:
 @router.get("")
 def list_workspaces(session: Session = Depends(get_session)) -> list[dict]:
     return [_summary(session, ws) for ws in session.exec(select(Workspace)).all()]
+
+
+def _inspection(found: RepositoryInspection) -> dict:
+    return {"repo_root": str(found.root), "state": found.state, "detail": found.detail}
+
+
+@router.get("/repository-probe")
+def probe_repository(path: str) -> dict:
+    """What is at a would-be workspace path, and whether a repository can be created there."""
+    return _inspection(inspect_repo_path(path))
+
+
+@router.post("/{slug}/repository")
+def create_workspace_repository(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Create, populate and commit the workspace's repository at its missing or empty path."""
+    ws = _workspace_or_404(session, slug)
+    try:
+        created = initialize_repository(ws)
+    except RepositoryInitError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {**_summary(session, ws), "follow_up": created.follow_up}
 
 
 @router.post("/{slug}/archive")

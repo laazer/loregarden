@@ -56,6 +56,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
         repo_path: "/workspace/loregarden",
         repo_root: "/workspace/loregarden",
         repo_exists: true,
+        repo_state: "repository",
         ticket_count: 12,
         blocked_count: 2,
         workflow_template_slug: "tdd",
