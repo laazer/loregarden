@@ -18,14 +18,20 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    CliAdapter,
     ExitActionGateLedger,
+    OrchestrationDriver,
     OrchestrationRun,
+    RunStatus,
+    RuntimeAvailability,
+    RuntimeExitActionSnapshot,
     StageStatus,
     Ticket,
     TicketState,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import ApprovalService
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from sqlmodel import Session, col, select
 from tests.test_auto_mode_subtree import (
     _STAGES,
@@ -257,3 +263,55 @@ def test_a_design_plan_sign_off_never_grants_authority(db_session: Session, tmp_
     assert _stage_status(db_session, ticket, "work") == StageStatus.AWAITING
     db_session.refresh(ticket)
     assert ticket.state != TicketState.BLOCKED
+
+
+@pytest.fixture(name="unconfirmed_signoff")
+def unconfirmed_signoff_fixture(db_session: Session, tmp_path) -> Ticket:
+    """A sign-off stage whose run exited cleanly but did not pass: its agent was
+    assigned read-usage, and nothing attests it."""
+    workspace = _make_workspace(
+        db_session, tmp_path, "unconfirmed", stages=_stages_with(1, _READ_USAGE, _ACCEPT_RISK)
+    )
+    ticket = _make_ticket(db_session, workspace, external_id="unconfirmed-1", title="Unconfirmed")
+    snapshot = RuntimeExitActionSnapshot(
+        run_id="prior",
+        agent_id="backend_implementer",
+        adapter=CliAdapter.LOCAL,
+        driver=OrchestrationDriver.MANUAL_STAGE,
+        credentials={"github_token": RuntimeAvailability.AVAILABLE},
+    )
+    db_session.add(
+        AgentRun(
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            stage_key="signoff",
+            agent_id="backend_implementer",
+            status=RunStatus.SUCCEEDED,
+            run_code="UNCONFIRMED-1",
+            runtime_exit_action_snapshot_json=snapshot.model_dump_json(),
+            assigned_exit_action_keys_json=json.dumps(["read-usage"]),
+            completed_exit_action_keys_json="[]",
+        )
+    )
+    db_session.commit()
+    return ticket
+
+
+def test_a_requested_gate_cannot_stand_in_for_unconfirmed_agent_work(
+    db_session: Session, unconfirmed_signoff: Ticket
+):
+    """Approving the judgment must not finish a stage whose assigned action was
+    never confirmed by a passing report (AC-5, AC-9)."""
+    with pytest.raises(ValueError, match="read-usage"):
+        OrchestrationCallbackService(db_session).request_approval(
+            unconfirmed_signoff, stage_key="signoff"
+        )
+
+    gates = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == unconfirmed_signoff.id,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+        )
+    ).all()
+    assert gates == []
+    assert _stage_status(db_session, unconfirmed_signoff, "signoff") != StageStatus.DONE

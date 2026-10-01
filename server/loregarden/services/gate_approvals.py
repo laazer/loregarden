@@ -168,6 +168,15 @@ def gate_would_skip_work(session: Session, ticket: Ticket, stage: WorkflowStageD
     )
 
 
+def _assigned_but_unattested(run: AgentRun | None, settled: list[str]) -> list[str]:
+    """Actions the run's agent was given that no passing report has confirmed."""
+    if run is None:
+        return []
+    assigned = json.loads(run.assigned_exit_action_keys_json or "[]")
+    completed = set(json.loads(run.completed_exit_action_keys_json or "[]")) | set(settled)
+    return [key for key in assigned if key not in completed]
+
+
 def request_exit_action_gate(
     session: Session,
     ticket: Ticket,
@@ -180,8 +189,9 @@ def request_exit_action_gate(
 
     An agent may ask a person to look at a stage, but what the person may do is
     the resolver's call, not the caller's: the gate lists the stage's
-    outstanding exit actions against the latest successful run, exactly as run
-    completion would have raised it. A stage with nothing outstanding has
+    outstanding exit actions against the latest successful run, and is refused
+    while that run's assigned actions lack a passing report — run completion
+    raises a gate only after one. A stage with nothing outstanding has
     nothing to approve, and a blank gate is refused rather than opened, because
     approving one would mark the stage done on no one's evidence.
     """
@@ -201,6 +211,16 @@ def request_exit_action_gate(
         .order_by(col(AgentRun.created_at).desc())
     ).first()
     outstanding, settled = outstanding_exit_actions(session, run, stage)
+    unattested = _assigned_but_unattested(run, settled)
+    if unattested:
+        # Run completion opens a gate only after a passing report; asking for one
+        # after a run that did not pass would let a person's approval finish the
+        # stage over actions its agent was given and never confirmed.
+        raise ValueError(
+            f"Stage '{stage.key}' assigned {', '.join(unattested)} to its agent, and no "
+            "passing report attests them. A gate cannot stand in for that work: re-run "
+            "the stage."
+        )
     if not outstanding:
         raise ValueError(
             f"Stage '{stage.key}' has no unresolved exit actions, so there is nothing for a "
