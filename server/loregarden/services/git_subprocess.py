@@ -63,6 +63,7 @@ def run_git(
     *,
     cwd: str | Path | None = None,
     env: Mapping[str, str] | None = None,
+    index_file: Path | None = None,
     **kwargs,
 ) -> subprocess.CompletedProcess:
     """Run `git *args` with the repo-binding env vars removed.
@@ -70,10 +71,17 @@ def run_git(
     A thin passthrough otherwise: `check`, `capture_output`, `text`, and
     `timeout` mean what they mean to `subprocess.run`, so call sites keep their
     own semantics (some want bytes, some want a non-raising non-zero exit).
+
+    *index_file* is the one binding a caller may set, and only by naming it
+    here: an inherited GIT_INDEX_FILE is scrubbed because nobody chose it, while
+    a scratch index is how a tree is snapshotted without touching the real one.
     """
+    child_env = scrubbed_git_env(env)
+    if index_file is not None:
+        child_env["GIT_INDEX_FILE"] = str(index_file)
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd is not None else None,
-        env=scrubbed_git_env(env),
+        env=child_env,
         **kwargs,
     )

@@ -49,6 +49,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from loregarden.services.gate_runner import _run_command
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -168,3 +169,34 @@ def test_a_link_to_an_untracked_file_is_not_graded(repo_with_ignored_link: Path)
     # Not "did it fail" — it fails today, by reporting the contents. The claim is
     # that the untracked file's structure must not be read out at all.
     assert "isinstance" not in _out(result), _out(result)
+
+
+@pytest.fixture
+def gate_warning_on_stderr_finding_on_stdout(tmp_path: Path) -> Path:
+    """A gate command shaped like `uv run <check>` with a stray VIRTUAL_ENV:
+    uv warns on stderr, the check prints its finding on stdout and exits 1."""
+    script = tmp_path / "gate.py"
+    script.write_text(
+        "import sys\n"
+        "print('src/a.py:3: isinstance is forbidden')\n"
+        "print('warning: `VIRTUAL_ENV=/x/.venv` does not match', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+    return script
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="unfiled — open: a failed gate records `stderr or stdout`, so a stderr "
+    "warning (uv's VIRTUAL_ENV mismatch) replaces the finding on stdout",
+)
+def test_a_failed_gate_keeps_the_finding_printed_on_stdout(
+    gate_warning_on_stderr_finding_on_stdout: Path,
+) -> None:
+    result = _run_command(
+        f"{sys.executable} {gate_warning_on_stderr_finding_on_stdout}",
+        gate_warning_on_stderr_finding_on_stdout.parent,
+    )
+
+    assert not result.ok
+    assert "isinstance is forbidden" in result.message

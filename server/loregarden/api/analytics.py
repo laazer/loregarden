@@ -1,11 +1,12 @@
 """Analytics endpoints for queue performance tracking."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.services.gate_eval import gate_scorecard
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.rework_feedback import MAX_REWORK_REROUTES
 from loregarden.services.stage_attempt_stats import (
@@ -219,3 +220,36 @@ def get_stage_attempt_stats(
         for name, cap, counter in measured
     ]
     return {"stats": stats.model_dump(mode="json"), "caps": [cap.model_dump() for cap in caps]}
+
+
+@router.get("/gate-scorecard")
+def get_gate_scorecard(
+    workspace: str = Query("", description="Workspace slug; empty means all"),
+    since: date | None = Query(None, description="Only events on or after this day (UTC)"),
+    until: date | None = Query(None, description="Only events before this day (UTC)"),
+    episodes: bool = Query(False, description="Include every episode"),
+    session: Session = Depends(get_session),
+):
+    """How agents fare against transition gates: first pass, repair, identical
+    resubmissions, harness noise — per workspace, transition and producer.
+
+    See `services.gate_eval` for the definitions; `loregarden eval gates` prints
+    the same scorecard without a server.
+    """
+
+    def _start(day: date | None) -> datetime | None:
+        return datetime.combine(day, time.min, tzinfo=timezone.utc) if day else None
+
+    try:
+        card, eps = gate_scorecard(
+            session, workspace_slug=workspace or None, since=_start(since), until=_start(until)
+        )
+    except Exception as e:  # noqa: BLE001 - endpoint boundary
+        # An empty scorecard is shaped exactly like "no gates have run", so a
+        # broken query must not be allowed to answer with one.
+        logger.exception("Error computing gate scorecard")
+        raise HTTPException(status_code=500, detail=f"Could not compute gate scorecard: {e}") from e
+    body = {"scorecard": card.model_dump(mode="json")}
+    if episodes:
+        body["episodes"] = [ep.model_dump(mode="json") for ep in eps]
+    return body
