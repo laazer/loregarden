@@ -103,6 +103,18 @@ def test_a_button_whose_child_is_an_expression_is_not_accused(repo: Path):
     assert _run(repo).returncode == 0
 
 
+def test_an_unnamed_themed_button_is_reported(repo: Path):
+    """`<Button>` renders a <button>; moving off the raw tag must not drop the check."""
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <Button variant="plain" onClick={go}><Icon /></Button>;\n',
+    )
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "<Button> has no text" in _findings(result)
+
+
 def test_spread_props_are_not_accused(repo: Path):
     """`aria-label` can arrive in the spread; the gate cannot see inside it."""
     _write(repo, "A.tsx", "export const A = () => <button {...rest}><Icon /></button>;\n")
@@ -449,6 +461,30 @@ def test_an_unlabelled_field_is_reported(repo: Path, field: str):
     result = _run(repo)
     assert result.returncode == 1
     assert "has no label" in _findings(result)
+
+
+@pytest.mark.parametrize("tag", ["Input", "Select", "Textarea"])
+def test_the_themed_field_primitives_owe_a_label_too(repo: Path, tag: str):
+    """The theme gate moves new code onto components/ui; this check must follow it there."""
+    _write(repo, "A.tsx", f"export const A = () => <{tag} value={{v}} onChange={{set}} />;\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "has no label" in _findings(result)
+
+    _write(repo, "A.tsx", f'export const A = () => <{tag} aria-label="Name" value={{v}} />;\n')
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
+def test_a_themed_checkbox_reports_its_own_state(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        'export const A = () => <label><Input type="checkbox" role="switch" checked={on} />'
+        " On</label>;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
 
 
 def test_a_sibling_div_styled_as_a_label_is_not_a_label(repo: Path):

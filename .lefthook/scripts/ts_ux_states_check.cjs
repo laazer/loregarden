@@ -59,9 +59,9 @@ const {
   parseArgv,
   filesToCheck,
 } = require("./ts_git_diff.cjs");
+const { waiversFor, spanTouched, shortWaiverErrors } = require("./gate_waivers.cjs");
 
 const ALLOW_MARKER = "ux-ok:";
-const MIN_WAIVER_REASON_CHARS = 12;
 
 // Elements the browser already makes focusable, clickable and announceable.
 // `label` and `option` are here because a click on them is handled by the
@@ -76,6 +76,12 @@ const NATIVELY_INTERACTIVE = new Set([
   "summary",
   "textarea",
 ]);
+
+// Controls that owe an accessible name. `Button` is the themed primitive in
+// components/ui: it renders a <button> with its children as-is, so the same
+// obligation applies — and without it here, the theme gate's push off raw
+// <button> would quietly take every button out of this check.
+const NAMED_CONTROLS = new Set(["a", "button", "Button"]);
 
 // Attributes that give an element an accessible name.
 const NAMING_ATTRS = new Set(["aria-label", "aria-labelledby", "title"]);
@@ -145,76 +151,6 @@ function parseFile(content) {
     // silent-ok: tsc and oxlint both report syntax errors, and far better
     return null;
   }
-}
-
-function waiverReason(line) {
-  const at = line.indexOf(ALLOW_MARKER);
-  if (at === -1) return null;
-  return line
-    .slice(at + ALLOW_MARKER.length)
-    .replace(/(?:\*\/|\}|\s)*$/, "")
-    .trim();
-}
-
-/**
- * 1-based line numbers that are entirely comment.
- *
- * Computed by a forward pass rather than by per-line prefix matching, because
- * in JSX the only way to comment above an element is `{/* … *\/}`, whose
- * continuation lines start with ordinary prose. The prefix test read the last
- * line of such a block as code and stopped the walk there, so a multi-line JSX
- * waiver silently did not apply — the failure mode a waiver exists to avoid.
- */
-function commentLines(lines) {
-  const inComment = new Set();
-  let open = false;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (open) {
-      inComment.add(i + 1);
-      if (line.includes("*/")) open = false;
-      continue;
-    }
-    const blockStart = trimmed.indexOf("/*");
-    if (blockStart !== -1 && (trimmed.startsWith("/*") || trimmed.startsWith("{/*"))) {
-      inComment.add(i + 1);
-      // A block that opens and closes on one line leaves nothing open.
-      if (!line.includes("*/", line.indexOf("/*") + 2)) open = true;
-      continue;
-    }
-    if (trimmed.startsWith("//")) inComment.add(i + 1);
-  }
-  return inComment;
-}
-
-/** Walk up over the comment block above, where a multi-line reason lives. */
-function waiverStart(lines, start, comments) {
-  let first = start;
-  while (first > 1 && comments.has(first - 1)) first -= 1;
-  return first;
-}
-
-function spanWaived(lines, start, end, comments) {
-  for (let i = waiverStart(lines, start, comments); i <= Math.min(end, lines.length); i += 1) {
-    const reason = waiverReason(lines[i - 1]);
-    if (reason !== null && reason.length >= MIN_WAIVER_REASON_CHARS) return true;
-  }
-  return false;
-}
-
-function shortWaiverLine(lines, start, end, comments) {
-  for (let i = waiverStart(lines, start, comments); i <= Math.min(end, lines.length); i += 1) {
-    const reason = waiverReason(lines[i - 1]);
-    if (reason !== null && reason.length < MIN_WAIVER_REASON_CHARS) return i;
-  }
-  return null;
-}
-
-function spanTouched(added, start, end) {
-  if (added === null) return true;
-  for (let i = start; i <= end; i += 1) if (added.has(i)) return true;
-  return false;
 }
 
 function walk(node, visit) {
@@ -309,17 +245,17 @@ function hasOwnText(element) {
 }
 
 /** 1. A control with no name at all — not spoken, not hoverable, not guessable. */
-function unnamedControlErrors(filePath, ast, lines, added, comments) {
+function unnamedControlErrors(filePath, ast, lines, added, waivers) {
   const found = [];
   walk(ast, (node) => {
     if (node.type !== "JSXElement") return;
     const name = elementName(node.openingElement);
-    if (name !== "button" && name !== "a") return;
+    if (!NAMED_CONTROLS.has(name)) return;
 
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     const { names, hasSpread } = attributeNames(node.openingElement);
     // Props may arrive wholesale, and dangerouslySetInnerHTML has children we
@@ -340,7 +276,7 @@ function unnamedControlErrors(filePath, ast, lines, added, comments) {
 }
 
 /** 2. Clickable to a mouse, invisible to a keyboard. */
-function keyboardUnreachableErrors(filePath, ast, lines, added, comments) {
+function keyboardUnreachableErrors(filePath, ast, lines, added, waivers) {
   const found = [];
   walk(ast, (node) => {
     if (node.type !== "JSXOpeningElement") return;
@@ -353,7 +289,7 @@ function keyboardUnreachableErrors(filePath, ast, lines, added, comments) {
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     const role = attributeValue(node, "role");
     // A backdrop is presentational by design; its obligation is Escape, below.
@@ -403,7 +339,7 @@ function mappedBaseName(callee) {
  * operator is not merely inconvenienced, they are held inside a dialog with no
  * way out that does not involve a mouse.
  */
-function backdropWithoutEscapeErrors(filePath, ast, lines, added, comments, content) {
+function backdropWithoutEscapeErrors(filePath, ast, lines, added, waivers, content) {
   if (ESCAPE_PATTERNS.some((re) => re.test(content))) return [];
 
   const found = [];
@@ -416,7 +352,7 @@ function backdropWithoutEscapeErrors(filePath, ast, lines, added, comments, cont
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     found.push(
       `${filePath}:${start}: this backdrop closes on click, but nothing in this file ` +
@@ -428,7 +364,7 @@ function backdropWithoutEscapeErrors(filePath, ast, lines, added, comments, cont
 }
 
 /** 4. A fetched list whose empty case nothing renders. */
-function missingEmptyStateErrors(filePath, ast, lines, added, comments, content) {
+function missingEmptyStateErrors(filePath, ast, lines, added, waivers, content) {
   if (!ASYNC_SOURCE_PATTERNS.some((re) => re.test(content))) return [];
   if (EMPTY_STATE_PATTERNS.some((re) => re.test(content))) return [];
 
@@ -467,7 +403,7 @@ function missingEmptyStateErrors(filePath, ast, lines, added, comments, content)
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
     if (reported.has(start)) return;
     reported.add(start);
 
@@ -494,6 +430,19 @@ function missingEmptyStateErrors(filePath, ast, lines, added, comments, content)
 // Inputs the browser names from their own attributes (`value`, `alt`), or that
 // are not in the tree at all.
 const SELF_NAMED_INPUT_TYPES = new Set(["hidden", "submit", "button", "reset", "image"]);
+
+// Form fields, keyed by the tag as written. `Input`/`Select`/`Textarea` are the
+// themed primitives in components/ui; each passes every prop straight to the
+// native element, so they owe a label exactly as it does — and the theme gate
+// moves new code onto them, so leaving them out would empty this check.
+const FIELD_ELEMENTS = new Map([
+  ["input", "input"],
+  ["Input", "input"],
+  ["select", "select"],
+  ["Select", "select"],
+  ["textarea", "textarea"],
+  ["Textarea", "textarea"],
+]);
 
 // Roles that make an element a field someone types into or sets a value on.
 const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox", "slider", "spinbutton"]);
@@ -605,10 +554,11 @@ function labelledById(opening, targets) {
 function fieldKind(node) {
   const opening = node.openingElement;
   const name = elementName(opening);
-  if (name === "input") {
+  const field = FIELD_ELEMENTS.get(name);
+  if (field === "input") {
     return SELF_NAMED_INPUT_TYPES.has(attributeValue(opening, "type")) ? "" : "input";
   }
-  if (name === "select" || name === "textarea") return name;
+  if (field) return field;
   if (isIntrinsic(name) && attributeIsOn(opening, "contentEditable")) return "contentEditable";
   if (FIELD_ROLES.has(attributeValue(opening, "role"))) return `role="${attributeValue(opening, "role")}"`;
   return "";
@@ -622,7 +572,7 @@ function fieldKind(node) {
  * nothing has no handle at all — the agent is left guessing by position, and so
  * is everyone else who cannot see the layout.
  */
-function unlabelledFieldErrors(filePath, ast, lines, added, comments) {
+function unlabelledFieldErrors(filePath, ast, lines, added, waivers) {
   const targets = labelTargets(ast);
   const found = [];
   walkElements(ast, (node, ancestors) => {
@@ -632,7 +582,7 @@ function unlabelledFieldErrors(filePath, ast, lines, added, comments) {
     const start = node.loc.start.line;
     const end = node.openingElement.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     const opening = node.openingElement;
     const { names, hasSpread } = attributeNames(opening);
@@ -712,7 +662,7 @@ function handlerToggles(handler, functions) {
  * aria-expanded / aria-pressed there is nothing to read: the click may have
  * worked, and nothing in the tree says so.
  */
-function widgetStateErrors(filePath, ast, lines, added, comments) {
+function widgetStateErrors(filePath, ast, lines, added, waivers) {
   const functions = localFunctions(ast);
   const found = [];
   walk(ast, (node) => {
@@ -723,12 +673,13 @@ function widgetStateErrors(filePath, ast, lines, added, comments) {
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     const name = elementName(node);
     // A native checkbox or radio reports `checked` itself, whatever its role says.
     const nativeState =
-      name === "input" && ["checkbox", "radio"].includes(attributeValue(node, "type"));
+      FIELD_ELEMENTS.get(name) === "input" &&
+      ["checkbox", "radio"].includes(attributeValue(node, "type"));
     if (nativeState) return;
 
     const role = attributeValue(node, "role");
@@ -774,7 +725,7 @@ function widgetStateErrors(filePath, ast, lines, added, comments) {
  * does the same move, and a drop zone for outside data needs a control that takes
  * the same input.
  */
-function pointerOnlyErrors(filePath, ast, lines, added, comments, content) {
+function pointerOnlyErrors(filePath, ast, lines, added, waivers, content) {
   const hasDragSource = /\bonDragStart\b/.test(content);
   const hasFileInput = /type\s*=\s*["']file["']/.test(content);
   const found = [];
@@ -786,7 +737,7 @@ function pointerOnlyErrors(filePath, ast, lines, added, comments, content) {
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     const name = elementName(node);
     const role = attributeValue(node, "role");
@@ -830,7 +781,7 @@ function pointerOnlyErrors(filePath, ast, lines, added, comments, content) {
  * screenshot, and verify nothing. The actions need DOM controls: buttons laid
  * over it, or a list beside it, that do the same thing.
  */
-function interactiveCanvasErrors(filePath, ast, lines, added, comments, content) {
+function interactiveCanvasErrors(filePath, ast, lines, added, waivers, content) {
   const listens = CANVAS_LISTENER.test(content);
   const found = [];
   walk(ast, (node) => {
@@ -842,7 +793,7 @@ function interactiveCanvasErrors(filePath, ast, lines, added, comments, content)
     const start = node.loc.start.line;
     const end = node.loc.end.line;
     if (!spanTouched(added, start, end)) return;
-    if (spanWaived(lines, start, end, comments)) return;
+    if (waivers.waived(start, end)) return;
 
     found.push(
       `${filePath}:${start}: <canvas> takes input (${handler || "addEventListener on its ref"}) ` +
@@ -851,22 +802,6 @@ function interactiveCanvasErrors(filePath, ast, lines, added, comments, content)
         `'ux-ok:' naming where those controls are`,
     );
   });
-  return found;
-}
-
-/** A waiver too thin to have been thought about is itself the finding. */
-function shortWaiverErrors(filePath, lines, added, comments) {
-  const found = [];
-  for (let i = 1; i <= lines.length; i += 1) {
-    if (!spanTouched(added, i, i)) continue;
-    const line = shortWaiverLine(lines, i, i, comments);
-    if (line !== null) {
-      found.push(
-        `${filePath}:${line}: 'ux-ok:' with no substantive reason — say why this is right ` +
-          `for the person using it, in at least ${MIN_WAIVER_REASON_CHARS} characters`,
-      );
-    }
-  }
   return found;
 }
 
@@ -888,7 +823,7 @@ for (const filePath of args) {
   const ast = parseFile(content);
   if (!ast) continue;
   const lines = content.split("\n");
-  const comments = commentLines(lines);
+  const waivers = waiversFor(ALLOW_MARKER, lines);
   const repoRel = path.relative(repoRoot, path.resolve(filePath));
   // `--all` ignores diff scoping entirely: null means "every line counts".
   const added = scanAll
@@ -901,15 +836,24 @@ for (const filePath of args) {
         untracked.has(path.resolve(filePath)),
         lines.length,
       ).added;
-  errors.push(...unnamedControlErrors(filePath, ast, lines, added, comments));
-  errors.push(...keyboardUnreachableErrors(filePath, ast, lines, added, comments));
-  errors.push(...backdropWithoutEscapeErrors(filePath, ast, lines, added, comments, content));
-  errors.push(...missingEmptyStateErrors(filePath, ast, lines, added, comments, content));
-  errors.push(...unlabelledFieldErrors(filePath, ast, lines, added, comments));
-  errors.push(...widgetStateErrors(filePath, ast, lines, added, comments));
-  errors.push(...pointerOnlyErrors(filePath, ast, lines, added, comments, content));
-  errors.push(...interactiveCanvasErrors(filePath, ast, lines, added, comments, content));
-  errors.push(...shortWaiverErrors(filePath, lines, added, comments));
+  errors.push(...unnamedControlErrors(filePath, ast, lines, added, waivers));
+  errors.push(...keyboardUnreachableErrors(filePath, ast, lines, added, waivers));
+  errors.push(...backdropWithoutEscapeErrors(filePath, ast, lines, added, waivers, content));
+  errors.push(...missingEmptyStateErrors(filePath, ast, lines, added, waivers, content));
+  errors.push(...unlabelledFieldErrors(filePath, ast, lines, added, waivers));
+  errors.push(...widgetStateErrors(filePath, ast, lines, added, waivers));
+  errors.push(...pointerOnlyErrors(filePath, ast, lines, added, waivers, content));
+  errors.push(...interactiveCanvasErrors(filePath, ast, lines, added, waivers, content));
+  errors.push(
+    ...shortWaiverErrors(
+      ALLOW_MARKER,
+      filePath,
+      lines,
+      added,
+      waivers,
+      "say why this is right for the person using it",
+    ),
+  );
 }
 
 if (errors.length > 0) {

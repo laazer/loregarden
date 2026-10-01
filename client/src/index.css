@@ -1,4 +1,9 @@
 :root {
+  /* Native control parts the CSS cannot reach — a <select>'s open list, a
+     checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
+     a light-mode OS draws them light inside the dark app. A light theme sets
+     `color-scheme: light` beside its tokens. */
+  color-scheme: dark;
   /* v6 Agent SDLC IDE palette — warmer navy + sage */
   --bg0: #0b0f16;
   --bg1: #111722;

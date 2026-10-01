@@ -121,6 +121,11 @@ pre-commit:
       priority: 1
       glob: "client/**/*.{ts,tsx}"
       run: bash .lefthook/scripts/ts-ux-states.sh {staged_files}
+    ts-theme:
+      name: Theme check (raw form controls, hardcoded colours, OS colour-scheme branches)
+      priority: 1
+      glob: "client/**/*.{ts,tsx,css}"
+      run: bash .lefthook/scripts/ts-theme.sh {staged_files}
 
 pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`
