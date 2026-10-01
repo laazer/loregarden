@@ -136,10 +136,10 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
-    key: "instances",
-    label: "Instances",
-    path: pathForPage("instances"),
-    ownsPage: ownsOnly("instances"),
+    key: "workspaces",
+    label: "Workspaces",
+    path: pathForPage("workspaces"),
+    ownsPage: ownsOnly("workspaces"),
     icon: (
       <svg {...STROKE} aria-hidden>
         <rect x="3" y="4" width="18" height="7" rx="1.5" />

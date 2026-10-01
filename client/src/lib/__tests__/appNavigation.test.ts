@@ -15,6 +15,8 @@ import {
   ticketPath,
   viewIdFromPath,
   viewPath,
+  workspacesPath,
+  workspacesTabFromPath,
 } from "../appNavigation";
 
 describe("appNavigation", () => {
@@ -29,6 +31,19 @@ describe("appNavigation", () => {
     expect(pageFromPath("/queue")).toBe("queue");
     expect(pageFromPath("/branch-triage")).toBe("branch-triage");
     expect(pageFromPath("/tickets/abc-123/diff")).toBe("dashboard");
+  });
+
+  it("keeps the Workspaces page, and its old /instances address, on one sidebar item", () => {
+    expect(pageFromPath("/workspaces")).toBe("workspaces");
+    expect(pageFromPath("/workspaces/instances")).toBe("workspaces");
+    expect(pageFromPath("/instances")).toBe("workspaces");
+    expect(pathForPage("workspaces")).toBe("/workspaces");
+  });
+
+  it("round-trips each Workspaces tab through its path", () => {
+    expect(workspacesTabFromPath(workspacesPath("workspaces"))).toBe("workspaces");
+    expect(workspacesTabFromPath(workspacesPath("instances"))).toBe("instances");
+    expect(workspacesTabFromPath("/workspaces/instancesx")).toBe("workspaces");
   });
 
   it("falls back to home for unknown paths", () => {

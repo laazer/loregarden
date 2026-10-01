@@ -144,6 +144,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  archiveWorkspace: (slug: string) =>
+    request<WorkspaceSummary>(`/api/workspaces/${encodeURIComponent(slug)}/archive`, { method: "POST" }),
+  restoreWorkspace: (slug: string) =>
+    request<WorkspaceSummary>(`/api/workspaces/${encodeURIComponent(slug)}/restore`, { method: "POST" }),
   browseDirectory: (path?: string) => {
     const q = path ? `?path=${encodeURIComponent(path)}` : "";
     return request<BrowseDirectoryResponse>(`/api/system/browse${q}`);

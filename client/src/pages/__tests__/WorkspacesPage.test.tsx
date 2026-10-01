@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
+import { api } from "../../api/client";
 import { localInstancesApi } from "../../api/localInstancesApi";
 import type {
   LocalInstance,
@@ -8,8 +10,11 @@ import type {
   WorkspaceIntegration,
   WorkspaceTemplates,
 } from "../../api/localInstancesTypes";
+import type { WorkspaceSummary } from "../../api/types";
 import { useToastStore } from "../../state/toastStore";
-import { InstancesPage } from "../InstancesPage";
+import { LegacyInstancesRedirect, WorkspacesPage } from "../WorkspacesPage";
+
+jest.mock("../../api/client");
 
 jest.mock("../../api/localInstancesApi", () => ({
   localInstancesApi: {
@@ -29,6 +34,26 @@ jest.mock("../../api/localInstancesApi", () => ({
 }));
 
 const mockApi = localInstancesApi as jest.Mocked<typeof localInstancesApi>;
+const mockClient = api as jest.Mocked<typeof api>;
+
+const summary = (slug: string, name: string, overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary => ({
+  id: `id-${slug}`,
+  slug,
+  name,
+  repo_path: `/w/${slug}`,
+  repo_root: `/w/${slug}`,
+  repo_exists: true,
+  ticket_count: 3,
+  blocked_count: 0,
+  workflow_template_slug: "loregarden-tdd",
+  archived_at: null,
+  cli_adapter: "claude",
+  claude_model: "",
+  cursor_model: "",
+  lmstudio_base_url: "",
+  lmstudio_model: "",
+  ...overrides,
+});
 
 const instance = (overrides: Partial<LocalInstance> = {}): LocalInstance => ({
   id: "api-feat-a1",
@@ -75,14 +100,26 @@ const workspace = (overrides: Partial<WorkspaceTemplates> = {}): WorkspaceTempla
   ...overrides,
 });
 
-function renderPage() {
+function Where() {
+  return <output aria-label="location">{useLocation().pathname}</output>;
+}
+
+function renderPage(path = "/workspaces") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <InstancesPage />
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/workspaces/*" element={<WorkspacesPage />} />
+          <Route path="/instances/*" element={<LegacyInstancesRedirect />} />
+        </Routes>
+        <Where />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+
+const renderInstances = () => renderPage("/workspaces/instances");
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -91,6 +128,15 @@ beforeEach(() => {
     { name: "blog/web", kind: "client", description: "", params: [] },
   ]);
   mockApi.workspaceTemplates.mockResolvedValue([workspace(), workspace({ slug: "blog", name: "Blog", entries: [] })]);
+  mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("blog", "Blog")]);
+  mockClient.workflowTemplates.mockResolvedValue([]);
+  mockClient.browseDirectory.mockResolvedValue({
+    current_path: "/w",
+    repo_path: ".",
+    parent_path: null,
+    repo_root: "/w",
+    entries: [],
+  });
   jest.spyOn(window, "confirm").mockReturnValue(true);
   mockApi.integration.mockImplementation((slug) => Promise.resolve(integration(slug)));
 });
@@ -128,22 +174,20 @@ it("groups running instances by workspace", async () => {
     instances: [instance(), instance({ id: "web-1", project: "blog", name: "web" })],
     unreadable: [],
   });
-  renderPage();
+  renderInstances();
   expect(await screen.findByRole("heading", { name: "shop" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "blog" })).toBeInTheDocument();
 });
 
-it("filters to one workspace: its instances, its templates, its launch choices", async () => {
+it("filters to one workspace: its instances and its launch choices", async () => {
   mockApi.list.mockResolvedValue({
     instances: [instance(), instance({ id: "web-1", project: "blog", name: "web" })],
     unreadable: [],
   });
-  renderPage();
+  renderInstances();
   await screen.findByRole("heading", { name: "shop" });
   fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "blog" } });
   expect(screen.queryByRole("heading", { name: "shop" })).not.toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Blog templates" })).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Shop templates" })).not.toBeInTheDocument();
   const form = screen.getByRole("form", { name: "Launch an instance" });
   expect(within(form).getAllByRole("option").map((o) => o.textContent)).toEqual([
     expect.stringContaining("blog/web"),
@@ -152,13 +196,13 @@ it("filters to one workspace: its instances, its templates, its launch choices",
 
 it("tells an empty machine apart from a filter that hides everything", async () => {
   mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
-  renderPage();
+  renderInstances();
   expect(await screen.findByText(/Nothing is running/)).toBeInTheDocument();
 });
 
 it("says so when no instance matches the filters", async () => {
   mockApi.list.mockResolvedValue({ instances: [instance()], unreadable: [] });
-  renderPage();
+  renderInstances();
   await screen.findByRole("heading", { name: "shop" });
   fireEvent.change(screen.getByLabelText("State"), { target: { value: "exited" } });
   expect(screen.getByText("No instance matches these filters.")).toBeInTheDocument();
@@ -343,5 +387,158 @@ describe("workspace setup", () => {
     const row = (await within(panel).findByText("Launch templates")).closest("tr") as HTMLElement;
     expect(within(row).getByText("Present")).toBeInTheDocument();
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("tabs", () => {
+  beforeEach(() => mockApi.list.mockResolvedValue({ instances: [instance()], unreadable: [] }));
+
+  it("opens on the workspace list, and the Instances tab is in the URL", async () => {
+    renderPage();
+    expect(await screen.findByRole("heading", { name: /Active workspaces/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Workspaces" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("heading", { name: /Running/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Instances" }));
+    expect(await screen.findByRole("heading", { name: /Running/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("location")).toHaveTextContent("/workspaces/instances");
+    expect(screen.getByRole("link", { name: "Instances" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("sends the old /instances address to the Instances tab", async () => {
+    renderPage("/instances");
+    expect(await screen.findByRole("heading", { name: /Running/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("location")).toHaveTextContent("/workspaces/instances");
+  });
+
+  it("points an empty launch list at the Workspaces tab", async () => {
+    mockApi.templates.mockResolvedValue([]);
+    renderInstances();
+    fireEvent.click(await screen.findByRole("link", { name: "Add one on the Workspaces tab." }));
+    expect(await screen.findByRole("heading", { name: /Active workspaces/ })).toBeInTheDocument();
+  });
+});
+
+describe("workspace list", () => {
+  beforeEach(() => {
+    mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
+    useToastStore.setState({ toasts: [] });
+  });
+
+  it("summarises each workspace's tickets and a missing repo on its card", async () => {
+    mockClient.workspaces.mockResolvedValue([
+      summary("shop", "Shop", { ticket_count: 5, blocked_count: 2 }),
+      summary("blog", "Blog", { ticket_count: 1, repo_exists: false }),
+    ]);
+    renderPage();
+    expect(await screen.findByText("5 tickets, 2 blocked")).toBeInTheDocument();
+    expect(screen.getByText("1 ticket")).toBeInTheDocument();
+    expect(screen.getByText("repo missing")).toBeInTheDocument();
+  });
+
+  it("archives after confirming, then lists it under Archived and can restore it", async () => {
+    mockClient.archiveWorkspace.mockResolvedValue(summary("blog", "Blog", { archived_at: "2026-09-30T00:00:00Z" }));
+    mockClient.restoreWorkspace.mockResolvedValue(summary("blog", "Blog"));
+    renderPage();
+    const archive = await screen.findByRole("button", { name: "Archive Blog" });
+
+    (window.confirm as jest.Mock).mockReturnValueOnce(false);
+    fireEvent.click(archive);
+    expect(mockClient.archiveWorkspace).not.toHaveBeenCalled();
+
+    mockClient.workspaces.mockResolvedValue([
+      summary("shop", "Shop"),
+      summary("blog", "Blog", { archived_at: "2026-09-30T00:00:00Z" }),
+    ]);
+    fireEvent.click(archive);
+    await waitFor(() => expect(mockClient.archiveWorkspace).toHaveBeenCalledWith("blog"));
+
+    const archived = (await screen.findByText("Archived")).closest("details") as HTMLElement;
+    const restore = await within(archived).findByRole("button", { name: "Restore Blog" });
+    expect(screen.getByRole("heading", { name: /Active workspaces/ })).toHaveTextContent("1");
+
+    mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("blog", "Blog")]);
+    fireEvent.click(restore);
+    await waitFor(() => expect(mockClient.restoreWorkspace).toHaveBeenCalledWith("blog"));
+    await waitFor(() => expect(screen.queryByText("Archived")).not.toBeInTheDocument());
+  });
+
+  it("reports a failed archive and leaves the workspace active", async () => {
+    mockClient.archiveWorkspace.mockRejectedValue(new Error("database is locked"));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive Blog" }));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toContainEqual(
+        expect.objectContaining({ tone: "error", title: "Archive workspace failed", message: "database is locked" }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Archive Blog" })).toBeEnabled();
+    expect(screen.queryByText("Archived")).not.toBeInTheDocument();
+  });
+
+  it("says when every workspace is archived, apart from having none", async () => {
+    mockClient.workspaces.mockResolvedValue([
+      summary("shop", "Shop", { archived_at: "2026-09-30T00:00:00Z" }),
+      summary("blog", "Blog", { archived_at: "2026-09-30T00:00:00Z" }),
+    ]);
+    renderPage();
+    expect(await screen.findByText(/Every workspace is archived/)).toBeInTheDocument();
+  });
+
+  it("says what to do when there are no workspaces", async () => {
+    mockApi.workspaceTemplates.mockResolvedValue([]);
+    mockClient.workspaces.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText(/No workspaces yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add workspace" })).toBeEnabled();
+  });
+
+  it("says the list failed to load, and retries", async () => {
+    mockClient.workspaces.mockRejectedValueOnce(new Error("server unreachable"));
+    renderPage();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("server unreachable");
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("adds a workspace from the tab and lists it", async () => {
+    mockClient.workflowTemplates.mockResolvedValue([
+      { slug: "loregarden-tdd", name: "TDD", description: "", stage_count: 6 } as never,
+    ]);
+    mockClient.createWorkspace.mockResolvedValue({
+      id: "id-docs",
+      slug: "docs",
+      name: "Docs",
+      workflow_template_slug: "loregarden-tdd",
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
+    await waitFor(() => expect(within(dialog).getByLabelText("Workflow template")).toBeEnabled());
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
+    fireEvent.change(within(dialog).getByLabelText("Repo path"), { target: { value: "/w/docs" } });
+
+    mockApi.workspaceTemplates.mockResolvedValue([workspace(), workspace({ slug: "docs", name: "Docs", entries: [] })]);
+    mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("docs", "Docs")]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() =>
+      expect(mockClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: "docs", name: "Docs", repo_path: "/w/docs", workflow_template_slug: "loregarden-tdd" }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByRole("heading", { name: "Docs setup" })).toBeInTheDocument();
+  });
+
+  it("keeps the dialog open with the server's refusal", async () => {
+    mockClient.createWorkspace.mockRejectedValue(new Error("slug already exists"));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    expect(await within(dialog).findByText("slug already exists")).toBeInTheDocument();
   });
 });

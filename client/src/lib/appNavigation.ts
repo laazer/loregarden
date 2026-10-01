@@ -11,7 +11,7 @@ export type AppPage =
   | "branch-triage"
   | "mcp"
   | "memory"
-  | "instances";
+  | "workspaces";
 
 export type ArtifactTab =
   | "diff"
@@ -89,7 +89,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
   memory: "/memory",
-  instances: "/instances",
+  workspaces: "/workspaces",
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
@@ -257,6 +257,20 @@ export function memoryPathForLegacyKnowledge(pathname: string): string {
   return memoryPath("map", match?.[1] ? decodeSegment(match[1]) : undefined);
 }
 
+export const WORKSPACES_TABS = ["workspaces", "instances"] as const;
+export type WorkspacesTab = (typeof WORKSPACES_TABS)[number];
+
+const WORKSPACES_TAB_PATH_RE = /^\/workspaces\/instances(?:\/|$)/;
+
+/** A Workspaces page tab's URL. The workspace list is the page's own root. */
+export function workspacesPath(tab: WorkspacesTab): string {
+  return tab === "instances" ? "/workspaces/instances" : "/workspaces";
+}
+
+export function workspacesTabFromPath(pathname: string): WorkspacesTab {
+  return WORKSPACES_TAB_PATH_RE.test(pathname) ? "instances" : "workspaces";
+}
+
 export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
@@ -271,7 +285,8 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
   if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
   if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "memory";
-  if (pathname === "/instances" || pathname.startsWith("/instances/")) return "instances";
+  if (pathname === "/workspaces" || pathname.startsWith("/workspaces/")) return "workspaces";
+  if (pathname === "/instances" || pathname.startsWith("/instances/")) return "workspaces";
   // Ticket deep-links still live in the Console shell.
   if (pathname.startsWith("/tickets/")) return "dashboard";
   return "home";

@@ -7,7 +7,6 @@ import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
-import { InstancesPage } from "./pages/InstancesPage";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
@@ -18,6 +17,7 @@ import { HomePage } from "./pages/HomePage";
 import { InitiativesPage } from "./pages/InitiativesPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
+import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
 import { ViewPage } from "./pages/ViewPage";
 import { viewIdFromPath } from "./lib/appNavigation";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
@@ -114,7 +114,8 @@ export function AppShell() {
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory/*" element={<MemoryPage />} />
             <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
-            <Route path="/instances" element={<InstancesPage />} />
+            <Route path="/workspaces/*" element={<WorkspacesPage />} />
+            <Route path="/instances/*" element={<LegacyInstancesRedirect />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
             {/* Before the catch-all, which would otherwise bounce every view

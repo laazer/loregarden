@@ -160,6 +160,7 @@ from loregarden.db.migrations_views import (
     m_view_store,
     m_view_viewport,
 )
+from loregarden.db.migrations_workspace_archive import m_workspace_archived_at
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1426,6 +1427,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # and rewrites every `gate_required` the older migrations above wrote.
     ("0138_runtime_exit_actions", m_runtime_exit_actions),
     ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
+    ("0150_workspace_archived_at", m_workspace_archived_at),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -49,19 +49,35 @@ export function AddWorkspaceModal({
   });
   const [slugTouched, setSlugTouched] = useState(false);
 
+  // Reset on open only. Keyed on `templates` too, a list that arrived after the
+  // operator started typing wiped the draft — and a caller passing `data ?? []`
+  // handed a fresh array every render, so the reset re-rendered forever.
   useEffect(() => {
     if (!open) return;
-    const defaultTemplate =
-      templates.find((t) => t.slug === DEFAULT_TEMPLATE)?.slug ?? templates[0]?.slug ?? DEFAULT_TEMPLATE;
     setDraft({
       name: "",
       slug: "",
       repo_path: ".",
-      workflow_template_slug: defaultTemplate,
+      workflow_template_slug: DEFAULT_TEMPLATE,
       orchestration_profile_slug: "",
     });
     setSlugTouched(false);
-  }, [open, templates]);
+  }, [open]);
+
+  // Once the list is known, move off a template it does not offer; a choice it
+  // does offer is kept, so this touches nothing the operator picked.
+  useEffect(() => {
+    if (templates.length === 0) return;
+    setDraft((d) =>
+      templates.some((t) => t.slug === d.workflow_template_slug)
+        ? d
+        : {
+            ...d,
+            workflow_template_slug:
+              templates.find((t) => t.slug === DEFAULT_TEMPLATE)?.slug ?? templates[0].slug,
+          },
+    );
+  }, [templates]);
 
   useEffect(() => {
     if (slugTouched) return;
@@ -123,6 +139,7 @@ export function AddWorkspaceModal({
               style={{ width: "100%", fontSize: 12 }}
               value={draft.name}
               disabled={isSaving}
+              aria-label="Name"
               placeholder="Blobert"
               autoFocus
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
@@ -136,6 +153,7 @@ export function AddWorkspaceModal({
               style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
               value={draft.slug}
               disabled={isSaving}
+              aria-label="Slug"
               placeholder="blobert"
               onChange={(e) => {
                 setSlugTouched(true);
@@ -156,6 +174,7 @@ export function AddWorkspaceModal({
               style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
               value={draft.repo_path}
               disabled={isSaving}
+              aria-label="Repo path"
               placeholder="."
               onChange={(e) => setDraft((d) => ({ ...d, repo_path: e.target.value }))}
             />
@@ -175,6 +194,7 @@ export function AddWorkspaceModal({
               style={{ width: "100%", fontSize: 12 }}
               value={draft.workflow_template_slug}
               disabled={isSaving || templates.length === 0}
+              aria-label="Workflow template"
               onChange={(e) => setDraft((d) => ({ ...d, workflow_template_slug: e.target.value }))}
             >
               {templates.length === 0 ? (
@@ -196,6 +216,7 @@ export function AddWorkspaceModal({
               style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
               value={draft.orchestration_profile_slug}
               disabled={isSaving}
+              aria-label="Orchestration profile"
               placeholder="blobert"
               onChange={(e) =>
                 setDraft((d) => ({ ...d, orchestration_profile_slug: e.target.value.trim() }))

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { localInstancesApi } from "../api/localInstancesApi";
 import type { LocalInstance, LocalInstanceState } from "../api/localInstancesTypes";
 import { describeError } from "../state/toastStore";
+import { LocalInstanceMenu } from "./LocalInstanceMenu";
 
 const STATE_LABEL: Record<LocalInstanceState, string> = {
   starting: "Starting",
@@ -112,6 +113,7 @@ export function LocalInstanceRow({ instance, targetName, stopping, onStop }: Loc
             Not managed here
           </span>
         )}
+        <LocalInstanceMenu instance={instance} />
       </div>
       {showLog && (
         <div id={logId}>

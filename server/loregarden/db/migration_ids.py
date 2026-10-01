@@ -169,6 +169,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     # Out of numeric order: see the note beside it in MIGRATIONS.
     "0138_runtime_exit_actions",
     "0149_agentless_stage_exit_actions",
+    "0150_workspace_archived_at",
 )
 
 

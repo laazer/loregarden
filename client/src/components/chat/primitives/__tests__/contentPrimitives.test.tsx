@@ -59,6 +59,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
         ticket_count: 12,
         blocked_count: 2,
         workflow_template_slug: "tdd",
+        archived_at: null,
         cli_adapter: "cursor",
         claude_model: "",
         cursor_model: "gpt-5",

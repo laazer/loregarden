@@ -113,7 +113,7 @@ export function LocalInstancesModal({ open, onClose }: LocalInstancesModalProps)
             className="btn-secondary"
             onClick={() => {
               onClose();
-              navigateToPage("instances");
+              navigateToPage("workspaces");
             }}
           >
             All workspaces and templates

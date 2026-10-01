@@ -1,4 +1,4 @@
-.screen-view--instances {
+.screen-view--workspaces {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -364,4 +364,64 @@
   color: var(--ac2);
   font-family: var(--mono);
   font-size: 12px;
+}
+
+.workspaces-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+}
+
+.workspaces-tab {
+  padding: 5px 14px;
+  border-radius: 7px;
+  color: var(--txm);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.workspaces-tab:hover,
+.workspaces-tab.active {
+  color: var(--tx);
+}
+
+.workspaces-tab.active {
+  background: var(--bg3);
+}
+
+.workspaces-tab:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+
+.workspaces-archived {
+  margin-top: 6px;
+}
+
+.workspaces-archived > summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.workspaces-archived > summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.workspaces-archived[open] > summary {
+  margin-bottom: 8px;
+}
+
+.instances-setup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
