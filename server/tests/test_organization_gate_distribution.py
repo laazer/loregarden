@@ -328,6 +328,45 @@ def test_check_mode_reports_without_writing(tmp_path: Path):
     assert config.read_text() == LEFTHOOK
 
 
+#: lore-eden's own managed block: the same five gates (and more), extracted from
+#: here. Abbreviated — only the markers decide anything.
+LORE_EDEN_BLOCK = """    # >>> lore-eden gate guardrails (managed) >>>
+    lore-eden-py-organization:
+      run: bash gates/scripts/gate-python.sh gates/lore_eden_gates/py_organization_check.py
+    # <<< lore-eden gate guardrails (managed) <<<
+"""
+
+
+def _with_lore_eden_block(text: str) -> str:
+    return text.replace("    existing-check:", LORE_EDEN_BLOCK + "    existing-check:")
+
+
+def test_a_repo_carrying_lore_eden_gates_is_not_given_a_second_copy(tmp_path: Path):
+    """lore-eden ships its own copies of these five gates. Installing ours beside
+    them runs each check twice, from two rule sets that can disagree — and
+    `--check` reporting "missing" there is what invited the second install."""
+    config = tmp_path / "lefthook.yml"
+    original = _with_lore_eden_block(LEFTHOOK)
+    config.write_text(original)
+
+    assert _install(config, check=True) == 0
+    assert _install(config) == 0
+    assert config.read_text() == original
+
+
+def test_installing_where_lore_eden_gates_exist_removes_ours(tmp_path: Path):
+    config = tmp_path / "lefthook.yml"
+    config.write_text(LEFTHOOK)
+    assert _install(config) == 0
+    config.write_text(_with_lore_eden_block(config.read_text()))
+
+    assert _install(config, check=True) == 1  # both blocks: reported, not written
+    assert installer.BEGIN_MARKER in config.read_text()
+
+    assert _install(config) == 0
+    assert config.read_text() == _with_lore_eden_block(LEFTHOOK)
+
+
 def test_installer_refuses_a_config_with_no_precommit_commands(tmp_path: Path):
     config = tmp_path / "lefthook.yml"
     config.write_text("pre-push:\n  commands:\n    tests:\n      run: echo t\n")

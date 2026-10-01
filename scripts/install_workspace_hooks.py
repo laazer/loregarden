@@ -24,6 +24,12 @@ from managed_block import RefusedError, read_lines, split_block, write_lines  # 
 BEGIN_MARKER = "# >>> loregarden organization guardrails (managed) >>>"
 END_MARKER = "# <<< loregarden organization guardrails (managed) <<<"
 
+#: lore-eden's own managed block. lore-eden ships its own copies of these five
+#: gates (extracted from here) and installs them into workspaces itself; a repo
+#: carrying that block is covered, and ours beside it would run every check
+#: twice, from two rule sets that can disagree.
+LORE_EDEN_BEGIN_MARKER = "# >>> lore-eden gate guardrails (managed) >>>"
+
 #: Command names the managed block writes. Namespaced deliberately: blobert
 #: already has a `py-organization` of its own, and a second entry under the same
 #: key in the same map is a duplicate YAML key — the parser either errors or
@@ -178,6 +184,9 @@ def _install(config: Path, loregarden_root: Path, *, check: bool) -> int:
     original, newline = read_lines(config)
     rest, existing = split_block(original, BEGIN_MARKER, END_MARKER, path=config)
 
+    if any(line.strip() == LORE_EDEN_BEGIN_MARKER for line in rest):
+        return _defer_to_lore_eden(config, rest, existing, newline, check=check)
+
     located = find_commands_map(rest)
     if located is None:
         print(f"skip: {config} has no pre-commit commands map", file=sys.stderr)
@@ -206,6 +215,22 @@ def _install(config: Path, loregarden_root: Path, *, check: bool) -> int:
     insert = end_of_commands_map(rest, commands_index, entry_indent)
     write_lines(config, [*rest[:insert], *block, *rest[insert:]], newline)
     print(f"{'refreshed' if existing else 'installed'}: {config.parent}")
+    return 0
+
+
+def _defer_to_lore_eden(
+    config: Path, rest: list[str], existing: list[str], newline: str, *, check: bool
+) -> int:
+    """lore-eden's gates are installed here, so ours are not — and are removed if
+    an earlier install left them beside lore-eden's."""
+    if not existing:
+        print(f"ok: {config.parent} carries lore-eden's gates, which cover these")
+        return 0
+    if check:
+        print(f"duplicate: {config.parent} carries lore-eden's gates and this managed block")
+        return 1
+    write_lines(config, rest, newline)
+    print(f"removed: {config.parent} managed block (lore-eden's gates cover it)")
     return 0
 
 
