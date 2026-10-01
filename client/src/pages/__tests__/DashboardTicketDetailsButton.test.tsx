@@ -210,8 +210,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // Modal should appear with ticket details
       await waitFor(() => {
         const dialog = screen.getByRole('dialog');
-        expect(within(dialog).getByDisplayValue('Test Feature')).toBeInTheDocument();
-        expect(within(dialog).getByDisplayValue('This is a test feature')).toBeInTheDocument();
+        expect(within(dialog).getByRole('heading', { name: 'Test Feature' })).toBeInTheDocument();
+        expect(within(dialog).getByText('This is a test feature')).toBeInTheDocument();
       });
     });
 
@@ -251,12 +251,15 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // Verify all details are displayed
       await waitFor(() => {
         const dialog = screen.getByRole('dialog');
-        expect(within(dialog).getByDisplayValue('Complete Feature')).toBeInTheDocument();
+        expect(within(dialog).getByRole('heading', { name: 'Complete Feature' })).toBeInTheDocument();
         expect(within(dialog).getByText('16-modal-with-ticket-details')).toBeInTheDocument();
-        expect(within(dialog).getByDisplayValue('Full description')).toBeInTheDocument();
-        expect(within(dialog).getByLabelText(/acceptance criteria/i)).toHaveValue(
-          'User can click button\nModal displays details\nModal can be closed'
-        );
+        expect(within(dialog).getByText('Full description')).toBeInTheDocument();
+        const criteria = within(dialog).getByRole('list', { name: /acceptance criteria/i });
+        expect(within(criteria).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+          'User can click button',
+          'Modal displays details',
+          'Modal can be closed',
+        ]);
         expect(within(dialog).getByText('Awaiting API review')).toBeInTheDocument();
       });
     });
@@ -401,7 +404,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       fireEvent.click(detailsButton);
 
       await waitFor(() => {
-        expect(screen.getByDisplayValue('First')).toBeInTheDocument();
+        expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'First' })).toBeInTheDocument();
       });
 
       // Switch to second ticket
@@ -411,7 +414,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       await waitFor(() => {
         const modal = screen.queryByRole('dialog');
         if (modal) {
-          expect(within(modal).getByDisplayValue('Second')).toBeInTheDocument();
+          expect(within(modal).getByRole('heading', { name: 'Second' })).toBeInTheDocument();
         }
       });
     });
@@ -502,7 +505,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       fireEvent.click(button);
 
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Test Ticket')).toBeInTheDocument();
+        expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'Test Ticket' })).toBeInTheDocument();
       });
     });
   });
@@ -532,6 +535,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     title: 'Test Ticket',
     description: 'Test description',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 1,
     workspace_slug: 'loregarden',

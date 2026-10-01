@@ -224,3 +224,72 @@ def test_mcp_update_ticket_accepts_auto_state_on_its_own(client: TestClient):
     )
 
     assert not body.get("error") and not body["result"].get("isError"), body
+
+
+def test_a_new_ticket_has_nothing_checked(client: TestClient):
+    ticket = _make_ticket(client, ["One", "Two"])
+
+    assert ticket["checked_acceptance_criteria"] == []
+
+
+def test_patch_checks_criteria_without_bumping_revision(client: TestClient):
+    ticket = _make_ticket(client, ["One", "Two", "Three"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"checked_acceptance_criteria": ["Three", "One"]},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    # Returned in criteria order, whatever order the caller sent.
+    assert body["checked_acceptance_criteria"] == ["One", "Three"]
+    assert body["revision"] == ticket["revision"]
+    reloaded = client.get(f"/api/tickets/{ticket['id']}").json()
+    assert reloaded["checked_acceptance_criteria"] == ["One", "Three"]
+
+
+def test_patch_drops_checks_for_criteria_the_ticket_lacks(client: TestClient):
+    ticket = _make_ticket(client, ["One", "Two"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"checked_acceptance_criteria": ["One", "Not a criterion"]},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["checked_acceptance_criteria"] == ["One"]
+
+
+def test_rewording_a_criterion_clears_its_check_and_keeps_the_rest(client: TestClient):
+    ticket = _make_ticket(client, ["One", "Two"])
+    client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"checked_acceptance_criteria": ["One", "Two"]},
+    )
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"acceptance_criteria": ["Two", "One reworded"]},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["checked_acceptance_criteria"] == ["Two"]
+    # Pruned in storage too, so restoring the old wording does not resurrect it.
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"acceptance_criteria": ["Two", "One"]},
+    )
+    assert res.json()["checked_acceptance_criteria"] == ["Two"]
+
+
+def test_patch_judges_checks_against_criteria_sent_with_them(client: TestClient):
+    ticket = _make_ticket(client, ["One"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"acceptance_criteria": ["One", "New"], "checked_acceptance_criteria": ["New"]},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["checked_acceptance_criteria"] == ["New"]

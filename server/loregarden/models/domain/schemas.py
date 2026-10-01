@@ -287,6 +287,8 @@ class TicketDetail(TicketSummary):
     admission: dict | None = None
     description: str
     acceptance_criteria: list[str]
+    #: The subset of `acceptance_criteria` an operator has checked off.
+    checked_acceptance_criteria: list[str]
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
     dependencies: list[TicketDependencyRef] = Field(default_factory=list)
     dependents: list[TicketDependencyRef] = Field(default_factory=list)
@@ -732,6 +734,9 @@ class UpdateTicketRequest(SQLModel):
     description: str | None = None
     #: Replaces the stored list; omit to leave it alone, [] to clear it.
     acceptance_criteria: list[str] | None = None
+    #: Replaces which criteria are checked off; omit to leave them alone. Any
+    #: text the ticket's criteria do not contain is dropped.
+    checked_acceptance_criteria: list[str] | None = None
     #: Replaces the stored tags; omit to leave them alone, [] to clear them.
     tags: list[str] | None = None
     state: TicketState | None = None

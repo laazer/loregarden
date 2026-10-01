@@ -313,6 +313,8 @@ export const api = {
       title?: string;
       description?: string;
       acceptance_criteria?: string[];
+      /** Replaces which criteria are checked off; text not among the criteria is dropped. */
+      checked_acceptance_criteria?: string[];
       /** Replaces the stored tags; omit to leave them alone, [] to clear them. */
       tags?: string[];
       state?: TicketState;

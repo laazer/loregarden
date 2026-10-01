@@ -21,6 +21,7 @@ function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
     current_stage_agent: "ac_gatekeeper",
     description: "",
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     revision: 1,
     last_updated_by: "human",
     next_status: "Proceed",

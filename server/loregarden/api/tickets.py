@@ -49,7 +49,7 @@ from loregarden.models.domain import (
     comparable_utc,
 )
 from loregarden.services import btw_service
-from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
@@ -805,10 +805,12 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     transitions = normalize_transitions_for_api(template.transitions_json) if template else []
     posture = resolve_compatibility_posture(session, ticket)
     prereq_ids, dependent_ids = _dependency_edge_ids(session, ticket.id)
+    criteria = load_criteria(ticket.acceptance_criteria_json)
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
-        acceptance_criteria=load_criteria(ticket.acceptance_criteria_json),
+        acceptance_criteria=criteria,
+        checked_acceptance_criteria=load_checked(ticket.checked_criteria_json, criteria),
         dependencies=_dependency_refs(session, prereq_ids),
         dependents=_dependency_refs(session, dependent_ids),
         related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),

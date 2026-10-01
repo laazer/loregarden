@@ -13,6 +13,7 @@ function mockTicket(over: Partial<apiClient.TicketDetail> = {}): apiClient.Ticke
     title: 'Main',
     description: '',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 2,
     workspace_slug: 'loregarden',
@@ -49,9 +50,11 @@ function renderModal(ticket: apiClient.TicketDetail, onSave?: (d: TicketDetailsS
 }
 
 const tagsInput = () => screen.getByLabelText(/tags, comma separated/i);
+const openEditor = () => fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
 
 it('seeds the editor from the ticket tags', () => {
-  renderModal(mockTicket({ tags: ['backend', 'needs-design'] }));
+  renderModal(mockTicket({ tags: ['backend', 'needs-design'] }), jest.fn());
+  openEditor();
 
   expect(tagsInput()).toHaveValue('backend, needs-design');
 });
@@ -59,9 +62,10 @@ it('seeds the editor from the ticket tags', () => {
 it('saves tags split on commas, trimmed and deduplicated', async () => {
   const onSave = jest.fn().mockResolvedValue(undefined);
   renderModal(mockTicket({ tags: [] }), onSave);
+  openEditor();
 
   fireEvent.change(tagsInput(), { target: { value: ' backend , Backend ,, ui ' } });
-  fireEvent.click(screen.getByRole('button', { name: /save/i }));
+  fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
   await waitFor(() => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ tags: ['backend', 'ui'] }));
@@ -70,18 +74,20 @@ it('saves tags split on commas, trimmed and deduplicated', async () => {
 
 it('leaves save disabled when only the tag spelling would round-trip unchanged', () => {
   renderModal(mockTicket({ tags: ['backend'] }), jest.fn());
+  openEditor();
 
   fireEvent.change(tagsInput(), { target: { value: 'backend,' } });
 
-  expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
 });
 
 it('can clear every tag', async () => {
   const onSave = jest.fn().mockResolvedValue(undefined);
   renderModal(mockTicket({ tags: ['backend'] }), onSave);
+  openEditor();
 
   fireEvent.change(tagsInput(), { target: { value: '' } });
-  fireEvent.click(screen.getByRole('button', { name: /save/i }));
+  fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
   await waitFor(() => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ tags: [] }));

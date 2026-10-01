@@ -36,6 +36,7 @@ function baseTicket(overrides: Partial<TicketDetail> = {}): TicketDetail {
     child_count: 0,
     description: "",
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     revision: 1,
     last_updated_by: "",
     current_stage_agent: "",
