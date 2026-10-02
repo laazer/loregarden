@@ -1,4 +1,4 @@
-"""Migration 0152: initiative schedules, and when each ticket was resolved.
+"""Initiative schedules, and when each ticket was resolved.
 
 ``tickets.resolved_at`` is what a schedule forecast measures pace from. It is
 backfilled from the best record each resolved ticket has, in order of how
@@ -22,6 +22,7 @@ from loregarden.db.migration_utils import (
     table_columns,
     table_exists,
 )
+from loregarden.db.versions import migration
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -169,6 +170,7 @@ def _create_plan_tables(conn: Connection) -> None:
             conn.execute(text(ddl))
 
 
+@migration("20261002_initiative_plans", after="0151_ticket_criteria_checked")
 def m_initiative_plans(conn: Connection) -> None:
     if table_exists(conn, "tickets"):
         _add_resolved_at(conn)

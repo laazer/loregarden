@@ -171,7 +171,6 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0149_agentless_stage_exit_actions",
     "0150_workspace_archived_at",
     "0151_ticket_criteria_checked",
-    "0152_initiative_plans",
 )
 
 
