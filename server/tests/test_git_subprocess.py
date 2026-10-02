@@ -197,6 +197,10 @@ def test_run_gh_scrubs_repo_bindings_and_passes_its_timeout(monkeypatch):
 
 def _gh_argv_sites(source: str) -> list[int]:
     """Lines of list/tuple literals whose first element is the string "gh"."""
+    # A "gh" element is spelled with either quote; a module with neither cannot
+    # hold one, and parsing all ~430 modules was most of this test's time.
+    if '"gh"' not in source and "'gh'" not in source:
+        return []
     return [
         node.lineno
         for node in ast.walk(ast.parse(source))
