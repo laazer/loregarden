@@ -24,7 +24,7 @@ from loregarden.services.change_pr import (
     ChangeRequest,
     open_change_pr,
 )
-from loregarden.services.github_pr_service import run_gh
+from loregarden.services.git_subprocess import run_gh
 from loregarden.services.workspace_integration import is_loregarden, primary_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select

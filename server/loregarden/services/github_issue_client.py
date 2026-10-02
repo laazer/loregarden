@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from loregarden.models.domain import IssueClosure, IssueSnapshot
-from loregarden.services.github_pr_service import run_gh
+from loregarden.services.git_subprocess import run_gh
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 _ISSUE_FIELDS = "number,title,body,state,stateReason,url,labels"

@@ -15,6 +15,7 @@ from loregarden.agents.mcp_context import (
     STAGE_REPORT_SECTION_TITLE,
     WORKFLOW_ENFORCEMENT_DOC_REL,
 )
+from tests.repo_templates import from_template
 
 
 def git(cwd: Path | str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -22,8 +23,14 @@ def git(cwd: Path | str, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def make_repo(tmp_path: Path, name: str = "project") -> Path:
-    """A repository on `main` with one commit, ready to cut worktrees from."""
-    root = tmp_path / name
+    """A repository on `main` with one commit, ready to cut worktrees from.
+
+    A copy of one built once per process; see `tests/repo_templates.py`.
+    """
+    return from_template(tmp_path / name, "make_repo", _build_repo)
+
+
+def _build_repo(root: Path) -> None:
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "t@example.com")
@@ -35,7 +42,6 @@ def make_repo(tmp_path: Path, name: str = "project") -> Path:
     seed_stage_report_contract(root)
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "seed")
-    return root
 
 
 def head_branch(path: Path | str) -> str:

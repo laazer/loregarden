@@ -1,4 +1,4 @@
-"""Single chokepoint for shelling out to git.
+"""Single chokepoint for shelling out to git, and to `gh`, which runs git itself.
 
 Git exports GIT_DIR — and, depending on the command, GIT_WORK_TREE and
 GIT_INDEX_FILE — into the environment of hooks and of anything they spawn. Those
@@ -84,4 +84,48 @@ def run_git(
         cwd=str(cwd) if cwd is not None else None,
         env=child_env,
         **kwargs,
+    )
+
+
+#: Which `gh` `run_gh` spawns, overriding PATH lookup — the same convention as
+#: the agent CLIs' `LOREGARDEN_*_BIN`. The test suite points it at a stub.
+GH_BINARY_ENV = "LOREGARDEN_GH_BIN"
+
+
+def gh_binary() -> str:
+    """The `gh` to spawn: `LOREGARDEN_GH_BIN` when set, otherwise `gh` from PATH."""
+    return (os.environ.get(GH_BINARY_ENV) or "").strip() or "gh"
+
+
+def run_gh(
+    args: Sequence[str],
+    *,
+    cwd: Path,
+    gh_token: str | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run `gh *args` from `cwd`, with git's repo bindings scrubbed.
+
+    The only place a `gh` argv is built. `gh` picks its target repository by
+    shelling out to git, so an inherited GIT_DIR would aim it at whatever repo
+    the parent was bound to — and `cwd` decides which worktree's branch it reads.
+
+    Text output, captured; a non-zero exit is returned, not raised, so each
+    caller decides what a failure means. `timeout` raises
+    `subprocess.TimeoutExpired` as `subprocess.run` does, and a missing binary
+    raises `FileNotFoundError`.
+
+    `gh_token` acts as that account for this call only (`GH_TOKEN`), for a
+    machine whose active `gh` account cannot write to the repository.
+    """
+    env = scrubbed_git_env()
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
+    return subprocess.run(
+        [gh_binary(), *args],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
