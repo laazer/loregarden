@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     InitiativeMilestoneView,
     InitiativeProgress,
     InitiativeView,
+    ScheduleTarget,
     Ticket,
     WorkItemType,
     Workspace,
@@ -109,3 +110,17 @@ def attachable_milestones(session: Session) -> list[InitiativeMilestoneView]:
     )
     slugs = workspace_slugs(session, milestones)
     return [_milestone_view(m, slugs) for m in milestones]
+
+
+def load_initiative(session: Session, initiative_id: str) -> Ticket:
+    initiative = session.get(Ticket, initiative_id)
+    if initiative is None or initiative.work_item_type != WorkItemType.INITIATIVE:
+        raise LookupError(f"Initiative not found: {initiative_id}")
+    return initiative
+
+
+def load_targets(session: Session, ticket_ids: list[str]) -> dict[str, ScheduleTarget]:
+    if not ticket_ids:
+        return {}
+    rows = session.exec(select(ScheduleTarget).where(col(ScheduleTarget.ticket_id).in_(ticket_ids)))
+    return {row.ticket_id: row for row in rows.all()}

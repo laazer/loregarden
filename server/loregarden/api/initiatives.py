@@ -12,11 +12,18 @@ the planner's proposals, and the planner conversation.
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
+    AutopilotUpdate,
     InitiativeMilestoneView,
     InitiativePlanUpdate,
     InitiativePlanView,
     InitiativeView,
     PlannerTurnMode,
+)
+from loregarden.services.initiative_autopilot import (
+    mark_needs_person,
+    run_autopilot,
+    set_autopilot,
+    start_ready_work,
 )
 from loregarden.services.initiative_plan_service import (
     ScheduleValidationError,
@@ -45,6 +52,14 @@ router = APIRouter(prefix="/initiatives", tags=["initiatives"])
 
 #: Who an edit made on this page is attributed to.
 _OPERATOR = "human"
+
+
+class TicketSelection(BaseModel):
+    ticket_ids: list[str]
+
+
+class NeedsPersonUpdate(TicketSelection):
+    needs_person: bool = True
 
 
 class PlannerMessageCreate(BaseModel):
@@ -122,6 +137,44 @@ def discard_proposal_endpoint(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ScheduleValidationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.patch("/{initiative_id}/autopilot", response_model=InitiativePlanView)
+def update_autopilot_endpoint(
+    initiative_id: str, body: AutopilotUpdate, session: Session = Depends(get_session)
+) -> InitiativePlanView:
+    """Turning it on queues the first batch now rather than at the next tick."""
+    try:
+        plan = set_autopilot(session, initiative_id, body, actor=_OPERATOR)
+        if plan.autopilot:
+            run_autopilot(session, initiative_id)
+        return plan_view(session, initiative_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{initiative_id}/work", response_model=dict[str, str])
+def start_work_endpoint(
+    initiative_id: str, body: TicketSelection, session: Session = Depends(get_session)
+) -> dict[str, str]:
+    """Queue named tickets if the plan says they are ready; returns id -> outcome."""
+    try:
+        return start_ready_work(session, initiative_id, body.ticket_ids, actor=_OPERATOR)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{initiative_id}/needs-person", response_model=InitiativePlanView)
+def needs_person_endpoint(
+    initiative_id: str, body: NeedsPersonUpdate, session: Session = Depends(get_session)
+) -> InitiativePlanView:
+    try:
+        mark_needs_person(session, initiative_id, body.ticket_ids, needs_person=body.needs_person)
+        return plan_view(session, initiative_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{initiative_id}/planner", response_model=PlannerChatSnapshot)

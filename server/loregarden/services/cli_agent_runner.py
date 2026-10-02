@@ -18,8 +18,10 @@ between the two paths now: approvals, not visibility.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -76,6 +78,54 @@ def cap_reply(reply: str, cap: int, *, label: str) -> str:
         return reply
     logger.warning("%s reply truncated from %d to %d characters", label, len(reply), cap)
     return reply[:cap] + REPLY_TRUNCATION_MARKER.format(cap=cap, total=len(reply))
+
+
+#: The most of a failure an operator reads in a chat bubble; the log keeps the rest.
+FAILURE_DETAIL_CAP = 600
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _stream_events(stdout_text: str) -> list[dict]:
+    events: list[dict] = []
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:  # silent-ok: a non-JSON line is plain CLI output, read below
+            continue
+        if isinstance(event, dict):  # py-org: allow-isinstance — a foreign CLI's stream
+            events.append(event)
+    return events
+
+
+def cli_failure_detail(stdout_text: str, stderr_text: str) -> str:
+    """What went wrong, in the CLI's own words — not its whole event stream.
+
+    A failing stream-json run prints init, hook and usage events before the one
+    line that matters; passing all of it through put kilobytes of JSON in the
+    chat thread with "Failed to authenticate" buried at the end. Preference:
+    stderr, then the stream's error result, then plain stdout lines. ANSI
+    colour is stripped and the result capped; the full output is logged.
+    """
+    logger.warning("CLI turn failed; stderr=%r stdout=%r", stderr_text[-4000:], stdout_text[-4000:])
+    detail = stderr_text.strip()
+    if not detail:
+        events = _stream_events(stdout_text)
+        errors = [
+            str(e.get("result") or e.get("error") or "")
+            for e in events
+            if e.get("type") == "result" and (e.get("is_error") or e.get("error"))
+        ]
+        detail = next((d for d in reversed(errors) if d), "")
+        if not detail and not events:
+            detail = stdout_text.strip()
+    detail = _ANSI.sub("", detail).strip()
+    if len(detail) > FAILURE_DETAIL_CAP:
+        detail = detail[:FAILURE_DETAIL_CAP].rstrip() + " …"
+    return detail
 
 
 def stub_response(profile: CliAgentProfile) -> str | None:
@@ -257,9 +307,9 @@ def run_cli_agent_turn(
             stderr_text = stderr.decode("utf-8", errors="replace")
 
         if proc.returncode != 0:
-            detail = stderr_text.strip() or stdout_text.strip()
             raise RuntimeError(
-                detail or f"{profile.cli_label} CLI exited with code {proc.returncode}"
+                cli_failure_detail(stdout_text, stderr_text)
+                or f"{profile.cli_label} CLI exited with code {proc.returncode}"
             )
 
         # Reads plain text and NDJSON alike, so the reply does not depend on

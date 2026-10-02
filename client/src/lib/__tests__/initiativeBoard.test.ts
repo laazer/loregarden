@@ -24,11 +24,18 @@ test("a parent cycle does not hang the walk", () => {
   expect(owner.size).toBe(0);
 });
 
-test("done is capped with its real total; optional columns appear only when used", () => {
-  const done = Array.from({ length: 30 }, (_, i) => ticket(`d${i}`, "m1", "done"));
-  const columns = buildColumns([...done, ticket("p", "m1", "parked")]);
+test("every column is capped with its real total; optional columns appear only when used", () => {
+  const backlog = Array.from({ length: 30 }, (_, i) => ticket(`b${i}`, "m1", "backlog"));
+  const columns = buildColumns([...backlog, ticket("p", "m1", "parked")]);
   expect(columns.map((c) => c.status)).toEqual(["backlog", "in_progress", "blocked", "done", "parked"]);
-  const doneColumn = columns.find((c) => c.status === "done");
-  expect(doneColumn?.tickets).toHaveLength(12);
-  expect(doneColumn?.total).toBe(30);
+  const first = columns.find((c) => c.status === "backlog");
+  expect(first?.tickets).toHaveLength(12);
+  expect(first?.total).toBe(30);
+});
+
+test("an expanded column draws everything", () => {
+  const backlog = Array.from({ length: 30 }, (_, i) => ticket(`b${i}`, "m1", "backlog"));
+  const column = buildColumns(backlog, new Set(["backlog"]))[0];
+  expect(column.tickets).toHaveLength(30);
+  expect(column.total).toBeUndefined();
 });

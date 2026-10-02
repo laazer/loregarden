@@ -276,6 +276,10 @@ def _args_for(
             "items": [],
             "mode": "fixed",
         },
+        # Off and empty: these drive real runs, and a smoke test must start none.
+        "loregarden_set_initiative_autopilot": {"initiative_id": initiative_id, "enabled": False},
+        "loregarden_start_initiative_work": {"initiative_id": initiative_id, "ticket_ids": []},
+        "loregarden_mark_needs_person": {"initiative_id": initiative_id, "ticket_ids": []},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -410,6 +414,9 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_doctor",
         "loregarden_get_initiative_plan",
         "loregarden_propose_initiative_schedule",
+        "loregarden_set_initiative_autopilot",
+        "loregarden_start_initiative_work",
+        "loregarden_mark_needs_person",
         "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",

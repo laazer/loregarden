@@ -65,6 +65,9 @@ class McpTool(StrEnum):
     SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
     GET_INITIATIVE_PLAN = "loregarden_get_initiative_plan"
     PROPOSE_INITIATIVE_SCHEDULE = "loregarden_propose_initiative_schedule"
+    SET_INITIATIVE_AUTOPILOT = "loregarden_set_initiative_autopilot"
+    START_INITIATIVE_WORK = "loregarden_start_initiative_work"
+    MARK_NEEDS_PERSON = "loregarden_mark_needs_person"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -176,6 +179,12 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
 INITIATIVE_PLANNER_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.GET_INITIATIVE_PLAN,
     McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+    # Driving the plan: these start real agent runs, so on a stage run they go
+    # to the inbox like any dispatch; marking a ticket as needing a person only
+    # ever stops work, so it does not.
+    McpTool.SET_INITIATIVE_AUTOPILOT,
+    McpTool.START_INITIATIVE_WORK,
+    McpTool.MARK_NEEDS_PERSON,
     McpTool.GET_TICKET,
     McpTool.GET_TICKET_BY_EXTERNAL,
     McpTool.LIST_TICKETS,
@@ -214,6 +223,8 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.APPEND_CHECKPOINT,
         # Files a *pending* proposal only; a person accepting it is the write.
         McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+        # A tag that keeps the autopilot away from a ticket; it starts nothing.
+        McpTool.MARK_NEEDS_PERSON,
         McpTool.APPEND_LEARNING,
         McpTool.UPSERT_MEMORY,
         McpTool.CREATE_MEMORY_RELATION,

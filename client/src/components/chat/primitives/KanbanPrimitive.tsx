@@ -5,6 +5,7 @@ import { api } from "../../../api/client";
 import type { TicketState, TicketSummary } from "../../../api/types";
 import { ticketStateColor, ticketStateLabel } from "../../../lib/ticketStates";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
+import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
@@ -91,9 +92,12 @@ export interface KanbanColumn {
 export function KanbanColumns({
   columns,
   tileAction,
+  onShowAll,
 }: {
   columns: KanbanColumn[];
   tileAction?: (ticket: TicketSummary) => ReactNode;
+  /** Offered on a truncated column; absent, the column just says how many are hidden. */
+  onShowAll?: (status: TicketState) => void;
 }) {
   return (
     <div className="lg-primitive-kanban">
@@ -116,7 +120,15 @@ export function KanbanColumns({
             ) : (
               col.tickets.map((t) => <TicketMini key={t.id} ticket={t} action={tileAction?.(t)} />)
             )}
-            {hidden > 0 ? (
+            {hidden > 0 && onShowAll ? (
+              <Button
+                variant="plain"
+                className="lg-primitive-kanban-col-more"
+                onClick={() => onShowAll(col.status)}
+              >
+                Show all {total}
+              </Button>
+            ) : hidden > 0 ? (
               <p className="lg-primitive-kanban-col-more">+{hidden} more</p>
             ) : null}
           </div>

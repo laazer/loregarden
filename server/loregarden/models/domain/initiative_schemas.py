@@ -12,12 +12,14 @@ from typing import Any
 
 from loregarden.models.domain.enums import TicketState
 from loregarden.models.domain.plan_enums import (
+    AutopilotAction,
     ForecastBasis,
+    NodeStatus,
     ProposalSource,
     ScheduleMode,
     ScheduleStatus,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InitiativeMilestoneView(BaseModel):
@@ -66,13 +68,9 @@ class MilestoneSchedule(BaseModel):
     workspace_slug: str
     plan_order: int
     target_date: date | None
-    #: When the work lands at the measured pace, in plan order. Never earlier
-    #: than `earliest_date`.
+    #: When its last open item lands, scheduled through the dependency graph
+    #: (`services.initiative_graph`). Null when any item cannot be priced.
     forecast_date: date | None
-    #: The agent run-time floor: remaining stages at their historical cost,
-    #: spread over the lanes. Work cannot finish before this however fast it
-    #: is approved.
-    earliest_date: date | None
     #: The date the plan shows: the target in a fixed plan, the forecast in a
     #: rolling one.
     planned_date: date | None
@@ -83,6 +81,10 @@ class MilestoneSchedule(BaseModel):
     #: Open work items under the milestone, and all of them.
     remaining: int
     total: int
+    #: Open items by graph status: ready, running, waiting, needs_person, blocked.
+    counts: dict[NodeStatus, int]
+    #: Items whose duration was the plan's median, not a measurement.
+    assumed: int
 
 
 class ScheduleTargetInput(BaseModel):
@@ -128,6 +130,14 @@ class InitiativePlanView(BaseModel):
     #: The trailing window, in days, every pace was measured over.
     window_days: int
     pending_proposal: ScheduleProposalView | None
+    #: Every ticket in the graph — the initiative's work and outside prerequisites.
+    nodes: list[PlanNodeView]
+    #: Ticket ids on the critical path, first to last.
+    critical_path: list[str]
+    #: Ticket ids caught in a dependency cycle (cannot be scheduled).
+    cyclic: list[str]
+    lanes: list[str]
+    autopilot: AutopilotView
     generated_at: datetime
 
 
@@ -145,3 +155,56 @@ class ScheduleProposalCreate(BaseModel):
     rationale: str
     items: list[ScheduleTargetInput]
     mode: ScheduleMode | None = None
+
+
+class PlanNodeView(BaseModel):
+    """One ticket in the plan's dependency graph."""
+
+    id: str
+    external_id: str
+    title: str
+    workspace_slug: str
+    state: TicketState
+    status: NodeStatus
+    lane: str
+    #: Its milestone; null for a prerequisite outside the initiative.
+    milestone_id: str | None
+    #: Dependency depth among open work: 1 means nothing open before it.
+    step: int
+    deps: list[str]
+    #: Prerequisites not yet done.
+    waiting_on: list[str]
+    start: datetime | None
+    finish: datetime | None
+    duration_days: float | None
+    basis: ForecastBasis
+    assumed: bool
+    critical: bool
+    external: bool
+
+
+class AutopilotEventView(BaseModel):
+    action: AutopilotAction
+    ticket_id: str | None
+    ticket_external_id: str | None
+    detail: str
+    created_at: datetime
+
+
+class AutopilotView(BaseModel):
+    enabled: bool
+    max_parallel: int
+    #: Why it stopped itself; blank when it has not.
+    paused_reason: str
+    #: Plan tickets holding a lane right now (running, queued, or awaiting approval).
+    in_flight: int
+    #: Ready tickets it would start next, in the order it would start them.
+    next_up: list[str]
+    #: False on a sandbox server, where the loop never runs.
+    available: bool
+    recent: list[AutopilotEventView]
+
+
+class AutopilotUpdate(BaseModel):
+    enabled: bool | None = None
+    max_parallel: int | None = Field(default=None, ge=1, le=12)

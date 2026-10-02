@@ -87,3 +87,33 @@ class PlannerTurnMode(StrEnum):
     CHAT = "chat"
     #: The "Draft schedule" button: plan the whole initiative and propose it.
     DRAFT = "draft"
+
+
+class NodeStatus(StrEnum):
+    """Where one work item stands in the plan's dependency graph."""
+
+    DONE = "done"
+    #: An agent run is executing or queued for it.
+    RUNNING = "running"
+    #: Every prerequisite is done; it can start now.
+    READY = "ready"
+    #: Waiting for prerequisites to finish.
+    WAITING = "waiting"
+    #: A person has to act: tagged `needs-person`, parked, or blocked on a
+    #: decision or a human action. Autopilot never dispatches these.
+    NEEDS_PERSON = "needs_person"
+    #: Stuck for a reason an agent or the harness may clear (block_kind work/harness).
+    BLOCKED = "blocked"
+
+
+class AutopilotAction(StrEnum):
+    """What the autopilot did, for its log."""
+
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    #: Queued a ready ticket into a free lane.
+    DISPATCHED = "dispatched"
+    #: The queue refused a ticket it tried to dispatch.
+    REFUSED = "refused"
+    #: Stopped itself: too many of the tickets it started ended blocked.
+    PAUSED = "paused"

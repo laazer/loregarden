@@ -11,21 +11,18 @@ from unittest.mock import patch
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
-    ForecastBasis,
     InitiativePlanUpdate,
     ProposalSource,
     ProposalStatus,
     ScheduleMode,
     ScheduleProposal,
     ScheduleProposalCreate,
-    ScheduleStatus,
     ScheduleTargetInput,
     Ticket,
     TicketState,
     WorkItemType,
     Workspace,
 )
-from loregarden.services.initiative_forecast import MIN_INITIATIVE_SAMPLES, WINDOW_DAYS
 from loregarden.services.initiative_plan_service import (
     ScheduleValidationError,
     accept_proposal,
@@ -52,11 +49,14 @@ class _Tree:
 
 
 class _FlatEstimator:
-    """Every milestone costs the same agent time; patched in where the floor matters."""
+    """Every ticket costs the same agent time (none, unless a test sets it)."""
 
     seconds: float | None = None
 
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+    def prime(self, _roots: list[Ticket]) -> None:
         pass
 
     def estimate(self, _ticket_id: str) -> _Tree:
@@ -66,7 +66,7 @@ class _FlatEstimator:
 @pytest.fixture(autouse=True)
 def _no_agent_history():
     _FlatEstimator.seconds = None
-    with patch("loregarden.services.initiative_forecast.TicketTreeEstimator", _FlatEstimator):
+    with patch("loregarden.services.initiative_graph.TicketTreeEstimator", _FlatEstimator):
         yield
 
 
@@ -169,153 +169,6 @@ def test_derived_close_is_stamped_too(db_session, workspaces):
 
 
 # --- forecasts ---------------------------------------------------------------
-
-
-def test_forecast_runs_in_plan_order_within_a_workspace(db_session, workspaces):
-    here, _ = workspaces
-    initiative = _initiative(db_session)
-    first = _milestone(db_session, here, "First", initiative)
-    second = _milestone(db_session, here, "Second", initiative)
-    # 7 completions in the window -> 1/3 per day on the initiative's own pace.
-    _items(db_session, here, first, open_count=3, done_days_ago=[1, 2, 3, 4, 5, 6, 7])
-    _items(db_session, here, second, open_count=3)
-    _set_target(db_session, initiative, second, None, 0)
-    _set_target(db_session, initiative, first, None, 1)
-
-    view = plan_view(db_session, initiative.id, now=NOW)
-
-    per_day = 7 / WINDOW_DAYS
-    assert [m.id for m in view.milestones] == [second.id, first.id]
-    assert _by_id(view, second).forecast_date == (NOW + timedelta(days=3 / per_day)).date()
-    # Second's three items come first; First waits behind them.
-    assert _by_id(view, first).forecast_date == (NOW + timedelta(days=6 / per_day)).date()
-    assert _by_id(view, first).basis == ForecastBasis.INITIATIVE_THROUGHPUT
-    assert view.forecast_date == _by_id(view, first).forecast_date
-
-
-def test_workspaces_proceed_in_parallel(db_session, workspaces):
-    here, there = workspaces
-    initiative = _initiative(db_session)
-    a = _milestone(db_session, here, "A", initiative)
-    b = _milestone(db_session, there, "B", initiative)
-    _items(db_session, here, a, open_count=2, done_days_ago=[1] * MIN_INITIATIVE_SAMPLES)
-    _items(db_session, there, b, open_count=2, done_days_ago=[1] * MIN_INITIATIVE_SAMPLES)
-
-    view = plan_view(db_session, initiative.id, now=NOW)
-
-    assert _by_id(view, a).forecast_date == _by_id(view, b).forecast_date
-    assert {p.workspace_slug for p in view.paces} == {"loregarden", "elsewhere"}
-
-
-def test_pace_falls_back_to_the_workspace_then_to_nothing(db_session, workspaces):
-    here, there = workspaces
-    initiative = _initiative(db_session)
-    a = _milestone(db_session, here, "A", initiative)
-    b = _milestone(db_session, there, "B", initiative)
-    _items(db_session, here, a, open_count=1)
-    _items(db_session, there, b, open_count=1)
-    # Outside the initiative, but in its workspace: stands in for its pace.
-    make_ticket(
-        db_session,
-        workspace_id=here.id,
-        title="unrelated",
-        state=TicketState.DONE,
-        resolved_at=NOW - timedelta(days=2),
-    )
-    # Outside the window: counts for nothing.
-    make_ticket(
-        db_session,
-        workspace_id=there.id,
-        title="ancient",
-        state=TicketState.DONE,
-        resolved_at=NOW - timedelta(days=WINDOW_DAYS + 5),
-    )
-
-    view = plan_view(db_session, initiative.id, now=NOW)
-
-    assert _by_id(view, a).basis == ForecastBasis.WORKSPACE_THROUGHPUT
-    assert _by_id(view, a).forecast_date is not None
-    assert _by_id(view, b).basis == ForecastBasis.NONE
-    assert _by_id(view, b).forecast_date is None
-    # One open milestone cannot be priced, so the initiative is not either —
-    # the latest of the others would understate it.
-    assert view.forecast_date is None
-    assert view.unforecast_milestones == 1
-
-
-def test_agent_time_floor_holds_a_fast_pace_back(db_session, workspaces):
-    here, _ = workspaces
-    initiative = _initiative(db_session)
-    m = _milestone(db_session, here, "M", initiative)
-    _items(db_session, here, m, open_count=1, done_days_ago=[1] * 20)
-    _FlatEstimator.seconds = timedelta(days=10).total_seconds()
-
-    view = plan_view(db_session, initiative.id, now=NOW)
-
-    row = _by_id(view, m)
-    assert row.basis == ForecastBasis.AGENT_TIME
-    assert row.forecast_date == row.earliest_date == (NOW + timedelta(days=10)).date()
-
-
-def test_status_against_target(db_session, workspaces):
-    here, there = workspaces
-    initiative = _initiative(db_session)
-    ahead = _milestone(db_session, here, "Ahead", initiative)
-    behind = _milestone(db_session, there, "Behind", initiative)
-    late = _milestone(db_session, here, "Late", initiative)
-    _items(db_session, here, ahead, open_count=1, done_days_ago=[1] * 21)
-    _items(db_session, there, behind, open_count=21, done_days_ago=[1] * 21)
-    _items(db_session, here, late, open_count=1)
-    _set_target(db_session, initiative, ahead, TODAY + timedelta(days=30), 0)
-    _set_target(db_session, initiative, behind, TODAY + timedelta(days=5), 0)
-    _set_target(db_session, initiative, late, TODAY - timedelta(days=1), 1)
-
-    view = plan_view(db_session, initiative.id, now=NOW)
-
-    assert _by_id(view, ahead).status == ScheduleStatus.ON_TRACK
-    assert _by_id(view, behind).status == ScheduleStatus.BEHIND
-    assert _by_id(view, behind).drift_days == 21 - 5
-    assert _by_id(view, late).status == ScheduleStatus.LATE
-
-
-def test_rolling_mode_plans_on_the_forecast(db_session, workspaces):
-    here, _ = workspaces
-    initiative = _initiative(db_session)
-    m = _milestone(db_session, here, "M", initiative)
-    _items(db_session, here, m, open_count=7, done_days_ago=[1] * 7)
-    target = TODAY + timedelta(days=5)
-    _set_target(db_session, initiative, m, target, 0)
-
-    fixed = _by_id(plan_view(db_session, initiative.id, now=NOW), m)
-    assert fixed.planned_date == target
-
-    update_plan(
-        db_session, initiative.id, InitiativePlanUpdate(mode=ScheduleMode.ROLLING), actor="t"
-    )
-    rolling = _by_id(plan_view(db_session, initiative.id, now=NOW), m)
-    assert rolling.planned_date == rolling.forecast_date != target
-    # The baseline survives, so the drift is still visible.
-    assert rolling.target_date == target
-
-
-def test_finishing_work_moves_the_forecast_earlier(db_session, workspaces):
-    """The dynamic part: nothing is re-planned, the next read just knows more."""
-    here, _ = workspaces
-    initiative = _initiative(db_session)
-    m = _milestone(db_session, here, "M", initiative)
-    _items(db_session, here, m, open_count=6, done_days_ago=[1] * MIN_INITIATIVE_SAMPLES)
-    before = _by_id(plan_view(db_session, initiative.id, now=NOW), m).forecast_date
-
-    open_items = db_session.exec(
-        select(Ticket).where(Ticket.parent_ticket_id == m.id, Ticket.state == TicketState.BACKLOG)
-    ).all()
-    for ticket in open_items[:3]:
-        choose(db_session, ticket, TicketState.DONE, actor="test")
-        ticket.resolved_at = NOW - timedelta(hours=1)
-    db_session.commit()
-
-    after = _by_id(plan_view(db_session, initiative.id, now=NOW), m).forecast_date
-    assert after < before
 
 
 # --- plan edits and proposals ------------------------------------------------
@@ -573,15 +426,16 @@ def test_dating_a_milestone_does_not_move_it(db_session, workspaces):
     assert [m.plan_order for m in after] == [0, 1, 2]
 
 
-def test_workspace_groups_keep_their_place(db_session, workspaces):
+def test_milestone_order_is_one_order_across_workspaces(db_session, workspaces):
+    """Milestones are phases of one plan; a phase can span repositories."""
     here, there = workspaces
     initiative = _initiative(db_session)
-    a = _milestone(db_session, there, "A", initiative)  # "elsewhere" sorts first
-    b = _milestone(db_session, here, "B", initiative)
+    a = _milestone(db_session, here, "A", initiative)
+    b = _milestone(db_session, there, "B", initiative)
     _set_target(db_session, initiative, b, TODAY, 0)
 
     view = plan_view(db_session, initiative.id, now=NOW)
-    assert [m.id for m in view.milestones] == [a.id, b.id]
+    assert [(m.id, m.plan_order) for m in view.milestones] == [(b.id, 0), (a.id, 1)]
 
 
 def test_planner_runs_in_a_workspace_that_is_checked_out(db_session, workspaces):

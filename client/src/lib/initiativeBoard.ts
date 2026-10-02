@@ -7,8 +7,8 @@ import type { KanbanColumn } from "../components/chat/primitives/KanbanPrimitive
 const BASE_COLUMNS: TicketState[] = ["backlog", "in_progress", "blocked", "done"];
 const OPTIONAL_COLUMNS: TicketState[] = ["parked", "wont_do"];
 
-/** Done piles up for the life of an initiative. Draw a handful; the header counts them all. */
-const DONE_SHOWN = 12;
+/** Tickets drawn per column before "Show all". */
+export const COLUMN_SHOWN = 12;
 
 export function boardQueryKey(initiativeId: string) {
   return ["tickets", "initiative-board", initiativeId] as const;
@@ -30,7 +30,15 @@ export function milestoneOf(tickets: TicketSummary[], milestoneIds: Set<string>)
   return owner;
 }
 
-export function buildColumns(tickets: TicketSummary[]): KanbanColumn[] {
+/**
+ * Columns for the board. Every column is capped, not only done: a phase can
+ * hold eighty backlog tickets, and a column that long hides the others. The
+ * header counts them all; `expanded` lifts the cap for the columns asked for.
+ */
+export function buildColumns(
+  tickets: TicketSummary[],
+  expanded: ReadonlySet<TicketState> = new Set(),
+): KanbanColumn[] {
   const byState = new Map<TicketState, TicketSummary[]>();
   for (const ticket of tickets) {
     const list = byState.get(ticket.state) ?? [];
@@ -40,7 +48,7 @@ export function buildColumns(tickets: TicketSummary[]): KanbanColumn[] {
   const states = [...BASE_COLUMNS, ...OPTIONAL_COLUMNS.filter((s) => byState.get(s)?.length)];
   return states.map((status) => {
     const all = byState.get(status) ?? [];
-    if (status !== "done" || all.length <= DONE_SHOWN) return { status, tickets: all };
-    return { status, tickets: all.slice(0, DONE_SHOWN), total: all.length };
+    if (expanded.has(status) || all.length <= COLUMN_SHOWN) return { status, tickets: all };
+    return { status, tickets: all.slice(0, COLUMN_SHOWN), total: all.length };
   });
 }

@@ -17,13 +17,14 @@ function row(overrides: Partial<MilestoneSchedule> = {}): MilestoneSchedule {
     plan_order: 0,
     target_date: null,
     forecast_date: null,
-    earliest_date: null,
     planned_date: null,
     drift_days: null,
     status: "unscheduled",
     basis: "none",
     remaining: 3,
     total: 3,
+    counts: { waiting: 3 },
+    assumed: 0,
     ...overrides,
   };
 }
@@ -47,6 +48,19 @@ function plan(milestones: MilestoneSchedule[]): InitiativePlan {
     paces: [],
     window_days: 21,
     pending_proposal: null,
+    nodes: [],
+    critical_path: [],
+    cyclic: [],
+    lanes: [],
+    autopilot: {
+      enabled: false,
+      max_parallel: 3,
+      paused_reason: "",
+      in_flight: 0,
+      next_up: [],
+      available: true,
+      recent: [],
+    },
     generated_at: "2026-10-01T12:00:00Z",
   };
 }

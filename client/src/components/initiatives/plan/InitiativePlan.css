@@ -307,10 +307,8 @@
 
 .plan-timeline-forecast,
 .plan-timeline-target,
-.plan-timeline-floor,
 .plan-legend-forecast,
-.plan-legend-target,
-.plan-legend-floor {
+.plan-legend-target {
   display: inline-block;
 }
 
@@ -341,13 +339,6 @@
   transform: rotate(45deg);
 }
 
-.plan-timeline-floor,
-.plan-legend-floor {
-  width: 2px;
-  height: 14px;
-  background: var(--txl);
-}
-
 /* Board */
 
 .plan-board {
@@ -368,10 +359,150 @@
   flex: 0 1 260px;
 }
 
-.plan-move-select {
-  width: 100%;
+/* Autopilot */
+
+.plan-autopilot {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-autopilot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plan-autopilot-head .plan-muted {
+  max-width: 70ch;
+  margin-top: 3px;
+}
+
+.plan-autopilot-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-parallel-select {
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.plan-subtitle {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.plan-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.plan-inline-btn {
+  padding: 0 6px;
+  font-size: 11.5px;
+  color: var(--ac2);
+}
+
+.plan-critical {
+  margin: 0;
+  font-family: var(--mono);
   font-size: 11px;
-  padding: 2px 4px;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.plan-alert {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--tx);
+  background: color-mix(in srgb, var(--red) 14%, var(--bg1));
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--bd));
+}
+
+.plan-log summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.plan-log .plan-list {
+  margin-top: 6px;
+}
+
+/* Schedule extras */
+
+.plan-assumed {
+  color: var(--amb);
+  font-weight: 600;
+}
+
+.plan-date {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-date-state {
+  min-height: 14px;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.plan-date-dirty {
+  color: var(--amb);
+}
+
+.plan-date-saved {
+  color: var(--grn);
+}
+
+.plan-date-failed {
+  color: var(--red);
+}
+
+.plan-mode-hint {
+  margin: 4px 0 0;
+  max-width: 34ch;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+/* Board selection */
+
+.plan-board-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+  font-size: 12.5px;
+}
+
+.plan-tile-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 /* Planner */
@@ -392,6 +523,11 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+}
+
+.plan-planner-tab {
+  height: 600px;
+  margin-top: 8px;
 }
 
 .plan-planner-thread {

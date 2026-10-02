@@ -5,7 +5,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { ApiError } from "../../api/http";
-import type { InitiativePlan, MilestoneSchedule, PlannerSnapshot } from "../../api/initiativeApi";
+import type {
+  InitiativePlan,
+  MilestoneSchedule,
+  NodeStatus,
+  PlanNode,
+  PlannerSnapshot,
+} from "../../api/initiativeApi";
 import type { TicketState, TicketSummary } from "../../api/types";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { InitiativePlanPage } from "../InitiativePlanPage";
@@ -15,43 +21,88 @@ jest.mock("../../api/client");
 const mockApi = api as jest.Mocked<typeof api>;
 
 /**
- * The live initiative's shape, measured 2026-10-01 (read-only): 7 milestones over
- * 4 workspaces, 84 work items, and two workspaces with no completions in the
- * window — so no forecast.
+ * The live initiative's shape, measured 2026-10-02 (read-only): 7 milestones
+ * (phases) over 4 workspaces, 84 work items joined by 91 dependency edges, and
+ * a critical path that starts with loremaker work outside the initiative.
  */
 const LIVE_SHAPE: { slug: string; title: string; items: number; forecast: string | null }[] = [
-  { slug: "tinkercg", title: "Card slice", items: 21, forecast: null },
-  { slug: "loregarden", title: "Carry the product", items: 14, forecast: "2026-10-07" },
-  { slug: "tinkercg", title: "Private alpha", items: 21, forecast: null },
-  { slug: "tinkercg", title: "Public beta", items: 8, forecast: null },
-  { slug: "tinkercg", title: "Commercial launch", items: 6, forecast: null },
-  { slug: "lore-eden", title: "What's new", items: 6, forecast: null },
-  { slug: "loremaker", title: "Deploy the product", items: 8, forecast: "2026-11-27" },
+  { slug: "tinkercg", title: "Card slice", items: 21, forecast: "2026-12-25" },
+  { slug: "loregarden", title: "Carry the product", items: 14, forecast: "2026-10-08" },
+  { slug: "tinkercg", title: "Private alpha", items: 21, forecast: "2027-01-22" },
+  { slug: "tinkercg", title: "Public beta", items: 8, forecast: "2027-01-08" },
+  { slug: "tinkercg", title: "Commercial launch", items: 6, forecast: "2027-01-08" },
+  { slug: "lore-eden", title: "What's new", items: 6, forecast: "2026-10-03" },
+  { slug: "loremaker", title: "Deploy the product", items: 8, forecast: "2027-01-22" },
 ];
 
-function milestones(): MilestoneSchedule[] {
-  const order = new Map<string, number>();
-  return LIVE_SHAPE.map((m, i) => {
-    const position = order.get(m.slug) ?? 0;
-    order.set(m.slug, position + 1);
-    return {
-      id: `m${i}`,
-      external_id: `${m.slug.slice(0, 3)}-m-${i}`,
-      title: m.title,
-      state: "backlog",
-      workspace_slug: m.slug,
-      plan_order: position,
-      target_date: i === 1 ? "2026-10-05" : null,
-      forecast_date: m.forecast,
-      earliest_date: "2026-10-02",
-      planned_date: i === 1 ? "2026-10-05" : null,
-      drift_days: i === 1 ? 2 : null,
-      status: i === 1 ? "behind" : m.forecast ? "unscheduled" : "unscheduled",
-      basis: m.forecast ? "workspace_throughput" : "none",
-      remaining: m.items,
-      total: m.items,
-    };
+const NODE_STATUSES: NodeStatus[] = ["waiting", "waiting", "ready", "waiting", "running", "waiting"];
+const TICKET_STATES: Record<NodeStatus, TicketState> = {
+  waiting: "backlog",
+  ready: "backlog",
+  running: "in_progress",
+  needs_person: "backlog",
+  blocked: "blocked",
+  done: "done",
+};
+
+function nodes(): PlanNode[] {
+  const out: PlanNode[] = [];
+  LIVE_SHAPE.forEach((m, i) => {
+    for (let n = 0; n < m.items; n += 1) {
+      const status: NodeStatus = i === 0 && n === 0 ? "needs_person" : NODE_STATUSES[n % NODE_STATUSES.length];
+      out.push({
+        id: `t${i}-${n}`,
+        external_id: `${m.slug.slice(0, 3)}-t-${i}-${n}`,
+        title: `${m.title} task ${n}`,
+        workspace_slug: m.slug,
+        state: TICKET_STATES[status],
+        status,
+        lane: `lane-${n % 5}`,
+        milestone_id: `m${i}`,
+        step: 1 + (n % 4),
+        deps: [],
+        waiting_on: status === "waiting" ? ["x"] : [],
+        start: null,
+        finish: "2026-11-01T00:00:00Z",
+        duration_days: 1,
+        basis: "agent_time",
+        assumed: false,
+        critical: n === 1,
+        external: false,
+      });
+    }
   });
+  out.push({
+    ...out[1],
+    id: "outside-1",
+    external_id: "lmkr-deployment-primitives-23",
+    title: "Deployment primitives",
+    milestone_id: null,
+    external: true,
+    critical: true,
+  });
+  return out;
+}
+
+function milestones(): MilestoneSchedule[] {
+  return LIVE_SHAPE.map((m, i) => ({
+    id: `m${i}`,
+    external_id: `${m.slug.slice(0, 3)}-m-${i}`,
+    title: m.title,
+    state: "backlog",
+    workspace_slug: m.slug,
+    plan_order: i,
+    target_date: i === 1 ? "2026-10-05" : null,
+    forecast_date: m.forecast,
+    planned_date: i === 1 ? "2026-10-05" : null,
+    drift_days: i === 1 ? 3 : null,
+    status: i === 1 ? "behind" : "unscheduled",
+    basis: "agent_time",
+    remaining: m.items,
+    total: m.items,
+    counts: { waiting: m.items - 2, ready: 2 },
+    assumed: i === 0 ? 4 : 0,
+  }));
 }
 
 function plan(overrides: Partial<InitiativePlan> = {}): InitiativePlan {
@@ -64,48 +115,67 @@ function plan(overrides: Partial<InitiativePlan> = {}): InitiativePlan {
     mode: "fixed",
     notes: "",
     target_date: null,
-    forecast_date: null,
+    forecast_date: "2027-01-22",
     planned_date: null,
     drift_days: null,
     status: "unscheduled",
-    unforecast_milestones: 5,
+    unforecast_milestones: 0,
     milestones: milestones(),
     paces: [
       { workspace_slug: "lore-eden", per_day: null, completed: 0, basis: "none" },
-      { workspace_slug: "loregarden", per_day: 2.38, completed: 50, basis: "workspace_throughput" },
+      { workspace_slug: "loregarden", per_day: 2.33, completed: 49, basis: "workspace_throughput" },
       { workspace_slug: "loremaker", per_day: 0.14, completed: 3, basis: "workspace_throughput" },
       { workspace_slug: "tinkercg", per_day: null, completed: 0, basis: "none" },
     ],
     window_days: 21,
     pending_proposal: null,
+    nodes: nodes(),
+    critical_path: ["outside-1", "t0-1", "t2-1"],
+    cyclic: [],
+    lanes: ["lane-0", "lane-1", "lane-2", "lane-3", "lane-4"],
+    autopilot: {
+      enabled: false,
+      max_parallel: 3,
+      paused_reason: "",
+      in_flight: 2,
+      next_up: ["t1-2", "t5-2"],
+      available: true,
+      recent: [],
+    },
     generated_at: "2026-10-01T12:00:00Z",
     ...overrides,
   };
 }
 
-const STATES: TicketState[] = ["backlog", "backlog", "backlog", "in_progress", "done", "blocked"];
-
 function boardTickets(): TicketSummary[] {
-  const rows: TicketSummary[] = [];
-  LIVE_SHAPE.forEach((m, i) => {
-    for (let n = 0; n < m.items; n += 1) {
-      rows.push({
-        id: `t${i}-${n}`,
-        external_id: `${m.slug.slice(0, 3)}-t-${i}-${n}`,
-        title: `${m.title} task ${n}`,
-        state: STATES[n % STATES.length],
-        priority: 3,
-        workspace_slug: m.slug,
-        work_item_type: "task",
-        parent_ticket_id: `m${i}`,
-        stages: [],
-      } as unknown as TicketSummary);
-    }
-  });
-  return rows;
+  return nodes()
+    .filter((n) => !n.external)
+    .map(
+      (n) =>
+        ({
+          id: n.id,
+          external_id: n.external_id,
+          title: n.title,
+          state: n.state,
+          priority: 3,
+          workspace_slug: n.workspace_slug,
+          work_item_type: "feature",
+          parent_ticket_id: n.milestone_id,
+          stages: [],
+        }) as unknown as TicketSummary,
+    );
 }
 
 const emptyChat: PlannerSnapshot = { initiative_id: "init1", messages: [], active_turn_id: null };
+
+function setNarrow(narrow: boolean) {
+  window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+    matches: narrow && query.includes("max-width"),
+    media: query,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+  }));
+}
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -122,50 +192,44 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  setNarrow(false);
   mockApi.initiativePlan.mockResolvedValue(plan());
   mockApi.plannerChat.mockResolvedValue(emptyChat);
   mockApi.tickets.mockResolvedValue(boardTickets());
   mockApi.updateInitiativePlan.mockResolvedValue(plan());
-  // A running turn streams its reasoning; nothing has arrived yet.
-  mockApi.chatTurnThinking.mockResolvedValue({
-    turn_id: "turn1",
-    content: "",
-    answer: "",
-    activity: "",
-    seq: 0,
-  });
+  mockApi.chatTurnThinking.mockResolvedValue({ turn_id: "turn1", content: "", answer: "", activity: "", seq: 0 });
 });
 
-test("the schedule groups milestones by workspace and says why forecasts are missing", async () => {
+test("the schedule is one table in phase order, and the page passes the usability check", async () => {
   const { container } = renderPage();
 
-  const tables = await screen.findAllByRole("table");
-  expect(tables.map((t) => within(t).getByText(/./, { selector: "caption" }).textContent)).toEqual([
-    "tinkercg",
-    "loregarden",
-    "lore-eden",
-    "loremaker",
-  ]);
-  expect(screen.getByText(/5 open milestones have no forecast/)).toBeInTheDocument();
+  const table = await screen.findByRole("table", { name: "Milestones in phase order" });
+  const rows = within(table).getAllByRole("rowheader");
+  expect(rows.map((r) => within(r).getAllByRole("button")[0].textContent)).toEqual(
+    milestones().map((m) => `${m.external_id} ${m.title}`),
+  );
+  expect(within(table).getByLabelText("4 items estimated without a measurement")).toBeInTheDocument();
   expect(findUsabilityProblems(container)).toEqual([]);
 });
 
-test("a target date saves on blur, and only the date is sent", async () => {
+test("a target date says it is not saved until Enter, then that it is", async () => {
   const user = userEvent.setup();
   renderPage();
 
   const field = await screen.findByLabelText("Target date for Public beta");
   await user.type(field, "2026-12-15");
-  await user.tab();
+  expect(screen.getAllByText("Press Enter to save").length).toBeGreaterThan(0);
+  await user.keyboard("{Enter}");
 
   await waitFor(() =>
     expect(mockApi.updateInitiativePlan).toHaveBeenCalledWith("init1", {
       targets: [{ ticket_id: "m3", target_date: "2026-12-15" }],
     }),
   );
+  expect(await screen.findByText("Saved")).toBeInTheDocument();
 });
 
-test("reordering sends the workspace's whole order and no dates", async () => {
+test("reordering sends the whole phase order and no dates", async () => {
   const user = userEvent.setup();
   renderPage();
 
@@ -173,13 +237,15 @@ test("reordering sends the workspace's whole order and no dates", async () => {
 
   expect(mockApi.updateInitiativePlan).toHaveBeenCalledWith("init1", {
     targets: [
-      { ticket_id: "m2", plan_order: 0 },
+      { ticket_id: "m1", plan_order: 0 },
       { ticket_id: "m0", plan_order: 1 },
-      { ticket_id: "m3", plan_order: 2 },
-      { ticket_id: "m4", plan_order: 3 },
+      { ticket_id: "m2", plan_order: 2 },
+      { ticket_id: "m3", plan_order: 3 },
+      { ticket_id: "m4", plan_order: 4 },
+      { ticket_id: "m5", plan_order: 5 },
+      { ticket_id: "m6", plan_order: 6 },
     ],
   });
-  expect(screen.getByRole("button", { name: "Move Card slice earlier" })).toBeDisabled();
 });
 
 test("a pending proposal shows what moves and is accepted in one click", async () => {
@@ -204,26 +270,58 @@ test("a pending proposal shows what moves and is accepted in one click", async (
   expect(within(proposal).getByRole("rowheader", { name: /Public beta/ })).toBeInTheDocument();
   await user.click(within(proposal).getByRole("button", { name: "Accept" }));
 
-  await waitFor(() =>
-    expect(mockApi.resolveScheduleProposal).toHaveBeenCalledWith("init1", "p1", "accept"),
-  );
+  await waitFor(() => expect(mockApi.resolveScheduleProposal).toHaveBeenCalledWith("init1", "p1", "accept"));
 });
 
-test("the board spans the subtree, filters by milestone, and moves a card by menu", async () => {
-  mockApi.updateTicket.mockResolvedValue({} as never);
+test("the autopilot panel says what waits on a person, what starts next, and what holds the date", async () => {
+  mockApi.setAutopilot.mockResolvedValue(plan());
+  mockApi.markNeedsPerson.mockResolvedValue(plan());
+  const user = userEvent.setup();
+  renderPage();
+
+  const panel = await screen.findByRole("region", { name: "Autopilot" });
+  expect(within(panel).getByText(/Waiting on a person \(1\)/)).toBeInTheDocument();
+  expect(within(panel).getByText(/starts with work outside this initiative/)).toBeInTheDocument();
+
+  await user.click(within(panel).getByRole("button", { name: "Agent can do it" }));
+  await waitFor(() => expect(mockApi.markNeedsPerson).toHaveBeenCalledWith("init1", ["t0-0"], false));
+
+  await user.click(within(panel).getByRole("button", { name: "Turn on" }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
+});
+
+test("a paused autopilot says why", async () => {
+  mockApi.initiativePlan.mockResolvedValue(
+    plan({
+      autopilot: {
+        ...plan().autopilot,
+        paused_reason: "3 tickets it started are blocked (tin-t-0-3)",
+      },
+    }),
+  );
+  renderPage();
+
+  expect(await screen.findByText(/Stopped itself: 3 tickets it started are blocked/)).toBeInTheDocument();
+});
+
+test("the board acts on a selection from one toolbar, and caps long columns", async () => {
+  mockApi.startInitiativeWork.mockResolvedValue({ "t0-2": "queued", "t0-1": "not ready: waiting" });
   const user = userEvent.setup();
   const { container } = renderPage();
 
   await user.click(await screen.findByRole("tab", { name: "Board" }));
-  expect(mockApi.tickets).toHaveBeenCalledWith({ ancestor_ticket_id: "init1" });
   expect(await screen.findByText("84 work items")).toBeInTheDocument();
+  expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: /Show all/ }).length).toBeGreaterThan(0);
   expect(findUsabilityProblems(container)).toEqual([]);
 
-  await user.selectOptions(screen.getByLabelText("Filter the board by milestone"), "m5");
-  expect(screen.getByText("6 work items")).toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "Select Card slice task 2" }));
+  await user.click(screen.getByRole("checkbox", { name: "Select Card slice task 1" }));
+  const toolbar = screen.getByRole("toolbar", { name: "Selected tickets" });
+  expect(within(toolbar).getByText("2 selected")).toBeInTheDocument();
 
-  await user.selectOptions(screen.getByLabelText("Move What's new task 0 to another state"), "done");
-  await waitFor(() => expect(mockApi.updateTicket).toHaveBeenCalledWith("t5-0", { state: "done" }));
+  await user.click(within(toolbar).getByRole("button", { name: "Start now" }));
+  await waitFor(() => expect(mockApi.startInitiativeWork).toHaveBeenCalledWith("init1", ["t0-2", "t0-1"]));
 });
 
 test("Draft schedule asks the planner for a whole schedule", async () => {
@@ -236,8 +334,21 @@ test("Draft schedule asks the planner for a whole schedule", async () => {
   await waitFor(() => expect(mockApi.sendPlannerMessage).toHaveBeenCalledWith("init1", "", "draft"));
 });
 
+test("on a narrow screen the planner is a tab, not a panel below everything", async () => {
+  setNarrow(true);
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(await screen.findByRole("tab", { name: "Planner" })).toBeInTheDocument();
+  expect(screen.queryByRole("complementary", { name: "Planning agent" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "Planner" }));
+  expect(screen.getByRole("complementary", { name: "Planning agent" })).toBeInTheDocument();
+});
+
 test("with no milestones there is nothing to plan, and the page says how to get one", async () => {
-  mockApi.initiativePlan.mockResolvedValue(plan({ milestones: [], unforecast_milestones: 0, paces: [] }));
+  mockApi.initiativePlan.mockResolvedValue(
+    plan({ milestones: [], nodes: [], critical_path: [], unforecast_milestones: 0, paces: [] }),
+  );
   renderPage();
 
   expect(await screen.findByText(/has no milestones yet/)).toBeInTheDocument();

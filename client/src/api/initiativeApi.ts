@@ -41,10 +41,8 @@ export interface MilestoneSchedule {
   workspace_slug: string;
   plan_order: number;
   target_date: string | null;
-  /** Measured pace in plan order; never before `earliest_date`. */
+  /** When its last open item lands, scheduled through the dependency graph. */
   forecast_date: string | null;
-  /** Agent run-time floor for the remaining stages. */
-  earliest_date: string | null;
   /** Target in a fixed plan, forecast in a rolling one. */
   planned_date: string | null;
   /** Forecast minus target in days; positive is late. */
@@ -53,6 +51,56 @@ export interface MilestoneSchedule {
   basis: ForecastBasis;
   remaining: number;
   total: number;
+  /** Open items by graph status. */
+  counts: Partial<Record<NodeStatus, number>>;
+  /** Items priced at the plan's median because nothing measured them. */
+  assumed: number;
+}
+
+export type NodeStatus = "done" | "running" | "ready" | "waiting" | "needs_person" | "blocked";
+
+/** One ticket in the plan's dependency graph. */
+export interface PlanNode {
+  id: string;
+  external_id: string;
+  title: string;
+  workspace_slug: string;
+  state: TicketState;
+  status: NodeStatus;
+  lane: string;
+  /** Null for a prerequisite outside the initiative. */
+  milestone_id: string | null;
+  step: number;
+  deps: string[];
+  waiting_on: string[];
+  start: string | null;
+  finish: string | null;
+  duration_days: number | null;
+  basis: ForecastBasis;
+  assumed: boolean;
+  critical: boolean;
+  external: boolean;
+}
+
+export type AutopilotAction = "enabled" | "disabled" | "dispatched" | "refused" | "paused";
+
+export interface AutopilotView {
+  enabled: boolean;
+  max_parallel: number;
+  /** Why it stopped itself; blank when it has not. */
+  paused_reason: string;
+  in_flight: number;
+  /** Ticket ids it would start next, in order. */
+  next_up: string[];
+  /** False on a sandbox server, where the loop never runs. */
+  available: boolean;
+  recent: {
+    action: AutopilotAction;
+    ticket_id: string | null;
+    ticket_external_id: string | null;
+    detail: string;
+    created_at: string;
+  }[];
 }
 
 export interface WorkspacePace {
@@ -97,6 +145,13 @@ export interface InitiativePlan {
   paces: WorkspacePace[];
   window_days: number;
   pending_proposal: ScheduleProposal | null;
+  nodes: PlanNode[];
+  /** Ticket ids on the critical path, first to last. */
+  critical_path: string[];
+  /** Ticket ids caught in a dependency cycle. */
+  cyclic: string[];
+  lanes: string[];
+  autopilot: AutopilotView;
   generated_at: string;
 }
 
@@ -135,6 +190,22 @@ export const initiativeApi = {
   resolveScheduleProposal: (id: string, proposalId: string, action: "accept" | "discard") =>
     request<InitiativePlan>(`/api/initiatives/${id}/plan/proposals/${proposalId}/${action}`, {
       method: "POST",
+    }),
+  setAutopilot: (id: string, body: { enabled?: boolean; max_parallel?: number }) =>
+    request<InitiativePlan>(`/api/initiatives/${id}/autopilot`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  /** Queue named tickets if the plan says they are ready; returns id -> outcome. */
+  startInitiativeWork: (id: string, ticketIds: string[]) =>
+    request<Record<string, string>>(`/api/initiatives/${id}/work`, {
+      method: "POST",
+      body: JSON.stringify({ ticket_ids: ticketIds }),
+    }),
+  markNeedsPerson: (id: string, ticketIds: string[], needsPerson: boolean) =>
+    request<InitiativePlan>(`/api/initiatives/${id}/needs-person`, {
+      method: "POST",
+      body: JSON.stringify({ ticket_ids: ticketIds, needs_person: needsPerson }),
     }),
   plannerChat: (id: string) => request<PlannerSnapshot>(`/api/initiatives/${id}/planner`),
   sendPlannerMessage: (id: string, content: string, mode: "chat" | "draft" = "chat") =>

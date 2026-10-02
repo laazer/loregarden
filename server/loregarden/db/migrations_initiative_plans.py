@@ -62,6 +62,10 @@ def _create_plan_tables(conn: Connection) -> None:
                     initiative_id VARCHAR NOT NULL PRIMARY KEY REFERENCES tickets(id),
                     mode VARCHAR NOT NULL DEFAULT 'fixed',
                     notes VARCHAR NOT NULL DEFAULT '',
+                    autopilot BOOLEAN NOT NULL DEFAULT 0,
+                    max_parallel INTEGER NOT NULL DEFAULT 3,
+                    paused_reason VARCHAR NOT NULL DEFAULT '',
+                    autopilot_since DATETIME,
                     updated_at DATETIME NOT NULL
                 )
                 """
@@ -116,7 +120,32 @@ def _create_plan_tables(conn: Connection) -> None:
                 """
             )
         )
+    if not table_exists(conn, "initiative_autopilot_events"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE initiative_autopilot_events (
+                    id VARCHAR NOT NULL PRIMARY KEY,
+                    initiative_id VARCHAR NOT NULL REFERENCES tickets(id),
+                    action VARCHAR NOT NULL,
+                    ticket_id VARCHAR REFERENCES tickets(id),
+                    detail VARCHAR NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
     for name, ddl in (
+        (
+            "ix_initiative_autopilot_events_initiative_id",
+            "CREATE INDEX ix_initiative_autopilot_events_initiative_id "
+            "ON initiative_autopilot_events (initiative_id)",
+        ),
+        (
+            "ix_initiative_autopilot_events_created_at",
+            "CREATE INDEX ix_initiative_autopilot_events_created_at "
+            "ON initiative_autopilot_events (created_at)",
+        ),
         (
             "ix_initiative_planner_messages_initiative_id",
             "CREATE INDEX ix_initiative_planner_messages_initiative_id "

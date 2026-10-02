@@ -16,10 +16,13 @@ const PLANNER_LABEL = "Planner";
 export function PlannerPanel({
   initiativeId,
   canPlan,
+  inTab = false,
 }: {
   initiativeId: string;
   /** False while the initiative has no milestones: there is nothing to schedule. */
   canPlan: boolean;
+  /** Shown as a tab on a narrow screen rather than docked beside the plan. */
+  inTab?: boolean;
 }) {
   const planner = useInitiativePlanner(initiativeId);
   const [draft, setDraft] = useState("");
@@ -32,11 +35,13 @@ export function PlannerPanel({
   };
 
   return (
-    <aside className="plan-planner" aria-label="Planning agent">
+    <aside className={`plan-planner${inTab ? " plan-planner-tab" : ""}`} aria-label="Planning agent">
       <header className="plan-planner-head">
         <div>
           <h2 className="plan-section-title">Planning agent</h2>
-          <p className="plan-muted">Proposes dates from measured pace. You accept them.</p>
+          <p className="plan-muted">
+            Proposes dates you accept, marks work for a person, and can start work or run the autopilot.
+          </p>
         </div>
         <Button
           variant="primary"
@@ -67,6 +72,8 @@ export function PlannerPanel({
             thinkingMessage="Planner is working…"
             thinkingSub="Reading the plan and its pace…"
             assistantLabel={PLANNER_LABEL}
+            // The avatar is Baxter's; the planner is a different agent.
+            showAssistantAvatar={false}
             emptyMessage={
               canPlan
                 ? "Draft a schedule to start, or ask something like “what would it take to land the beta by Nov 15?”"

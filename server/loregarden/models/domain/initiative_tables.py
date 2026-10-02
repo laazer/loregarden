@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from loregarden.models.domain.enums import str_enum_column, utcnow
 from loregarden.models.domain.plan_enums import (
+    AutopilotAction,
     PlannerRole,
     PlannerTurnMode,
     PlannerTurnStatus,
@@ -56,6 +57,15 @@ class InitiativePlan(SQLModel, table=True):
     #: The planner's reasoning for the current schedule, kept with it so the
     #: next person (or the next planner turn) knows why the dates are what they are.
     notes: str = ""
+    #: Keep the plan's lanes busy: queue ready tickets as prerequisites land
+    #: (`services.initiative_autopilot`). Off until someone turns it on.
+    autopilot: bool = False
+    #: Most tickets the autopilot keeps running or queued at once, across lanes.
+    max_parallel: int = 3
+    #: Why the autopilot stopped itself; blank while it has not.
+    paused_reason: str = ""
+    #: When autopilot was last turned on — its failure count starts here.
+    autopilot_since: datetime | None = None
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -125,3 +135,16 @@ class InitiativePlannerMessage(SQLModel, table=True):
     #: Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
     parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class AutopilotEvent(SQLModel, table=True):
+    """One thing the autopilot did, so a person can see why work started."""
+
+    __tablename__ = "initiative_autopilot_events"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    initiative_id: str = Field(foreign_key="tickets.id", index=True)
+    action: AutopilotAction = Field(sa_column=str_enum_column(AutopilotAction))
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
+    detail: str = ""
+    created_at: datetime = Field(default_factory=utcnow, index=True)

@@ -4,6 +4,7 @@
  */
 
 import type {
+  AutopilotAction,
   ForecastBasis,
   InitiativePlan,
   MilestoneSchedule,
@@ -75,10 +76,28 @@ export function formatPace(pace: WorkspacePace): string {
 export function forecastExplanation(m: MilestoneSchedule): string {
   if (m.status === "done") return "Resolved.";
   if (m.forecast_date === null) {
-    return "No forecast: nothing has closed in this workspace recently, so there is no pace to project.";
+    return "No forecast: some of its work cannot be priced — nothing measured it, and nothing else in the plan has been.";
   }
-  const floor = m.earliest_date ? ` Agent run-time alone needs until ${formatDay(m.earliest_date)}.` : "";
-  return `${m.remaining} open item${m.remaining === 1 ? "" : "s"}, projected from ${BASIS_LABEL[m.basis]} in plan order.${floor}`;
+  const assumed =
+    m.assumed > 0
+      ? ` ${m.assumed} of them had no measurement and were priced at the plan's median.`
+      : "";
+  return `When the last of its ${m.remaining} open item${m.remaining === 1 ? "" : "s"} lands, following their prerequisites, one ticket per lane, at ${BASIS_LABEL[m.basis]}.${assumed}`;
+}
+
+export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
+  enabled: "Turned on",
+  disabled: "Turned off",
+  dispatched: "Queued",
+  refused: "Held back",
+  paused: "Stopped itself",
+};
+
+/** "Oct 2, 14:05" — when an autopilot event happened. */
+export function formatWhen(iso: string): string {
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "";
+  return value.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export interface TimelineRange {
@@ -91,7 +110,7 @@ export function timelineRange(rows: MilestoneSchedule[], today: string): Timelin
   const start = isoDay(today);
   let end = start + 14 * MS_PER_DAY;
   for (const row of rows) {
-    for (const iso of [row.target_date, row.forecast_date, row.earliest_date]) {
+    for (const iso of [row.target_date, row.forecast_date]) {
       if (iso) end = Math.max(end, isoDay(iso));
     }
   }
@@ -104,7 +123,7 @@ export function timelinePercent(iso: string, range: TimelineRange): number {
   return Math.min(100, Math.max(0, ((isoDay(iso) - range.start) / span) * 100));
 }
 
-/** Milestones grouped by workspace, each group in plan order — the order the forecast assumes. */
+/** Milestones grouped by workspace, each group in plan order. */
 export function groupByWorkspace(rows: MilestoneSchedule[]): [string, MilestoneSchedule[]][] {
   const groups = new Map<string, MilestoneSchedule[]>();
   for (const row of rows) {
@@ -153,4 +172,9 @@ export function proposalRows(plan: InitiativePlan, proposal: ScheduleProposal): 
     }
   }
   return rows;
+}
+
+/** Whether any row has a date the timeline could draw. */
+export function hasTimelineDates(rows: MilestoneSchedule[]): boolean {
+  return rows.some((row) => row.target_date || row.forecast_date);
 }

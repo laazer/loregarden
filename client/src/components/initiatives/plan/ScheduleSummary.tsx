@@ -40,7 +40,7 @@ export function ScheduleSummary({
   plan: InitiativePlan;
   busy: boolean;
   onModeChange: (mode: ScheduleMode) => void;
-  onTargetChange: (date: string | null) => void;
+  onTargetChange: (date: string | null) => Promise<unknown>;
 }) {
   const drift = formatDrift(plan.drift_days);
   return (
@@ -70,20 +70,19 @@ export function ScheduleSummary({
           <TargetDateField
             value={plan.target_date}
             label={`Target date for ${plan.title}`}
-            disabled={busy}
             onCommit={onTargetChange}
           />
         </div>
         <div role="group" aria-label="Schedule mode">
           <div className="plan-label">Mode</div>
           <div className="plan-mode-buttons">
-            {MODES.map(({ mode, label, hint }) => (
+            {MODES.map(({ mode, label }) => (
               <Button
                 key={mode}
                 variant="plain"
                 className={`plan-mode-btn${plan.mode === mode ? " active" : ""}`}
                 aria-pressed={plan.mode === mode}
-                title={hint}
+                aria-describedby="plan-mode-hint"
                 disabled={busy}
                 onClick={() => plan.mode !== mode && onModeChange(mode)}
               >
@@ -91,14 +90,17 @@ export function ScheduleSummary({
               </Button>
             ))}
           </div>
+          <p id="plan-mode-hint" className="plan-mode-hint">
+            {MODES.find((m) => m.mode === plan.mode)?.hint}
+          </p>
         </div>
       </div>
 
       {plan.unforecast_milestones > 0 ? (
         <p className="plan-hint">
           {plan.unforecast_milestones} open milestone{plan.unforecast_milestones === 1 ? " has" : "s have"} no
-          forecast: nothing has closed in {plan.unforecast_milestones === 1 ? "its workspace" : "their workspaces"} in
-          the last {plan.window_days} days. The forecast appears as soon as work there starts finishing.
+          forecast: some of the work cannot be priced, because nothing in this plan has a run-time history or a
+          recent pace yet. It appears as soon as any of the work has been run or closed.
         </p>
       ) : null}
 

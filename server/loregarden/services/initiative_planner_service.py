@@ -14,15 +14,19 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import date, datetime
 
 from loregarden.agents.chat_role_prompt import chat_role_blocks
 from loregarden.agents.mcp_context import resolve_mcp_url
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
+from loregarden.dot_line import Dot
 from loregarden.mcp.tool_ids import INITIATIVE_PLANNER_MCP_TOOLS, mcp_tool_values
 from loregarden.models.domain import (
     ChatSurface,
     InitiativePlannerMessage,
+    InitiativePlanView,
+    NodeStatus,
     PlannerRole,
     PlannerTurnMode,
     PlannerTurnStatus,
@@ -210,6 +214,71 @@ def _task_block(initiative: Ticket, mode: PlannerTurnMode, latest_user_message: 
     return ["## Operator's message", latest_user_message[:MAX_MESSAGE_CHARS]]
 
 
+def _day(value: datetime | date | None) -> str:
+    return value.strftime("%Y-%m-%d") if value is not None else "?"
+
+
+def plan_digest(view: InitiativePlanView) -> str:
+    """The plan as lines an agent can scan — the full JSON runs to tens of KB.
+
+    Every ticket line carries its uuid, because that is what the tools take.
+    """
+    by_id = {n.id: n for n in view.nodes}
+    autopilot = view.autopilot
+    lines = [
+        str(
+            Dot(f"status {view.status.value}")
+            / f"target {_day(view.target_date)}"
+            / f"forecast {_day(view.forecast_date)}"
+            / f"mode {view.mode.value}"
+        ),
+        str(
+            Dot(f"autopilot {'ON' if autopilot.enabled else 'off'}")
+            / f"max_parallel {autopilot.max_parallel}"
+            / f"in flight {autopilot.in_flight}"
+            / (f"PAUSED: {autopilot.paused_reason}" if autopilot.paused_reason else "")
+            / ("" if autopilot.available else "(sandbox: autopilot loop does not run)")
+        ),
+        "next it would start: "
+        + (", ".join(by_id[i].external_id for i in autopilot.next_up) or "nothing"),
+        "pace: "
+        + "; ".join(
+            f"{p.workspace_slug} {p.per_day * 7:.1f}/wk ({p.basis.value})"
+            if p.per_day
+            else f"{p.workspace_slug} none measured"
+            for p in view.paces
+        ),
+        "",
+        "Milestones (phase order): id | external | target | forecast | status | open/total | counts",
+    ]
+    for m in view.milestones:
+        counts = " ".join(f"{k.value}={c}" for k, c in m.counts.items())
+        lines.append(
+            f"- {m.id} | {m.external_id} | {_day(m.target_date)} | {_day(m.forecast_date)} | "
+            f"{m.status.value} | {m.remaining}/{m.total} | {counts}"
+        )
+    lines += [
+        "",
+        "Critical path: "
+        + " -> ".join(
+            by_id[i].external_id + (" [outside]" if by_id[i].external else "")
+            for i in view.critical_path
+        ),
+        "",
+        "Open tickets: id | external | status | lane | step | finish | waiting on",
+    ]
+    for node in sorted(view.nodes, key=lambda n: (n.status.value, n.step, n.external_id)):
+        if node.status == NodeStatus.DONE:
+            continue
+        waiting = ",".join(by_id[w].external_id for w in node.waiting_on if w in by_id)
+        lines.append(
+            f"- {node.id} | {node.external_id}{' [outside]' if node.external else ''}"
+            f"{' *critical*' if node.critical else ''} | {node.status.value} | {node.lane} | "
+            f"{node.step} | {_day(node.finish)} | {waiting} | {node.title[:70]}"
+        )
+    return "\n".join(lines)
+
+
 def build_planner_prompt(
     session: Session,
     initiative: Ticket,
@@ -219,11 +288,9 @@ def build_planner_prompt(
     mode: PlannerTurnMode,
 ) -> str:
     agent = get_agent(INITIATIVE_PLANNER_AGENT_ID) or {}
-    plan_json = plan_view(session, initiative.id).model_dump_json()
-    if len(plan_json) > MAX_PLAN_CHARS:
-        plan_json = (
-            plan_json[:MAX_PLAN_CHARS] + " …[truncated — call loregarden_get_initiative_plan]"
-        )
+    digest = plan_digest(plan_view(session, initiative.id))
+    if len(digest) > MAX_PLAN_CHARS:
+        digest = digest[:MAX_PLAN_CHARS] + "\n…[truncated — call loregarden_get_initiative_plan]"
     transcript = [
         f"{msg.role.value}: {msg.content[:MAX_MESSAGE_CHARS]}"
         for msg in history[-MAX_HISTORY_MESSAGES:]
@@ -243,8 +310,8 @@ def build_planner_prompt(
             f"title: {initiative.title}",
             initiative.description[:MAX_MESSAGE_CHARS] or "(no description)",
             "",
-            "## Current plan (computed now; re-read with the tool after proposing)",
-            plan_json,
+            "## Current plan (computed now; re-read with the tool after acting)",
+            digest,
             "",
             "## Conversation so far",
             *(transcript or ["(none)"]),
