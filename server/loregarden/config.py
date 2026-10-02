@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # background sync is due. Each workspace sets its own interval; this is
     # only the resolution. 0 disables the scheduler entirely.
     github_sync_tick_seconds: float = 60.0
+    #: How often initiative autopilot looks for ready work. Non-positive is off.
+    autopilot_interval_seconds: float = 60.0
     # Push-on-edit: how often the worker drains edited tickets (0 disables the
     # worker), and how long an edit waits for more before it is pushed.
     github_push_poll_seconds: float = 0.5

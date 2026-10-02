@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     InitiativeMilestoneView,
     InitiativeProgress,
     InitiativeView,
+    ScheduleTarget,
     Ticket,
     WorkItemType,
     Workspace,
@@ -21,7 +22,7 @@ from loregarden.services.ticket_rollup import RESOLVED_STATES
 from sqlmodel import Session, col, select
 
 
-def _workspace_slugs(session: Session, tickets: list[Ticket]) -> dict[str, str]:
+def workspace_slugs(session: Session, tickets: list[Ticket]) -> dict[str, str]:
     ids = {t.workspace_id for t in tickets if t.workspace_id is not None}
     if not ids:
         return {}
@@ -59,7 +60,7 @@ def _initiative_view(
     )
 
 
-def _milestones_under(session: Session, parent_ids: list[str]) -> list[Ticket]:
+def milestones_under(session: Session, parent_ids: list[str]) -> list[Ticket]:
     if not parent_ids:
         return []
     query = (
@@ -79,8 +80,8 @@ def list_initiatives(session: Session) -> list[InitiativeView]:
             .order_by(Ticket.priority, Ticket.created_at)
         ).all()
     )
-    milestones = _milestones_under(session, [i.id for i in initiatives])
-    slugs = _workspace_slugs(session, milestones)
+    milestones = milestones_under(session, [i.id for i in initiatives])
+    slugs = workspace_slugs(session, milestones)
     by_parent: dict[str, list[Ticket]] = {}
     for milestone in milestones:
         by_parent.setdefault(milestone.parent_ticket_id or "", []).append(milestone)
@@ -91,8 +92,8 @@ def get_initiative(session: Session, initiative_id: str) -> InitiativeView:
     initiative = session.get(Ticket, initiative_id)
     if initiative is None or initiative.work_item_type != WorkItemType.INITIATIVE:
         raise LookupError(f"Initiative not found: {initiative_id}")
-    milestones = _milestones_under(session, [initiative.id])
-    return _initiative_view(initiative, milestones, _workspace_slugs(session, milestones))
+    milestones = milestones_under(session, [initiative.id])
+    return _initiative_view(initiative, milestones, workspace_slugs(session, milestones))
 
 
 def attachable_milestones(session: Session) -> list[InitiativeMilestoneView]:
@@ -107,5 +108,19 @@ def attachable_milestones(session: Session) -> list[InitiativeMilestoneView]:
             .order_by(Ticket.priority, Ticket.created_at)
         ).all()
     )
-    slugs = _workspace_slugs(session, milestones)
+    slugs = workspace_slugs(session, milestones)
     return [_milestone_view(m, slugs) for m in milestones]
+
+
+def load_initiative(session: Session, initiative_id: str) -> Ticket:
+    initiative = session.get(Ticket, initiative_id)
+    if initiative is None or initiative.work_item_type != WorkItemType.INITIATIVE:
+        raise LookupError(f"Initiative not found: {initiative_id}")
+    return initiative
+
+
+def load_targets(session: Session, ticket_ids: list[str]) -> dict[str, ScheduleTarget]:
+    if not ticket_ids:
+        return {}
+    rows = session.exec(select(ScheduleTarget).where(col(ScheduleTarget.ticket_id).in_(ticket_ids)))
+    return {row.ticket_id: row for row in rows.all()}

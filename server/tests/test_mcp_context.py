@@ -1,15 +1,24 @@
+import asyncio
 import os
 from unittest import mock
+from unittest.mock import patch
 
+import httpx
+import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.mcp_context import (
+    SandboxMcpUrlError,
     build_mcp_run_context,
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
     loregarden_mcp_cli_config_json,
+    resolve_api_base_url,
     resolve_mcp_url,
+    unverified_api_base_url,
 )
+from loregarden.config import settings
+from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
     ControlPlaneTransport,
@@ -17,6 +26,12 @@ from loregarden.models.domain import (
     Ticket,
     WorkflowStageDef,
     Workspace,
+)
+from loregarden.services import sandbox_endpoint
+from loregarden.services.sandbox_endpoint import (
+    INSTANCE_ID,
+    reset_verification,
+    verify_this_instance,
 )
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
@@ -27,6 +42,89 @@ from sqlmodel.pool import StaticPool
 def test_resolve_mcp_url_env(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_MCP_URL", "http://example.test/mcp")
     assert resolve_mcp_url() == "http://example.test/mcp"
+
+
+@pytest.fixture(name="sandbox_settings")
+def sandbox_settings_fixture(monkeypatch):
+    monkeypatch.delenv("LOREGARDEN_MCP_URL", raising=False)
+    monkeypatch.delenv("LOREGARDEN_API_URL", raising=False)
+    reset_verification()
+    with (
+        patch.object(settings, "sandbox", True),
+        patch.object(settings, "mcp_url", "http://127.0.0.1:8000/mcp"),
+        patch.object(settings, "dev_host", "127.0.0.1"),
+        patch.object(settings, "dev_port", 8123),
+    ):
+        yield
+    reset_verification()
+
+
+def _verify(base: str, transport: httpx.AsyncBaseTransport) -> bool:
+    async def run() -> bool:
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await verify_this_instance(base, client=client)
+
+    return asyncio.run(run())
+
+
+def _answering_as(instance_id: str) -> httpx.MockTransport:
+    return httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"instance_id": instance_id})
+    )
+
+
+def test_a_sandbox_hands_out_its_own_url_once_it_answers_as_itself(sandbox_settings):
+    """Main's default would have the sandbox's agents write to production."""
+    assert unverified_api_base_url() == "http://127.0.0.1:8123"
+    # The real /health, so the id this proves is the one the server serves.
+    assert _verify("http://127.0.0.1:8123", httpx.ASGITransport(app=app))
+
+    assert resolve_mcp_url() == "http://127.0.0.1:8123/mcp"
+    assert resolve_api_base_url() == "http://127.0.0.1:8123"
+
+
+def test_agents_are_refused_until_the_endpoint_is_proven(sandbox_settings):
+    with pytest.raises(SandboxMcpUrlError, match="not verified"):
+        resolve_mcp_url()
+
+
+def test_another_server_on_the_url_is_refused(sandbox_settings):
+    assert not _verify("http://127.0.0.1:8123", _answering_as("someone-else"))
+    with pytest.raises(SandboxMcpUrlError, match="different server"):
+        resolve_mcp_url()
+
+
+def test_a_url_that_never_answers_is_refused(sandbox_settings):
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with (
+        patch.object(sandbox_endpoint, "VERIFY_TIMEOUT_SECONDS", 0.05),
+        patch.object(sandbox_endpoint, "_RETRY_SECONDS", 0.01),
+    ):
+        assert not _verify("http://127.0.0.1:8123", httpx.MockTransport(refuse))
+    with pytest.raises(SandboxMcpUrlError, match="did not answer"):
+        resolve_mcp_url()
+
+
+def test_an_inherited_url_must_be_the_verified_one(sandbox_settings, monkeypatch):
+    """A shell that exported main's URL must not leak it into the sandbox's agents."""
+    assert _verify("http://127.0.0.1:8123", _answering_as(INSTANCE_ID))
+    monkeypatch.setenv("LOREGARDEN_MCP_URL", "http://127.0.0.1:8000/mcp")
+    with pytest.raises(SandboxMcpUrlError):
+        resolve_mcp_url()
+
+
+def test_a_sandbox_with_no_url_and_no_port_refuses(sandbox_settings):
+    with patch.object(settings, "dev_port", None), pytest.raises(SandboxMcpUrlError):
+        unverified_api_base_url()
+
+
+def test_main_still_uses_the_configured_default(monkeypatch):
+    monkeypatch.delenv("LOREGARDEN_MCP_URL", raising=False)
+    monkeypatch.delenv("LOREGARDEN_API_URL", raising=False)
+    with patch.object(settings, "sandbox", False), patch.object(settings, "dev_port", 8000):
+        assert resolve_mcp_url() == settings.mcp_url.rstrip("/")
 
 
 def test_build_mcp_run_context_includes_ids():

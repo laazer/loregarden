@@ -3,6 +3,7 @@ import { useLocation, useParams } from "react-router-dom";
 import { getRouterNavigate } from "./routerBridge";
 import {
   artifactTabFromPath,
+  initiativePath,
   isArtifactTab,
   isStudioSection,
   pageFromPath,
@@ -20,6 +21,8 @@ import {
 export type { AppPage, ArtifactTab, StudioSection } from "./appNavigation";
 export {
   artifactTabFromPath,
+  initiativeIdFromPath,
+  initiativePath,
   isArtifactTab,
   isStudioNewResource,
   isStudioSection,
@@ -43,6 +46,12 @@ export function navigateToPage(page: AppPage, replace = false) {
   const navigate = getRouterNavigate();
   if (!navigate) return;
   navigate(pathForPage(page), { replace });
+}
+
+export function navigateToInitiative(initiativeId: string, replace = false) {
+  const navigate = getRouterNavigate();
+  if (!navigate) return;
+  navigate(initiativePath(initiativeId), { replace });
 }
 
 export function navigateToStudio(section: StudioSection = "agents", replace = false) {

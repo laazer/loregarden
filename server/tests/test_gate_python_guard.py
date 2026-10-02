@@ -195,26 +195,35 @@ def test_orchestration_profiles_route_python_gates_through_the_wrapper(profile: 
     assert any("workspace-gates.sh" in c for c in commands), f"{profile}.yaml runs no gates"
 
 
-def _old_interpreters() -> list[str]:
+@pytest.fixture(name="old_interpreters", scope="session")
+def old_interpreters_fixture() -> list[str]:
+    """Every sub-3.11 interpreter on PATH, as the binary itself rather than its launcher.
+
+    Probed once per session, and each probe reports `sys.executable`: a
+    `python3.x` on PATH can be a pyenv shim, which re-resolves its version on
+    every call — ~6s a call on a loaded host, paid per interpreter per
+    parametrized script until one case passed pytest's 120s timeout.
+    """
     found = []
     for name in ("python3.8", "python3.9", "python3.10"):
         path = shutil.which(name)
         if path is None:
             continue
         probe = subprocess.run(
-            [path, "-c", "import sys; print(sys.version_info[:2] < (3, 11))"],
+            [path, "-c", "import sys; print(sys.version_info[:2] < (3, 11), sys.executable)"],
             capture_output=True,
             text=True,
             check=False,
         )
-        if probe.stdout.strip() == "True":
-            found.append(path)
+        is_old, _, executable = probe.stdout.strip().partition(" ")
+        if is_old == "True" and executable:
+            found.append(executable)
     return found
 
 
 @pytest.mark.parametrize("script_name", GUARDED_ENTRY_POINTS)
 def test_a_real_old_interpreter_refuses_rather_than_crashing(
-    script_name: str, tmp_path: Path
+    script_name: str, tmp_path: Path, old_interpreters: list[str]
 ) -> None:
     """End to end, on a genuine sub-3.11 interpreter when the host has one.
 
@@ -222,7 +231,7 @@ def test_a_real_old_interpreter_refuses_rather_than_crashing(
     the least weight — everything it would catch except "a real old interpreter
     matches the injected tuple" is already asserted deterministically above.
     """
-    interpreters = _old_interpreters()
+    interpreters = old_interpreters
     if not interpreters:
         pytest.skip("host has no interpreter below 3.11; the deterministic tests cover the rest")
 

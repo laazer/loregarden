@@ -10,7 +10,14 @@ export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
-export type { InitiativeMilestone, InitiativeView } from "./initiativeApi";
+export type {
+  InitiativeMilestone,
+  InitiativePlan,
+  InitiativeView,
+  MilestoneSchedule,
+  PlannerSnapshot,
+  ScheduleProposal,
+} from "./initiativeApi";
 export type * from "./memoryApi";
 import type {
   WorkflowReassignmentPreview,
@@ -94,6 +101,7 @@ function ticketQuery(params?: {
   state?: TicketState | TicketState[];
   work_item_type?: WorkItemType | WorkItemType[];
   parent_ticket_id?: string;
+  ancestor_ticket_id?: string;
   roots_only?: boolean;
   milestone?: string;
   search?: string;
@@ -115,6 +123,7 @@ function ticketQuery(params?: {
     : [];
   for (const workItemType of workItemTypes) q.append("work_item_type", workItemType);
   if (params?.parent_ticket_id) q.set("parent_ticket_id", params.parent_ticket_id);
+  if (params?.ancestor_ticket_id) q.set("ancestor_ticket_id", params.ancestor_ticket_id);
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
   if (params?.search) q.set("search", params.search);
@@ -257,6 +266,8 @@ export const api = {
     state?: TicketState | TicketState[];
     work_item_type?: WorkItemType | WorkItemType[];
     parent_ticket_id?: string;
+    /** Every level below this ticket, across workspaces — an initiative's board. */
+    ancestor_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
     /** Opt-in page size. Unset returns the whole filtered set, as before. */

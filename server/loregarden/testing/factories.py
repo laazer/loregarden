@@ -18,6 +18,7 @@ literal it already reads for ("run-1"), instead of threading a uuid through.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -35,8 +36,10 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkItemType,
     Workspace,
+    utcnow,
 )
 from loregarden.services.exit_actions import resolve_exit_actions
+from loregarden.services.ticket_state_service import RESOLVED_STATES
 
 # Where a workspace points when the test never said. Absolute and deliberately
 # nonexistent, because `resolve_workspace_root` resolves a *relative* path
@@ -84,6 +87,9 @@ def make_ticket(
     state: TicketState | None = None,
     parent_ticket_id: str | None = None,
     description: str = "",
+    #: When a resolved ticket closed. Defaults to now for a resolved `state`,
+    #: as `ticket_state_service` would stamp it; schedule forecasts read it.
+    resolved_at: datetime | None = None,
 ) -> Ticket:
     if ticket_id:
         existing = session.get(Ticket, ticket_id)
@@ -101,6 +107,8 @@ def make_ticket(
         ticket.id = ticket_id
     if state is not None:
         ticket.state = state
+        if state in RESOLVED_STATES:
+            ticket.resolved_at = resolved_at or utcnow()
     session.add(ticket)
     session.commit()
     session.refresh(ticket)

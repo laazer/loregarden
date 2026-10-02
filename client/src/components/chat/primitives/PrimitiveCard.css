@@ -1464,6 +1464,11 @@
   right: 7px;
 }
 
+/* A host's extra control under the tile body — the initiative board's state menu. */
+.lg-primitive-ticket-tile-foot {
+  margin-top: 8px;
+}
+
 .lg-primitive-ticket-tile .lg-primitive-ticket-v6-title {
   padding-right: 22px;
 }

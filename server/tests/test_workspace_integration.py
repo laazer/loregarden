@@ -5,7 +5,9 @@ against the seeded workspace's throwaway repository — so what is asserted is
 what lands in that repository's files.
 """
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +16,7 @@ from fastapi.testclient import TestClient
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
 from loregarden.services import workspace_integration
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_integration import primary_checkout
 from sqlmodel import Session, select
 
@@ -159,3 +162,56 @@ def test_installing_into_loregarden_itself_is_refused_and_writes_nothing(
     response = client.post("/api/workspace-integration/loregarden/docs")
     assert response.status_code == 409
     assert not (loregarden_repo / "AGENTS.md").exists()
+
+
+# -- which Python the installers run ----------------------------------------
+
+
+def test_the_server_runs_the_installers_with_its_own_interpreter(
+    client: TestClient, repo: Path
+) -> None:
+    """Not whatever `python3` PATH finds: through a pyenv shim that is ~6s a call."""
+    real_run = subprocess.run
+    with mock.patch.object(workspace_integration.subprocess, "run", wraps=real_run) as spawn:
+        _states(client.get("/api/workspace-integration/loregarden"))
+    installer_calls = [
+        call
+        for call in spawn.call_args_list
+        if Path(call.args[0][0]).name in {"install-workspace-hooks.sh", "install-workspace-docs.sh"}
+    ]
+    assert len(installer_calls) == 2
+    for call in installer_calls:
+        assert call.kwargs["env"][workspace_integration.INSTALLER_PYTHON_ENV] == sys.executable
+        # This checkout's scripts, not the primary's: from a worktree the primary
+        # is main, and a branch's changes to the installers would go untested.
+        assert Path(call.args[0][0]).parent == settings.repo_root / "scripts"
+
+
+@pytest.mark.parametrize(
+    "script", ["install-workspace-hooks.sh", "install-workspace-docs.sh"], ids=["hooks", "docs"]
+)
+def test_an_installer_runs_python_through_the_interpreter_it_is_given(
+    tmp_path: Path, script: str
+) -> None:
+    target = tmp_path / "workspace"
+    target.mkdir()
+    run_git(["init", "-q", "-b", "main"], cwd=target, check=True, capture_output=True)
+    (target / "lefthook.yml").write_text(LEFTHOOK, encoding="utf-8")
+    calls = tmp_path / "python-calls"
+    stub = tmp_path / "recording-python"
+    stub.write_text(
+        f'#!/bin/sh\necho "$@" >> "{calls}"\nexec "{sys.executable}" "$@"\n', encoding="utf-8"
+    )
+    stub.chmod(0o755)
+
+    completed = subprocess.run(
+        [str(settings.repo_root / "scripts" / script), "--check", str(target)],
+        env={**os.environ, workspace_integration.INSTALLER_PYTHON_ENV: str(stub)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert calls.exists(), completed.stderr
+    assert "--check" in calls.read_text(encoding="utf-8")
+    assert completed.stdout.startswith("missing"), completed.stdout + completed.stderr

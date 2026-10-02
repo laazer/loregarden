@@ -16,7 +16,8 @@
 # Safe by construction: the database and memory graphs are copied (SQLite backup
 # API, source opened read-only) into data/sandbox/, and the server boots with
 # LOREGARDEN_SANDBOX=1, so recovery, the reconcile timer and GitHub sync are off
-# and nothing it does reaches main's runs, worktrees or memory.
+# and nothing it does reaches main's runs, worktrees or memory. Its agents get
+# an MCP URL naming this server, verified against its /health instance id.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SNAP="$ROOT/data/sandbox"
@@ -67,6 +68,12 @@ fi
 source "$ENV_FILE"
 export LOREGARDEN_REPO_ROOT="$ROOT"
 export LOREGARDEN_DEV_PORT="$SERVER_PORT"
+# The agents this server starts must reach *this* server: main's default is the
+# live one on :8000, and a URL inherited from the shell may be anything. Set from
+# the port uvicorn is given below, so `--keep` with another port stays right; the
+# server then proves it on boot (services/sandbox_endpoint.py) before any agent runs.
+export LOREGARDEN_API_URL="http://127.0.0.1:$SERVER_PORT"
+export LOREGARDEN_MCP_URL="$LOREGARDEN_API_URL/mcp"
 
 server_pid=""
 cleanup() { [[ -n "$server_pid" ]] && kill "$server_pid" 2>/dev/null || true; }

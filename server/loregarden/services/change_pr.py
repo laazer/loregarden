@@ -25,8 +25,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from loregarden.services.git_subprocess import run_git, scrubbed_git_env
-from loregarden.services.github_pr_service import run_gh
+from loregarden.services.git_subprocess import run_gh, run_git, scrubbed_git_env
 
 logger = logging.getLogger(__name__)
 

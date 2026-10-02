@@ -160,6 +160,7 @@ def _args_for(
     prereq_id: str,
     optional_stage_key: str,
     gate_stage_key: str,
+    initiative_id: str,
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -271,6 +272,18 @@ def _args_for(
         # more than a smoke test needs to prove the tool is wired up.
         # status only reads the link table; every other action shells out to gh.
         "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
+        "loregarden_get_initiative_plan": {"initiative_id": initiative_id},
+        # No items, a mode only: files a pending proposal and writes no target.
+        "loregarden_propose_initiative_schedule": {
+            "initiative_id": initiative_id,
+            "rationale": "smoke",
+            "items": [],
+            "mode": "fixed",
+        },
+        # Off and empty: these drive real runs, and a smoke test must start none.
+        "loregarden_set_initiative_autopilot": {"initiative_id": initiative_id, "enabled": False},
+        "loregarden_start_initiative_work": {"initiative_id": initiative_id, "ticket_ids": []},
+        "loregarden_mark_needs_person": {"initiative_id": initiative_id, "ticket_ids": []},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -377,6 +390,12 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     all_tickets = client.get("/api/tickets").json()
     prereq_id = next((t["id"] for t in all_tickets if t["id"] != ticket_id), ticket_id)
 
+    initiative = client.post(
+        "/api/tickets", json={"title": "Smoke initiative", "work_item_type": "initiative"}
+    )
+    assert initiative.status_code in (200, 201), initiative.text
+    initiative_id = initiative.json()["id"]
+
     ordered = [
         "loregarden_get_ticket",
         "loregarden_link_dependency",
@@ -397,6 +416,11 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",
+        "loregarden_get_initiative_plan",
+        "loregarden_propose_initiative_schedule",
+        "loregarden_set_initiative_autopilot",
+        "loregarden_start_initiative_work",
+        "loregarden_mark_needs_person",
         "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
@@ -451,6 +475,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             prereq_id,
             optional_stage_key,
             gate_stage_key,
+            initiative_id,
         )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")

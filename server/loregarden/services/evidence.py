@@ -13,7 +13,7 @@ from pathlib import Path
 
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_commit_push_service import head_commit_sha
-from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session, select
 
@@ -40,11 +40,11 @@ FULL_SUITE_EVIDENCE_KIND = "full_suite_green"
 
 
 def resolve_head_sha(session: Session, ticket: Ticket) -> str:
-    """HEAD of the ticket's workspace, or "" when it cannot be resolved."""
+    """HEAD of the ticket checkout (active worktree or workspace-root fallback), or ""."""
     workspace = session.get(Workspace, ticket.workspace_id)
     if not workspace:
         return ""
-    return head_commit_sha(resolve_workspace_root(workspace))
+    return head_commit_sha(resolve_ticket_root(session, ticket, workspace))
 
 
 def evidence_for_commit(
@@ -99,8 +99,9 @@ def evidence_kinds_for_tree(session: Session, ticket: Ticket, tree: TreeSnapshot
     the proof no longer covers what's there.
 
     Cleanliness is asked first because a dirty tree answers without HEAD at all.
-    HEAD is the *workspace's* (`resolve_head_sha`), the commit evidence is
-    stamped with; the snapshot supplies it only when it is of that same checkout.
+    HEAD is the ticket checkout's (`resolve_head_sha`), the commit evidence is
+    stamped with; the snapshot supplies it when it is of that same checkout,
+    which on the dispatch path it always is.
     """
     # A tree we could not read is NOT a clean tree. `dirty_paths` is None on a
     # git failure, and treating that as 'no dirty paths' would let evidence be
@@ -112,7 +113,7 @@ def evidence_kinds_for_tree(session: Session, ticket: Ticket, tree: TreeSnapshot
     recorded = evidence_for_commit(session, ticket)
     if not recorded:
         return set()
-    head = _workspace_head(session, ticket, tree)
+    head = _ticket_head(session, ticket, tree)
     if not head:
         return set()
     return {
@@ -122,11 +123,13 @@ def evidence_kinds_for_tree(session: Session, ticket: Ticket, tree: TreeSnapshot
     }
 
 
-def _workspace_head(session: Session, ticket: Ticket, tree: TreeSnapshot) -> str:
+def _ticket_head(session: Session, ticket: Ticket, tree: TreeSnapshot) -> str:
+    """`resolve_head_sha`, answered from `tree` when it is of the same checkout."""
     workspace = session.get(Workspace, ticket.workspace_id)
-    if workspace and resolve_workspace_root(workspace) == tree.repo_root:
-        return tree.head_sha
-    return resolve_head_sha(session, ticket)
+    if not workspace:
+        return ""
+    root = resolve_ticket_root(session, ticket, workspace)
+    return tree.head_sha if root == tree.repo_root else head_commit_sha(root)
 
 
 def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:

@@ -1,19 +1,30 @@
+import os
 import subprocess
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from lore_eden.testing import pytest_profile
 from loregarden.config import settings
-from loregarden.db.session import get_session
+from loregarden.db.session import get_session, init_db
 from loregarden.main import app
 from loregarden.models.domain import Workspace
-from loregarden.services import docker_capacity, local_instances, reference_cache
-from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
+from loregarden.services import (
+    codex_discovery,
+    docker_capacity,
+    local_instances,
+    opencode_discovery,
+    reference_cache,
+)
+from loregarden.services.cli_settings import ADAPTER_BINARIES
+from loregarden.services.git_subprocess import GH_BINARY_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, create_engine, select
+from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
+from tests.repo_templates import from_template, set_template_root
 from tests.worktree_helpers import seed_stage_report_contract
 
 
@@ -48,6 +59,11 @@ _ENGINE_BINDINGS = (
     "loregarden.services.branch_triage_run_service.engine",
     "loregarden.services.baxter_chat_run_service.engine",
     "loregarden.services.ticket_studio_run_service.engine",
+    "loregarden.services.initiative_planner_service.engine",
+    "loregarden.services.initiative_autopilot.engine",
+    # Its loop ticks inside any TestClient that lives past the interval; unbound,
+    # it reconciled whatever database the checkout defaults to.
+    "loregarden.services.reconcile_timer.engine",
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
     "loregarden.services.github_push_on_edit.engine",
@@ -118,6 +134,72 @@ def force_local_cli_adapter(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_installed_model_clis(monkeypatch, tmp_path):
+    """Model discovery sees no `opencode` or `codex`, whatever this machine has installed.
+
+    `GET /api/workspaces/runtime-options` lists models by running both CLIs. With
+    them installed, three tests ran the real `opencode models` — 97s of the suite,
+    16s for one assertion on a static list — and saw a different catalog than CI,
+    where neither is installed. Each binary's override is pointed at a path that
+    does not exist, which the resolvers treat as absent, and `CODEX_HOME` at an
+    empty directory so codex's cache fallback reads nothing.
+
+    A test of discovery itself still patches `resolve_*_binary` or
+    `subprocess.run`, which takes precedence. The caches are cleared either side
+    so a catalog one test faked cannot reach the next.
+    """
+    missing = tmp_path / "no-installed-cli"
+    for adapter in ("opencode", "codex"):
+        monkeypatch.setenv(ADAPTER_BINARIES[adapter][1], str(missing))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    opencode_discovery.reset_model_cache()
+    codex_discovery.reset_model_cache()
+    yield
+    opencode_discovery.reset_model_cache()
+    codex_discovery.reset_model_cache()
+
+
+@pytest.fixture(name="gh_stub", scope="session")
+def gh_stub_fixture(tmp_path_factory):
+    """A `gh` that fails at once, the way `gh` fails in a repo with no GitHub remote."""
+    stub = tmp_path_factory.mktemp("gh-stub") / "gh-disabled-under-pytest"
+    stub.write_text(
+        "#!/bin/sh\necho 'gh: not available under pytest (tests/conftest.py)' >&2\nexit 1\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+@pytest.fixture(autouse=True)
+def no_installed_gh(monkeypatch, gh_stub):
+    """No test reaches the `gh` installed on this machine, or GitHub through it.
+
+    Branch triage asks `gh` for every branch's PR. The triage repos have no
+    GitHub remote, so each call could only fail, but the real binary took ~4.6s
+    to say so: 14 calls, 65s of `test_branch_triage.py`, signed in as whatever
+    account this machine has. Every `gh` call goes through `run_gh`, which
+    honours `LOREGARDEN_GH_BIN`. A test of a `gh` flow still patches `run_gh`
+    or `subprocess.run`, which takes precedence.
+    """
+    monkeypatch.setenv(GH_BINARY_ENV, str(gh_stub))
+
+
+@pytest.fixture(autouse=True)
+def no_installed_docker(monkeypatch, tmp_path):
+    """No test reaches this machine's docker daemon.
+
+    Doctor runs probe docker as a side effect, and the real daemon cost 45s
+    across 29 calls, answering with whatever this host's daemon had running.
+    Every docker call goes through `run_docker` with `settings.docker_binary`; a
+    path that does not exist raises `FileNotFoundError`, which the probe layer
+    reports as docker not installed. Docker tests patch above `run_docker` and
+    are unaffected.
+    """
+    monkeypatch.setattr(settings, "docker_binary", str(tmp_path / "no-installed-docker"))
+
+
+@pytest.fixture(autouse=True)
 def _forget_docker_probe():
     """The `docker info` cache is one module-global value with no key. A probe
     another test cached — `NCPU: 0` from the doctor tests — leaked into the
@@ -129,8 +211,18 @@ def _forget_docker_probe():
     docker_capacity.clear_probe_cache()
 
 
+#: Whether `isolated_db` handed this test the seeded template, for `client` to read.
+_SEEDED_FROM_TEMPLATE = pytest.StashKey[bool]()
+
+
+@pytest.fixture(name="schema_template", scope="session")
+def schema_template_fixture(tmp_path_factory):
+    """An empty, fully tabled database, built once per process; see `tests/db_templates.py`."""
+    return build_schema_template(tmp_path_factory.mktemp("schema-template") / "schema.db")
+
+
 @pytest.fixture(name="isolated_db", autouse=True)
-def isolated_db_fixture(tmp_path, monkeypatch):
+def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
     """Give every test an isolated, schema'd SQLite engine and point all
     module-global engine bindings at it.
 
@@ -139,9 +231,19 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     now shares the test engine). It does NOT seed — request the ``client``
     fixture, or call ``seed_database(session)``, when a test needs the built-in
     workspace/ticket/agent data.
+
+    A test that requests ``client`` starts from the seeded template instead,
+    copied here rather than in ``client``: the test's own fixtures write into
+    this database before ``client`` is set up, and a later restore would erase
+    them. See `tests/db_templates.py`.
     """
+    database = tmp_path / "pytest.db"
+    seeded = "client" in request.fixturenames
+    source = request.getfixturevalue("seeded_template").database if seeded else schema_template
+    copy_database(source, database)
+    request.node.stash[_SEEDED_FROM_TEMPLATE] = seeded
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'pytest.db'}",
+        f"sqlite:///{database}",
         connect_args={"check_same_thread": False, "timeout": 30},
     )
     # A real pool, not StaticPool: StaticPool hands every thread the *same* DBAPI
@@ -152,7 +254,6 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     # write concurrently instead of serialising on the whole file.
     with engine.connect() as conn:
         conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-    SQLModel.metadata.create_all(engine)
     for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
     # Chat attachments are files beside the database; keep them beside this one.
@@ -160,7 +261,38 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     return engine
 
 
-def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
+@pytest.fixture(name="seeded_template", scope="session")
+def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate:
+    """The database `client` starts from, built once per process: seeded, repointed, migrated.
+
+    In the order the fixture and the app's lifespan always applied them — seed,
+    repoint the workspace, then ``init_db`` — because two migrations read
+    ``Workspace.repo_path``. Built on its own engine, with every module-global
+    engine binding pointed at it for the duration, so nothing reaches a test's
+    database or the real one. The lifespan still runs ``init_db`` and
+    ``seed_database`` on every copy; on this database both are near no-ops.
+    """
+    root = tmp_path_factory.mktemp("seeded-template")
+    template = SeededTemplate(database=root / "seeded.db", repo=root / "seeded-repo")
+    _init_seeded_workspace_repo(template.repo)
+    copy_database(schema_template, template.database)
+    engine = create_engine(f"sqlite:///{template.database}")
+    try:
+        with ExitStack() as stack:
+            for target in _ENGINE_BINDINGS:
+                stack.enter_context(patch(target, engine))
+            with Session(engine) as session:
+                seed_database(session)
+                _repoint_seeded_workspace(session, template.repo)
+            init_db()
+    finally:
+        engine.dispose()
+    return template
+
+
+def _isolate_seeded_workspace_repo(
+    session: Session, tmp_path, seeded_template: SeededTemplate
+) -> None:
     """Repoint the seeded "loregarden" workspace at a throwaway git repo.
 
     Orchestration/CLI-executor code paths run real `git checkout -B` against
@@ -169,27 +301,15 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
     seeded workspace's tickets would check out branches in the actual project
     working directory. Profile/doc loading falls back to settings.repo_root
     directly and is unaffected by this repo_path change.
-    """
-    repo = tmp_path / "loregarden-seeded-repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True
-    )
-    (repo / "README.md").write_text("# test\n", encoding="utf-8")
-    # The dispatch preflight refuses a workspace with no stage-report contract,
-    # so a repo standing in for a real workspace has to carry one. Before the
-    # commit, so the tree it hands to orchestration is clean.
-    seed_stage_report_contract(repo)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
 
+    The repo is a copy of one built once per process — the five git calls cost
+    more than most tests that use them.
+    """
+    repo = seeded_template.copy_repo(tmp_path / "loregarden-seeded-repo")
+    _repoint_seeded_workspace(session, repo)
+
+
+def _repoint_seeded_workspace(session: Session, repo) -> None:
     ws = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
     if ws:
         ws.repo_path = str(repo)
@@ -197,23 +317,52 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
         session.commit()
 
 
+def _init_seeded_workspace_repo(repo) -> None:
+    """Build the workspace repo `client` tests copy.
+
+    Called from a session fixture, which runs before `scrub_ambient_git_env`
+    applies to anything — so it scrubs the same variables itself, or a
+    `GIT_DIR` inherited from a hook would aim every call at the outer checkout.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCATION_ENV_VARS}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True)
+
+    repo.mkdir()
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    (repo / "README.md").write_text("# test\n", encoding="utf-8")
+    # The dispatch preflight refuses a workspace with no stage-report contract,
+    # so a repo standing in for a real workspace has to carry one. Before the
+    # commit, so the tree it hands to orchestration is clean.
+    seed_stage_report_contract(repo)
+    git("add", ".")
+    git("commit", "-m", "init")
+
+
 @pytest.fixture(name="client")
-def client_fixture(isolated_db, tmp_path):
+def client_fixture(isolated_db, tmp_path, seeded_template, request):
     def override_session():
         with Session(isolated_db) as session:
             yield session
 
     app.dependency_overrides[get_session] = override_session
     with Session(isolated_db) as session:
-        seed_database(session)
-        _isolate_seeded_workspace_repo(session, tmp_path)
+        # Requested dynamically, after `isolated_db` chose the bare schema:
+        # seed here, as this fixture always did, rather than hand over an
+        # empty database that looks like a seeded one.
+        if not request.node.stash.get(_SEEDED_FROM_TEMPLATE, False):
+            seed_database(session)
+        _isolate_seeded_workspace_repo(session, tmp_path, seeded_template)
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
 
 
 @pytest.fixture(name="isolate_seeded_repo")
-def isolate_seeded_repo_fixture(tmp_path):
+def isolate_seeded_repo_fixture(tmp_path, seeded_template):
     """Hand a test the repoint that the `client` fixture applies for free.
 
     A test that seeds the database itself — `isolated_db` plus
@@ -229,7 +378,7 @@ def isolate_seeded_repo_fixture(tmp_path):
     """
 
     def apply(session: Session) -> None:
-        _isolate_seeded_workspace_repo(session, tmp_path)
+        _isolate_seeded_workspace_repo(session, tmp_path, seeded_template)
 
     return apply
 
@@ -240,10 +389,19 @@ def db_session_fixture(client, isolated_db):
         yield session
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _repo_templates(tmp_path_factory):
+    """Give `tests/repo_templates.py` a per-process place to keep its templates."""
+    set_template_root(tmp_path_factory.mktemp("repo-templates"))
+
+
 @pytest.fixture(name="git_repo")
 def git_repo_fixture(tmp_path):
     """A throwaway git repo with one commit, for tests that assert on staging."""
-    root = tmp_path / "repo"
+    return from_template(tmp_path / "repo", "git_repo", _build_git_repo)
+
+
+def _build_git_repo(root) -> None:
     root.mkdir()
 
     def git(*args):
@@ -255,7 +413,6 @@ def git_repo_fixture(tmp_path):
     (root / "seed.txt").write_text("seed\n")
     git("add", "-A")
     git("commit", "-q", "-m", "seed")
-    return root
 
 
 @pytest.fixture(autouse=True)
