@@ -56,7 +56,7 @@ loregarden/
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
 | MCP tools | `mcp/tools.py` | Tool names and schemas |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
-| Migrations | `db/migrations.py` | Append with the next **free** id and mirror it into `db/migration_ids.py`; never reorder. Parallel branches contend for numbers — check the live DB, and expect to renumber an unlanded branch rather than contest one |
+| Migrations | `db/versions/` | One module per migration: `@migration("YYYYMMDD_name", after="<newest id on main>")`. No shared list — `FROZEN_MIGRATIONS` and `SHIPPED_MIGRATION_IDS` are closed at 0151. If another branch merged with the same `after`, the suite reports a fork: repoint yours, never rename an id |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
 | Docker capacity | `services/docker_leases.py`, `services/docker_ledger.py` | `reserve` → bind → `release_lease`, shaped after queue admission. `drain_waiters` is the only granter: book capacity, then compare-and-set the row |
 | Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify — docker ps prints nothing both when nothing matched and when it could not ask |
@@ -145,7 +145,12 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 - **Test isolation**: prefer `unittest.mock` (`patch`, `MagicMock`) over pytest's `monkeypatch`, unless mocking handles the case poorly (e.g. `os.environ` swaps).
 - **Naming**: stable filenames describing behavior. **No ticket IDs in filenames** — `test_classify_routing.py`, not `test_82_findings.py`.
 - **Git**: Conventional Commits. `git mv` for renames.
-- **Migrations**: append to `MIGRATIONS` with the next id; each migration guards its own changes; never rewrite an applied id.
+- **Migrations**: add a module to `db/versions/` (see its `__init__`); order is the `after` chain; each migration guards its own changes; never rename a merged id.
+  - **Fixing a fork.** Another branch merged a migration with the same `after` as yours. Git merges cleanly, but after you bring in main, `test_the_real_chain_does_not_fork` fails (and on main, the boot log and the `migration_chain` doctor check name it). To fix:
+    1. Merge `origin/main` into your branch.
+    2. In **your** module, set `after=` to the id that merged first (the other side of the fork).
+    3. Run `uv run pytest tests/test_migration_registry.py`; it should pass with no fork.
+  - Change only `after`, never either id. The live database records ids, so a renamed id runs again, and `test_no_merged_id_has_been_renamed_or_removed` rejects it. If the fork reached main, repoint whichever of the two merged later.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -155,6 +160,7 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | Searching for a ticket markdown file | Tickets are DB rows. The prompts that implied otherwise are fixed | `agents/stage_context.py` |
 | Editing `agent_context/workflows/*.yaml` to change a workflow | v1-era; live templates are in `workflow_templates.stages_json` | `services/studio_service.py` |
 | Hand-editing files while an orchestration runs | It commits the **whole** working tree into whatever ticket is open | commit `49096a5` re-added 13 deleted files |
+| Renaming a migration id (renumbering, or to fix a fork) | The live database records the id; a new name runs the body again. Fix a fork by changing `after`, not the id | `migration_ledger.py` (`prune_renumbered`); `0138` left out of order in `FROZEN_MIGRATIONS` |
 | Ticket IDs in test/doc filenames | Produces the `TICKET_39_*` sprawl that was just deleted | `docs/AUDIT.md` L-3 |
 | `str(...).strip().lower()` defensively | Redundant normalization; normalize at the source | `.lefthook/scripts/detect-defensive-normalization.sh` |
 | `run.status == "failed"`, `kind: str`, inline literal sets | Stringly-typed vocabularies. ~100 enum members already exist in `models/domain/enums.py` and `mcp/tool_ids.py`; use them, or add one | `.lefthook/scripts/py_string_vocab.py` |
