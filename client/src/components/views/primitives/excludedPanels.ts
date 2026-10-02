@@ -39,10 +39,6 @@ export const EXCLUDED_PANELS: ExcludedPanel[] = [
       "Needs a TicketDetail, and shares a global skin and speed setting, so two panes could not disagree about either.",
   },
   {
-    component: "FailedRunsPanel",
-    reason: "No endpoint backs it; there is nothing for a self-fetching primitive to fetch.",
-  },
-  {
     component: "TicketDiffReviewPanel",
     reason:
       "Driven by the page's run list rather than by an id, so a container has nothing to pass it.",

@@ -1,11 +1,21 @@
 /**
- * Line-by-line output review component
- * Allows commenting on specific lines of run stdout/stderr
+ * Line-by-line review of a run's stdout/stderr.
+ *
+ * Laid out like InlineCodeDiffReview, the other line-comment surface: one row
+ * per line, a "+" in the gutter that appears on hover or keyboard focus, and a
+ * line's comments shown beneath it rather than behind a toggle.
+ *
+ * Lines do not wrap by default. Run output is mostly stream-json, where one line
+ * is often a few kilobytes; wrapped, the first line alone fills the screen and
+ * nothing is scannable. The gutter stays pinned while the text scrolls.
  */
 
-import { useState, useMemo } from 'react';
-import './RunOutputReview.css';
+import { useState } from 'react';
+import type { KeyboardEvent } from 'react';
+
+import { Button } from './ui/Button';
 import { Textarea } from './ui/Textarea';
+import './RunOutputReview.css';
 
 export interface OutputLine {
   number: number;
@@ -27,8 +37,13 @@ export interface RunOutputReviewProps {
   approved?: boolean;
   approvedBy?: string;
   onAddComment?: (lineNumber: number, content: string) => void;
+  /** Without it there is nothing to approve with, so no button is drawn. */
   onApprove?: () => void;
   isLoading?: boolean;
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 export function RunOutputReview({
@@ -40,187 +55,144 @@ export function RunOutputReview({
   onApprove,
   isLoading = false,
 }: RunOutputReviewProps) {
-  const [expandedLines, setExpandedLines] = useState<Set<number>>(
-    new Set()
-  );
-  const [newCommentLine, setNewCommentLine] = useState<number | null>(null);
-  const [newCommentContent, setNewCommentContent] = useState('');
+  const [composingLine, setComposingLine] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [wrap, setWrap] = useState(false);
 
-  const handleToggleExpanded = (lineNumber: number) => {
-    const next = new Set(expandedLines);
-    if (next.has(lineNumber)) {
-      next.delete(lineNumber);
-    } else {
-      next.add(lineNumber);
+  const commentCount = lines.reduce((sum, line) => sum + line.comments.length, 0);
+
+  const closeComposer = () => {
+    setComposingLine(null);
+    setDraft('');
+  };
+
+  const submit = (lineNumber: number) => {
+    if (!draft.trim()) return;
+    onAddComment?.(lineNumber, draft);
+    closeComposer();
+  };
+
+  const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>, lineNumber: number) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeComposer();
+    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      submit(lineNumber);
     }
-    setExpandedLines(next);
   };
-
-  const handleAddComment = (lineNumber: number) => {
-    if (!newCommentContent.trim()) return;
-
-    onAddComment?.(lineNumber, newCommentContent);
-    setNewCommentContent('');
-    setNewCommentLine(null);
-  };
-
-  const stats = useMemo(() => {
-    let commentCount = 0;
-    let linesWithComments = 0;
-
-    lines.forEach((line) => {
-      if (line.comments.length > 0) {
-        linesWithComments++;
-        commentCount += line.comments.length;
-      }
-    });
-
-    return { commentCount, linesWithComments };
-  }, [lines]);
-
-  const typeLabel = outputType === 'stdout' ? 'STDOUT' : 'STDERR';
-  const typeIcon = outputType === 'stdout' ? '📤' : '⚠️';
 
   return (
-    <div className="run-output-review">
-      {/* Header */}
-      <div className="output-header">
-        <div className="output-title">
-          <span className="output-icon">{typeIcon}</span>
-          <span className="output-type">{typeLabel}</span>
-          <span className="output-stats">
-            {lines.length} lines, {stats.commentCount} comment
-            {stats.commentCount === 1 ? '' : 's'}
-          </span>
-        </div>
+    <section className="run-output-review" aria-label={`${outputType} review`}>
+      <header className="run-output-header">
+        <span className={`run-output-kind run-output-kind--${outputType}`}>{outputType}</span>
+        <span className="run-output-count">
+          {plural(lines.length, 'line')} · {plural(commentCount, 'comment')}
+        </span>
+        <span className="run-output-header-end">
+          {lines.length > 0 ? (
+            <Button
+              variant="secondary"
+              compact
+              aria-pressed={wrap}
+              className={wrap ? 'active' : undefined}
+              onClick={() => setWrap((value) => !value)}
+            >
+              Wrap lines
+            </Button>
+          ) : null}
+          {approved ? (
+            <span className="run-output-approved">Approved by {approvedBy || 'system'}</span>
+          ) : onApprove ? (
+            <Button variant="primary" compact onClick={onApprove} disabled={isLoading}>
+              Approve output
+            </Button>
+          ) : null}
+        </span>
+      </header>
 
-        {approved && (
-          <div className="approval-badge">
-            ✓ Approved by {approvedBy || 'system'}
-          </div>
-        )}
-      </div>
-
-      {/* Output Lines */}
-      <div className="output-lines">
-        {lines.length === 0 ? (
-          <div className="no-output">
-            <div className="no-output-icon">-</div>
-            <div className="no-output-text">No output</div>
-          </div>
-        ) : (
-          lines.map((line) => (
-            <div key={line.number} className="output-line-group">
-              <div
-                className={`output-line ${
-                  line.comments.length > 0 ? 'has-comments' : ''
-                }`}
-              >
-                <div className="line-number">{line.number}</div>
-                <div className="line-content">
-                  <code>{line.content || ' '}</code>
-                </div>
-
-                {line.comments.length > 0 && (
-                  <button
-                    className="comment-indicator"
-                    onClick={() => handleToggleExpanded(line.number)}
-                    title={`${line.comments.length} comment${
-                      line.comments.length === 1 ? '' : 's'
-                    }`}
+      {lines.length === 0 ? (
+        <p className="run-output-empty">
+          Nothing was written to {outputType}. The other stream may have the run's output.
+        </p>
+      ) : (
+        <div className={`run-output-lines${wrap ? ' run-output-lines--wrap' : ''}`}>
+          {lines.map((line) => (
+            <div
+              key={line.number}
+              className={`run-output-row${line.comments.length > 0 ? ' has-comments' : ''}`}
+            >
+              <div className="run-output-line">
+                <span className="run-output-gutter">{line.number}</span>
+                {onAddComment ? (
+                  <Button
+                    variant="plain"
+                    className="run-output-add"
+                    aria-label={`Comment on line ${line.number}`}
+                    title="Comment on this line"
+                    disabled={isLoading}
+                    onClick={() => {
+                      setComposingLine(line.number);
+                      setDraft('');
+                    }}
                   >
-                    💬 {line.comments.length}
-                  </button>
+                    +
+                  </Button>
+                ) : (
+                  <span aria-hidden />
                 )}
+                <code className="run-output-text">{line.content || ' '}</code>
               </div>
 
-              {/* Comments for this line */}
-              {expandedLines.has(line.number) && line.comments.length > 0 && (
-                <div className="line-comments">
+              {line.comments.length > 0 ? (
+                <div className="run-output-thread">
                   {line.comments.map((comment, idx) => (
-                    <div key={idx} className="comment-item">
-                      <div className="comment-header">
-                        <span className="comment-author">
-                          {comment.created_by || 'Anonymous'}
-                        </span>
-                        <span className="comment-time">
-                          {new Date(comment.created_at).toLocaleString()}
-                        </span>
-                        {comment.resolved && (
-                          <span className="comment-resolved">Resolved</span>
-                        )}
+                    <div key={`${comment.created_at}-${idx}`} className="run-output-comment">
+                      <div className="run-output-comment-meta">
+                        <span>{comment.created_by || 'reviewer'}</span>
+                        <span>{new Date(comment.created_at).toLocaleString()}</span>
+                        {comment.resolved ? (
+                          <span className="run-output-resolved">Resolved</span>
+                        ) : null}
                       </div>
-                      <div className="comment-content">{comment.content}</div>
+                      <div className="run-output-comment-body">{comment.content}</div>
                     </div>
                   ))}
                 </div>
-              )}
+              ) : null}
 
-              {/* Add comment form */}
-              {newCommentLine === line.number && (
-                <div className="add-comment-form">
+              {composingLine === line.number ? (
+                <div className="run-output-compose">
                   <Textarea
+                    className="run-output-compose-input"
                     aria-label={`Comment on line ${line.number}`}
-                    className="comment-textarea"
-                    placeholder="Add a comment..."
-                    value={newCommentContent}
-                    onChange={(e) => setNewCommentContent(e.target.value)}
-                    disabled={isLoading}
+                    placeholder="Comment on this line… (⌘/Ctrl+Enter to send, Esc to cancel)"
                     rows={3}
+                    autoFocus
+                    value={draft}
+                    disabled={isLoading}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => onComposerKey(event, line.number)}
                   />
-
-                  <div className="comment-form-actions">
-                    <button
-                      className="btn btn-comment-add"
-                      onClick={() => handleAddComment(line.number)}
-                      disabled={isLoading || !newCommentContent.trim()}
+                  <div className="run-output-compose-actions">
+                    <Button
+                      variant="primary"
+                      compact
+                      disabled={isLoading || !draft.trim()}
+                      onClick={() => submit(line.number)}
                     >
                       Comment
-                    </button>
-                    <button
-                      className="btn btn-cancel"
-                      onClick={() => {
-                        setNewCommentLine(null);
-                        setNewCommentContent('');
-                      }}
-                      disabled={isLoading}
-                    >
+                    </Button>
+                    <Button variant="secondary" compact disabled={isLoading} onClick={closeComposer}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              )}
-
-              {/* Add comment button */}
-              {newCommentLine !== line.number && (
-                <div className="line-actions">
-                  <button
-                    className="btn-add-comment"
-                    onClick={() => setNewCommentLine(line.number)}
-                    disabled={isLoading}
-                  >
-                    + Comment
-                  </button>
-                </div>
-              )}
+              ) : null}
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Footer Actions */}
-      {!approved && (
-        <div className="output-footer">
-          <button
-            className="btn btn-approve-output"
-            onClick={onApprove}
-            disabled={isLoading}
-          >
-            ✓ Approve Output
-          </button>
-          {isLoading && <span className="loading-text">Processing...</span>}
+          ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
