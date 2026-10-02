@@ -12,8 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
-from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
+from loregarden.services.git_commit_push_service import head_commit_sha
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session, select
 
 #: Kept as a name because this module's callers read it; the value is the
@@ -83,7 +84,12 @@ def has_evidence(
 
 
 def evidence_kinds_at_head(session: Session, ticket: Ticket, repo_root: Path) -> set[str]:
-    """The evidence kinds proven for the *exact current tree*: recorded at the
+    """The evidence kinds proven for the *exact current tree* of `repo_root`."""
+    return evidence_kinds_for_tree(session, ticket, read_tree(repo_root))
+
+
+def evidence_kinds_for_tree(session: Session, ticket: Ticket, tree: TreeSnapshot) -> set[str]:
+    """The evidence kinds proven for the tree `tree` describes: recorded at the
     current HEAD with a clean working tree.
 
     The clean-tree requirement closes the gap the commit stamp alone leaves:
@@ -91,19 +97,36 @@ def evidence_kinds_at_head(session: Session, ticket: Ticket, repo_root: Path) ->
     the evidence) unchanged while the tree a downstream stage sees is no longer
     the one that was proven. Empty when HEAD is unresolved or anything is dirty —
     the proof no longer covers what's there.
+
+    Cleanliness is asked first because a dirty tree answers without HEAD at all.
+    HEAD is the *workspace's* (`resolve_head_sha`), the commit evidence is
+    stamped with; the snapshot supplies it only when it is of that same checkout.
     """
-    head = resolve_head_sha(session, ticket)
-    # A tree we could not read is NOT a clean tree. `working_tree_paths`
-    # returns None on a git failure, and treating that as 'no dirty paths'
-    # would let evidence be accepted against a tree nobody inspected.
-    dirty = working_tree_paths(repo_root)
-    if not head or dirty is None or dirty:
+    # A tree we could not read is NOT a clean tree. `dirty_paths` is None on a
+    # git failure, and treating that as 'no dirty paths' would let evidence be
+    # accepted against a tree nobody inspected.
+    if tree.dirty_paths is None or tree.dirty_paths:
+        return set()
+    # Nothing recorded at any commit proves nothing at this one, and costs no
+    # git call to find out.
+    recorded = evidence_for_commit(session, ticket)
+    if not recorded:
+        return set()
+    head = _workspace_head(session, ticket, tree)
+    if not head:
         return set()
     return {
         artifact.evidence_kind
-        for artifact in evidence_for_commit(session, ticket, commit_sha=head)
-        if artifact.evidence_kind
+        for artifact in recorded
+        if artifact.commit_sha == head and artifact.evidence_kind
     }
+
+
+def _workspace_head(session: Session, ticket: Ticket, tree: TreeSnapshot) -> str:
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace and resolve_workspace_root(workspace) == tree.repo_root:
+        return tree.head_sha
+    return resolve_head_sha(session, ticket)
 
 
 def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:

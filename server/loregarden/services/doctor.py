@@ -52,6 +52,7 @@ from loregarden.models.domain import (
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.stage_parking import park_stage
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.workspace_paths import resolve_agent_context_dir
@@ -632,15 +633,33 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
 
 
 def preflight_run(
-    session: Session, run: AgentRun, workspace: Workspace, repo_root: Path
+    session: Session,
+    run: AgentRun,
+    workspace: Workspace,
+    repo_root: Path,
+    *,
+    ledger: PreflightLedger,
 ) -> list[DoctorFinding]:
     """Run the fast subset before a stage, and record which checks failed.
 
     Recorded on the run rather than raised: knowing that a stage started in a
     broken environment is worth having afterwards even when nobody stopped it at
     the time. The caller decides what a failure means; this only observes.
+
+    A repository-shape check this orchestration run already passed for
+    `repo_root` is taken from `ledger` instead of asked again; see
+    `services.preflight_ledger`.
     """
-    findings = run_checks(session, workspace, repo_root, checks=DISPATCH_PREFLIGHT_CHECKS)
+    reused = ledger.passed(run.orchestration_run_id, repo_root)
+    fresh = run_checks(
+        session,
+        workspace,
+        repo_root,
+        checks=tuple(check for check in DISPATCH_PREFLIGHT_CHECKS if check not in reused),
+    )
+    ledger.record(run.orchestration_run_id, repo_root, fresh)
+    by_check = {**reused, **{finding.check: finding for finding in fresh}}
+    findings = [by_check[check] for check in DISPATCH_PREFLIGHT_CHECKS]
     failures = [f.check.value for f in findings if f.status is DoctorStatus.FAIL]
     run.start_preflight_failures_json = json.dumps(failures)
     session.add(run)

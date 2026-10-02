@@ -166,14 +166,13 @@ def snapshot_worktree(repo_root: Path) -> WorktreeSnapshot:
     moves. A failure comes back on the snapshot, not as an exception: a gate
     must still be recorded when its tree cannot be.
     """
-    head = _git(["rev-parse", "HEAD"], repo_root)
-    if head.returncode != 0:
-        return WorktreeSnapshot(error=f"rev-parse HEAD: {head.stderr.strip()}")
-    head_sha = head.stdout.strip()
-    index = _git(["rev-parse", "--git-path", "index"], repo_root)
-    if index.returncode != 0:
-        return WorktreeSnapshot(head_sha, error=f"rev-parse index: {index.stderr.strip()}")
-    real_index = repo_root / index.stdout.strip()
+    # HEAD and the index path in one call; rev-parse answers them in order.
+    located = _git(["rev-parse", "HEAD", "--git-path", "index"], repo_root)
+    lines = located.stdout.splitlines()
+    if located.returncode != 0 or len(lines) != 2:
+        return WorktreeSnapshot(error=f"rev-parse HEAD: {located.stderr.strip()}")
+    head_sha, index_path = (line.strip() for line in lines)
+    real_index = repo_root / index_path
     with tempfile.TemporaryDirectory(prefix="loregarden-gate-snapshot-") as tmp:
         scratch = Path(tmp) / "index"
         if real_index.is_file():

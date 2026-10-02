@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.worktree_snapshot import read_tree
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -65,7 +66,7 @@ def test_a_run_without_a_waiver_parks_on_the_failing_check(db_session, dispatch)
     run = make_run()
 
     parked = executor._record_and_check_boundary(
-        run, ticket, workspace, repo_root=repo, dirty_paths=set()
+        run, ticket, workspace, repo_root=repo, before=read_tree(repo)
     )
 
     assert parked is not None
@@ -87,7 +88,7 @@ def test_a_waived_run_is_allowed_past_the_same_check(db_session, dispatch):
     run = make_run(waiver="appr-123")
 
     parked = executor._record_and_check_boundary(
-        run, ticket, workspace, repo_root=repo, dirty_paths=set()
+        run, ticket, workspace, repo_root=repo, before=read_tree(repo)
     )
 
     assert parked is None
@@ -99,7 +100,9 @@ def test_a_waived_run_still_records_the_check_it_was_let_past(db_session, dispat
     executor, ticket, workspace, repo, make_run = dispatch
     run = make_run(waiver="appr-123")
 
-    executor._record_and_check_boundary(run, ticket, workspace, repo_root=repo, dirty_paths=set())
+    executor._record_and_check_boundary(
+        run, ticket, workspace, repo_root=repo, before=read_tree(repo)
+    )
 
     db_session.refresh(run)
     assert "git_core_bare" in run.start_preflight_failures_json
@@ -110,7 +113,9 @@ def test_a_waived_run_says_so_in_its_own_log(db_session, dispatch):
     the failure hunts the agent's output for a cause sitting in an approval."""
     executor, ticket, workspace, repo, make_run = dispatch
     run = make_run(waiver="appr-123")
-    executor._record_and_check_boundary(run, ticket, workspace, repo_root=repo, dirty_paths=set())
+    executor._record_and_check_boundary(
+        run, ticket, workspace, repo_root=repo, before=read_tree(repo)
+    )
     db_session.refresh(run)
     streamer = mock.Mock()
 

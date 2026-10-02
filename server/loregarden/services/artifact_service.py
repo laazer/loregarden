@@ -48,8 +48,12 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+#: The first base `git_base_ref` tries, and the one nearly every repository has.
+_PREFERRED_BASE = "main"
+
+
 def git_base_ref(cwd: Path) -> str | None:
-    for ref in ("main", "master", "origin/main", "origin/master"):
+    for ref in (_PREFERRED_BASE, "master", "origin/main", "origin/master"):
         if _git(cwd, "rev-parse", "--verify", ref).returncode == 0:
             return ref
     if _git(cwd, "rev-parse", "--verify", "HEAD~1").returncode == 0:
@@ -581,6 +585,27 @@ def _artifact_from_git_diff(
     }
 
 
+def _stat_and_patch(cwd: Path, ref: str | None) -> tuple[str, str] | None:
+    """`git diff --stat` and `git diff` against `ref` (the index when None), in one call.
+
+    `--stat --patch` prints the stat block, a blank line, then the same patch
+    the separate call would — and every patch starts on a `diff --git` line,
+    which no stat line can (each begins with a space) (lg-build-verification-847).
+
+    None when git could not diff — `ref` names no revision, most often — which
+    the caller must tell apart from an empty diff: only the first sends it
+    looking for another base.
+    """
+    proc = _git(cwd, "diff", "--stat", "--patch", *([ref, "--"] if ref else []))
+    if proc.returncode != 0:
+        return None
+    text = proc.stdout or ""
+    marker = text.find("\ndiff --git ")
+    if marker < 0:
+        return text, ""
+    return text[: marker + 1], text[marker + 1 :]
+
+
 def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dict[str, Any] | None:
     """Return the diff artifact payload from `repo_root`, or the shared checkout.
 
@@ -592,16 +617,25 @@ def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dic
     if not (cwd / ".git").exists():
         return None
 
-    base = git_base_ref(cwd)
-    diff_ref = base if base else "HEAD"
-    stat = _git(cwd, "diff", "--stat", diff_ref)
-    if stat.returncode != 0 or not stat.stdout.strip():
-        stat = _git(cwd, "diff", "--stat")
+    # The usual base first, without resolving it separately: a diff against a
+    # `main` that exists is the answer, and only when it is not does the
+    # candidate search run, exactly as it always did.
+    diff_ref = _PREFERRED_BASE
+    diffed = _stat_and_patch(cwd, diff_ref)
+    if diffed is None:
+        base = git_base_ref(cwd)
+        diff_ref = base if base else "HEAD"
+        # A `main` that resolves but would not diff fails the same way twice.
+        if diff_ref != _PREFERRED_BASE:
+            diffed = _stat_and_patch(cwd, diff_ref)
+    stat_text, patch_text = diffed or ("", "")
+    if not stat_text.strip():
         diff_ref = "working tree"
-    if stat.returncode != 0 or not stat.stdout.strip():
+        stat_text, patch_text = _stat_and_patch(cwd, None) or ("", "")
+    if not stat_text.strip():
         return None
 
-    stat_lines = [line for line in stat.stdout.splitlines() if line.strip()]
+    stat_lines = [line for line in stat_text.splitlines() if line.strip()]
     summary = stat_lines[-1] if stat_lines else ""
     primary_file = stat_lines[0].split("|", 1)[0].strip() if stat_lines else "changes"
 
@@ -610,8 +644,7 @@ def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dic
     add = f"+{add_match.group(1)}" if add_match else "+0"
     delete = f"−{del_match.group(1)}" if del_match else "−0"
 
-    patch = _git(cwd, "diff", diff_ref) if diff_ref != "working tree" else _git(cwd, "diff")
-    sections = _parse_unified_diff(patch.stdout or "")
+    sections = _parse_unified_diff(patch_text)
 
     return {
         "file": primary_file,

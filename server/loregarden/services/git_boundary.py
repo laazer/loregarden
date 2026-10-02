@@ -21,8 +21,9 @@ import subprocess
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, GitBoundary
-from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
+from loregarden.services.git_commit_push_service import head_commit_sha
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -52,26 +53,12 @@ def current_branch(repo_root: Path) -> str:
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
-def read_boundary(repo_root: Path, *, dirty_paths: set[str] | None = None) -> GitBoundary:
-    """The boundary of `repo_root`, or an empty boundary if it cannot be read.
-
-    `dirty_paths` is accepted because the dispatch path already computes it to
-    bracket the run's own edits; passing it in keeps this to one extra git call
-    per dispatch instead of two.
-    """
+def read_boundary(repo_root: Path) -> GitBoundary:
+    """The boundary of `repo_root`, or an empty boundary if it cannot be read."""
     try:
         if not repo_root.is_dir():
             return GitBoundary()
-        # `or set()` keeps a boundary check that cannot read the tree from
-        # claiming a clean one — the caller's own verdict logic treats an
-        # empty set as 'nothing to attribute', which is the safe reading here.
-        paths = (working_tree_paths(repo_root) or set()) if dirty_paths is None else dirty_paths
-        return GitBoundary(
-            repo_path=str(repo_root),
-            branch=current_branch(repo_root),
-            head_sha=head_commit_sha(repo_root),
-            dirty_paths=sorted(paths),
-        )
+        return boundary_of_tree(read_tree(repo_root))
     except (OSError, subprocess.SubprocessError):
         logger.warning(
             "Could not read the git boundary of %s; the run starts from an unknown tree",
@@ -79,6 +66,36 @@ def read_boundary(repo_root: Path, *, dirty_paths: set[str] | None = None) -> Gi
             exc_info=True,
         )
         return GitBoundary()
+
+
+def boundary_of_tree(tree: TreeSnapshot) -> GitBoundary:
+    """The boundary a snapshot already describes, with no further git call.
+
+    The dispatch path takes one snapshot before the agent runs and brackets the
+    run's edits with it; the boundary is the same moment, so it is read from the
+    same answer rather than asked for again (lg-build-verification-847).
+
+    A snapshot git could not take falls back to asking for HEAD and the branch
+    on their own, as this did before there was a snapshot: a `status` that fails
+    does not mean `rev-parse` will, and a recorded sha is worth the two calls on
+    a path that is already failing. The dirty paths then read as none — the
+    caller's own verdict logic treats an empty set as "nothing to attribute",
+    which is the safe reading here.
+    """
+    repo_root = tree.repo_root
+    if tree.dirty_paths is None:
+        return GitBoundary(
+            repo_path=str(repo_root),
+            branch=current_branch(repo_root),
+            head_sha=head_commit_sha(repo_root),
+            dirty_paths=[],
+        )
+    return GitBoundary(
+        repo_path=str(repo_root),
+        branch=tree.branch,
+        head_sha=tree.head_sha,
+        dirty_paths=sorted(tree.dirty_paths),
+    )
 
 
 def boundary_of_run(run: AgentRun) -> GitBoundary:

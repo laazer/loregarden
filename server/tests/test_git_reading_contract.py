@@ -67,7 +67,7 @@ def test_a_git_that_runs_and_fails_still_reads_as_cannot_say(tmp_path: Path):
     """The half that already worked, pinned alongside the half that did not, so
     a later refactor cannot fix one by breaking the other."""
     failed = mock.Mock(returncode=128, stdout="", stderr="fatal: not a git repository")
-    with mock.patch("loregarden.services.git_commit_push_service.run_git", return_value=failed):
+    with mock.patch("loregarden.services.worktree_snapshot.run_git", return_value=failed):
         assert working_tree_paths(tmp_path) is None
         assert paths_committed_since(tmp_path, "HEAD") is None
 
@@ -76,7 +76,7 @@ def test_an_os_error_from_git_itself_reads_as_cannot_say(tmp_path: Path):
     """Whatever the OS refuses — a missing binary, a permission denial — is a
     reading that could not be made, not an empty one."""
     with mock.patch(
-        "loregarden.services.git_commit_push_service.run_git",
+        "loregarden.services.worktree_snapshot.run_git",
         side_effect=PermissionError("git not executable"),
     ):
         assert working_tree_paths(tmp_path) is None

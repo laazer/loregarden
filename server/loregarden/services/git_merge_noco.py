@@ -13,6 +13,7 @@ integration branch up to the base branch before a ticket is cut from it
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +33,47 @@ class MergeOutcome:
     @property
     def conflicted(self) -> bool:
         return bool(self.conflicted_files)
+
+
+@dataclass(frozen=True)
+class BranchTips:
+    """Where some local branches pointed, read in one `for-each-ref` at one moment.
+
+    Consumed by the step that moves one of them (`merge_tips`), never kept past
+    it: the compare-and-swap that step ends with is what makes a reading taken
+    a moment earlier safe to act on — a ref that moved since is refused, not
+    overwritten (lg-build-verification-847).
+    """
+
+    shas: Mapping[str, str]
+    #: git's own words when it could not list the refs at all. Every branch then
+    #: reads as missing, which is what `rev` answered on the same failure.
+    error: str = ""
+
+    def of(self, branch: str) -> str:
+        """The commit `branch` names, or "" when it does not exist."""
+        return self.shas.get(branch, "")
+
+
+def read_branch_tips(repo_root: Path, *branches: str) -> BranchTips:
+    """The tips of `branches`, in one git call instead of one per branch.
+
+    `for-each-ref` matches a pattern by whole path components, so
+    `refs/heads/integration` would also list `refs/heads/integration/x`; only
+    exact names are kept. A branch that does not exist is simply absent.
+    """
+    wanted = {f"refs/heads/{branch}": branch for branch in branches}
+    result = _git(repo_root, "for-each-ref", "--format=%(refname) %(objectname)", *wanted)
+    if result.returncode != 0:
+        return BranchTips(
+            shas={}, error=(result.stderr or result.stdout or "git for-each-ref failed").strip()
+        )
+    shas: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        refname, _, sha = line.rpartition(" ")
+        if refname in wanted:
+            shas[wanted[refname]] = sha
+    return BranchTips(shas=shas)
 
 
 def _git(repo_root: Path, *args: str):
@@ -87,13 +129,33 @@ def merge_without_checkout(
     repo_root: Path, *, target: str, source: str, subject: str
 ) -> MergeOutcome:
     """Merge ``source`` into ``target`` (both local branch names) and move ``target``."""
-    source_sha = rev(repo_root, f"refs/heads/{source}")
-    target_sha = rev(repo_root, f"refs/heads/{target}")
+    return merge_tips(
+        repo_root,
+        read_branch_tips(repo_root, target, source),
+        target=target,
+        source=source,
+        subject=subject,
+    )
+
+
+def merge_tips(
+    repo_root: Path, tips: BranchTips, *, target: str, source: str, subject: str
+) -> MergeOutcome:
+    """`merge_without_checkout` from tips the caller has just read.
+
+    For a caller that already read both branches to decide whether to merge at
+    all, so the merge does not ask git for them again. The final `update-ref`
+    compares against ``tips``' target, so a target that moved after the reading
+    is reported rather than overwritten.
+    """
+    source_sha = tips.of(source)
+    target_sha = tips.of(target)
     if not source_sha:
-        return MergeOutcome(ok=False, detail=f"branch {source!r} does not exist")
+        return MergeOutcome(ok=False, detail=tips.error or f"branch {source!r} does not exist")
     if not target_sha:
-        return MergeOutcome(ok=False, detail=f"branch {target!r} does not exist")
-    if is_ancestor(repo_root, source_sha, target_sha):
+        return MergeOutcome(ok=False, detail=tips.error or f"branch {target!r} does not exist")
+    # A commit is its own ancestor; equal tips need no `merge-base` to say so.
+    if source_sha == target_sha or is_ancestor(repo_root, source_sha, target_sha):
         return MergeOutcome(ok=True, sha=source_sha, already_contained=True)
 
     tree, conflicts, words = _merge_tree(repo_root, target, source)

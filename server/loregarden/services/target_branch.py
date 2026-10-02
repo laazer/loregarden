@@ -30,7 +30,7 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import validate_branch_name
-from loregarden.services.git_merge_noco import merge_without_checkout
+from loregarden.services.git_merge_noco import BranchTips, merge_tips, read_branch_tips
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
@@ -78,30 +78,26 @@ def target_branch_name(session: Session, ticket: Ticket, workspace: Workspace) -
     return integration_branch_for(root)
 
 
-def _branch_exists(repo_root: Path, branch: str) -> bool:
-    result = run_git(
-        ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
+def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) -> BranchTips:
+    """Create ``branch`` from ``base_branch`` if it is missing.
 
-
-def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
-    """Create ``branch`` from ``base_branch`` if it is missing. True when created.
+    Returns both tips as they stand afterwards — read again after a creation,
+    since creating is the one step here that moves a ref — so a caller about to
+    merge can use them rather than ask git twice for the same two refs.
 
     Creation does not check the branch out anywhere, so it is safe while the
     primary checkout and any number of worktrees hold other branches. A base
     that does not exist is an error rather than an empty branch: an integration
     branch with no history would land every ticket as unrelated histories.
     """
-    if _branch_exists(repo_root, branch):
-        return False
-    if not _branch_exists(repo_root, base_branch):
+    tips = read_branch_tips(repo_root, branch, base_branch)
+    if tips.of(branch):
+        return tips
+    if not tips.of(base_branch):
+        reason = f": {tips.error}" if tips.error else ""
         raise TargetBranchError(
-            f"Cannot create {branch!r}: base branch {base_branch!r} does not exist in {repo_root}"
+            f"Cannot create {branch!r}: base branch {base_branch!r} does not exist "
+            f"in {repo_root}{reason}"
         )
     result = run_git(
         ["branch", branch, base_branch],
@@ -114,7 +110,7 @@ def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) ->
         detail = (result.stderr or result.stdout or "git branch failed").strip()
         raise TargetBranchError(f"Cannot create {branch!r} from {base_branch!r}: {detail}")
     logger.info("Created integration branch %s from %s in %s", branch, base_branch, repo_root)
-    return True
+    return read_branch_tips(repo_root, branch, base_branch)
 
 
 def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
@@ -128,8 +124,15 @@ def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -
     safe from any working tree; a conflict is raised, because a ticket about to
     be cut from a branch that cannot take its base is not a ticket to start.
     """
-    outcome = merge_without_checkout(
+    return _refresh_from_tips(
+        repo_root, read_branch_tips(repo_root, branch, base_branch), branch, base_branch
+    )
+
+
+def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_branch: str) -> bool:
+    outcome = merge_tips(
         repo_root,
+        tips,
         target=branch,
         source=base_branch,
         subject=f"Refresh {branch} from {base_branch}",
@@ -159,6 +162,8 @@ def resolve_target_branch(
     base = resolve_orchestration_profile(workspace).git.base_branch
     target = target_branch_name(session, ticket, workspace)
     if target != base:
-        ensure_integration_branch(repo_root, target, base)
-        refresh_integration_branch(repo_root, target, base)
+        # One reading of both refs decides creation and the refresh alike.
+        _refresh_from_tips(
+            repo_root, ensure_integration_branch(repo_root, target, base), target, base
+        )
     return target
