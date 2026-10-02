@@ -1,0 +1,66 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
+
+import { api } from "../api/client";
+import { useAgentAction } from "../lib/agentActions/useAgentAction";
+
+/**
+ * The open ticket's write actions, offered to agents while a ticket route is
+ * showing — and only then, so an agent cannot edit a ticket the operator is
+ * not looking at. Each goes through the same `api.updateTicket` call and the
+ * same cache refresh as the ticket modal's own save.
+ *
+ * The server gates these as writes before this tab is ever asked. Renders
+ * nothing itself.
+ */
+export function TicketAgentActions() {
+  const { ticketId = "" } = useParams<{ ticketId: string }>();
+  const queryClient = useQueryClient();
+  const { data: ticket } = useQuery({
+    queryKey: ["ticket", ticketId],
+    queryFn: () => api.ticket(ticketId),
+    enabled: ticketId !== "",
+  });
+
+  /** The agent names a ticket; refuse unless it is the one on screen. */
+  const requireOpen = (requested: string): string => {
+    if (!ticket) throw new Error("the ticket is still loading; try again");
+    if (requested !== ticket.id && requested !== ticket.external_id) {
+      throw new Error(
+        `${requested} is not the open ticket (${ticket.external_id || ticket.id}); open it first with ticket.open`,
+      );
+    }
+    return ticket.id;
+  };
+
+  const refresh = (id: string) => {
+    void queryClient.invalidateQueries({ queryKey: ["ticket", id] });
+    void queryClient.invalidateQueries({ queryKey: ["ticket-tree"] });
+    void queryClient.invalidateQueries({ queryKey: ["tickets"] });
+  };
+
+  useAgentAction(
+    "ticket.update",
+    async ({ ticket_id, ...fields }) => {
+      const id = requireOpen(ticket_id);
+      if (Object.keys(fields).length === 0) throw new Error("no fields to change");
+      const updated = await api.updateTicket(id, fields);
+      refresh(id);
+      return { ticket_id: updated.id, title: updated.title, priority: updated.priority };
+    },
+    ticketId !== "",
+  );
+
+  useAgentAction(
+    "ticket.set_state",
+    async ({ ticket_id, state }) => {
+      const id = requireOpen(ticket_id);
+      const updated = await api.updateTicket(id, { state });
+      refresh(id);
+      return { ticket_id: updated.id, state: updated.state };
+    },
+    ticketId !== "",
+  );
+
+  return null;
+}

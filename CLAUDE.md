@@ -250,6 +250,14 @@ clicks or types. It cannot reliably hover or drag, and a canvas is one opaque no
   `<input type="file">` in the file;
 - a `<canvas>` that takes input — waive it naming the DOM controls that do the same thing.
 
+Those make a surface *readable* by an agent. To let one *act* on it directly, register the
+action where the control lives: `useAgentAction("ticket.set_state", handler)`
+(`client/src/lib/agentActions/`). Agents reach it through `loregarden_list_ui_actions` /
+`loregarden_invoke_ui_action`. The server owns the catalog (`services/ui_action_catalog.py`):
+each action's effect decides its approval — `view` auto-approves, `write` is gated like any
+write tool, `human_only` (resolving an approval) is refused to every agent. A new action is a
+catalog entry on both sides; `test_ui_actions.py` fails when they drift.
+
 A gate can only see shape. It cannot tell you the empty state you wrote says the right thing,
 that the loading state matches the wait, or that the surface answers a question anyone has. That judgment is the `ui-design` stage's before the
 work and `visual_qa`'s after it — and yours in between.
