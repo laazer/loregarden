@@ -15,12 +15,14 @@ import { AgentActionHost } from "../AgentActionHost";
 
 const ticket = jest.fn();
 const updateTicket = jest.fn();
+const triggerAutoFix = jest.fn();
 
 jest.mock("../../api/client", () => ({
   API_BASE: "http://127.0.0.1:8000",
   api: {
     ticket: (id: string) => ticket(id),
     updateTicket: (id: string, body: unknown) => updateTicket(id, body),
+    triggerAutoFix: (id: string) => triggerAutoFix(id),
   },
 }));
 
@@ -59,6 +61,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   ticket.mockReset().mockResolvedValue(OPEN);
+  triggerAutoFix.mockReset().mockResolvedValue({ status: "started", attempt_number: 2 });
   updateTicket.mockReset().mockImplementation(async (id: string, body: object) => ({ ...OPEN, id, ...body }));
 });
 
@@ -107,5 +110,36 @@ it("refuses a ticket the operator is not looking at, and writes nothing", async 
     ),
   );
   expect(updateTicket).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+it("starts the open ticket's CI auto-fix, and relays its attempt — or refuses another ticket", async () => {
+  const view = renderAt(`/tickets/${OPEN.id}/diff`);
+  await waitFor(() => expect(ticket).toHaveBeenCalled());
+  await waitFor(async () =>
+    expect(await uiActionRegistry.run("ticket.trigger_auto_fix", { ticket_id: "lg-open-1" })).toEqual({
+      ticket_id: OPEN.id,
+      status: "started",
+      attempt_number: 2,
+    }),
+  );
+  expect(triggerAutoFix).toHaveBeenCalledWith(OPEN.id);
+
+  await expect(uiActionRegistry.run("ticket.trigger_auto_fix", { ticket_id: "lg-other-2" })).rejects.toThrow(
+    "lg-other-2 is not the open ticket",
+  );
+  expect(triggerAutoFix).toHaveBeenCalledTimes(1);
+  view.unmount();
+});
+
+it("relays an auto-fix failure to the agent instead of reporting success", async () => {
+  triggerAutoFix.mockRejectedValue(new Error("no failing CI run to fix"));
+  const view = renderAt(`/tickets/${OPEN.id}/diff`);
+  await waitFor(() => expect(ticket).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(uiActionRegistry.run("ticket.trigger_auto_fix", { ticket_id: OPEN.id })).rejects.toThrow(
+      "no failing CI run to fix",
+    ),
+  );
   view.unmount();
 });

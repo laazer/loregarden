@@ -42,7 +42,9 @@ export const API_WRITE_COVERAGE = {
   createTicket: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
-  importTickets: { kind: "gap" },
+  // The bulk form of the same write: an agent creates the tickets directly,
+  // without the import dialog's file-preview step.
+  importTickets: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
   previewTicketImport: { kind: "not_a_write", reason: DRAFT },
   previewTicketImportPaths: { kind: "not_a_write", reason: DRAFT },
   orchestrate: { kind: "mcp_tool", tool: "loregarden_start_orchestration" },
@@ -66,7 +68,7 @@ export const API_WRITE_COVERAGE = {
   sendRunMessage: { kind: "gap" },
   cancelRun: { kind: "gap" },
   queueRunAction: { kind: "gap" },
-  triggerAutoFix: { kind: "gap" },
+  triggerAutoFix: { kind: "agent_action", action: "ticket.trigger_auto_fix" },
   skipCICheck: { kind: "human_only", reason: GATE },
 
   // Inbox
@@ -76,9 +78,9 @@ export const API_WRITE_COVERAGE = {
   // Workspaces
   createWorkspace: { kind: "gap" },
   createWorkspaceRepository: { kind: "gap" },
-  archiveWorkspace: { kind: "gap" },
-  restoreWorkspace: { kind: "gap" },
-  setWorkspaceTemplate: { kind: "gap" },
+  archiveWorkspace: { kind: "agent_action", action: "workspace.archive" },
+  restoreWorkspace: { kind: "agent_action", action: "workspace.restore" },
+  setWorkspaceTemplate: { kind: "agent_action", action: "workspace.set_workflow" },
   setWorkspaceRuntime: { kind: "gap" },
   updateWorkspaceGates: { kind: "human_only", reason: OVERSIGHT },
   testWorkspaceGates: { kind: "not_a_write", reason: DRAFT },
@@ -135,7 +137,7 @@ export const API_WRITE_COVERAGE = {
   saveTicketStudioSurvey: { kind: "not_agent_driven", reason: CONVERSATION },
 
   // Reference repositories
-  addReferenceRepo: { kind: "gap" },
-  syncReferenceRepo: { kind: "gap" },
+  addReferenceRepo: { kind: "agent_action", action: "reference_repo.add" },
+  syncReferenceRepo: { kind: "agent_action", action: "reference_repo.sync" },
   deleteReferenceRepo: { kind: "human_only", reason: DELETES },
 } satisfies Partial<Record<keyof typeof api, WriteCoverage>>;
