@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { errorDetail } from "../../utils/errorDetail";
+import { Input } from "../ui/Input";
 
 import {
   api,
@@ -87,7 +88,8 @@ export function ReferenceRepoPicker({
       )}
 
       <div style={{ display: "flex", gap: 6 }}>
-        <input
+        <Input
+          aria-label="Reference repo URL"
           className="studio-input"
           placeholder="https://github.com/owner/repo"
           value={url}
@@ -103,7 +105,8 @@ export function ReferenceRepoPicker({
           {addRepo.isPending ? "Cloning…" : "Add"}
         </button>
       </div>
-      <input
+      <Input
+        aria-label="Why this repo is interesting"
         className="studio-input"
         style={{ marginTop: 6 }}
         placeholder="Why this repo is interesting (optional)"

@@ -4,6 +4,7 @@
 
 import { useState, useMemo } from 'react';
 import './QueueSnapshotManager.css';
+import { Input } from './ui/Input';
 
 export interface Snapshot {
   id: string;
@@ -136,8 +137,9 @@ export function QueueSnapshotManager({
             ) : (
               <>
                 <div className="search-section">
-                  <input
+                  <Input
                     type="text"
+                    aria-label="Search snapshots by name or description"
                     className="search-input"
                     placeholder="Search by name or description..."
                     value={searchQuery}
@@ -360,8 +362,9 @@ export function QueueSnapshotManager({
                     onChange={(e) => setReplayCount(Number(e.target.value))}
                     disabled={isLoading}
                   />
-                  <input
+                  <Input
                     type="range"
+                    aria-label="Number of Runs to Replay"
                     className="form-range"
                     min="1"
                     max="100"

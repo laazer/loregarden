@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { Approval } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
+import { Select } from "./ui/Select";
+import { Textarea } from "./ui/Textarea";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
@@ -31,6 +33,7 @@ export function RejectApprovalModal({
   useDialogDismiss(!open || !approval ? null : isSubmitting ? undefined : onClose);
   const [reason, setReason] = useState("");
   const [routeStageKey, setRouteStageKey] = useState("");
+  const fieldId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -78,8 +81,9 @@ export function RejectApprovalModal({
 
         <div className="modal-body">
           <div style={{ marginBottom: 16 }}>
-            <div className="modal-section-title">Reason</div>
-            <textarea
+            <div id={`${fieldId}-reason`} className="modal-section-title">Reason</div>
+            <Textarea
+              aria-labelledby={`${fieldId}-reason`}
               value={reason}
               disabled={isSubmitting}
               onChange={(e) => setReason(e.target.value)}
@@ -105,8 +109,9 @@ export function RejectApprovalModal({
 
           {routeOptions.length > 0 && (
             <div>
-              <div className="modal-section-title">Route back to stage (optional)</div>
-              <select
+              <div id={`${fieldId}-route`} className="modal-section-title">Route back to stage (optional)</div>
+              <Select
+                aria-labelledby={`${fieldId}-route`}
                 className="btn-secondary"
                 style={{ width: "100%", fontSize: 12 }}
                 value={routeStageKey}
@@ -119,7 +124,7 @@ export function RejectApprovalModal({
                     {option.name}
                   </option>
                 ))}
-              </select>
+              </Select>
               <p className="modal-hint" style={{ marginTop: 6 }}>
                 Leave unset to follow the template's configured reject route.
               </p>

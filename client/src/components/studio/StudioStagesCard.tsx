@@ -24,7 +24,7 @@
  * change smuggled into a split is the thing a split is least able to show.
  */
 
-import type { Dispatch, SetStateAction } from "react";
+import { useId, type Dispatch, type SetStateAction } from "react";
 
 import type {
   ClassifyRoute,
@@ -38,6 +38,8 @@ import type {
   StudioWorkflowStage,
 } from "../../api/client";
 import { StageRouteHints } from "../StageRouteHints";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
 import { SkillSelect } from "./SkillSelect";
 import {
   emptyStage,
@@ -89,6 +91,7 @@ export function StudioStagesCard({
   skipConditions,
   selectedWorkflow,
 }: StudioStagesCardProps) {
+  const fieldId = useId();
   const updateStage = (index: number, patch: Partial<StudioWorkflowStage>) => {
     setWorkflowDraft((draft) => ({
       ...draft,
@@ -239,8 +242,9 @@ export function StudioStagesCard({
                     </div>
                     <div className="studio-stage-fields">
                       <div>
-                        <div className="studio-stage-field-label">Stage key</div>
-                        <input
+                        <label htmlFor={`${fieldId}-${index}-key`} className="studio-stage-field-label">Stage key</label>
+                        <Input
+                          id={`${fieldId}-${index}-key`}
                           className="studio-stage-input mono"
                           value={stage.key}
                           readOnly={isWorkflowReadOnly}
@@ -248,8 +252,9 @@ export function StudioStagesCard({
                         />
                       </div>
                       <div>
-                        <div className="studio-stage-field-label">Label</div>
-                        <input
+                        <label htmlFor={`${fieldId}-${index}-name`} className="studio-stage-field-label">Label</label>
+                        <Input
+                          id={`${fieldId}-${index}-name`}
                           className="studio-stage-input"
                           value={stage.name}
                           readOnly={isWorkflowReadOnly}
@@ -257,8 +262,9 @@ export function StudioStagesCard({
                         />
                       </div>
                       <div>
-                        <div className="studio-stage-field-label">Step type</div>
-                        <select
+                        <label htmlFor={`${fieldId}-${index}-type`} className="studio-stage-field-label">Step type</label>
+                        <Select
+                          id={`${fieldId}-${index}-type`}
                           className="studio-stage-select"
                           value={stage.stage_type}
                           disabled={isWorkflowReadOnly}
@@ -292,7 +298,7 @@ export function StudioStagesCard({
                           <option value="classify">Classify & route</option>
                           <option value="gate">Gate / review</option>
                           <option value="parallel">Parallel review</option>
-                        </select>
+                        </Select>
                       </div>
                     </div>
 
@@ -340,8 +346,9 @@ export function StudioStagesCard({
                           >
                             <div className="studio-stage-fields two-col">
                               <div>
-                                <div className="studio-stage-field-label">Languages</div>
-                                <select
+                                <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-languages`} className="studio-stage-field-label">Languages</label>
+                                <Select
+                                  id={`${fieldId}-${index}-route-${routeIndex}-languages`}
                                   multiple
                                   className="studio-stage-select"
                                   style={{ minHeight: 72, height: "auto" }}
@@ -358,11 +365,12 @@ export function StudioStagesCard({
                                       {lang}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </div>
                               <div>
-                                <div className="studio-stage-field-label">Specialties</div>
-                                <select
+                                <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-specialties`} className="studio-stage-field-label">Specialties</label>
+                                <Select
+                                  id={`${fieldId}-${index}-route-${routeIndex}-specialties`}
                                   multiple
                                   className="studio-stage-select"
                                   style={{ minHeight: 72, height: "auto" }}
@@ -379,7 +387,7 @@ export function StudioStagesCard({
                                       {spec}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </div>
                             </div>
                             <div
@@ -390,7 +398,8 @@ export function StudioStagesCard({
                                 marginTop: 8,
                               }}
                             >
-                              <select
+                              <Select
+                                aria-label={`Route ${routeIndex + 1} agent`}
                                 className="studio-stage-select"
                                 value={route.agent_id}
                                 disabled={isWorkflowReadOnly}
@@ -401,7 +410,7 @@ export function StudioStagesCard({
                                     {opt.label}
                                   </option>
                                 ))}
-                              </select>
+                              </Select>
                               <SkillSelect
                                 className="studio-stage-select mono"
                                 value={route.skill_name}
@@ -420,8 +429,9 @@ export function StudioStagesCard({
                               </label>
                             </div>
                             <div style={{ marginTop: 8 }}>
-                              <div className="studio-stage-field-label">Branches to</div>
-                              <select
+                              <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-to`} className="studio-stage-field-label">Branches to</label>
+                              <Select
+                                id={`${fieldId}-${index}-route-${routeIndex}-to`}
                                 className="studio-stage-select mono"
                                 value={route.to_stage ?? ""}
                                 disabled={isWorkflowReadOnly}
@@ -437,7 +447,7 @@ export function StudioStagesCard({
                                       {candidate.key}
                                     </option>
                                   ))}
-                              </select>
+                              </Select>
                             </div>
                           </div>
                         ))}
@@ -483,7 +493,8 @@ export function StudioStagesCard({
                               borderTop: memberIndex === 0 ? undefined : "1px solid var(--bd)",
                             }}
                           >
-                            <select
+                            <Select
+                              aria-label={`Parallel agent ${memberIndex + 1}`}
                               className="studio-stage-select"
                               value={member.agent_id}
                               disabled={isWorkflowReadOnly}
@@ -494,7 +505,7 @@ export function StudioStagesCard({
                                   {opt.label}
                                 </option>
                               ))}
-                            </select>
+                            </Select>
                             <SkillSelect
                               className="studio-stage-select mono"
                               value={member.skill_name}
@@ -541,8 +552,9 @@ export function StudioStagesCard({
                     ) : (
                       <div className="studio-stage-fields">
                         <div>
-                          <div className="studio-stage-field-label">Agent</div>
-                          <select
+                          <label htmlFor={`${fieldId}-${index}-agent`} className="studio-stage-field-label">Agent</label>
+                          <Select
+                            id={`${fieldId}-${index}-agent`}
                             className="studio-stage-select"
                             value={stage.agent_id}
                             disabled={isWorkflowReadOnly}
@@ -556,7 +568,7 @@ export function StudioStagesCard({
                                 {opt.label}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                           {stage.stage_type === "agent" && !stage.agent_id && (
                             <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
                               No agent runtime — exit actions are still evaluated against the
@@ -576,7 +588,7 @@ export function StudioStagesCard({
                           />
                         </div>
                         <div>
-                          <div className="studio-stage-field-label">Model override</div>
+                          <label htmlFor={`${fieldId}-${index}-model`} className="studio-stage-field-label">Model override</label>
                           {(() => {
                             const stageAgent = agents?.find((a) => a.slug === stage.agent_id);
                             const modelOptions = modelOptionsForAdapter(
@@ -585,7 +597,8 @@ export function StudioStagesCard({
                             );
                             if (modelOptions) {
                               return (
-                                <select
+                                <Select
+                                  id={`${fieldId}-${index}-model`}
                                   className="studio-stage-select mono"
                                   value={stage.model}
                                   disabled={isWorkflowReadOnly}
@@ -599,11 +612,12 @@ export function StudioStagesCard({
                                         {opt.label}
                                       </option>
                                     ))}
-                                </select>
+                                </Select>
                               );
                             }
                             return (
-                              <input
+                              <Input
+                                id={`${fieldId}-${index}-model`}
                                 className="studio-stage-select mono"
                                 placeholder="Model id"
                                 value={stage.model}
@@ -693,8 +707,9 @@ export function StudioStagesCard({
                     </label>
 
                     <div style={{ marginTop: 10 }}>
-                      <div className="studio-stage-field-label">Skip this stage when</div>
-                      <select
+                      <label htmlFor={`${fieldId}-${index}-skip`} className="studio-stage-field-label">Skip this stage when</label>
+                      <Select
+                        id={`${fieldId}-${index}-skip`}
                         className="studio-stage-select mono"
                         value={stage.skip_when ?? ""}
                         disabled={isWorkflowReadOnly}
@@ -706,7 +721,7 @@ export function StudioStagesCard({
                             {condition}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                   </div>
                 );

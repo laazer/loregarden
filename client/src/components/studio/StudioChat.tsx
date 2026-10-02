@@ -23,6 +23,7 @@ import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
 import { useStickToBottom } from "../chat/useStickToBottom";
+import { Textarea } from "../ui/Textarea";
 import "../chat/ChatLook.css";
 
 export type StudioAssistantActivity = "thinking" | "typing";
@@ -519,7 +520,8 @@ export function StudioChatComposer({
               onPick={commands.accept}
             />
           ) : null}
-          <textarea
+          <Textarea
+            aria-label="Message"
             ref={commands?.inputRef as React.Ref<HTMLTextAreaElement>}
             className="lg-chat-composer-input"
             value={value}

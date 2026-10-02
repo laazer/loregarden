@@ -537,14 +537,21 @@ function labelTargets(ast) {
   return { literal, computed };
 }
 
-/** Whether a <label htmlFor> in this file can be pointing at this element's id. */
+/**
+ * Whether a <label htmlFor> can be pointing at this element's id.
+ *
+ * A literal id must be matched in this file. A computed one cannot be judged
+ * from here: `id={inputId}` arriving as a prop is the normal shape of a field
+ * component whose parent renders the label (PaneSettingsChoiceInput /
+ * PaneSettingsEditor), and a gate that cannot tell must not accuse.
+ */
 function labelledById(opening, targets) {
   const attr = attributeNode(opening, "id");
   if (!attr) return false;
-  if (targets.computed) return true;
-  if (attr.value && attr.value.type === "Literal") return targets.literal.has(attr.value.value);
-  // A computed id with only literal htmlFors may still match; the gate cannot tell.
-  return targets.literal.size > 0;
+  if (attr.value && attr.value.type === "Literal") {
+    return targets.computed || targets.literal.has(attr.value.value);
+  }
+  return true;
 }
 
 /** What kind of field this element is, or "" when it is not one. */

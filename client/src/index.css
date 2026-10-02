@@ -1182,6 +1182,18 @@ textarea::placeholder {
   margin-bottom: 5px;
 }
 
+/* These label classes were drawn on <div>s; a field's label is a <label htmlFor>
+   so a click focuses the field and a reader (or an agent) finds it by name. A
+   <label> is inline, which drops the margin-bottom — keep the block layout. */
+label:is(
+    .studio-field-label,
+    .studio-stage-field-label,
+    .import-preview-field-label,
+    .modal-field-label
+  ) {
+  display: block;
+}
+
 .studio-stage-input,
 .studio-stage-select {
   width: 100%;

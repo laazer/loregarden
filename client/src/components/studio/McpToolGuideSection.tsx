@@ -1,4 +1,5 @@
 import type { StudioMcpToolGuide } from "../../api/client";
+import { Input } from "../ui/Input";
 
 export function McpToolGuideSection({
   guides,
@@ -151,7 +152,7 @@ function McpToolCard({
       style={{ padding: "8px 12px", opacity: dimmed ? 0.85 : 1 }}
     >
       <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <input type="checkbox" checked={checked} onChange={onToggle} onClick={(e) => e.stopPropagation()} />
+        <Input type="checkbox" aria-label={guide.name} checked={checked} onChange={onToggle} onClick={(e) => e.stopPropagation()} />
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600 }}>{guide.name}</div>
           <div style={{ fontSize: 11.5, color: "var(--txl)", marginTop: 2 }}>{guide.description}</div>

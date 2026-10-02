@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { API_BASE, type ChatAttachment } from "../../api/client";
 import { ATTACHMENT_ACCEPT, type PendingAttachment } from "../../hooks/useComposerAttachments";
+import { Input } from "../ui/Input";
 import "./ComposerAttachments.css";
 
 function formatSize(bytes: number): string {
@@ -42,9 +43,10 @@ export function ComposerAttachButton({
           <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
         </svg>
       </button>
-      <input
+      <Input
         ref={inputRef}
         type="file"
+        aria-label="Attach files"
         multiple
         accept={ATTACHMENT_ACCEPT}
         className="lg-composer-file-input"
