@@ -131,6 +131,19 @@ class DockerLease(SQLModel, table=True):
     #: no longer exists settles liveness outright, with no docker call at all.
     holder_pid: int | None = None
 
+    #: A child lease draws on its parent's grant before the pools: a gate run
+    #: inside an agent run that already holds capacity. `covered_*` is the part
+    #: of this lease's price the parent's unused allotment paid for; only the
+    #: rest is booked against the pools, and a child takes no lease-count slot of
+    #: its own. Children never wait in line — see `capacity_children`.
+    parent_lease_id: str | None = Field(default=None, foreign_key="docker_leases.id", index=True)
+    covered_cpus: float = 0.0
+    covered_memory_mb: int = 0
+    #: On a parent: what its live children have drawn from it. A running total
+    #: so that covering a child is one conditional UPDATE, like the pool's.
+    child_covered_cpus: float = 0.0
+    child_covered_memory_mb: int = 0
+
     #: The pool this claim asked for. A docker claim is also charged to the host
     #: pool; see `CHARGED_POOLS`.
     pool: CapacityPool = Field(

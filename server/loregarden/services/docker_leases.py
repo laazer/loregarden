@@ -62,6 +62,7 @@ from loregarden.services.docker_ledger import (
     CHARGED_POOLS,
     OCCUPYING,
     as_utc,
+    booked,
     load_pool,
     pool_ceiling,
 )
@@ -84,7 +85,7 @@ logger = logging.getLogger(__name__)
 #: queued with a slot free ("3 fit; 2 are held" — lg-workflow-integrity-735).
 #: The honest exit is "full, not contended"; this budget only stops a claimant
 #: spinning forever under pathological contention, and is seconds, not tries.
-_CLAIM_CONTENTION_BUDGET_SECONDS = 5.0
+CLAIM_CONTENTION_BUDGET_SECONDS = 5.0
 
 #: How often a stage waiting for capacity re-checks its place in line.
 _STAGE_POLL_SECONDS = 2.0
@@ -96,6 +97,9 @@ REJECT_HOST_UNAVAILABLE = "host_unavailable"
 REJECT_EXCEEDS_CAPACITY = "exceeds_capacity"
 REJECT_UNKNOWN_LEASE = "unknown_lease"
 REJECT_LEASE_NOT_HELD = "lease_not_held"
+REJECT_PARENT_NOT_HELD = "parent_not_held"
+REJECT_PARENT_POOL_MISMATCH = "parent_pool_mismatch"
+REJECT_EXCEEDS_PARENT_GRANT = "exceeds_parent_grant"
 
 
 class DockerCapacityUnavailable(RuntimeError):
@@ -252,12 +256,14 @@ def repair_pool(session: Session) -> None:
     statement = text(
         """
         UPDATE docker_capacity_pool
-        SET held_cpus = (SELECT COALESCE(SUM(cpus), 0) FROM docker_leases
+        SET held_cpus = (SELECT COALESCE(SUM(cpus - covered_cpus), 0) FROM docker_leases
                          WHERE status IN :occupying AND pool IN :charged_by),
-            held_memory_mb = (SELECT COALESCE(SUM(memory_mb), 0) FROM docker_leases
+            held_memory_mb = (SELECT COALESCE(SUM(memory_mb - covered_memory_mb), 0)
+                              FROM docker_leases
                               WHERE status IN :occupying AND pool IN :charged_by),
             held_count = (SELECT COUNT(*) FROM docker_leases
-                          WHERE status IN :occupying AND pool IN :charged_by),
+                          WHERE status IN :occupying AND pool IN :charged_by
+                          AND parent_lease_id IS NULL),
             revision = revision + 1
         WHERE id = :pool_id
         """
@@ -273,13 +279,40 @@ def repair_pool(session: Session) -> None:
                 "pool_id": POOL_ROW_IDS[pool],
             },
         )
+    # A parent's drawn total is derived the same way, from its live children.
+    session.connection().execute(
+        text(
+            """
+            UPDATE docker_leases
+            SET child_covered_cpus = (
+                    SELECT COALESCE(SUM(child.covered_cpus), 0) FROM docker_leases AS child
+                    WHERE child.parent_lease_id = docker_leases.id
+                    AND child.status IN :occupying),
+                child_covered_memory_mb = (
+                    SELECT COALESCE(SUM(child.covered_memory_mb), 0) FROM docker_leases AS child
+                    WHERE child.parent_lease_id = docker_leases.id
+                    AND child.status IN :occupying)
+            WHERE status IN :occupying
+            """
+        ).bindparams(bindparam("occupying", expanding=True)),
+        {"occupying": occupying},
+    )
     session.commit()
 
 
-def _claim_capacity(
-    session: Session, *, pool_id: str, cpus: float, memory_mb: int, revision: int
+def claim_pool_capacity(
+    session: Session,
+    *,
+    pool_id: str,
+    cpus: float,
+    memory_mb: int,
+    revision: int,
+    count: int = 1,
 ) -> bool:
-    """Book `cpus`/`memory_mb` against one pool, or report that it did not fit.
+    """Book `cpus`/`memory_mb` (and `count` lease slots) against one pool, or say it did not fit.
+
+    Does not commit: a caller booking several pools, or a pool and a parent's
+    cover, commits them together or rolls them all back.
 
     Every dimension is in the WHERE clause, so the database decides. Satisfying
     cpus while over-booking memory is not reachable from here — which it would
@@ -293,11 +326,11 @@ def _claim_capacity(
         .where(
             DockerCapacityPool.held_memory_mb + memory_mb <= DockerCapacityPool.ceiling_memory_mb
         )
-        .where(DockerCapacityPool.held_count + 1 <= DockerCapacityPool.ceiling_leases)
+        .where(DockerCapacityPool.held_count + count <= DockerCapacityPool.ceiling_leases)
         .values(
             held_cpus=DockerCapacityPool.held_cpus + cpus,
             held_memory_mb=DockerCapacityPool.held_memory_mb + memory_mb,
-            held_count=DockerCapacityPool.held_count + 1,
+            held_count=DockerCapacityPool.held_count + count,
             revision=DockerCapacityPool.revision + 1,
         )
         .execution_options(synchronize_session=False)
@@ -317,14 +350,17 @@ def _return_capacity(session: Session, lease: DockerLease) -> None:
     hand out capacity that does not exist — the clamp turns a bug into a
     conservative number rather than an over-booking.
     """
+    booking = booked(lease)
     for pool in CHARGED_POOLS[lease.pool]:
         session.exec(
             update(DockerCapacityPool)
             .where(DockerCapacityPool.id == POOL_ROW_IDS[pool])
             .values(
-                held_cpus=_at_least_zero(DockerCapacityPool.held_cpus - lease.cpus),
-                held_memory_mb=_at_least_zero(DockerCapacityPool.held_memory_mb - lease.memory_mb),
-                held_count=_at_least_zero(DockerCapacityPool.held_count - 1),
+                held_cpus=_at_least_zero(DockerCapacityPool.held_cpus - booking.cpus),
+                held_memory_mb=_at_least_zero(
+                    DockerCapacityPool.held_memory_mb - booking.memory_mb
+                ),
+                held_count=_at_least_zero(DockerCapacityPool.held_count - booking.count),
                 revision=DockerCapacityPool.revision + 1,
             )
             .execution_options(synchronize_session=False)
@@ -484,14 +520,14 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
     a claim the host pool refused.
     """
     pools = CHARGED_POOLS[lease.pool]
-    deadline = time.monotonic() + _CLAIM_CONTENTION_BUDGET_SECONDS
+    deadline = time.monotonic() + CLAIM_CONTENTION_BUDGET_SECONDS
     while True:
         session.expire_all()
         # Every row read (and lazily created, which commits) before the first
         # UPDATE, so nothing commits half a booking.
         revisions = {pool: load_pool(session, pool).revision for pool in pools}
         if all(
-            _claim_capacity(
+            claim_pool_capacity(
                 session,
                 pool_id=POOL_ROW_IDS[pool],
                 cpus=lease.cpus,
@@ -514,7 +550,7 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
                 "Docker lease %s lost the pool revision race for %.0fs while capacity fit; "
                 "queued under contention",
                 lease.id,
-                _CLAIM_CONTENTION_BUDGET_SECONDS,
+                CLAIM_CONTENTION_BUDGET_SECONDS,
             )
             return False
 
@@ -538,7 +574,9 @@ def _held_for_run(
     if not agent_run_id and not orchestration_run_id:
         return None
     statement = select(DockerLease).where(
-        DockerLease.status.in_(OCCUPYING), DockerLease.pool == pool
+        DockerLease.status.in_(OCCUPYING),
+        DockerLease.pool == pool,
+        col(DockerLease.parent_lease_id).is_(None),
     )
     if agent_run_id:
         statement = statement.where(DockerLease.agent_run_id == agent_run_id)
@@ -580,7 +618,7 @@ def reserve(
     price_cpus, price_memory = resolve_weights(footprint, cpus=cpus, memory_mb=memory_mb)
 
     for charged in CHARGED_POOLS[pool]:
-        refusal = _ceiling_refusal(
+        refusal = ceiling_refusal(
             session, charged, cpus=price_cpus, memory_mb=price_memory, invoke=invoke
         )
         if refusal is not None:
@@ -661,7 +699,7 @@ def reserve(
     return _queued_reservation(session, lease)
 
 
-def _ceiling_refusal(
+def ceiling_refusal(
     session: Session,
     pool: CapacityPool,
     *,
@@ -849,16 +887,42 @@ def release_lease(
         session.commit()
         return True
 
+    # Children first: a child draws on this grant, and must not hold capacity a
+    # moment longer than the thing it runs inside.
+    for child in session.exec(
+        select(DockerLease).where(
+            DockerLease.parent_lease_id == lease.id, DockerLease.status.in_(OCCUPYING)
+        )
+    ).all():
+        release_lease(session, child.id, reason=DockerLeaseEndReason.PARENT_RELEASED, drain=False)
+
     lease.status = DockerLeaseStatus.RELEASED
     lease.released_at = _now()
     lease.end_reason = reason
     session.add(lease)
     _return_capacity(session, lease)
+    if lease.parent_lease_id:
+        _return_cover(session, lease)
     session.commit()
 
     if drain:
         drain_waiters(session)
     return True
+
+
+def _return_cover(session: Session, child: DockerLease) -> None:
+    """Hand a child's covered share back to its parent's allotment, clamped at zero."""
+    session.exec(
+        update(DockerLease)
+        .where(DockerLease.id == child.parent_lease_id)
+        .values(
+            child_covered_cpus=_at_least_zero(DockerLease.child_covered_cpus - child.covered_cpus),
+            child_covered_memory_mb=_at_least_zero(
+                DockerLease.child_covered_memory_mb - child.covered_memory_mb
+            ),
+        )
+        .execution_options(synchronize_session=False)
+    )
 
 
 @contextmanager

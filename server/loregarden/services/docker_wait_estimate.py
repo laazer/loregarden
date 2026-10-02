@@ -43,7 +43,13 @@ from loregarden.models.domain import (
     DockerLeaseStatus,
     DockerWaitBasis,
 )
-from loregarden.services.docker_ledger import CHARGED_POOLS, OCCUPYING, as_utc, load_pool
+from loregarden.services.docker_ledger import (
+    CHARGED_POOLS,
+    OCCUPYING,
+    as_utc,
+    booked,
+    load_pool,
+)
 from sqlmodel import Session, col, select
 
 #: End reasons whose `released_at` marks the work finishing rather than the
@@ -134,6 +140,8 @@ class _Holder:
 
     cpus: float
     memory_mb: int
+    #: Lease-count slots it frees: none for a child, which runs in its parent's.
+    count: int
     #: The pools this holder's booking occupies.
     pools: tuple[CapacityPool, ...]
     #: Seconds from now. None when nothing can predict it — which propagates
@@ -149,6 +157,7 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
 
     holders: list[_Holder] = []
     for lease in leases:
+        booking = booked(lease)
         predicted = stats.predict(lease.pool, lease.footprint)
         granted = as_utc(lease.granted_at)
         releases_in: float | None = None
@@ -163,8 +172,9 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
                 basis = DockerWaitBasis.TTL_BOUND
         holders.append(
             _Holder(
-                cpus=lease.cpus,
-                memory_mb=lease.memory_mb,
+                cpus=booking.cpus,
+                memory_mb=booking.memory_mb,
+                count=booking.count,
                 pools=CHARGED_POOLS[lease.pool],
                 releases_in=releases_in,
                 basis=basis,
@@ -237,7 +247,7 @@ def estimate_waits(
             if soonest.basis is DockerWaitBasis.TTL_BOUND:
                 basis = DockerWaitBasis.TTL_BOUND
             for name in soonest.pools:
-                free[name].add(soonest.cpus, soonest.memory_mb, 1)
+                free[name].add(soonest.cpus, soonest.memory_mb, soonest.count)
             holders.remove(soonest)
 
         if blind:
@@ -254,6 +264,7 @@ def estimate_waits(
             _Holder(
                 cpus=waiter.cpus,
                 memory_mb=waiter.memory_mb,
+                count=1,
                 pools=charged,
                 releases_in=None if predicted is None else clock + predicted,
                 basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
