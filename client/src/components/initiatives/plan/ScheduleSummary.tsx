@@ -48,34 +48,38 @@ export function ScheduleSummary({
       <div className="plan-summary-dates">
         <div>
           <div className="plan-label">Status</div>
-          <StatusChip status={plan.status} />
+          <div className="plan-value">
+            <StatusChip status={plan.status} />
+          </div>
         </div>
         <div>
           <div className="plan-label">Planned</div>
-          <div className="plan-figure">{formatDay(plan.planned_date)}</div>
+          <div className="plan-value plan-figure">{formatDay(plan.planned_date)}</div>
         </div>
         <div>
           <div className="plan-label">Forecast</div>
-          <div className="plan-figure">
+          <div className="plan-value plan-figure">
             {plan.forecast_date
               ? formatDay(plan.forecast_date)
               : plan.unforecast_milestones > 0
                 ? "Unknown"
                 : "—"}
           </div>
-          {drift ? <div className="plan-muted">{drift}</div> : null}
+          {drift ? <div className="plan-under">{drift}</div> : null}
         </div>
         <div>
           <div className="plan-label">Target</div>
-          <TargetDateField
-            value={plan.target_date}
-            label={`Target date for ${plan.title}`}
-            onCommit={onTargetChange}
-          />
+          <div className="plan-value">
+            <TargetDateField
+              value={plan.target_date}
+              label={`Target date for ${plan.title}`}
+              onCommit={onTargetChange}
+            />
+          </div>
         </div>
         <div role="group" aria-label="Schedule mode">
           <div className="plan-label">Mode</div>
-          <div className="plan-mode-buttons">
+          <div className="plan-value plan-mode-buttons">
             {MODES.map(({ mode, label }) => (
               <Button
                 key={mode}
@@ -90,7 +94,7 @@ export function ScheduleSummary({
               </Button>
             ))}
           </div>
-          <p id="plan-mode-hint" className="plan-mode-hint">
+          <p id="plan-mode-hint" className="plan-under plan-mode-hint">
             {MODES.find((m) => m.mode === plan.mode)?.hint}
           </p>
         </div>

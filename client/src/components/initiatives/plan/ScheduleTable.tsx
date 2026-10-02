@@ -172,10 +172,15 @@ export function ScheduleTable({
       {range || assumed ? (
         <p className="plan-muted plan-legend">
           {range ? (
-            <span aria-hidden>
-              <span className="plan-legend-target" /> target <span className="plan-legend-forecast" /> forecast ·
-              timeline to {formatDay(new Date(range.end).toISOString().slice(0, 10))}
-            </span>
+            <>
+              <span aria-hidden>
+                <span className="plan-legend-target" /> target
+              </span>
+              <span aria-hidden>
+                <span className="plan-legend-forecast" /> forecast
+              </span>
+              <span>timeline to {formatDay(new Date(range.end).toISOString().slice(0, 10))}</span>
+            </>
           ) : null}
           {assumed ? <span>~ includes work with no measurement, priced at the plan's median</span> : null}
         </p>

@@ -110,6 +110,11 @@
   font-weight: 600;
 }
 
+/* One height for every control that sits beside another. */
+.plan-page {
+  --plan-control-h: 28px;
+}
+
 .plan-status {
   font-size: 12px;
   font-weight: 600;
@@ -136,22 +141,47 @@
   gap: 10px;
 }
 
+/* Columns align at the top, and every value sits in a row of one height, so
+   labels share a line and values share a line whatever each one is — text,
+   a chip, a date input, a toggle. Anything under a value (drift, the mode's
+   explanation) hangs below and moves nothing above it. */
 .plan-summary-dates {
   display: flex;
   flex-wrap: wrap;
   gap: 14px 28px;
-  align-items: flex-end;
+  align-items: flex-start;
+}
+
+.plan-summary-dates > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-value {
+  height: var(--plan-control-h);
+  display: flex;
+  align-items: center;
+}
+
+.plan-under {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--txl);
 }
 
 .plan-mode-buttons {
   display: inline-flex;
+  align-self: flex-start;
+  align-items: stretch;
   border: 1px solid var(--bd2);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .plan-mode-btn {
-  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
   font-size: 12px;
   color: var(--txm);
   background: var(--bg2);
@@ -163,8 +193,10 @@
 }
 
 .plan-date-input {
+  height: var(--plan-control-h);
+  box-sizing: border-box;
   font-size: 12px;
-  padding: 3px 6px;
+  padding: 0 6px;
   max-width: 150px;
 }
 
@@ -222,6 +254,12 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.plan-legend > span {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -242,7 +280,7 @@
 .plan-table th,
 .plan-table td {
   text-align: left;
-  padding: 6px 8px;
+  padding: 8px 8px 12px;
   border-bottom: 1px solid var(--bd);
   vertical-align: middle;
 }
@@ -357,6 +395,8 @@
 
 .plan-board-filters .filter-select {
   flex: 0 1 260px;
+  max-width: 260px;
+  height: var(--plan-control-h);
 }
 
 /* Autopilot */
@@ -390,9 +430,15 @@
   gap: 8px;
 }
 
+.plan-parallel-select,
+.plan-autopilot-controls > button {
+  height: var(--plan-control-h);
+  box-sizing: border-box;
+}
+
 .plan-parallel-select {
   font-size: 12px;
-  padding: 4px 6px;
+  padding: 0 6px;
 }
 
 .plan-subtitle {
@@ -452,16 +498,22 @@
   font-weight: 600;
 }
 
+/* The save state hangs below the input, out of the flow: it must never move
+   the input it describes, in a table row or in the summary strip. */
 .plan-date {
+  position: relative;
   display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .plan-date-state {
-  min-height: 14px;
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 2px;
+  white-space: nowrap;
   font-size: 10.5px;
+  line-height: 1.2;
   color: var(--txl);
+  pointer-events: none;
 }
 
 .plan-date-dirty {
@@ -477,10 +529,7 @@
 }
 
 .plan-mode-hint {
-  margin: 4px 0 0;
   max-width: 34ch;
-  font-size: 11px;
-  color: var(--txl);
 }
 
 /* Board selection */
@@ -495,6 +544,23 @@
   border-radius: 8px;
   background: var(--bg2);
   font-size: 12.5px;
+}
+
+/* Every control in the toolbar at one height, the select boxed like a field. */
+.plan-board-toolbar > select,
+.plan-board-toolbar > button:not(.plan-inline-btn) {
+  height: var(--plan-control-h);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+
+.plan-board-toolbar > select {
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: var(--bg1);
 }
 
 .plan-tile-select {
