@@ -24,21 +24,19 @@ def test_the_real_list_is_sound():
     assert_migration_ids_are_sound([i for i, _ in M.MIGRATIONS])
 
 
-def test_ledger_covers_every_migration():
-    """The ledger must list every migration, not just an old prefix of them.
+def test_ledger_covers_every_frozen_migration():
+    """The ledger mirrors the frozen list exactly, and both are closed.
 
-    Left to drift it protects less each release, and the id it stops covering is
-    always the newest one — the one most likely to still be getting renumbered.
-    Adding a migration therefore means adding its id here too. That is one line,
-    and when two branches both add one the conflict is a visible two-line merge
-    rather than a silent double-apply.
+    New migrations go in `db/versions/`; adding one to either list here is the
+    numbered scheme coming back, with its collisions.
     """
-    ids = [migration_id for migration_id, _ in M.MIGRATIONS]
+    ids = [migration_id for migration_id, _ in M.FROZEN_MIGRATIONS]
 
     assert ids == list(SHIPPED_MIGRATION_IDS), (
-        "MIGRATIONS and SHIPPED_MIGRATION_IDS disagree. If you added a migration, "
-        "append its id to SHIPPED_MIGRATION_IDS as well."
+        "FROZEN_MIGRATIONS and SHIPPED_MIGRATION_IDS disagree. Both are closed: add a "
+        "new migration as a module in db/versions/ instead."
     )
+    assert ids[-1] == "0151_ticket_criteria_checked"
 
 
 def test_duplicate_id_is_rejected(monkeypatch):

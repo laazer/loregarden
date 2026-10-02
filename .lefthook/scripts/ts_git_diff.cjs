@@ -152,11 +152,70 @@ function allSourceFiles(dir, sourcePattern = TS_SOURCE) {
 }
 
 /**
+ * The subset of `paths` that HEAD tracks — the only missing paths that can be a
+ * deletion. Mirrors `git_paths_at_head` in precommit_git_diff.py. Not through
+ * `git()`: its failure is "" plus a warning, and here a failure must mean
+ * "tracked by nothing", which then fails the run loudly as unknown paths.
+ */
+function pathsAtHead(repoRoot, paths) {
+  const byRel = new Map();
+  for (const p of paths) {
+    const rel = path.relative(repoRoot, path.resolve(p));
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+      byRel.set(rel.split(path.sep).join("/"), p);
+    }
+  }
+  if (byRel.size === 0) return new Set();
+  let out;
+  try {
+    out = execFileSync(
+      "git",
+      ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ...byRel.keys()],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+  } catch {
+    // silent-ok: no HEAD (unborn) or no git — nothing is tracked, so every missing path is reported as unknown and the run fails
+    return new Set();
+  }
+  const tracked = new Set(out.split("\0").filter(Boolean));
+  return new Set([...byRel].filter(([rel]) => tracked.has(rel)).map(([, p]) => p));
+}
+
+/**
+ * An explicit file list, minus files the change deletes.
+ *
+ * lefthook's `{staged_files}` lists deletions, and a deleted file has nothing to
+ * grade — dropped by name. A missing path HEAD never had is not a deletion: a
+ * typo, or a whole list that reached argv as one word (zsh does not split an
+ * unquoted `$files`). Skipping those graded nothing and printed "passed", so
+ * they end the run with exit 1.
+ */
+function existingExplicitFiles(files, repoRoot, label) {
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length === 0) return files;
+  const deleted = pathsAtHead(repoRoot, missing);
+  const unknown = missing.filter((f) => !deleted.has(f));
+  if (unknown.length > 0) {
+    console.error(
+      `${label}: cannot determine what to examine: ${unknown.length} path(s) do not exist ` +
+        `and are not deletions of a tracked file: ${unknown.join(", ")} — check the ` +
+        `argument list (a file list passed as one quoted word arrives as one path)`,
+    );
+    process.exit(1);
+  }
+  console.log(
+    `${label}: skipping ${deleted.size} deleted file(s): ` +
+      `${[...deleted].map((f) => path.basename(f)).sort().join(", ")}`,
+  );
+  return files.filter((f) => !deleted.has(f));
+}
+
+/**
  * The file list a gate should read: the explicit argv list, or the diff confined
  * to the repo's detected TypeScript root (mirroring the lefthook glob).
  */
-function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll, sourcePattern }) {
-  if (files.length > 0) return files;
+function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll, sourcePattern, label }) {
+  if (files.length > 0) return existingExplicitFiles(files, repoRoot, label);
   const sourceRoot = tsSourceRoot(repoRoot);
   if (scanAll) return allSourceFiles(sourceRoot, sourcePattern);
   return changedPaths(repoRoot, diffScope, baseRef, sourcePattern)

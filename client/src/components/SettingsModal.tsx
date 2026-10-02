@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { IconCloseButton } from "./IconCloseButton";
 
@@ -23,6 +23,7 @@ import {
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { describeError } from "../state/toastStore";
+import { Select } from "./ui/Select";
 
 type SettingsTab = "runtime" | "memory";
 
@@ -68,6 +69,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const qc = useQueryClient();
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const workspaceFieldId = useId();
   const [tab, setTab] = useState<SettingsTab>("runtime");
   const workspace = workspaces.find((w) => w.slug === workspaceSlug);
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(() => runtimeFromWorkspace(workspace));
@@ -177,8 +179,9 @@ export function SettingsModal({
             <div className="modal-body">
               {workspaces.length > 1 && (
                 <div className="modal-field">
-                  <div className="modal-field-label">Workspace</div>
-                  <select
+                  <label htmlFor={workspaceFieldId} className="modal-field-label">Workspace</label>
+                  <Select
+                    id={workspaceFieldId}
                     className="btn-secondary filter-select"
                     style={{ width: "100%", fontSize: 12 }}
                     value={workspaceSlug}
@@ -190,7 +193,7 @@ export function SettingsModal({
                         {w.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 

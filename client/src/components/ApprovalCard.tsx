@@ -7,6 +7,9 @@ import { MarkdownContent } from "./chat/MarkdownContent";
 import { exitActionCategoryLabel } from "./exitActionCategories";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { Textarea } from "./ui/Textarea";
 
 export type ApprovalResolvePayload = {
   answers?: Record<string, string | string[]>;
@@ -343,7 +346,8 @@ export function ApprovalCard({
             </label>
             {reworkEnabled && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 22 }}>
-                <select
+                <Select
+                  aria-label="Route back to stage"
                   value={reworkStageKey}
                   disabled={isSubmitting}
                   onChange={(e) => setReworkStageKey(e.target.value)}
@@ -362,8 +366,9 @@ export function ApprovalCard({
                       {option.name}
                     </option>
                   ))}
-                </select>
-                <textarea
+                </Select>
+                <Textarea
+                  aria-label="What should be formalized?"
                   value={reworkNote}
                   disabled={isSubmitting}
                   onChange={(e) => setReworkNote(e.target.value)}
@@ -450,8 +455,9 @@ export function ApprovalCard({
                     );
                   })}
                 </div>
-                <input
+                <Input
                   type="text"
+                  aria-label={`Custom answer: ${q.question}`}
                   placeholder="Or type a custom answer…"
                   value={customText[q.question] ?? ""}
                   onChange={(e) => {

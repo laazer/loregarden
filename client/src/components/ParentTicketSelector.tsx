@@ -13,6 +13,7 @@ import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "./TicketTree";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Input } from "./ui/Input";
 
 export interface ParentTicketSelection {
   id: string;
@@ -186,7 +187,8 @@ export function ParentTicketSelector({
             </div>
 
             <div className="modal-body" style={{ gap: 12 }}>
-              <input
+              <Input
+                aria-label="Search tickets by title or id"
                 className="btn-secondary ticket-search"
                 style={{ width: "100%", boxSizing: "border-box" }}
                 value={search}

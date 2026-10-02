@@ -3,6 +3,11 @@
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  /* Its parent (.queue-review-main) aligns children to flex-start, which sized
+     this view to its content: a long run-output line made it wider than the
+     page. Fill the column and let wide content scroll inside instead. */
+  align-self: stretch;
+  min-width: 0;
 }
 
 .operation-diff-review-tabs {

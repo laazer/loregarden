@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { TicketDetail, WorkflowTemplateSummary, WorkspaceWorkflow } from "../../api/client";
 import { STATE_COLORS, STATE_LABELS } from "../UpdateStateModal";
+import { Select } from "../ui/Select";
 
 interface WorkflowTicketSettingsProps {
   ticket: TicketDetail;
@@ -32,14 +33,16 @@ export function WorkflowTicketSettings({
   onSaveBranch,
   onPostureChange,
 }: WorkflowTicketSettingsProps) {
+  const fieldId = useId();
   return (
     <>
       {workflowTemplates && workflowTemplates.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <div className="state-label" style={{ marginBottom: 6 }}>
+          <div id={`${fieldId}-template`} className="state-label" style={{ marginBottom: 6 }}>
             Workflow template
           </div>
-          <select
+          <Select
+            aria-labelledby={`${fieldId}-template`}
             className="btn-secondary"
             style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
             value={ticket.workflow_template_slug || ""}
@@ -55,7 +58,7 @@ export function WorkflowTicketSettings({
                 {t.name} ({t.stage_count} stages)
               </option>
             ))}
-          </select>
+          </Select>
           {ticket.workflow_template_slug &&
             workspaceWorkflow?.template_slug &&
             ticket.workflow_template_slug !== workspaceWorkflow.template_slug && (
@@ -94,10 +97,11 @@ export function WorkflowTicketSettings({
         </div>
       </div>
       <div style={{ marginTop: 12 }}>
-        <div className="state-label" style={{ marginBottom: 6 }}>
+        <div id={`${fieldId}-posture`} className="state-label" style={{ marginBottom: 6 }}>
           Compatibility posture · HOW FREELY
         </div>
-        <select
+        <Select
+          aria-labelledby={`${fieldId}-posture`}
           className="btn-secondary"
           style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
           value={ticket.compatibility_posture || ""}
@@ -111,7 +115,7 @@ export function WorkflowTicketSettings({
           <option value="greenfield">greenfield — no consumers; delete and rename freely</option>
           <option value="internal">internal — break freely, but migrate every caller</option>
           <option value="public">public — external consumers; preserve and deprecate</option>
-        </select>
+        </Select>
         {/* An inherited value is meaningless without its origin — always show which
             milestone/feature/workspace the agent will actually be told. */}
         <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>

@@ -107,6 +107,21 @@ def generate_diff(before: list, after: list) -> list[dict]:
     return changes
 
 
+def output_lines(content: str) -> list[str]:
+    """A run's output as the lines a reviewer comments on, numbered from 1.
+
+    An empty stream has no lines, not one blank one; and a trailing newline ends
+    the last line rather than starting another. `split("\\n")` alone got both
+    wrong: a run that wrote nothing showed "1 line", and every newline-terminated
+    output gained a phantom blank last line. Only "\\n" separates lines — a "\\r"
+    progress bar stays one line, so comment line numbers do not shift.
+    """
+    lines = content.split("\n") if content else []
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 @router.post("/workspace/{workspace_id}/queue/operations/create")
 def create_queue_operation(
     workspace_id: str,
@@ -449,7 +464,7 @@ def create_output_review(
         "review_id": review.id,
         "run_id": run_id,
         "output_type": body.output_type,
-        "line_count": len(body.output_content.split("\n")),
+        "line_count": len(output_lines(body.output_content)),
     }
 
 
@@ -520,8 +535,7 @@ def get_output_review(
 
     comments = json.loads(review.comments_json) if review.comments_json else []
 
-    # Split output into lines for display
-    lines = review.output_content.split("\n")
+    lines = output_lines(review.output_content)
 
     return {
         "review_id": review.id,

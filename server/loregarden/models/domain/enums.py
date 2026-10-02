@@ -242,6 +242,10 @@ class DoctorCheck(str, Enum):
     #: under its new id, which is survivable only while every migration happens
     #: to be idempotent, and nothing enforces that (lg-workflow-integrity-712).
     MIGRATION_LEDGER = "migration_ledger"
+    #: Two `db/versions/` migrations that follow the same id. Two branches
+    #: merged against one tip with no textual conflict, so the build orders them
+    #: by id — which need not be the order the live database applied them in.
+    MIGRATION_CHAIN = "migration_chain"
 
     #: Backend `.py` edits newer than the reload sentinel, so a running dev
     #: server is still serving the code the fix replaced.

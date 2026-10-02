@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { IconCloseButton } from "../IconCloseButton";
+import { Input } from "../ui/Input";
 
 import type { StudioWorkflow, TicketStudioDraftItem } from "../../api/client";
 import {
@@ -51,6 +52,7 @@ export function TicketStudioDraftModal({
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<TicketStudioDraftItem | null>(null);
   const [acceptanceText, setAcceptanceText] = useState("");
+  const kindLabelId = useId();
 
   useEffect(() => {
     if (!item) {
@@ -121,9 +123,10 @@ export function TicketStudioDraftModal({
       >
         <div className="modal-header">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="state-label">Draft ticket</div>
-            <input
+            <div id={kindLabelId} className="state-label">Draft ticket</div>
+            <Input
               id="studio-draft-modal-title"
+              aria-labelledby={kindLabelId}
               className="btn-secondary filter-select modal-title"
               style={{ width: "100%", fontSize: 16, fontWeight: 600, marginTop: 4 }}
               value={draft.title}

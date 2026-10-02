@@ -49,7 +49,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from loregarden.main import app
+from loregarden.models.domain import Workspace
 from loregarden.services.gate_runner import _run_command
+from sqlmodel import Session
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -200,3 +204,36 @@ def test_a_failed_gate_keeps_the_finding_printed_on_stdout(
 
     assert not result.ok
     assert "isinstance is forbidden" in result.message
+
+
+@pytest.fixture
+def queue_workspace_id(client: TestClient, isolated_db) -> str:
+    with Session(isolated_db) as session:
+        workspace = Workspace(name="queue-repro", slug="queue-repro")
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
+        return workspace.id
+
+
+@pytest.fixture
+def lenient_client(client: TestClient) -> TestClient:
+    """The same app (overrides and lifespan already set up by `client`), but a
+    server error comes back as a 500 response instead of raising in the test."""
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="lg-queue-execution-846 — open: create takes operation_type as str, commits an "
+    "unknown value, then 500s; the stored row breaks listing",
+)
+def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
+    lenient_client: TestClient, queue_workspace_id: str
+) -> None:
+    base = f"/api/parallel/workspace/{queue_workspace_id}/queue/operations"
+
+    created = lenient_client.post(f"{base}/create", json={"operation_type": "reorder"})
+    listing = lenient_client.get(base)
+
+    assert (created.status_code, listing.status_code) == (422, 200)

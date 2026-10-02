@@ -1,661 +1,272 @@
 /**
- * Line-by-line output review styling
+ * Line-by-line review of a run's stdout/stderr.
+ *
+ * Shares its line metrics with InlineCodeDiffReview (mono 12px, 1.55 line
+ * height, a numbered gutter, a hover "+") and its panel with QueueDiffViewer
+ * (bg1 card, bg2 header, 16px radius), so the queue's two review tabs read as
+ * one surface. Tokens only: the theme is chosen by :root, never by the OS.
  */
 
 .run-output-review {
+  /* The pinned gutter and composer are positioned; without a stacking context
+     of their own they paint over whatever the page layers above this card. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  min-width: 0;
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
   overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-  .run-output-review {
-    background: #1e1e1e;
-    border-color: #444;
-  }
 }
 
 /* Header */
-.output-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: #f9f9f9;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-header {
-    background: #1a1a1a;
-    border-bottom-color: #444;
-  }
-}
-
-.output-title {
+.run-output-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-title {
-    color: #e0e0e0;
-  }
-}
-
-.output-icon {
-  font-size: 16px;
-}
-
-.output-type {
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #333;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-type {
-    color: #e0e0e0;
-  }
-}
-
-.output-stats {
-  font-size: 12px;
-  color: #999;
-  margin-left: auto;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-stats {
-    color: #bbb;
-  }
-}
-
-.approval-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: #d4edda;
-  border: 1px solid #c3e6cb;
-  border-radius: 24px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #155724;
-}
-
-@media (prefers-color-scheme: dark) {
-  .approval-badge {
-    background: #1a3a1a;
-    border-color: #2d5a2d;
-    color: #66bb6a;
-  }
-}
-
-/* Output Lines Container */
-.output-lines {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  background: white;
-  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-lines {
-    background: #1e1e1e;
-  }
-}
-
-.no-output {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  color: #999;
-  text-align: center;
-}
-
-@media (prefers-color-scheme: dark) {
-  .no-output {
-    color: #bbb;
-  }
-}
-
-.no-output-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  opacity: 0.5;
-}
-
-.no-output-text {
-  font-size: 13px;
-}
-
-/* Output Line Group */
-.output-line-group {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid #f0f0f0;
-  transition: background-color 0.15s ease;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-line-group {
-    border-bottom-color: #333;
-  }
-}
-
-.output-line-group:hover {
-  background: #f9f9f9;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-line-group:hover {
-    background: #2a2a2a;
-  }
-}
-
-/* Output Line */
-.output-line {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0;
-  min-height: 24px;
-  user-select: none;
-}
-
-.output-line.has-comments {
-  background: rgba(33, 150, 243, 0.02);
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-line.has-comments {
-    background: rgba(33, 150, 243, 0.05);
-  }
-}
-
-/* Line Number */
-.line-number {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 60px;
-  padding: 0 12px;
-  background: #f5f5f5;
-  border-right: 1px solid #e0e0e0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #999;
-  user-select: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .line-number {
-    background: #2a2a2a;
-    border-right-color: #444;
-    color: #bbb;
-  }
-}
-
-/* Line Content */
-.line-content {
-  flex: 1;
-  padding: 0 12px;
-  overflow: hidden;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-size: 12px;
-  line-height: 24px;
-  color: #333;
-}
-
-@media (prefers-color-scheme: dark) {
-  .line-content {
-    color: #ccc;
-  }
-}
-
-.line-content code {
-  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-  font-size: inherit;
-  color: inherit;
-}
-
-/* Comment Indicator */
-.comment-indicator {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  margin-right: 8px;
-  background: #e3f2fd;
-  border: none;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #1565c0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-indicator {
-    background: #1a2a3a;
-    color: #66b3ff;
-  }
-}
-
-.comment-indicator:hover {
-  background: #bbdefb;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-indicator:hover {
-    background: #2d4a5a;
-  }
-}
-
-/* Line Comments */
-.line-comments {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: #f9f9f9;
-  border-top: 1px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .line-comments {
-    background: #2a2a2a;
-    border-top-color: #444;
-  }
-}
-
-.comment-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  border-bottom: 1px solid #e0e0e0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-item {
-    border-bottom-color: #444;
-  }
-}
-
-.comment-item:last-child {
-  border-bottom: none;
-}
-
-.comment-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-}
-
-.comment-author {
-  font-weight: 600;
-  color: #333;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-author {
-    color: #e0e0e0;
-  }
-}
-
-.comment-time {
-  color: #999;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-time {
-    color: #bbb;
-  }
-}
-
-.comment-resolved {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  background: #e8f5e9;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #2e7d32;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-resolved {
-    background: #1a3a1a;
-    color: #66bb6a;
-  }
-}
-
-.comment-content {
-  font-size: 12px;
-  line-height: 1.5;
-  color: #333;
-  word-wrap: break-word;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-content {
-    color: #ccc;
-  }
-}
-
-/* Add Comment Form */
-.add-comment-form {
-  display: flex;
-  flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  background: #f9f9f9;
-  border-top: 1px solid #e0e0e0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--bd);
 }
 
-@media (prefers-color-scheme: dark) {
-  .add-comment-form {
-    background: #2a2a2a;
-    border-top-color: #444;
-  }
+.run-output-kind {
+  padding: 3px 9px;
+  border-radius: 9px;
+  background: var(--bg4);
+  color: var(--bll);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.comment-textarea {
-  padding: 10px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+.run-output-kind--stderr {
+  color: var(--aml);
+}
+
+.run-output-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.run-output-header-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-output-header-end .active {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.run-output-approved {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--grn) 40%, var(--bd));
+  background: color-mix(in srgb, var(--grn) 12%, transparent);
+  color: var(--grl);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* Empty */
+.run-output-empty {
+  margin: 0;
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--txl);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Lines. Unwrapped by default: each row is as wide as its longest line and
+   the whole block scrolls sideways, while the gutter and "+" stay pinned. */
+.run-output-lines {
+  padding: 6px 0 10px;
+  overflow-x: auto;
+  /* So threads can size to the visible width (cqw), not the row's. */
+  container-type: inline-size;
+}
+
+.run-output-row {
+  width: max-content;
+  min-width: 100%;
+}
+
+.run-output-line {
+  display: grid;
+  grid-template-columns: 52px 24px max-content;
+  align-items: start;
+  column-gap: 8px;
+  padding: 1px 16px 1px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.run-output-gutter,
+.run-output-add {
+  position: sticky;
+  z-index: 1;
+}
+
+/* The gutter is opaque so text scrolling under it is hidden. */
+.run-output-gutter {
+  left: 0;
+  align-self: stretch;
+  padding-right: 4px;
+  background: var(--bg1);
+}
+
+.run-output-add {
+  left: 60px;
+}
+
+.run-output-line:hover,
+.run-output-line:hover .run-output-gutter {
+  background: var(--bg2);
+}
+
+.run-output-lines--wrap {
+  overflow-x: visible;
+}
+
+.run-output-lines--wrap .run-output-row {
+  width: auto;
+}
+
+.run-output-lines--wrap .run-output-line {
+  grid-template-columns: 52px 24px minmax(0, 1fr);
+}
+
+.run-output-lines--wrap .run-output-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-output-row.has-comments .run-output-line {
+  box-shadow: inset 3px 0 0 var(--ac);
+}
+
+.run-output-gutter {
+  text-align: right;
+  color: var(--txl);
+  user-select: none;
+}
+
+.run-output-text {
+  font-family: inherit;
+  color: var(--tx);
+  white-space: pre;
+}
+
+/* The "+" stays out of the way until the line is pointed at or tabbed to. */
+.run-output-add {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--txm);
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.run-output-line:hover .run-output-add,
+.run-output-add:focus-visible {
+  opacity: 1;
+}
+
+.run-output-add:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.run-output-add:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+
+/* Threads and the composer sit under their line, aligned with its text, and
+   stay in view (sticky) however far the row has been scrolled sideways. */
+.run-output-thread,
+.run-output-compose {
+  position: sticky;
+  left: 84px;
+  width: min(720px, calc(100cqw - 96px));
+  margin: 4px 12px 8px 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-output-thread {
+  border-left: 2px solid var(--ac);
+  padding-left: 10px;
+}
+
+.run-output-comment {
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.run-output-comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.run-output-resolved {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--grn) 12%, transparent);
+  color: var(--grl);
+  font-weight: 600;
+}
+
+.run-output-comment-body {
   font-size: 12px;
   line-height: 1.5;
+  color: var(--tx);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-output-compose-input {
+  width: 100%;
   resize: vertical;
-  background: white;
-  color: #333;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-@media (prefers-color-scheme: dark) {
-  .comment-textarea {
-    background: #1e1e1e;
-    border-color: #555;
-    color: #ccc;
-  }
-}
-
-.comment-textarea:focus {
+.run-output-compose-input:focus {
   outline: none;
-  border-color: #2196f3;
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+  border-color: var(--ac);
 }
 
-@media (prefers-color-scheme: dark) {
-  .comment-textarea:focus {
-    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
-  }
-}
-
-.comment-textarea:disabled {
-  background: #e8e8e8;
-  color: #999;
-  cursor: not-allowed;
-}
-
-@media (prefers-color-scheme: dark) {
-  .comment-textarea:disabled {
-    background: #333;
-    color: #666;
-  }
-}
-
-/* Comment Form Actions */
-.comment-form-actions {
+.run-output-compose-actions {
   display: flex;
   gap: 8px;
 }
 
-/* Line Actions */
-.line-actions {
-  display: flex;
-  padding: 8px 12px;
-  background: #f9f9f9;
-  border-top: 1px solid #e0e0e0;
-  font-size: 12px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .line-actions {
-    background: #2a2a2a;
-    border-top-color: #444;
-  }
-}
-
-.btn-add-comment {
-  padding: 6px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  background: white;
-  color: #666;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-add-comment {
-    background: #1e1e1e;
-    border-color: #555;
-    color: #aaa;
-  }
-}
-
-.btn-add-comment:hover:not(:disabled) {
-  background: #f5f5f5;
-  border-color: #2196f3;
-  color: #2196f3;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-add-comment:hover:not(:disabled) {
-    background: #2a2a2a;
-    border-color: #66b3ff;
-    color: #66b3ff;
-  }
-}
-
-.btn-add-comment:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Buttons */
-.btn {
-  padding: 8px 16px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-comment-add {
-  background: #e3f2fd;
-  color: #1565c0;
-  border-color: #bbdefb;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-comment-add {
-    background: #1a2a3a;
-    color: #66b3ff;
-    border-color: #2d4a5a;
-  }
-}
-
-.btn-comment-add:hover:not(:disabled) {
-  background: #bbdefb;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-comment-add:hover:not(:disabled) {
-    background: #2d4a5a;
-  }
-}
-
-.btn-cancel {
-  background: #f5f5f5;
-  color: #666;
-  border-color: #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-cancel {
-    background: #3a3a3a;
-    color: #aaa;
-    border-color: #555;
-  }
-}
-
-.btn-cancel:hover:not(:disabled) {
-  background: #e8e8e8;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-cancel:hover:not(:disabled) {
-    background: #4a4a4a;
-  }
-}
-
-/* Output Footer */
-.output-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #f9f9f9;
-  border-top: 1px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .output-footer {
-    background: #1a1a1a;
-    border-top-color: #444;
-  }
-}
-
-.btn-approve-output {
-  background: #d4edda;
-  color: #155724;
-  border-color: #c3e6cb;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-approve-output {
-    background: #1a3a1a;
-    color: #66bb6a;
-    border-color: #2d5a2d;
-  }
-}
-
-.btn-approve-output:hover:not(:disabled) {
-  background: #c3e6cb;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-approve-output:hover:not(:disabled) {
-    background: #2d5a2d;
-  }
-}
-
-.btn-approve-output:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.loading-text {
-  font-size: 12px;
-  color: #999;
-}
-
-@media (prefers-color-scheme: dark) {
-  .loading-text {
-    color: #bbb;
-  }
-}
-
-/* Responsive */
 @media (max-width: 768px) {
-  .output-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .output-line {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .line-number {
-    width: 100%;
-    min-width: auto;
-    border-right: none;
-    border-bottom: 1px solid #e0e0e0;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .line-number {
-      border-bottom-color: #444;
-    }
-  }
-
-  .line-content {
-    width: 100%;
-  }
-
-  .comment-form-actions {
-    flex-direction: column;
-  }
-
-  .comment-form-actions .btn {
-    width: 100%;
+  .run-output-thread,
+  .run-output-compose {
+    left: 12px;
+    width: calc(100cqw - 24px);
+    margin-left: 12px;
   }
 }

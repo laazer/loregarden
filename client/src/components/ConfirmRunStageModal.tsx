@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { RuntimeOptions, TicketDetail, WorkflowStageView, WorkspaceRuntimeSettings } from "../api/client";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./WorkspaceRuntimeFields";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Input } from "./ui/Input";
 
 interface ConfirmRunStageModalProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function ConfirmRunStageModal({
   onOpenPr,
 }: ConfirmRunStageModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const timeoutLabelId = useId();
   const busy = isRunning || isSavingRuntime || isOpeningPr;
   // Escape and the backdrop agree on purpose: whatever makes a click
   // dismiss this dialog is what makes the key dismiss it.
@@ -197,8 +199,11 @@ export function ConfirmRunStageModal({
 
           {showAutoApprove && (
             <div style={{ marginTop: 12 }}>
-              <div className="modal-section-title">Timeout (seconds, optional)</div>
-              <input
+              <div id={timeoutLabelId} className="modal-section-title">
+                Timeout (seconds, optional)
+              </div>
+              <Input
+                aria-labelledby={timeoutLabelId}
                 type="number"
                 min={30}
                 className="btn-secondary"

@@ -7,10 +7,11 @@
  * to whoever renders it — one dialog, one dirty check, one Save button.
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { MemoryConfigResponse, MemoryConfigSettings } from "../api/client";
 import { RepoPathExplorer, sanitizeBrowsePath } from "./RepoPathExplorer";
+import { Input } from "./ui/Input";
 
 export function emptyMemoryConfig(): MemoryConfigSettings {
   return {
@@ -64,6 +65,7 @@ export function MemorySettingsFields({
   disabled: boolean;
   onChange: (next: MemoryConfigSettings) => void;
 }) {
+  const fieldId = useId();
   const [icloudJump, setIcloudJump] = useState("");
   const [obsidianJump, setObsidianJump] = useState("");
 
@@ -133,8 +135,11 @@ export function MemorySettingsFields({
       )}
 
       <div className="modal-field">
-        <div className="modal-field-label">iCloud Drive root</div>
-        <input
+        <label htmlFor={`${fieldId}-icloud-root`} className="modal-field-label">
+          iCloud Drive root
+        </label>
+        <Input
+          id={`${fieldId}-icloud-root`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.icloud_root}
@@ -193,8 +198,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Obsidian vault folder</div>
-        <input
+        <label htmlFor={`${fieldId}-obsidian-vault`} className="modal-field-label">
+          Obsidian vault folder
+        </label>
+        <Input
+          id={`${fieldId}-obsidian-vault`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.obsidian_vault_dir}
@@ -242,8 +250,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Memory notes subfolder</div>
-        <input
+        <label htmlFor={`${fieldId}-memory-subdir`} className="modal-field-label">
+          Memory notes subfolder
+        </label>
+        <Input
+          id={`${fieldId}-memory-subdir`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.obsidian_memory_subdir}
@@ -253,8 +264,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Learnings subfolder</div>
-        <input
+        <label htmlFor={`${fieldId}-learnings-subdir`} className="modal-field-label">
+          Learnings subfolder
+        </label>
+        <Input
+          id={`${fieldId}-learnings-subdir`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.obsidian_learnings_subdir}
@@ -264,8 +278,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Blog posts subfolder</div>
-        <input
+        <label htmlFor={`${fieldId}-blogposts-subdir`} className="modal-field-label">
+          Blog posts subfolder
+        </label>
+        <Input
+          id={`${fieldId}-blogposts-subdir`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.obsidian_blogposts_subdir}
@@ -275,8 +292,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Checkpoints subfolder</div>
-        <input
+        <label htmlFor={`${fieldId}-checkpoints-subdir`} className="modal-field-label">
+          Checkpoints subfolder
+        </label>
+        <Input
+          id={`${fieldId}-checkpoints-subdir`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.obsidian_checkpoints_subdir}
@@ -286,8 +306,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Memory graph SQLite URL (optional)</div>
-        <input
+        <label htmlFor={`${fieldId}-memory-sqlite-url`} className="modal-field-label">
+          Memory graph SQLite URL (optional)
+        </label>
+        <Input
+          id={`${fieldId}-memory-sqlite-url`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.memory_sqlite_url}
@@ -312,8 +335,11 @@ export function MemorySettingsFields({
       </div>
 
       <div className="modal-field">
-        <div className="modal-field-label">Control-plane database URL</div>
-        <input
+        <label htmlFor={`${fieldId}-database-url`} className="modal-field-label">
+          Control-plane database URL
+        </label>
+        <Input
+          id={`${fieldId}-database-url`}
           className="btn-secondary filter-select"
           style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
           value={draft.database_url}

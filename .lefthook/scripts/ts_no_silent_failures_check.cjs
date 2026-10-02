@@ -334,7 +334,7 @@ const untracked = new Set(
 );
 
 for (const filePath of args) {
-  if (!fs.existsSync(filePath) || isTestFile(filePath)) continue;
+  if (isTestFile(filePath)) continue;
   const content = fs.readFileSync(filePath, "utf8");
   const ast = parseFile(content);
   if (!ast) continue;
