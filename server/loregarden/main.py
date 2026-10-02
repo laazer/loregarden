@@ -46,6 +46,7 @@ from loregarden.api import (
     terminal,
     ticket_studio,
     tickets,
+    ui_action_events,
     usage,
     views,
     workflow_monitor,
@@ -275,6 +276,7 @@ app.include_router(analytics.router)
 app.include_router(terminal.router)
 app.include_router(queue_events.router)
 app.include_router(chat_turn_events.router)
+app.include_router(ui_action_events.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 
