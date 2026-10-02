@@ -25,6 +25,7 @@ from loregarden.models.domain import (
 from loregarden.models.domain.docker_tables import POOL_ROW_IDS
 from loregarden.services.docker_capacity import Ceiling
 from pydantic import TypeAdapter, ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,12 @@ def load_pool(session: Session, pool: CapacityPool = CapacityPool.DOCKER) -> Doc
         return row
 
     session.add(DockerCapacityPool(id=row_id))
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # The other half of "one insert and one integrity error": a racer
+        # created the row first. Its row is the pool; read that one.
+        session.rollback()
     row = session.get(DockerCapacityPool, row_id)
     if row is None:  # pragma: no cover — the insert above either lands or raises
         raise RuntimeError(f"could not create the docker_capacity_pool row {row_id!r}")

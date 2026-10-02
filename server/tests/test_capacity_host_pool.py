@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import threading
+from unittest import mock
 
 import pytest
 from loregarden.db.versions.capacity_host_pool import m_capacity_host_pool
@@ -248,3 +249,25 @@ def test_the_migration_seeds_the_host_pool_with_live_docker_claims(isolated_db) 
 
     with Session(isolated_db) as session:
         assert _held(session, CapacityPool.HOST) == (2, 2048, 1)
+
+
+def test_a_pool_row_created_by_a_racer_is_read_not_raised(isolated_db) -> None:
+    """Two first users of a pool both find no row and both insert; one insert
+    wins. The loser must read the winner's row — it raised IntegrityError, and
+    an eight-thread claim on a fresh database crashed instead of queueing (CI)."""
+    with Session(isolated_db) as peer:
+        load_pool(peer, CapacityPool.HOST)  # the racer that got there first
+
+    with Session(isolated_db) as session:
+        real_get = session.get
+        calls = {"n": 0}
+
+        def stale_get(model, key):
+            calls["n"] += 1
+            # The first read happened before the peer's insert landed.
+            return None if calls["n"] == 1 else real_get(model, key)
+
+        with mock.patch.object(session, "get", side_effect=stale_get):
+            row = load_pool(session, CapacityPool.HOST)
+
+    assert row.id == "host"
