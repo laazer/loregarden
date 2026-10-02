@@ -155,6 +155,20 @@ def no_installed_model_clis(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def no_installed_docker(monkeypatch, tmp_path):
+    """No test reaches this machine's docker daemon.
+
+    Doctor runs probe docker as a side effect, and the real daemon cost 45s
+    across 29 calls, answering with whatever this host's daemon had running.
+    Every docker call goes through `run_docker` with `settings.docker_binary`; a
+    path that does not exist raises `FileNotFoundError`, which the probe layer
+    reports as docker not installed. Docker tests patch above `run_docker` and
+    are unaffected.
+    """
+    monkeypatch.setattr(settings, "docker_binary", str(tmp_path / "no-installed-docker"))
+
+
+@pytest.fixture(autouse=True)
 def _forget_docker_probe():
     """The `docker info` cache is one module-global value with no key. A probe
     another test cached — `NCPU: 0` from the doctor tests — leaked into the
