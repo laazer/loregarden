@@ -3,9 +3,11 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
+import { AgentActionHost } from "./components/AgentActionHost";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketRouteResolver } from "./components/TicketRouteResolver";
+import { TicketAgentActions } from "./components/TicketAgentActions";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
@@ -104,6 +106,7 @@ export function AppShell() {
               path="/tickets/:ticketId/:artifactTab"
               element={
                 <TicketRouteResolver>
+                  <TicketAgentActions />
                   <Dashboard />
                 </TicketRouteResolver>
               }
@@ -136,6 +139,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <RouterBridgeSync />
+        <AgentActionHost />
         <AppShell />
       </BrowserRouter>
     </QueryClientProvider>

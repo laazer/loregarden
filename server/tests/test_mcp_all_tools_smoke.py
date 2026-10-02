@@ -255,6 +255,10 @@ def _args_for(
         "loregarden_launch_instance": {"template": "smoke-no-such-template"},
         "loregarden_instance_status": {"instance_id": "smoke-no-such-instance"},
         "loregarden_stop_instance": {"instance_id": "smoke-no-such-instance"},
+        # UI actions: no tab is connected here, so invoke answers with a named
+        # `no_tab` failure payload rather than hanging or raising.
+        "loregarden_list_ui_actions": {},
+        "loregarden_invoke_ui_action": {"action": "navigate.page", "arguments": {"page": "queue"}},
         "loregarden_force_release_docker_lease": {
             "lease_id": "smoke-no-such-lease",
             "reason": "smoke",
@@ -442,6 +446,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_launch_instance",
         "loregarden_instance_status",
         "loregarden_stop_instance",
+        "loregarden_list_ui_actions",
+        "loregarden_invoke_ui_action",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)

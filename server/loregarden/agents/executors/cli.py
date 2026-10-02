@@ -63,11 +63,8 @@ from loregarden.services.compatibility_posture import resolve_compatibility_post
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.exit_action_dispatch import assign_dispatch_exit_actions
-from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
+from loregarden.services.git_boundary import boundary_of_tree, read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
-from loregarden.services.git_commit_push_service import (
-    working_tree_paths,
-)
 from loregarden.services.handoff_boundary import (
     boundary_enforced,
     park_for_boundary,
@@ -78,6 +75,7 @@ from loregarden.services.learning_outcomes import confidence_for
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.run_errors import (
     RunTimeout,
     agent_timeout_message,
@@ -91,6 +89,7 @@ from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
     resolve_workspace_root,
 )
+from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from loregarden.skills.registry import (
     SkillNotFoundError,
     get_skill,
@@ -116,9 +115,14 @@ _FULL_SUITE_SKILL = "run_tests"
 class CliAgentExecutor:
     """Spawn local CLI agents via subprocess."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self, session: Session, *, preflight_ledger: PreflightLedger | None = None
+    ) -> None:
         self.session = session
         self.orchestration = OrchestrationService(session)
+        # One per orchestration run: the executor serving a run, and the
+        # parallel workers it lends this to, check the repository's shape once.
+        self.preflight_ledger = preflight_ledger or PreflightLedger()
 
     def execute(
         self,
@@ -182,14 +186,13 @@ class CliAgentExecutor:
         # Bracket the run so its commit can be scoped to what it touched. Paths
         # already dirty beforehand belong to whatever else is in the workspace
         # and must not be attributed to this ticket.
-        # None means git could not answer. Treated as "nothing was dirty" for
-        # bracketing, which is the conservative direction: the delta below then
-        # attributes everything it finds to this run rather than silently
-        # dropping paths. `_record_changed_paths` reports the failure.
-        paths_before = working_tree_paths(repo_root) or set()
+        # One read serves the boundary and the evidence ledger too: nothing
+        # between here and the agent's start touches the tree. See
+        # `TreeSnapshot.bracket_paths` for an unreadable tree.
+        before = read_tree(repo_root)
 
         parked = self._record_and_check_boundary(
-            run, ticket, workspace, repo_root=repo_root, dirty_paths=paths_before
+            run, ticket, workspace, repo_root=repo_root, before=before
         )
         if parked is not None:
             return parked
@@ -203,6 +206,7 @@ class CliAgentExecutor:
                 workspace,
                 stage_def,
                 assembly_source=MemoryBriefingAssembly.DISPATCH,
+                tree=before,
             )
             record_prompt_size(self.session, run, prompt)
         except SkillNotFoundError as exc:
@@ -305,7 +309,7 @@ class CliAgentExecutor:
                     self.session,
                     run,
                     repo_root=repo_root,
-                    paths_before=paths_before,
+                    paths_before=before.bracket_paths(),
                     stdout=stdout,
                     invocation=invocation,
                 )
@@ -327,7 +331,7 @@ class CliAgentExecutor:
                     invocation=invocation,
                     fallback_timeout=timeout,
                     repo_root=repo_root,
-                    paths_before=paths_before,
+                    paths_before=before.bracket_paths(),
                     streamer=streamer,
                     advance_workflow=advance_workflow,
                 )
@@ -608,7 +612,7 @@ class CliAgentExecutor:
         workspace: Workspace,
         *,
         repo_root: Path,
-        dirty_paths: set[str],
+        before: TreeSnapshot,
     ) -> AgentRun | None:
         """Record the tree this run inherited, then ask whether it is still the
         one the last handoff described. Returns the parked run when the stage
@@ -626,13 +630,15 @@ class CliAgentExecutor:
         because "a human waived it" and "the environment was fine" must not read
         the same afterwards. `_maybe_warn_dispatch_waiver` puts it in the log.
         """
-        stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=dirty_paths))
+        stamp_run_boundary(self.session, run, boundary_of_tree(before))
         waived = bool(run.dispatch_waiver_approval_id)
 
         # The environment first: a stage started in a checkout with core.bare set,
         # or under a leaked GIT_DIR, fails in ways that point at anything but the
         # cause. Recorded on the run whatever happens next.
-        preflight = preflight_run(self.session, run, workspace, repo_root)
+        preflight = preflight_run(
+            self.session, run, workspace, repo_root, ledger=self.preflight_ledger
+        )
         if any(finding.status is DoctorStatus.FAIL for finding in preflight) and not waived:
             park_for_environment(
                 self.session, run=run, ticket=ticket, summary=preflight_summary(preflight)
@@ -751,11 +757,16 @@ class CliAgentExecutor:
         stage_def: WorkflowStageDef | None,
         *,
         assembly_source: MemoryBriefingAssembly,
+        tree: TreeSnapshot | None = None,
     ) -> str:
         # The tree this run will work in — the ticket's worktree once it has
         # one. A prompt built from the shared checkout would describe a repo
         # without any of the ticket's own work in it.
         repo_root = resolve_ticket_root(self.session, ticket, workspace)
+        # A dispatch hands in the read it bracketed the run with; anything
+        # else — a render, or a tree that is not this one — reads its own.
+        if tree is None or tree.repo_root != repo_root:
+            tree = read_tree(repo_root)
         # Role body comes from the agent config (DB-backed studio agent, or the
         # registry fallback which loads it in get_agent). The executor no longer
         # reads role_file from the workspace filesystem — the DB is authoritative.
@@ -817,9 +828,7 @@ class CliAgentExecutor:
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
         is_synthesis = skill_name == SYNTHESIS_SKILL
         full_suite_note = self._full_suite_producer_note(skill_name)
-        evidence_ledger = build_evidence_ledger(
-            self.session, ticket, repo_root, is_verify=is_verify
-        )
+        evidence_ledger = build_evidence_ledger(self.session, ticket, tree, is_verify=is_verify)
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block

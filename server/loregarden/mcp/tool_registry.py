@@ -37,6 +37,7 @@ from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDL
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
 from loregarden.mcp.tool_ids import McpTool
+from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
 from loregarden.services.prior_work import search_prior_work
 
 ToolHandler = Callable[[Session, dict[str, Any]], str]
@@ -71,5 +72,6 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.FORCE_RELEASE_DOCKER_LEASE.value: force_release_docker_lease_tool,
     **LOCAL_INSTANCE_HANDLERS,
     **INITIATIVE_PLAN_HANDLERS,
+    **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
 }

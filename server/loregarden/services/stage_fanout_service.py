@@ -51,7 +51,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import stage_fanout_groups as groups
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_commit_push_service import commit_paths_in, working_tree_paths
+from loregarden.services.git_commit_push_service import commit_all_dirty_in
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.stage_report import parse_stage_report
@@ -266,15 +266,8 @@ def _commit_attempt_work(session: Session, run: AgentRun, attempt_id: str) -> No
     root = Path(worktree.worktree_path)
     if not root.is_dir():
         return
-    # `or set()` is safe here only because the `is_dir()` guard above has
-    # already excluded the common way git cannot answer, and because None
-    # and empty lead to the same place: the early return below. Nothing is
-    # attributed on a reading this could not make.
-    paths = working_tree_paths(root) or set()
-    if not paths:
-        return
     try:
-        commit_paths_in(root, f"{run.agent_id}: fan-out attempt {attempt_id[:8]}", paths)
+        commit_all_dirty_in(root, f"{run.agent_id}: fan-out attempt {attempt_id[:8]}")
     except ValueError as exc:
         logger.warning("Could not commit fan-out attempt %s: %s", attempt_id, exc)
 

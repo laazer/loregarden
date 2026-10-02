@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from loregarden.services.git_branch import resolve_ticket_branch, validate_branc
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_snapshot import git_reading, read_tree
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -19,48 +19,6 @@ logger = logging.getLogger(__name__)
 
 class NothingToCommitError(ValueError):
     """Raised when the workspace has no working-tree changes to commit."""
-
-
-logger = logging.getLogger(__name__)
-
-
-def _git_reading(
-    args: list[str], *, repo_root: Path, describing: str
-) -> subprocess.CompletedProcess | None:
-    """Run a read-only git command, or None if git could not answer.
-
-    The single place the "None means I could not look" contract of
-    `working_tree_paths` and `paths_committed_since` is honoured, because both
-    used to honour only HALF of it. They checked `returncode`, which covers a
-    git that ran and failed — and missed the case where git never ran at all.
-
-    `run_git` passes `cwd` straight to `subprocess.run`, which raises
-    FileNotFoundError when the directory is gone. That escaped both functions as
-    an exception rather than the None their callers are written to expect, and
-    `record_run_evidence` is called with no try/except immediately before
-    `complete_run` — so a removed worktree did not degrade to "changed paths not
-    recorded", it abandoned the run mid-completion and left it RUNNING with
-    nothing behind it (lg-workflow-integrity-713).
-
-    NotADirectoryError and PermissionError are caught for the same reason: each
-    is a way of not being able to look, and the caller cannot tell them apart
-    from an empty tree anyway.
-    """
-    try:
-        proc = run_git(args, cwd=repo_root, capture_output=True, text=True)
-    except OSError as exc:
-        logger.warning("could not run git %s in %s: %s", describing, repo_root, exc)
-        return None
-    if proc.returncode != 0:
-        logger.warning(
-            "git %s failed in %s (exit %s): %s",
-            describing,
-            repo_root,
-            proc.returncode,
-            (proc.stderr or "").strip()[:400],
-        )
-        return None
-    return proc
 
 
 def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
@@ -83,7 +41,7 @@ def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
     """
     if not base_sha:
         return set()
-    proc = _git_reading(
+    proc = git_reading(
         ["diff", "--name-only", "-z", f"{base_sha}..HEAD"],
         repo_root=repo_root,
         describing=f"diff {base_sha}..HEAD",
@@ -110,32 +68,12 @@ def working_tree_paths(repo_root: Path) -> set[str] | None:
     (lg-workflow-integrity-406), and until this told the difference there was no
     way to know how much of that was real.
 
-    `-z` because paths with spaces or non-ASCII are otherwise quoted and would
-    not round-trip back into `git add`.
+    One `git status` through `read_tree`; a caller that also needs HEAD or the
+    branch at the same moment should take the `TreeSnapshot` instead of asking
+    git twice.
     """
-    proc = _git_reading(
-        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        repo_root=repo_root,
-        describing="status",
-    )
-    if proc is None:
-        return None
-
-    records = [record for record in proc.stdout.split("\0") if record]
-    paths: set[str] = set()
-    index = 0
-    while index < len(records):
-        entry = records[index]
-        status, path = entry[:2], entry[3:]
-        if path:
-            paths.add(path)
-        # A rename or copy emits its source as the following record.
-        if status[:1] in ("R", "C"):
-            index += 1
-            if index < len(records):
-                paths.add(records[index])
-        index += 1
-    return paths
+    dirty = read_tree(repo_root).dirty_paths
+    return None if dirty is None else set(dirty)
 
 
 def head_commit_sha(repo_root: Path) -> str:
@@ -207,6 +145,21 @@ def commit_paths_in(repo_root: Path, message: str, paths: Iterable[str]) -> bool
     # Nothing to commit if we cannot see what is dirty — better than
     # committing a guess.
     live = (working_tree_paths(repo_root) or set()) & set(wanted)
+    return _add_and_commit(repo_root, message, live)
+
+
+def commit_all_dirty_in(repo_root: Path, message: str) -> bool:
+    """Commit every path dirty in `repo_root` right now. False if none were.
+
+    The dirty set is read here, immediately before the commit that consumes it,
+    rather than taken from a caller: a set read earlier and carried in would
+    name paths reverted since, and `git add` on a pathspec matching nothing is
+    an error (lg-build-verification-847).
+    """
+    return _add_and_commit(repo_root, message, working_tree_paths(repo_root) or set())
+
+
+def _add_and_commit(repo_root: Path, message: str, live: set[str]) -> bool:
     if not live:
         return False
 

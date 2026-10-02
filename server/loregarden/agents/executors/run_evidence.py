@@ -22,10 +22,8 @@ from loregarden.agents.cli_adapters import CliAdapter, CliInvocation
 from loregarden.agents.executors.read_paths import record_read_paths
 from loregarden.agents.run_usage import parse_run_usage, usage_status_for
 from loregarden.models.domain import AgentRun
-from loregarden.services.git_commit_push_service import (
-    paths_committed_since,
-    working_tree_paths,
-)
+from loregarden.services.git_commit_push_service import paths_committed_since
+from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -40,7 +38,10 @@ def record_changed_paths(
     whatever else is in the workspace, and attributing it here is exactly how
     unrelated work used to get swept into a ticket's commit.
     """
-    after = working_tree_paths(repo_root)
+    # A fresh read: the agent ran since `before` was taken, so nothing from
+    # that snapshot may stand in for this one.
+    tree = read_tree(repo_root)
+    after = tree.dirty_paths
     if after is None:
         # Not the same as "nothing changed", and this column is the record
         # of what a run touched — lg-workflow-integrity-452's gate
@@ -61,7 +62,7 @@ def record_changed_paths(
     # can leave both. `paths_committed_since` returns None when git cannot
     # answer, which is not the same as "it committed nothing" — so a failure
     # there degrades to the dirty set rather than silently narrowing it.
-    committed = paths_committed_since(repo_root, run.start_head_sha or "")
+    committed = _committed_since_start(tree, run.start_head_sha or "")
     touched = sorted((after - before) | (committed or set()))
     # Written even when empty. An early return left the column at its old
     # "[]" default, which said the same thing as never having looked — the
@@ -72,6 +73,17 @@ def record_changed_paths(
     run.changed_paths_recorded_at = datetime.now(timezone.utc)
     session.add(run)
     session.commit()
+
+
+def _committed_since_start(tree: TreeSnapshot, start_sha: str) -> set[str] | None:
+    """Paths committed between `start_sha` and the HEAD `tree` saw.
+
+    A HEAD that has not moved committed nothing, which the snapshot already
+    says; only a moved HEAD is worth a `git diff` to ask what the commits touched.
+    """
+    if start_sha and tree.head_sha == start_sha:
+        return set()
+    return paths_committed_since(tree.repo_root, start_sha)
 
 
 def record_usage(

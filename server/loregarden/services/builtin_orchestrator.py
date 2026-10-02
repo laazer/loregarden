@@ -41,6 +41,7 @@ from loregarden.services.parallel_stage import (
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
 )
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.review_relens import decide_lenses, record_relens_decisions
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
@@ -770,7 +771,7 @@ class BuiltinOrchestrator:
         tree_error = prepare_tree_for_parallel_stage(self.session, ticket, stage_key, runs)
         if tree_error:
             return False, tree_error
-        results = _run_and_collect_parallel_results(runs)
+        results = _run_and_collect_parallel_results(runs, self.executor.preflight_ledger)
         return reconcile_parallel_stage(self.session, ticket, orch_run, stage_key, results)
 
     def _incomplete_parallel_specs(
@@ -1001,7 +1002,9 @@ def _why(entry: UnmetPrerequisite) -> str:
     return entry.ticket.state.value
 
 
-def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemberResult]:
+def _run_and_collect_parallel_results(
+    runs: list[AgentRun], preflight_ledger: PreflightLedger
+) -> list[ParallelMemberResult]:
     """Run parallel stage members and judge each one.
 
     Module-level so ``BuiltinOrchestrator`` stays under its size cap. Executing
@@ -1012,7 +1015,7 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
 
     def _run_agent(run_id: str) -> ParallelMemberResult:
         with Session(engine) as session:
-            worker = CliAgentExecutor(session)
+            worker = CliAgentExecutor(session, preflight_ledger=preflight_ledger)
             run = session.get(AgentRun, run_id)
             if not run:
                 raise ValueError(f"Agent run not found: {run_id}")

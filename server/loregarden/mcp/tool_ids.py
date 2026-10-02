@@ -59,6 +59,8 @@ class McpTool(StrEnum):
     DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
     FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
     LIST_INSTANCES = "loregarden_list_instances"
+    LIST_UI_ACTIONS = "loregarden_list_ui_actions"
+    INVOKE_UI_ACTION = "loregarden_invoke_ui_action"
     LAUNCH_INSTANCE = "loregarden_launch_instance"
     INSTANCE_STATUS = "loregarden_instance_status"
     STOP_INSTANCE = "loregarden_stop_instance"
@@ -203,6 +205,7 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.DOCKER_CAPACITY_STATUS,
         McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
+        McpTool.LIST_UI_ACTIONS,
         # Also stamps `ready_at` the first time an instance answers — the
         # registry's own bookkeeping, not a change to anything it describes.
         McpTool.INSTANCE_STATUS,
@@ -303,7 +306,11 @@ AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
 #: name. `check_organization` reads a workspace for one action and rewrites that
 #: workspace's git hooks for another; auto-approving the name would auto-approve
 #: the write. `argument_gated_auto_approval` decides per call.
-ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.CHECK_ORGANIZATION})
+#: `invoke_ui_action` is gated by the invoked action's catalog effect: a view
+#: change auto-approves, a write is gated like any write tool.
+ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {McpTool.CHECK_ORGANIZATION, McpTool.INVOKE_UI_ACTION}
+)
 
 #: The operator moves triage can make on a work item: where it lives, how it
 #: runs, and whether it should exist at all. Offered to the ticket rail and the
