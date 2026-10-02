@@ -266,3 +266,12 @@ def test_the_page_enum_matches_the_clients_pages():
         text.index("export type AppPage =") : text.index(";", text.index("export type AppPage ="))
     ]
     assert set(re.findall(r'"([\w-]+)"', union)) == {p.value for p in UiPage}
+
+
+def test_every_mcp_twin_the_client_names_is_a_real_tool():
+    """`writeCoverage.ts` says "an agent does this with tool X" — X must exist,
+    or the classification sends an agent to a tool it cannot call."""
+    text = (_CLIENT / "lib" / "agentActions" / "writeCoverage.ts").read_text()
+    named = set(re.findall(r'kind: "mcp_tool", tool: "([\w]+)"', text))
+    assert named, "found no mcp_tool entries — the pattern no longer matches the file"
+    assert named <= {tool.value for tool in McpTool}
