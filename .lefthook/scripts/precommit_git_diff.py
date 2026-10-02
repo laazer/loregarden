@@ -469,6 +469,30 @@ def git_has_head(repo: Path) -> bool:
     return proc.returncode == 0
 
 
+def git_paths_at_head(repo: Optional[Path], paths: Iterable[Path]) -> Set[Path]:
+    """The subset of `paths` that HEAD tracks — i.e. that a missing file can be a deletion of.
+
+    A path absent from disk is a deletion only if git had it. One HEAD never had
+    is a typo, or a whole file list that reached argv as one word (zsh does not
+    split an unquoted `$files`), and treating it as a deletion graded nothing and
+    exited 0. Outside a repository, or before the first commit, nothing is tracked.
+    """
+    if repo is None or not git_has_head(repo):
+        return set()
+    root = repo.resolve()
+    by_rel: Dict[str, Path] = {}
+    for path in paths:
+        try:
+            by_rel[path.resolve().relative_to(root).as_posix()] = path
+        except ValueError:  # outside the repository: HEAD cannot track it, so it stays unknown
+            continue
+    if not by_rel:
+        return set()
+    out = _git(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *by_rel], repo)
+    tracked = {name for name in out.split("\0") if name}
+    return {path for rel, path in by_rel.items() if rel in tracked}
+
+
 def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
     """Repo-relative paths this diff touches, for callers given no explicit file list."""
     if unborn_worktree(repo, diff_scope):
@@ -938,7 +962,17 @@ def resolve_gate_scope(
         # silence: the whole point of `read_source_text` refusing an unreadable
         # path is that "I could not read it" must never pass as "it is clean",
         # and a deletion is the one case where there is genuinely nothing to read.
-        deleted = [path for path in candidates if not path.exists()]
+        missing = [path for path in candidates if not path.exists()]
+        deleted = git_paths_at_head(repo, missing)
+        unknown = [path for path in missing if path not in deleted]
+        if unknown:
+            # Not a deletion — HEAD never had it. Skipping it by the deletion rule
+            # graded nothing and passed.
+            raise UnexaminableFileError(
+                f"{len(unknown)} path(s) do not exist and are not deletions of a tracked "
+                f"file: {', '.join(sorted(str(path) for path in unknown))} — check the "
+                f"argument list (a file list passed as one quoted word arrives as one path)"
+            )
         if deleted:
             names = ", ".join(sorted(path.name for path in deleted))
             print(f"{label}: skipping {len(deleted)} deleted file(s): {names}")
