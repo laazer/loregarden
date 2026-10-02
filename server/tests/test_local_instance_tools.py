@@ -73,7 +73,13 @@ def _call(client: TestClient, tool: str, **arguments) -> dict:
     assert response.status_code == 200, response.text
     body = response.json()
     assert "error" not in body, body
-    return json.loads(body["result"]["content"][0]["text"])
+    # A tool that raises comes back as an `isError` result whose text is the
+    # bare exception message, not JSON. Decoding it anyway reported only
+    # "JSONDecodeError: Expecting value" and threw the message away.
+    result = body["result"]
+    text = result["content"][0]["text"]
+    assert not result.get("isError"), f"{tool} raised: {text}"
+    return json.loads(text)
 
 
 def test_an_agent_launches_checks_and_stops_a_real_instance(
@@ -104,3 +110,25 @@ def test_a_bad_parameter_is_a_classified_answer_not_an_rpc_error(
         "retryable": False,
         "error": "unknown parameter(s) for static: shell",
     }
+
+
+def test_a_tool_that_raises_fails_naming_the_exception(client: TestClient) -> None:
+    """The helper must report what the tool said, not a JSON decode error.
+
+    An `OSError` escaping a launch reached `/mcp` as `isError` text
+    ("[Errno 35] ...") and the helper decoded it, so a pre-push failure read
+    "Expecting value: line 1 column 2" with the cause discarded.
+    """
+
+    with (
+        # The manager is looked up per call, inside the dispatched handler, so
+        # this reaches the real `/mcp` path; patching `HANDLERS` would not —
+        # `tool_registry` copied it at import.
+        patch.object(
+            local_instance_tools,
+            "get_instance_manager",
+            side_effect=OSError(35, "Resource temporarily unavailable"),
+        ),
+        pytest.raises(AssertionError, match=r"loregarden_list_instances raised: \[Errno 35\]"),
+    ):
+        _call(client, "loregarden_list_instances")
