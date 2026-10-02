@@ -39,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
+    CapacityPool,
     DockerCapacityPool,
     DockerFootprint,
     DockerGrantState,
@@ -49,7 +50,7 @@ from loregarden.models.domain import (
     DockerWaitBasis,
     WorkflowStageDef,
 )
-from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID
+from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID, POOL_ROW_IDS
 from loregarden.services.docker_capacity import (
     Ceiling,
     DockerInvoke,
@@ -57,6 +58,8 @@ from loregarden.services.docker_capacity import (
     resolve_weights,
 )
 from loregarden.services.docker_ledger import (
+    CHARGED_BY,
+    CHARGED_POOLS,
     OCCUPYING,
     as_utc,
     load_pool,
@@ -69,6 +72,7 @@ from loregarden.services.docker_wait_estimate import (
     estimate_waits,
     poll_interval_for,
 )
+from loregarden.services.host_capacity import resolve_host_ceiling
 from sqlalchemy import bindparam, func, text, update
 from sqlmodel import Session, col, select
 
@@ -88,6 +92,7 @@ _STAGE_POLL_SECONDS = 2.0
 #: Why a request could not be granted, as a closed set the payloads quote.
 REJECT_DISABLED = "capacity_ledger_disabled"
 REJECT_DOCKER_UNAVAILABLE = "docker_unavailable"
+REJECT_HOST_UNAVAILABLE = "host_unavailable"
 REJECT_EXCEEDS_CAPACITY = "exceeds_capacity"
 REJECT_UNKNOWN_LEASE = "unknown_lease"
 REJECT_LEASE_NOT_HELD = "lease_not_held"
@@ -206,17 +211,24 @@ class DockerReservation:
 
 
 def refresh_ceiling(
-    session: Session, *, invoke: DockerInvoke = run_docker, use_cache: bool = True
+    session: Session,
+    *,
+    pool_name: CapacityPool = CapacityPool.DOCKER,
+    invoke: DockerInvoke = run_docker,
+    use_cache: bool = True,
 ) -> Ceiling:
-    """Re-measure the machine and record the result on the pool row.
+    """Re-measure one pool and record the result on its row.
 
     Writes the ceiling into the pool so that every racer is judged by one
     number: if each claim carried its own locally cached measurement, two
     processes with different cache ages would enforce different limits.
     """
-    previous = pool_ceiling(load_pool(session))
-    ceiling = resolve_ceiling(invoke=invoke, previous=previous, use_cache=use_cache)
-    pool = load_pool(session)
+    previous = pool_ceiling(load_pool(session, pool_name))
+    if pool_name is CapacityPool.HOST:
+        ceiling = resolve_host_ceiling(previous=previous)
+    else:
+        ceiling = resolve_ceiling(invoke=invoke, previous=previous, use_cache=use_cache)
+    pool = load_pool(session, pool_name)
     pool.ceiling_cpus = ceiling.cpus
     pool.ceiling_memory_mb = ceiling.memory_mb
     pool.ceiling_leases = ceiling.leases
@@ -229,34 +241,45 @@ def refresh_ceiling(
 
 
 def repair_pool(session: Session) -> None:
-    """Recompute the running totals from the ledger, which is authoritative.
+    """Recompute every pool's running totals from the ledger, which is authoritative.
 
-    One statement, so it is atomic against a concurrent claim. This is what
-    bounds the damage from a process killed between the pool update and the row
-    commit: capacity leaks for one sweep interval rather than until a restart.
+    One statement per pool and one commit for all of them, so it is atomic
+    against a concurrent claim. This is what bounds the damage from a process
+    killed between the pool update and the row commit: capacity leaks for one
+    sweep interval rather than until a restart. Each pool sums the leases
+    charged to it — the host pool counts docker claims too.
     """
     statement = text(
         """
         UPDATE docker_capacity_pool
         SET held_cpus = (SELECT COALESCE(SUM(cpus), 0) FROM docker_leases
-                         WHERE status IN :occupying),
+                         WHERE status IN :occupying AND pool IN :charged_by),
             held_memory_mb = (SELECT COALESCE(SUM(memory_mb), 0) FROM docker_leases
-                              WHERE status IN :occupying),
+                              WHERE status IN :occupying AND pool IN :charged_by),
             held_count = (SELECT COUNT(*) FROM docker_leases
-                          WHERE status IN :occupying),
+                          WHERE status IN :occupying AND pool IN :charged_by),
             revision = revision + 1
         WHERE id = :pool_id
         """
-    ).bindparams(bindparam("occupying", expanding=True))
-    session.connection().execute(
-        statement,
-        {"occupying": [status.value for status in OCCUPYING], "pool_id": GLOBAL_POOL_ID},
-    )
+    ).bindparams(bindparam("occupying", expanding=True), bindparam("charged_by", expanding=True))
+    occupying = [status.value for status in OCCUPYING]
+    for pool in CapacityPool:
+        load_pool(session, pool)
+        session.connection().execute(
+            statement,
+            {
+                "occupying": occupying,
+                "charged_by": [claim.value for claim in CHARGED_BY[pool]],
+                "pool_id": POOL_ROW_IDS[pool],
+            },
+        )
     session.commit()
 
 
-def _claim_capacity(session: Session, *, cpus: float, memory_mb: int, revision: int) -> bool:
-    """Book `cpus`/`memory_mb` against the pool, or report that it did not fit.
+def _claim_capacity(
+    session: Session, *, pool_id: str, cpus: float, memory_mb: int, revision: int
+) -> bool:
+    """Book `cpus`/`memory_mb` against one pool, or report that it did not fit.
 
     Every dimension is in the WHERE clause, so the database decides. Satisfying
     cpus while over-booking memory is not reachable from here — which it would
@@ -264,7 +287,7 @@ def _claim_capacity(session: Session, *, cpus: float, memory_mb: int, revision: 
     """
     result = session.exec(
         update(DockerCapacityPool)
-        .where(DockerCapacityPool.id == GLOBAL_POOL_ID)
+        .where(DockerCapacityPool.id == pool_id)
         .where(DockerCapacityPool.revision == revision)
         .where(DockerCapacityPool.held_cpus + cpus <= DockerCapacityPool.ceiling_cpus)
         .where(
@@ -287,24 +310,25 @@ def _at_least_zero(expression):
     return func.max(expression, 0)
 
 
-def _return_capacity(session: Session, *, cpus: float, memory_mb: int) -> None:
-    """Give booked capacity back, clamped at zero.
+def _return_capacity(session: Session, lease: DockerLease) -> None:
+    """Give a lease's booking back to every pool it was charged to, clamped at zero.
 
     Clamped because a double release must not drive the totals negative and
     hand out capacity that does not exist — the clamp turns a bug into a
     conservative number rather than an over-booking.
     """
-    session.exec(
-        update(DockerCapacityPool)
-        .where(DockerCapacityPool.id == GLOBAL_POOL_ID)
-        .values(
-            held_cpus=_at_least_zero(DockerCapacityPool.held_cpus - cpus),
-            held_memory_mb=_at_least_zero(DockerCapacityPool.held_memory_mb - memory_mb),
-            held_count=_at_least_zero(DockerCapacityPool.held_count - 1),
-            revision=DockerCapacityPool.revision + 1,
+    for pool in CHARGED_POOLS[lease.pool]:
+        session.exec(
+            update(DockerCapacityPool)
+            .where(DockerCapacityPool.id == POOL_ROW_IDS[pool])
+            .values(
+                held_cpus=_at_least_zero(DockerCapacityPool.held_cpus - lease.cpus),
+                held_memory_mb=_at_least_zero(DockerCapacityPool.held_memory_mb - lease.memory_mb),
+                held_count=_at_least_zero(DockerCapacityPool.held_count - 1),
+                revision=DockerCapacityPool.revision + 1,
+            )
+            .execution_options(synchronize_session=False)
         )
-        .execution_options(synchronize_session=False)
-    )
 
 
 # ---- the queue ---------------------------------------------------------
@@ -318,7 +342,11 @@ def _take_position(session: Session) -> int:
     exhausted its retries and raised, turning contention — the one condition
     this whole feature exists to handle — into a crashed reservation. An atomic
     increment cannot lose a race, so it needs no retries and has no give-up path.
+
+    The counter lives on the docker row for both pools — one line, one order —
+    so that row must exist even for a host-only claim.
     """
+    load_pool(session)
     row = (
         session.connection()
         .execute(
@@ -392,7 +420,7 @@ def drain_waiters(session: Session) -> list[str]:
             # A peer took this head, so it is no longer WAITING and the next
             # read returns whoever is first now — including anyone refused while
             # this booking made the pool look full.
-            _return_capacity(session, cpus=lease.cpus, memory_mb=lease.memory_mb)
+            _return_capacity(session, lease)
             session.commit()
             continue
 
@@ -450,20 +478,33 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
     "it is genuinely full". Re-reading and re-testing the *numbers* answers that
     directly; the revision counter alone cannot, because it moves for reasons
     that have nothing to do with whether this claim fits.
+
+    A lease charged to two pools books both in one transaction: a miss on the
+    second rolls back the first, so no observer sees the docker pool booked for
+    a claim the host pool refused.
     """
+    pools = CHARGED_POOLS[lease.pool]
     deadline = time.monotonic() + _CLAIM_CONTENTION_BUDGET_SECONDS
     while True:
         session.expire_all()
-        pool = load_pool(session)
-        if _claim_capacity(
-            session, cpus=lease.cpus, memory_mb=lease.memory_mb, revision=pool.revision
+        # Every row read (and lazily created, which commits) before the first
+        # UPDATE, so nothing commits half a booking.
+        revisions = {pool: load_pool(session, pool).revision for pool in pools}
+        if all(
+            _claim_capacity(
+                session,
+                pool_id=POOL_ROW_IDS[pool],
+                cpus=lease.cpus,
+                memory_mb=lease.memory_mb,
+                revision=revisions[pool],
+            )
+            for pool in pools
         ):
             session.commit()
             return True
         session.rollback()
         session.expire_all()
-        fresh = load_pool(session)
-        if not _fits(fresh, lease):
+        if not all(_fits(load_pool(session, pool), lease) for pool in pools):
             return False  # full, not contended — retrying would only spin
         if time.monotonic() >= deadline:
             # Contended past the budget with room still showing: queue rather
@@ -487,12 +528,18 @@ def _fits(pool: DockerCapacityPool, lease: DockerLease) -> bool:
 
 
 def _held_for_run(
-    session: Session, *, agent_run_id: str | None, orchestration_run_id: str | None
+    session: Session,
+    *,
+    pool: CapacityPool,
+    agent_run_id: str | None,
+    orchestration_run_id: str | None,
 ) -> DockerLease | None:
-    """A lease this run already holds, if any."""
+    """A lease this run already holds in this pool, if any."""
     if not agent_run_id and not orchestration_run_id:
         return None
-    statement = select(DockerLease).where(DockerLease.status.in_(OCCUPYING))
+    statement = select(DockerLease).where(
+        DockerLease.status.in_(OCCUPYING), DockerLease.pool == pool
+    )
     if agent_run_id:
         statement = statement.where(DockerLease.agent_run_id == agent_run_id)
     else:
@@ -514,9 +561,10 @@ def reserve(
     ticket_id: str | None = None,
     workspace_id: str | None = None,
     holder_pid: int | None = None,
+    pool: CapacityPool = CapacityPool.DOCKER,
     invoke: DockerInvoke = run_docker,
 ) -> DockerReservation:
-    """Claim docker capacity, take a place in line, or be told why neither.
+    """Claim capacity in `pool`, take a place in line, or be told why neither.
 
     Refusals are returned, not raised, and each carries an `error_kind` — an
     agent that cannot tell "wait your turn" from "this will never fit" will do
@@ -531,35 +579,16 @@ def reserve(
 
     price_cpus, price_memory = resolve_weights(footprint, cpus=cpus, memory_mb=memory_mb)
 
-    ceiling = pool_ceiling(load_pool(session))
-    if not ceiling.known:
-        ceiling = refresh_ceiling(session, invoke=invoke)
-    if not ceiling.known:
-        # Fail closed. A ledger that admits freely because it cannot see the
-        # machine is worse than one that says it cannot see the machine.
-        return DockerReservation(
-            state=DockerGrantState.REJECTED,
-            error_kind=REJECT_DOCKER_UNAVAILABLE,
-            message=f"Cannot measure docker capacity, so nothing can be booked: {ceiling.error}",
+    for charged in CHARGED_POOLS[pool]:
+        refusal = _ceiling_refusal(
+            session, charged, cpus=price_cpus, memory_mb=price_memory, invoke=invoke
         )
-
-    if price_cpus > ceiling.cpus or price_memory > ceiling.memory_mb or ceiling.leases < 1:
-        # Refused rather than queued: parking a claim that can never be granted
-        # would block the head of the line for everything behind it, forever.
-        return DockerReservation(
-            state=DockerGrantState.REJECTED,
-            error_kind=REJECT_EXCEEDS_CAPACITY,
-            cpus=price_cpus,
-            memory_mb=price_memory,
-            message=(
-                f"A claim of {price_cpus} cpus / {price_memory} MB exceeds the whole "
-                f"ceiling ({ceiling.cpus} cpus / {ceiling.memory_mb} MB, "
-                f"{ceiling.leases} leases)."
-            ),
-        )
+        if refusal is not None:
+            return refusal
 
     pending = _pending_duplicate(
         session,
+        pool=pool,
         holder_label=holder_label,
         cpus=price_cpus,
         memory_mb=price_memory,
@@ -576,7 +605,7 @@ def reserve(
         return _queued_reservation(session, pending, reused=True)
 
     existing = _held_for_run(
-        session, agent_run_id=agent_run_id, orchestration_run_id=orchestration_run_id
+        session, pool=pool, agent_run_id=agent_run_id, orchestration_run_id=orchestration_run_id
     )
     if existing is not None:
         return DockerReservation(
@@ -600,6 +629,7 @@ def reserve(
         ticket_id=ticket_id,
         workspace_id=workspace_id,
         holder_pid=holder_pid,
+        pool=pool,
         footprint=footprint,
         cpus=price_cpus,
         memory_mb=price_memory,
@@ -631,9 +661,52 @@ def reserve(
     return _queued_reservation(session, lease)
 
 
+def _ceiling_refusal(
+    session: Session,
+    pool: CapacityPool,
+    *,
+    cpus: float,
+    memory_mb: int,
+    invoke: DockerInvoke,
+) -> DockerReservation | None:
+    """Why `pool` can never grant this claim, or None when it might."""
+    ceiling = pool_ceiling(load_pool(session, pool))
+    if not ceiling.known:
+        ceiling = refresh_ceiling(session, pool_name=pool, invoke=invoke)
+    if not ceiling.known:
+        # Fail closed. A ledger that admits freely because it cannot see the
+        # machine is worse than one that says it cannot see the machine.
+        return DockerReservation(
+            state=DockerGrantState.REJECTED,
+            error_kind=(
+                REJECT_HOST_UNAVAILABLE if pool is CapacityPool.HOST else REJECT_DOCKER_UNAVAILABLE
+            ),
+            message=(
+                f"Cannot measure {pool.value} capacity, so nothing can be booked: {ceiling.error}"
+            ),
+        )
+
+    if cpus > ceiling.cpus or memory_mb > ceiling.memory_mb or ceiling.leases < 1:
+        # Refused rather than queued: parking a claim that can never be granted
+        # would block the head of the line for everything behind it, forever.
+        return DockerReservation(
+            state=DockerGrantState.REJECTED,
+            error_kind=REJECT_EXCEEDS_CAPACITY,
+            cpus=cpus,
+            memory_mb=memory_mb,
+            message=(
+                f"A claim of {cpus} cpus / {memory_mb} MB exceeds the whole {pool.value} "
+                f"ceiling ({ceiling.cpus} cpus / {ceiling.memory_mb} MB, "
+                f"{ceiling.leases} leases)."
+            ),
+        )
+    return None
+
+
 def _pending_duplicate(
     session: Session,
     *,
+    pool: CapacityPool,
     holder_label: str,
     cpus: float,
     memory_mb: int,
@@ -648,7 +721,9 @@ def _pending_duplicate(
     the label is what an operator reads off the board to decide what to go and
     stop, and two indistinguishable entries are already a problem there.
     """
-    statement = select(DockerLease).where(DockerLease.status == DockerLeaseStatus.WAITING)
+    statement = select(DockerLease).where(
+        DockerLease.status == DockerLeaseStatus.WAITING, DockerLease.pool == pool
+    )
     if agent_run_id:
         statement = statement.where(DockerLease.agent_run_id == agent_run_id)
     elif orchestration_run_id:
@@ -681,7 +756,8 @@ def _queued_reservation(
         estimate_basis=estimate.basis,
         poll_after_seconds=poll_interval_for(estimate),
         message=(
-            f"Docker capacity is full. This claim is{already} queued at position "
+            f"{lease.pool.value.capitalize()} capacity is full. This claim is{already} "
+            f"queued at position "
             f"{lease.position} with {ahead} ahead.{wait_note} "
             "Waiting is not a failure — poll for this lease rather than reserving again."
         ),
@@ -777,7 +853,7 @@ def release_lease(
     lease.released_at = _now()
     lease.end_reason = reason
     session.add(lease)
-    _return_capacity(session, cpus=lease.cpus, memory_mb=lease.memory_mb)
+    _return_capacity(session, lease)
     session.commit()
 
     if drain:

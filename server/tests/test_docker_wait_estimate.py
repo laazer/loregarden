@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from loregarden.models.domain import (
+    CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
     DockerLease,
@@ -108,21 +109,21 @@ def test_only_clean_releases_teach_the_estimator(session) -> None:
 
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 3
-    assert stats.by_footprint[DockerFootprint.STACK] == pytest.approx(120)
+    assert stats.by_footprint[(CapacityPool.DOCKER, DockerFootprint.STACK)] == pytest.approx(120)
 
 
 def test_no_history_predicts_nothing(session) -> None:
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 0
     assert stats.overall is None
-    assert stats.predict(DockerFootprint.STACK) is None
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK) is None
 
 
 def test_a_footprint_with_no_history_falls_back_to_the_overall_median(session) -> None:
     """Less than it knows about `stack`, more than nothing."""
     _history(session, footprint=DockerFootprint.STACK, held_seconds=200)
     stats = observed_hold_times(session, now=NOW)
-    assert stats.predict(DockerFootprint.HEAVY) == pytest.approx(200)
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY) == pytest.approx(200)
 
 
 # ---- projection ---------------------------------------------------------
@@ -264,7 +265,9 @@ def test_estimates_can_be_computed_from_supplied_stats(session) -> None:
     holder = _reserve(session, "holder", cpus=4.0, memory_mb=4096)
     waiter = _reserve(session, "waiter", cpus=4.0, memory_mb=4096)
     _granted_at(session, holder.lease_id, seconds_ago=0)
-    stats = HoldStats(by_footprint={DockerFootprint.CUSTOM: 60.0}, overall=60.0, samples=9)
+    stats = HoldStats(
+        by_footprint={(CapacityPool.DOCKER, DockerFootprint.CUSTOM): 60.0}, overall=60.0, samples=9
+    )
 
     assert estimate_waits(session, now=NOW, stats=stats)[waiter.lease_id].seconds == pytest.approx(
         60, abs=2

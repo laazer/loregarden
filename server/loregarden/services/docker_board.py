@@ -18,8 +18,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from loregarden.models.domain import DockerLease, DockerLeaseStatus, DockerProbeOutcome
-from loregarden.services.docker_capacity import DockerInvoke
+from loregarden.models.domain import (
+    CapacityPool,
+    DockerCapacityPool,
+    DockerLease,
+    DockerLeaseStatus,
+    DockerProbeOutcome,
+)
+from loregarden.services.docker_capacity import Ceiling, DockerInvoke
 from loregarden.services.docker_leases import refresh_ceiling
 from loregarden.services.docker_ledger import (
     OCCUPYING,
@@ -46,6 +52,7 @@ def _lease_payload(
         "status": lease.status.value,
         "holder_label": lease.holder_label,
         "holder_kind": lease.holder_kind.value,
+        "pool": lease.pool.value,
         "agent_run_id": lease.agent_run_id,
         "ticket_id": lease.ticket_id,
         "footprint": lease.footprint.value,
@@ -88,6 +95,11 @@ def capacity_status(
     if measure_if_unknown and not ceiling.known:
         ceiling = refresh_ceiling(session, invoke=invoke)
         pool = load_pool(session)
+    host = load_pool(session, CapacityPool.HOST)
+    host_ceiling = pool_ceiling(host)
+    if measure_if_unknown and not host_ceiling.known:
+        host_ceiling = refresh_ceiling(session, pool_name=CapacityPool.HOST)
+        host = load_pool(session, CapacityPool.HOST)
 
     holders = list(
         session.exec(
@@ -121,17 +133,10 @@ def capacity_status(
 
     return {
         "enabled": True,
-        "ceiling": ceiling.as_dict(),
-        "in_use": {
-            "cpus": pool.held_cpus,
-            "memory_mb": pool.held_memory_mb,
-            "leases": pool.held_count,
-        },
-        "available": {
-            "cpus": max(0.0, round(ceiling.cpus - pool.held_cpus, 2)),
-            "memory_mb": max(0, ceiling.memory_mb - pool.held_memory_mb),
-            "leases": max(0, ceiling.leases - pool.held_count),
-        },
+        # The top level is the docker pool, as it was before the host pool
+        # existed; `host` is the machine, which docker claims are charged to too.
+        **_pool_summary(pool, ceiling),
+        "host": _pool_summary(host, host_ceiling),
         "holders": [_lease_payload(lease, now=stamp) for lease in holders],
         "waiting": [
             _lease_payload(lease, now=stamp, estimate=estimates.get(lease.id)) for lease in waiting
@@ -145,4 +150,20 @@ def capacity_status(
             }
             for lease in unverifiable
         ],
+    }
+
+
+def _pool_summary(pool: DockerCapacityPool, ceiling: Ceiling) -> dict:
+    return {
+        "ceiling": ceiling.as_dict(),
+        "in_use": {
+            "cpus": pool.held_cpus,
+            "memory_mb": pool.held_memory_mb,
+            "leases": pool.held_count,
+        },
+        "available": {
+            "cpus": max(0.0, round(ceiling.cpus - pool.held_cpus, 2)),
+            "memory_mb": max(0, ceiling.memory_mb - pool.held_memory_mb),
+            "leases": max(0, ceiling.leases - pool.held_count),
+        },
     }

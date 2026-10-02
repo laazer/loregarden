@@ -16,8 +16,13 @@ import logging
 from datetime import datetime
 
 from loregarden.core.timestamps import as_utc as _as_utc_aware
-from loregarden.models.domain import DockerCapacityPool, DockerLease, DockerLeaseStatus
-from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID
+from loregarden.models.domain import (
+    CapacityPool,
+    DockerCapacityPool,
+    DockerLease,
+    DockerLeaseStatus,
+)
+from loregarden.models.domain.docker_tables import POOL_ROW_IDS
 from loregarden.services.docker_capacity import Ceiling
 from pydantic import TypeAdapter, ValidationError
 from sqlmodel import Session
@@ -28,6 +33,19 @@ logger = logging.getLogger(__name__)
 #: its containers are confirmed to still be running, so the machine really is
 #: that busy, and freeing it would over-book a box that is genuinely loaded.
 OCCUPYING = (DockerLeaseStatus.HELD, DockerLeaseStatus.ORPHANED)
+
+#: The pools a claim is booked against. Docker containers run on the host, so a
+#: docker claim spends both; a host claim (a test suite) spends the host alone.
+CHARGED_POOLS: dict[CapacityPool, tuple[CapacityPool, ...]] = {
+    CapacityPool.DOCKER: (CapacityPool.DOCKER, CapacityPool.HOST),
+    CapacityPool.HOST: (CapacityPool.HOST,),
+}
+
+#: The inverse: which lease pools each pool is charged by.
+CHARGED_BY: dict[CapacityPool, tuple[CapacityPool, ...]] = {
+    pool: tuple(claim for claim, charged in CHARGED_POOLS.items() if pool in charged)
+    for pool in CapacityPool
+}
 
 #: The stored `container_names_json` payload, validated rather than
 #: hand-inspected. It is written by this process, but it is still a blob coming
@@ -67,31 +85,32 @@ def container_names(lease: DockerLease) -> list[str]:
         return []
 
 
-def load_pool(session: Session) -> DockerCapacityPool:
-    """The singleton, created on first use if the migration has not run yet.
+def load_pool(session: Session, pool: CapacityPool = CapacityPool.DOCKER) -> DockerCapacityPool:
+    """The pool's row, created on first use if the migration has not run yet.
 
     Lazy creation here is safe in a way it was NOT for `agent_slots`, and the
     difference is worth stating because the surface reads identically. That pool
     was keyed by `slot_number` with no unique constraint, so two threads
     initialising it each inserted a full set and the machine ran six agents
     against a limit of three. This row's identity is a constant primary key: two
-    racers both inserting `'global'` means one insert and one integrity error,
+    racers both inserting the same id means one insert and one integrity error,
     never two pools.
 
     The migration still seeds it, so a migrated database never reaches the
     fallback. It exists for the schema paths that skip migrations — `create_all`
     on a fresh database, and every test engine.
     """
-    pool = session.get(DockerCapacityPool, GLOBAL_POOL_ID)
-    if pool is not None:
-        return pool
+    row_id = POOL_ROW_IDS[pool]
+    row = session.get(DockerCapacityPool, row_id)
+    if row is not None:
+        return row
 
-    session.add(DockerCapacityPool(id=GLOBAL_POOL_ID))
+    session.add(DockerCapacityPool(id=row_id))
     session.commit()
-    pool = session.get(DockerCapacityPool, GLOBAL_POOL_ID)
-    if pool is None:  # pragma: no cover — the insert above either lands or raises
-        raise RuntimeError("could not create the docker_capacity_pool singleton")
-    return pool
+    row = session.get(DockerCapacityPool, row_id)
+    if row is None:  # pragma: no cover — the insert above either lands or raises
+        raise RuntimeError(f"could not create the docker_capacity_pool row {row_id!r}")
+    return row
 
 
 def pool_ceiling(pool: DockerCapacityPool) -> Ceiling:

@@ -276,10 +276,13 @@ def hoist_call_flags(argv: list[str]) -> list[str]:
     `mcp call tool a=b --orchestrated` would fail as an unrecognized argument. Tool
     arguments are always `key=value` and never start with `-`, so reordering is
     unambiguous. Only tokens after `call` move; the rest of the command line is untouched.
+
+    Only `mcp call` itself: a `call` anywhere else — inside the command that
+    `capacity run` or `git change-pr` passes through — is somebody else's word.
     """
-    if "call" not in argv:
+    if argv[:2] != ["mcp", "call"]:
         return argv
-    split = argv.index("call") + 1
+    split = 2
     head, rest = argv[:split], argv[split:]
     flags: list[str] = []
     positionals: list[str] = []

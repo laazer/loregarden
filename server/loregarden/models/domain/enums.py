@@ -1310,6 +1310,21 @@ class DockerFootprint(StrEnum):
     CUSTOM = "custom"
 
 
+class CapacityPool(StrEnum):
+    """Which pool a lease claims from. The pools nest: docker runs on the host.
+
+    On macOS the Docker daemon lives in a VM with its own cpu and memory limit,
+    smaller than the machine's, so the two need separate ceilings. Containers
+    still burn the host's cores, so a docker claim is charged to *both* pools,
+    and a host claim (a test suite, a build) to the host alone. The lease
+    records the pool it asked for; `CHARGED_POOLS` in `docker_ledger` says what
+    that costs.
+    """
+
+    DOCKER = "docker"
+    HOST = "host"
+
+
 class DockerLeaseStatus(StrEnum):
     """Where a claim on docker capacity stands.
 

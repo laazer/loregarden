@@ -191,6 +191,15 @@ class Settings(BaseSettings):
     # being read. Comma-separated.
     docker_baseline_projects: str = ""
     docker_baseline_containers: str = ""
+    # The host pool — the machine itself, which docker claims are also charged
+    # to. Same shape as the docker knobs; the reserve is what the editor, the
+    # browser and the control plane itself use, which no lease accounts for.
+    host_capacity_headroom: float = 0.8
+    host_capacity_cpus: float = 0.0  # override; 0 = derive from the OS
+    host_capacity_memory_mb: int = 0  # override; 0 = derive
+    host_capacity_max_leases: int = 6
+    host_reserved_cpus: float = 1.0
+    host_reserved_memory_mb: int = 4096
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod

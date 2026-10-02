@@ -129,6 +129,18 @@ def _forget_docker_probe():
     docker_capacity.clear_probe_cache()
 
 
+@pytest.fixture(autouse=True)
+def _host_pool_never_binds(monkeypatch):
+    """Every docker claim is charged to the host pool too, and the host ceiling is
+    measured from the machine running the suite — 10 cpus here, 2 on a CI runner,
+    where the derived ceiling is near zero. A docker test must not pass or fail on
+    that, so the host is overridden to a size no test reaches; a test about the
+    host pool sets its own ceiling on the row."""
+    monkeypatch.setattr(settings, "host_capacity_cpus", 1024.0)
+    monkeypatch.setattr(settings, "host_capacity_memory_mb", 1024 * 1024)
+    monkeypatch.setattr(settings, "host_capacity_max_leases", 1024)
+
+
 @pytest.fixture(name="isolated_db", autouse=True)
 def isolated_db_fixture(tmp_path, monkeypatch):
     """Give every test an isolated, schema'd SQLite engine and point all

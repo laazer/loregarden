@@ -8,8 +8,10 @@ lifecycle, and splitting it would put a delete and an insert either side of ever
 grant — precisely where a double-booking would hide. Ended rows stay as the audit
 trail the reaper's warnings point at.
 
-`docker_capacity_pool` is a single row (`id = 'global'`) and exists for one
-reason: something a conditional UPDATE can key on. Admission has to decide
+`docker_capacity_pool` holds one row per `CapacityPool`: `'global'` (the
+docker VM — the id predates the host pool and older builds still read it) and
+`'host'` (the machine). The rows exist for one reason: something a conditional
+UPDATE can key on. Admission has to decide
 "does this claim fit" and "grant it" in one statement, and there is no SQLite
 statement that both sums a ledger and inserts conditionally on that sum —
 `SELECT SUM(...)` then `INSERT` is the select-then-mutate defect `claim_free_slot`
@@ -39,6 +41,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
+    CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
     DockerHolderKind,
@@ -49,13 +52,21 @@ from loregarden.models.domain.enums import (
 )
 from sqlmodel import Field, SQLModel
 
-#: There is one machine, so there is one pool. Named rather than implied, so a
-#: query reading the wrong row is a typo rather than a silent empty result.
+#: The docker pool's row. Named rather than implied, so a query reading the
+#: wrong row is a typo rather than a silent empty result. Still `'global'`
+#: because builds that predate the host pool read it under that id.
 GLOBAL_POOL_ID = "global"
+#: The machine's own pool, which every lease is charged to.
+HOST_POOL_ID = "host"
+
+POOL_ROW_IDS: dict[CapacityPool, str] = {
+    CapacityPool.DOCKER: GLOBAL_POOL_ID,
+    CapacityPool.HOST: HOST_POOL_ID,
+}
 
 
 class DockerCapacityPool(SQLModel, table=True):
-    """Running totals and the ceiling in force. Exactly one row.
+    """Running totals and the ceiling in force. One row per `CapacityPool`.
 
     `revision` is what tells "lost a race" apart from "genuinely full": a
     conditional UPDATE that matched no row could mean either, and retrying is
@@ -89,7 +100,8 @@ class DockerCapacityPool(SQLModel, table=True):
     #: the pool moved under its read.
     revision: int = 0
     #: Handed out to waiters. Monotonic and global, so two concurrent waiters
-    #: cannot both take position 7.
+    #: cannot both take position 7. Only the docker row's counter is used: there
+    #: is one line across both pools.
     next_position: int = 1
 
 
@@ -119,6 +131,12 @@ class DockerLease(SQLModel, table=True):
     #: no longer exists settles liveness outright, with no docker call at all.
     holder_pid: int | None = None
 
+    #: The pool this claim asked for. A docker claim is also charged to the host
+    #: pool; see `CHARGED_POOLS`.
+    pool: CapacityPool = Field(
+        default=CapacityPool.DOCKER,
+        sa_column=str_enum_column(CapacityPool, CapacityPool.DOCKER),
+    )
     footprint: DockerFootprint = Field(
         default=DockerFootprint.CUSTOM,
         sa_column=str_enum_column(DockerFootprint, DockerFootprint.CUSTOM),

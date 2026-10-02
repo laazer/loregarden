@@ -155,6 +155,12 @@ def test_hoisting_leaves_other_subcommands_alone():
     assert mcp_tools.hoist_call_flags(["db", "init", "--empty"]) == ["db", "init", "--empty"]
 
 
+def test_hoisting_leaves_a_passed_through_command_alone():
+    """`call` inside the command `capacity run` runs is not `mcp call`."""
+    argv = ["capacity", "run", "--label", "x", "--", "make", "call", "a=b", "--fast"]
+    assert mcp_tools.hoist_call_flags(argv) == argv
+
+
 def test_flags_after_key_value_arguments_survive_a_real_parse():
     args = build_parser().parse_args(
         mcp_tools.hoist_call_flags(
