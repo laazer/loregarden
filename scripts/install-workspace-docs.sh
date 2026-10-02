@@ -21,6 +21,9 @@
 
 set -euo pipefail
 
+# The interpreter for the Python halves; see install-workspace-hooks.sh.
+PYTHON="${LOREGARDEN_PYTHON:-python3}"
+
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOREGARDEN_ROOT="$SCRIPT_ROOT"
 
@@ -72,7 +75,7 @@ if [ "$all" -eq 1 ]; then
     echo "--all takes no paths and no --slug; each workspace gets its own" >&2
     exit 2
   fi
-  listing="$(python3 "$SCRIPT_ROOT/scripts/list_workspace_roots.py" --loregarden-root "$LOREGARDEN_ROOT")"
+  listing="$("$PYTHON" "$SCRIPT_ROOT/scripts/list_workspace_roots.py" --loregarden-root "$LOREGARDEN_ROOT")"
   while IFS=$'\t' read -r ws_slug root; do
     [ -n "$root" ] || continue
     targets+=("$root")
@@ -102,7 +105,7 @@ for i in "${!targets[@]}"; do
   args=(--agents-file "$target/AGENTS.md" --loregarden-root "$LOREGARDEN_ROOT")
   [ -n "$slug" ] && args+=(--workspace-slug "$slug")
   [ "$check_only" -eq 1 ] && args+=(--check)
-  if ! python3 "$SCRIPT_ROOT/scripts/install_workspace_agents_doc.py" "${args[@]}"; then
+  if ! "$PYTHON" "$SCRIPT_ROOT/scripts/install_workspace_agents_doc.py" "${args[@]}"; then
     status=1
   fi
 done
