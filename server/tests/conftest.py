@@ -1,19 +1,23 @@
+import os
 import subprocess
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from lore_eden.testing import pytest_profile
 from loregarden.config import settings
-from loregarden.db.session import get_session
+from loregarden.db.session import get_session, init_db
 from loregarden.main import app
 from loregarden.models.domain import Workspace
 from loregarden.services import docker_capacity, local_instances, reference_cache
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, create_engine, select
+from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
+from tests.repo_templates import from_template, set_template_root
 from tests.worktree_helpers import seed_stage_report_contract
 
 
@@ -129,8 +133,18 @@ def _forget_docker_probe():
     docker_capacity.clear_probe_cache()
 
 
+#: Whether `isolated_db` handed this test the seeded template, for `client` to read.
+_SEEDED_FROM_TEMPLATE = pytest.StashKey[bool]()
+
+
+@pytest.fixture(name="schema_template", scope="session")
+def schema_template_fixture(tmp_path_factory):
+    """An empty, fully tabled database, built once per process; see `tests/db_templates.py`."""
+    return build_schema_template(tmp_path_factory.mktemp("schema-template") / "schema.db")
+
+
 @pytest.fixture(name="isolated_db", autouse=True)
-def isolated_db_fixture(tmp_path, monkeypatch):
+def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
     """Give every test an isolated, schema'd SQLite engine and point all
     module-global engine bindings at it.
 
@@ -139,9 +153,19 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     now shares the test engine). It does NOT seed — request the ``client``
     fixture, or call ``seed_database(session)``, when a test needs the built-in
     workspace/ticket/agent data.
+
+    A test that requests ``client`` starts from the seeded template instead,
+    copied here rather than in ``client``: the test's own fixtures write into
+    this database before ``client`` is set up, and a later restore would erase
+    them. See `tests/db_templates.py`.
     """
+    database = tmp_path / "pytest.db"
+    seeded = "client" in request.fixturenames
+    source = request.getfixturevalue("seeded_template").database if seeded else schema_template
+    copy_database(source, database)
+    request.node.stash[_SEEDED_FROM_TEMPLATE] = seeded
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'pytest.db'}",
+        f"sqlite:///{database}",
         connect_args={"check_same_thread": False, "timeout": 30},
     )
     # A real pool, not StaticPool: StaticPool hands every thread the *same* DBAPI
@@ -152,7 +176,6 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     # write concurrently instead of serialising on the whole file.
     with engine.connect() as conn:
         conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-    SQLModel.metadata.create_all(engine)
     for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
     # Chat attachments are files beside the database; keep them beside this one.
@@ -160,7 +183,38 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     return engine
 
 
-def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
+@pytest.fixture(name="seeded_template", scope="session")
+def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate:
+    """The database `client` starts from, built once per process: seeded, repointed, migrated.
+
+    In the order the fixture and the app's lifespan always applied them — seed,
+    repoint the workspace, then ``init_db`` — because two migrations read
+    ``Workspace.repo_path``. Built on its own engine, with every module-global
+    engine binding pointed at it for the duration, so nothing reaches a test's
+    database or the real one. The lifespan still runs ``init_db`` and
+    ``seed_database`` on every copy; on this database both are near no-ops.
+    """
+    root = tmp_path_factory.mktemp("seeded-template")
+    template = SeededTemplate(database=root / "seeded.db", repo=root / "seeded-repo")
+    _init_seeded_workspace_repo(template.repo)
+    copy_database(schema_template, template.database)
+    engine = create_engine(f"sqlite:///{template.database}")
+    try:
+        with ExitStack() as stack:
+            for target in _ENGINE_BINDINGS:
+                stack.enter_context(patch(target, engine))
+            with Session(engine) as session:
+                seed_database(session)
+                _repoint_seeded_workspace(session, template.repo)
+            init_db()
+    finally:
+        engine.dispose()
+    return template
+
+
+def _isolate_seeded_workspace_repo(
+    session: Session, tmp_path, seeded_template: SeededTemplate
+) -> None:
     """Repoint the seeded "loregarden" workspace at a throwaway git repo.
 
     Orchestration/CLI-executor code paths run real `git checkout -B` against
@@ -169,27 +223,15 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
     seeded workspace's tickets would check out branches in the actual project
     working directory. Profile/doc loading falls back to settings.repo_root
     directly and is unaffected by this repo_path change.
-    """
-    repo = tmp_path / "loregarden-seeded-repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True
-    )
-    (repo / "README.md").write_text("# test\n", encoding="utf-8")
-    # The dispatch preflight refuses a workspace with no stage-report contract,
-    # so a repo standing in for a real workspace has to carry one. Before the
-    # commit, so the tree it hands to orchestration is clean.
-    seed_stage_report_contract(repo)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
 
+    The repo is a copy of one built once per process — the five git calls cost
+    more than most tests that use them.
+    """
+    repo = seeded_template.copy_repo(tmp_path / "loregarden-seeded-repo")
+    _repoint_seeded_workspace(session, repo)
+
+
+def _repoint_seeded_workspace(session: Session, repo) -> None:
     ws = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
     if ws:
         ws.repo_path = str(repo)
@@ -197,23 +239,52 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
         session.commit()
 
 
+def _init_seeded_workspace_repo(repo) -> None:
+    """Build the workspace repo `client` tests copy.
+
+    Called from a session fixture, which runs before `scrub_ambient_git_env`
+    applies to anything — so it scrubs the same variables itself, or a
+    `GIT_DIR` inherited from a hook would aim every call at the outer checkout.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCATION_ENV_VARS}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True)
+
+    repo.mkdir()
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    (repo / "README.md").write_text("# test\n", encoding="utf-8")
+    # The dispatch preflight refuses a workspace with no stage-report contract,
+    # so a repo standing in for a real workspace has to carry one. Before the
+    # commit, so the tree it hands to orchestration is clean.
+    seed_stage_report_contract(repo)
+    git("add", ".")
+    git("commit", "-m", "init")
+
+
 @pytest.fixture(name="client")
-def client_fixture(isolated_db, tmp_path):
+def client_fixture(isolated_db, tmp_path, seeded_template, request):
     def override_session():
         with Session(isolated_db) as session:
             yield session
 
     app.dependency_overrides[get_session] = override_session
     with Session(isolated_db) as session:
-        seed_database(session)
-        _isolate_seeded_workspace_repo(session, tmp_path)
+        # Requested dynamically, after `isolated_db` chose the bare schema:
+        # seed here, as this fixture always did, rather than hand over an
+        # empty database that looks like a seeded one.
+        if not request.node.stash.get(_SEEDED_FROM_TEMPLATE, False):
+            seed_database(session)
+        _isolate_seeded_workspace_repo(session, tmp_path, seeded_template)
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
 
 
 @pytest.fixture(name="isolate_seeded_repo")
-def isolate_seeded_repo_fixture(tmp_path):
+def isolate_seeded_repo_fixture(tmp_path, seeded_template):
     """Hand a test the repoint that the `client` fixture applies for free.
 
     A test that seeds the database itself — `isolated_db` plus
@@ -229,7 +300,7 @@ def isolate_seeded_repo_fixture(tmp_path):
     """
 
     def apply(session: Session) -> None:
-        _isolate_seeded_workspace_repo(session, tmp_path)
+        _isolate_seeded_workspace_repo(session, tmp_path, seeded_template)
 
     return apply
 
@@ -240,10 +311,19 @@ def db_session_fixture(client, isolated_db):
         yield session
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _repo_templates(tmp_path_factory):
+    """Give `tests/repo_templates.py` a per-process place to keep its templates."""
+    set_template_root(tmp_path_factory.mktemp("repo-templates"))
+
+
 @pytest.fixture(name="git_repo")
 def git_repo_fixture(tmp_path):
     """A throwaway git repo with one commit, for tests that assert on staging."""
-    root = tmp_path / "repo"
+    return from_template(tmp_path / "repo", "git_repo", _build_git_repo)
+
+
+def _build_git_repo(root) -> None:
     root.mkdir()
 
     def git(*args):
@@ -255,7 +335,6 @@ def git_repo_fixture(tmp_path):
     (root / "seed.txt").write_text("seed\n")
     git("add", "-A")
     git("commit", "-q", "-m", "seed")
-    return root
 
 
 @pytest.fixture(autouse=True)
