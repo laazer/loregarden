@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 function useSafeQueryClient() {
   try {
@@ -36,6 +36,8 @@ import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
 import { describeError, pushToast } from "../../state/toastStore";
 import { ImportTicketsModal } from "../ImportTicketsModal";
+import { Input } from "../ui/Input";
+import { Textarea } from "../ui/Textarea";
 import { ReferenceRepoPicker, ReferenceReposSection } from "./ReferenceRepos";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
@@ -99,6 +101,7 @@ export function TicketStudioPanel({
   const [isPreview, setIsPreview] = useState(propsIsPreview ?? false);
   const [importedTickets, setImportedTickets] = useState<ImportedTicket[]>(propsImportedTickets ?? []);
   const [previewConfirmed, setPreviewConfirmed] = useState(false);
+  const fieldId = useId();
 
   const sessions = useQuery({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
@@ -705,8 +708,9 @@ export function TicketStudioPanel({
               <div className="ticket-studio-chat-body ticket-studio-chat-body--new">
                 <div className="ticket-studio-new-scope">
                   <div className="studio-field">
-                    <div className="studio-field-label">Feature title</div>
-                    <input
+                    <label htmlFor={`${fieldId}-title`} className="studio-field-label">Feature title</label>
+                    <Input
+                      id={`${fieldId}-title`}
                       className="studio-input"
                       value={newDraft.title}
                       onChange={(e) => setNewDraft({ ...newDraft, title: e.target.value })}
@@ -727,8 +731,9 @@ export function TicketStudioPanel({
                   />
 
                   <div className="studio-field">
-                    <div className="studio-field-label">Feature brief</div>
-                    <textarea
+                    <label htmlFor={`${fieldId}-brief`} className="studio-field-label">Feature brief</label>
+                    <Textarea
+                      id={`${fieldId}-brief`}
                       className="studio-textarea"
                       value={newDraft.brief}
                       onChange={(e) => setNewDraft({ ...newDraft, brief: e.target.value })}
@@ -840,8 +845,9 @@ export function TicketStudioPanel({
                     </p>
                     {selectedSession.clarifying_questions.map((question, index) => (
                       <div key={question} className="studio-field" style={{ marginBottom: 10 }}>
-                        <div className="studio-field-label">{question}</div>
-                        <textarea
+                        <label htmlFor={`${fieldId}-answer-${index}`} className="studio-field-label">{question}</label>
+                        <Textarea
+                          id={`${fieldId}-answer-${index}`}
                           className="studio-textarea"
                           style={{ minHeight: 56 }}
                           value={answerDraft[index] ?? ""}

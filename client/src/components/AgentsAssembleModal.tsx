@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type {
   RuntimeOptions,
@@ -15,6 +15,8 @@ import {
 } from "./WorkspaceRuntimeFields";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
 
 /**
  * The request body `POST /orchestrate` takes for what this dialog collected.
@@ -87,6 +89,7 @@ export function AgentsAssembleModal({
   onConfirm,
 }: AgentsAssembleModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const fieldId = useId();
   const busy = isRunning || isSavingRuntime;
   // Escape and the backdrop agree on purpose: whatever makes a click
   // dismiss this dialog is what makes the key dismiss it.
@@ -142,8 +145,9 @@ export function AgentsAssembleModal({
         <div className="modal-body">
           {!isParent && (
             <div style={{ marginBottom: 16 }}>
-              <div className="modal-section-title">Branch</div>
-              <input
+              <div id={`${fieldId}-branch`} className="modal-section-title">Branch</div>
+              <Input
+                aria-labelledby={`${fieldId}-branch`}
                 className="btn-secondary"
                 style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
                 value={branch}
@@ -176,8 +180,11 @@ export function AgentsAssembleModal({
           )}
 
           <div style={{ marginBottom: 16 }}>
-            <div className="modal-section-title">Stop at stage (optional)</div>
-            <select
+            <div id={`${fieldId}-stop-at`} className="modal-section-title">
+              Stop at stage (optional)
+            </div>
+            <Select
+              aria-labelledby={`${fieldId}-stop-at`}
               className="btn-secondary"
               style={{ width: "100%", fontSize: 12 }}
               value={stopAtStageKey}
@@ -190,7 +197,7 @@ export function AgentsAssembleModal({
                   {stage.name} ({stage.key})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div style={{ marginBottom: 16 }}>
@@ -203,8 +210,11 @@ export function AgentsAssembleModal({
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <div className="modal-section-title">Max agent runtime (seconds, optional)</div>
-            <input
+            <div id={`${fieldId}-timeout`} className="modal-section-title">
+              Max agent runtime (seconds, optional)
+            </div>
+            <Input
+              aria-labelledby={`${fieldId}-timeout`}
               type="number"
               min={30}
               className="btn-secondary"

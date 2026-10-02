@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import './QueueOperationReview.css';
 import { useDialogDismiss } from '../hooks/useDialogDismiss';
+import { Textarea } from './ui/Textarea';
 
 export interface OperationComment {
   id: string;
@@ -154,7 +155,8 @@ export function QueueOperationReview({
         <h4 className="section-title">Add Comment</h4>
 
         <div className="comment-form">
-          <textarea
+          <Textarea
+            aria-label="Add comment"
             className="comment-input"
             placeholder="Add a comment (markdown supported)..."
             value={newComment}

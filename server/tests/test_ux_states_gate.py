@@ -518,6 +518,18 @@ def test_a_labelled_or_self_named_field_passes(repo: Path, markup: str):
     assert result.returncode == 0, _findings(result)
 
 
+def test_an_id_from_a_prop_is_not_accused(repo: Path):
+    """A field component whose parent renders the <label htmlFor> takes its id as a
+    prop; nothing in this file can show the label, so the gate must not guess."""
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = ({ inputId }: P) => <Select id={inputId} value={v} />;\n",
+    )
+    result = _run(repo)
+    assert result.returncode == 0, _findings(result)
+
+
 def test_a_label_pointing_elsewhere_does_not_name_the_field(repo: Path):
     _write(
         repo,

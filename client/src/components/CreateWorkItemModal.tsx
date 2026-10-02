@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
 import { ParentTicketSelector } from "./ParentTicketSelector";
@@ -13,6 +13,9 @@ import {
 } from "../lib/workItemHierarchy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { Textarea } from "./ui/Textarea";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "initiative", label: "Initiative" },
@@ -133,6 +136,7 @@ export function CreateWorkItemModal({
   onCreate,
 }: CreateWorkItemModalProps) {
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  const fieldId = useId();
   // Escape and the backdrop agree on purpose: whatever makes a click
   // dismiss this dialog is what makes the key dismiss it.
   useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
@@ -236,8 +240,11 @@ export function CreateWorkItemModal({
         <div className="modal-body">
           {workspacePicker && !workspaceless && (
             <div className="modal-field">
-              <div className="modal-field-label">Workspace</div>
-              <select
+              <label htmlFor={`${fieldId}-workspace`} className="modal-field-label">
+                Workspace
+              </label>
+              <Select
+                id={`${fieldId}-workspace`}
                 className="btn-secondary filter-select"
                 style={{ width: "100%", fontSize: 12 }}
                 value={workspaceSlug}
@@ -253,7 +260,7 @@ export function CreateWorkItemModal({
                     </option>
                   ))
                 )}
-              </select>
+              </Select>
             </div>
           )}
 
@@ -274,8 +281,9 @@ export function CreateWorkItemModal({
           )}
 
           <div className="modal-field">
-            <div className="modal-field-label">Type</div>
-            <select
+            <label htmlFor={`${fieldId}-type`} className="modal-field-label">Type</label>
+            <Select
+              id={`${fieldId}-type`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12 }}
               value={draft.work_item_type}
@@ -289,7 +297,7 @@ export function CreateWorkItemModal({
                   {t.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           {needsParent && !lockParent && (
@@ -323,8 +331,9 @@ export function CreateWorkItemModal({
           )}
 
           <div className="modal-field">
-            <div className="modal-field-label">Title</div>
-            <input
+            <label htmlFor={`${fieldId}-title`} className="modal-field-label">Title</label>
+            <Input
+              id={`${fieldId}-title`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12 }}
               value={draft.title}
@@ -335,8 +344,11 @@ export function CreateWorkItemModal({
           </div>
 
           <div className="modal-field">
-            <div className="modal-field-label">Description</div>
-            <textarea
+            <label htmlFor={`${fieldId}-description`} className="modal-field-label">
+              Description
+            </label>
+            <Textarea
+              id={`${fieldId}-description`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
               value={draft.description}
@@ -347,8 +359,11 @@ export function CreateWorkItemModal({
 
           {(
             <div className="modal-field">
-              <div className="modal-field-label">Acceptance criteria (one per line)</div>
-              <textarea
+              <label htmlFor={`${fieldId}-acceptance-criteria`} className="modal-field-label">
+                Acceptance criteria (one per line)
+              </label>
+              <Textarea
+                id={`${fieldId}-acceptance-criteria`}
                 className="btn-secondary filter-select"
                 style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
                 value={draft.acceptance_criteria}
@@ -360,8 +375,9 @@ export function CreateWorkItemModal({
           )}
 
           <div className="modal-field">
-            <div className="modal-field-label">Priority</div>
-            <select
+            <label htmlFor={`${fieldId}-priority`} className="modal-field-label">Priority</label>
+            <Select
+              id={`${fieldId}-priority`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12 }}
               value={draft.priority}
@@ -371,7 +387,7 @@ export function CreateWorkItemModal({
               <option value={1}>P1 — High</option>
               <option value={2}>P2 — Medium</option>
               <option value={3}>P3 — Low</option>
-            </select>
+            </Select>
           </div>
         </div>
 

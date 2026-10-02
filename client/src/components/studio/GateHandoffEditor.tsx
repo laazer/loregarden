@@ -1,4 +1,7 @@
 import type { StudioGateCheck, StudioHandoffCheck } from "../../api/client";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
+import { Textarea } from "../ui/Textarea";
 
 export function GateHandoffEditor({
   gateChecks,
@@ -16,7 +19,8 @@ export function GateHandoffEditor({
         <p className="modal-hint">Human approval gates before the next stage proceeds.</p>
         {gateChecks.map((gate, index) => (
           <div key={index} className="state-card" style={{ marginBottom: 8 }}>
-            <select
+            <Select
+              aria-label={`Gate check ${index + 1} kind`}
               className="btn-secondary filter-select"
               style={{ width: "100%", marginBottom: 6 }}
               value={gate.kind}
@@ -29,8 +33,9 @@ export function GateHandoffEditor({
               <option value="workflow_gate">Workflow gate</option>
               <option value="ac_review">AC review</option>
               <option value="human_approval">Human approval</option>
-            </select>
-            <input
+            </Select>
+            <Input
+              aria-label={`Gate check ${index + 1} title`}
               className="btn-secondary"
               style={{ width: "100%", marginBottom: 6, boxSizing: "border-box" }}
               placeholder="Title"
@@ -41,7 +46,8 @@ export function GateHandoffEditor({
                 onChange(next, handoffChecks);
               }}
             />
-            <input
+            <Input
+              aria-label={`Gate check ${index + 1} impact`}
               className="btn-secondary"
               style={{ width: "100%", boxSizing: "border-box" }}
               placeholder="Impact / description"
@@ -68,7 +74,8 @@ export function GateHandoffEditor({
         <p className="modal-hint">Instructions the agent must satisfy before completing the stage via MCP.</p>
         {handoffChecks.map((handoff, index) => (
           <div key={index} className="state-card" style={{ marginBottom: 8 }}>
-            <select
+            <Select
+              aria-label={`Handoff check ${index + 1} kind`}
               className="btn-secondary filter-select"
               style={{ width: "100%", marginBottom: 6 }}
               value={handoff.kind}
@@ -81,8 +88,9 @@ export function GateHandoffEditor({
               <option value="mcp_complete">MCP complete_stage</option>
               <option value="blocking_clear">Clear blocking issues</option>
               <option value="custom">Custom check</option>
-            </select>
-            <textarea
+            </Select>
+            <Textarea
+              aria-label={`Handoff check ${index + 1} instructions`}
               className="btn-secondary"
               style={{ width: "100%", minHeight: 72, boxSizing: "border-box" }}
               placeholder="What the agent must verify or do before handoff"

@@ -1,7 +1,7 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { api, type TicketImportItem, type TicketImportPreviewResponse } from "../api/client";
 import {
@@ -16,6 +16,7 @@ import {
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { ImportQuickCreate } from "./ImportQuickCreate";
 import { ImportTicketPreviewCard } from "./ImportTicketPreviewCard";
+import { Select } from "./ui/Select";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
@@ -53,6 +54,7 @@ export function ImportTicketsConfirmModal({
   useDialogDismiss(!open || !preview ? null : isImporting ? undefined : onClose);
   const [draftTickets, setDraftTickets] = useState<TicketImportItem[]>([]);
   const [bulkMilestoneId, setBulkMilestoneId] = useState("");
+  const bulkMilestoneFieldId = useId();
 
   useEffect(() => {
     if (!open || !preview) return;
@@ -247,9 +249,10 @@ export function ImportTicketsConfirmModal({
 
           {hasTickets && (
             <div className="modal-field">
-              <div className="modal-field-label">Assign milestone to all</div>
+              <label htmlFor={bulkMilestoneFieldId} className="modal-field-label">Assign milestone to all</label>
               <div className="import-bulk-milestone-row">
-                <select
+                <Select
+                  id={bulkMilestoneFieldId}
                   className="btn-secondary filter-select"
                   style={{ flex: 1, fontSize: 12 }}
                   value={bulkMilestoneId}
@@ -263,7 +266,7 @@ export function ImportTicketsConfirmModal({
                       {option.source === "quick" ? " (new)" : option.source === "import" ? " (import)" : ""}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <button
                   type="button"
                   className="btn-secondary btn-compact"
