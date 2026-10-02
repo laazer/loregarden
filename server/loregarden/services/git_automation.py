@@ -37,7 +37,7 @@ from loregarden.services.git_branch import (
     resolve_ticket_branch,
     validate_branch_name,
 )
-from loregarden.services.git_subprocess import run_git, scrubbed_git_env
+from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session
@@ -171,16 +171,8 @@ def _push(repo_root: Path, branch: str) -> StepResult:
     return StepResult("push", True, f"pushed {branch}")
 
 
-def _gh(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    # `gh` resolves its repository through git, so an inherited GIT_DIR would
-    # aim these at whatever repo the parent process was pointed at.
-    return subprocess.run(
-        ["gh", *args],
-        cwd=cwd,
-        env=scrubbed_git_env(),
-        capture_output=True,
-        text=True,
-    )
+def _gh(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return run_gh(args, cwd=cwd)
 
 
 def _existing_pr_url(repo_root: Path, branch: str) -> str:

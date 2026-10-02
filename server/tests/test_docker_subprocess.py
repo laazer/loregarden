@@ -19,6 +19,7 @@ import subprocess
 from unittest import mock
 
 import pytest
+from loregarden.config import settings
 from loregarden.services.docker_subprocess import (
     DockerVerbRefused,
     assert_read_only,
@@ -102,7 +103,10 @@ def test_daemon_selection_survives_scrubbing() -> None:
     assert scrubbed["DOCKER_CONTEXT"] == "remote"
 
 
-def test_run_docker_builds_expected_argv_and_never_raises_on_exit_code() -> None:
+def test_run_docker_builds_expected_argv_and_never_raises_on_exit_code(monkeypatch) -> None:
+    # The default binary, restored over conftest's `no_installed_docker`: this
+    # test spawns nothing (`subprocess.run` is patched), it checks the argv.
+    monkeypatch.setattr(settings, "docker_binary", "docker")
     completed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
     with mock.patch("subprocess.run", return_value=completed) as spawn:
         result = run_docker(["ps", "-q"], timeout=3.0)
