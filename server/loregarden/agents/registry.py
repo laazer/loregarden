@@ -180,6 +180,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "initiative_planner": {
+        "name": "Initiative Planner",
+        "role_file": "agents/misc_agents/initiative_planner_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
 }
 
 

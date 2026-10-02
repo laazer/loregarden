@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.mcp_registry import cli_server_entries
+from loregarden.services.sandbox_endpoint import SandboxMcpUrlError, require_this_instance
 from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
 
@@ -170,14 +171,55 @@ def _tool_names() -> list[str]:
     return tool_names()
 
 
+#: Main's endpoint — what an unconfigured process would hand its agents.
+_DEFAULT_MCP_URL = type(settings).model_fields["mcp_url"].default.rstrip("/")
+
+
+def _configured_mcp_url() -> str:
+    """`settings.mcp_url` — except that a sandbox never falls back to main's.
+
+    The default is the live server on :8000. When nothing configured the URL, a
+    sandbox points its agents at itself (``dev_port``); with no port either, it
+    refuses rather than guess.
+    """
+    url = settings.mcp_url.rstrip("/")
+    if not settings.sandbox or url != _DEFAULT_MCP_URL:
+        return url
+    if settings.dev_port is not None:
+        return f"http://{settings.dev_host}:{settings.dev_port}/mcp"
+    raise SandboxMcpUrlError(
+        "This is a sandbox server with no MCP URL of its own: set LOREGARDEN_MCP_URL "
+        "or LOREGARDEN_DEV_PORT, or its agents would write to the live server."
+    )
+
+
+def unverified_api_base_url() -> str:
+    """The API base this process would hand out, before any sandbox check.
+
+    What the sandbox boot check probes; everything else calls the resolvers
+    below, which in a sandbox also require the probe to have said "this is me".
+    """
+    explicit = os.environ.get("LOREGARDEN_MCP_URL")
+    if explicit:
+        return explicit.rstrip("/").removesuffix("/mcp")
+    api_base = os.environ.get("LOREGARDEN_API_URL")
+    if api_base:
+        return api_base.rstrip("/")
+    return _configured_mcp_url().removesuffix("/mcp")
+
+
+def _checked(base: str) -> str:
+    if settings.sandbox:
+        require_this_instance(base)
+    return base
+
+
 def resolve_mcp_url() -> str:
     explicit = os.environ.get("LOREGARDEN_MCP_URL")
     if explicit:
+        _checked(explicit.rstrip("/").removesuffix("/mcp"))
         return explicit.rstrip("/")
-    api_base = os.environ.get("LOREGARDEN_API_URL")
-    if api_base:
-        return f"{api_base.rstrip('/')}/mcp"
-    return settings.mcp_url.rstrip("/")
+    return f"{_checked(unverified_api_base_url())}/mcp"
 
 
 def resolve_api_base_url() -> str:
@@ -188,8 +230,8 @@ def resolve_api_base_url() -> str:
     """
     api_base = os.environ.get("LOREGARDEN_API_URL")
     if api_base:
-        return api_base.rstrip("/")
-    return settings.mcp_url.rstrip("/").removesuffix("/mcp")
+        return _checked(api_base.rstrip("/"))
+    return _checked(_configured_mcp_url().removesuffix("/mcp"))
 
 
 def _default_mcp_transport() -> str:

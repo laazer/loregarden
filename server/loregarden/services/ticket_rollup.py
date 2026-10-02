@@ -34,13 +34,13 @@ from __future__ import annotations
 import logging
 
 from loregarden.models.domain import Ticket, TicketState
-from loregarden.services.ticket_state_service import derive
+from loregarden.services.ticket_state_service import RESOLVED_STATES, derive
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-#: A child in one of these has nothing left to contribute to its parent.
-RESOLVED_STATES = (TicketState.DONE, TicketState.WONT_DO)
+# RESOLVED_STATES (re-exported): a child in one of these has nothing left to
+# contribute to its parent.
 
 
 def derive_parent_state(child_states: list[TicketState]) -> TicketState | None:

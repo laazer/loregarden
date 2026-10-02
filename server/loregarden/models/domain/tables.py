@@ -238,6 +238,11 @@ class Ticket(SQLModel, table=True):
     compatibility_posture: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+    #: When the ticket last entered `done`/`wont_do`; null while open. Stamped by
+    #: `ticket_state_service._write`, the one place state is written, because
+    #: `TicketStateChanged` misses every stage-derived close — schedule
+    #: forecasts read their throughput from this.
+    resolved_at: datetime | None = Field(default=None, index=True)
 
 
 class WorkflowInstance(SQLModel, table=True):

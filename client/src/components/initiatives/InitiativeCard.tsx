@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
-import { navigateToTicket } from "../../lib/useAppNavigation";
+import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigation";
+import { Button } from "../ui/Button";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
 
 interface InitiativeCardProps {
@@ -139,7 +140,12 @@ export function InitiativeCard({
             {initiative.title}
           </h2>
         </div>
-        <StatePill state={initiative.state} />
+        <div className="initiative-card-head-actions">
+          <StatePill state={initiative.state} />
+          <Button variant="primary" compact onClick={() => navigateToInitiative(initiative.id)}>
+            Plan &amp; board
+          </Button>
+        </div>
       </header>
       {initiative.description && <p className="initiative-desc">{initiative.description}</p>}
 

@@ -59,7 +59,10 @@ def test_renaming_a_shipped_id_is_rejected(monkeypatch):
 
 
 def test_dropping_a_shipped_id_is_rejected(monkeypatch):
-    monkeypatch.setattr(M, "MIGRATIONS", list(M.MIGRATIONS)[:-1])
+    # The last *shipped* id, not the list's last entry: versioned migrations
+    # follow the frozen list, and dropping one of those is not this failure.
+    last_shipped = SHIPPED_MIGRATION_IDS[-1]
+    monkeypatch.setattr(M, "MIGRATIONS", [m for m in M.MIGRATIONS if m[0] != last_shipped])
 
     with pytest.raises(RuntimeError, match="append-only"):
         assert_migration_ids_are_sound([i for i, _ in M.MIGRATIONS])
