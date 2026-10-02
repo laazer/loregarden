@@ -22,12 +22,14 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from loregarden.db.migration_registry import ids_declared_in_source
 from loregarden.services.git_subprocess import run_git
 
 #: The ref whose ledger decides what has shipped.
 SHIPPED_REF = "origin/main"
 _LEDGER_PATH = "server/loregarden/db/migration_ids.py"
 _LEDGER_NAME = "SHIPPED_MIGRATION_IDS"
+_VERSIONS_DIR = "server/loregarden/db/versions"
 
 
 class UnshippedMigrationError(RuntimeError):
@@ -52,9 +54,8 @@ def primary_checkout(code_root: Path) -> Path:
     return common.resolve().parent
 
 
-def shipped_migration_ids(code_root: Path) -> frozenset[str]:
-    """The ledger as `SHIPPED_REF` has it, read without checking anything out."""
-    source = _git_stdout(code_root, "show", f"{SHIPPED_REF}:{_LEDGER_PATH}")
+def _frozen_ledger_ids(code_root: Path, ref: str) -> frozenset[str]:
+    source = _git_stdout(code_root, "show", f"{ref}:{_LEDGER_PATH}")
     for node in ast.parse(source).body:
         if (
             isinstance(node, ast.AnnAssign)  # py-org: allow-isinstance
@@ -63,7 +64,28 @@ def shipped_migration_ids(code_root: Path) -> frozenset[str]:
             and node.value is not None
         ):
             return frozenset(ast.literal_eval(node.value))
-    raise UnshippedMigrationError(f"{SHIPPED_REF}:{_LEDGER_PATH} defines no {_LEDGER_NAME}")
+    raise UnshippedMigrationError(f"{ref}:{_LEDGER_PATH} defines no {_LEDGER_NAME}")
+
+
+def _versioned_ids(code_root: Path, ref: str) -> frozenset[str]:
+    """Ids the `db/versions/` modules at ``ref`` declare.
+
+    An empty listing is a real answer — a main that predates the package, or
+    has no versioned migration yet — and git exits 0 for it.
+    """
+    listing = _git_stdout(
+        code_root, "ls-tree", "--full-tree", "--name-only", ref, f"{_VERSIONS_DIR}/"
+    )
+    ids: set[str] = set()
+    for path in listing.splitlines():
+        if path.endswith(".py"):
+            ids.update(ids_declared_in_source(_git_stdout(code_root, "show", f"{ref}:{path}")))
+    return frozenset(ids)
+
+
+def shipped_migration_ids(code_root: Path, ref: str = SHIPPED_REF) -> frozenset[str]:
+    """Every migration id ``ref`` ships, read without checking anything out."""
+    return _frozen_ledger_ids(code_root, ref) | _versioned_ids(code_root, ref)
 
 
 def assert_may_migrate(database: Path | None, pending: list[str], *, code_root: Path) -> None:

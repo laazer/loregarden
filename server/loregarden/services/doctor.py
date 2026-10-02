@@ -38,7 +38,7 @@ from loregarden.agents.mcp_context import (
 )
 from loregarden.config import resolved_database_path, settings
 from loregarden.db.migration_ledger import ledger_orphans
-from loregarden.db.migrations import MIGRATIONS
+from loregarden.db.migrations import MIGRATIONS, VERSION_CHAIN
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -586,6 +586,31 @@ def check_migration_ledger(
     )
 
 
+def check_migration_chain(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
+    """Versioned migrations that claim to follow the same id.
+
+    Such a merge has no textual conflict, so it reaches main quietly; the build
+    then orders the siblings by id and logs it once at import, which nobody
+    reads. WARN rather than FAIL: the server runs and every migration still
+    applies — what is uncertain is only the order, against a database that may
+    have seen them the other way round.
+    """
+    if not VERSION_CHAIN.forks:
+        return _ok(DoctorCheck.MIGRATION_CHAIN, "Versioned migrations form one chain.")
+    return DoctorFinding(
+        check=DoctorCheck.MIGRATION_CHAIN,
+        status=DoctorStatus.WARN,
+        finding="; ".join(
+            f"{', '.join(fork.children)} all follow {fork.parent}" for fork in VERSION_CHAIN.forks
+        )
+        + ".",
+        remediation=(
+            "Point the later-merged migration's `after` at the earlier one in "
+            "server/loregarden/db/versions/. Do not rename either id."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -602,6 +627,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.DOCKER_CAPACITY: check_docker_capacity,
     DoctorCheck.DOCKER_UNACCOUNTED: check_docker_unaccounted,
     DoctorCheck.MIGRATION_LEDGER: check_migration_ledger,
+    DoctorCheck.MIGRATION_CHAIN: check_migration_chain,
 }
 
 

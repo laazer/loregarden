@@ -23,6 +23,8 @@ from sqlmodel import SQLModel, create_engine
 
 SHIPPED = "0001_shipped"
 UNSHIPPED = "0002_branch_only"
+SHIPPED_VERSIONED = "20261001_merged_already"
+UNSHIPPED_VERSIONED = "20261002_branch_only"
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -41,6 +43,12 @@ def checkouts(tmp_path: Path) -> tuple[Path, Path]:
     ledger = primary / "server/loregarden/db/migration_ids.py"
     ledger.parent.mkdir(parents=True)
     ledger.write_text(f'SHIPPED_MIGRATION_IDS: tuple[str, ...] = (\n    "{SHIPPED}",\n)\n')
+    (ledger.parent / "versions").mkdir()
+    (ledger.parent / "versions/merged_already.py").write_text(
+        "from loregarden.db.versions import migration\n\n\n"
+        f'@migration("{SHIPPED_VERSIONED}", after="{SHIPPED}")\n'
+        "def m_merged_already(conn):\n    pass\n"
+    )
     _git(tmp_path, "init", "-q", "-b", "main", str(primary))
     _git(primary, "add", ".")
     _git(primary, "commit", "-q", "-m", "ledger")
@@ -70,6 +78,23 @@ def test_a_worktree_may_not_apply_an_unshipped_migration_to_live(checkouts):
 def test_a_worktree_may_apply_what_main_ships(checkouts):
     primary, worktree = checkouts
     assert_may_migrate(primary / "data/loregarden.db", [SHIPPED], code_root=worktree)
+
+
+def test_a_versioned_migration_on_main_counts_as_shipped(checkouts):
+    """`db/versions/` ids are read from main's source, not from the closed ledger."""
+    primary, worktree = checkouts
+    assert_may_migrate(primary / "data/loregarden.db", [SHIPPED_VERSIONED], code_root=worktree)
+
+
+def test_a_worktree_may_not_apply_an_unshipped_versioned_migration_to_live(checkouts):
+    primary, worktree = checkouts
+
+    with pytest.raises(UnshippedMigrationError, match=UNSHIPPED_VERSIONED):
+        assert_may_migrate(
+            primary / "data/loregarden.db",
+            [SHIPPED_VERSIONED, UNSHIPPED_VERSIONED],
+            code_root=worktree,
+        )
 
 
 def test_the_primary_checkout_migrates_its_own_database(checkouts):

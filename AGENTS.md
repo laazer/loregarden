@@ -56,7 +56,7 @@ loregarden/
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
 | MCP tools | `mcp/tools.py` | Tool names and schemas |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
-| Migrations | `db/migrations.py` | Append with the next **free** id and mirror it into `db/migration_ids.py`; never reorder. Parallel branches contend for numbers — check the live DB, and expect to renumber an unlanded branch rather than contest one |
+| Migrations | `db/versions/` | One module per migration: `@migration("YYYYMMDD_name", after="<newest id on main>")`. No shared list — `FROZEN_MIGRATIONS` and `SHIPPED_MIGRATION_IDS` are closed at 0151. If another branch merged with the same `after`, the suite reports a fork: repoint yours, never rename an id |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
 | Docker capacity | `services/docker_leases.py`, `services/docker_ledger.py` | `reserve` → bind → `release_lease`, shaped after queue admission. `drain_waiters` is the only granter: book capacity, then compare-and-set the row |
 | Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify — docker ps prints nothing both when nothing matched and when it could not ask |
@@ -145,7 +145,7 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 - **Test isolation**: prefer `unittest.mock` (`patch`, `MagicMock`) over pytest's `monkeypatch`, unless mocking handles the case poorly (e.g. `os.environ` swaps).
 - **Naming**: stable filenames describing behavior. **No ticket IDs in filenames** — `test_classify_routing.py`, not `test_82_findings.py`.
 - **Git**: Conventional Commits. `git mv` for renames.
-- **Migrations**: append to `MIGRATIONS` with the next id; each migration guards its own changes; never rewrite an applied id.
+- **Migrations**: add a module to `db/versions/` (see its `__init__`); order is the `after` chain; each migration guards its own changes; never rename a merged id.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 

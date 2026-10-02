@@ -18,7 +18,11 @@ jobs:
       run:
         working-directory: server
     steps:
+      # Full history: test_migration_registry compares the registered ids with
+      # the ones origin/main shipped at this branch's merge-base.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
