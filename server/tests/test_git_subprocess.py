@@ -1,13 +1,18 @@
 """The shared git-subprocess chokepoint scrubs inherited repo bindings."""
 
+import ast
 import os
 import subprocess
 from pathlib import Path
+from unittest import mock
 
+import loregarden
 from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_subprocess import (
+    GH_BINARY_ENV,
     GIT_LOCATION_ENV_VARS,
+    run_gh,
     run_git,
     scrubbed_git_env,
 )
@@ -151,3 +156,69 @@ def test_service_layer_branch_checkout_survives_leaked_git_dir(tmp_path, monkeyp
     assert _current_branch(target) == "loregarden/99-scoped"
     # The leaked repo was never touched.
     assert _current_branch(intruder) == "main"
+
+
+# -- gh ---------------------------------------------------------------------
+
+
+def _spawned_gh(monkeypatch, binary: str | None) -> list[str]:
+    if binary is None:
+        monkeypatch.delenv(GH_BINARY_ENV, raising=False)
+    else:
+        monkeypatch.setenv(GH_BINARY_ENV, binary)
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with mock.patch(
+        "loregarden.services.git_subprocess.subprocess.run", return_value=completed
+    ) as spawn:
+        run_gh(["pr", "list"], cwd=Path("."))
+    return spawn.call_args.args[0]
+
+
+def test_run_gh_spawns_gh_from_path_by_default(monkeypatch):
+    assert _spawned_gh(monkeypatch, None) == ["gh", "pr", "list"]
+
+
+def test_run_gh_spawns_the_binary_the_override_names(monkeypatch):
+    assert _spawned_gh(monkeypatch, "/opt/tools/gh") == ["/opt/tools/gh", "pr", "list"]
+
+
+def test_run_gh_scrubs_repo_bindings_and_passes_its_timeout(monkeypatch):
+    monkeypatch.setenv("GIT_DIR", "/elsewhere/.git")
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with mock.patch(
+        "loregarden.services.git_subprocess.subprocess.run", return_value=completed
+    ) as spawn:
+        run_gh(["pr", "view"], cwd=Path("."), gh_token="t0k", timeout=10)
+    kwargs = spawn.call_args.kwargs
+    assert "GIT_DIR" not in kwargs["env"]
+    assert kwargs["env"]["GH_TOKEN"] == "t0k"
+    assert kwargs["timeout"] == 10
+
+
+def _gh_argv_sites(source: str) -> list[int]:
+    """Lines of list/tuple literals whose first element is the string "gh"."""
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.List | ast.Tuple)  # py-org: allow-isinstance — AST node type
+        and node.elts
+        and isinstance(node.elts[0], ast.Constant)  # py-org: allow-isinstance — AST node type
+        and node.elts[0].value == "gh"
+    ]
+
+
+def test_no_module_builds_a_gh_argv_outside_run_gh():
+    """`run_gh` is the one seam: its binary override is how tests keep the real `gh` out."""
+    package = Path(loregarden.__file__).parent
+    offenders = {
+        str(path.relative_to(package)): lines
+        for path in sorted(package.rglob("*.py"))
+        if (lines := _gh_argv_sites(path.read_text(encoding="utf-8")))
+    }
+    assert offenders == {}
+
+
+def test_the_argv_scan_sees_a_gh_argv():
+    """The scan above proves nothing if it cannot see the shape it bans."""
+    assert _gh_argv_sites('subprocess.run(["gh", "pr", "list"])\n') == [1]
+    assert _gh_argv_sites('subprocess.run(["other", "status"])\n') == []

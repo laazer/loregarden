@@ -18,7 +18,7 @@ from loregarden.services import (
     reference_cache,
 )
 from loregarden.services.cli_settings import ADAPTER_BINARIES
-from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
+from loregarden.services.git_subprocess import GH_BINARY_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
@@ -152,6 +152,32 @@ def no_installed_model_clis(monkeypatch, tmp_path):
     yield
     opencode_discovery.reset_model_cache()
     codex_discovery.reset_model_cache()
+
+
+@pytest.fixture(name="gh_stub", scope="session")
+def gh_stub_fixture(tmp_path_factory):
+    """A `gh` that fails at once, the way `gh` fails in a repo with no GitHub remote."""
+    stub = tmp_path_factory.mktemp("gh-stub") / "gh-disabled-under-pytest"
+    stub.write_text(
+        "#!/bin/sh\necho 'gh: not available under pytest (tests/conftest.py)' >&2\nexit 1\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+@pytest.fixture(autouse=True)
+def no_installed_gh(monkeypatch, gh_stub):
+    """No test reaches the `gh` installed on this machine, or GitHub through it.
+
+    Branch triage asks `gh` for every branch's PR. The triage repos have no
+    GitHub remote, so each call could only fail, but the real binary took ~4.6s
+    to say so: 14 calls, 65s of `test_branch_triage.py`, signed in as whatever
+    account this machine has. Every `gh` call goes through `run_gh`, which
+    honours `LOREGARDEN_GH_BIN`. A test of a `gh` flow still patches `run_gh`
+    or `subprocess.run`, which takes precedence.
+    """
+    monkeypatch.setenv(GH_BINARY_ENV, str(gh_stub))
 
 
 @pytest.fixture(autouse=True)

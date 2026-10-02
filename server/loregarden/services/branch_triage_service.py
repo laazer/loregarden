@@ -23,7 +23,7 @@ from loregarden.services.artifact_service import (
 )
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
-from loregarden.services.git_subprocess import run_git, scrubbed_git_env
+from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -246,14 +246,9 @@ def _worktree_dirty(worktree_path: str) -> bool:
 def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None:
     """Look up the PR associated with a branch via the `gh` CLI (network call)."""
     try:
-        proc = subprocess.run(
-            ["gh", "pr", "view", branch, "--json", "state,url,number,isDraft,title"],
+        proc = run_gh(
+            ["pr", "view", branch, "--json", "state,url,number,isDraft,title"],
             cwd=repo_root,
-            # `gh` resolves the repo by shelling out to git, so an inherited
-            # GIT_DIR would have it report the wrong repository's PRs.
-            env=scrubbed_git_env(),
-            capture_output=True,
-            text=True,
             timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -299,9 +294,8 @@ def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
     reporting "no PR".
     """
     try:
-        proc = subprocess.run(
+        proc = run_gh(
             [
-                "gh",
                 "pr",
                 "list",
                 "--state",
@@ -312,11 +306,6 @@ def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
                 "headRefName,state,url,number,isDraft,title",
             ],
             cwd=repo_root,
-            # `gh` resolves the repo by shelling out to git, so an inherited
-            # GIT_DIR would have it report the wrong repository's PRs.
-            env=scrubbed_git_env(),
-            capture_output=True,
-            text=True,
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
