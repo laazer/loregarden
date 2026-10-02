@@ -10,6 +10,8 @@ server/.venv/
 server/.self-improve-restart
 server/.pyinstaller/
 server/.pylint_home/
+# Test profiles, written on request by lore_eden.testing.pytest_profile
+.profile/
 .loregarden/
 client/node_modules/
 client/dist/
