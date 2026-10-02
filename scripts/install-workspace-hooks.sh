@@ -21,6 +21,12 @@
 
 set -euo pipefail
 
+# The interpreter for the Python halves. The server names its own
+# (services/workspace_integration.py), so it is not re-resolved from PATH on
+# every call — through a pyenv shim that costs seconds per call, not
+# milliseconds. A shell run falls back to python3.
+PYTHON="${LOREGARDEN_PYTHON:-python3}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOREGARDEN_ROOT="$ROOT"
 
@@ -49,7 +55,7 @@ done
 
 if [ "$all" -eq 1 ]; then
   [ ${#targets[@]} -eq 0 ] || { echo "--all takes no paths" >&2; exit 2; }
-  listing="$(python3 "$ROOT/scripts/list_workspace_roots.py" --loregarden-root "$LOREGARDEN_ROOT")"
+  listing="$("$PYTHON" "$ROOT/scripts/list_workspace_roots.py" --loregarden-root "$LOREGARDEN_ROOT")"
   while IFS=$'\t' read -r _slug root; do
     [ -n "$root" ] && targets+=("$root")
   done <<<"$listing"
@@ -82,7 +88,7 @@ for target in "${targets[@]}"; do
     status=1
     continue
   fi
-  if ! python3 "$ROOT/scripts/install_workspace_hooks.py" \
+  if ! "$PYTHON" "$ROOT/scripts/install_workspace_hooks.py" \
     --config "$target/lefthook.yml" \
     --loregarden-root "$LOREGARDEN_ROOT" \
     ${check_only:+$([ "$check_only" -eq 1 ] && echo --check)}; then
