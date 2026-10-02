@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from lore_eden.testing import pytest_profile
 from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
@@ -14,6 +15,16 @@ from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.worktree_helpers import seed_stage_report_contract
+
+
+def pytest_configure(config):
+    """Profile this run when `LORE_EDEN_PROFILE` names an output file; otherwise do nothing.
+
+    `task test:profile` sets it. The plugin records per-test setup/call/teardown
+    seconds and prints the slowest; under xdist only the controller writes.
+    """
+    pytest_profile.register(config, suite="server")
+
 
 # Every module that binds the DB engine at import time via
 # `from loregarden.db.session import engine`. The isolated_db fixture redirects
