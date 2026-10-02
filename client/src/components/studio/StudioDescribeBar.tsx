@@ -1,3 +1,5 @@
+import { Input } from "../ui/Input";
+
 export function StudioDescribeBar({
   value,
   onChange,
@@ -23,7 +25,8 @@ export function StudioDescribeBar({
 
   return (
     <div className="studio-describe-bar">
-      <input
+      <Input
+        aria-label="Describe what to generate"
         className="studio-describe-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}

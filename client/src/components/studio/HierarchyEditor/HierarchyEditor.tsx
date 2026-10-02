@@ -23,6 +23,7 @@ import {
 } from "./models";
 import { describeError, pushToast, toastActionFailed } from "../../../state/toastStore";
 import styles from "./HierarchyEditor.module.css";
+import { Input } from "../../ui/Input";
 
 export interface HierarchyEditorProps {
   initialHierarchy?: HierarchyNode[];
@@ -438,7 +439,8 @@ function HierarchyNodeEditor({
                 })}
           >
             {isEditing ? (
-              <input
+              <Input
+                aria-label="Node title"
                 autoFocus
                 type="text"
                 value={titleValue}

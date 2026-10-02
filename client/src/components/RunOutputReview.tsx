@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from 'react';
 import './RunOutputReview.css';
+import { Textarea } from './ui/Textarea';
 
 export interface OutputLine {
   number: number;
@@ -158,7 +159,8 @@ export function RunOutputReview({
               {/* Add comment form */}
               {newCommentLine === line.number && (
                 <div className="add-comment-form">
-                  <textarea
+                  <Textarea
+                    aria-label={`Comment on line ${line.number}`}
                     className="comment-textarea"
                     placeholder="Add a comment..."
                     value={newCommentContent}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { IconCloseButton } from "./IconCloseButton";
+import { Select } from "./ui/Select";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../lib/ticketStates";
 
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
@@ -309,7 +310,8 @@ export function UpdateStateModal({
                 </button>
               </div>
               <div className="modal-bulk-row">
-                <select
+                <Select
+                  aria-label="Status to apply to selected stages"
                   className="filter-select"
                   value={bulkStatus}
                   disabled={isSaving}
@@ -320,7 +322,7 @@ export function UpdateStateModal({
                       {s.replace("_", " ")}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <button
                   type="button"
                   className="btn-secondary btn-compact"
@@ -395,7 +397,8 @@ export function UpdateStateModal({
                       {stage.name}
                       {stage.optional && <span className="count-pill">optional</span>}
                     </span>
-                    <select
+                    <Select
+                      aria-label={`${stage.name} status`}
                       className="filter-select stage-status-select"
                       value={draft.stageStatuses[stage.key] ?? stage.status}
                       disabled={isSaving}
@@ -418,7 +421,7 @@ export function UpdateStateModal({
                           {st}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 );
               })}

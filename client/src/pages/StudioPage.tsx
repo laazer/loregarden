@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -31,6 +31,9 @@ import { useUiStore } from "../state/uiStore";
 import { StudioStagesCard } from "../components/studio/StudioStagesCard";
 import { emptyStage, modelOptionsForAdapter } from "../components/studio/studioWorkflowHelpers";
 import { AddToTabMenu } from "../components/AddToTabMenu";
+import { Input } from "../components/ui/Input";
+import { Select } from "../components/ui/Select";
+import { Textarea } from "../components/ui/Textarea";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -73,6 +76,7 @@ function agentCategory(agent: StudioAgent): { label: string; className: string }
 }
 
 export function StudioPage() {
+  const fieldId = useId();
   const qc = useQueryClient();
   const tab = useStudioSectionFromRoute();
   const studioResourceId = useStudioResourceFromRoute();
@@ -677,8 +681,9 @@ export function StudioPage() {
                 </div>
                 <div className="studio-field-row">
                   <div className="studio-field">
-                    <div className="studio-field-label">Name</div>
-                    <input
+                    <label htmlFor={`${fieldId}-agent-name`} className="studio-field-label">Name</label>
+                    <Input
+                      id={`${fieldId}-agent-name`}
                       className="studio-input"
                       value={isAgentReadOnly ? selectedAgent?.name ?? "" : agentDraft.name}
                       readOnly={isAgentReadOnly}
@@ -687,8 +692,9 @@ export function StudioPage() {
                     />
                   </div>
                   <div className="studio-field">
-                    <div className="studio-field-label">Slug</div>
-                    <input
+                    <label htmlFor={`${fieldId}-agent-slug`} className="studio-field-label">Slug</label>
+                    <Input
+                      id={`${fieldId}-agent-slug`}
                       className="studio-input mono"
                       value={isAgentReadOnly ? selectedAgent?.slug ?? "" : agentDraft.slug}
                       placeholder="auto from name"
@@ -698,8 +704,9 @@ export function StudioPage() {
                   </div>
                 </div>
                 <div className="studio-field">
-                  <div className="studio-field-label">Description</div>
-                  <input
+                  <label htmlFor={`${fieldId}-agent-description`} className="studio-field-label">Description</label>
+                  <Input
+                    id={`${fieldId}-agent-description`}
                     className="studio-input"
                     value={isAgentReadOnly ? selectedAgent?.description ?? "" : agentDraft.description}
                     readOnly={isAgentReadOnly}
@@ -721,7 +728,8 @@ export function StudioPage() {
                 <p className="studio-card-hint">
                   What this agent does, its constraints, and its output expectations. This becomes the system prompt.
                 </p>
-                <textarea
+                <Textarea
+                  aria-label="Role instructions"
                   className="studio-textarea"
                   value={isAgentReadOnly ? selectedAgent?.role_body ?? "" : agentDraft.role_body}
                   readOnly={isAgentReadOnly}
@@ -741,8 +749,9 @@ export function StudioPage() {
                 </div>
                 <div className="studio-field-row" style={{ marginBottom: 0 }}>
                   <div className="studio-field" style={{ flex: 1.3 }}>
-                    <div className="studio-field-label">Provider</div>
-                    <select
+                    <label htmlFor={`${fieldId}-agent-provider`} className="studio-field-label">Provider</label>
+                    <Select
+                      id={`${fieldId}-agent-provider`}
                       className="studio-select"
                       value={isAgentReadOnly ? selectedAgent?.adapter ?? "claude" : agentDraft.adapter}
                       disabled={isAgentReadOnly}
@@ -753,11 +762,12 @@ export function StudioPage() {
                           {opt.label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                   <div className="studio-field">
-                    <div className="studio-field-label">Default skill</div>
-                    <select
+                    <label htmlFor={`${fieldId}-agent-skill`} className="studio-field-label">Default skill</label>
+                    <Select
+                      id={`${fieldId}-agent-skill`}
                       className="studio-select mono"
                       value={isAgentReadOnly ? selectedAgent?.default_skill ?? "" : agentDraft.default_skill}
                       disabled={isAgentReadOnly}
@@ -769,10 +779,10 @@ export function StudioPage() {
                           {skill}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                   <div className="studio-field">
-                    <div className="studio-field-label">Default model</div>
+                    <label htmlFor={`${fieldId}-agent-model`} className="studio-field-label">Default model</label>
                     {(() => {
                       const adapter = isAgentReadOnly ? selectedAgent?.adapter ?? "claude" : agentDraft.adapter;
                       const value = isAgentReadOnly
@@ -781,7 +791,8 @@ export function StudioPage() {
                       const modelOptions = modelOptionsForAdapter(adapter, runtimeOptions.data);
                       if (modelOptions) {
                         return (
-                          <select
+                          <Select
+                            id={`${fieldId}-agent-model`}
                             className="studio-select mono"
                             value={value}
                             disabled={isAgentReadOnly}
@@ -792,11 +803,12 @@ export function StudioPage() {
                                 {opt.label}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         );
                       }
                       return (
-                        <input
+                        <Input
+                          id={`${fieldId}-agent-model`}
                           className="studio-input mono"
                           placeholder="Model id"
                           value={value}
@@ -807,8 +819,9 @@ export function StudioPage() {
                     })()}
                   </div>
                   <div className="studio-field" style={{ flex: 0.8 }}>
-                    <div className="studio-field-label">Timeout (s)</div>
-                    <input
+                    <label htmlFor={`${fieldId}-agent-timeout`} className="studio-field-label">Timeout (s)</label>
+                    <Input
+                      id={`${fieldId}-agent-timeout`}
                       type="number"
                       className="studio-input mono"
                       value={isAgentReadOnly ? selectedAgent?.timeout ?? 600 : agentDraft.timeout}
@@ -1025,8 +1038,9 @@ export function StudioPage() {
                 </div>
                 <div className="studio-field-row">
                   <div className="studio-field">
-                    <div className="studio-field-label">Name</div>
-                    <input
+                    <label htmlFor={`${fieldId}-workflow-name`} className="studio-field-label">Name</label>
+                    <Input
+                      id={`${fieldId}-workflow-name`}
                       className="studio-input"
                       value={workflowDraft.name}
                       readOnly={isWorkflowReadOnly}
@@ -1035,8 +1049,9 @@ export function StudioPage() {
                     />
                   </div>
                   <div className="studio-field">
-                    <div className="studio-field-label">Slug</div>
-                    <input
+                    <label htmlFor={`${fieldId}-workflow-slug`} className="studio-field-label">Slug</label>
+                    <Input
+                      id={`${fieldId}-workflow-slug`}
                       className="studio-input mono"
                       value={workflowDraft.slug}
                       placeholder="auto from name"
@@ -1046,8 +1061,9 @@ export function StudioPage() {
                   </div>
                 </div>
                 <div className="studio-field">
-                  <div className="studio-field-label">Description</div>
-                  <input
+                  <label htmlFor={`${fieldId}-workflow-description`} className="studio-field-label">Description</label>
+                  <Input
+                    id={`${fieldId}-workflow-description`}
                     className="studio-input"
                     value={workflowDraft.description}
                     readOnly={isWorkflowReadOnly}
