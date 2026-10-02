@@ -10,6 +10,7 @@ from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.worktree_snapshot import read_tree
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -48,7 +49,7 @@ def _record(session, ticket, evidence_kind, commit_sha):
 
 def test_ledger_is_empty_when_nothing_is_proven(session_and_ticket, git_repo):
     session, ticket = session_and_ticket
-    assert build_evidence_ledger(session, ticket, git_repo, is_verify=False) == ""
+    assert build_evidence_ledger(session, ticket, read_tree(git_repo), is_verify=False) == ""
 
 
 def test_ledger_lists_evidence_recorded_at_head(session_and_ticket, git_repo):
@@ -57,7 +58,7 @@ def test_ledger_lists_evidence_recorded_at_head(session_and_ticket, git_repo):
     _record(session, ticket, "full_suite_green", head)
     _record(session, ticket, "real_surface", head)
 
-    ledger = build_evidence_ledger(session, ticket, git_repo, is_verify=False)
+    ledger = build_evidence_ledger(session, ticket, read_tree(git_repo), is_verify=False)
     assert "full regression suite passed" in ledger.lower()
     assert "Do not re-run it" in ledger
     assert "real surface" in ledger.lower()
@@ -67,13 +68,13 @@ def test_ledger_is_withheld_from_the_verifier(session_and_ticket, git_repo):
     """A verifier primed with what was already concluded is no longer independent."""
     session, ticket = session_and_ticket
     _record(session, ticket, "full_suite_green", resolve_head_sha(session, ticket))
-    assert build_evidence_ledger(session, ticket, git_repo, is_verify=True) == ""
+    assert build_evidence_ledger(session, ticket, read_tree(git_repo), is_verify=True) == ""
 
 
 def test_ledger_excludes_evidence_from_an_earlier_commit(session_and_ticket, git_repo):
     session, ticket = session_and_ticket
     _record(session, ticket, "full_suite_green", "an-earlier-commit")
-    assert build_evidence_ledger(session, ticket, git_repo, is_verify=False) == ""
+    assert build_evidence_ledger(session, ticket, read_tree(git_repo), is_verify=False) == ""
 
 
 def test_ledger_is_empty_when_the_tree_is_dirty(session_and_ticket, git_repo):
@@ -82,4 +83,4 @@ def test_ledger_is_empty_when_the_tree_is_dirty(session_and_ticket, git_repo):
     session, ticket = session_and_ticket
     _record(session, ticket, "full_suite_green", resolve_head_sha(session, ticket))
     (git_repo / "drift.txt").write_text("x", encoding="utf-8")
-    assert build_evidence_ledger(session, ticket, git_repo, is_verify=False) == ""
+    assert build_evidence_ledger(session, ticket, read_tree(git_repo), is_verify=False) == ""

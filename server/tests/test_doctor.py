@@ -34,6 +34,7 @@ from loregarden.services.doctor import (
     preflight_summary,
     run_checks,
 )
+from loregarden.services.preflight_ledger import PreflightLedger
 from sqlmodel import Session
 from tests.worktree_helpers import git, make_repo
 
@@ -328,7 +329,7 @@ def test_a_healthy_preflight_records_no_failures(session, workspace, repo, monke
     session.refresh(ticket)
     run = _run(session, workspace, ticket)
 
-    findings = preflight_run(session, run, workspace, repo)
+    findings = preflight_run(session, run, workspace, repo, ledger=PreflightLedger())
 
     assert all(f.status is not DoctorStatus.FAIL for f in findings)
     session.refresh(run)
@@ -343,7 +344,7 @@ def test_the_preflight_records_which_checks_failed(session, workspace, repo):
     session.refresh(ticket)
     run = _run(session, workspace, ticket)
 
-    preflight_run(session, run, workspace, repo)
+    preflight_run(session, run, workspace, repo, ledger=PreflightLedger())
 
     session.refresh(run)
     assert json.loads(run.start_preflight_failures_json) == [DoctorCheck.GIT_CORE_BARE.value]
@@ -366,7 +367,9 @@ def test_the_preflight_runs_only_the_fast_subset(session, workspace, repo, monke
     session.commit()
     session.refresh(ticket)
 
-    preflight_run(session, _run(session, workspace, ticket), workspace, repo)
+    preflight_run(
+        session, _run(session, workspace, ticket), workspace, repo, ledger=PreflightLedger()
+    )
 
     assert ran == list(DISPATCH_PREFLIGHT_CHECKS)
     assert DoctorCheck.GIT_PORTABILITY not in ran

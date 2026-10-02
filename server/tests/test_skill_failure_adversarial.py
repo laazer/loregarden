@@ -5,6 +5,7 @@ import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.config import settings
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowTemplate, Workspace
+from loregarden.services.worktree_snapshot import TreeSnapshot
 from loregarden.skills.registry import SkillNotFoundError
 from tests.worktree_helpers import seed_stage_report_contract
 
@@ -52,7 +53,12 @@ def test_execute_marks_run_failed_when_declared_skill_is_missing(db_session, tmp
 
     with (
         patch("loregarden.agents.executors.cli.ensure_ticket_branch"),
-        patch("loregarden.agents.executors.cli.working_tree_paths", return_value=[]),
+        patch(
+            "loregarden.agents.executors.cli.read_tree",
+            return_value=TreeSnapshot(
+                repo_root=repo, head_sha="", branch="", dirty_paths=frozenset()
+            ),
+        ),
     ):
         completed = CliAgentExecutor(db_session).execute(run, ticket, advance_workflow=False)
 

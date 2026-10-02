@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     WorkItemType,
 )
 from loregarden.services.builtin_orchestrator import _run_and_collect_parallel_results
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.run_lease import AGENT_RUN_LEASE, agent_run_lease_expired
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session
@@ -93,7 +94,7 @@ def test_member_lease_is_renewed_while_it_executes(
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(CliAgentExecutor, "execute", _fake_execute)
-        _run_and_collect_parallel_results(lens_runs)
+        _run_and_collect_parallel_results(lens_runs, PreflightLedger())
 
     assert set(still_expired) == set(LENSES)
     assert not any(still_expired.values()), (
