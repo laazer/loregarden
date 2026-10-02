@@ -58,16 +58,12 @@ from loregarden.models.domain import (
     TicketState,
     WorkItemType,
     Workspace,
-    Worktree,
-    WorktreeState,
 )
-from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.gate_recovery import GateRecovery
 from loregarden.services.gate_runner import _run_command
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from sqlmodel import Session
-from tests.worktree_helpers import git as helper_git
 from tests.worktree_helpers import make_repo
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
@@ -252,71 +248,6 @@ def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
     listing = lenient_client.get(base)
 
     assert (created.status_code, listing.status_code) == (422, 200)
-
-
-# --- lg-milestone-that-849: evidence stamped on the shared checkout --------
-
-
-@pytest.fixture
-def ticket_in_a_diverged_worktree(isolated_db, tmp_path: Path):
-    """A ticket whose ACTIVE worktree has advanced past the shared checkout."""
-    shared = make_repo(tmp_path, name="shared")
-    worktree_dir = make_repo(tmp_path, name="ticket-worktree")
-    (worktree_dir / "only-here.txt").write_text("x\n")
-    helper_git(worktree_dir, "add", "-A")
-    helper_git(worktree_dir, "commit", "-qm", "work the shared checkout never saw")
-    worktree_head = helper_git(worktree_dir, "rev-parse", "HEAD").stdout.strip()
-    assert helper_git(shared, "rev-parse", "HEAD").stdout.strip() != worktree_head
-
-    session = Session(isolated_db)
-    workspace = Workspace(slug="ev-wt", name="EV-WT", repo_path=str(shared))
-    session.add(workspace)
-    session.commit()
-    ticket = Ticket(
-        external_id="ev-wt-1",
-        workspace_id=workspace.id,
-        title="stamp",
-        state=TicketState.IN_PROGRESS,
-        work_item_type=WorkItemType.TASK,
-    )
-    session.add(ticket)
-    session.commit()
-    run = AgentRun(
-        run_code="ev_wt_run",
-        workspace_id=workspace.id,
-        ticket_id=ticket.id,
-        agent_id="test_designer",
-        stage_key="test-design",
-    )
-    session.add(run)
-    session.commit()
-    session.add(
-        Worktree(
-            workspace_id=workspace.id,
-            agent_run_id=run.id,
-            ticket_id=ticket.id,
-            worktree_path=str(worktree_dir),
-            state=WorktreeState.ACTIVE,
-        )
-    )
-    session.commit()
-    yield session, ticket, worktree_head
-    session.close()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "lg-milestone-that-849 — open. 742's fix never reached main: resolve_head_sha "
-        "reads the shared checkout, so evidence is stamped and gated against a HEAD "
-        "the ticket never wrote to."
-    ),
-)
-def test_evidence_is_stamped_at_the_ticket_worktree_head(ticket_in_a_diverged_worktree) -> None:
-    """Verified live on 2026-10-02 with 742's own regression test."""
-    session, ticket, worktree_head = ticket_in_a_diverged_worktree
-
-    assert resolve_head_sha(session, ticket) == worktree_head
 
 
 # --- lg-workflow-integrity-850: autofix commit failures swallowed ----------

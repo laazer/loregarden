@@ -2,7 +2,16 @@
 
 import pytest
 from loregarden.mcp.tools import execute_tool, tool_names
-from loregarden.models.domain import Artifact, Ticket, WorkItemType, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    Ticket,
+    TicketState,
+    WorkItemType,
+    Workspace,
+    Worktree,
+    WorktreeState,
+)
 from loregarden.services.evidence import EVIDENCE_KINDS, evidence_for_commit, has_evidence
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -488,3 +497,181 @@ def test_without_template_context_the_requirement_still_applies(session_and_tick
         ticket, _implement_stage(stages), None
     )
     assert "real_surface" in detail
+
+
+# --- resolve_head_sha: ticket checkout, not shared workspace root (AC3) ------
+
+
+def test_resolve_head_sha_reads_ticket_worktree_not_shared_checkout(tmp_path):
+    """AC3 / AC1: stamp against the ACTIVE ticket worktree HEAD, not workspace.repo_path.
+
+    Worktree execution is the default path. resolve_head_sha that asks only
+    resolve_workspace_root stamps the shared checkout the ticket never wrote to
+    — observed on lg-initiatives-cross-741 (worktree e9c262a0 vs stamped a9e43ea2).
+
+    Fixture mirrors test_rework_convergence's two-repo divergence, but asserts the
+    ticket-scoped path (ACTIVE Worktree.worktree_path), not the run-scoped one.
+    Must fail while resolve_head_sha still calls resolve_workspace_root.
+    """
+    from loregarden.services.evidence import resolve_head_sha
+    from tests.worktree_helpers import git, make_repo
+
+    shared = make_repo(tmp_path, name="shared")
+    worktree_dir = make_repo(tmp_path, name="ticket-worktree")
+    (worktree_dir / "only-here.txt").write_text("x", encoding="utf-8")
+    git(worktree_dir, "add", "-A")
+    git(worktree_dir, "commit", "-q", "-m", "work the shared checkout never saw")
+
+    shared_head = git(shared, "rev-parse", "HEAD").stdout.strip()
+    worktree_head = git(worktree_dir, "rev-parse", "HEAD").stdout.strip()
+    assert shared_head != worktree_head, (
+        "fixture must diverge before the behaviour assert — otherwise a "
+        "workspace-root body can pass without exercising the worktree path"
+    )
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-wt.sqlite'}")
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine)
+
+    workspace = Workspace(slug="ev-wt", name="EV-WT", repo_path=str(shared))
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+
+    ticket = Ticket(
+        external_id="ev-wt-1",
+        workspace_id=workspace.id,
+        title="Evidence worktree stamp",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    # Worktree.agent_run_id is NOT NULL — seed a run before the ACTIVE row.
+    run = AgentRun(
+        run_code="ev_wt_run",
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        agent_id="test_designer",
+        stage_key="test-design",
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    worktree = Worktree(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        ticket_id=ticket.id,
+        worktree_path=str(worktree_dir),
+        state=WorktreeState.ACTIVE,  # resolve_ticket_root only accepts ACTIVE
+    )
+    session.add(worktree)
+    session.commit()
+    session.refresh(worktree)
+
+    assert resolve_head_sha(session, ticket) == worktree_head, (
+        "resolve_head_sha returned the shared checkout HEAD; stamp/gate must "
+        "follow resolve_ticket_root (ACTIVE worktree) so evidence binds to the "
+        "checkout the ticket actually advanced"
+    )
+
+    # Optional attach-path check: Artifact.commit_sha must use the same SHA.
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="stamped at ticket worktree HEAD",
+        content={},
+        evidence_kind="real_surface",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    stored = session.exec(select(Artifact).where(Artifact.kind == "evidence")).first()
+    assert stored is not None
+    assert stored.commit_sha == worktree_head
+
+    session.close()
+
+
+def test_resolve_head_sha_ignores_non_active_worktree_and_falls_back_to_shared(tmp_path):
+    """AC1 fallback: CLEANUP (or otherwise non-ACTIVE) must not stamp the old tree.
+
+    A wrong fix that drops the ACTIVE filter would keep stamping a retired
+    worktree after release. Locks the resolve_ticket_root fallback to
+    workspace.repo_path when no usable ACTIVE row exists.
+    """
+    from loregarden.services.evidence import resolve_head_sha
+    from tests.worktree_helpers import git, make_repo
+
+    shared = make_repo(tmp_path, name="shared")
+    retired = make_repo(tmp_path, name="retired-worktree")
+    (retired / "only-here.txt").write_text("x", encoding="utf-8")
+    git(retired, "add", "-A")
+    git(retired, "commit", "-q", "-m", "retired tree")
+
+    shared_head = git(shared, "rev-parse", "HEAD").stdout.strip()
+    retired_head = git(retired, "rev-parse", "HEAD").stdout.strip()
+    assert shared_head != retired_head
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-cleanup.sqlite'}")
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine)
+
+    workspace = Workspace(slug="ev-cu", name="EV-CU", repo_path=str(shared))
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+
+    ticket = Ticket(
+        external_id="ev-cu-1",
+        workspace_id=workspace.id,
+        title="Evidence cleanup fallback",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    run = AgentRun(
+        run_code="ev_cu_run",
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        agent_id="test_breaker",
+        stage_key="test-break",
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            ticket_id=ticket.id,
+            worktree_path=str(retired),
+            state=WorktreeState.CLEANUP,
+        )
+    )
+    session.commit()
+
+    assert resolve_head_sha(session, ticket) == shared_head
+    session.close()
+
+
+def test_resolve_head_sha_returns_empty_when_workspace_row_missing(tmp_path):
+    """AC1: no Workspace row → "" (cannot stamp a commit that does not exist)."""
+    from types import SimpleNamespace
+
+    from loregarden.services.evidence import resolve_head_sha
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'evidence-nows.sqlite'}")
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine)
+
+    # FK would refuse a Ticket row pointing at a missing workspace; the helper
+    # only reads ticket.workspace_id, so a stand-in is enough to hit the miss.
+    orphan = SimpleNamespace(workspace_id="missing-workspace-id")
+    assert resolve_head_sha(session, orphan) == ""
+    session.close()
