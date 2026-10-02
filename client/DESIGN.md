@@ -129,9 +129,9 @@ blocks every commit. Whole-file-on-touch converts the backlog into steady amorti
 
 ### Known violations, to migrate on touch
 
-Eleven tab implementations — `.tab-btn` (Dashboard, QueueSnapshotManager), `.terminal-tab`,
+Ten tab implementations — `.tab-btn` (Dashboard), `.terminal-tab`,
 `.studio-subtab`, `.queue-rail-tab`, `.artifacts-subtab`, `.operation-diff-review-tab`,
-`.ticket-diff-review-tabs`, `.manager-tabs`, `.code-editor-tab`, `.branch-triage-tab`, `.tab-bar`.
+`.ticket-diff-review-tabs`, `.code-editor-tab`, `.branch-triage-tab`, `.tab-bar`.
 
 Nineteen `*Modal.tsx`, each hand-rolling `role="dialog"` and a portal.
 

@@ -476,6 +476,34 @@ class TestRunOutputReview:
         line_2 = data["lines"][1]
         assert len(line_2["comments"]) == 1
 
+    @pytest.mark.parametrize(
+        ("output_content", "expected"),
+        [
+            ("", []),
+            ("Line 1\nLine 2\n", ["Line 1", "Line 2"]),
+            ("Line 1\n\nLine 3", ["Line 1", "", "Line 3"]),
+            ("50%\r100%\nDone", ["50%\r100%", "Done"]),
+        ],
+        ids=["empty-stream", "trailing-newline", "inner-blank-kept", "carriage-return-kept"],
+    )
+    def test_lines_match_what_the_run_wrote(
+        self, client: TestClient, workspace, output_content: str, expected: list[str]
+    ):
+        """No phantom line for an empty stream or a trailing newline, and the
+        create response's line_count agrees with the lines the review returns."""
+        created = client.post(
+            f"/api/parallel/workspace/{workspace.id}/runs/run1/output-review",
+            json={"output_type": "stdout", "output_content": output_content},
+        ).json()
+
+        review = client.get(
+            f"/api/parallel/workspace/{workspace.id}/runs/run1/output-review/{created['review_id']}"
+        ).json()
+
+        assert [line["content"] for line in review["lines"]] == expected
+        assert [line["number"] for line in review["lines"]] == list(range(1, len(expected) + 1))
+        assert created["line_count"] == len(expected)
+
 
 class TestErrorHandling:
     """Test error handling in review system."""
