@@ -37,6 +37,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.branch_triage_run_service.engine",
     "loregarden.services.baxter_chat_run_service.engine",
     "loregarden.services.ticket_studio_run_service.engine",
+    "loregarden.services.initiative_planner_service.engine",
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
     "loregarden.services.github_push_on_edit.engine",

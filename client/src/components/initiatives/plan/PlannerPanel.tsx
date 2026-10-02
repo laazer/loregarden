@@ -1,0 +1,93 @@
+import { useState } from "react";
+
+import { useInitiativePlanner } from "../../../hooks/useInitiativePlanner";
+import { Button } from "../../ui/Button";
+import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat";
+
+const PLANNER_LABEL = "Planner";
+
+/**
+ * The planner conversation, docked beside the schedule.
+ *
+ * Answers "what should the dates be, and what would it take to hit one?". Its
+ * replies end in a proposal the schedule shows for acceptance, so the action
+ * this leads to is the Accept button on the left, not anything in here.
+ */
+export function PlannerPanel({
+  initiativeId,
+  canPlan,
+}: {
+  initiativeId: string;
+  /** False while the initiative has no milestones: there is nothing to schedule. */
+  canPlan: boolean;
+}) {
+  const planner = useInitiativePlanner(initiativeId);
+  const [draft, setDraft] = useState("");
+
+  const submit = () => {
+    const content = draft.trim();
+    if (!content) return;
+    setDraft("");
+    planner.send(content, () => setDraft(content));
+  };
+
+  return (
+    <aside className="plan-planner" aria-label="Planning agent">
+      <header className="plan-planner-head">
+        <div>
+          <h2 className="plan-section-title">Planning agent</h2>
+          <p className="plan-muted">Proposes dates from measured pace. You accept them.</p>
+        </div>
+        <Button
+          variant="primary"
+          compact
+          disabled={!canPlan || planner.isBusy}
+          title={canPlan ? undefined : "Attach a milestone to this initiative first"}
+          onClick={planner.draft}
+        >
+          {planner.isBusy ? "Planning…" : "Draft schedule"}
+        </Button>
+      </header>
+
+      <div className="plan-planner-thread">
+        {planner.loadError ? (
+          <div className="plan-empty" role="alert">
+            <p>{planner.loadError}</p>
+            <Button variant="secondary" compact onClick={planner.retry}>
+              Retry
+            </Button>
+          </div>
+        ) : planner.isLoading ? (
+          <div className="plan-skeleton plan-skeleton-thread" aria-busy="true" aria-label="Loading conversation" />
+        ) : (
+          <StudioChatMessages
+            messages={planner.messages}
+            isThinking={planner.isBusy}
+            activeTurnId={planner.activeTurnId}
+            thinkingMessage="Planner is working…"
+            thinkingSub="Reading the plan and its pace…"
+            assistantLabel={PLANNER_LABEL}
+            emptyMessage={
+              canPlan
+                ? "Draft a schedule to start, or ask something like “what would it take to land the beta by Nov 15?”"
+                : "Attach a milestone to this initiative, then the planner can schedule it."
+            }
+          />
+        )}
+      </div>
+
+      <StudioChatComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={submit}
+        onStop={planner.stop}
+        isSending={planner.isBusy}
+        isStopping={planner.isStopping}
+        disabled={!canPlan}
+        placeholder={canPlan ? "Ask the planner…" : "Attach a milestone first"}
+        error={planner.sendError}
+        dense
+      />
+    </aside>
+  );
+}

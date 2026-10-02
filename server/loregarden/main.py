@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
+from loregarden.agents.mcp_context import unverified_api_base_url
 from loregarden.api import (
     agents,
     analytics,
@@ -64,6 +66,7 @@ from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
+from loregarden.services.initiative_planner_service import fail_interrupted_planner_turns
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
@@ -73,6 +76,12 @@ from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
     settle_stranded_stages,
+)
+from loregarden.services.sandbox_endpoint import (
+    INSTANCE_ID,
+    SandboxMcpUrlError,
+    reset_verification,
+    verify_this_instance,
 )
 from loregarden.services.seed import seed_database
 from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
@@ -95,6 +104,7 @@ def _recover_previous_boot(session: Session) -> None:
     fail_interrupted_branch_triage_turns(session)
     fail_interrupted_baxter_chat_turns(session)
     fail_interrupted_studio_turns(session)
+    fail_interrupted_planner_turns(session)
     # An aside has no run row of its own, so nothing above would ever reach it.
     fail_interrupted_asides(session)
     # The turns those four just settled are exactly the ones whose live
@@ -123,6 +133,28 @@ def _recover_previous_boot(session: Session) -> None:
     # Resume only after every orphan row and stranded stage has been made
     # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
     resume_interrupted_orchestrations(session)
+
+
+def _start_sandbox_endpoint_check() -> asyncio.Task[None]:
+    """Prove the MCP URL this sandbox hands its agents reaches this process.
+
+    Runs once the server is serving (the task waits for it); until it passes,
+    sandbox agent turns refuse to start — see `services.sandbox_endpoint`.
+    """
+    reset_verification()
+
+    async def check() -> None:
+        try:
+            base = unverified_api_base_url()
+        except SandboxMcpUrlError:
+            # The resolver itself refused (no URL and no port): agent turns raise
+            # the same error, with the fix in it, when they ask.
+            logger.exception("sandbox: no MCP endpoint of its own; agent turns are refused")
+            return
+        async with httpx.AsyncClient() as client:
+            await verify_this_instance(base, client=client)
+
+    return asyncio.create_task(check(), name="sandbox-endpoint-check")
 
 
 @asynccontextmanager
@@ -160,9 +192,12 @@ async def lifespan(app: FastAPI):
     github_push_task = None if settings.sandbox else start_push_worker()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
+    endpoint_check = _start_sandbox_endpoint_check() if settings.sandbox else None
     try:
         yield
     finally:
+        if endpoint_check is not None:
+            endpoint_check.cancel()
         if advertised is not None:
             advertised.release()
         # Draining before anything else is torn down: the point is to stop
@@ -280,4 +315,5 @@ app.include_router(mcp.router, prefix="/mcp")
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "loregarden", "mcp": "/mcp"}
+    # `instance_id` lets a sandbox prove the URL it hands its agents is itself.
+    return {"status": "ok", "service": "loregarden", "mcp": "/mcp", "instance_id": INSTANCE_ID}

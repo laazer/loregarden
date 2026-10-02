@@ -32,6 +32,7 @@ from loregarden.mcp.external_harness_tools import (
     finish_external_stage_tool,
 )
 from loregarden.mcp.github_issue_tool import sync_github_issues
+from loregarden.mcp.initiative_plan_tools import HANDLERS as INITIATIVE_PLAN_HANDLERS
 from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDLERS
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
@@ -69,5 +70,6 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.DOCKER_CAPACITY_STATUS.value: docker_capacity_status_tool,
     McpTool.FORCE_RELEASE_DOCKER_LEASE.value: force_release_docker_lease_tool,
     **LOCAL_INSTANCE_HANDLERS,
+    **INITIATIVE_PLAN_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
 }

@@ -1,0 +1,465 @@
+/* One initiative's planning page: schedule and board on the left, the planner
+   docked on the right; stacked below 1100px. Colours are theme tokens only. */
+
+.plan-page {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  overflow: hidden;
+}
+
+.plan-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+/* Stacked: one scrolling column. A grid here let the rows shrink to the
+   items' min-height: 0, and the planner drew over the schedule. */
+@media (max-width: 1100px) {
+  .plan-page {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .plan-main {
+    flex: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+  .plan-planner {
+    flex: none;
+    height: 560px;
+  }
+}
+
+/* Initiative titles are sentences; the topbar's actions must stay reachable. */
+.plan-topbar-title {
+  display: inline-block;
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.plan-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-description {
+  margin: 0;
+  color: var(--txm);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  max-width: 80ch;
+}
+
+/* Briefs run to pages; three lines say what it is without burying the schedule. */
+.plan-description.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.plan-more-btn {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--ac2);
+}
+
+.plan-mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.plan-muted {
+  color: var(--txl);
+  font-size: 11.5px;
+  margin: 0;
+}
+
+.plan-hint {
+  margin: 0;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.plan-label {
+  color: var(--txl);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+.plan-figure {
+  color: var(--tx);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.plan-status {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.plan-section-title {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--tx);
+}
+
+/* Summary strip */
+
+.plan-summary,
+.plan-proposal,
+.plan-notes {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-summary-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  align-items: flex-end;
+}
+
+.plan-mode-buttons {
+  display: inline-flex;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.plan-mode-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--txm);
+  background: var(--bg2);
+}
+
+.plan-mode-btn.active {
+  background: color-mix(in srgb, var(--ac) 22%, var(--bg2));
+  color: var(--tx);
+}
+
+.plan-date-input {
+  font-size: 12px;
+  padding: 3px 6px;
+  max-width: 150px;
+}
+
+/* Proposal */
+
+.plan-proposal {
+  border-color: color-mix(in srgb, var(--ac) 55%, var(--bd));
+  background: color-mix(in srgb, var(--ac) 7%, var(--bg1));
+}
+
+.plan-proposal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plan-proposal-rationale {
+  margin: 4px 0 0;
+  color: var(--txm);
+  font-size: 12.5px;
+  max-width: 75ch;
+  white-space: pre-wrap;
+}
+
+.plan-proposal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.plan-notes summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.plan-notes p {
+  margin: 8px 0 0;
+  color: var(--txm);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+/* Schedule tables */
+
+.plan-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.plan-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.plan-table caption {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+  padding: 0 0 6px;
+}
+
+.plan-table th,
+.plan-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+.plan-table thead th {
+  color: var(--txl);
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.plan-table tbody th {
+  font-weight: 400;
+}
+
+.plan-row-done {
+  opacity: 0.6;
+}
+
+.plan-order {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.plan-icon-btn {
+  padding: 2px 6px;
+  color: var(--txm);
+  border-radius: 6px;
+}
+
+.plan-icon-btn:not(:disabled):hover {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.plan-link {
+  padding: 0;
+  text-align: left;
+  color: var(--tx);
+}
+
+.plan-link:hover {
+  color: var(--ac2);
+}
+
+.plan-progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+.plan-timeline-cell {
+  width: 28%;
+  min-width: 140px;
+}
+
+.plan-timeline {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg2);
+}
+
+.plan-timeline-forecast,
+.plan-timeline-target,
+.plan-timeline-floor,
+.plan-legend-forecast,
+.plan-legend-target,
+.plan-legend-floor {
+  display: inline-block;
+}
+
+.plan-timeline > span {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.plan-timeline-forecast,
+.plan-legend-forecast {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ac);
+}
+
+.plan-timeline-target,
+.plan-legend-target {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--tx);
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: transparent;
+}
+
+.plan-legend-target {
+  transform: rotate(45deg);
+}
+
+.plan-timeline-floor,
+.plan-legend-floor {
+  width: 2px;
+  height: 14px;
+  background: var(--txl);
+}
+
+/* Board */
+
+.plan-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.plan-board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-board-filters .filter-select {
+  flex: 0 1 260px;
+}
+
+.plan-move-select {
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+/* Planner */
+
+.plan-planner {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  padding: 12px;
+}
+
+.plan-planner-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.plan-planner-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Shared states */
+
+.plan-empty {
+  border: 1px dashed var(--bd2);
+  border-radius: 10px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--txm);
+  font-size: 12.5px;
+}
+
+.plan-empty p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.plan-skeleton {
+  border-radius: 10px;
+  background: var(--bg2);
+  animation: plan-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.plan-skeleton-summary {
+  height: 96px;
+}
+
+.plan-skeleton-table {
+  height: 260px;
+}
+
+.plan-skeleton-board {
+  height: 320px;
+}
+
+.plan-skeleton-thread {
+  height: 100%;
+  min-height: 160px;
+}
+
+@keyframes plan-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-skeleton {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .plan-page {
+    padding: 12px 16px 20px;
+  }
+  .plan-timeline-cell,
+  .plan-table thead th:last-child {
+    display: none;
+  }
+}

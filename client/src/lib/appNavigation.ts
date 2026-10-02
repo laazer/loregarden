@@ -205,6 +205,19 @@ export function studioSectionFromPath(pathname: string): StudioSection {
   return "agents";
 }
 
+const INITIATIVE_PATH_RE = /^\/initiatives\/([^/]+)/;
+
+/** An initiative's planning page. */
+export function initiativePath(initiativeId: string): string {
+  return `/initiatives/${encodeURIComponent(initiativeId)}`;
+}
+
+/** The initiative a `/initiatives/:id` URL names, or null on the list and elsewhere. */
+export function initiativeIdFromPath(pathname: string): string | null {
+  const match = pathname.match(INITIATIVE_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
+}
+
 export function viewPath(viewId: string): string {
   return `/view/${encodeURIComponent(viewId)}`;
 }

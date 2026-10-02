@@ -1188,6 +1188,7 @@ class ChatSurface(StrEnum):
     TICKET_TRIAGE = "ticket_triage"
     BRANCH_TRIAGE = "branch_triage"
     TICKET_STUDIO = "ticket_studio"
+    INITIATIVE_PLANNER = "initiative_planner"
 
 
 class CliTool(StrEnum):

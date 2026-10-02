@@ -1,0 +1,89 @@
+"""Vocabulary for initiative schedules: how a plan moves, and how it is doing.
+
+A plan holds a *target* date per milestone — what someone committed to — and
+the control plane recomputes a *forecast* from how fast the work is actually
+finishing. These enums name the two choices that separate them.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class ScheduleMode(StrEnum):
+    """Which date the plan shows as *the* date."""
+
+    #: Targets stay put until someone re-baselines; the forecast is drawn
+    #: beside them as ahead or behind.
+    FIXED = "fixed"
+    #: The planned date follows the forecast, so the schedule slides as work
+    #: speeds up or slows down. Targets are kept as the baseline it drifts from.
+    ROLLING = "rolling"
+
+
+class ScheduleStatus(StrEnum):
+    """One milestone's standing against its target."""
+
+    DONE = "done"
+    #: Forecast lands on or before the target.
+    ON_TRACK = "on_track"
+    #: Forecast lands after the target, which has not passed yet.
+    BEHIND = "behind"
+    #: The target has passed and the work is still open.
+    LATE = "late"
+    #: Open, but nobody has set a target.
+    UNSCHEDULED = "unscheduled"
+    #: A target exists but nothing measured can price the remaining work.
+    NO_FORECAST = "no_forecast"
+
+
+class ForecastBasis(StrEnum):
+    """What a forecast date was computed from — said, so it can be weighed."""
+
+    #: Resolved work items per day in this initiative's own subtree.
+    INITIATIVE_THROUGHPUT = "initiative_throughput"
+    #: Too little history in the initiative; the whole workspace's pace instead.
+    WORKSPACE_THROUGHPUT = "workspace_throughput"
+    #: Agent run-time for the remaining stages was longer than the throughput
+    #: forecast, so it set the date — work cannot finish faster than it runs.
+    AGENT_TIME = "agent_time"
+    #: Nothing to measure: no completions in the window and no run history.
+    NONE = "none"
+
+
+class ProposalStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DISCARDED = "discarded"
+    #: A newer proposal for the same initiative replaced it before anyone chose.
+    SUPERSEDED = "superseded"
+
+
+class ProposalSource(StrEnum):
+    """Who drafted a proposal."""
+
+    #: The one-shot "Draft schedule" run.
+    DRAFT = "draft"
+    #: The planner chat, mid-conversation.
+    CHAT = "chat"
+
+
+class PlannerRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class PlannerTurnStatus(StrEnum):
+    """An assistant row's lifecycle; user rows are written COMPLETE."""
+
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class PlannerTurnMode(StrEnum):
+    """Which prompt a planner turn runs with."""
+
+    CHAT = "chat"
+    #: The "Draft schedule" button: plan the whole initiative and propose it.
+    DRAFT = "draft"

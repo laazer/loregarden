@@ -80,6 +80,7 @@ from loregarden.db.migrations_github_issues import (
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
+from loregarden.db.migrations_initiative_plans import m_initiative_plans
 from loregarden.db.migrations_instances import m_instance_templates
 from loregarden.db.migrations_landing import m_ticket_landing_columns
 from loregarden.db.migrations_learning_applications import (
@@ -1430,6 +1431,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
     ("0150_workspace_archived_at", m_workspace_archived_at),
     ("0151_ticket_criteria_checked", m_ticket_criteria_checked),
+    ("0152_initiative_plans", m_initiative_plans),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -63,6 +63,8 @@ class McpTool(StrEnum):
     INSTANCE_STATUS = "loregarden_instance_status"
     STOP_INSTANCE = "loregarden_stop_instance"
     SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
+    GET_INITIATIVE_PLAN = "loregarden_get_initiative_plan"
+    PROPOSE_INITIATIVE_SCHEDULE = "loregarden_propose_initiative_schedule"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -169,6 +171,16 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.SUPERSEDE_TICKET,
 )
 
+#: The initiative planner's floor: read the plan and the tickets behind it, and
+#: file a schedule proposal. It is offered nothing that writes a ticket.
+INITIATIVE_PLANNER_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.GET_INITIATIVE_PLAN,
+    McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+    McpTool.GET_TICKET,
+    McpTool.GET_TICKET_BY_EXTERNAL,
+    McpTool.LIST_TICKETS,
+)
+
 # --- Permission-bridge policy (auto-approve vs inbox vs hard deny) ------------
 
 READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
@@ -180,6 +192,7 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
         McpTool.DOCKER_CAPACITY_STATUS,
+        McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
         # Also stamps `ready_at` the first time an instance answers — the
         # registry's own bookkeeping, not a change to anything it describes.
@@ -199,6 +212,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
 CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {
         McpTool.APPEND_CHECKPOINT,
+        # Files a *pending* proposal only; a person accepting it is the write.
+        McpTool.PROPOSE_INITIATIVE_SCHEDULE,
         McpTool.APPEND_LEARNING,
         McpTool.UPSERT_MEMORY,
         McpTool.CREATE_MEMORY_RELATION,
