@@ -10,7 +10,14 @@ from loregarden.config import settings
 from loregarden.db.session import get_session, init_db
 from loregarden.main import app
 from loregarden.models.domain import Workspace
-from loregarden.services import docker_capacity, local_instances, reference_cache
+from loregarden.services import (
+    codex_discovery,
+    docker_capacity,
+    local_instances,
+    opencode_discovery,
+    reference_cache,
+)
+from loregarden.services.cli_settings import ADAPTER_BINARIES
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
@@ -119,6 +126,32 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+
+
+@pytest.fixture(autouse=True)
+def no_installed_model_clis(monkeypatch, tmp_path):
+    """Model discovery sees no `opencode` or `codex`, whatever this machine has installed.
+
+    `GET /api/workspaces/runtime-options` lists models by running both CLIs. With
+    them installed, three tests ran the real `opencode models` — 97s of the suite,
+    16s for one assertion on a static list — and saw a different catalog than CI,
+    where neither is installed. Each binary's override is pointed at a path that
+    does not exist, which the resolvers treat as absent, and `CODEX_HOME` at an
+    empty directory so codex's cache fallback reads nothing.
+
+    A test of discovery itself still patches `resolve_*_binary` or
+    `subprocess.run`, which takes precedence. The caches are cleared either side
+    so a catalog one test faked cannot reach the next.
+    """
+    missing = tmp_path / "no-installed-cli"
+    for adapter in ("opencode", "codex"):
+        monkeypatch.setenv(ADAPTER_BINARIES[adapter][1], str(missing))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    opencode_discovery.reset_model_cache()
+    codex_discovery.reset_model_cache()
+    yield
+    opencode_discovery.reset_model_cache()
+    codex_discovery.reset_model_cache()
 
 
 @pytest.fixture(autouse=True)
