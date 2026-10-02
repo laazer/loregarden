@@ -25,6 +25,7 @@ names no destination, the destination is **a control-plane tool** — never a ne
 | You want to record… | Use | Not |
 |---|---|---|
 | Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
+| Architecture, decision record, plan for a milestone or initiative (no run needed) | `loregarden_write_document` | a `docs/*.md` file |
 | Stage outcome on a **stage run** (pass / reject / blocked) | `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel in your response | `loregarden_complete_stage` or a `*_COMPLETION.md` file |
 | Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
 | Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
@@ -201,6 +202,9 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 | Unrecoverable failure | `loregarden_block_ticket` |
 | A stage's exit actions need a person | `loregarden_request_approval` (refused when nothing is outstanding; a sign-off is an `operator_judgment` exit action on the stage) |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
+| Store a document (architecture, decision, plan) on any ticket, initiative included; same title = new version | `loregarden_write_document` |
+| Find the planning documents your ticket and its ancestors carry | `documents` in `loregarden_get_ticket`, or `loregarden_list_artifacts` |
+| Read one artifact in full (`is_latest` says if it was superseded) | `loregarden_read_artifact` |
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Find the right documentation page | `loregarden_search_reference` — not a guessed URL |
 | Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
