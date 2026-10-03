@@ -148,3 +148,14 @@ class AutopilotEvent(SQLModel, table=True):
     ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
     detail: str = ""
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+__all__ = [
+    "GLOBAL_INITIATIVE_POOL_ID",
+    "InitiativeNumberPool",
+    "InitiativePlan",
+    "ScheduleTarget",
+    "ScheduleProposal",
+    "InitiativePlannerMessage",
+    "AutopilotEvent",
+]

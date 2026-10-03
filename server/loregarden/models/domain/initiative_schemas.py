@@ -208,3 +208,21 @@ class AutopilotView(BaseModel):
 class AutopilotUpdate(BaseModel):
     enabled: bool | None = None
     max_parallel: int | None = Field(default=None, ge=1, le=12)
+
+
+__all__ = [
+    "InitiativeMilestoneView",
+    "InitiativeProgress",
+    "InitiativeView",
+    "WorkspacePace",
+    "MilestoneSchedule",
+    "ScheduleTargetInput",
+    "ScheduleProposalView",
+    "InitiativePlanView",
+    "InitiativePlanUpdate",
+    "ScheduleProposalCreate",
+    "PlanNodeView",
+    "AutopilotEventView",
+    "AutopilotView",
+    "AutopilotUpdate",
+]

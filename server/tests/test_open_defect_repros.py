@@ -48,21 +48,27 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
+    RunStatus,
     Ticket,
     TicketState,
     WorkItemType,
     Workspace,
 )
+from loregarden.services import process_identity
 from loregarden.services.gate_recovery import GateRecovery
 from loregarden.services.gate_runner import _run_command
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.process_identity import identify
+from loregarden.services.run_reattach import reattach_surviving_runs
+from loregarden.services.run_service import fail_interrupted_runs
 from sqlmodel import Session
 from tests.worktree_helpers import make_repo
 
@@ -314,3 +320,62 @@ def test_a_failed_autofix_commit_is_reported(
         recovery._commit_autofix(ticket, "implement", "fixers rewrote seed.txt")
 
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
+
+
+# --- lg-run-durability-862: a slow `ps` at boot fails a live run -------------
+
+
+@pytest.fixture
+def live_run_with_its_identity(isolated_db):
+    """A RUNNING run whose agent is a real live process, identity recorded by
+    the real `ps` — so a broken `ps` ERRORs the setup instead of XFAILing."""
+    agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    identity = identify(agent.pid)
+    assert identity, "the fixture needs a real identity to record"
+    session = Session(isolated_db)
+    workspace = Workspace(slug="reattach-ps", name="reattach-ps", repo_path=".")
+    session.add(workspace)
+    session.commit()
+    ticket = Ticket(external_id="reattach-ps-1", workspace_id=workspace.id, title="ps")
+    session.add(ticket)
+    session.commit()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        run_code="ps_slow",
+        agent_id="backend_implementer",
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+        agent_pid=agent.pid,
+        agent_pid_identity=identity,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    yield session, run
+    session.close()
+    agent.kill()
+    agent.wait(timeout=5)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "lg-run-durability-862 — open. identify() returns None on a `ps` timeout, the "
+        "same answer as a dead process, so a slow `ps` at boot gets a live agent's "
+        "run failed by fail_interrupted_runs."
+    ),
+)
+def test_a_live_run_survives_a_ps_that_cannot_answer(live_run_with_its_identity) -> None:
+    """Reasoned from a pre-push failure on 2026-10-02 and reproduced by forcing the
+    timeout; a `ps` actually exceeding 5s was not observed."""
+    session, run = live_run_with_its_identity
+
+    def ps_times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 5))
+
+    with mock.patch.object(process_identity.subprocess, "run", ps_times_out):
+        reattach_surviving_runs(session, interval_seconds=0.05)
+        failed = fail_interrupted_runs(session)
+
+    assert run.id not in {r.id for r in failed}
