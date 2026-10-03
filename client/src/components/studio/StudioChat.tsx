@@ -26,6 +26,9 @@ import { useStickToBottom } from "../chat/useStickToBottom";
 import { Textarea } from "../ui/Textarea";
 import "../chat/ChatLook.css";
 
+/** Copy alone — the row every turn gets when the host adds nothing to it. */
+const NO_MESSAGE_HANDLERS: ChatMessageActionHandlers = {};
+
 export type StudioAssistantActivity = "thinking" | "typing";
 
 export type StudioChatComposerVariant = "panel" | "dock";
@@ -206,35 +209,40 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           const oneShotTask = runSummary ? null : agentPlanRequestTask(body);
           return (
             <div key={message.id} className="lg-chat-turn lg-chat-turn--user">
-              {runSummary ? (
-                <div className="lg-chat-action-chip" title={body}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  <span>
-                    Ran {runSummary.title}
-                    {runSummary.steps
-                      ? ` · ${runSummary.steps} step${runSummary.steps === 1 ? "" : "s"}`
-                      : ""}
-                  </span>
-                </div>
-              ) : oneShotTask ? (
-                <div className="lg-chat-user-stack">
+              <div className="lg-chat-user-col">
+                {runSummary ? (
                   <div className="lg-chat-action-chip" title={body}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                      <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                      <path d="M8 5v14l11-7z" />
                     </svg>
-                    <span>Asked for a plan</span>
+                    <span>
+                      Ran {runSummary.title}
+                      {runSummary.steps
+                        ? ` · ${runSummary.steps} step${runSummary.steps === 1 ? "" : "s"}`
+                        : ""}
+                    </span>
                   </div>
+                ) : oneShotTask ? (
+                  <div className="lg-chat-user-stack">
+                    <div className="lg-chat-action-chip" title={body}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                      </svg>
+                      <span>Asked for a plan</span>
+                    </div>
+                    <div className="lg-chat-user-bubble">
+                      <MarkdownContent content={oneShotTask} />
+                    </div>
+                  </div>
+                ) : (
                   <div className="lg-chat-user-bubble">
-                    <MarkdownContent content={oneShotTask} />
+                    <MarkdownContent content={body} />
                   </div>
-                </div>
-              ) : (
-                <div className="lg-chat-user-bubble">
-                  <MarkdownContent content={body} />
-                </div>
-              )}
+                )}
+                {/* Copy only: forking or filing what the operator typed is not
+                    something any surface offers. */}
+                <ChatMessageActions message={message} body={body} handlers={NO_MESSAGE_HANDLERS} />
+              </div>
               {renderAfterMessage?.(message)}
             </div>
           );
@@ -246,13 +254,15 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         // row, so a sibling here would sit to the right of the reply rather
         // than under it — and the column's avatar gutter is what lines the row
         // up with the prose it acts on.
-        const actionsRow = messageActions ? (
+        // Copy needs nothing from the host, so every thread gets the row; a
+        // host's handlers only add Fork and Start as ticket to it.
+        const actionsRow = (
           <ChatMessageActions
             message={message}
             body={textBody || body}
-            handlers={messageActions}
+            handlers={messageActions ?? NO_MESSAGE_HANDLERS}
           />
-        ) : null;
+        );
         const reply = (
           <>
             {leadingReasoning}
