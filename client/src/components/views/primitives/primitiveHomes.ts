@@ -13,9 +13,8 @@
  *
  * ## `null` is an answer, not a gap
  *
- * A primitive with no home is recorded as one. `web_embed` points at an
- * arbitrary URL and no page in this app is "the page about that URL"; leaving it
- * out of the map would be indistinguishable from forgetting it.
+ * A primitive with no home is recorded as one, as `null`; leaving it out of the
+ * map would be indistinguishable from forgetting it.
  *
  * ## The list is closed on purpose
  *
@@ -95,9 +94,9 @@ export const PRIMITIVE_HOMES: Record<HomedPrimitiveId, PrimitiveHome | null> = {
   // chat page is where a thread is chosen, which is what the pane needs.
   chat_session: { path: "/chat", surface: "Chat" },
 
-  // Points at an arbitrary URL. No page in this app is the page about that URL,
-  // so there is nowhere to offer it from — which is a decision, recorded.
-  web_embed: null,
+  // An arbitrary URL in general, but a local instance's site in particular: the
+  // Instances tab lists each one's URL, and its row menu embeds it.
+  web_embed: { path: "/workspaces/instances", surface: "Instances" },
 };
 
 /** The home of `primitiveId`, or `undefined` when the map does not name it. */

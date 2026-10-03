@@ -32,12 +32,11 @@ describe("PRIMITIVE_HOMES", () => {
     }
   });
 
-  it("records the homeless as homeless rather than missing", () => {
-    // `web_embed` points at an arbitrary URL; no page here is the page about it.
-    // `null` and "not in the map" are different answers and `homeOf` keeps them
-    // apart, because only one of them is a bug.
-    expect(homeOf("web_embed")).toBeNull();
+  it("tells a primitive it does not know from one it does", () => {
+    // `null` (homeless, recorded) and "not in the map" are different answers and
+    // `homeOf` keeps them apart, because only one of them is a bug.
     expect(homeOf("not_a_primitive")).toBeUndefined();
+    expect(homeOf("web_embed")).toMatchObject({ path: "/workspaces/instances" });
     expect(homeOf("queue_lane")).toMatchObject({ path: "/queue" });
   });
 

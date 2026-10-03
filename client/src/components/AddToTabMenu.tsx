@@ -13,8 +13,8 @@
  * Only where `primitiveHomes` says the primitive belongs. The map is what stops
  * this becoming an "add to tab" button on every panel in the app regardless of
  * whether the thing beneath it has a pane to become — and a primitive with no
- * home (`web_embed`) has no menu anywhere, which is the map saying so rather
- * than an omission.
+ * home (`null`) has no menu anywhere, which is the map saying so rather than an
+ * omission.
  *
  * ## Which workspace the tab lands in
  *

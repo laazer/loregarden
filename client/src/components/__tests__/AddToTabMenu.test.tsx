@@ -89,14 +89,6 @@ describe("what the menu offers", () => {
     expect(await screen.findByRole("menuitem", { name: "Board" })).toBeInTheDocument();
   });
 
-  it("offers nothing for a primitive the map says has no home", () => {
-    // `web_embed` points at an arbitrary URL and no page here is about it. The
-    // map records that, and the menu honours it rather than rendering a control
-    // with nowhere sensible to appear.
-    const { container } = renderMenu({ primitiveId: "web_embed" });
-    expect(container).toBeEmptyDOMElement();
-  });
-
   it("offers nothing for a primitive this build does not have", () => {
     const { container } = renderMenu({ primitiveId: "not_a_primitive" });
     expect(container).toBeEmptyDOMElement();
