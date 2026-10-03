@@ -332,6 +332,10 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
         engine.dispose()
 
 
+# The real script costs `uv run`, interpreter start-up and every migration on a
+# fresh database: ~11s alone, past pytest-timeout's 120s default inside a loaded
+# 4-worker pre-push. Bounded by the subprocess timeout below instead.
+@pytest.mark.timeout(360)
 def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> None:
     """scripts/loregarden-cli.sh cds into server/ to start Python. The held
     command must still run in the caller's directory: a pre-push hook passes
