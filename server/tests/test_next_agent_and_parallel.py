@@ -275,6 +275,10 @@ def _commit_fixture_repo(repo) -> None:
     worktree from), and a checkout holding uncommitted files nobody's run
     recorded is refused rather than shared (lg-workflow-integrity-864).
     """
+    # The test's own SQLite database lives in this same tmp_path; it is not part
+    # of the repo, and committing it would dirty the tree on every write.
+    with (repo / ".git" / "info" / "exclude").open("a") as exclude:
+        exclude.write("pytest.db*\n")
     for args in (
         ["add", "-A"],
         ["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-qm", "seed"],
