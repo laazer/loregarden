@@ -10,6 +10,7 @@ of which workspace uses them.
 
 from __future__ import annotations
 
+import functools
 import io
 from pathlib import Path
 
@@ -249,6 +250,21 @@ def _load_yaml(path: Path) -> dict:
 
 
 def load_profile_from_path(path: Path) -> OrchestrationProfile:
+    """The profile in ``path``, parsed once per version of the file.
+
+    Every stage transition resolves its workspace's profile, and the
+    comment-preserving loader that writes need costs tens of milliseconds a
+    parse. Keyed on the file's inode, mtime and size: a write here is an atomic
+    replace, which gives the file a new inode, and an edit in place moves the
+    mtime. Each caller gets its own copy, so one mutating it cannot reach another.
+    """
+    stat = path.stat()
+    profile = _parse_profile(path, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    return profile.model_copy(deep=True)
+
+
+@functools.lru_cache(maxsize=64)
+def _parse_profile(path: Path, _inode: int, _mtime_ns: int, _size: int) -> OrchestrationProfile:
     raw = _load_yaml(path)
     if "slug" not in raw:
         raw["slug"] = path.stem
