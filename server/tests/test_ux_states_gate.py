@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.repo_templates import from_template
 
 _ROOT = Path(__file__).resolve().parents[2]
 _GATE = _ROOT / ".lefthook" / "scripts" / "ts_ux_states_check.cjs"
@@ -39,16 +40,21 @@ def repo(tmp_path: Path) -> Path:
     """A workspace the gate recognises: `client/src`, on `main`, with a commit.
 
     Built here rather than in a test body so a broken fixture is an ERROR and
-    cannot be mistaken for a gate that found nothing.
+    cannot be mistaken for a gate that found nothing. A copy of one built once
+    per process (`tests/repo_templates.py`).
     """
-    _git(tmp_path, "init", "-q", "-b", "main", ".")
-    _git(tmp_path, "config", "user.email", "t@example.com")
-    _git(tmp_path, "config", "user.name", "t")
-    (tmp_path / "client" / "src").mkdir(parents=True)
-    (tmp_path / "client" / "src" / ".keep").write_text("")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-qm", "base")
-    return tmp_path
+    return from_template(tmp_path / "repo", "ux_states_gate", _build_repo)
+
+
+def _build_repo(root: Path) -> None:
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main", ".")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "client" / "src").mkdir(parents=True)
+    (root / "client" / "src" / ".keep").write_text("")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
 
 
 def _write(repo: Path, name: str, body: str) -> Path:

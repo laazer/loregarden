@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_templates import from_template
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
@@ -69,18 +70,23 @@ def repo(tmp_path: Path) -> Path:
     """A committed repository holding one Python and one TypeScript module.
 
     Built in a fixture so a broken setup is an ERROR, never a gate that
-    happened to find nothing.
+    happened to find nothing. A copy of one built once per process
+    (`tests/repo_templates.py`).
     """
-    _git(tmp_path, "init", "-q", "-b", "main", ".")
-    _git(tmp_path, "config", "user.email", "t@example.com")
-    _git(tmp_path, "config", "user.name", "t")
-    (tmp_path / "src" / "pkg").mkdir(parents=True)
-    (tmp_path / "src" / "pkg" / "m.py").write_text(PY_BODY)
-    (tmp_path / "client" / "src").mkdir(parents=True)
-    (tmp_path / "client" / "src" / "m.ts").write_text(TS_BODY)
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-qm", "base")
-    return tmp_path
+    return from_template(tmp_path / "repo", "gate_missing_paths", _build_repo)
+
+
+def _build_repo(root: Path) -> None:
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main", ".")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "src" / "pkg").mkdir(parents=True)
+    (root / "src" / "pkg" / "m.py").write_text(PY_BODY)
+    (root / "client" / "src").mkdir(parents=True)
+    (root / "client" / "src" / "m.ts").write_text(TS_BODY)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
 
 
 def _run(gate: list[str], repo: Path, *paths: str) -> subprocess.CompletedProcess:
