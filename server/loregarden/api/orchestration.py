@@ -90,6 +90,7 @@ def _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:
         gates_placeholders=sample_gate_context(workspace),
         gates_suggested_commands=default_gate_commands(),
         max_stages_per_run=profile.max_stages_per_run,
+        source_path=profile.source_path,
     )
 
 
@@ -128,11 +129,18 @@ def update_workspace_gates(
     if not ws:
         raise HTTPException(404, "Workspace not found")
     supplied = body.model_dump(exclude_none=True)
-    profile = update_gates_config(
-        ws,
-        GatesConfig.model_validate(supplied),
-        preserve=PRESERVED_GATE_KEYS - supplied.keys(),
-    )
+    try:
+        profile = update_gates_config(
+            ws,
+            GatesConfig.model_validate(supplied),
+            preserve=PRESERVED_GATE_KEYS - supplied.keys(),
+        )
+    except PermissionError as exc:
+        # The editor shows this as a permission problem with the named file,
+        # not a server error (lg-gate-studio-863, 631's R3).
+        raise HTTPException(
+            403, f"Cannot write the gate settings for {slug}: {exc.filename} is not writable"
+        ) from exc
     return _profile_view(profile, ws)
 
 

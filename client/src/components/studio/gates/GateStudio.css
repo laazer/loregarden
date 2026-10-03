@@ -1,0 +1,182 @@
+/* Gate Studio's own chrome (lg-gate-studio-863). The editor and cards reuse
+   WorkspaceGatesPanel.css; every colour here is a theme token. */
+
+.gate-studio-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gate-studio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.gate-studio-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.gate-studio-link:hover,
+.gate-studio-link:focus-visible {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.gate-studio-link.active {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+/* Light token on the text, the base hue mixed down underneath — the pairing
+   the gate editor's status chips already use, readable in the dark theme. */
+.gate-studio-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--grn) 45%, var(--bd2));
+  background: color-mix(in srgb, var(--grn) 16%, transparent);
+  color: var(--grl);
+  font-size: 11px;
+}
+
+.gate-studio-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--txl);
+  font-size: 13px;
+}
+
+.gate-studio-link--inline {
+  display: inline;
+  padding: 0;
+  color: var(--ac);
+  text-decoration: underline;
+}
+
+.gate-studio-link--inline:hover,
+.gate-studio-link--inline:focus-visible {
+  background: none;
+}
+
+.gate-studio-breadcrumb .gate-studio-link {
+  display: inline-flex;
+  padding: 2px 4px;
+}
+
+.gate-studio-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gate-studio-title {
+  margin: 0;
+  font-size: 18px;
+  color: var(--tx);
+}
+
+.gate-studio-tone {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.gate-studio-tone--blocking {
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--bd2));
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--rdl);
+}
+
+.gate-studio-tone--parking {
+  border: 1px solid color-mix(in srgb, var(--amb) 45%, var(--bd2));
+  background: color-mix(in srgb, var(--amb) 16%, transparent);
+  color: var(--aml);
+}
+
+.gate-studio-tone--advisory {
+  background: var(--bg2);
+  color: var(--txm);
+}
+
+.gate-studio-controls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gate-studio-controls li {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.gate-studio-controls li:last-child {
+  border-bottom: none;
+}
+
+.gate-studio-value {
+  padding: 0 8px 4px;
+  color: var(--txl);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.gate-studio-detail h2 {
+  margin: 2px 0 0;
+  font-size: 17px;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.gate-studio-kind {
+  color: var(--txl);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gate-studio-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 12px 0 0;
+}
+
+.gate-studio-facts dt {
+  color: var(--txl);
+}
+
+.gate-studio-facts dd {
+  margin: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.gate-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .gate-studio-facts {
+    grid-template-columns: 1fr;
+  }
+}

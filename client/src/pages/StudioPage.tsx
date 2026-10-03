@@ -22,7 +22,7 @@ import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowDriftNotice } from "../components/studio/WorkflowDriftNotice";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
-import { WorkspaceGatesPanel } from "../components/studio/WorkspaceGatesPanel";
+import { GateStudioPanel } from "../components/studio/gates/GateStudioPanel";
 import { notifyStrippedSkills } from "../components/studio/skillOptions";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
 import { isStudioNewResource, studioPath } from "../lib/appNavigation";
@@ -484,7 +484,7 @@ export function StudioPage() {
             : tab === "workflows"
               ? "Workflow Studio"
               : tab === "gates"
-                ? "Transition Gates"
+                ? "Gate Studio"
                 : "Ticket Studio"
         }
       >
@@ -523,7 +523,7 @@ export function StudioPage() {
             ["agents", "Agent Studio"],
             ["workflows", "Workflow Studio"],
             ["tickets", "Ticket Studio"],
-            ["gates", "Transition Gates"],
+            ["gates", "Gate Studio"],
           ] as const
         ).map(([section, label]) => (
           <NavLink
@@ -548,7 +548,13 @@ export function StudioPage() {
             />
           </div>
         ) : tab === "gates" ? (
-          <WorkspaceGatesPanel workspaces={workspaces.data ?? []} workspaceSlug={activeWorkspaceSlug} />
+          <GateStudioPanel
+            workspaces={workspaces.data ?? []}
+            workspacesLoading={workspaces.isLoading}
+            workspacesError={workspaces.isError ? workspaces.error : null}
+            onRetryWorkspaces={() => workspaces.refetch()}
+            activeWorkspaceSlug={activeWorkspaceSlug}
+          />
         ) : tab === "agents" ? (
           <div className="studio-shell">
             {layoutMode === "workbench" && (

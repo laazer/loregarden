@@ -8,6 +8,8 @@ test here redirects settings.repo_root to a throwaway tmp_path rather than
 writing into the real agent_context/orchestration/ directory.
 """
 
+from unittest import mock
+
 import yaml
 from fastapi.testclient import TestClient
 from loregarden.config import settings
@@ -336,3 +338,57 @@ def test_gate_test_endpoint_unknown_workspace(client: TestClient):
         json={"commands": ["true"]},
     )
     assert res.status_code == 404
+
+
+# --- Gate Studio's "Stored in" and the unwritable profile (lg-gate-studio-863) ---
+
+
+def test_a_profile_says_which_file_it_was_read_from(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    path = orchestration_dir() / "stamped.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("slug: stamped\nsource_path: /etc/somewhere-else.yaml\n")
+
+    profile = load_profile_from_path(path)
+
+    assert profile.source_path == "agent_context/orchestration/stamped.yaml"
+
+
+def test_the_built_in_fallback_has_no_source_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+
+    assert resolve_orchestration_profile(_workspace("no-file-anywhere")).source_path is None
+
+
+def test_the_profile_endpoint_reports_its_source_path(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    db_session.add(Workspace(slug="gates-source-test", name="Gates Source", repo_path="."))
+    db_session.commit()
+    client.put(
+        "/api/orchestration/workspaces/gates-source-test/profile/gates",
+        json={"enabled": True, "commands": ["true"], "transition_script": ""},
+    )
+
+    body = client.get("/api/orchestration/workspaces/gates-source-test/profile").json()
+
+    assert body["source_path"] == "agent_context/orchestration/gates-source-test.yaml"
+
+
+def test_an_unwritable_profile_is_a_403_naming_the_file(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    db_session.add(Workspace(slug="gates-locked-test", name="Gates Locked", repo_path="."))
+    db_session.commit()
+    denied = PermissionError(13, "Permission denied", "/profiles/gates-locked-test.yaml")
+
+    with mock.patch("loregarden.api.orchestration.update_gates_config", side_effect=denied):
+        res = client.put(
+            "/api/orchestration/workspaces/gates-locked-test/profile/gates",
+            json={"enabled": True, "commands": ["true"], "transition_script": ""},
+        )
+
+    assert res.status_code == 403
+    assert "gates-locked-test.yaml" in res.json()["detail"]
