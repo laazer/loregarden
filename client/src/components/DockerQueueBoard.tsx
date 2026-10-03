@@ -6,8 +6,9 @@
  * and containers take. Every lease is charged to the host pool, and a docker
  * claim to the docker pool as well. The question is the same shape — what is
  * occupied, what is behind it, and how long until my turn. So it uses the same
- * vocabulary: a grid of slots across the top, each holding something or idle,
- * and the line waiting underneath.
+ * vocabulary: the holders across the top, one line counting the free slots,
+ * and the line waiting underneath. Free slots are counted rather than drawn —
+ * a card per empty slot pushed the line below the fold.
  *
  * **One shared queue, not one per slot.** That is the real difference from the
  * lane board and the reason the waiting list sits below the grid rather than
@@ -24,14 +25,21 @@
  * queue shows what it is waiting for rather than just its position.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
+import { dockerApi } from "../api/dockerApi";
 import type {
   CapacityPoolSummary,
   CapacityShortfall,
   DockerCapacityStatus,
   DockerLeaseRow,
 } from "../api/dockerTypes";
+import { ticketPath } from "../lib/appNavigation";
+import { useAgentAction } from "../lib/agentActions/useAgentAction";
+import { describeError, pushToast } from "../state/toastStore";
+import { DockerLeaseReleaseDialog } from "./DockerLeaseReleaseDialog";
+import { Button } from "./ui/Button";
 import { CapacityMeter } from "./ui/CapacityMeter";
 import "./DockerQueueBoard.css";
 
@@ -138,69 +146,227 @@ function PoolMeters({
   );
 }
 
-function HolderSlot({ row }: { row: DockerLeaseRow }) {
+/** "heavy · 4 cpus · 8 GB" — the footprint once, with what it costs. */
+function describeCost(row: DockerLeaseRow): string {
+  return `${row.footprint} · ${formatCpus(row.cpus)} · ${formatMemory(row.memory_mb)}`;
+}
+
+/**
+ * What is running, then where, then — quietly — which process. The raw label
+ * repeated the worktree inside the branch name; the server splits it, and the
+ * worktree only appears when it says something the branch does not.
+ */
+function HolderIdentity({
+  row,
+  titleClass,
+  detail,
+}: {
+  row: DockerLeaseRow;
+  titleClass: string;
+  /** What it costs, on the same line as where it runs — one line, not three. */
+  detail: string;
+}) {
+  const { what, branch, worktree, pid } = row.holder;
+  return (
+    <>
+      <div className={titleClass} title={row.holder_label}>
+        {what || "unlabelled"}
+      </div>
+      <div className="docker-holder-where">
+        {branch ? <span className="docker-holder-branch">{branch}</span> : null}
+        {worktree ? <span className="docker-holder-worktree">in {worktree}</span> : null}
+        <span>{detail}</span>
+        {pid ? <span className="docker-holder-pid">pid {pid}</span> : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Where to go from a lease, and how to end it. The ticket link only exists
+ * when the lease names one (a stage's lease names its run, which the server
+ * resolves to the run's ticket); most ad-hoc leases name neither.
+ */
+function LeaseActions({
+  row,
+  pending,
+  onEnd,
+}: {
+  row: DockerLeaseRow;
+  pending: boolean;
+  onEnd: (row: DockerLeaseRow) => void;
+}) {
+  const waiting = row.status === "waiting";
+  // The branch makes the name unique: a line of seven is mostly "pre-push
+  // client-tests", and seven identical button names cannot be told apart.
+  const what = `${row.holder.what || "unlabelled lease"}${row.holder.branch ? ` on ${row.holder.branch}` : ""}`;
+  return (
+    <div className="docker-lease-actions">
+      {row.ticket_id ? (
+        <Link
+          className="docker-lease-link"
+          to={ticketPath(row.ticket_id, row.agent_run_id ? "logs" : "diff")}
+        >
+          {row.agent_run_id ? "Open run" : "Open ticket"}
+        </Link>
+      ) : null}
+      <Button
+        variant="secondary"
+        compact
+        disabled={pending}
+        aria-label={`${waiting ? "Drop from line" : "Release"}: ${what}`}
+        onClick={() => onEnd(row)}
+      >
+        {pending ? "Ending…" : waiting ? "Drop" : "Release"}
+      </Button>
+    </div>
+  );
+}
+
+function HolderSlot({
+  row,
+  pending,
+  onEnd,
+}: {
+  row: DockerLeaseRow;
+  pending: boolean;
+  onEnd: (row: DockerLeaseRow) => void;
+}) {
   const status = holderStatus(row);
   return (
     <div className="queue-slot queue-slot--busy" data-testid={`docker-slot-${row.lease_id}`}>
       <div className="queue-slot-head">
         <span className="queue-slot-dot" aria-hidden />
-        <span className="queue-slot-name">
-          {describePool(row)} · {row.footprint}
-        </span>
+        <span className="queue-slot-name">{describePool(row)}</span>
         <span className="queue-slot-badge" data-run-status={status}>
           {status}
         </span>
       </div>
       <div className="queue-slot-body">
-        <div className="queue-slot-title" title={row.holder_label}>
-          {row.holder_label || "unlabelled"}
-        </div>
-        <div className="queue-slot-sub">
-          {formatCpus(row.cpus)} · {formatMemory(row.memory_mb)}
-          {row.compose_project ? ` · ${row.compose_project}` : ""}
-        </div>
-        <div className="docker-slot-expiry">
-          {row.expires_in_seconds === null
-            ? "no expiry"
-            : `expires in ${formatDuration(row.expires_in_seconds)}`}
-        </div>
+        <HolderIdentity
+          row={row}
+          titleClass="queue-slot-title"
+          detail={`${describeCost(row)}${row.compose_project ? ` · ${row.compose_project}` : ""}`}
+        />
         {row.last_probe_error ? (
           <div className="docker-slot-error" title={row.last_probe_error}>
             {row.last_probe_error}
           </div>
         ) : null}
+        <div className="docker-slot-foot">
+          <span className="docker-slot-expiry">
+            {row.expires_in_seconds === null
+              ? "no expiry"
+              : `expires in ${formatDuration(row.expires_in_seconds)}`}
+          </span>
+          <LeaseActions row={row} pending={pending} onEnd={onEnd} />
+        </div>
       </div>
     </div>
   );
 }
 
 /**
- * A slot no lease holds. `blockedBy` is set when the head of the line still
- * cannot start — slots are only one of three things a claim needs, so a free
- * one beside a stalled line must not read as room to start something.
+ * The free slots, as one line rather than a card each. Six identical "Free
+ * slot" cards pushed the waiting line — what the operator came to see — below
+ * the fold. When the head of the line still cannot start, the line says why:
+ * a slot is one of three things a claim needs, so free slots beside a stalled
+ * line must not read as room.
  */
-function EmptySlot({ index, blockedBy }: { index: number; blockedBy: string | null }) {
+function FreeSlots({
+  free,
+  ceiling,
+  blockedBy,
+}: {
+  free: number;
+  ceiling: number;
+  blockedBy: string | null;
+}) {
+  const count = free === 0 ? `All ${ceiling} slots held` : `${free} of ${ceiling} slots free`;
   return (
-    <div className="queue-slot" data-testid={`docker-slot-free-${index}`}>
-      <div className="queue-slot-head">
-        <span className="queue-slot-dot" aria-hidden />
-        <span className="queue-slot-name">Free</span>
-        <span className="queue-slot-badge" data-run-status="available">
-          {blockedBy ? "no room" : "available"}
-        </span>
-      </div>
-      <div className="queue-slot-body">
-        <div className="queue-slot-title">{blockedBy ? "Free slot, no room" : "Available"}</div>
-        {/* Wraps: the reason is the point, and the lane board's one-line
-            ellipsis cut it at "3 cpus fre…". */}
-        <div className="queue-slot-sub docker-slot-reason">
-          {blockedBy
-            ? `The next claim ${blockedBy}`
-            : "Reserve before a test run, build or container stack"}
-        </div>
-      </div>
+    <div className="docker-free-slots" data-testid="docker-free-slots">
+      <span className="docker-free-slots-count">{count}</span>
+      {free > 0 && blockedBy ? (
+        <span className="docker-free-slots-note">— no room yet: the next claim {blockedBy}</span>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * How long a waiter has queued, and whether it is still asking. Age alone
+ * cannot tell a stuck waiter from a patient one at the back of a long line;
+ * a waiter that stopped polling has most likely lost its process, and the
+ * sweep drops it at `drops_in_seconds` unless it polls again.
+ */
+function WaitingAge({ row }: { row: DockerLeaseRow }) {
+  if (row.waiting_seconds === null) return null;
+  return (
+    <span className="docker-waiting-age">
+      waiting {formatDuration(row.waiting_seconds)}
+      {row.poll_stalled ? (
+        <span className="docker-waiting-stalled" data-testid={`docker-stalled-${row.lease_id}`}>
+          {" "}
+          · no poll for {formatDuration(row.last_seen_seconds_ago ?? 0)}
+          {row.drops_in_seconds !== null
+            ? `, dropped in ${formatDuration(row.drops_in_seconds)} unless it polls`
+            : ""}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Ending a lease from the board: confirm, send once, refresh, and say what
+ * happened. Also offered to agents as `capacity.release` while the board is on
+ * screen, through the same call.
+ */
+function useLeaseRelease(status: DockerCapacityStatus | null, onChanged: () => void) {
+  const [confirming, setConfirming] = useState<DockerLeaseRow | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const release = async (leaseId: string, reason: string) => {
+    setPendingId(leaseId);
+    try {
+      return await dockerApi.releaseLease(leaseId, reason);
+    } finally {
+      setPendingId(null);
+      onChanged();
+    }
+  };
+
+  useAgentAction("capacity.release", async ({ lease_id, reason }) => {
+    const listed = [...(status?.holders ?? []), ...(status?.waiting ?? [])];
+    if (!listed.some((row) => row.lease_id === lease_id)) {
+      throw new Error(`lease ${lease_id} is not on the Machine board`);
+    }
+    return release(lease_id, reason);
+  });
+
+  const confirm = async (reason: string) => {
+    if (!confirming || pendingId) return;
+    const row = confirming;
+    try {
+      const result = await release(row.lease_id, reason);
+      setConfirming(null);
+      if (!result.released) {
+        pushToast({
+          tone: "info",
+          title: "Already ended",
+          message: `${row.holder.what || "That lease"} had ended before this reached it.`,
+        });
+      }
+    } catch (error) {
+      pushToast({
+        tone: "error",
+        title: row.status === "waiting" ? "Could not drop from the line" : "Could not release",
+        message: describeError(error, "The capacity ledger did not answer; try again."),
+      });
+    }
+  };
+
+  return { confirming, setConfirming, pendingId, confirm };
 }
 
 export function DockerQueueBoard({
@@ -208,12 +374,17 @@ export function DockerQueueBoard({
   error,
   loading,
   headerSlot,
+  onChanged,
 }: {
   status: DockerCapacityStatus | null;
   error: string;
   loading: boolean;
   headerSlot?: ReactNode;
+  /** Re-read the ledger after the board changed it. */
+  onChanged: () => void;
 }) {
+  const { confirming, setConfirming, pendingId, confirm } = useLeaseRelease(status, onChanged);
+
   // The board owns the main area now, so it owns the states the rail used to
   // cover: a first read still in flight, a read that failed, and a ledger that
   // is switched off. A failed read and an idle pool are kept apart — they are
@@ -276,15 +447,20 @@ export function DockerQueueBoard({
       <PoolMeters title="Machine" summary={host} leasesLabel="slots" />
       <PoolMeters title="Docker" summary={status} leasesLabel="leases" />
 
-      {slotCeiling > 0 ? (
-        <div className="queue-slot-grid" data-testid="docker-slot-grid">
+      {holders.length > 0 ? (
+        <div className="queue-slot-grid docker-holder-grid" data-testid="docker-slot-grid">
           {holders.map((row) => (
-            <HolderSlot key={row.lease_id} row={row} />
-          ))}
-          {Array.from({ length: freeSlots }, (_, index) => (
-            <EmptySlot key={`free-${index}`} index={index} blockedBy={headBlockedBy} />
+            <HolderSlot
+              key={row.lease_id}
+              row={row}
+              pending={pendingId === row.lease_id}
+              onEnd={setConfirming}
+            />
           ))}
         </div>
+      ) : null}
+      {slotCeiling > 0 ? (
+        <FreeSlots free={freeSlots} ceiling={slotCeiling} blockedBy={headBlockedBy} />
       ) : null}
 
       <div className="queue-section-head">
@@ -312,24 +488,39 @@ export function DockerQueueBoard({
             >
               <span className="queue-lane-item-position">{row.position ?? "?"}</span>
               <div className="queue-lane-item-copy">
-                <div className="queue-lane-item-title" title={row.holder_label}>
-                  {row.holder_label || "unlabelled"}
-                </div>
-                <div className="queue-lane-item-sub">
-                  {formatCpus(row.cpus)} · {formatMemory(row.memory_mb)} ·{" "}
-                  {describePool(row)} · {row.footprint}
-                </div>
+                <HolderIdentity
+                  row={row}
+                  titleClass="queue-lane-item-title"
+                  detail={`${describePool(row)} · ${describeCost(row)}`}
+                />
                 {index === 0 && headBlockedBy ? (
                   <div className="docker-queue-head-reason" data-testid="docker-head-reason">
                     Waiting: {headBlockedBy}
                   </div>
                 ) : null}
               </div>
-              <div className="queue-lane-item-timing">{describeWait(row)}</div>
+              <div className="docker-waiting-side">
+                <div className="queue-lane-item-timing">{describeWait(row)}</div>
+                <WaitingAge row={row} />
+              </div>
+              <LeaseActions
+                row={row}
+                pending={pendingId === row.lease_id}
+                onEnd={setConfirming}
+              />
             </div>
           ))}
         </div>
       )}
+
+      {confirming ? (
+        <DockerLeaseReleaseDialog
+          lease={confirming}
+          inFlight={pendingId === confirming.lease_id}
+          onClose={() => setConfirming(null)}
+          onConfirm={(reason) => void confirm(reason)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -219,6 +219,7 @@ export function QueueDashboard({
               status={docker.status}
               error={docker.error}
               loading={docker.loading}
+              onChanged={docker.reload}
               headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
             />
           ) : (
@@ -339,10 +340,15 @@ export function QueueDashboard({
               ) : null}
             </div>
 
-            <div className="queue-rail-baxter">
-              <img src={baxterHead} alt="" width={32} height={32} />
-              <div className="queue-rail-baxter-copy">{idleCopy}</div>
-            </div>
+            {/* Agent-lane copy: on the Machine view it contradicted a
+                non-empty capacity line, and the rail beside it already
+                summarises capacity. */}
+            {queueKind === "agents" ? (
+              <div className="queue-rail-baxter">
+                <img src={baxterHead} alt="" width={32} height={32} />
+                <div className="queue-rail-baxter-copy">{idleCopy}</div>
+              </div>
+            ) : null}
           </div>
         </aside>
       </div>

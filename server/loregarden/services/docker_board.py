@@ -18,13 +18,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from loregarden.config import settings
 from loregarden.models.domain import (
+    AgentRun,
     CapacityPool,
     DockerCapacityPool,
     DockerLease,
     DockerLeaseStatus,
     DockerProbeOutcome,
 )
+from loregarden.services.capacity_label import parse_holder_label
 from loregarden.services.docker_capacity import Ceiling, DockerInvoke
 from loregarden.services.docker_leases import refresh_ceiling
 from loregarden.services.docker_ledger import (
@@ -32,6 +35,7 @@ from loregarden.services.docker_ledger import (
     OCCUPYING,
     as_utc,
     container_names,
+    last_seen_at,
     load_pool,
     pool_ceiling,
     shortfalls,
@@ -45,25 +49,80 @@ from loregarden.services.docker_wait_estimate import (
 from sqlmodel import Session, select
 
 
+def _stall_after_seconds() -> float:
+    """How long a waiter may go unseen before the board calls it stalled.
+
+    A live waiter polls at least every `docker_poll_max_interval_seconds`, so
+    two of those with no sign of it means it has most likely stopped — well
+    before the abandonment sweep drops it at `docker_waiting_ttl_seconds`.
+    """
+    return 2 * settings.docker_poll_max_interval_seconds
+
+
+def _waiting_payload(lease: DockerLease, *, now: datetime) -> dict:
+    """How long a waiter has queued, and whether it is still asking.
+
+    Age alone cannot tell a stuck waiter from a patient one at the back of a
+    long line; whether its polls stopped can.
+    """
+    requested_at = as_utc(lease.requested_at)
+    seen = last_seen_at(lease)
+    unseen = int((now - seen).total_seconds()) if seen else None
+    return {
+        "waiting_seconds": (int((now - requested_at).total_seconds()) if requested_at else None),
+        "last_seen_seconds_ago": unseen,
+        "poll_stalled": unseen is not None and unseen > _stall_after_seconds(),
+        # When the abandonment sweep will take it out of the line unless it polls.
+        "drops_in_seconds": (
+            max(0, settings.docker_waiting_ttl_seconds - unseen) if unseen is not None else None
+        ),
+    }
+
+
+_NOT_WAITING = {
+    "waiting_seconds": None,
+    "last_seen_seconds_ago": None,
+    "poll_stalled": False,
+    "drops_in_seconds": None,
+}
+
+
+def _run_tickets(session: Session, leases: list[DockerLease]) -> dict[str, str]:
+    """The ticket each lease's agent run belongs to, for leases naming a run only."""
+    run_ids = {lease.agent_run_id for lease in leases if lease.agent_run_id and not lease.ticket_id}
+    if not run_ids:
+        return {}
+    rows = session.exec(
+        select(AgentRun.id, AgentRun.ticket_id).where(AgentRun.id.in_(run_ids))
+    ).all()
+    return {run_id: ticket_id for run_id, ticket_id in rows if ticket_id}
+
+
 def _lease_payload(
     lease: DockerLease,
     *,
     now: datetime,
+    run_tickets: dict[str, str],
     place: int | None = None,
     estimate: WaitEstimate | None = None,
 ) -> dict:
     expires_at = as_utc(lease.expires_at)
+    requested_at = as_utc(lease.requested_at)
     return {
         "lease_id": lease.id,
         "status": lease.status.value,
         "holder_label": lease.holder_label,
+        # The label read back as what / where / pid, so a reader does not have
+        # to re-split a string whose shape has changed over time.
+        "holder": parse_holder_label(lease.holder_label, pid=lease.holder_pid).as_dict(),
         "holder_kind": lease.holder_kind.value,
         "pool": lease.pool.value,
         "parent_lease_id": lease.parent_lease_id,
         "covered_cpus": lease.covered_cpus,
         "covered_memory_mb": lease.covered_memory_mb,
         "agent_run_id": lease.agent_run_id,
-        "ticket_id": lease.ticket_id,
+        # A stage's lease names its run; the ticket is where the run is read.
+        "ticket_id": lease.ticket_id or run_tickets.get(lease.agent_run_id or ""),
         "footprint": lease.footprint.value,
         "cpus": lease.cpus,
         "memory_mb": lease.memory_mb,
@@ -75,6 +134,12 @@ def _lease_payload(
         "position": place,
         **(estimate or UNKNOWN_WAIT).as_dict(),
         "poll_count": lease.poll_count,
+        "requested_at": requested_at.isoformat() if requested_at else None,
+        **(
+            _waiting_payload(lease, now=now)
+            if lease.status is DockerLeaseStatus.WAITING
+            else _NOT_WAITING
+        ),
         "expires_at": expires_at.isoformat() if expires_at else None,
         "expires_in_seconds": (int((expires_at - now).total_seconds()) if expires_at else None),
         # What the last probe actually found. The attention panel needs the
@@ -156,15 +221,23 @@ def capacity_status(
             for gap in shortfalls(charged, rows[charged], head)
         ]
 
+    run_tickets = _run_tickets(session, holders + waiting)
+
     return {
         "enabled": True,
         # The top level is the docker pool, as it was before the host pool
         # existed; `host` is the machine, which docker claims are charged to too.
         **_pool_summary(pool, ceiling),
         "host": _pool_summary(host, host_ceiling),
-        "holders": [_lease_payload(lease, now=stamp) for lease in holders],
+        "holders": [_lease_payload(lease, now=stamp, run_tickets=run_tickets) for lease in holders],
         "waiting": [
-            _lease_payload(lease, now=stamp, place=place, estimate=estimates.get(lease.id))
+            _lease_payload(
+                lease,
+                now=stamp,
+                run_tickets=run_tickets,
+                place=place,
+                estimate=estimates.get(lease.id),
+            )
             for place, lease in enumerate(waiting, start=1)
         ],
         "head_shortfall": head_shortfall,

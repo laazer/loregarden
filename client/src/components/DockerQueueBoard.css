@@ -21,12 +21,15 @@
   gap: 12px 20px;
 }
 
-.queue-slot-sub.docker-slot-reason {
-  white-space: normal;
+.docker-slot-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .docker-slot-expiry {
-  margin-top: 6px;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--txl);
@@ -57,4 +60,111 @@
 /* The head of the line is the one anyone is actually asking about. */
 .docker-queue-list .queue-lane-item:first-child {
   border-color: var(--bd2);
+}
+
+/* Free slots, counted on one line rather than drawn as a card each. */
+.docker-free-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 10px 0 8px;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.docker-free-slots-count {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.docker-free-slots-note {
+  color: var(--aml);
+}
+
+/* Where a lease runs: branch, then the worktree only when it differs, pid last. */
+.docker-holder-where {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+  min-width: 0;
+}
+
+.docker-holder-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.docker-holder-worktree,
+.docker-holder-pid {
+  color: var(--txl);
+}
+
+.docker-lease-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.docker-lease-link {
+  font-size: 12px;
+  color: var(--ac2);
+}
+
+.docker-waiting-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  text-align: right;
+}
+
+.docker-waiting-age {
+  font-size: 11px;
+  color: var(--txl);
+}
+
+/* A waiter that stopped polling — most likely its process is gone. */
+.docker-waiting-stalled {
+  color: var(--aml);
+}
+
+.docker-release-effect {
+  margin: 0 0 12px;
+  color: var(--txm);
+}
+
+.docker-release-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+/* The lane board's items drag; a capacity waiter does not. */
+.docker-queue-list .queue-lane-item {
+  cursor: default;
+}
+
+/* The lane grid stretches to fill the panel, because a lane holds a queue of
+   its own. A holder holds nothing below it; the shared line does, so the grid
+   takes only its cards' height and leaves the rest to the line. */
+/* Doubled class: the lane board's stylesheet loads after this one and its
+   single-class rules would otherwise win. */
+.queue-slot-grid.docker-holder-grid {
+  flex: none;
+  min-height: 0;
+  grid-auto-rows: auto;
+}
+
+.docker-holder-grid .queue-slot {
+  min-height: 0;
 }
