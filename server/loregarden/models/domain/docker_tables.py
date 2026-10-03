@@ -139,6 +139,11 @@ class DockerLease(SQLModel, table=True):
     parent_lease_id: str | None = Field(default=None, foreign_key="docker_leases.id", index=True)
     covered_cpus: float = 0.0
     covered_memory_mb: int = 0
+    #: Whether this lease takes one of its pools' lease-count slots. The slot
+    #: dimension caps how many heavy things run at once; a child runs inside its
+    #: parent's slot, and an agent run's lease is a small standing claim that
+    #: must not crowd out the test suites the slots exist to space apart.
+    takes_slot: bool = True
     #: On a parent: what its live children have drawn from it. A running total
     #: so that covering a child is one conditional UPDATE, like the pool's.
     child_covered_cpus: float = 0.0
