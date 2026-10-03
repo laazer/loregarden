@@ -43,6 +43,7 @@ from loregarden.models.domain import (
     DockerLeaseStatus,
     DockerWaitBasis,
 )
+from loregarden.services.capacity_children import reserve_child
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
     DockerReservation,
@@ -114,6 +115,8 @@ class CapacityRequest:
     max_wait_seconds: float = 3600.0
     ttl_seconds: int | None = None
     workspace_id: str | None = None
+    #: Nest under this lease: draw on its grant first, never wait in line.
+    parent_lease_id: str | None = None
 
 
 def worker_count(cpus: float) -> int:
@@ -166,6 +169,22 @@ def acquire(
 ) -> DockerReservation:
     """Hold capacity for `request`, waiting in line if need be. Raises when it cannot."""
     cpus, memory_mb = fit_to_ceiling(session, request, report)
+    if request.parent_lease_id:
+        child = reserve_child(
+            session,
+            parent_lease_id=request.parent_lease_id,
+            holder_label=f"{request.label} · pid {os.getpid()}",
+            footprint=request.footprint,
+            cpus=cpus,
+            memory_mb=memory_mb,
+            pool=request.pool,
+            ttl_seconds=request.ttl_seconds,
+            workspace_id=request.workspace_id,
+            holder_pid=os.getpid(),
+        )
+        if not child.granted:
+            raise CapacityNotGranted(f"{child.error_kind}: {child.message}")
+        return child
     reservation = reserve(
         session,
         # The pid makes the label unique per process. Without it two pushes from

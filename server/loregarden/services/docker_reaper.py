@@ -182,6 +182,8 @@ def reap_docker_leases(
         refresh_ceiling(session, pool_name=CapacityPool.DOCKER, invoke=invoke)
 
     for lease in leases:
+        if lease.status not in OCCUPYING:
+            continue  # ended earlier in this sweep, with the parent it ran inside
         outcome = _judge(session, lease, invoke=invoke, now=stamp, report=report)
         if outcome is not None:
             release_lease(session, lease.id, reason=outcome, drain=False)
@@ -227,6 +229,19 @@ def _judge(
     # 1. A pid that is gone settles it outright, with no waiting and no docker.
     if lease.holder_pid is not None and not pid_alive(lease.holder_pid):
         return DockerLeaseEndReason.PID_GONE
+
+    # A child is alive exactly while its parent is: it runs inside the parent's
+    # work, and the parent's own liveness is judged on its own row.
+    if lease.parent_lease_id:
+        parent = session.get(DockerLease, lease.parent_lease_id)
+        if parent is None or parent.status not in OCCUPYING:
+            return DockerLeaseEndReason.PARENT_RELEASED
+        if _expired(lease, now=now):
+            _extend(lease, now=now)
+            session.add(lease)
+            session.commit()
+            report.renewed.append(lease.id)
+        return None
 
     if not _expired(lease, now=now):
         return None

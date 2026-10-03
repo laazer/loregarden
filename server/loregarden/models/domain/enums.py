@@ -1383,6 +1383,8 @@ class DockerLeaseEndReason(StrEnum):
     ABANDONED = "abandoned"
     #: Taken back by an operator through the force-release tool.
     FORCE_RELEASED = "force_released"
+    #: Its parent lease ended, and a child cannot outlive the grant it draws on.
+    PARENT_RELEASED = "parent_released"
 
 
 class DockerProbeOutcome(StrEnum):

@@ -14,13 +14,14 @@ reserving an exit code the command might also use. See
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
-from loregarden.services.capacity_run import CapacityRequest, run_holding
+from loregarden.services.capacity_run import LEASE_ENV, CapacityRequest, run_holding
 from loregarden.services.docker_capacity import CLASS_WEIGHTS
 from sqlmodel import Session, select
 
@@ -56,6 +57,7 @@ def _run(args: argparse.Namespace) -> str:
         max_wait_seconds=args.max_wait,
         ttl_seconds=args.ttl,
         workspace_id=_workspace_id(args.workspace),
+        parent_lease_id=args.parent_lease or None,
     )
     code = run_holding(
         lambda: Session(db_session.engine),
@@ -92,6 +94,14 @@ def register(sub: argparse._SubParsersAction) -> None:
         type=float,
         default=3600.0,
         help="Seconds to wait in line before giving up (default 3600).",
+    )
+    run.add_argument(
+        "--parent-lease",
+        default=os.environ.get(LEASE_ENV, ""),
+        help=(
+            "Nest under this lease: draw on its grant, never queue. Defaults to "
+            f"${LEASE_ENV}, so a capacity run inside another nests automatically."
+        ),
     )
     run.add_argument("--ttl", type=int, help="Lease TTL in seconds; renewed every third of it.")
     run.add_argument("--started-file", help="Touched just before the command starts.")

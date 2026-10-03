@@ -13,6 +13,7 @@ timestamp back out of SQLite.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 from loregarden.core.timestamps import as_utc as _as_utc_aware
@@ -53,6 +54,29 @@ CHARGED_BY: dict[CapacityPool, tuple[CapacityPool, ...]] = {
 #: back out of a text column, and `isinstance(parsed, list)` is a schema check
 #: written by hand — the thing the organization gate exists to stop.
 _CONTAINER_NAMES = TypeAdapter(list[str])
+
+
+@dataclass(frozen=True)
+class Booking:
+    """What a lease is charged against each pool it touches."""
+
+    cpus: float
+    memory_mb: int
+    count: int
+
+
+def booked(lease: DockerLease) -> Booking:
+    """A lease's price less what its parent's grant covered.
+
+    A top-level lease books its whole price and one lease-count slot. A child
+    books only the excess over its parent's unused allotment and no slot: it
+    runs inside the parent's, which is the point of nesting it.
+    """
+    return Booking(
+        cpus=lease.cpus - lease.covered_cpus,
+        memory_mb=lease.memory_mb - lease.covered_memory_mb,
+        count=0 if lease.parent_lease_id else 1,
+    )
 
 
 def as_utc(stamp: datetime | None) -> datetime | None:
