@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from loregarden.services.ui_action_catalog import UiAction
+from loregarden.services.ui_action_catalog import CATALOG, UiAction
 from pydantic import BaseModel
 
 #: Long enough for a ticket save to round-trip; short enough that an agent is
@@ -148,12 +148,8 @@ class UiActionBroker:
             return UiActionOutcome.failed(
                 action.value,
                 UiActionFailure.NOT_AVAILABLE,
-                f"no open tab can perform {action.value} right now"
-                + (
-                    " — open the ticket first with ticket.open"
-                    if action.value.startswith("ticket.")
-                    else ""
-                ),
+                f"no open tab can perform {action.value} right now; it is offered "
+                f"{CATALOG[action].offered}",
             )
         tab_id, tab = max(offering, key=lambda item: (item[1].visible, item[1].focused_at))
         request_id = str(next(self._ids))

@@ -30,6 +30,12 @@ export interface UiActionArgs {
     priority?: number;
   };
   "ticket.set_state": { ticket_id: string; state: TicketState };
+  "ticket.trigger_auto_fix": { ticket_id: string };
+  "workspace.archive": { workspace_slug: string };
+  "workspace.restore": { workspace_slug: string };
+  "workspace.set_workflow": { workspace_slug: string; template: string };
+  "reference_repo.add": { workspace_slug: string; url: string; notes?: string };
+  "reference_repo.sync": { reference_repo_id: string };
   /** Human-only on the server: never invoked by an agent, so nothing registers it. */
   "approval.resolve": { approval_id: string };
 }
@@ -45,5 +51,11 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "ticket.open": "Opened a ticket",
   "ticket.update": "Edited the ticket",
   "ticket.set_state": "Changed the ticket's state",
+  "ticket.trigger_auto_fix": "Started the CI auto-fix",
+  "workspace.archive": "Archived a workspace",
+  "workspace.restore": "Restored a workspace",
+  "workspace.set_workflow": "Changed a workspace's workflow",
+  "reference_repo.add": "Added a reference repo",
+  "reference_repo.sync": "Synced a reference repo",
   "approval.resolve": "Resolved an approval",
 };

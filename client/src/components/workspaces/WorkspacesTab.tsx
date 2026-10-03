@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { localInstancesApi } from "../../api/localInstancesApi";
 import type { WorkspaceSummary } from "../../api/types";
 import { WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocalInstances";
+import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { describeError, pushToast, toastActionFailed } from "../../state/toastStore";
 import { WorkspaceSetupCard } from "../instances/WorkspaceSetupCard";
 import { AddWorkspaceFlow } from "./AddWorkspaceFlow";
@@ -41,6 +42,20 @@ export function WorkspacesTab() {
   });
 
   const bySlug = useMemo(() => new Map((summaries.data ?? []).map((row) => [row.slug, row])), [summaries.data]);
+
+  // The same mutation the card's Archive/Restore button runs. The agent's
+  // approval stands in for the button's confirm dialog.
+  const agentArchive = (slug: string, next: boolean) => {
+    const row = bySlug.get(slug);
+    if (!row) throw new Error(`no workspace named ${slug}`);
+    if (Boolean(row.archived_at) === next) throw new Error(`${slug} is already ${next ? "archived" : "active"}`);
+    return archive.mutateAsync({ slug, archived: next }).then((updated) => ({
+      workspace_slug: updated.slug,
+      archived: Boolean(updated.archived_at),
+    }));
+  };
+  useAgentAction("workspace.archive", async ({ workspace_slug }) => agentArchive(workspace_slug, true));
+  useAgentAction("workspace.restore", async ({ workspace_slug }) => agentArchive(workspace_slug, false));
   const all = setups.data ?? [];
   const active = all.filter((w) => !bySlug.get(w.slug)?.archived_at);
   const archived = all.filter((w) => bySlug.get(w.slug)?.archived_at);

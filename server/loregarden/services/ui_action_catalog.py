@@ -24,6 +24,12 @@ class UiAction(StrEnum):
     TICKET_OPEN = "ticket.open"
     TICKET_UPDATE = "ticket.update"
     TICKET_SET_STATE = "ticket.set_state"
+    TICKET_TRIGGER_AUTO_FIX = "ticket.trigger_auto_fix"
+    WORKSPACE_ARCHIVE = "workspace.archive"
+    WORKSPACE_RESTORE = "workspace.restore"
+    WORKSPACE_SET_WORKFLOW = "workspace.set_workflow"
+    REFERENCE_REPO_ADD = "reference_repo.add"
+    REFERENCE_REPO_SYNC = "reference_repo.sync"
     APPROVAL_RESOLVE = "approval.resolve"
 
     @classmethod
@@ -88,6 +94,29 @@ class TicketSetStateArgs(_Args):
     state: TicketState
 
 
+class TicketTriggerAutoFixArgs(_Args):
+    ticket_id: str = Field(min_length=1, description="The ticket open in the tab.")
+
+
+class WorkspaceArgs(_Args):
+    workspace_slug: str = Field(min_length=1)
+
+
+class WorkspaceSetWorkflowArgs(_Args):
+    workspace_slug: str = Field(min_length=1)
+    template: str = Field(min_length=1, description="A workflow template slug.")
+
+
+class ReferenceRepoAddArgs(_Args):
+    workspace_slug: str = Field(min_length=1, description="The workspace whose picker is open.")
+    url: str = Field(min_length=1, description="The repository URL to clone.")
+    notes: str = ""
+
+
+class ReferenceRepoSyncArgs(_Args):
+    reference_repo_id: str = Field(min_length=1)
+
+
 class ApprovalResolveArgs(_Args):
     approval_id: str
 
@@ -98,12 +127,15 @@ class UiActionSpec:
     effect: UiActionEffect
     description: str
     args_model: type[_Args]
+    #: Where a tab offers it — what an agent must open first when no tab does.
+    offered: str
 
     def describe(self) -> dict[str, Any]:
         return {
             "action": self.action.value,
             "effect": self.effect.value,
             "description": self.description,
+            "offered": self.offered,
             "arguments": self.args_model.model_json_schema(),
         }
 
@@ -116,24 +148,70 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             UiActionEffect.VIEW,
             "Show one of the app's top-level pages in the operator's tab.",
             NavigatePageArgs,
+            offered="in every open tab",
         ),
         UiActionSpec(
             UiAction.TICKET_OPEN,
             UiActionEffect.VIEW,
             "Open a ticket in the operator's tab. The ticket actions below need it open.",
             TicketOpenArgs,
+            offered="in every open tab",
         ),
         UiActionSpec(
             UiAction.TICKET_UPDATE,
             UiActionEffect.WRITE,
             "Edit the open ticket's title, description, acceptance criteria or priority.",
             TicketUpdateArgs,
+            offered="while that ticket is open (ticket.open)",
         ),
         UiActionSpec(
             UiAction.TICKET_SET_STATE,
             UiActionEffect.WRITE,
             "Set the open ticket's state, as the state picker does.",
             TicketSetStateArgs,
+            offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.TICKET_TRIGGER_AUTO_FIX,
+            UiActionEffect.WRITE,
+            "Launch the CI auto-fix agent for the open ticket.",
+            TicketTriggerAutoFixArgs,
+            offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_ARCHIVE,
+            UiActionEffect.WRITE,
+            "Archive a workspace from the Workspaces page. Reversible with workspace.restore.",
+            WorkspaceArgs,
+            offered="on the Workspaces page (navigate.page workspaces)",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_RESTORE,
+            UiActionEffect.WRITE,
+            "Restore an archived workspace from the Workspaces page.",
+            WorkspaceArgs,
+            offered="on the Workspaces page (navigate.page workspaces)",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_SET_WORKFLOW,
+            UiActionEffect.WRITE,
+            "Set a workspace's default workflow template, from the console's workspaces pane.",
+            WorkspaceSetWorkflowArgs,
+            offered="on the console with that workspace selected (navigate.page dashboard)",
+        ),
+        UiActionSpec(
+            UiAction.REFERENCE_REPO_ADD,
+            UiActionEffect.WRITE,
+            "Clone a repository into the workspace's reference library, from the open picker.",
+            ReferenceRepoAddArgs,
+            offered="while that workspace's reference-repo picker is open in Ticket Studio",
+        ),
+        UiActionSpec(
+            UiAction.REFERENCE_REPO_SYNC,
+            UiActionEffect.WRITE,
+            "Fetch the latest of a reference repository shown in the open picker.",
+            ReferenceRepoSyncArgs,
+            offered="while a reference-repo picker listing it is open in Ticket Studio",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,
@@ -141,6 +219,7 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "Approve or reject an inbox item. The inbox is the human gate on agents' "
             "work, so no agent may resolve one — this is refused, always.",
             ApprovalResolveArgs,
+            offered="never to an agent",
         ),
     )
 }

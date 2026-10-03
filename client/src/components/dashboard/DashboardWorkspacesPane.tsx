@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { api, type WorkflowTemplateSummary, type WorkspaceSummary } from "../../api/client";
+import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { workspacesPath } from "../../lib/appNavigation";
 import { PaneHideButton } from "./PaneHideButton";
 
@@ -47,6 +48,23 @@ export function DashboardWorkspacesPane({
       qc.invalidateQueries({ queryKey: ["ticket"] });
     },
   });
+
+  // Offered only while the selector is: a workspace is selected and the
+  // templates have loaded — the same conditions that render the <select>.
+  useAgentAction(
+    "workspace.set_workflow",
+    async ({ workspace_slug, template }) => {
+      if (workspace_slug !== selected) {
+        throw new Error(`${workspace_slug} is not the selected workspace (${selected}); select it first`);
+      }
+      if (!workflowTemplates?.some((t) => t.slug === template)) {
+        throw new Error(`no workflow template named ${template}`);
+      }
+      await setTemplate.mutateAsync({ slug: workspace_slug, template });
+      return { workspace_slug, template };
+    },
+    selected !== "all" && Boolean(workflowTemplates),
+  );
 
   return (
     <div className={`workspaces-pane ${fill ? "pane-fill" : ""}`.trim()}>

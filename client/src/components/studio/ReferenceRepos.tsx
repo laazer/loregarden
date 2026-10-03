@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { errorDetail } from "../../utils/errorDetail";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 
 import {
@@ -40,15 +42,51 @@ export function ReferenceRepoPicker({
   const [notes, setNotes] = useState("");
 
   const addRepo = useMutation({
-    mutationFn: () =>
-      api.addReferenceRepo({ workspace_slug: workspaceSlug, url: url.trim(), notes: notes.trim() }),
+    mutationFn: (input: { url: string; notes: string }) =>
+      api.addReferenceRepo({ workspace_slug: workspaceSlug, url: input.url.trim(), notes: input.notes.trim() }),
     onSuccess: (repo) => {
       qc.invalidateQueries({ queryKey: ["reference-repos", workspaceSlug] });
-      setUrl("");
-      setNotes("");
       if (!selectedIds.includes(repo.id)) onChange([...selectedIds, repo.id]);
     },
   });
+
+  // The form clears only when its own button added the repo — an agent's add
+  // must not wipe what the operator is typing.
+  const addFromForm = () =>
+    addRepo.mutate(
+      { url, notes },
+      {
+        onSuccess: () => {
+          setUrl("");
+          setNotes("");
+        },
+      },
+    );
+
+  useAgentAction(
+    "reference_repo.add",
+    async ({ workspace_slug, url: repoUrl, notes: repoNotes = "" }) => {
+      if (workspace_slug !== workspaceSlug) {
+        throw new Error(`this picker is for ${workspaceSlug}, not ${workspace_slug}`);
+      }
+      const repo = await addRepo.mutateAsync({ url: repoUrl, notes: repoNotes });
+      return { reference_repo_id: repo.id, url: repo.url };
+    },
+    Boolean(workspaceSlug) && !disabled,
+  );
+
+  useAgentAction(
+    "reference_repo.sync",
+    async ({ reference_repo_id }) => {
+      if (!(repos.data ?? []).some((repo) => repo.id === reference_repo_id)) {
+        throw new Error(`no reference repo ${reference_repo_id} in ${workspaceSlug}'s list`);
+      }
+      const repo = await api.syncReferenceRepo(reference_repo_id);
+      await qc.invalidateQueries({ queryKey: ["reference-repos", workspaceSlug] });
+      return { reference_repo_id: repo.id, url: repo.url };
+    },
+    Boolean(workspaceSlug) && !disabled,
+  );
 
   const toggle = (repo: ReferenceRepo) => {
     onChange(
@@ -96,14 +134,14 @@ export function ReferenceRepoPicker({
           disabled={disabled}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
+        <Button
+          variant="secondary"
+          compact
           disabled={disabled || !url.trim() || addRepo.isPending}
-          onClick={() => addRepo.mutate()}
+          onClick={addFromForm}
         >
           {addRepo.isPending ? "Cloning…" : "Add"}
-        </button>
+        </Button>
       </div>
       <Input
         aria-label="Why this repo is interesting"

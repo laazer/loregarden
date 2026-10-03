@@ -62,5 +62,16 @@ export function TicketAgentActions() {
     ticketId !== "",
   );
 
+  useAgentAction(
+    "ticket.trigger_auto_fix",
+    async ({ ticket_id }) => {
+      const id = requireOpen(ticket_id);
+      // Straight to the API, not through useAutoFix: that hook keeps a failure in
+      // component state, which would report success to the agent.
+      return { ticket_id: id, ...(await api.triggerAutoFix(id)) };
+    },
+    ticketId !== "",
+  );
+
   return null;
 }
