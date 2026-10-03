@@ -9,7 +9,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def child_count(session: Session, ticket_id: str) -> int:
@@ -169,3 +169,21 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
     ticket.last_updated_by = "human"
     session.add(ticket)
     return ticket
+
+
+def descendants_by_root(session: Session, root_ids: list[str]) -> dict[str, list[Ticket]]:
+    """Every descendant of each root, one query per tree level."""
+    owner: dict[str, str] = {root: root for root in root_ids}
+    found: dict[str, list[Ticket]] = {root: [] for root in root_ids}
+    frontier = list(root_ids)
+    while frontier:
+        rows = session.exec(select(Ticket).where(col(Ticket.parent_ticket_id).in_(frontier))).all()
+        frontier = []
+        for child in rows:
+            if child.id in owner:  # a parent cycle is a data bug; do not loop on it
+                continue
+            root = owner[child.parent_ticket_id or ""]
+            owner[child.id] = root
+            found[root].append(child)
+            frontier.append(child.id)
+    return found

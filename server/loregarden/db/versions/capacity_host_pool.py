@@ -13,7 +13,7 @@ from loregarden.db.versions import migration
 from sqlalchemy import Connection, text
 
 
-@migration("20261002_capacity_host_pool", after="0151_ticket_criteria_checked")
+@migration("20261002_capacity_host_pool", after="20261002_initiative_plans")
 def m_capacity_host_pool(conn: Connection) -> None:
     if not table_exists(conn, "docker_capacity_pool") or not table_exists(conn, "docker_leases"):
         return

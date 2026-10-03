@@ -26,7 +26,9 @@ workspace that is any checkout of loregarden's repository reports
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -39,6 +41,9 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 logger = logging.getLogger(__name__)
 
 INSTALLER_TIMEOUT_SECONDS = 60
+
+#: How the installer scripts are told which Python to run their halves with.
+INSTALLER_PYTHON_ENV = "LOREGARDEN_PYTHON"
 
 
 class Installer(StrEnum):
@@ -126,14 +131,47 @@ def is_loregarden(workspace: Workspace, checkout: Path) -> bool:
     return result.returncode == 0 and Path(result.stdout.strip()).resolve().parent == checkout
 
 
-def _argv(checkout: Path, installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
-    argv = [str(checkout / "scripts" / _SCRIPTS[installer])]
+def _argv(installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
+    """The installer from the checkout this server runs from.
+
+    Not the primary checkout's copy: the scripts resolve the primary themselves
+    for the paths they render, and running main's scripts from a worktree meant
+    a branch's changes to them were never the ones its tests exercised.
+    """
+    argv = [str(settings.repo_root / "scripts" / _SCRIPTS[installer])]
     if check:
         argv.append("--check")
     if installer is Installer.DOCS:
         argv += ["--slug", workspace.slug]
     argv.append(str(resolve_workspace_root(workspace)))
     return argv
+
+
+def _installer_env() -> dict[str, str]:
+    """The ambient environment, plus the interpreter the scripts should use.
+
+    The server's own, already resolved. Left to the scripts, bare `python3`
+    goes through PATH on every call — on a machine where that is a pyenv shim,
+    ~6s of version resolution per call against a 60s timeout, and an older
+    Python than the one the server runs.
+    """
+    return {**os.environ, INSTALLER_PYTHON_ENV: sys.executable}
+
+
+#: How the installers prefix stderr that informs rather than explains a refusal —
+#: "rendering paths against the primary checkout", printed from any worktree.
+_NOTE_PREFIX = "note: "
+
+
+def _refusal_reason(stderr: str) -> str:
+    """The first stderr line that says why, passing over the scripts' notes.
+
+    Taking the first line outright reported the worktree note as the reason an
+    installer could not run whenever the server ran from a linked worktree.
+    """
+    return _first_line(
+        "\n".join(line for line in stderr.splitlines() if not line.startswith(_NOTE_PREFIX))
+    )
 
 
 def _first_line(text: str) -> str:
@@ -152,7 +190,8 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
         return InstallerStatus(installer, InstallState.BUILT_IN, _BUILT_IN_DETAIL)
     try:
         completed = subprocess.run(
-            _argv(checkout, installer, workspace, check=check),
+            _argv(installer, workspace, check=check),
+            env=_installer_env(),
             capture_output=True,
             text=True,
             timeout=INSTALLER_TIMEOUT_SECONDS,
@@ -164,7 +203,7 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
     reported = _first_line(completed.stdout)
     state = _REPORTED.get(reported.split(":", 1)[0].split(" ", 1)[0])
     if state is None:
-        detail = _first_line(completed.stderr) or reported or f"exit {completed.returncode}"
+        detail = _refusal_reason(completed.stderr) or reported or f"exit {completed.returncode}"
         return InstallerStatus(installer, InstallState.UNAVAILABLE, detail.removeprefix("skip: "))
     return InstallerStatus(installer, state, reported)
 

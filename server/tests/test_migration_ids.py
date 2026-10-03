@@ -59,8 +59,8 @@ def test_renaming_a_shipped_id_is_rejected(monkeypatch):
 
 
 def test_dropping_a_shipped_id_is_rejected(monkeypatch):
-    # The last *shipped* id, not the last entry: versioned migrations after the
-    # frozen list are not in the ledger, so dropping one of those is no violation.
+    # The last *shipped* id, not the list's last entry: versioned migrations
+    # follow the frozen list, and dropping one of those is not this failure.
     last_shipped = SHIPPED_MIGRATION_IDS[-1]
     monkeypatch.setattr(M, "MIGRATIONS", [m for m in M.MIGRATIONS if m[0] != last_shipped])
 

@@ -82,14 +82,15 @@ def rework_feedback_artifact_title(target_stage: str) -> str:
 def _tree_sha(session: Session, ticket: Ticket, run_id: str | None) -> str:
     """HEAD of the checkout the run actually executed in.
 
-    Resolved through the RUN, not the workspace. `resolve_head_sha` answers for
-    `workspace.repo_path` — the shared checkout — and `GitAutomationConfig`
-    defaults `worktree` to True, so a ticket's commits normally land in a
-    per-ticket worktree that the shared checkout never sees. Stamping the shared
-    HEAD would have compared a repository the run never wrote to: two rounds
-    would read as "the same tree" while the ticket's worktree advanced between
-    them, which is a false STUCK, and the signal would be answering a question
-    about the wrong repo entirely.
+    Resolved through the RUN, not the ticket. ``resolve_head_sha`` answers the
+    ticket-scoped question (ACTIVE worktree, else workspace-root fallback via
+    ``resolve_ticket_root``). This helper answers the run-scoped sibling: under
+    stage fan-out an attempt worktree can diverge from the ticket's ACTIVE
+    worktree, and convergence must compare the tree the finding was raised
+    against. Stamping the shared checkout HEAD would have compared a repository
+    the run never wrote to: two rounds would read as "the same tree" while the
+    ticket's worktree advanced between them, which is a false STUCK, and the
+    signal would be answering a question about the wrong repo entirely.
 
     `resolve_run_root` already falls back to the workspace checkout for a run
     with no worktree, or one whose directory has been cleaned up.

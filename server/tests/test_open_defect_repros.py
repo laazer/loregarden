@@ -48,26 +48,28 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
+    RunStatus,
     Ticket,
     TicketState,
     WorkItemType,
     Workspace,
-    Worktree,
-    WorktreeState,
 )
-from loregarden.services.evidence import resolve_head_sha
+from loregarden.services import process_identity
 from loregarden.services.gate_recovery import GateRecovery
 from loregarden.services.gate_runner import _run_command
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.process_identity import identify
+from loregarden.services.run_reattach import reattach_surviving_runs
+from loregarden.services.run_service import fail_interrupted_runs
 from sqlmodel import Session
-from tests.worktree_helpers import git as helper_git
 from tests.worktree_helpers import make_repo
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
@@ -254,71 +256,6 @@ def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
     assert (created.status_code, listing.status_code) == (422, 200)
 
 
-# --- lg-milestone-that-849: evidence stamped on the shared checkout --------
-
-
-@pytest.fixture
-def ticket_in_a_diverged_worktree(isolated_db, tmp_path: Path):
-    """A ticket whose ACTIVE worktree has advanced past the shared checkout."""
-    shared = make_repo(tmp_path, name="shared")
-    worktree_dir = make_repo(tmp_path, name="ticket-worktree")
-    (worktree_dir / "only-here.txt").write_text("x\n")
-    helper_git(worktree_dir, "add", "-A")
-    helper_git(worktree_dir, "commit", "-qm", "work the shared checkout never saw")
-    worktree_head = helper_git(worktree_dir, "rev-parse", "HEAD").stdout.strip()
-    assert helper_git(shared, "rev-parse", "HEAD").stdout.strip() != worktree_head
-
-    session = Session(isolated_db)
-    workspace = Workspace(slug="ev-wt", name="EV-WT", repo_path=str(shared))
-    session.add(workspace)
-    session.commit()
-    ticket = Ticket(
-        external_id="ev-wt-1",
-        workspace_id=workspace.id,
-        title="stamp",
-        state=TicketState.IN_PROGRESS,
-        work_item_type=WorkItemType.TASK,
-    )
-    session.add(ticket)
-    session.commit()
-    run = AgentRun(
-        run_code="ev_wt_run",
-        workspace_id=workspace.id,
-        ticket_id=ticket.id,
-        agent_id="test_designer",
-        stage_key="test-design",
-    )
-    session.add(run)
-    session.commit()
-    session.add(
-        Worktree(
-            workspace_id=workspace.id,
-            agent_run_id=run.id,
-            ticket_id=ticket.id,
-            worktree_path=str(worktree_dir),
-            state=WorktreeState.ACTIVE,
-        )
-    )
-    session.commit()
-    yield session, ticket, worktree_head
-    session.close()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "lg-milestone-that-849 — open. 742's fix never reached main: resolve_head_sha "
-        "reads the shared checkout, so evidence is stamped and gated against a HEAD "
-        "the ticket never wrote to."
-    ),
-)
-def test_evidence_is_stamped_at_the_ticket_worktree_head(ticket_in_a_diverged_worktree) -> None:
-    """Verified live on 2026-10-02 with 742's own regression test."""
-    session, ticket, worktree_head = ticket_in_a_diverged_worktree
-
-    assert resolve_head_sha(session, ticket) == worktree_head
-
-
 # --- lg-workflow-integrity-850: autofix commit failures swallowed ----------
 
 
@@ -383,3 +320,62 @@ def test_a_failed_autofix_commit_is_reported(
         recovery._commit_autofix(ticket, "implement", "fixers rewrote seed.txt")
 
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
+
+
+# --- lg-run-durability-862: a slow `ps` at boot fails a live run -------------
+
+
+@pytest.fixture
+def live_run_with_its_identity(isolated_db):
+    """A RUNNING run whose agent is a real live process, identity recorded by
+    the real `ps` — so a broken `ps` ERRORs the setup instead of XFAILing."""
+    agent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    identity = identify(agent.pid)
+    assert identity, "the fixture needs a real identity to record"
+    session = Session(isolated_db)
+    workspace = Workspace(slug="reattach-ps", name="reattach-ps", repo_path=".")
+    session.add(workspace)
+    session.commit()
+    ticket = Ticket(external_id="reattach-ps-1", workspace_id=workspace.id, title="ps")
+    session.add(ticket)
+    session.commit()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        run_code="ps_slow",
+        agent_id="backend_implementer",
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+        agent_pid=agent.pid,
+        agent_pid_identity=identity,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    yield session, run
+    session.close()
+    agent.kill()
+    agent.wait(timeout=5)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "lg-run-durability-862 — open. identify() returns None on a `ps` timeout, the "
+        "same answer as a dead process, so a slow `ps` at boot gets a live agent's "
+        "run failed by fail_interrupted_runs."
+    ),
+)
+def test_a_live_run_survives_a_ps_that_cannot_answer(live_run_with_its_identity) -> None:
+    """Reasoned from a pre-push failure on 2026-10-02 and reproduced by forcing the
+    timeout; a `ps` actually exceeding 5s was not observed."""
+    session, run = live_run_with_its_identity
+
+    def ps_times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 5))
+
+    with mock.patch.object(process_identity.subprocess, "run", ps_times_out):
+        reattach_surviving_runs(session, interval_seconds=0.05)
+        failed = fail_interrupted_runs(session)
+
+    assert run.id not in {r.id for r in failed}
