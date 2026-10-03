@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api, type InitiativeMilestone, type InitiativeView } from "../../api/client";
@@ -16,6 +16,7 @@ function milestone(overrides: Partial<InitiativeMilestone> = {}): InitiativeMile
     title: "Backend half",
     state: "done",
     workspace_slug: "loregarden",
+    work_item_type: "milestone",
     ...overrides,
   };
 }
@@ -170,4 +171,51 @@ test("a failed load says so instead of showing the empty state", async () => {
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Initiatives could not be loaded");
   expect(screen.queryByRole("button", { name: "Create the first initiative" })).not.toBeInTheDocument();
+});
+
+describe("a sprint-style initiative", () => {
+  const sprint = () =>
+    initiative({
+      id: "s1",
+      title: "Sprint Oct 3",
+      milestones: [milestone({ id: "f1", title: "Drag nodes", work_item_type: "feature", state: "in_progress" })],
+    });
+
+  test("moves a feature back to a milestone in its workspace, done ones included", async () => {
+    mockApi.initiatives.mockResolvedValue([sprint()]);
+    mockApi.attachableMilestones.mockResolvedValue([
+      milestone({ id: "m9", external_id: "lg-m9", title: "Canvas", state: "done" }),
+      milestone({ id: "x1", external_id: "lor-x-1", title: "Elsewhere", workspace_slug: "lore-eden" }),
+    ]);
+    mockApi.setMilestoneInitiative.mockResolvedValue({} as never);
+    const user = userEvent.setup();
+    renderPage();
+
+    const move = await screen.findByRole("combobox", { name: "Move Drag nodes to a milestone" });
+    expect(within(move).queryByText(/Elsewhere/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Detach Drag nodes/ })).not.toBeInTheDocument();
+    await user.selectOptions(move, "lg-m9 — Canvas (done)");
+    await waitFor(() => expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("f1", "m9"));
+  });
+
+  test("finds open work by search and adds it to the sprint", async () => {
+    mockApi.initiatives.mockResolvedValue([sprint()]);
+    mockApi.initiativeAddableWork.mockResolvedValue([
+      {
+        ...milestone({ id: "f2", external_id: "lg-f2", title: "Zoom nodes", work_item_type: "feature" }),
+        from_milestone: "lg-m9",
+        cost: 2,
+      },
+    ]);
+    mockApi.setMilestoneInitiative.mockResolvedValue({} as never);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByRole("searchbox", { name: "Add a feature or bug to this sprint" }), "nodes");
+    const add = await screen.findByRole("button", { name: "Add lg-f2 to Sprint Oct 3" });
+    expect(screen.getByText("leaves lg-m9")).toBeInTheDocument();
+    expect(mockApi.initiativeAddableWork).toHaveBeenCalledWith("s1", "nodes");
+    await user.click(add);
+    await waitFor(() => expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("f2", "s1"));
+  });
 });

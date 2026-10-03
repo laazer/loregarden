@@ -2,7 +2,7 @@ import type { WorkItemType } from "../api/client";
 
 /** Mirrors server VALID_HIERARCHY — parent types that may contain children. */
 export const VALID_HIERARCHY: Record<WorkItemType, WorkItemType[]> = {
-  initiative: ["milestone"],
+  initiative: ["milestone", "feature", "bug"],
   milestone: ["feature", "bug"],
   feature: ["capability", "bug"],
   capability: ["task", "bug"],

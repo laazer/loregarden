@@ -4,6 +4,7 @@
   "id": "cc241d9a-4dde-585c-8211-6162d1cc835a",
   "state": "in_progress",
   "title": "M01 \u2014 Fix the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -11,6 +12,7 @@
   "id": "045cb2f2-be50-5e21-9d25-0c3ae6a0d6ac",
   "state": "done",
   "title": "M02 \u2014 Retry stage timeout budgets",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -18,6 +20,7 @@
   "id": "c5aa36d9-c7a9-5ef9-9abc-95bf75238779",
   "state": "backlog",
   "title": "M03 \u2014 Surface the rework ledger's loop cap",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -25,6 +28,7 @@
   "id": "df55b90d-a2be-573a-930e-e61a792f19d1",
   "state": "in_progress",
   "title": "M04 \u2014 Route the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -32,6 +36,7 @@
   "id": "ac1f6162-d94a-59e7-ba2f-c46ee9391ed2",
   "state": "done",
   "title": "M05 \u2014 Add worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -39,6 +44,7 @@
   "id": "171baf2b-05cf-57f2-8380-63ccf5fec6d2",
   "state": "in_progress",
   "title": "M06 \u2014 Split memory recall ranking",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -46,6 +52,7 @@
   "id": "c2b44d86-261d-537e-8f17-f5e08c66d56b",
   "state": "in_progress",
   "title": "M07 \u2014 Surface memory recall ranking",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -53,6 +60,7 @@
   "id": "628f03db-3d44-534b-9fd7-dfc8a8641a38",
   "state": "backlog",
   "title": "M09 \u2014 Cache github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -60,6 +68,7 @@
   "id": "48e77f84-88c8-5340-aa20-368b257c9756",
   "state": "backlog",
   "title": "M10 \u2014 Split worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -67,6 +76,7 @@
   "id": "0e7ac914-9fb0-5b33-8663-2fb06609c8b4",
   "state": "backlog",
   "title": "M12 \u2014 Cache github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -74,6 +84,7 @@
   "id": "98044ca7-9a2b-57ab-adcd-da3ddba72702",
   "state": "in_progress",
   "title": "M13 \u2014 Stop github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -81,6 +92,7 @@
   "id": "a9534c5c-24ae-55cb-bada-93526264427c",
   "state": "backlog",
   "title": "M14 \u2014 Fix the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -88,6 +100,7 @@
   "id": "91787e0b-a7b9-5d5a-a82c-e0a0b9aec022",
   "state": "blocked",
   "title": "M15 \u2014 Make initiative progress rollup",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -95,6 +108,7 @@
   "id": "e9a3ee2c-f9d8-52b3-a282-75b1a85ab3ea",
   "state": "in_progress",
   "title": "M16 \u2014 Add the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -102,6 +116,7 @@
   "id": "f875a16b-d92a-537e-b619-48b5febc8348",
   "state": "backlog",
   "title": "M17 \u2014 Cache docker capacity leases",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -109,6 +124,7 @@
   "id": "1003e8ad-2c29-5f9d-9b42-2a1604a542c7",
   "state": "backlog",
   "title": "M18 \u2014 Fix github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -116,6 +132,7 @@
   "id": "695a2949-b24e-50e3-91bc-bee5b9da7aa9",
   "state": "in_progress",
   "title": "M19 \u2014 Make worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -123,6 +140,7 @@
   "id": "24aa5af3-725b-59a6-b4cc-10c5a186f634",
   "state": "backlog",
   "title": "M21 \u2014 Make github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -130,6 +148,7 @@
   "id": "d9388773-4c0e-5be0-b102-6359f631239b",
   "state": "backlog",
   "title": "M23 \u2014 Make the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -137,6 +156,7 @@
   "id": "c3613fd7-8655-5b19-bf88-28ded6868d2a",
   "state": "backlog",
   "title": "M25 \u2014 Make worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -144,6 +164,7 @@
   "id": "39102f82-68e3-5511-b13b-cef9d34d46b7",
   "state": "backlog",
   "title": "M26 \u2014 Split initiative progress rollup",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -151,6 +172,7 @@
   "id": "9ce491d6-0f07-5516-b1d3-db34654da6a9",
   "state": "backlog",
   "title": "M27 \u2014 Show the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -158,6 +180,7 @@
   "id": "dd4e38df-4572-5f20-86a5-a29981426851",
   "state": "backlog",
   "title": "M28 \u2014 Stop branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -165,6 +188,7 @@
   "id": "227560a3-3edb-5167-bf59-720e33f6f736",
   "state": "done",
   "title": "M29 \u2014 Fix branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -172,6 +196,7 @@
   "id": "16ed366e-99af-5d00-a76a-96170911cc30",
   "state": "backlog",
   "title": "M30 \u2014 Cache the rework ledger's loop cap",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -179,6 +204,7 @@
   "id": "b1ecdb6d-75de-5b3e-8765-35ebe3bcab16",
   "state": "in_progress",
   "title": "M31 \u2014 Show the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -186,6 +212,7 @@
   "id": "2ed27a8c-2a6f-5e30-8293-942d1e800843",
   "state": "in_progress",
   "title": "M32 \u2014 Route the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -193,6 +220,7 @@
   "id": "9c25f95f-2d61-5cd2-aadd-4205e70e3380",
   "state": "backlog",
   "title": "M33 \u2014 Stop branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -200,6 +228,7 @@
   "id": "6ca78352-1990-532d-b0d9-5f8ccaa5a6e8",
   "state": "in_progress",
   "title": "M34 \u2014 Route the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -207,6 +236,7 @@
   "id": "bbd3ea41-948a-58a8-a429-0d415e5d10c2",
   "state": "in_progress",
   "title": "M35 \u2014 Add docker capacity leases",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -214,6 +244,7 @@
   "id": "a81c26c5-000b-5b4a-b633-5326b88db529",
   "state": "backlog",
   "title": "M36 \u2014 Route worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -221,6 +252,7 @@
   "id": "8035a90f-29ea-55d8-886b-25e6acbc01f6",
   "state": "backlog",
   "title": "M37 \u2014 Add the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -228,6 +260,7 @@
   "id": "04d6f162-5423-5b49-8c3c-bee447e80456",
   "state": "backlog",
   "title": "M38 \u2014 Show github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -235,6 +268,7 @@
   "id": "f954bfa8-9335-5d46-bd18-3efc5f05c060",
   "state": "backlog",
   "title": "M39 \u2014 Fix memory recall ranking",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -242,6 +276,7 @@
   "id": "ed49589c-1d5d-5f22-b6a1-44c54fba0262",
   "state": "done",
   "title": "M40 \u2014 Retry the rework ledger's loop cap",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -249,6 +284,7 @@
   "id": "1fdc5862-15b7-5d81-b6aa-83da300e4cf0",
   "state": "in_progress",
   "title": "M41 \u2014 Surface stage timeout budgets",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -256,6 +292,7 @@
   "id": "c6244a4a-518d-5622-8a52-182867de8b55",
   "state": "backlog",
   "title": "M42 \u2014 Cache the rework ledger's loop cap",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -263,6 +300,7 @@
   "id": "5ddbd212-d172-522b-a2bb-d34b42f50e0d",
   "state": "backlog",
   "title": "M43 \u2014 Route the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -270,6 +308,7 @@
   "id": "39aa6b34-1f3c-5e0b-b4b2-c6686597d163",
   "state": "backlog",
   "title": "M45 \u2014 Route the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -277,6 +316,7 @@
   "id": "f4d66354-ec15-598e-beb1-9ce3908ab73c",
   "state": "backlog",
   "title": "M46 \u2014 Route memory recall ranking",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -284,6 +324,7 @@
   "id": "6212bbf4-560f-508a-9a0f-83d09b32d55f",
   "state": "backlog",
   "title": "M47 \u2014 Retry the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -291,6 +332,7 @@
   "id": "9262a26c-626d-5dfb-9430-64427c12e2b0",
   "state": "backlog",
   "title": "M48 \u2014 Add the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -298,6 +340,7 @@
   "id": "c91272f3-e826-53f2-aee4-24169ac6400d",
   "state": "backlog",
   "title": "M49 \u2014 Route the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -305,6 +348,7 @@
   "id": "8cec0588-2214-5a52-8272-26154de473bf",
   "state": "done",
   "title": "M50 \u2014 Show branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -312,6 +356,7 @@
   "id": "3c7a0631-745b-55b3-9761-6654bc332fed",
   "state": "backlog",
   "title": "M52 \u2014 Cache worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -319,6 +364,7 @@
   "id": "5ce398fb-4bfc-5957-aecb-fd01a7311b0c",
   "state": "in_progress",
   "title": "M53 \u2014 Surface the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -326,6 +372,7 @@
   "id": "68e9a739-8152-5c57-9146-e121fbc48d0b",
   "state": "in_progress",
   "title": "M54 \u2014 Fix the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "loregarden"
  },
  {
@@ -333,6 +380,7 @@
   "id": "6a9ca7b5-3673-55a9-9824-b41bebb4747a",
   "state": "in_progress",
   "title": "M01 \u2014 Surface memory recall ranking",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -340,6 +388,7 @@
   "id": "88cc42c8-2f6f-5b55-aef8-5536eb2c0374",
   "state": "done",
   "title": "M02 \u2014 Show the rework ledger's loop cap",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -347,6 +396,7 @@
   "id": "473bdf49-97d8-5b44-8bb4-2ad485779219",
   "state": "backlog",
   "title": "M04 \u2014 Fix branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -354,6 +404,7 @@
   "id": "935c2d7a-d60a-5abe-b107-4ea4af3f410f",
   "state": "in_progress",
   "title": "M05 \u2014 Show branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -361,6 +412,7 @@
   "id": "42d1ed09-48de-5454-a683-7594eca9b81f",
   "state": "backlog",
   "title": "M06 \u2014 Make docker capacity leases",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -368,6 +420,7 @@
   "id": "788d4fdc-f612-5c30-af8c-cf32253c09d1",
   "state": "backlog",
   "title": "M07 \u2014 Add the run log's live tail",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -375,6 +428,7 @@
   "id": "3628e800-a9d0-5bfb-8f33-e2b0cfa9211e",
   "state": "backlog",
   "title": "M08 \u2014 Route worktree isolation for chat turns",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -382,6 +436,7 @@
   "id": "95780a97-f531-54ce-9880-6c41c4adada3",
   "state": "backlog",
   "title": "M09 \u2014 Show the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -389,6 +444,7 @@
   "id": "2de340cb-70e3-5f5d-aefd-2adc4cd121ec",
   "state": "backlog",
   "title": "M10 \u2014 Split github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -396,6 +452,7 @@
   "id": "91cb3cc0-a76f-5d6e-ac5f-30e16fd55744",
   "state": "in_progress",
   "title": "M11 \u2014 Fix the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "blobert"
  },
  {
@@ -403,6 +460,7 @@
   "id": "b623dd55-9b65-540b-94b3-1758760df604",
   "state": "backlog",
   "title": "M01 \u2014 Add github issue two-way sync",
+  "work_item_type": "milestone",
   "workspace_slug": "lore-eden"
  },
  {
@@ -410,6 +468,7 @@
   "id": "2ce7f878-0015-5d08-bb89-36fe79fc3d05",
   "state": "backlog",
   "title": "M02 \u2014 Fix initiative progress rollup",
+  "work_item_type": "milestone",
   "workspace_slug": "lore-eden"
  },
  {
@@ -417,6 +476,7 @@
   "id": "632808f4-cf5a-5960-a621-8444de7c39c3",
   "state": "backlog",
   "title": "M03 \u2014 Retry branch cleanup after a squash merge",
+  "work_item_type": "milestone",
   "workspace_slug": "lore-eden"
  },
  {
@@ -424,6 +484,7 @@
   "id": "3f8452bf-1483-51e5-a511-e8037e4f003f",
   "state": "in_progress",
   "title": "M04 \u2014 Stop the queue board's stalled lane",
+  "work_item_type": "milestone",
   "workspace_slug": "lore-eden"
  },
  {
@@ -431,6 +492,7 @@
   "id": "a7a55334-ec74-5461-a091-e3d6b1690827",
   "state": "backlog",
   "title": "M01 \u2014 Stop stage timeout budgets",
+  "work_item_type": "milestone",
   "workspace_slug": "loremaker"
  },
  {
@@ -438,6 +500,7 @@
   "id": "b5144855-3a49-5c63-bef5-b9e5b48c9ac1",
   "state": "backlog",
   "title": "M02 \u2014 Stop stage timeout budgets",
+  "work_item_type": "milestone",
   "workspace_slug": "loremaker"
  },
  {
@@ -445,6 +508,7 @@
   "id": "0b22c93f-c3b5-5a15-878e-374c1e3e1fe4",
   "state": "backlog",
   "title": "M05 \u2014 Show the approval inbox for parked stages",
+  "work_item_type": "milestone",
   "workspace_slug": "loremaker"
  },
  {
@@ -452,6 +516,7 @@
   "id": "2ed882fb-d88f-5b94-887d-8b685b4db15d",
   "state": "in_progress",
   "title": "M06 \u2014 Surface docker capacity leases",
+  "work_item_type": "milestone",
   "workspace_slug": "loremaker"
  }
 ]

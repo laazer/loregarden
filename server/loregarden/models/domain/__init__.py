@@ -13,6 +13,7 @@ from loregarden.models.domain.gate_eval_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.git_tables import *  # noqa: F401,F403
 from loregarden.models.domain.github_issue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_schemas import *  # noqa: F401,F403
+from loregarden.models.domain.initiative_suggestion_schemas import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_tables import *  # noqa: F401,F403
 from loregarden.models.domain.instance_template_tables import *  # noqa: F401,F403
 from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
