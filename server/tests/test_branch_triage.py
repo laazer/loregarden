@@ -36,6 +36,7 @@ from loregarden.services.branch_triage_service import (
 from loregarden.services.file_editor import _list_branches
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
+from tests.repo_templates import from_template
 
 
 def _init_repo(path: Path) -> None:
@@ -56,9 +57,7 @@ def _init_repo(path: Path) -> None:
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
 
 
-@pytest.fixture
-def triage_repo(tmp_path, monkeypatch):
-    repo = tmp_path / "loregarden"
+def _build_triage_repo(repo: Path) -> None:
     repo.mkdir()
     _init_repo(repo)
     subprocess.run(
@@ -73,6 +72,11 @@ def triage_repo(tmp_path, monkeypatch):
         ["git", "commit", "-m", "orphan work"], cwd=repo, check=True, capture_output=True
     )
     subprocess.run(["git", "checkout", "main"], cwd=repo, check=True, capture_output=True)
+
+
+@pytest.fixture
+def triage_repo(tmp_path, monkeypatch):
+    repo = from_template(tmp_path / "loregarden", "branch_triage", _build_triage_repo)
     monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo))
     monkeypatch.setattr("loregarden.config.settings.repo_root", repo.resolve())
     monkeypatch.setattr(settings, "browse_root", str(tmp_path))

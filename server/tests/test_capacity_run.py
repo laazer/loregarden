@@ -283,6 +283,9 @@ def _cli_env(database: Path) -> dict[str, str]:
             "LOREGARDEN_HOST_CAPACITY_CPUS": "2",
             "LOREGARDEN_HOST_CAPACITY_MEMORY_MB": "4096",
             "LOREGARDEN_DOCKER_POLL_MIN_INTERVAL_SECONDS": "1",
+            # A waiter otherwise sleeps a fraction of its TTL-bound estimate —
+            # tens of seconds — before noticing the lease ahead was released.
+            "LOREGARDEN_DOCKER_POLL_MAX_INTERVAL_SECONDS": "1",
         }
     )
     return env
@@ -314,9 +317,16 @@ def _wait_for_status(database: Path, status: DockerLeaseStatus, *, timeout: floa
 def test_two_runs_with_room_for_one_do_not_overlap(tmp_path) -> None:
     database = tmp_path / "ledger.db"
     env = _cli_env(database)
+    # The first command holds its lease until the second is seen queued behind
+    # it, so the second really did ask while the first held. A fixed sleep
+    # could end before the second CLI finished starting, and then the order
+    # asserted below would hold without anything having been queued.
+    release = tmp_path / "release"
     stamp = (
-        "import sys, time; open(sys.argv[1], 'w').write(str(time.time())); "
-        "time.sleep(1.5); open(sys.argv[2], 'w').write(str(time.time()))"
+        "import os, sys, time; open(sys.argv[1], 'w').write(str(time.time())); "
+        "deadline = time.monotonic() + 120\n"
+        "while not os.path.exists(sys.argv[3]) and time.monotonic() < deadline: time.sleep(0.05)\n"
+        "open(sys.argv[2], 'w').write(str(time.time()))"
     )
 
     def run(name: str) -> subprocess.Popen:
@@ -334,6 +344,7 @@ def test_two_runs_with_room_for_one_do_not_overlap(tmp_path) -> None:
                 stamp,
                 str(tmp_path / f"{name}.start"),
                 str(tmp_path / f"{name}.end"),
+                str(release),
             ),
             cwd=SERVER_ROOT,
             env=env,
@@ -342,6 +353,8 @@ def test_two_runs_with_room_for_one_do_not_overlap(tmp_path) -> None:
     first = run("first")
     _wait_for_status(database, DockerLeaseStatus.HELD)
     second = run("second")
+    _wait_for_status(database, DockerLeaseStatus.WAITING)
+    release.touch()
     assert first.wait(timeout=120) == 0
     assert second.wait(timeout=120) == 0
 
