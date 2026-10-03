@@ -13,6 +13,7 @@ from loregarden.models.domain import (
 from loregarden.services.conflict_detector import ConflictDetectorService
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.parallel_run_service import ParallelRunService
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.queue_status import build_queue_status
 from loregarden.services.worktree_service import WorktreeService, repo_path_for_worktree
 from loregarden.websocket_events import (
@@ -287,6 +288,22 @@ async def check_conflicts(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+def _merge_or_conflict(
+    service: WorktreeService, worktree: Worktree, target_branch: str, auto_resolve: bool
+) -> bool:
+    """`merge_worktree`, with a dirty primary checkout answered as a 409.
+
+    Nothing was touched and the worktree is still mergeable: the operator clears
+    the named paths from the primary checkout and merges again (864).
+    """
+    try:
+        return service.merge_worktree(
+            worktree, target_branch=target_branch, auto_resolve=auto_resolve
+        )
+    except DirtyPrimaryCheckoutError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/worktree/{worktree_id}/merge")
 def merge_worktree(
     worktree_id: str = Path(...),
@@ -325,11 +342,7 @@ def merge_worktree(
         worktree_service = WorktreeService(
             session, repo_path=repo_path_for_worktree(session, worktree)
         )
-        success = worktree_service.merge_worktree(
-            worktree,
-            target_branch=target_branch,
-            auto_resolve=auto_resolve,
-        )
+        success = _merge_or_conflict(worktree_service, worktree, target_branch, auto_resolve)
 
         if success:
             # Emit conflict resolved event on successful merge

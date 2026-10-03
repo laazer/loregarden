@@ -7,14 +7,17 @@ from loregarden.config import settings
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowTemplate, Workspace
 from loregarden.services.worktree_snapshot import TreeSnapshot
 from loregarden.skills.registry import SkillNotFoundError
-from tests.worktree_helpers import seed_stage_report_contract
+from tests.worktree_helpers import make_repo
 
 
 def _repo(root: Path) -> Path:
-    root.mkdir()
-    (root / ".git").mkdir()
-    seed_stage_report_contract(root)
-    return root
+    """A real repository with its seed committed.
+
+    It used to be a bare `.git` directory, which git cannot read; a dispatch
+    that falls back to the shared checkout now refuses an unreadable tree
+    rather than treat it as clean (lg-workflow-integrity-864).
+    """
+    return make_repo(root.parent, name=root.name)
 
 
 def test_execute_marks_run_failed_when_declared_skill_is_missing(db_session, tmp_path):

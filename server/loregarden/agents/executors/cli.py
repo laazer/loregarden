@@ -12,6 +12,7 @@ from loregarden.agents.cli_adapters import (
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
+from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
@@ -78,6 +79,8 @@ from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.preflight_ledger import PreflightLedger
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
+from loregarden.services.recorded_paths import ticket_recorded_paths
 from loregarden.services.run_errors import (
     RunTimeout,
     agent_timeout_message,
@@ -162,25 +165,16 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
 
-        # The ticket's own worktree, cut on its first stage and reused by every
-        # later one. Without this every run, parallel or not, executed in the
-        # one shared checkout and fought over its working tree — and a crash
-        # mid-run left that shared tree on a half-applied ticket branch.
-        # A worktree that cannot be cut falls back to the checkout above, so
-        # this is always a real directory.
-        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
-        in_worktree = repo_root != workspace_root
-
-        failed_checkout = self._ensure_branch_or_fail(
+        repo_root, stopped = self._prepare_tree(
             run,
             ticket,
             workspace,
-            repo_root=repo_root,
-            skip=skip_git_branch or in_worktree,
+            workspace_root=workspace_root,
+            skip_git_branch=skip_git_branch,
             advance_workflow=advance_workflow,
         )
-        if failed_checkout is not None:
-            return failed_checkout
+        if stopped is not None:
+            return stopped
 
         stage_def = self._resolve_stage_def(ticket, run)
         ticket_runtime = get_ticket_orchestration_runtime(ticket)
@@ -427,6 +421,7 @@ class CliAgentExecutor:
                 start_point=resolve_target_branch(
                     self.session, ticket, workspace, repo_root=workspace_root
                 ),
+                ignoring=ticket_recorded_paths(self.session, ticket),
             )
 
         stage_def = self._resolve_stage_def(ticket, run)
@@ -660,7 +655,10 @@ class CliAgentExecutor:
                 start_point=resolve_target_branch(
                     self.session, ticket, workspace, repo_root=repo_root
                 ),
+                ignoring=ticket_recorded_paths(self.session, ticket),
             )
+        except DirtyPrimaryCheckoutError:
+            raise  # parked by `_prepare_tree`, not failed as a checkout error
         except (ValueError, subprocess.CalledProcessError) as exc:
             return self.orchestration.complete_run(
                 run,
@@ -669,6 +667,42 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
         return None
+
+    def _prepare_tree(
+        self,
+        run: AgentRun,
+        ticket: Ticket,
+        workspace: Workspace,
+        *,
+        workspace_root: Path,
+        skip_git_branch: bool,
+        advance_workflow: bool,
+    ) -> tuple[Path, AgentRun | None]:
+        """The tree this run executes in, on its branch — or the run, stopped.
+
+        The ticket's own worktree, cut on its first stage and reused by every
+        later one. Without this every run, parallel or not, executed in the one
+        shared checkout and fought over its working tree — and a crash mid-run
+        left that shared tree on a half-applied ticket branch. A worktree that
+        cannot be cut falls back to the shared checkout, unless that holds
+        someone else's uncommitted work: then the run is parked, not started
+        (864).
+        """
+        try:
+            repo_root = resolve_execution_root(self.session, run, ticket, workspace)
+            failed = self._ensure_branch_or_fail(
+                run,
+                ticket,
+                workspace,
+                repo_root=repo_root,
+                skip=skip_git_branch or repo_root != workspace_root,
+                advance_workflow=advance_workflow,
+            )
+        except DirtyPrimaryCheckoutError as exc:
+            return workspace_root, park_on_dirty_checkout(
+                self.session, self.orchestration, run=run, ticket=ticket, error=exc
+            )
+        return repo_root, failed
 
     def _record_and_check_boundary(
         self,

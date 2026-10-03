@@ -269,7 +269,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/orchestration_callbacks.py:pause_for_rework_decision": (
         "delegates: orchestration_callbacks.block_ticket"
     ),
-    "services/parallel_stage.py:prepare_tree_for_parallel_stage": "settles",
+    "services/parallel_stage.py:_block_on_checkout_failure": "settles",
     "services/parallel_stage.py:_route_parallel_stage_failures": "settles",
     "services/run_completion.py:_reroute_or_block_for_rework": "settles",
     "services/run_completion.py:settle_stage_after_failed_completion": "settles",

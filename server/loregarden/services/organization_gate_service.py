@@ -21,8 +21,9 @@ from enum import StrEnum
 from pathlib import Path
 
 from loregarden.config import settings
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import PrimaryCheckoutUse, Workspace
 from loregarden.services import workspace_integration as integration
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
 from loregarden.services.workspace_integration import Installer, InstallerError, InstallState
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -209,7 +210,22 @@ def check_workspace(workspace: Workspace, scope: OrganizationScope) -> list[Chec
     return results
 
 
+#: The file `install-workspace-hooks.sh` writes the hook block into.
+HOOK_CONFIG_FILE = "lefthook.yml"
+
+
 def hooks_result(workspace: Workspace, *, install: bool) -> CheckerResult:
+    if install:
+        # The installer rewrites this one file; refuse only if it holds
+        # uncommitted edits, and leave unrelated work-in-progress alone (864).
+        try:
+            require_clean_checkout(
+                resolve_workspace_root(workspace),
+                use=PrimaryCheckoutUse.HOOK_INSTALL,
+                watching=(HOOK_CONFIG_FILE,),
+            )
+        except DirtyPrimaryCheckoutError as exc:
+            return CheckerResult("hooks", ok=False, message=str(exc))
     try:
         status = (
             integration.install(workspace, Installer.HOOKS)
