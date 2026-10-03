@@ -26,8 +26,21 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
     },
     in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
     available: { cpus: 3, memory_mb: 5846, leases: 3 },
+    host: {
+      ceiling: {
+        cpus: 12,
+        memory_mb: 32768,
+        leases: 4,
+        source: "probe",
+        probed_at: "2026-09-10T12:00:00+00:00",
+        error: "",
+      },
+      in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
+      available: { cpus: 10, memory_mb: 28672, leases: 3 },
+    },
     holders: [],
     waiting: [],
+    head_shortfall: null,
     orphaned: [],
     unverifiable: [],
     ...overrides,
@@ -39,13 +52,15 @@ const idle = { error: "", loading: false };
 describe("DockerCapacityRail", () => {
   it("leads with what is free, because that is the decision being made", () => {
     render(<DockerCapacityRail status={status()} {...idle} />);
+    // The machine is what every claim waits on; docker's room is a tile.
+    expect(screen.getByText("10 cpus")).toBeInTheDocument();
+    expect(screen.getByText("free on this machine")).toBeInTheDocument();
     expect(screen.getByText("3 cpus")).toBeInTheDocument();
-    expect(screen.getByText("free now")).toBeInTheDocument();
   });
 
   it("counts holders and waiters but points at the board for the queue itself", () => {
     render(<DockerCapacityRail status={status()} {...idle} />);
-    expect(screen.getByText("Holding")).toBeInTheDocument();
+    expect(screen.getByText("Slots held")).toBeInTheDocument();
     expect(screen.getByText("Waiting")).toBeInTheDocument();
     // The queue belongs on the board; an earlier cut squeezed it in here.
     expect(screen.getByText(/on the board/i)).toBeInTheDocument();
@@ -75,7 +90,27 @@ describe("DockerCapacityRail", () => {
         {...idle}
       />,
     );
-    expect(screen.getByText(/never been measured/i)).toBeInTheDocument();
+    expect(screen.getByText(/docker reservations are being refused/i)).toBeInTheDocument();
+  });
+
+  it("says every reservation is refused when the machine was never measured", () => {
+    // The host pool backs every claim, so its unknown ceiling is the louder
+    // caveat, and the headline is a dash rather than a plausible zero.
+    const base = status();
+    render(
+      <DockerCapacityRail
+        status={status({
+          host: {
+            ...base.host,
+            ceiling: { ...base.host.ceiling, cpus: 0, leases: 0, source: "unknown" },
+            available: { cpus: 0, memory_mb: 0, leases: 0 },
+          },
+        })}
+        {...idle}
+      />,
+    );
+    expect(screen.getByText(/every reservation is being refused/i)).toBeInTheDocument();
+    expect(screen.queryByText("0 cpus")).not.toBeInTheDocument();
   });
 
   it("surfaces leases the reaper could not verify", () => {
@@ -93,7 +128,7 @@ describe("DockerCapacityRail", () => {
   it("keeps a failed read apart from an idle daemon", () => {
     render(<DockerCapacityRail status={null} error="boom" loading={false} />);
     expect(screen.getByText("boom")).toBeInTheDocument();
-    expect(screen.queryByText("free now")).not.toBeInTheDocument();
+    expect(screen.queryByText("free on this machine")).not.toBeInTheDocument();
   });
 
   it("says so plainly when the ledger is switched off", () => {

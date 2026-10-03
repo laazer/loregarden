@@ -7,11 +7,22 @@
   color: var(--txm);
 }
 
+.docker-board-pool {
+  margin: 12px 0;
+}
+
+.docker-board-pool:last-of-type {
+  margin-bottom: 16px;
+}
+
 .docker-board-meters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px 20px;
-  margin: 12px 0 16px;
+}
+
+.queue-slot-sub.docker-slot-reason {
+  white-space: normal;
 }
 
 .docker-slot-expiry {
@@ -34,6 +45,13 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Why the head is not running — the question the line is really asking. */
+.docker-queue-head-reason {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--aml);
 }
 
 /* The head of the line is the one anyone is actually asking about. */

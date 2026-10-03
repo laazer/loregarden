@@ -5,7 +5,7 @@
  * claim: slots stand for the lease ceiling, so an unmeasured ceiling must draw
  * NO grid rather than zero slots (zero slots reads as "the machine is full"),
  * and the waiting list is ONE shared line rather than a queue per slot, because
- * capacity is a single pool and a per-slot queue would imply a choice of line
+ * capacity is one shared line and a per-slot queue would imply a choice of line
  * that does not exist.
  */
 
@@ -20,6 +20,8 @@ function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     status: "held",
     holder_label: "e2e suite",
     holder_kind: "ad_hoc",
+    pool: "docker",
+    parent_lease_id: null,
     agent_run_id: null,
     ticket_id: null,
     footprint: "stack",
@@ -53,8 +55,21 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
     },
     in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
     available: { cpus: 3, memory_mb: 5846, leases: 3 },
+    host: {
+      ceiling: {
+        cpus: 12,
+        memory_mb: 32768,
+        leases: 4,
+        source: "probe",
+        probed_at: "2026-09-10T12:00:00+00:00",
+        error: "",
+      },
+      in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
+      available: { cpus: 10, memory_mb: 28672, leases: 3 },
+    },
     holders: [],
     waiting: [],
+    head_shortfall: null,
     orphaned: [],
     unverifiable: [],
     ...overrides,
@@ -64,7 +79,7 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
 const idle = { error: "", loading: false };
 
 describe("DockerQueueBoard", () => {
-  it("draws one slot per lease in the ceiling, filled or free", () => {
+  it("draws one slot per lease in the machine's ceiling, filled or free", () => {
     render(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
 
     const grid = screen.getByTestId("docker-slot-grid");
@@ -80,8 +95,17 @@ describe("DockerQueueBoard", () => {
     render(
       <DockerQueueBoard
         status={status({
-          ceiling: { ...status().ceiling, cpus: 0, memory_mb: 0, leases: 0, source: "unknown" },
-          in_use: { cpus: 0, memory_mb: 0, leases: 0 },
+          host: {
+            ...status().host,
+            ceiling: {
+              ...status().host.ceiling,
+              cpus: 0,
+              memory_mb: 0,
+              leases: 0,
+              source: "unknown",
+            },
+            in_use: { cpus: 0, memory_mb: 0, leases: 0 },
+          },
         })}
         {...idle}
       />,
@@ -90,6 +114,46 @@ describe("DockerQueueBoard", () => {
     expect(screen.queryByTestId("docker-slot-grid")).not.toBeInTheDocument();
     expect(screen.getByText("Capacity not measured")).toBeInTheDocument();
     expect(screen.getAllByText("not measured").length).toBeGreaterThan(0);
+  });
+
+  it("counts free slots from the pool, so a nested lease hides none", () => {
+    // A nested lease draws on its parent and books no slot. Subtracting the
+    // holder list from the ceiling would show two free slots here, not three.
+    const parent = lease({ lease_id: "parent", pool: "host", footprint: "heavy" });
+    const child = lease({ lease_id: "child", parent_lease_id: "parent" });
+    render(<DockerQueueBoard status={status({ holders: [parent, child] })} {...idle} />);
+
+    const grid = screen.getByTestId("docker-slot-grid");
+    expect(within(grid).getAllByText("available").length).toBe(3);
+    expect(within(screen.getByTestId("docker-slot-parent")).getByText(/machine/)).toBeTruthy();
+    expect(within(screen.getByTestId("docker-slot-child")).getByText(/nested/)).toBeTruthy();
+  });
+
+  it("meters the machine and the docker pool separately", () => {
+    render(<DockerQueueBoard status={status()} {...idle} />);
+    expect(screen.getByRole("meter", { name: "Machine CPU" })).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "Docker CPU" })).toBeInTheDocument();
+  });
+
+  it("says what the head of the line is short of, and that free slots are no use to it", () => {
+    // A free slot is one of three things a claim needs. Beside a stalled line,
+    // "Available" told people the machine had room it did not have.
+    render(
+      <DockerQueueBoard
+        status={status({
+          holders: [lease()],
+          waiting: [lease({ lease_id: "w1", status: "waiting", position: 1, cpus: 4 })],
+          head_shortfall: [{ pool: "host", resource: "cpus", needed: 4, free: 3 }],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(screen.getByTestId("docker-head-reason")).toHaveTextContent(
+      "needs 4 cpus, 3 cpus free on the machine",
+    );
+    const freeSlot = screen.getByTestId("docker-slot-free-0");
+    expect(within(freeSlot).getByText("Free slot, no room")).toBeInTheDocument();
   });
 
   it("keeps the waiting line shared rather than one queue per slot", () => {
@@ -157,7 +221,7 @@ describe("DockerQueueBoard", () => {
 
   it("distinguishes an idle pool from a busy one with nobody queued", () => {
     const { rerender } = render(<DockerQueueBoard status={status()} {...idle} />);
-    expect(screen.getByText(/Nothing is holding docker capacity/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is holding machine capacity/)).toBeInTheDocument();
 
     rerender(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
     expect(screen.getByText(/next claim starts immediately if it fits/)).toBeInTheDocument();

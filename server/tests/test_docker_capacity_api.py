@@ -1,4 +1,4 @@
-"""The endpoint the board's Docker tab reads.
+"""The endpoint the board's Machine tab reads.
 
 Its own route rather than a block on the queue-status payload, and the test that
 matters most pins why: the queue socket pushes that payload to every open tab on
@@ -64,10 +64,56 @@ def test_a_holder_and_a_waiter_carry_what_the_rail_renders(client, isolated_db, 
     assert holder["expires_in_seconds"] is not None
 
     waiter = payload["waiting"][0]
-    assert waiter["position"] == queued.position
+    assert waiter["position"] == 1
     assert "estimated_wait_seconds" in waiter
     assert waiter["estimate_basis"] in {"history", "ttl_bound", "unknown"}
     assert "last_probe_outcome" in waiter
+
+
+def test_the_line_is_numbered_by_place_and_the_head_says_what_it_lacks(
+    client, isolated_db, ceiling
+) -> None:
+    """`lease.position` is a ticket from a counter that never resets: the board
+    once numbered a line of seven 72 to 78, and its head said "≈ 0s" with no
+    word on why it was not running."""
+    with Session(isolated_db) as session:
+        pool = docker_leases.load_pool(session)
+        pool.next_position = 72
+        session.add(pool)
+        session.commit()
+        held = docker_leases.reserve(
+            session,
+            holder_label="suite",
+            footprint=DockerFootprint.CUSTOM,
+            cpus=3.0,
+            memory_mb=1024,
+        )
+        assert held.granted
+        first = docker_leases.reserve(
+            session,
+            holder_label="first",
+            footprint=DockerFootprint.CUSTOM,
+            cpus=2.0,
+            memory_mb=1024,
+        )
+        second = docker_leases.reserve(
+            session,
+            holder_label="second",
+            footprint=DockerFootprint.CUSTOM,
+            cpus=1.0,
+            memory_mb=1024,
+        )
+        assert first.position >= 72 and second.state.value == "queued"
+
+    payload = client.get("/api/docker/capacity").json()
+
+    assert [row["position"] for row in payload["waiting"]] == [1, 2]
+    docker_gaps = [gap for gap in payload["head_shortfall"] if gap["pool"] == "docker"]
+    assert docker_gaps == [{"pool": "docker", "resource": "cpus", "needed": 2.0, "free": 1.0}]
+
+
+def test_with_nobody_waiting_there_is_no_head_to_explain(client, ceiling) -> None:
+    assert client.get("/api/docker/capacity").json()["head_shortfall"] is None
 
 
 def test_an_unmeasured_ceiling_is_reported_as_unknown_not_as_zero_capacity(

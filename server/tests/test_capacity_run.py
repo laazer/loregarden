@@ -376,6 +376,38 @@ def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
     assert exited.value.code == capacity_cli.EXIT_QUEUE_STALLED == 75
 
 
+@pytest.mark.parametrize("command", [["sh", "-c", "exit 127"], ["sh", "-c", "exit 126"]])
+def test_a_command_the_shell_could_not_run_is_not_recorded_as_a_hold(
+    isolated_db, session, host, tmp_path, command
+) -> None:
+    """Every capacity-gated push once died at once with "No such file", and
+    those instant clean releases dragged the wait estimate down to seconds."""
+    code = run_holding(
+        lambda: Session(isolated_db), _request(), command, report=lambda _line: None, cwd=tmp_path
+    )
+
+    assert code in (126, 127)
+    (lease,) = _leases(session)
+    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
+
+
+def test_a_command_that_cannot_be_started_is_not_recorded_as_a_hold(
+    isolated_db, session, host, tmp_path
+) -> None:
+    with pytest.raises(FileNotFoundError):
+        run_holding(
+            lambda: Session(isolated_db),
+            _request(),
+            [str(tmp_path / "missing")],
+            report=lambda _line: None,
+            cwd=tmp_path,
+        )
+
+    (lease,) = _leases(session)
+    assert lease.status is DockerLeaseStatus.RELEASED
+    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
+
+
 def test_an_unmeasurable_host_refuses_before_the_command_starts(
     isolated_db, monkeypatch, tmp_path
 ) -> None:

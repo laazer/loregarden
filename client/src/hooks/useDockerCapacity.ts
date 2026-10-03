@@ -7,7 +7,7 @@
  * queue's own status has one subscription above the layout for exactly this
  * reason; this is the same rule at a smaller scale.
  *
- * Polls only while a consumer is mounted, which is only while the Docker tab is
+ * Polls only while a consumer is mounted, which is only while the Machine tab is
  * selected. A failed read is kept distinct from an empty ledger: they look
  * identical if you only check whether the lists are empty.
  */

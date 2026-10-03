@@ -28,11 +28,13 @@ from loregarden.models.domain import (
 from loregarden.services.docker_capacity import Ceiling, DockerInvoke
 from loregarden.services.docker_leases import refresh_ceiling
 from loregarden.services.docker_ledger import (
+    CHARGED_POOLS,
     OCCUPYING,
     as_utc,
     container_names,
     load_pool,
     pool_ceiling,
+    shortfalls,
 )
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.docker_wait_estimate import (
@@ -44,7 +46,11 @@ from sqlmodel import Session, select
 
 
 def _lease_payload(
-    lease: DockerLease, *, now: datetime, estimate: WaitEstimate | None = None
+    lease: DockerLease,
+    *,
+    now: datetime,
+    place: int | None = None,
+    estimate: WaitEstimate | None = None,
 ) -> dict:
     expires_at = as_utc(lease.expires_at)
     return {
@@ -63,7 +69,10 @@ def _lease_payload(
         "memory_mb": lease.memory_mb,
         "compose_project": lease.compose_project,
         "container_names": container_names(lease),
-        "position": lease.position or None,
+        # Place in line, 1-based, for a waiter; None for a holder. Not
+        # `lease.position`, which is a ticket from a counter that never resets
+        # — the board once numbered a line of seven 72 to 78.
+        "position": place,
         **(estimate or UNKNOWN_WAIT).as_dict(),
         "poll_count": lease.poll_count,
         "expires_at": expires_at.isoformat() if expires_at else None,
@@ -134,6 +143,19 @@ def capacity_status(
     # the same holder releases.
     estimates = estimate_waits(session, now=stamp)
 
+    # What the head of the line is short of, from admission's own test. The rest
+    # of the line waits on the head (strict order), so only its reason is news.
+    # None with nobody waiting; an empty list means it fits and is about to start.
+    head_shortfall = None
+    if waiting:
+        head = waiting[0]
+        rows = {CapacityPool.DOCKER: pool, CapacityPool.HOST: host}
+        head_shortfall = [
+            gap.as_dict()
+            for charged in CHARGED_POOLS[head.pool]
+            for gap in shortfalls(charged, rows[charged], head)
+        ]
+
     return {
         "enabled": True,
         # The top level is the docker pool, as it was before the host pool
@@ -142,8 +164,10 @@ def capacity_status(
         "host": _pool_summary(host, host_ceiling),
         "holders": [_lease_payload(lease, now=stamp) for lease in holders],
         "waiting": [
-            _lease_payload(lease, now=stamp, estimate=estimates.get(lease.id)) for lease in waiting
+            _lease_payload(lease, now=stamp, place=place, estimate=estimates.get(lease.id))
+            for place, lease in enumerate(waiting, start=1)
         ],
+        "head_shortfall": head_shortfall,
         "orphaned": [lease.id for lease in holders if lease.status is DockerLeaseStatus.ORPHANED],
         "unverifiable": [
             {
