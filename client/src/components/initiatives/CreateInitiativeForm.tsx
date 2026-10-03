@@ -39,7 +39,7 @@ export function CreateInitiativeForm({ milestones, isSaving, onCreate, onCancel 
           value={title}
           autoFocus
           disabled={isSaving}
-          placeholder="e.g. Cross-repo auth migration"
+          placeholder="Name the shared goal its milestones work toward"
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
