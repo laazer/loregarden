@@ -22,7 +22,7 @@ from loregarden.models.domain import (
     QueuedRun,
     RunStatus,
 )
-from loregarden.models.domain.enums import DetachedStopOutcome
+from loregarden.models.domain.process_enums import DetachedStopOutcome
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_detached_stop import stop_detached_process
 from sqlmodel import Session, select

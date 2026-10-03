@@ -11,7 +11,7 @@ shipped the predicate that disproves it — a pid plus a start-time fingerprint 
 later process reusing that pid can match — and this is what consumes it.
 
 The direction of the fail-closed matters and is inherited from
-`process_identity.still_running`: a run with no recorded identity reads as *not*
+`process_identity.liveness`: a run with no recorded identity reads as *not*
 surviving. A wrong "orphaned" costs one re-run; a wrong "still mine" means the
 control plane adopts, reports on, and eventually signals a process it does not
 own.
@@ -23,8 +23,8 @@ import logging
 import threading
 import time
 
-from loregarden.models.domain import AgentRun
-from loregarden.services.process_identity import still_running
+from loregarden.models.domain import AgentRun, ProcessState
+from loregarden.services.process_identity import liveness
 from loregarden.services.run_lease import (
     RENEWAL_INTERVAL_SECONDS,
     SUPERVISED,
@@ -35,8 +35,8 @@ from sqlmodel import Session, col, select
 logger = logging.getLogger(__name__)
 
 
-def surviving_runs(session: Session) -> list[AgentRun]:
-    """In-flight runs whose recorded process is still alive and still theirs.
+def _in_flight_by_state(session: Session) -> dict[ProcessState, list[AgentRun]]:
+    """Every supervised in-flight run, grouped by what `ps` said about its process.
 
     Externally-harnessed runs are excluded: they have no pid here to identify,
     and `fail_interrupted_runs` already leaves them alone on the boot path for
@@ -48,7 +48,35 @@ def surviving_runs(session: Session) -> list[AgentRun]:
         .where(col(AgentRun.status).in_(list(SUPERVISED)))
         .where(col(AgentRun.external_harness).is_(None))
     ).all()
-    return [run for run in candidates if still_running(run.agent_pid, run.agent_pid_identity)]
+    grouped: dict[ProcessState, list[AgentRun]] = {state: [] for state in ProcessState}
+    for run in candidates:
+        grouped[liveness(run.agent_pid, run.agent_pid_identity)].append(run)
+    return grouped
+
+
+def surviving_runs(session: Session) -> list[AgentRun]:
+    """In-flight runs whose recorded process is still alive and still theirs."""
+    return _in_flight_by_state(session)[ProcessState.ALIVE]
+
+
+def runs_to_spare(session: Session) -> list[AgentRun]:
+    """In-flight runs a boot reaper must not fail: alive, or not knowably dead.
+
+    A run whose `ps` could not answer is neither adopted — nothing vouches for
+    the process — nor failed, which would be the reaper killing a working
+    agent's row on a slow `ps` (lg-run-durability-862). It is left for the lease
+    reaper, whose next sweep asks again; until then, the warning names it.
+    """
+    grouped = _in_flight_by_state(session)
+    for run in grouped[ProcessState.UNKNOWN]:
+        logger.warning(
+            "Run %s (ticket %s, pid %s): could not tell whether its agent survived the "
+            "restart; neither adopting nor failing it — the lease reaper will ask again",
+            run.run_code,
+            run.ticket_id,
+            run.agent_pid,
+        )
+    return grouped[ProcessState.ALIVE] + grouped[ProcessState.UNKNOWN]
 
 
 def _watch(run_id: str, pid: int, identity: str, interval_seconds: float) -> None:
@@ -62,8 +90,11 @@ def _watch(run_id: str, pid: int, identity: str, interval_seconds: float) -> Non
     settles the row at the lease boundary, which is the honest outcome: nobody
     is supervising it any more.
     """
-    while still_running(pid, identity):
-        renew_agent_run_lease(run_id)
+    while (state := liveness(pid, identity)) is not ProcessState.GONE:
+        # An unanswered `ps` is not a death: skip this beat and ask again. Only
+        # a reading that the process is gone ends the watch.
+        if state is ProcessState.ALIVE:
+            renew_agent_run_lease(run_id)
         time.sleep(interval_seconds)
     logger.info("Reattached run %s: its process is gone; renewal stopped", run_id[:8])
 
