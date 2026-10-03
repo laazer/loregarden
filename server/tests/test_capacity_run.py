@@ -4,8 +4,10 @@ The properties a pre-push hook depends on:
 
 - the command's exit status is the caller's, and the lease is released after it
   whatever that status was — including when the process is told to stop;
-- a full machine means waiting in line, and a wait that runs out gives the place
-  back rather than leaving a waiter wedged at the head of the queue;
+- a full machine means waiting in line for as long as the line keeps moving, and
+  a line that stops moving gives the place back rather than leaving a waiter
+  wedged at the head of the queue — saying it was still queued, not that the
+  ledger failed;
 - capacity that cannot be had raises *before* the command starts, so a wrapper
   can tell "the ledger failed" from "the tests failed";
 - two of these at once on a machine with room for one run one after the other.
@@ -19,6 +21,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -38,6 +41,7 @@ from loregarden.services import docker_leases, host_capacity
 from loregarden.services.capacity_run import (
     WORKERS_ENV,
     CapacityNotGranted,
+    CapacityQueueStalled,
     CapacityRequest,
     acquire,
     run_holding,
@@ -69,7 +73,7 @@ def host_fixture(session):
 
 
 def _request(**overrides) -> CapacityRequest:
-    fields = {"label": "pytest", "cpus": 2.0, "memory_mb": 2048, "max_wait_seconds": 60.0}
+    fields = {"label": "pytest", "cpus": 2.0, "memory_mb": 2048, "stall_seconds": 60.0}
     fields.update(overrides)
     return CapacityRequest(**fields)
 
@@ -131,7 +135,7 @@ def test_the_cli_runs_the_command_in_the_callers_directory(tmp_path) -> None:
         memory_mb=0,
         label="pytest",
         pool=CapacityPool.HOST.value,
-        max_wait=1.0,
+        stall_timeout=1.0,
         ttl=None,
         workspace=None,
         parent_lease="",
@@ -180,7 +184,7 @@ def test_a_full_machine_means_waiting_then_running(session, host) -> None:
     assert lease.last_polled_at is not None  # what keeps it out of the abandonment sweep
 
 
-def test_a_wait_that_runs_out_gives_its_place_back(session, host) -> None:
+def test_a_line_that_stops_moving_gives_its_place_back(session, host) -> None:
     docker_leases.reserve(
         session,
         holder_label="other push",
@@ -191,10 +195,10 @@ def test_a_wait_that_runs_out_gives_its_place_back(session, host) -> None:
     )
     ticks = iter(range(0, 1000, 30))
 
-    with pytest.raises(CapacityNotGranted, match="still queued"):
+    with pytest.raises(CapacityQueueStalled, match="still queued"):
         acquire(
             session,
-            _request(max_wait_seconds=60),
+            _request(stall_seconds=60),
             report=lambda _line: None,
             sleep=lambda _seconds: None,
             clock=lambda: float(next(ticks)),
@@ -203,6 +207,173 @@ def test_a_wait_that_runs_out_gives_its_place_back(session, host) -> None:
     waiter = next(lease for lease in _leases(session) if lease.holder_label.startswith("pytest"))
     assert waiter.status is DockerLeaseStatus.RELEASED
     assert waiter.end_reason is DockerLeaseEndReason.ABANDONED
+
+
+#: The ledger on 2026-10-03, when a push gave up at "1 ahead" after 3604s: a
+#: 10-core / 64 GB host booking 7 cpus / 48332 MB, one heavy pre-push suite and
+#: one service lease held, six more heavy suites queued behind them.
+_HEAVY_CPUS, _HEAVY_MB = 4.0, 8192
+#: The longest clean hold the ledger had recorded for a pre-push server suite.
+_SLOWEST_SUITE_SECONDS = 2765
+
+
+@pytest.fixture(name="busy_host")
+def busy_host_fixture(session, monkeypatch) -> list[str]:
+    """The 2026-10-03 load. Returns the heavy suites' lease ids, oldest first."""
+    # Pinned in settings too: the waiter's own reap pass re-derives the ceiling.
+    monkeypatch.setattr(settings, "host_capacity_cpus", 7.0)
+    monkeypatch.setattr(settings, "host_capacity_memory_mb", 48332)
+    monkeypatch.setattr(settings, "host_capacity_max_leases", 16)
+    row = load_pool(session, CapacityPool.HOST)
+    row.ceiling_cpus = 7.0
+    row.ceiling_memory_mb = 48332
+    row.ceiling_leases = 16
+    row.ceiling_source = DockerCeilingSource.CONFIG_OVERRIDE
+    session.add(row)
+    session.commit()
+    # History, so the queue has an estimate to report: suites that ran and left.
+    finished = datetime.now(timezone.utc) - timedelta(hours=1)
+    for index in range(3):
+        session.add(
+            DockerLease(
+                status=DockerLeaseStatus.RELEASED,
+                end_reason=DockerLeaseEndReason.RELEASED,
+                holder_label=f"earlier suite {index}",
+                pool=CapacityPool.HOST,
+                footprint=DockerFootprint.HEAVY,
+                cpus=_HEAVY_CPUS,
+                memory_mb=_HEAVY_MB,
+                position=0,
+                granted_at=finished - timedelta(seconds=1800),
+                released_at=finished,
+            )
+        )
+    session.commit()
+    suites = []
+    for index in range(7):
+        claim = docker_leases.reserve(
+            session,
+            holder_label=f"pre-push server-tests · suite {index}",
+            footprint=DockerFootprint.HEAVY,
+            pool=CapacityPool.HOST,
+        )
+        suites.append(claim.lease_id)
+        if index == 0:
+            docker_leases.reserve(
+                session,
+                holder_label="gateway",
+                footprint=DockerFootprint.SERVICE,
+                pool=CapacityPool.HOST,
+            )
+    statuses = [session.get(DockerLease, lease_id).status for lease_id in suites]
+    assert statuses == [DockerLeaseStatus.HELD] + [DockerLeaseStatus.WAITING] * 6
+    return suites
+
+
+class _QueueClock:
+    """A fake monotonic clock; each heavy suite ahead finishes `every` seconds after the last."""
+
+    def __init__(self, session, suites: list[str], *, every: float | None) -> None:
+        self.now = 0.0
+        self._session = session
+        self._suites = list(suites)
+        self._every = every
+        self._next = every
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+        while self._next is not None and self.now >= self._next and self._suites:
+            # The oldest suite finishes; releasing it drains the next into its place.
+            docker_leases.release_lease(self._session, self._suites.pop(0))
+            self._next += self._every
+
+
+def test_a_push_behind_six_heavy_suites_waits_its_turn_and_runs(session, busy_host) -> None:
+    """The 2026-10-03 failure: seven suites ahead, each up to the slowest ever seen."""
+    clock = _QueueClock(session, busy_host, every=_SLOWEST_SUITE_SECONDS)
+    lines: list[str] = []
+
+    reservation = acquire(
+        session,
+        _request(footprint=DockerFootprint.HEAVY, cpus=0.0, memory_mb=0, stall_seconds=3600),
+        report=lines.append,
+        sleep=clock.sleep,
+        clock=clock,
+    )
+
+    assert reservation.granted
+    # It ran after all seven suites ahead finished — five times the old one-hour cap.
+    assert clock.now >= 7 * _SLOWEST_SUITE_SECONDS
+    assert any("6 ahead, about" in line for line in lines)
+    assert any("0 ahead" in line for line in lines)
+
+
+def test_a_line_whose_holder_hangs_gives_up_saying_it_was_still_queued(session, busy_host) -> None:
+    clock = _QueueClock(session, busy_host, every=None)
+
+    with pytest.raises(CapacityQueueStalled) as stalled:
+        acquire(
+            session,
+            _request(footprint=DockerFootprint.HEAVY, cpus=0.0, memory_mb=0, stall_seconds=3600),
+            report=lambda _line: None,
+            sleep=clock.sleep,
+            clock=clock,
+        )
+
+    assert 3600 <= clock.now < 3600 + 60
+    message = str(stalled.value)
+    assert "6 ahead" in message
+    assert "about " in message  # the estimate, from the suites' history
+    assert "pre-push server-tests · suite 0" in message  # who is holding the line
+    mine = next(lease for lease in _leases(session) if lease.holder_label.startswith("pytest"))
+    assert mine.end_reason is DockerLeaseEndReason.ABANDONED
+
+
+def test_the_stall_clock_restarts_whenever_something_ahead_finishes(session, busy_host) -> None:
+    """One release at 3000s buys a fresh 3600s, not the 600s left on the first."""
+    clock = _QueueClock(session, busy_host[:1], every=3000)
+
+    with pytest.raises(CapacityQueueStalled):
+        acquire(
+            session,
+            _request(footprint=DockerFootprint.HEAVY, cpus=0.0, memory_mb=0, stall_seconds=3600),
+            report=lambda _line: None,
+            sleep=clock.sleep,
+            clock=clock,
+        )
+
+    assert 3000 + 3600 <= clock.now < 3000 + 3600 + 60
+
+
+def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
+    """capacity-run.sh tells "still queued" from "the ledger failed" by this code."""
+    args = argparse.Namespace(
+        held_command=["--", "true"],
+        footprint="heavy",
+        cpus=0.0,
+        memory_mb=0,
+        label="pytest",
+        pool=CapacityPool.HOST.value,
+        stall_timeout=1.0,
+        ttl=None,
+        workspace=None,
+        parent_lease="",
+        started_file=None,
+    )
+    stalled = CapacityQueueStalled("still queued — 3 ahead")
+
+    with (
+        mock.patch.dict(os.environ, {capacity_cli.CALLER_CWD_ENV: str(tmp_path)}),
+        mock.patch.object(capacity_cli.db_session, "init_db"),
+        mock.patch.object(capacity_cli, "run_holding", side_effect=stalled),
+        pytest.raises(SystemExit) as exited,
+    ):
+        capacity_cli._run(args)
+
+    assert exited.value.code == capacity_cli.EXIT_QUEUE_STALLED == 75
 
 
 def test_an_unmeasurable_host_refuses_before_the_command_starts(

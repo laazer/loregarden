@@ -11,14 +11,28 @@
 # grant pays for.
 #
 # Waiting in line is not a failure — `loregarden capacity run` prints the line
-# and waits. A failure is the ledger itself being unusable (database locked, the
-# CLI broken, a footprint the machine can never fit). Then:
+# and waits for as long as it keeps moving, however long that is. Six heavy
+# suites ahead is hours, and an orderly line is never a reason to fail a push.
+# Two things are, and they end differently:
+#
+# The line stopped moving: nothing ahead has finished for
+# LOREGARDEN_CAPACITY_STALL_SECONDS (default 3600 — above the slowest pre-push
+# suite the ledger has seen), usually a holder that hung. The CLI exits 75 having
+# said who is holding, how many are ahead and the estimate. The ledger is fine,
+# so this is not retried — retrying would only rejoin at the back:
+#   - at a terminal, ask: [p] proceed without reserving, [r] queue again,
+#     anything else stops;
+#   - with no terminal (an agent), fail with exit 75.
+#
+# The ledger is unusable (database locked, the CLI broken, a footprint the
+# machine can never fit) — any other exit before the command starts. Then:
 #   - retry with exponential backoff (1s, 2s, 4s … capped at 60s);
 #   - at a terminal, after LOREGARDEN_CAPACITY_RETRIES failures (default 6) or
 #     the hard cap, ask: [p] proceed without reserving, [r] wait and retry,
 #     anything else stops;
 #   - with no terminal (an agent), keep retrying until
-#     LOREGARDEN_CAPACITY_HARD_CAP_SECONDS (default 3600), then fail.
+#     LOREGARDEN_CAPACITY_HARD_CAP_SECONDS (default 3600) have passed since the
+#     first failure, then fail. Time spent queued before it does not count.
 #
 # LOREGARDEN_CAPACITY=off runs the command unreserved, and says so. It skips the
 # reservation only — the command itself still runs.
@@ -71,38 +85,75 @@ if [ -z "$cli" ]; then
     warn "Update that checkout to main to queue for capacity."
     exec "$@"
   fi
+  if ! grep -q -- '--stall-timeout' "$primary/server/loregarden/cli/capacity.py"; then
+    # Its --max-wait counts time spent in line: a push far enough back gives up
+    # before its turn, and reports it as a ledger failure.
+    warn "WARNING: $primary predates queue-stall timeouts; waiting in line counts against"
+    warn "its --max-wait. Update that checkout to main."
+    stall_flag="--max-wait"
+  fi
 fi
+stall_flag="${stall_flag:---stall-timeout}"
 
 repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 branch="$(git branch --show-current 2>/dev/null || true)"
 full_label="$label · $repo${branch:+@$branch}"
 
 hard_cap="${LOREGARDEN_CAPACITY_HARD_CAP_SECONDS:-3600}"
+stall="${LOREGARDEN_CAPACITY_STALL_SECONDS:-3600}"
 quiet_retries="${LOREGARDEN_CAPACITY_RETRIES:-6}"
+# `loregarden capacity run`'s code for "still queued, but the line stopped moving".
+EXIT_QUEUE_STALLED=75
 started_file="${TMPDIR:-/tmp}/lg-capacity-$$-started"
 trap 'rm -f "$started_file"' EXIT
 
 at_terminal() { [ -t 0 ]; }
 
-start=$SECONDS
+# When the current run of ledger failures began; empty while there is none.
+failing_since=""
 failures=0
 delay=1
 while :; do
   rm -f "$started_file"
-  remaining=$((hard_cap - (SECONDS - start)))
-  [ "$remaining" -lt 1 ] && remaining=1
   "$cli" capacity run --label "$full_label" ${cli_args[@]+"${cli_args[@]}"} \
-    --max-wait "$remaining" --started-file "$started_file" -- "$@"
+    "$stall_flag" "$stall" --started-file "$started_file" -- "$@"
   rc=$?
   if [ -e "$started_file" ]; then
     exit "$rc" # the command ran; its status is ours
   fi
 
-  failures=$((failures + 1))
-  elapsed=$((SECONDS - start))
-  warn "could not reserve capacity for '$label' (attempt $failures, ${elapsed}s, exit $rc)."
+  if [ "$rc" -eq "$EXIT_QUEUE_STALLED" ]; then
+    warn "'$label' was still queued when the line stopped moving: nothing ahead finished"
+    warn "for ${stall}s (position, estimate and holder above). The ledger is working."
+    if at_terminal; then
+      printf 'capacity-run: [p] proceed without reserving  [r] queue again  [other] stop: ' >&2
+      answer=""
+      read -r answer || answer=""
+      case "$answer" in
+        p | P)
+          warn "proceeding WITHOUT a capacity reservation."
+          exec "$@"
+          ;;
+        r | R)
+          failing_since=""
+          failures=0
+          delay=1
+          continue
+          ;;
+      esac
+      warn "stopped."
+    else
+      warn "Push again to rejoin the line, or free the holder named above."
+    fi
+    exit "$EXIT_QUEUE_STALLED"
+  fi
 
-  if at_terminal && { [ "$failures" -ge "$quiet_retries" ] || [ "$elapsed" -ge "$hard_cap" ]; }; then
+  failures=$((failures + 1))
+  [ -z "$failing_since" ] && failing_since=$SECONDS
+  failing=$((SECONDS - failing_since))
+  warn "could not reserve capacity for '$label' (attempt $failures, failing for ${failing}s, exit $rc)."
+
+  if at_terminal && { [ "$failures" -ge "$quiet_retries" ] || [ "$failing" -ge "$hard_cap" ]; }; then
     printf 'capacity-run: [p] proceed without reserving  [r] wait and retry  [other] stop: ' >&2
     answer=""
     read -r answer || answer=""
@@ -112,7 +163,7 @@ while :; do
         exec "$@"
         ;;
       r | R)
-        start=$SECONDS
+        failing_since=""
         failures=0
         delay=1
         continue
@@ -124,8 +175,8 @@ while :; do
     esac
   fi
 
-  if ! at_terminal && [ "$elapsed" -ge "$hard_cap" ]; then
-    warn "gave up after ${elapsed}s (LOREGARDEN_CAPACITY_HARD_CAP_SECONDS=$hard_cap)."
+  if ! at_terminal && [ "$failing" -ge "$hard_cap" ]; then
+    warn "gave up after ${failing}s of ledger failures (LOREGARDEN_CAPACITY_HARD_CAP_SECONDS=$hard_cap)."
     warn "The ledger error is printed above. LOREGARDEN_CAPACITY=off runs without reserving."
     exit 1
   fi
