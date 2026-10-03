@@ -83,6 +83,12 @@ def test_a_sandbox_hands_out_its_own_url_once_it_answers_as_itself(sandbox_setti
     assert resolve_api_base_url() == "http://127.0.0.1:8123"
 
 
+def test_a_sandbox_bound_to_a_wildcard_hands_out_loopback(sandbox_settings):
+    """0.0.0.0 is where it listens, not where an agent can be sent."""
+    with patch.object(settings, "dev_host", "0.0.0.0"):
+        assert unverified_api_base_url() == "http://127.0.0.1:8123"
+
+
 def test_agents_are_refused_until_the_endpoint_is_proven(sandbox_settings):
     with pytest.raises(SandboxMcpUrlError, match="not verified"):
         resolve_mcp_url()
