@@ -15,7 +15,11 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import validate_parent_assignment
 from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
-from loregarden.services.ticket_ids import assign_external_id
+from loregarden.services.ticket_ids import (
+    assign_external_id,
+    assign_initiative_external_id,
+    taken_spellings,
+)
 from loregarden.services.ticket_workspace_binding import validate_workspace_binding
 from sqlmodel import Session, select
 
@@ -30,11 +34,14 @@ def _flatten_hierarchy(items: list) -> list:
     return flattened
 
 
-def _reject_conflicting_refs(session: Session, *, workspace_id: str, hierarchy: list) -> None:
-    """Refuse a proposal whose refs collide with each other or with the workspace.
+def _reject_conflicting_refs(session: Session, *, hierarchy: list) -> None:
+    """Refuse a proposal whose refs collide with each other or with any ticket.
 
-    Existing ids are collected under both spellings: a proposal's refs become
-    legacy ids, so a resubmission collides there rather than on ``external_id``.
+    Any ticket, not the workspace's: ids are global — an initiative belongs to
+    no workspace, and a ref equal to a live ``init-*`` spelling would otherwise
+    mint a second row answering to it (lg-initiatives-cross-869). Both spellings
+    are checked: a proposal's refs become legacy ids, so a resubmission collides
+    there rather than on ``external_id``.
     """
     refs: set[str] = set()
     for item in _flatten_hierarchy(hierarchy):
@@ -43,15 +50,9 @@ def _reject_conflicting_refs(session: Session, *, workspace_id: str, hierarchy: 
             raise ValueError(f"Duplicate external_id in hierarchy: {ref}")
         refs.add(ref)
 
-    taken = {
-        spelling
-        for ticket in session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
-        for spelling in (ticket.external_id, ticket.legacy_external_id)
-        if spelling
-    }
-    for ref in refs:
-        if ref in taken:
-            raise ValueError(f"external_id already exists in workspace: {ref}")
+    taken = taken_spellings(session, refs)
+    if taken:
+        raise ValueError(f"external_id already exists: {', '.join(sorted(taken))}")
 
 
 def _resolve_parent(
@@ -111,10 +112,11 @@ def _build_ticket(
         acceptance_criteria_json=serialize_criteria(item.acceptance_criteria),
         last_updated_by="system",
     )
-    # Initiatives skip assign_external_id (null workspace; 733 owns scheme).
+    # An initiative is spelled by the system (``init-<slug>-<n>``, global pool)
+    # exactly as TicketService spells one; the proposal's ref is only ever its
+    # legacy id, even when the ref itself looks like an init-* spelling (869).
     if is_initiative:
-        new_ticket.external_id = ext_id
-        new_ticket.legacy_external_id = ext_id
+        assign_initiative_external_id(session, new_ticket, supplied_id=ext_id)
     else:
         assign_external_id(session, new_ticket, ws, supplied_id=ext_id)
     session.add(new_ticket)
@@ -173,7 +175,7 @@ def finalize_hierarchy(
         return []
 
     validated_hierarchy = ProposalValidator.validate_all(hierarchy)
-    _reject_conflicting_refs(session, workspace_id=ws.id, hierarchy=validated_hierarchy)
+    _reject_conflicting_refs(session, hierarchy=validated_hierarchy)
 
     created_ids: list[str] = []
     id_mapping: dict[str, str] = {}
