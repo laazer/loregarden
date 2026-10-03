@@ -605,7 +605,7 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
             "--",
             "sh",
             "-c",
-            "pwd -P > where",
+            'pwd -P > where; printf %s "${LOREGARDEN_CALLER_CWD-unset}" > inherited',
         ],
         cwd=caller,
         env=_cli_env(tmp_path / "ledger.db"),
@@ -616,6 +616,9 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
 
     assert result.returncode == 0, result.stderr
     assert (caller / "where").read_text().strip() == str(caller.resolve())
+    # The command does not inherit the caller's directory: a nested `loregarden`
+    # started another way, from elsewhere, would run its command here instead.
+    assert (caller / "inherited").read_text() == "unset"
     # And it booked against this test's ledger, not the live one.
     engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
     try:
