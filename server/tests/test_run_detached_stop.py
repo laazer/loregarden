@@ -20,8 +20,8 @@ import sys
 import time
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
-from loregarden.models.domain.enums import DetachedStopOutcome
+from loregarden.models.domain import AgentRun, ProcessState, RunStatus, Ticket, Workspace
+from loregarden.models.domain.process_enums import DetachedStopOutcome
 from loregarden.services.process_identity import identify
 from loregarden.services.run_detached_stop import stop_detached_process
 from sqlmodel import Session
@@ -78,7 +78,7 @@ def test_a_detached_process_is_actually_killed(session):
     """AC1. The child dies, from a process that did not spawn it as a pipe child."""
     proc = _detached()
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run)
 
@@ -121,15 +121,15 @@ def test_the_whole_process_group_goes_not_just_the_leader(session):
                 child_pid = None
         assert child_pid, "could not observe the grandchild; test cannot judge"
 
-        run = _run(session, pid=parent.pid, identity=identify(parent.pid) or "")
+        run = _run(session, pid=parent.pid, identity=identify(parent.pid).stamp)
         stop_detached_process(run)
 
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
-            if identify(child_pid) is None:
+            if identify(child_pid).state is ProcessState.GONE:
                 break
             time.sleep(0.05)
-        assert identify(child_pid) is None, "the grandchild outlived the stop"
+        assert identify(child_pid).state is ProcessState.GONE, "the grandchild outlived the stop"
     finally:
         for pid in (child_pid, parent.pid):
             if pid:
@@ -183,7 +183,7 @@ def test_a_live_pid_that_is_not_a_session_leader_is_not_signalled(session):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])  # not detached
     try:
         assert os.getpgid(proc.pid) != proc.pid, "precondition: this process leads no group"
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run)
 
@@ -200,7 +200,7 @@ def test_a_process_that_ignores_sigterm_is_killed(session):
         "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
     )
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run, grace_seconds=0.5)
 
