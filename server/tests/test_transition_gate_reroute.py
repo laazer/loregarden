@@ -317,3 +317,37 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert "Errors tab" in ticket.blocking_issues
+
+
+def test_autofix_commits_a_file_the_fixer_creates_in_a_real_repo(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """lg-workflow-integrity-850, end to end: the footprint is taken before the
+    fixers run, so a file only the fixer wrote — recorded by no run — is
+    committed with the autofix rather than left behind unmentioned."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from tests.worktree_helpers import git
+
+    git(tmp_path, "init", "-q", "-b", "main")
+    git(tmp_path, "config", "user.email", "t@example.com")
+    git(tmp_path, "config", "user.name", "Test")
+    (tmp_path / "README.md").write_text("seed\n")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-qm", "seed")
+
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path)
+    profile.gates.commands = ["test -f {workspace_root}/fixed.txt"]
+    profile.gates.autofix_commands = ["touch {workspace_root}/fixed.txt"]
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        return self.orchestration.complete_run(
+            run, status=RunStatus.SUCCEEDED, stdout=_stage_report("pass", 0.95), stderr=""
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    BuiltinOrchestrator(db_session).execute(ticket, profile, max_stages=1)
+
+    committed = git(tmp_path, "show", "--name-only", "--format=%s", "HEAD").stdout.splitlines()
+    assert committed[0] == "chore(test-break): auto-fix static-analysis gate [gate-reroute-test]"
+    assert "fixed.txt" in committed
