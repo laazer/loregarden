@@ -191,7 +191,7 @@ it("withholds shipping on the default branch — there is nothing to open a PR a
   ).not.toBeInTheDocument();
 });
 
-it("drops the openers once the thread is open, leaving the composer the width", () => {
+it("keeps the quick prompts once the thread is open", () => {
   mockResolver.mockReturnValue(
     bind({ session: session(), label: "Ticket triage" }),
   );
@@ -199,6 +199,25 @@ it("drops the openers once the thread is open, leaving the composer the width", 
 
   renderBar();
 
+  expect(
+    screen.getByRole("button", { name: "What is blocking this ticket?" }),
+  ).toBeInTheDocument();
+});
+
+it("answers the reply on screen rather than repeating the openers", () => {
+  const bound = session({
+    messages: [
+      { id: "u1", role: "user", content: "What is blocking this ticket?" },
+      { id: "a1", role: "assistant", content: "The gate failed. Should I rerun it?" },
+    ],
+  });
+  mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
+  useUiStore.setState({ copilotOpen: true });
+
+  renderBar();
+  fireEvent.click(screen.getByRole("button", { name: "Yes, go ahead" }));
+
+  expect(bound.send).toHaveBeenCalledWith("Yes, go ahead", { autoApprove: false, skill: "" });
   expect(
     screen.queryByRole("button", { name: "What is blocking this ticket?" }),
   ).not.toBeInTheDocument();

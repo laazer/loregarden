@@ -13,6 +13,7 @@ The properties a pre-push hook depends on:
 
 from __future__ import annotations
 
+import argparse
 import os
 import signal
 import subprocess
@@ -22,6 +23,8 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from loregarden.cli import capacity as capacity_cli
+from loregarden.cli.errors import UsageError
 from loregarden.config import settings
 from loregarden.models.domain import (
     CapacityPool,
@@ -98,6 +101,59 @@ def test_the_command_runs_under_a_lease_and_its_status_is_passed_through(
     assert lease.end_reason is DockerLeaseEndReason.RELEASED
     assert lease.pool is CapacityPool.HOST
     assert (load_pool(session, CapacityPool.HOST).held_cpus, lease.holder_pid) == (0, os.getpid())
+
+
+def test_the_command_runs_where_the_caller_stood(isolated_db, host, tmp_path) -> None:
+    """A hook's `bash .lefthook/scripts/x.sh` is relative to the repo, not the server dir."""
+    caller = tmp_path / "repo"
+    (caller / "scripts").mkdir(parents=True)
+    (caller / "scripts" / "check.sh").write_text("exit 5\n")
+
+    code = run_holding(
+        lambda: Session(isolated_db),
+        _request(),
+        ["sh", "scripts/check.sh"],
+        report=lambda _line: None,
+        cwd=caller,
+    )
+
+    assert code == 5
+
+
+def test_the_cli_runs_the_command_in_the_callers_directory(tmp_path) -> None:
+    """`scripts/loregarden-cli.sh` cds into server/ for uv; the held command must not follow it."""
+    caller = tmp_path / "repo"
+    caller.mkdir()
+    args = argparse.Namespace(
+        held_command=["--", "true"],
+        footprint="light",
+        cpus=0.0,
+        memory_mb=0,
+        label="pytest",
+        pool=CapacityPool.HOST.value,
+        max_wait=1.0,
+        ttl=None,
+        workspace=None,
+        parent_lease="",
+        started_file="started",
+    )
+
+    with (
+        mock.patch.dict(os.environ, {capacity_cli.CALLER_CWD_ENV: str(caller)}),
+        mock.patch.object(capacity_cli.db_session, "init_db"),
+        mock.patch.object(capacity_cli, "run_holding", return_value=0) as held,
+        pytest.raises(SystemExit),
+    ):
+        capacity_cli._run(args)
+
+    assert held.call_args.kwargs["cwd"] == caller
+    assert held.call_args.kwargs["started_file"] == caller / "started"
+
+
+def test_the_cli_refuses_a_caller_directory_that_is_gone(tmp_path) -> None:
+    with mock.patch.dict(os.environ, {capacity_cli.CALLER_CWD_ENV: str(tmp_path / "gone")}):
+        with pytest.raises(UsageError):
+            capacity_cli._caller_cwd()
 
 
 def test_a_full_machine_means_waiting_then_running(session, host) -> None:

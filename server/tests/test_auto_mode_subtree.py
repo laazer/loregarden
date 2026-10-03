@@ -32,6 +32,7 @@ from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
+from tests.repo_templates import from_template
 from tests.worktree_helpers import seed_stage_report_contract
 
 # Stage shapes the ticket names explicitly:
@@ -159,7 +160,12 @@ _TRANSITIONS = [
 
 
 def _git_repo(tmp_path: Path) -> Path:
+    """A copy of a seeded repo built once per process (`tests/repo_templates.py`)."""
     root = tmp_path / f"repo-{len(list(tmp_path.iterdir()))}"
+    return from_template(root, "auto_mode_subtree", _build_git_repo)
+
+
+def _build_git_repo(root: Path) -> None:
     root.mkdir()
     subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
     subprocess.run(
@@ -174,7 +180,6 @@ def _git_repo(tmp_path: Path) -> Path:
     seed_stage_report_contract(root)
     subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True, capture_output=True)
-    return root
 
 
 def _make_workspace(

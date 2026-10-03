@@ -76,7 +76,8 @@ def make_workspace(
 def make_ticket(
     session: Session,
     *,
-    workspace_id: str,
+    #: None only for an initiative, which binds to no workspace.
+    workspace_id: str | None,
     ticket_id: str | None = None,
     external_id: str | None = None,
     title: str = "Test ticket",

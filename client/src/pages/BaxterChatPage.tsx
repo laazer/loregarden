@@ -6,6 +6,7 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
+import { QuickReplies } from "../components/chat/QuickReplies";
 import {
   ComposerAttachButton,
   ComposerAttachmentTray,
@@ -27,6 +28,7 @@ import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
+import { followUpPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { pushToast } from "../state/toastStore";
@@ -236,6 +238,7 @@ function BaxterReplyDock({
   blocked = false,
   commandOptions,
   menu,
+  quickReplies,
 }: {
   onSend: ComposerSend;
   onStop?: () => void;
@@ -245,11 +248,17 @@ function BaxterReplyDock({
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
   menu: ReactNode;
+  quickReplies: readonly string[];
 }) {
   const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
   return (
     <div className="baxter-chat-dock baxter-chat-dock--fade">
+      <QuickReplies
+        prompts={quickReplies}
+        disabled={busy || blocked}
+        onPick={(prompt) => onSend(prompt, [])}
+      />
       <StudioChatComposer
         {...composer}
         onStop={onStop}
@@ -491,6 +500,12 @@ export function BaxterChatPage() {
     return hasThread ? suggestionChips(approvals, tickets) : EMPTY_CHIPS;
   }, [galleryTurns, hasThread, approvals, tickets]);
 
+  // The gallery is a canned thread with nothing to answer; its turns carry their own.
+  const quickReplies = useMemo(
+    () => (galleryTurns ? [] : followUpPrompts("baxter-home", null, chat.messages).slice(0, 3)),
+    [galleryTurns, chat.messages],
+  );
+
   const primitives = useMemo(() => primitiveHistory(threadMessages), [threadMessages]);
 
   // The server's attachments per user turn; the thread view does not carry them.
@@ -663,6 +678,7 @@ export function BaxterChatPage() {
               blocked={!workspaceSlug}
               commandOptions={commandOptions}
               menu={composerMenu}
+              quickReplies={quickReplies}
             />
           </>
         )}

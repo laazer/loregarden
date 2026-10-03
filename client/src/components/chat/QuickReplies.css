@@ -1,0 +1,33 @@
+.lg-quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+/* Same chip as the action bar's quick prompts, so a reply looks the same wherever it is offered. */
+.lg-quick-reply {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--txm);
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.lg-quick-reply:hover:not(:disabled),
+.lg-quick-reply:focus-visible {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.lg-quick-reply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

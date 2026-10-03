@@ -41,11 +41,6 @@ def test_the_monitor_sees_mostly_finished_tickets(prod_shape, client):
     assert all(f["ticket_title"] for f in on_tickets)
 
 
-def test_milestones_wait_for_an_initiative(prod_shape, client):
-    assert client.get("/api/initiatives").json() == []
-    assert len(client.get("/api/initiatives/attachable-milestones").json()) >= 75
-
-
 def test_memory_has_no_recorded_links_but_real_groups(prod_shape, client):
     graph = client.get("/api/memory/graph", params={"workspace_slug": "loregarden"}).json()
 
@@ -64,3 +59,15 @@ def test_memory_proposals_match_production(prod_shape, client):
 
     assert kinds.count("near_duplicate") == 0
     assert 20 <= kinds.count("generic_title") <= 30
+
+
+def test_one_initiative_claims_a_cross_workspace_theme(prod_shape, client):
+    [initiative] = client.get("/api/initiatives").json()
+    assert prod_shape.initiative_milestones == 10
+    assert initiative["external_id"].startswith("init-")
+    assert initiative["progress"] == {"resolved": 1, "total": 10}
+    assert initiative["workspaces"] == ["blobert", "loregarden", "loremaker"]
+    # The children are mixed, so the rollup — not the factory default — set this.
+    assert initiative["state"] == "in_progress"
+    # Most milestones stay unclaimed: that is still the shape that dominates.
+    assert len(client.get("/api/initiatives/attachable-milestones").json()) >= 65

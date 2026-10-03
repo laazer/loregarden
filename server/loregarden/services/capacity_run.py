@@ -366,7 +366,7 @@ def run_holding(
                 if started_file is not None:
                     started_file.touch()
                 code = relay.run(
-                    command, child_environment(reservation, environ or os.environ), cwd=cwd
+                    command, child_environment(reservation, environ or os.environ), cwd
                 )
         except _Terminated as stopped:
             code = 128 + stopped.signum
@@ -409,11 +409,9 @@ class _SignalRelay:
             raise _Terminated(number)
         self._child.send_signal(number)
 
-    def run(self, command: Sequence[str], env: Mapping[str, str], *, cwd: Path | None) -> int:
+    def run(self, command: Sequence[str], env: Mapping[str, str], cwd: Path | None) -> int:
         signal.signal(signal.SIGINT, lambda _number, _frame: None)
-        self._child = subprocess.Popen(  # noqa: S603 — the caller's command
-            list(command), env=dict(env), cwd=cwd
-        )
+        self._child = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # noqa: S603 — the caller's command
         code = self._child.wait()
         return 128 - code if code < 0 else code
 
