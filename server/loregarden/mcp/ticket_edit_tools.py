@@ -31,6 +31,7 @@ from loregarden.services.ticket_dependencies import (
     TicketDependencyService,
 )
 from loregarden.services.ticket_discovery import ticket_neighbors_mcp
+from loregarden.services.ticket_documents import document_index
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_tags import load_tags, normalize_tags
 
@@ -169,7 +170,14 @@ def resolve_ticket_payload(
         external_id=external_id,
         workspace_slug=workspace_slug,
     )
-    return ticket_state_payload(session, ticket.id) | ticket_body(ticket)
+    # Planning documents on this ticket and every ancestor up to its initiative,
+    # for the same reason the body rides here: an agent that is not told they
+    # exist will not think to list them. Read one with loregarden_read_artifact.
+    return (
+        ticket_state_payload(session, ticket.id)
+        | ticket_body(ticket)
+        | {"documents": document_index(session, ticket)}
+    )
 
 
 def _collect_criteria_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[str, Any]:

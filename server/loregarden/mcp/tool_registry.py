@@ -27,6 +27,7 @@ from loregarden.mcp.docker_capacity_tool import (
     reserve_docker_capacity_tool,
 )
 from loregarden.mcp.doctor_tool import doctor
+from loregarden.mcp.document_tools import HANDLERS as DOCUMENT_HANDLERS
 from loregarden.mcp.external_harness_tools import (
     begin_external_stage_tool,
     finish_external_stage_tool,
@@ -74,4 +75,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **INITIATIVE_PLAN_HANDLERS,
     **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
+    **DOCUMENT_HANDLERS,
 }
