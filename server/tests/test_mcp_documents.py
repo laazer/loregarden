@@ -218,6 +218,10 @@ def test_read_artifact_reads_run_artifacts_too(db_session):
         ("Title", "   ", "body"),
         ("Title", "x" * (MAX_DOCUMENT_CHARS + 1), "limit"),
     ],
+    # Explicit ids: pytest exports the test id in PYTEST_CURRENT_TEST, and an id
+    # carrying the over-cap body exceeds Linux's 128 KB limit on one environment
+    # string, so every subprocess the fixtures start fails with E2BIG.
+    ids=["blank-title", "blank-body", "over-cap"],
 )
 def test_write_refuses_what_it_cannot_file(db_session, title, body, message):
     tree = _tree(db_session)
