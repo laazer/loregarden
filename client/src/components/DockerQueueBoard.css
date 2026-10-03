@@ -7,11 +7,18 @@
   color: var(--txm);
 }
 
+.docker-board-pool {
+  margin: 12px 0;
+}
+
+.docker-board-pool:last-of-type {
+  margin-bottom: 16px;
+}
+
 .docker-board-meters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px 20px;
-  margin: 12px 0 16px;
 }
 
 .docker-slot-expiry {

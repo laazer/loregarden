@@ -1,4 +1,4 @@
-"""The endpoint the board's Docker tab reads.
+"""The endpoint the board's Machine tab reads.
 
 Its own route rather than a block on the queue-status payload, and the test that
 matters most pins why: the queue socket pushes that payload to every open tab on
