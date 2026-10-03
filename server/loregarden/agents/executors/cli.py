@@ -53,6 +53,8 @@ from loregarden.models.domain import (
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
+    adapter_override_warning,
+    adapter_pin_source,
     get_ticket_orchestration_runtime,
     resolve_effective_adapter,
     resolve_model_for_adapter,
@@ -267,15 +269,14 @@ class CliAgentExecutor:
                 partial_output="--stream-partial-output" in invocation.argv,
             )
             streamer.start(run.command)
-            self._maybe_warn_dispatch_waiver(streamer=streamer, run=run)
-            self._maybe_warn_weak_mcp_model(
+            self._warn_before_run(
                 streamer=streamer,
                 run=run,
                 agent=agent,
                 workspace=workspace,
                 ticket_runtime=ticket_runtime,
                 stage_def=stage_def,
-                selected_adapter=invocation.adapter,
+                invocation=invocation,
             )
 
             timeout = (
@@ -488,6 +489,70 @@ class CliAgentExecutor:
         self.session.add(run)
         self.session.commit()
         return invocation, cleanup_path
+
+    def _warn_before_run(
+        self,
+        *,
+        streamer: RunLogStreamer,
+        run: AgentRun,
+        agent: dict,
+        workspace: Workspace,
+        ticket_runtime: WorkspaceRuntimeSettings,
+        stage_def: WorkflowStageDef | None,
+        invocation: CliInvocation,
+    ) -> None:
+        """Every warning a run's log should open with, before the agent speaks."""
+        self._maybe_warn_dispatch_waiver(streamer=streamer, run=run)
+        self._maybe_warn_adapter_override(
+            streamer=streamer,
+            run=run,
+            agent=agent,
+            workspace=workspace,
+            ticket_runtime=ticket_runtime,
+            stage_def=stage_def,
+            invocation=invocation,
+        )
+        self._maybe_warn_weak_mcp_model(
+            streamer=streamer,
+            run=run,
+            agent=agent,
+            workspace=workspace,
+            ticket_runtime=ticket_runtime,
+            stage_def=stage_def,
+            selected_adapter=invocation.adapter,
+        )
+
+    def _maybe_warn_adapter_override(
+        self,
+        *,
+        streamer: RunLogStreamer,
+        run: AgentRun,
+        agent: dict,
+        workspace: Workspace,
+        ticket_runtime: WorkspaceRuntimeSettings,
+        stage_def: WorkflowStageDef | None,
+        invocation: CliInvocation,
+    ) -> None:
+        """Say, in the run's own log, that the agent is not running as declared.
+
+        A workspace or ticket provider pin replaces the agent's adapter and drops
+        its model pin with it; without this line the run log opens like any
+        other and the operator hunts for why "the model I set" never applied.
+        """
+        message = adapter_override_warning(
+            agent_id=run.agent_id,
+            agent_adapter=agent.get("adapter", "local"),
+            selected_adapter=invocation.adapter,
+            pin_source=adapter_pin_source(
+                workspace=workspace, ticket_adapter=ticket_runtime.cli_adapter
+            ),
+            dropped_model=(stage_def.model if stage_def else "") or agent.get("default_model", ""),
+            model=invocation.model,
+        )
+        if not message:
+            return
+        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, message)
+        streamer.append("WARN", message, force=True)
 
     def _maybe_warn_weak_mcp_model(
         self,

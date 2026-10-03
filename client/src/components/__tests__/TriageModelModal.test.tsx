@@ -122,4 +122,21 @@ describe("TriageModelModal", () => {
     expect(onClose).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("says the options failed to load instead of loading forever", () => {
+    render(
+      <TriageModelModal
+        open
+        runtime={DEFAULT_RUNTIME}
+        runtimeOptions={undefined}
+        runtimeOptionsError={new Error("Ticket not found")}
+        isSaving={false}
+        onClose={() => {}}
+        onSave={async () => {}}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Ticket not found");
+    expect(screen.queryByText(/Loading runtime options/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
 });
