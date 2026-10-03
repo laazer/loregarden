@@ -79,9 +79,18 @@ server_pid=""
 cleanup() { [[ -n "$server_pid" ]] && kill "$server_pid" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-(cd "$ROOT/server" && exec uv run uvicorn loregarden.main:app --host 127.0.0.1 --port "$SERVER_PORT") &
+# Both halves register as branch instances (sandbox-server, sandbox-client): the
+# server's own registration stands down in a sandbox, so it never claims main.
+(cd "$ROOT/server" && exec uv run loregarden instance run \
+  --name sandbox-server --kind server --role branch --port "$SERVER_PORT" \
+  --label "worktree=$ROOT" --label sandbox=1 \
+  -- uvicorn loregarden.main:app --host 127.0.0.1 --port "$SERVER_PORT") &
 server_pid=$!
 
-echo "sandbox: server http://127.0.0.1:$SERVER_PORT  client http://localhost:$CLIENT_PORT"
+echo "sandbox: server http://127.0.0.1:$SERVER_PORT  client http://127.0.0.1:$CLIENT_PORT"
 cd "$ROOT/client"
-LOREGARDEN_API_TARGET="http://127.0.0.1:$SERVER_PORT" npm run dev -- --port "$CLIENT_PORT" --strictPort
+LOREGARDEN_API_TARGET="http://127.0.0.1:$SERVER_PORT" uv run --project "$ROOT/server" \
+  loregarden instance run \
+  --name sandbox-client --kind client --role branch --port "$CLIENT_PORT" --health-path / \
+  --label "worktree=$ROOT" --label "api=http://127.0.0.1:$SERVER_PORT" \
+  -- ./node_modules/.bin/vite --host 127.0.0.1 --port "$CLIENT_PORT" --strictPort

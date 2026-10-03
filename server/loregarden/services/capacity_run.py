@@ -31,15 +31,12 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
-import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from loregarden.models.domain import (
     CapacityPool,
@@ -76,6 +73,7 @@ from loregarden.services.docker_wait_estimate import (
     estimate_waits,
     poll_interval_for,
 )
+from loregarden.services.signal_relay import SignalRelay, Terminated
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, or_, select
 
@@ -113,18 +111,6 @@ class CapacityQueueStalled(CapacityNotGranted):
     that only knows "capacity was not granted" still stops, and one that can say
     more — the CLI's exit code, the pre-push wrapper's message — does.
     """
-
-
-class _Terminated(BaseException):
-    """SIGTERM/SIGHUP arrived before the command started.
-
-    A BaseException, like KeyboardInterrupt, so no `except Exception` on the way
-    out swallows it, and the `finally` that gives the place in line back runs.
-    """
-
-    def __init__(self, signum: int) -> None:
-        super().__init__(signum)
-        self.signum = signum
 
 
 @dataclass(frozen=True)
@@ -245,7 +231,7 @@ def _wait_in_line(
         return _poll_until_granted(
             session, reservation, request, report=report, sleep=sleep, clock=clock
         )
-    except (KeyboardInterrupt, _Terminated):
+    except (KeyboardInterrupt, Terminated):
         # Stopped while queued: leave the line now rather than sitting at its
         # head until the abandonment sweep notices nobody is polling.
         release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
@@ -426,11 +412,11 @@ def run_holding(
     A SIGTERM or SIGHUP before the command starts gives the place in line back
     and returns 128+N without starting it; once it runs, they are forwarded to it.
     """
-    with _SignalRelay() as relay:
+    with SignalRelay() as relay:
         try:
             with session_factory() as session:
                 reservation = acquire(session, request, report=report)
-        except _Terminated as stopped:
+        except Terminated as stopped:
             return 128 + stopped.signum
         lease_id = reservation.lease_id
         report(
@@ -449,52 +435,11 @@ def run_holding(
                 code = relay.run(
                     command, child_environment(reservation, environ or os.environ), cwd
                 )
-        except _Terminated as stopped:
+        except Terminated as stopped:
             code = 128 + stopped.signum
         finally:
             _release(session_factory, lease_id, report)
     return code
-
-
-class _SignalRelay:
-    """Who a SIGTERM, SIGHUP or SIGINT is for, across the whole run.
-
-    Installed before the reservation, so there is no moment a signal kills this
-    process with a lease it has not released. Before the command starts, SIGTERM
-    and SIGHUP raise `_Terminated` (SIGINT raises KeyboardInterrupt as usual),
-    which unwinds through the release. Once it runs they are forwarded to it, and
-    this process waits for it to exit so the release still happens. SIGINT is
-    not forwarded: Ctrl-C reaches the whole foreground process group, so the
-    command already has it, and a second copy reads to pytest as "force quit".
-    """
-
-    _FORWARDED = (signal.SIGTERM, signal.SIGHUP)
-
-    def __init__(self) -> None:
-        self._child: subprocess.Popen | None = None
-        self._previous: dict[int, Any] = {}
-
-    def __enter__(self) -> _SignalRelay:
-        for sig in (*self._FORWARDED, signal.SIGINT):
-            self._previous[sig] = signal.getsignal(sig)
-        for sig in self._FORWARDED:
-            signal.signal(sig, self._on_signal)
-        return self
-
-    def __exit__(self, *_exc: object) -> None:
-        for sig, handler in self._previous.items():
-            signal.signal(sig, handler)
-
-    def _on_signal(self, number: int, _frame: object) -> None:
-        if self._child is None:
-            raise _Terminated(number)
-        self._child.send_signal(number)
-
-    def run(self, command: Sequence[str], env: Mapping[str, str], cwd: Path | None) -> int:
-        signal.signal(signal.SIGINT, lambda _number, _frame: None)
-        self._child = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # noqa: S603 — the caller's command
-        code = self._child.wait()
-        return 128 - code if code < 0 else code
 
 
 def _release(session_factory: SessionFactory, lease_id: str, report: Report) -> None:
