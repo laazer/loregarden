@@ -91,11 +91,12 @@ describe("Memory map at production volume", () => {
   });
 });
 
-it("Initiatives with no initiatives still shows what to group, without a wall", async () => {
+it("Initiatives shows its one initiative and what is left to group, without a wall", async () => {
   mockApi.initiatives.mockResolvedValue(initiatives as unknown as InitiativeView[]);
   mockApi.attachableMilestones.mockResolvedValue(attachable as unknown as InitiativeMilestone[]);
   const { container } = render(withProviders(<InitiativesPage />));
 
+  await screen.findByRole("heading", { name: "Trustworthy gate outcomes on every stage transition" });
   await screen.findByRole("heading", { name: /milestones without an initiative/i });
 
   expect(findUsabilityProblems(container)).toEqual([]);
