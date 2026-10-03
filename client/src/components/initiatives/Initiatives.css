@@ -343,3 +343,144 @@
   color: var(--tx);
   border-color: var(--bd2);
 }
+
+/* Suggested initiatives (InitiativeSuggestionsPage). */
+.initiative-suggest-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Unticked, but still meant to be read before it is ticked — so marked, not faded out. */
+.initiative-suggestion-off {
+  border-style: dashed;
+  background: transparent;
+}
+
+.initiative-warn {
+  color: var(--aml);
+}
+
+.initiative-warn ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.initiative-suggest-foot {
+  position: sticky;
+  bottom: -40px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  background: var(--bg0);
+  border-top: 1px solid var(--bd);
+}
+
+.initiative-card > summary {
+  cursor: pointer;
+}
+
+/* A suggestion's row carries workspace, origin, state and cost beside the title. */
+.initiative-pick-label.initiative-suggest-item {
+  grid-template-columns: auto minmax(0, 1fr) repeat(4, auto);
+}
+
+.initiative-suggest-cost {
+  min-width: 6ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Theme and ungrouped rows: the label, a "move to" select, the open button. */
+.initiative-pick.initiative-suggest-row-move {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.initiative-suggest-move {
+  max-width: 220px;
+  font-size: 12px;
+}
+
+.initiative-suggest-alert {
+  border: 1px solid color-mix(in srgb, var(--amb) 55%, transparent);
+  background: color-mix(in srgb, var(--amb) 12%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--tx);
+  font-size: 13px;
+}
+
+.initiative-suggest-alert p {
+  margin: 4px 0 0;
+  color: var(--txm);
+}
+
+.initiative-suggest-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.initiative-suggest-confirm {
+  position: sticky;
+  bottom: -40px;
+  border-color: var(--ac);
+}
+
+.initiative-suggest-confirm h2:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.initiative-suggest-confirm-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--tx);
+  font-size: 13px;
+}
+
+/* Narrow panes: the title gets its own line; the facts wrap beneath it. */
+@media (max-width: 720px) {
+  .initiative-pick-label.initiative-suggest-item {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .initiative-suggest-item > :nth-child(n + 3) {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .initiative-suggest-item .initiative-pick-title {
+    white-space: normal;
+  }
+
+  .initiative-pick.initiative-suggest-row-move {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .initiative-suggest-row-move .initiative-suggest-move {
+    grid-column: 1;
+    max-width: none;
+  }
+
+  .initiative-suggest-cost {
+    text-align: left;
+  }
+
+  /* A scrolling list inside a scrolling page is a trap on a phone; let the page scroll. */
+  .initiative-suggestion .initiative-pick-list {
+    max-height: none;
+  }
+}
+
+/* "Add a feature or bug to this sprint": label, search field, matches. */
+.initiative-sprint-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

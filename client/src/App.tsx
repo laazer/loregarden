@@ -18,6 +18,7 @@ import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
 import { InitiativePlanPage } from "./pages/InitiativePlanPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
+import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
@@ -100,6 +101,7 @@ export function AppShell() {
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
             <Route path="/initiatives" element={<InitiativesPage />} />
+            <Route path="/initiatives/suggest" element={<InitiativeSuggestionsPage />} />
             <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
             <Route

@@ -6,6 +6,8 @@ import { CreateInitiativeForm } from "../components/initiatives/CreateInitiative
 import { InitiativeCard } from "../components/initiatives/InitiativeCard";
 import { UnassignedMilestones } from "../components/initiatives/UnassignedMilestones";
 import { PageTopbar } from "../components/TopbarPageSlot";
+import { Button } from "../components/ui/Button";
+import { navigateToInitiativeSuggestions } from "../lib/useAppNavigation";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/Initiatives.css";
 
@@ -78,6 +80,17 @@ export function InitiativesPage() {
     },
   });
 
+  const moveWork = useMutation({
+    meta: { errorTitle: "Move work item" },
+    mutationFn: ({ ticketId, parentId }: { ticketId: string; parentId: string }) =>
+      api.setMilestoneInitiative(ticketId, parentId),
+    onMutate: ({ ticketId }) => setBusyId(ticketId),
+    onSettled: () => {
+      setBusyId(null);
+      refresh();
+    },
+  });
+
   const remove = useMutation({
     meta: { errorTitle: "Delete initiative" },
     mutationFn: (id: string) => api.deleteTicket(id),
@@ -89,10 +102,19 @@ export function InitiativesPage() {
   });
 
   const list = initiatives.data ?? [];
+  // Every milestone a sprint's work could go back to: unclaimed ones and those in an initiative.
+  // Done ones included — a milestone a sprint emptied rolled up as done, and reopens when work returns.
+  const milestoneChoices = [
+    ...(attachable.data ?? []),
+    ...list.flatMap((i) => i.milestones.filter((m) => m.work_item_type === "milestone")),
+  ];
 
   return (
     <div className="initiatives-page">
       <PageTopbar title="Initiatives">
+        <Button variant="secondary" onClick={navigateToInitiativeSuggestions}>
+          Suggest from open work
+        </Button>
         <button
           type="button"
           className="btn-primary"
@@ -129,7 +151,11 @@ export function InitiativesPage() {
         !creating && (
           <p className="initiative-intro">
             No initiatives yet. An initiative is one goal that spans workspaces — its milestones can live in any repo,
-            and their progress rolls up here. Start from the milestones below, or{" "}
+            and their progress rolls up here.{" "}
+            <Button variant="plain" className="initiative-link-btn" onClick={navigateToInitiativeSuggestions}>
+              Suggest initiatives from open work
+            </Button>
+            , start from the milestones below, or{" "}
             <button type="button" className="initiative-link-btn" onClick={() => setCreating(true)}>
               create an empty one
             </button>
@@ -145,6 +171,8 @@ export function InitiativesPage() {
             busyId={busyId}
             onAttach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: initiative.id })}
             onDetach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: null })}
+            milestoneChoices={milestoneChoices}
+            onMoveWork={(ticketId, parentId) => moveWork.mutate({ ticketId, parentId })}
             onDelete={() => remove.mutate(initiative.id)}
           />
         ))
