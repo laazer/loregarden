@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from lore_eden.instances.ports import instance_url
 from loregarden.config import settings
 from loregarden.mcp.caller import (
     ORCHESTRATED_ENV,
@@ -186,7 +187,9 @@ def _configured_mcp_url() -> str:
     if not settings.sandbox or url != _DEFAULT_MCP_URL:
         return url
     if settings.dev_port is not None:
-        return f"http://{settings.dev_host}:{settings.dev_port}/mcp"
+        # A wildcard bind (0.0.0.0) is not an address to connect to; lore-eden
+        # maps it to loopback, as it does for the instance registry.
+        return f"{instance_url(settings.dev_host, settings.dev_port)}/mcp"
     raise SandboxMcpUrlError(
         "This is a sandbox server with no MCP URL of its own: set LOREGARDEN_MCP_URL "
         "or LOREGARDEN_DEV_PORT, or its agents would write to the live server."
