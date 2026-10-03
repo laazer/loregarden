@@ -11,11 +11,12 @@ is not a machine with no limit.
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import logging
 import os
-import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -27,15 +28,29 @@ logger = logging.getLogger(__name__)
 
 _BYTES_PER_MB = 1024 * 1024
 
-#: Runs `sysctl` on macOS, where `os.sysconf` has no physical-memory name.
-#: Injected so tests hand in canned output instead of patching `subprocess`.
-SysctlInvoke = Callable[[Sequence[str]], subprocess.CompletedProcess]
+#: Reads physical memory in bytes, raising OSError with the reason when it cannot.
+#: Injected so tests hand in a canned size or failure.
+MemoryReader = Callable[[], int]
 
 
-def _run_sysctl(argv: Sequence[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["sysctl", *argv], capture_output=True, text=True, timeout=5, check=False
-    )
+def _read_physical_memory() -> int:
+    """Physical memory in bytes, read in-process.
+
+    macOS has no `os.sysconf` name for it, so this asks libc's `sysctlbyname`
+    directly. It used to fork `sysctl -n hw.memsize` with a 5s timeout, and on a
+    box under memory pressure — exactly when capacity matters — spawning the
+    process alone outran the timeout (2026-10-03, load average ~28). The value
+    is constant for the machine's uptime; reading it should not need a process.
+    """
+    if sys.platform != "darwin":
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+    value = ctypes.c_uint64(0)
+    size = ctypes.c_size_t(ctypes.sizeof(value))
+    if libc.sysctlbyname(b"hw.memsize", ctypes.byref(value), ctypes.byref(size), None, 0) != 0:
+        errno = ctypes.get_errno()
+        raise OSError(errno, f"sysctlbyname(hw.memsize) failed: {os.strerror(errno)}")
+    return value.value
 
 
 @dataclass(frozen=True)
@@ -51,23 +66,13 @@ class HostProbe:
         return not self.error
 
 
-def _memory_bytes(invoke: SysctlInvoke) -> int:
-    """Physical memory in bytes. Raises with the reason when it cannot be read."""
-    if sys.platform == "darwin":
-        result = invoke(["-n", "hw.memsize"])
-        if result.returncode != 0:
-            raise OSError(f"sysctl hw.memsize exited {result.returncode}: {result.stderr.strip()}")
-        return int(result.stdout.strip())
-    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-
-
-def probe_host(*, invoke: SysctlInvoke = _run_sysctl) -> HostProbe:
+def probe_host(*, read_memory: MemoryReader = _read_physical_memory) -> HostProbe:
     ncpu = os.cpu_count() or 0
     if ncpu <= 0:
         return HostProbe(error="os.cpu_count() could not determine the cpu count")
     try:
-        memory = _memory_bytes(invoke)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        memory = read_memory()
+    except (OSError, ValueError) as exc:
         return HostProbe(error=f"could not read physical memory: {exc}")
     if memory <= 0:
         return HostProbe(error=f"physical memory read as {memory} bytes")
@@ -76,7 +81,7 @@ def probe_host(*, invoke: SysctlInvoke = _run_sysctl) -> HostProbe:
 
 def resolve_host_ceiling(
     *,
-    invoke: SysctlInvoke = _run_sysctl,
+    read_memory: MemoryReader = _read_physical_memory,
     now: datetime | None = None,
     previous: Ceiling | None = None,
 ) -> Ceiling:
@@ -91,7 +96,7 @@ def resolve_host_ceiling(
             probed_at=stamp,
         )
 
-    probe = probe_host(invoke=invoke)
+    probe = probe_host(read_memory=read_memory)
     if probe.ok:
         headroom = settings.host_capacity_headroom
         return Ceiling(
