@@ -22,7 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / ".lefthook" / "scripts" / "capacity-run.sh"
 
 #: Fails while its counter is below FAKE_FAILURES; then touches the started file
-#: and runs the command after `--`, as `loregarden capacity run` does.
+#: and runs the command after `--`, as `loregarden capacity run` does. With
+#: FAKE_CLI_CWD it first moves there, as the real CLI moves into server/.
 FAKE_CLI = """#!/usr/bin/env bash
 count_file="$FAKE_STATE/calls"
 calls=$(( $(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
@@ -38,6 +39,7 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do
 done
 shift
 touch "$started"
+[ -n "${FAKE_CLI_CWD:-}" ] && cd "$FAKE_CLI_CWD"
 "$@"
 """
 
@@ -87,6 +89,28 @@ def test_a_ledger_failure_is_retried_and_the_command_runs_once_it_clears(
 
     assert result.returncode == 3
     assert _calls(tmp_path) == 3
+
+
+def test_the_command_runs_where_the_hook_was_even_if_the_cli_moves(tmp_path, fake_cli) -> None:
+    # lefthook names its scripts relative to the repository; the CLI runs from
+    # its own server/ directory. The first capacity-gated push waited its turn
+    # and then failed with "No such file or directory".
+    elsewhere = tmp_path / "server"
+    elsewhere.mkdir()
+    (tmp_path / "script.sh").write_text("pwd > where\n")
+
+    result = subprocess.run(
+        _wrap("sh", "script.sh"),
+        env=_env(tmp_path, fake_cli, FAKE_CLI_CWD=str(elsewhere)),
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert Path((tmp_path / "where").read_text().strip()).resolve() == tmp_path.resolve()
 
 
 def test_a_failing_command_is_not_mistaken_for_a_ledger_failure(tmp_path, fake_cli) -> None:
