@@ -48,6 +48,7 @@ from loregarden.services.cli_settings import (
     resolve_effort_for_adapter,
     resolve_model_for_adapter,
 )
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.run_concurrency import (
     find_active_workspace_chat_run,
     new_run_code,
@@ -367,6 +368,13 @@ def _resolve_checkout(request: AgentTurnRequest, run: AgentRun) -> Path:
         root = _resolve_turn_root(request, run)
         if not root.is_dir():
             raise ValueError(f"Workspace repo path does not exist: {root}")
+    except DirtyPrimaryCheckoutError as exc:
+        # Refused, not failed: nothing ran, and the turn can be retried once the
+        # shared checkout is clean (864). The run's stderr names the paths, and
+        # the raise is the error the conversation shows. (Ticket stage runs go
+        # through the executor, which also files an artifact and parks.)
+        _settle(request, run, status=RunStatus.CANCELLED, stderr=str(exc))
+        raise
     except Exception as exc:
         _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise

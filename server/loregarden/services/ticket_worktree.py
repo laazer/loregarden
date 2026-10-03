@@ -21,8 +21,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from loregarden.models.domain import AgentRun, Ticket, Workspace
+from loregarden.models.domain import AgentRun, PrimaryCheckoutUse, Ticket, Workspace
 from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.primary_checkout import require_clean_checkout
+from loregarden.services.recorded_paths import ticket_recorded_paths
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -58,15 +60,22 @@ def resolve_execution_root(
     both assign one before dispatch) keeps it. Otherwise the ticket's shared
     worktree is created on first use and reused by every later stage.
 
-    Falls back to the shared checkout rather than failing the run: a worktree
-    that cannot be cut is a degraded run, not a dead ticket.
+    Falls back to the shared checkout rather than failing the run — a worktree
+    that cannot be cut is a degraded run, not a dead ticket — but only onto a
+    checkout holding nothing but this ticket's own work. Anything else raises
+    `DirtyPrimaryCheckoutError` for the caller to park on (864).
     """
     workspace_root = resolve_workspace_root(workspace)
     if run.worktree_id:
-        return resolve_run_root(session, run, workspace_root)
+        root = resolve_run_root(session, run, workspace_root)
+        if root == workspace_root:
+            # The run's worktree is gone and this is the same fallback.
+            _require_clean_fallback(session, ticket, workspace_root)
+        return root
 
     config = resolve_git_automation(workspace, ticket)
     if not config.worktree:
+        _require_clean_fallback(session, ticket, workspace_root)
         return workspace_root
 
     # Cut from the branch this ticket's work will land on, not from the base:
@@ -81,9 +90,24 @@ def resolve_execution_root(
             ticket.id,
             workspace_root,
         )
+        _require_clean_fallback(session, ticket, workspace_root)
         return workspace_root
 
     run.worktree_id = worktree.id
     session.add(run)
     session.commit()
     return Path(worktree.worktree_path)
+
+
+def _require_clean_fallback(session: Session, ticket: Ticket, workspace_root: Path) -> None:
+    """The shared checkout may hold this ticket's own uncommitted work, and nothing else.
+
+    With worktrees off, a ticket's earlier stage leaves its files there; those
+    are the ticket's, not an operator's, and refusing on them would park every
+    later stage on its own predecessor (decided with the operator, 864).
+    """
+    require_clean_checkout(
+        workspace_root,
+        use=PrimaryCheckoutUse.TICKET_FALLBACK,
+        ignoring=ticket_recorded_paths(session, ticket),
+    )
