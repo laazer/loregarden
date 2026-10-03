@@ -38,6 +38,8 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do
 done
 shift
 touch "$started"
+# The real CLI changes into its own server package before running the command.
+[ -n "${FAKE_CD:-}" ] && cd "$FAKE_CD"
 "$@"
 """
 
@@ -87,6 +89,30 @@ def test_a_ledger_failure_is_retried_and_the_command_runs_once_it_clears(
 
     assert result.returncode == 3
     assert _calls(tmp_path) == 3
+
+
+def test_a_relative_command_runs_where_the_hook_ran_it(tmp_path, fake_cli) -> None:
+    # The defect: lefthook runs `bash .lefthook/scripts/client-tests.sh` from the
+    # checkout being pushed, and the CLI ran it from its own server directory —
+    # "No such file or directory", or worse, another checkout's script.
+    caller = tmp_path / "caller"
+    elsewhere = tmp_path / "elsewhere"
+    caller.mkdir()
+    elsewhere.mkdir()
+    (caller / "hook.sh").write_text(f'pwd -P > "{tmp_path / "ran-in"}"\n')
+
+    result = subprocess.run(
+        _wrap("bash", "hook.sh"),
+        env=_env(tmp_path, fake_cli, FAKE_CD=str(elsewhere)),
+        cwd=caller,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "ran-in").read_text().strip() == str(caller.resolve())
 
 
 def test_a_failing_command_is_not_mistaken_for_a_ledger_failure(tmp_path, fake_cli) -> None:

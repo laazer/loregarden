@@ -100,6 +100,27 @@ def test_the_command_runs_under_a_lease_and_its_status_is_passed_through(
     assert (load_pool(session, CapacityPool.HOST).held_cpus, lease.holder_pid) == (0, os.getpid())
 
 
+def test_the_command_runs_in_the_directory_it_is_given(
+    isolated_db, session, host, tmp_path
+) -> None:
+    # `loregarden-cli.sh` changes into the server package before the CLI starts,
+    # so a command left to inherit this process's directory runs in the wrong place.
+    here = tmp_path / "caller"
+    here.mkdir()
+    seen = tmp_path / "ran-in"
+
+    code = run_holding(
+        lambda: Session(isolated_db),
+        _request(),
+        ["sh", "-c", f"pwd -P > {seen}"],
+        report=lambda _line: None,
+        cwd=here,
+    )
+
+    assert code == 0
+    assert seen.read_text().strip() == str(here.resolve())
+
+
 def test_a_full_machine_means_waiting_then_running(session, host) -> None:
     holder = docker_leases.reserve(
         session,

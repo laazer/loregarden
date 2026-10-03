@@ -338,8 +338,13 @@ def run_holding(
     started_file: Path | None = None,
     environ: Mapping[str, str] | None = None,
     heartbeat_seconds: float | None = None,
+    cwd: Path | None = None,
 ) -> int:
     """Run `command` under a lease and return its exit status (128+N for signal N).
+
+    `cwd` is where the command runs — the caller's directory, not this process's:
+    `loregarden-cli.sh` changes into the server package before starting the CLI,
+    so a relative command left to inherit it runs in the wrong checkout.
 
     A SIGTERM or SIGHUP before the command starts gives the place in line back
     and returns 128+N without starting it; once it runs, they are forwarded to it.
@@ -364,7 +369,9 @@ def run_holding(
             with _Heartbeat(session_factory, lease_id, interval, report):
                 if started_file is not None:
                     started_file.touch()
-                code = relay.run(command, child_environment(reservation, environ or os.environ))
+                code = relay.run(
+                    command, child_environment(reservation, environ or os.environ), cwd
+                )
         except _Terminated as stopped:
             code = 128 + stopped.signum
         finally:
@@ -406,9 +413,9 @@ class _SignalRelay:
             raise _Terminated(number)
         self._child.send_signal(number)
 
-    def run(self, command: Sequence[str], env: Mapping[str, str]) -> int:
+    def run(self, command: Sequence[str], env: Mapping[str, str], cwd: Path | None) -> int:
         signal.signal(signal.SIGINT, lambda _number, _frame: None)
-        self._child = subprocess.Popen(list(command), env=dict(env))  # noqa: S603 — the caller's command
+        self._child = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # noqa: S603 — the caller's command
         code = self._child.wait()
         return 128 - code if code < 0 else code
 

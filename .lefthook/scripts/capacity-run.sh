@@ -91,8 +91,13 @@ while :; do
   rm -f "$started_file"
   remaining=$((hard_cap - (SECONDS - start)))
   [ "$remaining" -lt 1 ] && remaining=1
+  # The command runs from here, whatever directory the CLI starts it in: the
+  # primary checkout's CLI changes into its own server package, and may predate
+  # the fix that carries the caller's directory across — a relative hook script
+  # then runs against the wrong checkout, or is not found at all.
   "$cli" capacity run --label "$full_label" ${cli_args[@]+"${cli_args[@]}"} \
-    --max-wait "$remaining" --started-file "$started_file" -- "$@"
+    --max-wait "$remaining" --started-file "$started_file" \
+    -- bash -c 'cd "$1" && shift && exec "$@"' capacity-run "$PWD" "$@"
   rc=$?
   if [ -e "$started_file" ]; then
     exit "$rc" # the command ran; its status is ours

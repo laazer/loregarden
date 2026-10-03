@@ -26,5 +26,9 @@ if [ -z "${LOREGARDEN_REPO_ROOT:-}" ]; then
 fi
 export LOREGARDEN_REPO_ROOT
 
+# `capacity run` executes the caller's command, which must run where the caller
+# is — not in the server package this script changes into below.
+export LOREGARDEN_CALLER_CWD="$PWD"
+
 cd "$ROOT/server"
 exec uv run loregarden "$@"
