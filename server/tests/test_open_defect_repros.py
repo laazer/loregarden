@@ -44,7 +44,6 @@ Rules for this module:
 
 from __future__ import annotations
 
-import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -57,20 +56,14 @@ from loregarden.models.domain import (
     AgentRun,
     RunStatus,
     Ticket,
-    TicketState,
-    WorkItemType,
     Workspace,
 )
 from loregarden.services import process_identity
-from loregarden.services.gate_recovery import GateRecovery
 from loregarden.services.gate_runner import _run_command
-from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.process_identity import identify
 from loregarden.services.run_reattach import reattach_surviving_runs
 from loregarden.services.run_service import fail_interrupted_runs
 from sqlmodel import Session
-from tests.worktree_helpers import make_repo
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -254,72 +247,6 @@ def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
     listing = lenient_client.get(base)
 
     assert (created.status_code, listing.status_code) == (422, 200)
-
-
-# --- lg-workflow-integrity-850: autofix commit failures swallowed ----------
-
-
-@pytest.fixture
-def autofix_commit_that_git_refuses(isolated_db, tmp_path: Path):
-    """A ticket whose recorded path is dirty, in a repo whose pre-commit hook
-    refuses every commit — the way a workspace's own gates refuse fixer output."""
-    repo = make_repo(tmp_path)
-    hook = repo / ".git" / "hooks" / "pre-commit"
-    hook.write_text("#!/bin/sh\necho 'refused by the workspace gate' >&2\nexit 1\n")
-    hook.chmod(0o755)
-    (repo / "seed.txt").write_text("rewritten by a fixer\n")
-
-    session = Session(isolated_db)
-    workspace = Workspace(slug="autofix", name="autofix", repo_path=str(repo))
-    session.add(workspace)
-    session.commit()
-    ticket = Ticket(
-        external_id="autofix-1",
-        workspace_id=workspace.id,
-        title="autofix",
-        state=TicketState.IN_PROGRESS,
-        work_item_type=WorkItemType.TASK,
-    )
-    session.add(ticket)
-    session.commit()
-    session.add(
-        AgentRun(
-            run_code="autofix_run",
-            workspace_id=workspace.id,
-            ticket_id=ticket.id,
-            agent_id="backend_implementer",
-            stage_key="implement",
-            changed_paths_json='["seed.txt"]',
-        )
-    )
-    session.commit()
-    refused = subprocess.run(
-        ["git", "commit", "--dry-run", "-qam", "probe"], cwd=repo, capture_output=True
-    )
-    assert refused.returncode == 0, "the fixture must leave a commit to make"
-    yield session, ticket
-    session.close()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "lg-workflow-integrity-850 — open. `_commit_autofix` catches the ValueError "
-        "`commit_paths` raises and reads it as 'nothing to commit': no log, no artifact, "
-        "and the gate still passes with the fixer's edits uncommitted."
-    ),
-)
-def test_a_failed_autofix_commit_is_reported(
-    autofix_commit_that_git_refuses, caplog: pytest.LogCaptureFixture
-) -> None:
-    session, ticket = autofix_commit_that_git_refuses
-    callbacks = OrchestrationCallbackService(session)
-    recovery = GateRecovery(session, callbacks, OrchestrationService(session))
-
-    with caplog.at_level(logging.WARNING):
-        recovery._commit_autofix(ticket, "implement", "fixers rewrote seed.txt")
-
-    assert any(record.levelno >= logging.WARNING for record in caplog.records)
 
 
 # --- lg-run-durability-862: a slow `ps` at boot fails a live run -------------

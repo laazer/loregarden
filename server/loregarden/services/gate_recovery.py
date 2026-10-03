@@ -17,7 +17,9 @@ refresh the budget. Only when both are exhausted does a human get pulled in.
 from __future__ import annotations
 
 import json
+import logging
 from enum import Enum
+from pathlib import Path
 
 from loregarden.agents.registry import DEBUGGER_AGENT_ID
 from loregarden.models.domain import (
@@ -34,6 +36,12 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import looks_like_test_output
+from loregarden.services.autofix_commit import (
+    AutofixCommit,
+    FixerFootprint,
+    commit_fixer_changes,
+    take_fixer_footprint,
+)
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.gate_attribution import (
     GatePartition,
@@ -46,7 +54,6 @@ from loregarden.services.gate_observability import (
     run_and_record_gates,
 )
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates
-from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -56,8 +63,11 @@ from loregarden.services.stage_retry_budget import (
     gate_failure_artifact_title,
 )
 from loregarden.services.studio_routing import took_light_route
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_routing import apply_stage_route
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 
 class GateDecision(Enum):
@@ -208,6 +218,10 @@ class GateRecovery:
         # Gate failed. First, let mechanical fixers have a go — these clear the
         # "basic problems" (imports, formatting, trivial lint) with no agent run.
         if profile.gates.autofix_commands:
+            # Measured before the fixers run, so what they changed can be told
+            # apart from what was already dirty (lg-workflow-integrity-850).
+            repo_root = resolve_ticket_root(self.session, ticket, workspace)
+            footprint = take_fixer_footprint(repo_root)
             autofix = run_gate_autofix(
                 self.session,
                 profile,
@@ -234,7 +248,9 @@ class GateRecovery:
                     fix_tier=GateFixTier.MECHANICAL,
                 )
                 if not residual:
-                    self._commit_autofix(ticket, from_stage, autofix.output)
+                    self._commit_autofix(
+                        ticket, from_stage, autofix.output, repo_root=repo_root, before=footprint
+                    )
                     return GateDecision.PASS
                 detail = residual
 
@@ -344,37 +360,111 @@ class GateRecovery:
             paths.update(json.loads(raw or "[]"))
         return sorted(paths)
 
-    def _commit_autofix(self, ticket: Ticket, from_stage: str, output: str) -> None:
-        """Commit the mechanical fixer diff onto the ticket branch and note it as
-        a context artifact, so the invisible fix is a first-class commit rather
-        than an uncommitted working-tree change."""
-        try:
-            committed = commit_paths(
-                self.session,
-                ticket,
-                message=(
-                    f"chore({from_stage}): auto-fix static-analysis gate [{ticket.external_id}]"
+    def _commit_autofix(
+        self,
+        ticket: Ticket,
+        from_stage: str,
+        output: str,
+        *,
+        repo_root: Path,
+        before: FixerFootprint,
+    ) -> None:
+        """Commit the mechanical fixer diff onto the ticket branch, and report it.
+
+        A first-class commit rather than an uncommitted working-tree change, and
+        every way it can fall short is said out loud: a commit git refused, and
+        fixer edits that could not be attributed to the ticket. Only "the fixers
+        changed nothing that needed committing" stays quiet.
+        """
+        outcome = commit_fixer_changes(
+            repo_root,
+            before,
+            recorded=self._ticket_changed_paths(ticket),
+            message=f"chore({from_stage}): auto-fix static-analysis gate [{ticket.external_id}]",
+        )
+        if outcome.error:
+            self._report_uncommitted_autofix(ticket, from_stage, output, repo_root, outcome)
+            return
+        if outcome.left_uncommitted or outcome.attribution_unknown:
+            logger.warning(
+                "auto-fix for %s (%s) left fixer edits uncommitted in %s: %s%s",
+                ticket.external_id,
+                from_stage,
+                repo_root,
+                ", ".join(outcome.left_uncommitted) or "-",
+                " (the tree could not be read before the fixers ran)"
+                if outcome.attribution_unknown
+                else "",
+            )
+        if outcome.committed or outcome.left_uncommitted or outcome.attribution_unknown:
+            self._attach_autofix_artifact(ticket, from_stage, output, outcome)
+
+    def _attach_autofix_artifact(
+        self, ticket: Ticket, from_stage: str, output: str, outcome: AutofixCommit
+    ) -> None:
+        title = (
+            f"Auto-fixed static-analysis gate — {from_stage}"
+            if outcome.committed
+            else f"Auto-fix not committed — {from_stage}"
+        )
+        rows = [
+            {"k": "Stage", "v": from_stage},
+            {"k": "Message", "v": output or "Mechanical fixers cleared the transition gate."},
+        ]
+        if outcome.left_uncommitted:
+            rows.append(
+                {
+                    "k": "Left uncommitted",
+                    "v": "Fixer edits to files that were already changed and belong to no "
+                    "run of this ticket: " + ", ".join(outcome.left_uncommitted),
+                }
+            )
+        if outcome.attribution_unknown:
+            rows.append(
+                {
+                    "k": "Attribution",
+                    "v": "The tree could not be read before the fixers ran; only paths this "
+                    "ticket's runs recorded were committed.",
+                }
+            )
+        self.callbacks.attach_artifact(
+            ticket, kind=ArtifactKind.CONTEXT, title=title, content={"title": title, "rows": rows}
+        )
+
+    def _report_uncommitted_autofix(
+        self,
+        ticket: Ticket,
+        from_stage: str,
+        output: str,
+        repo_root: Path,
+        outcome: AutofixCommit,
+    ) -> None:
+        """git refused the commit: the gate passed on a tree whose fix is not on the branch."""
+        logger.warning(
+            "auto-fix for %s (%s) cleared the gate but was not committed in %s: %s",
+            ticket.external_id,
+            from_stage,
+            repo_root,
+            outcome.error,
+        )
+        paths = ", ".join(outcome.left_uncommitted) or "none recorded"
+        self.callbacks.attach_artifact(
+            ticket,
+            kind=ArtifactKind.ERROR,
+            title=f"Auto-fix not committed — {from_stage}",
+            content={
+                "message": (
+                    "Mechanical fixers cleared the transition gate, but committing their "
+                    f"changes failed, so the fix is not on the ticket's branch.\n\n"
+                    f"git said: {outcome.error}\n\nUncommitted fixer edits: {paths}\n\n"
+                    f"Fixer output:\n{output or '(none)'}"
                 ),
-                paths=self._ticket_changed_paths(ticket),
-            )
-        except ValueError:
-            committed = False
-        if committed:
-            self.callbacks.attach_artifact(
-                ticket,
-                kind=ArtifactKind.CONTEXT,
-                title=f"Auto-fixed static-analysis gate — {from_stage}",
-                content={
-                    "title": f"Auto-fixed static-analysis gate — {from_stage}",
-                    "rows": [
-                        {"k": "Stage", "v": from_stage},
-                        {
-                            "k": "Message",
-                            "v": output or "Mechanical fixers cleared the transition gate.",
-                        },
-                    ],
-                },
-            )
+                "run_code": "",
+                "agent_id": "",
+                "stage_key": from_stage,
+                "command": "git commit",
+            },
+        )
 
     def _gate_failure_agent(self, detail: str) -> str:
         """Who should take a failing gate: "" for the stage's own agent.
