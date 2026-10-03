@@ -279,6 +279,11 @@ def _cli_env(database: Path) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if not key.startswith("LOREGARDEN_")}
     env.update(
         {
+            # Pinned, not inherited: with the repo root at the primary checkout,
+            # config applies data/memory.local.json over LOREGARDEN_DATABASE_URL
+            # and the CLI writes to the LIVE ledger. scripts/loregarden-cli.sh
+            # keeps a root that is already set.
+            "LOREGARDEN_REPO_ROOT": str(database.parent),
             "LOREGARDEN_DATABASE_URL": f"sqlite:///{database}",
             "LOREGARDEN_HOST_CAPACITY_CPUS": "2",
             "LOREGARDEN_HOST_CAPACITY_MEMORY_MB": "4096",
@@ -386,3 +391,52 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
             assert lease.status is DockerLeaseStatus.RELEASED
     finally:
         engine.dispose()
+
+
+# `uv run`, interpreter start-up and every migration on a fresh database:
+# allow for a loaded 4-worker pre-push. The subprocess timeout below is the bound.
+@pytest.mark.timeout(360)
+def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> None:
+    """scripts/loregarden-cli.sh cds into server/ to start Python. The held
+    command must still run in the caller's directory: a pre-push hook passes
+    `bash .lefthook/scripts/server-tests.sh`, relative to the repo, and every
+    loregarden push failed with "No such file or directory" once the primary
+    checkout gained `capacity run`."""
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    script = SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(script),
+            "capacity",
+            "run",
+            "--label",
+            "cwd",
+            "--cpus",
+            "1",
+            "--memory-mb",
+            "256",
+            "--",
+            "sh",
+            "-c",
+            "pwd -P > where",
+        ],
+        cwd=caller,
+        env=_cli_env(tmp_path / "ledger.db"),
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (caller / "where").read_text().strip() == str(caller.resolve())
+    # And it booked against this test's ledger, not the live one.
+    engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
+    try:
+        with Session(engine) as session:
+            labels = [lease.holder_label for lease in session.exec(select(DockerLease))]
+    finally:
+        engine.dispose()
+    assert [label.split(" · ")[0] for label in labels] == ["cwd"]
