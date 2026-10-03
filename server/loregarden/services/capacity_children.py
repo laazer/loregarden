@@ -131,6 +131,7 @@ def reserve_child(
         workspace_id=workspace_id,
         holder_pid=holder_pid,
         pool=child_pool,
+        takes_slot=False,
         footprint=footprint,
         cpus=price_cpus,
         memory_mb=price_memory,

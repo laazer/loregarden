@@ -19,15 +19,19 @@ from loregarden.models.domain.plan_enums import (
     ScheduleMode,
     ScheduleStatus,
 )
+from loregarden.models.domain.work_item_types import WorkItemType
 from pydantic import BaseModel, Field
 
 
 class InitiativeMilestoneView(BaseModel):
+    """A direct child of an initiative: a milestone, or a sprint's feature or bug."""
+
     id: str
     external_id: str
     title: str
     state: TicketState
     workspace_slug: str
+    work_item_type: WorkItemType
 
 
 class InitiativeProgress(BaseModel):

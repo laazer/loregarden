@@ -1,14 +1,73 @@
 import type { ChatMessageView } from "../components/chat/chatUtils";
 import { request } from "./http";
-import type { TicketDetail, TicketState } from "./types";
+import type { TicketDetail, TicketState, WorkItemType } from "./types";
 
-/** A milestone as an initiative sees it: tagged with the workspace it lives in. */
+/** A direct child of an initiative — a milestone, or a sprint's feature or bug —
+ * tagged with the workspace it lives in. */
 export interface InitiativeMilestone {
   id: string;
   external_id: string;
   title: string;
   state: TicketState;
   workspace_slug: string;
+  work_item_type: WorkItemType;
+}
+
+export type SuggestionKind = "theme" | "sprint";
+
+/** Open work a suggestion may claim. */
+export interface SuggestedItem extends InitiativeMilestone {
+  /** The milestone a feature or bug would leave; blank for a milestone. */
+  from_milestone: string;
+  /** Open work items it carries, in the unit pace is measured in. */
+  cost: number;
+}
+
+export interface InitiativeSuggestion {
+  key: string;
+  kind: SuggestionKind;
+  title: string;
+  description: string;
+  rationale: string;
+  items: SuggestedItem[];
+  /** Milestones this takes every open feature and bug out of; they roll up as done. */
+  empties: string[];
+  /** A sprint's last day (`YYYY-MM-DD`); null for a theme. */
+  target_date: string | null;
+}
+
+export interface InitiativeSuggestionSet {
+  source: "heuristic" | "agent";
+  suggestions: InitiativeSuggestion[];
+  /** Open milestones without an initiative that no suggestion claimed. */
+  ungrouped: SuggestedItem[];
+  sprint: {
+    days: number;
+    /** Work items the measured pace finishes in `days`; null when nothing was measured. */
+    capacity: number | null;
+    /** Open work items already directly under an initiative, charged before this sprint. */
+    committed: number;
+    planned: number;
+    basis: ForecastBasis;
+  };
+  /** What the agent proposed that could not be used. */
+  warnings: string[];
+  generated_at: string;
+}
+
+export interface InitiativeDraft {
+  title: string;
+  description: string;
+  item_ids: string[];
+  /** Set as the initiative's plan target. */
+  target_date: string | null;
+}
+
+export interface CreatedInitiative {
+  id: string;
+  external_id: string;
+  title: string;
+  attached: number;
 }
 
 export interface InitiativeView {
@@ -178,6 +237,25 @@ export const initiativeApi = {
       method: "POST",
       body: JSON.stringify({ ...body, work_item_type: "initiative" }),
     }),
+  /** Instant keyword themes plus a paced sprint, from work no initiative owns. */
+  initiativeSuggestions: (sprintDays: number) =>
+    request<InitiativeSuggestionSet>(`/api/initiatives/suggestions?sprint_days=${sprintDays}`),
+  /** One agent turn over the same candidates; holds the request until it answers. */
+  agentInitiativeSuggestions: (sprintDays: number, signal?: AbortSignal) =>
+    request<InitiativeSuggestionSet>("/api/initiatives/suggestions/agent", {
+      method: "POST",
+      body: JSON.stringify({ sprint_days: sprintDays }),
+      signal,
+    }),
+  /** Create every kept suggestion; the server checks the whole batch before writing. */
+  applyInitiativeSuggestions: (initiatives: InitiativeDraft[]) =>
+    request<{ created: CreatedInitiative[] }>("/api/initiatives/suggestions/apply", {
+      method: "POST",
+      body: JSON.stringify({ initiatives }),
+    }),
+  /** Open features and bugs that could join a sprint-style initiative; never integration reviews. */
+  initiativeAddableWork: (id: string, search: string) =>
+    request<SuggestedItem[]>(`/api/initiatives/${id}/addable-work?search=${encodeURIComponent(search)}`),
   initiativePlan: (id: string) => request<InitiativePlan>(`/api/initiatives/${id}/plan`),
   updateInitiativePlan: (
     id: string,

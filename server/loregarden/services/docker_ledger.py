@@ -69,14 +69,15 @@ class Booking:
 def booked(lease: DockerLease) -> Booking:
     """A lease's price less what its parent's grant covered.
 
-    A top-level lease books its whole price and one lease-count slot. A child
-    books only the excess over its parent's unused allotment and no slot: it
-    runs inside the parent's, which is the point of nesting it.
+    A top-level lease books its whole price. A child books only the excess over
+    its parent's unused allotment. Either takes a lease-count slot only when
+    `takes_slot` says so — a child runs inside its parent's slot, and an agent
+    run's standing claim takes none.
     """
     return Booking(
         cpus=lease.cpus - lease.covered_cpus,
         memory_mb=lease.memory_mb - lease.covered_memory_mb,
-        count=0 if lease.parent_lease_id else 1,
+        count=1 if lease.takes_slot else 0,
     )
 
 
@@ -107,7 +108,7 @@ def shortfalls(name: CapacityPool, pool: DockerCapacityPool, lease: DockerLease)
     checks = (
         (CapacityResource.CPUS, lease.cpus, pool.held_cpus, pool.ceiling_cpus),
         (CapacityResource.MEMORY_MB, lease.memory_mb, pool.held_memory_mb, pool.ceiling_memory_mb),
-        (CapacityResource.SLOTS, 1, pool.held_count, pool.ceiling_leases),
+        (CapacityResource.SLOTS, booked(lease).count, pool.held_count, pool.ceiling_leases),
     )
     return [
         Shortfall(pool=name, resource=resource, needed=needed, free=max(0, ceiling - held))

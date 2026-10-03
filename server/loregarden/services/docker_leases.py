@@ -67,6 +67,7 @@ from loregarden.services.docker_ledger import (
     pool_ceiling,
     shortfalls,
 )
+from loregarden.services.docker_poll_guard import note_poll
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.docker_wait_estimate import (
     UNKNOWN_WAIT,
@@ -264,7 +265,7 @@ def repair_pool(session: Session) -> None:
                               WHERE status IN :occupying AND pool IN :charged_by),
             held_count = (SELECT COUNT(*) FROM docker_leases
                           WHERE status IN :occupying AND pool IN :charged_by
-                          AND parent_lease_id IS NULL),
+                          AND takes_slot),
             revision = revision + 1
         WHERE id = :pool_id
         """
@@ -534,6 +535,7 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
                 cpus=lease.cpus,
                 memory_mb=lease.memory_mb,
                 revision=revisions[pool],
+                count=booked(lease).count,
             )
             for pool in pools
         ):
@@ -593,6 +595,7 @@ def reserve(
     workspace_id: str | None = None,
     holder_pid: int | None = None,
     pool: CapacityPool = CapacityPool.DOCKER,
+    takes_slot: bool = True,
     invoke: DockerInvoke = run_docker,
 ) -> DockerReservation:
     """Claim capacity in `pool`, take a place in line, or be told why neither.
@@ -661,6 +664,7 @@ def reserve(
         workspace_id=workspace_id,
         holder_pid=holder_pid,
         pool=pool,
+        takes_slot=takes_slot,
         footprint=footprint,
         cpus=price_cpus,
         memory_mb=price_memory,
@@ -987,7 +991,7 @@ def docker_capacity_for_stage(
     )
 
     if reservation.state is DockerGrantState.QUEUED:
-        reservation = _wait_for_capacity(session, reservation, budget=budget)
+        reservation = wait_for_grant(session, reservation, budget=budget)
 
     if not reservation.granted:
         # Give the place in line back rather than leaving a waiter nobody will
@@ -1006,16 +1010,23 @@ def docker_capacity_for_stage(
         reservation.release(reason=DockerLeaseEndReason.RUN_COMPLETED)
 
 
-def _wait_for_capacity(
+def wait_for_grant(
     session: Session, reservation: DockerReservation, *, budget: float
 ) -> DockerReservation:
-    """Poll our own place in line until it is granted or the budget runs out."""
+    """Poll our own place in line until it is granted or the budget runs out.
+
+    Each pass is recorded as a poll, which is what the abandonment sweep reads:
+    a wait longer than `docker_waiting_ttl_seconds` is otherwise dropped from the
+    line as abandoned while it is still faithfully waiting.
+    """
     deadline = time.monotonic() + budget
     while time.monotonic() < deadline:
         time.sleep(min(_STAGE_POLL_SECONDS, max(0.1, budget / 10)))
         drain_waiters(session)
         session.expire_all()
         lease = session.get(DockerLease, reservation.lease_id)
+        if lease is not None and lease.status is DockerLeaseStatus.WAITING:
+            note_poll(session, lease, min_interval=0)
         if lease is not None and lease.status is DockerLeaseStatus.HELD:
             reservation.state = DockerGrantState.GRANTED
             reservation.position = None

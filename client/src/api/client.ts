@@ -11,6 +11,10 @@ export { API_BASE, ApiError } from "./http";
 
 export type * from "./types";
 export type {
+  InitiativeDraft,
+  InitiativeSuggestion,
+  InitiativeSuggestionSet,
+  SuggestedItem,
   InitiativeMilestone,
   InitiativePlan,
   InitiativeView,
@@ -180,11 +184,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ workflow_template_slug }),
     }),
-  runtimeOptions: (params?: { workspace?: string; lmstudio_base_url?: string }) => {
+  /** `ticket` resolves `effective` for that ticket's runs: its own pin over its own workspace. */
+  runtimeOptions: (params?: { workspace?: string; lmstudio_base_url?: string; ticket?: string }) => {
     const query = new URLSearchParams();
     if (params && typeof params === "object" && !Array.isArray(params)) {
       if (typeof params.workspace === "string" && params.workspace) {
         query.set("workspace", params.workspace);
+      }
+      if (typeof params.ticket === "string" && params.ticket) {
+        query.set("ticket", params.ticket);
       }
       if (typeof params.lmstudio_base_url === "string" && params.lmstudio_base_url) {
         query.set("lmstudio_base_url", params.lmstudio_base_url);

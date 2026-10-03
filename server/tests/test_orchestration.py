@@ -1,5 +1,8 @@
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 from loregarden.models.domain import OrchestrationRunStatus
+from loregarden.services import gate_runner
 
 
 def test_orchestration_profile_loaded(client: TestClient):
@@ -103,3 +106,31 @@ def test_get_ticket_by_external_id(client: TestClient):
     body = res.json()
     assert body["legacy_external_id"] == "01-bootstrap-fastapi-control-plane"
     assert body["external_id"].startswith("lg-")
+
+
+def test_the_seeded_workspace_passes_its_transition_gates_without_recovery(client: TestClient):
+    """Orchestrating the seeded workspace takes the gate-pass path a real workspace takes.
+
+    Its profile is loregarden's, whose gates need loregarden's `server/` and
+    `client/`; the seeded repo has neither. `client` gives it a trivial gate
+    instead, so a run here reaches no fixer, no recovery and no agent fallback.
+    """
+    ticket_id = next(
+        t["id"]
+        for t in client.get("/api/tickets").json()
+        if t["legacy_external_id"] == "04-workflow-template-overrides"
+    )
+    real_run = gate_runner._run_command
+    ran: list[tuple[str, bool]] = []
+
+    def recording(command, cwd):
+        result = real_run(command, cwd)
+        ran.append((command, result.ok))
+        return result
+
+    with patch.object(gate_runner, "_run_command", recording):
+        res = client.post(f"/api/tickets/{ticket_id}/orchestrate", json={"max_stages": 2})
+
+    assert res.status_code == 200
+    assert ran, "no transition gate ran, so this proves nothing"
+    assert ran == [("true", True)] * len(ran)

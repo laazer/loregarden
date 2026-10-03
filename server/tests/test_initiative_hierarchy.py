@@ -91,8 +91,13 @@ class TestInitiativeVocabulary:
     def test_initiative_enum_value(self):
         assert _initiative().value == "initiative"
 
-    def test_valid_hierarchy_initiative_allows_only_milestone(self):
-        assert VALID_HIERARCHY[_initiative()] == [WorkItemType.MILESTONE]
+    def test_valid_hierarchy_initiative_allows_milestone_feature_bug(self):
+        # Features and bugs too, for sprint-style initiatives (initiative_suggestions).
+        assert VALID_HIERARCHY[_initiative()] == [
+            WorkItemType.MILESTONE,
+            WorkItemType.FEATURE,
+            WorkItemType.BUG,
+        ]
 
     def test_workflow_work_item_types_excludes_initiative_and_stays_five(self):
         expected = frozenset(
@@ -135,15 +140,17 @@ class TestValidateParentAssignment:
     @pytest.mark.parametrize(
         "child",
         [
-            WorkItemType.FEATURE,
             WorkItemType.CAPABILITY,
             WorkItemType.TASK,
-            WorkItemType.BUG,
         ],
     )
     def test_non_milestone_under_initiative_rejected(self, child: WorkItemType):
         with pytest.raises(ValueError):
             _validate_parent_assignment(child, _initiative())
+
+    @pytest.mark.parametrize("child", [WorkItemType.FEATURE, WorkItemType.BUG])
+    def test_sprint_types_under_initiative_allowed(self, child: WorkItemType):
+        _validate_parent_assignment(child, _initiative())
 
     @pytest.mark.parametrize(
         "parent",
@@ -219,10 +226,8 @@ class TestTicketServiceInitiativeParents:
     @pytest.mark.parametrize(
         "child_type",
         [
-            WorkItemType.FEATURE,
             WorkItemType.CAPABILITY,
             WorkItemType.TASK,
-            WorkItemType.BUG,
         ],
     )
     def test_create_non_milestone_under_initiative_rejected(
@@ -325,11 +330,11 @@ class TestImportInitiativeAgreement:
         assert child.parent_ticket_id == initiative.id
         assert child.work_item_type == WorkItemType.MILESTONE
 
-    def test_import_feature_under_initiative_rejected(
+    def test_import_capability_under_initiative_rejected(
         self, client: TestClient, db_session: Session
     ):
         initiative = _create(
-            db_session, title="Import init reject feature", work_item_type=_initiative()
+            db_session, title="Import init reject capability", work_item_type=_initiative()
         )
         res = client.post(
             "/api/tickets/import",
@@ -337,8 +342,8 @@ class TestImportInitiativeAgreement:
                 "workspace_slug": "loregarden",
                 "tickets": [
                     {
-                        "title": "Imported feature under init",
-                        "work_item_type": "feature",
+                        "title": "Imported capability under init",
+                        "work_item_type": "capability",
                         "parent_ticket_id": initiative.id,
                     }
                 ],
@@ -422,7 +427,7 @@ class TestFinalizeInitiativeAgreement:
         assert initiative.workspace_id is None
         assert milestone.workspace_id is not None
 
-    def test_finalize_initiative_with_feature_child_rejected(
+    def test_finalize_initiative_with_capability_child_rejected(
         self, client: TestClient, db_session: Session
     ):
         res = client.post(
@@ -437,8 +442,8 @@ class TestFinalizeInitiativeAgreement:
                         "children": [
                             {
                                 "external_id": "fin-feat-under-init",
-                                "title": "Feature under init",
-                                "work_item_type": "feature",
+                                "title": "Capability under init",
+                                "work_item_type": "capability",
                                 "children": [],
                             }
                         ],

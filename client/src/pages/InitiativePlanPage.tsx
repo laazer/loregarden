@@ -11,6 +11,7 @@ import { PlannerPanel } from "../components/initiatives/plan/PlannerPanel";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
+import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { Button } from "../components/ui/Button";
 import { planQueryKey } from "../hooks/useInitiativePlanner";
@@ -159,9 +160,9 @@ export function InitiativePlanPage() {
               <span className="plan-mono plan-muted">{data.external_id}</span>
               {data.description ? (
                 <>
-                  <p id="plan-description" className={`plan-description${showBrief ? "" : " clamped"}`}>
-                    {data.description}
-                  </p>
+                  <div id="plan-description" className={`plan-description${showBrief ? "" : " clamped"}`}>
+                    <MarkdownContent content={data.description} expandable={false} />
+                  </div>
                   {data.description.length > BRIEF_PREVIEW_CHARS ? (
                     <Button
                       variant="plain"

@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Any
 
 from loregarden.mcp.tool_ids import McpTool
+from loregarden.services.ticket_documents import DEFAULT_DOCUMENT_KIND
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +313,43 @@ def normalize_stop_instance(args: dict[str, Any]) -> dict[str, Any]:
     return {"instance_id": coerce_string(args.get("instance_id"), field="instance_id")}
 
 
+#: Cap on one artifact listing. Documents sit on a handful of ancestors; a ticket
+#: with hundreds of run artifacts should be narrowed with `kind`, not paged.
+MAX_ARTIFACT_LIST_LIMIT = 200
+
+
+def _default_true(value: Any) -> bool:
+    """An omitted flag reads as True; `coerce_optional_bool` would read it as False."""
+    return True if value is None or value == "" else coerce_optional_bool(value)
+
+
+def normalize_write_document(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
+        "workspace_slug": coerce_optional_string(args.get("workspace_slug")),
+        "title": coerce_string(args.get("title"), field="title"),
+        "body": coerce_string(args.get("body"), field="body"),
+        "kind": coerce_optional_string(args.get("kind")) or DEFAULT_DOCUMENT_KIND,
+        "summary": coerce_optional_string(args.get("summary")),
+    }
+
+
+def normalize_list_artifacts(args: dict[str, Any]) -> dict[str, Any]:
+    limit = coerce_optional_int(args.get("limit"), field="limit") or 50
+    return {
+        "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
+        "workspace_slug": coerce_optional_string(args.get("workspace_slug")),
+        "kind": coerce_optional_string(args.get("kind")),
+        "include_ancestors": _default_true(args.get("include_ancestors")),
+        "latest_only": _default_true(args.get("latest_only")),
+        "limit": max(1, min(limit, MAX_ARTIFACT_LIST_LIMIT)),
+    }
+
+
+def normalize_read_artifact(args: dict[str, Any]) -> dict[str, Any]:
+    return {"artifact_id": coerce_string(args.get("artifact_id"), field="artifact_id")}
+
+
 #: Normalizers dispatched by table instead of another branch in the chain below.
 #:
 #: `execute_tool` got this seam first, as `EXTENDED_TOOLS` — the chain was past
@@ -333,4 +371,7 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.LAUNCH_INSTANCE.value: normalize_launch_instance,
     McpTool.INSTANCE_STATUS.value: normalize_instance_status,
     McpTool.STOP_INSTANCE.value: normalize_stop_instance,
+    McpTool.WRITE_DOCUMENT.value: normalize_write_document,
+    McpTool.LIST_ARTIFACTS.value: normalize_list_artifacts,
+    McpTool.READ_ARTIFACT.value: normalize_read_artifact,
 }

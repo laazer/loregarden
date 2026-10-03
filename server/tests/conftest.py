@@ -1,9 +1,11 @@
 import os
+import shutil
 import subprocess
 from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from lore_eden.testing import pytest_profile
 from loregarden.config import settings
@@ -15,6 +17,7 @@ from loregarden.services import (
     docker_capacity,
     local_instances,
     opencode_discovery,
+    orchestration_profile,
     reference_cache,
 )
 from loregarden.services.cli_settings import ADAPTER_BINARIES
@@ -354,8 +357,55 @@ def _init_seeded_workspace_repo(repo) -> None:
     git("commit", "-m", "init")
 
 
+@pytest.fixture(name="seeded_orchestration_profiles", scope="session")
+def seeded_orchestration_profiles_fixture(tmp_path_factory):
+    """The real orchestration profiles, with `loregarden.yaml`'s gates made trivial.
+
+    The seeded workspace's slug is `loregarden`, so it resolves loregarden's own
+    profile, whose gates `cd server` and `cd client` — directories its one-commit
+    repo does not have. Every stage transition of every test that orchestrates it
+    failed its first gate, ran all three fixers, failed again and took the
+    recovery path: about 130 failed gate runs per suite, in tests that assert
+    nothing about gates and so were exercising the wrong path. Tests about gates
+    build their own profile, or point `settings.repo_root` elsewhere.
+
+    Everything but the gate commands is the real profile.
+    """
+    root = tmp_path_factory.mktemp("seeded-orchestration")
+    real = orchestration_profile.orchestration_dir()
+    for path in real.glob("*.yaml"):
+        shutil.copy2(path, root / path.name)
+    profile = yaml.safe_load((real / "loregarden.yaml").read_text(encoding="utf-8"))
+    profile["gates"]["commands"] = ["true"]
+    profile["gates"]["autofix_commands"] = []
+    (root / "loregarden.yaml").write_text(yaml.safe_dump(profile, sort_keys=False))
+    return root
+
+
+def _use_seeded_orchestration_profiles(monkeypatch, tmp_path, profiles) -> None:
+    """Resolve profiles from a per-test copy of ``profiles`` while `repo_root` is the real one.
+
+    A test that points `settings.repo_root` at its own tree, or patches
+    `orchestration_dir` itself, still gets exactly what it asked for. The copy is
+    per test so a profile write cannot leak into the next test.
+    """
+    copy = tmp_path / "orchestration-profiles"
+    shutil.copytree(profiles, copy)
+    real_root = settings.repo_root
+    real_dir = orchestration_profile.orchestration_dir
+
+    def orchestration_dir():
+        return copy if settings.repo_root == real_root else real_dir()
+
+    monkeypatch.setattr(orchestration_profile, "orchestration_dir", orchestration_dir)
+
+
 @pytest.fixture(name="client")
-def client_fixture(isolated_db, tmp_path, seeded_template, request):
+def client_fixture(
+    isolated_db, tmp_path, seeded_template, seeded_orchestration_profiles, monkeypatch, request
+):
+    _use_seeded_orchestration_profiles(monkeypatch, tmp_path, seeded_orchestration_profiles)
+
     def override_session():
         with Session(isolated_db) as session:
             yield session

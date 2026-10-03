@@ -9,15 +9,23 @@ What lives here beyond reads is the schedule: the plan (targets, order, mode),
 the planner's proposals, and the planner conversation.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
+    DEFAULT_SPRINT_DAYS,
+    MAX_SPRINT_DAYS,
+    MIN_SPRINT_DAYS,
     AutopilotUpdate,
     InitiativeMilestoneView,
     InitiativePlanUpdate,
     InitiativePlanView,
+    InitiativeSuggestionSet,
     InitiativeView,
     PlannerTurnMode,
+    SuggestedItem,
+    SuggestionApply,
+    SuggestionApplyResult,
+    SuggestionRequest,
 )
 from loregarden.services.initiative_autopilot import (
     mark_needs_person,
@@ -44,6 +52,13 @@ from loregarden.services.initiative_service import (
     attachable_milestones,
     get_initiative,
     list_initiatives,
+)
+from loregarden.services.initiative_suggestion_agent import regroup_with_agent
+from loregarden.services.initiative_suggestions import (
+    SuggestionConflictError,
+    addable_work,
+    apply_suggestions,
+    suggest_initiatives,
 )
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -79,6 +94,41 @@ def attachable_milestones_endpoint(
     return attachable_milestones(session)
 
 
+@router.get("/suggestions", response_model=InitiativeSuggestionSet)
+def suggestions_endpoint(
+    sprint_days: int = Query(default=DEFAULT_SPRINT_DAYS, ge=MIN_SPRINT_DAYS, le=MAX_SPRINT_DAYS),
+    session: Session = Depends(get_session),
+) -> InitiativeSuggestionSet:
+    """Instant keyword themes plus a paced sprint, from work no initiative owns."""
+    return suggest_initiatives(session, days=sprint_days)
+
+
+@router.post("/suggestions/agent", response_model=InitiativeSuggestionSet)
+def agent_suggestions_endpoint(
+    body: SuggestionRequest, session: Session = Depends(get_session)
+) -> InitiativeSuggestionSet:
+    """One agent turn over the same candidates. Synchronous: it holds the request
+    for as long as the turn takes, and nothing is stored if it is abandoned."""
+    try:
+        return regroup_with_agent(session, days=body.sprint_days)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (RuntimeError, TimeoutError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/suggestions/apply", response_model=SuggestionApplyResult, status_code=201)
+def apply_suggestions_endpoint(
+    body: SuggestionApply, session: Session = Depends(get_session)
+) -> SuggestionApplyResult:
+    try:
+        return apply_suggestions(session, body)
+    except SuggestionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{initiative_id}", response_model=InitiativeView)
 def get_initiative_endpoint(
     initiative_id: str, session: Session = Depends(get_session)
@@ -87,6 +137,16 @@ def get_initiative_endpoint(
         return get_initiative(session, initiative_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{initiative_id}/addable-work", response_model=list[SuggestedItem])
+def addable_work_endpoint(
+    initiative_id: str,
+    search: str = Query(min_length=2, max_length=200),
+    session: Session = Depends(get_session),
+) -> list[SuggestedItem]:
+    """Open features and bugs that could join a sprint-style initiative."""
+    return addable_work(session, initiative_id, search)
 
 
 @router.get("/{initiative_id}/plan", response_model=InitiativePlanView)

@@ -1,17 +1,23 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigation";
 import { Button } from "../ui/Button";
+import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
 
 interface InitiativeCardProps {
   initiative: InitiativeView;
   attachable: InitiativeMilestone[];
+  /** Every milestone a sprint's feature or bug could move back to, any workspace. */
+  milestoneChoices: InitiativeMilestone[];
   /** Milestone or initiative id whose write is in flight; its controls disable. */
   busyId: string | null;
   onAttach: (milestoneId: string) => void;
   onDetach: (milestoneId: string) => void;
+  /** Re-parent a feature or bug: into this initiative, or out to a milestone. */
+  onMoveWork: (ticketId: string, parentId: string) => void;
   onDelete: () => void;
 }
 
@@ -80,12 +86,16 @@ function AttachControl({
 
 function MilestoneRow({
   milestone,
+  milestoneChoices,
   busy,
   onDetach,
+  onMoveTo,
 }: {
   milestone: InitiativeMilestone;
+  milestoneChoices: InitiativeMilestone[];
   busy: boolean;
   onDetach: () => void;
+  onMoveTo: (milestoneId: string) => void;
 }) {
   return (
     <li className="initiative-milestone">
@@ -102,17 +112,25 @@ function MilestoneRow({
       >
         <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
       </button>
-      <span className="initiative-ws-pill">{milestone.workspace_slug}</span>
+      <span className="initiative-ws-pill">
+        {milestone.work_item_type === "milestone"
+          ? milestone.workspace_slug
+          : `${milestone.work_item_type} · ${milestone.workspace_slug}`}
+      </span>
       <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
-      <button
-        type="button"
-        className="btn-secondary initiative-small-btn"
-        aria-label={`Detach ${milestone.title} from this initiative`}
-        disabled={busy}
-        onClick={onDetach}
-      >
-        {busy ? "Detaching…" : "Detach"}
-      </button>
+      {milestone.work_item_type === "milestone" ? (
+        <Button
+          variant="secondary"
+          className="initiative-small-btn"
+          aria-label={`Detach ${milestone.title} from this initiative`}
+          disabled={busy}
+          onClick={onDetach}
+        >
+          {busy ? "Detaching…" : "Detach"}
+        </Button>
+      ) : (
+        <MoveToMilestone item={milestone} milestones={milestoneChoices} busy={busy} onMove={onMoveTo} />
+      )}
     </li>
   );
 }
@@ -120,9 +138,11 @@ function MilestoneRow({
 export function InitiativeCard({
   initiative,
   attachable,
+  milestoneChoices,
   busyId,
   onAttach,
   onDetach,
+  onMoveWork,
   onDelete,
 }: InitiativeCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -147,7 +167,14 @@ export function InitiativeCard({
           </Button>
         </div>
       </header>
-      {initiative.description && <p className="initiative-desc">{initiative.description}</p>}
+      {initiative.description && (
+        <MarkdownContent
+          content={initiative.description}
+          className="initiative-desc"
+          readerTitle={initiative.title}
+          readerSubtitle={initiative.external_id}
+        />
+      )}
 
       <div
         className="initiative-progress"
@@ -162,7 +189,9 @@ export function InitiativeCard({
       <div className="initiative-muted">
         {total === 0
           ? "No milestones yet"
-          : `${resolved} of ${total} milestones resolved · ${initiative.workspaces.join(", ")}`}
+          : `${resolved} of ${total} ${
+              initiative.milestones.every((m) => m.work_item_type === "milestone") ? "milestones" : "items"
+            } resolved · ${initiative.workspaces.join(", ")}`}
       </div>
 
       {hasMilestones ? (
@@ -171,8 +200,10 @@ export function InitiativeCard({
             <MilestoneRow
               key={m.id}
               milestone={m}
+              milestoneChoices={milestoneChoices}
               busy={busyId === m.id}
               onDetach={() => onDetach(m.id)}
+              onMoveTo={(milestoneId) => onMoveWork(m.id, milestoneId)}
             />
           ))}
         </ul>
@@ -180,6 +211,14 @@ export function InitiativeCard({
         <p className="initiative-hint">
           Attach a milestone below. Its progress, and every milestone after it, rolls up here.
         </p>
+      )}
+
+      {initiative.milestones.some((m) => m.work_item_type !== "milestone") && (
+        <AddSprintWork
+          initiative={initiative}
+          disabled={busyId !== null}
+          onAdd={(ticketId) => onMoveWork(ticketId, initiative.id)}
+        />
       )}
 
       <AttachControl

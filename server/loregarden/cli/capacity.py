@@ -5,9 +5,11 @@
 
 Waits in line when the machine is full, renews while the command runs, and
 releases when it exits. The command's exit status is this command's. A
-failure to get capacity exits 1 *before* the command starts; `--started-file`
+failure to get capacity exits *before* the command starts; `--started-file`
 is touched just before it does, so a wrapper can tell the two apart without
-reserving an exit code the command might also use. See
+reserving an exit code the command might also use. Before the command starts,
+the code says which failure it was: `EXIT_QUEUE_STALLED` (75) for a line that
+stopped moving, 1 for a ledger that could not be used. See
 `services/capacity_run.py`.
 """
 
@@ -21,9 +23,20 @@ from pathlib import Path
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
-from loregarden.services.capacity_run import LEASE_ENV, CapacityRequest, run_holding
+from loregarden.services.capacity_run import (
+    DEFAULT_STALL_SECONDS,
+    LEASE_ENV,
+    CapacityQueueStalled,
+    CapacityRequest,
+    run_holding,
+)
 from loregarden.services.docker_capacity import CLASS_WEIGHTS
 from sqlmodel import Session, select
+
+#: Still queued when the line stopped moving — not a ledger failure. EX_TEMPFAIL
+#: from sysexits.h; only meaningful when `--started-file` was not touched, since
+#: after that every exit code is the command's. capacity-run.sh reads it.
+EXIT_QUEUE_STALLED = 75
 
 
 def _report(line: str) -> None:
@@ -71,19 +84,23 @@ def _run(args: argparse.Namespace) -> str:
         footprint=DockerFootprint(args.footprint) if args.footprint else DockerFootprint.CUSTOM,
         cpus=args.cpus,
         memory_mb=args.memory_mb,
-        max_wait_seconds=args.max_wait,
+        stall_seconds=args.stall_timeout,
         ttl_seconds=args.ttl,
         workspace_id=_workspace_id(args.workspace),
         parent_lease_id=args.parent_lease or None,
     )
-    code = run_holding(
-        lambda: Session(db_session.engine),
-        request,
-        command,
-        report=_report,
-        started_file=cwd / args.started_file if args.started_file else None,
-        cwd=cwd,
-    )
+    try:
+        code = run_holding(
+            lambda: Session(db_session.engine),
+            request,
+            command,
+            report=_report,
+            started_file=cwd / args.started_file if args.started_file else None,
+            cwd=cwd,
+        )
+    except CapacityQueueStalled as stalled:
+        _report(f"capacity: {stalled}")
+        raise SystemExit(EXIT_QUEUE_STALLED) from stalled
     # The command's status, not EXIT_OK/EXIT_ERROR: a wrapper must see exactly
     # what the held command returned.
     raise SystemExit(code)
@@ -108,10 +125,17 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     run.add_argument("--workspace", help="Workspace slug the work belongs to.")
     run.add_argument(
+        "--stall-timeout",
+        # The old name, still accepted: a worktree's wrapper calls the PRIMARY
+        # checkout's CLI, so older wrappers keep passing it after this lands.
         "--max-wait",
+        dest="stall_timeout",
         type=float,
-        default=3600.0,
-        help="Seconds to wait in line before giving up (default 3600).",
+        default=DEFAULT_STALL_SECONDS,
+        help=(
+            "Give up the place in line when nothing ahead has finished for this many "
+            f"seconds (default {DEFAULT_STALL_SECONDS:.0f}). Time in a moving line never counts."
+        ),
     )
     run.add_argument(
         "--parent-lease",
