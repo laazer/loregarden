@@ -186,12 +186,14 @@ function EmptySlot({ index, blockedBy }: { index: number; blockedBy: string | nu
         <span className="queue-slot-dot" aria-hidden />
         <span className="queue-slot-name">Free</span>
         <span className="queue-slot-badge" data-run-status="available">
-          available
+          {blockedBy ? "no room" : "available"}
         </span>
       </div>
       <div className="queue-slot-body">
         <div className="queue-slot-title">{blockedBy ? "Free slot, no room" : "Available"}</div>
-        <div className="queue-slot-sub">
+        {/* Wraps: the reason is the point, and the lane board's one-line
+            ellipsis cut it at "3 cpus fre…". */}
+        <div className="queue-slot-sub docker-slot-reason">
           {blockedBy
             ? `The next claim ${blockedBy}`
             : "Reserve before a test run, build or container stack"}
