@@ -11,6 +11,10 @@ export { API_BASE, ApiError } from "./http";
 
 export type * from "./types";
 export type {
+  InitiativeDraft,
+  InitiativeSuggestion,
+  InitiativeSuggestionSet,
+  SuggestedItem,
   InitiativeMilestone,
   InitiativePlan,
   InitiativeView,

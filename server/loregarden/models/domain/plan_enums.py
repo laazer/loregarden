@@ -117,3 +117,21 @@ class AutopilotAction(StrEnum):
     REFUSED = "refused"
     #: Stopped itself: too many of the tickets it started ended blocked.
     PAUSED = "paused"
+
+
+class SuggestionKind(StrEnum):
+    """What a suggested initiative groups."""
+
+    #: Milestones that share a goal.
+    THEME = "theme"
+    #: A time-box: open features and bugs sized to the measured pace.
+    SPRINT = "sprint"
+
+
+class SuggestionSource(StrEnum):
+    """Who drew up a set of initiative suggestions."""
+
+    #: Instant keyword grouping, computed on read.
+    HEURISTIC = "heuristic"
+    #: One agent turn over the same candidates.
+    AGENT = "agent"

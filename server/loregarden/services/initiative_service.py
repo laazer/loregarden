@@ -37,6 +37,7 @@ def _milestone_view(ticket: Ticket, slugs: dict[str, str]) -> InitiativeMileston
         title=ticket.title,
         state=ticket.state,
         workspace_slug=slugs.get(ticket.workspace_id or "", ""),
+        work_item_type=ticket.work_item_type,
     )
 
 

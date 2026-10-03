@@ -17,13 +17,17 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Artifact
+from loregarden.services import initiative_suggestions
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.testing.prod_shape import build_prod_shape, prod_shape_id
 from sqlmodel import Session
@@ -46,7 +50,13 @@ ENDPOINTS = {
     "memory-graph-loregarden.json": ("/api/memory/graph", {"workspace_slug": "loregarden"}),
     # The ticket carrying the scenario's first plan document; resolved per run.
     "ticket-artifacts.json": ("/api/tickets/{plan_ticket}/artifacts", {}),
+    "initiative-suggestions.json": ("/api/initiatives/suggestions", {}),
 }
+
+#: Fixtures whose response is computed from "now" (the sprint's dates), recorded
+#: with the clock pinned. The scenario's own timestamps are stamped at build
+#: time, after the pin, so pace still measures every completion in the window.
+_CLOCKED = {"initiative-suggestions.json"}
 
 
 def _pin(value):
@@ -79,7 +89,13 @@ def test_fixture_matches_the_api(api, isolated_db, name):
     path, params = ENDPOINTS[name]
     with Session(isolated_db) as session:
         plan_ticket = session.get(Artifact, prod_shape_id("plan", 0)).ticket_id
-    response = api.get(path.format(plan_ticket=plan_ticket), params=params)
+    with ExitStack() as stack:
+        if name in _CLOCKED:
+            pinned = datetime.fromisoformat(_PINNED.replace("Z", "+00:00")).astimezone(timezone.utc)
+            stack.enter_context(
+                mock.patch.object(initiative_suggestions, "clock", return_value=pinned)
+            )
+        response = api.get(path.format(plan_ticket=plan_ticket), params=params)
     assert response.status_code == 200, response.text
     body = json.dumps(_pin(response.json()), indent=1, sort_keys=True) + "\n"
 

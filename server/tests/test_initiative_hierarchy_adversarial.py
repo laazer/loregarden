@@ -113,13 +113,15 @@ class TestParentAssignmentCombinatorial:
                     _validate_parent_assignment(child, parent)
 
     def test_valid_hierarchy_initiative_has_no_extra_children(self):
-        """Mutation: VALID_HIERARCHY[INITIATIVE] = [MILESTONE, FEATURE] would pass
-        AC1's `== [MILESTONE]` only if someone weakens the assertion — pin length
-        and membership separately so a list-extend mutation still fails."""
+        """Pin length and membership separately so a list-extend mutation still fails.
+
+        Milestones, plus features and bugs for sprint-style initiatives; never a
+        capability or task, which only make sense under their feature."""
         children = VALID_HIERARCHY[_initiative()]
-        assert len(children) == 1
-        assert children[0] is WorkItemType.MILESTONE
-        assert WorkItemType.FEATURE not in children
+        assert len(children) == 3
+        assert set(children) == {WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.BUG}
+        assert WorkItemType.CAPABILITY not in children
+        assert WorkItemType.TASK not in children
         assert _initiative() not in children
 
 
@@ -262,10 +264,8 @@ class TestReparentNonMilestoneUnderInitiative:
     @pytest.mark.parametrize(
         "child_type",
         [
-            WorkItemType.FEATURE,
             WorkItemType.CAPABILITY,
             WorkItemType.TASK,
-            WorkItemType.BUG,
         ],
     )
     def test_reparent_non_milestone_under_initiative_rejected(
@@ -282,21 +282,7 @@ class TestReparentNonMilestoneUnderInitiative:
             title=f"Adv scaffold root {child_type.value}",
             work_item_type=WorkItemType.MILESTONE,
         )
-        if child_type == WorkItemType.FEATURE:
-            child = _create(
-                db_session,
-                title="Adv feature",
-                work_item_type=WorkItemType.FEATURE,
-                parent_ticket_id=root.id,
-            )
-        elif child_type == WorkItemType.BUG:
-            child = _create(
-                db_session,
-                title="Adv bug",
-                work_item_type=WorkItemType.BUG,
-                parent_ticket_id=root.id,
-            )
-        elif child_type == WorkItemType.CAPABILITY:
+        if child_type == WorkItemType.CAPABILITY:
             feature = _create(
                 db_session,
                 title="Adv cap parent feature",
@@ -449,7 +435,7 @@ class TestCrossPathAgreement:
         assert res.status_code == 201, res.text
         assert res.json()["parent_ticket_id"] == initiative.id
 
-    def test_feature_under_initiative_rejected_across_surfaces(
+    def test_capability_under_initiative_rejected_across_surfaces(
         self, client: TestClient, db_session: Session
     ):
         initiative = _create(db_session, title="Agree reject init", work_item_type=_initiative())
@@ -460,22 +446,58 @@ class TestCrossPathAgreement:
             work_item_type=WorkItemType.FEATURE,
             parent_ticket_id=root.id,
         )
+        capability = _create(
+            db_session,
+            title="Agree reject capability",
+            work_item_type=WorkItemType.CAPABILITY,
+            parent_ticket_id=feature.id,
+        )
 
         with pytest.raises(ValueError):
             _create(
                 db_session,
-                title="Agree create feat under init",
-                work_item_type=WorkItemType.FEATURE,
+                title="Agree create cap under init",
+                work_item_type=WorkItemType.CAPABILITY,
                 parent_ticket_id=initiative.id,
             )
         with pytest.raises(ValueError):
-            reparent_ticket(db_session, feature, initiative.id)
+            reparent_ticket(db_session, capability, initiative.id)
 
+        res = client.patch(
+            f"/api/tickets/{capability.id}",
+            json={"parent_ticket_id": initiative.id},
+        )
+        assert res.status_code == 400, res.text
+
+        res = client.post(
+            "/api/tickets",
+            json={
+                "workspace_slug": "loregarden",
+                "title": "Agree REST cap under init",
+                "work_item_type": "capability",
+                "parent_ticket_id": initiative.id,
+            },
+        )
+        assert res.status_code == 400, res.text
+
+    def test_feature_under_initiative_allowed_across_surfaces(
+        self, client: TestClient, db_session: Session
+    ):
+        """Sprint-style initiatives hold features; every write path agrees."""
+        initiative = _create(db_session, title="Agree allow init", work_item_type=_initiative())
+        root = _create(db_session, title="Agree allow root", work_item_type=WorkItemType.MILESTONE)
+        feature = _create(
+            db_session,
+            title="Agree allow feature",
+            work_item_type=WorkItemType.FEATURE,
+            parent_ticket_id=root.id,
+        )
         res = client.patch(
             f"/api/tickets/{feature.id}",
             json={"parent_ticket_id": initiative.id},
         )
-        assert res.status_code == 400, res.text
+        assert res.status_code == 200, res.text
+        assert res.json()["parent_ticket_id"] == initiative.id
 
         res = client.post(
             "/api/tickets",
@@ -486,7 +508,7 @@ class TestCrossPathAgreement:
                 "parent_ticket_id": initiative.id,
             },
         )
-        assert res.status_code == 400, res.text
+        assert res.status_code == 201, res.text
 
 
 # --- finalize nesting mutations ---------------------------------------------
@@ -979,9 +1001,9 @@ class TestImportSortKeyRanksInitiative:
 
 
 class TestImportMixedBatchPartialReject:
-    """A batch that creates a parentless initiative then tries a feature under
-    it must not leave the feature row behind. Initiative may land; feature must
-    not. Soft short-circuit that orphans features under initiatives would hide
+    """A batch that creates a parentless initiative then tries a capability under
+    it must not leave the capability row behind. Initiative may land; capability
+    must not. Soft short-circuit that orphans items under initiatives would hide
     AC3 on this path."""
 
     def test_mixed_batch_initiative_ok_feature_under_init_rejected(
@@ -999,8 +1021,8 @@ class TestImportMixedBatchPartialReject:
                         "external_id": "adv-mixed-init",
                     },
                     {
-                        "title": "Illegal feature under init",
-                        "work_item_type": "feature",
+                        "title": "Illegal capability under init",
+                        "work_item_type": "capability",
                         "external_id": "adv-mixed-feat",
                         "parent_external_id": "adv-mixed-init",
                     },
@@ -1019,7 +1041,7 @@ class TestImportMixedBatchPartialReject:
                 select(Ticket).where(Ticket.legacy_external_id == "adv-mixed-feat")
             ).first()
         )
-        assert feature is None, "AC3: feature under initiative must not persist"
+        assert feature is None, "AC3: capability under initiative must not persist"
         after = db_session.exec(select(Ticket)).all()
         new_tickets = [t for t in after if t.id not in before_ids]
         for t in new_tickets:
@@ -1120,12 +1142,12 @@ class TestRestAndFinalizeRootSurfaces:
 class TestImportNonMilestoneUnderInitiativeMatrix:
     @pytest.mark.parametrize(
         "child_type",
-        ["capability", "task", "bug"],
+        ["capability", "task"],
     )
     def test_import_non_milestone_under_initiative_rejected(
         self, client: TestClient, db_session: Session, child_type: str
     ):
-        """Design suite covers feature; extend AC3 to capability/task/bug on import."""
+        """Extend AC3 to every type an initiative may not hold, on import."""
         initiative = _create(
             db_session,
             title=f"Import reject {child_type} init",

@@ -5,16 +5,18 @@ import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { KnowledgeGraph } from "../../api/memoryApi";
-import type { InitiativeMilestone, InitiativeView } from "../../api/client";
+import type { InitiativeMilestone, InitiativeSuggestionSet, InitiativeView } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
 import { WorkflowMonitorView } from "../../components/dashboard/WorkflowMonitorView";
 import { MemoryMap } from "../../components/knowledge/MemoryMap";
 import { StructuredContent } from "../../components/reader/StructuredContent";
 import { inferredEdges } from "../../lib/memoryInferred";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
+import { InitiativeSuggestionsPage } from "../../pages/InitiativeSuggestionsPage";
 import { InitiativesPage } from "../../pages/InitiativesPage";
 import attachable from "../fixtures/prod-shape/attachable-milestones.json";
 import artifacts from "../fixtures/prod-shape/ticket-artifacts.json";
+import suggestions from "../fixtures/prod-shape/initiative-suggestions.json";
 import initiatives from "../fixtures/prod-shape/initiatives.json";
 import memoryGraph from "../fixtures/prod-shape/memory-graph-loregarden.json";
 import monitorFindings from "../fixtures/prod-shape/monitor-findings.json";
@@ -99,6 +101,17 @@ it("Initiatives shows its one initiative and what is left to group, without a wa
   await screen.findByRole("heading", { name: "Trustworthy gate outcomes on every stage transition" });
   await screen.findByRole("heading", { name: /milestones without an initiative/i });
 
+  expect(findUsabilityProblems(container)).toEqual([]);
+});
+
+it("Suggested initiatives at production volume names each group and stays operable", async () => {
+  const data = suggestions as unknown as InitiativeSuggestionSet;
+  mockApi.initiativeSuggestions.mockResolvedValue(data);
+  const { container } = render(withProviders(<InitiativeSuggestionsPage />));
+
+  for (const suggestion of data.suggestions) {
+    expect(await screen.findByDisplayValue(suggestion.title)).toBeInTheDocument();
+  }
   expect(findUsabilityProblems(container)).toEqual([]);
 });
 
