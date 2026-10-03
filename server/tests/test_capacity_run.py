@@ -450,6 +450,10 @@ def _cli_env(database: Path) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if not key.startswith("LOREGARDEN_")}
     env.update(
         {
+            # Pinned, not inherited: with the repo root at the primary checkout,
+            # config applies data/memory.local.json over LOREGARDEN_DATABASE_URL
+            # and the CLI books against the LIVE ledger.
+            "LOREGARDEN_REPO_ROOT": str(database.parent),
             "LOREGARDEN_DATABASE_URL": f"sqlite:///{database}",
             "LOREGARDEN_HOST_CAPACITY_CPUS": "2",
             "LOREGARDEN_HOST_CAPACITY_MEMORY_MB": "4096",
@@ -570,3 +574,69 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
             assert lease.status is DockerLeaseStatus.RELEASED
     finally:
         engine.dispose()
+
+
+# ---- through scripts/loregarden-cli.sh, as CLAUDE.md tells every repo to ----
+
+
+@pytest.fixture(name="uv_shim")
+def uv_shim_fixture(tmp_path) -> Path:
+    """A `uv` that runs `uv run loregarden …` as this interpreter's CLI, without syncing."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    shim = bin_dir / "uv"
+    shim.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = run ] && [ "$2" = loregarden ] || exit 97\n'
+        "shift 2\n"
+        f'exec "{sys.executable}" -m loregarden.cli.main "$@"\n'
+    )
+    shim.chmod(0o755)
+    return bin_dir
+
+
+def test_a_relative_command_runs_from_where_the_script_was_invoked(tmp_path, uv_shim) -> None:
+    """The script's `export LOREGARDEN_CALLER_CWD` is what puts the command back."""
+    caller = tmp_path / "caller"
+    (caller / "client").mkdir(parents=True)
+    out = tmp_path / "out"
+    database = tmp_path / "ledger.db"
+    env = _cli_env(database)
+    env["PATH"] = f"{uv_shim}{os.pathsep}{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"),
+            "capacity",
+            "run",
+            "--label",
+            "relative",
+            "--cpus",
+            "1",
+            "--memory-mb",
+            "512",
+            "--",
+            "sh",
+            "-c",
+            f'cd client && printf "%s|%s" "$PWD" "${{LOREGARDEN_CALLER_CWD-unset}}" > {out}',
+        ],
+        cwd=caller,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    ran_in, inherited = out.read_text().split("|")
+    assert Path(ran_in).resolve() == (caller / "client").resolve()
+    assert inherited == "unset"
+    engine = create_engine(f"sqlite:///{database}")
+    try:
+        with Session(engine) as session:
+            labels = [lease.holder_label for lease in session.exec(select(DockerLease))]
+    finally:
+        engine.dispose()
+    assert [label.split(" · ")[0] for label in labels] == ["relative"]

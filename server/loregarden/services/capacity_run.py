@@ -87,6 +87,13 @@ LEASE_ENV = "LOREGARDEN_CAPACITY_LEASE_ID"
 CPUS_ENV = "LOREGARDEN_CAPACITY_CPUS"
 WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
 
+#: Where the caller stood before `scripts/loregarden-cli.sh` moved into
+#: `server/` to start uv. The held command runs there, so a relative path in it
+#: means what the caller meant. The command does not inherit it: a nested
+#: `loregarden` started some other way, from another directory, would otherwise
+#: run its own command where the outer caller stood.
+CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
+
 #: How often a waiting process runs a reap pass of its own. The server's timer
 #: does this every 30s when it is up; this is the floor when it is not.
 _REAP_INTERVAL_SECONDS = 60.0
@@ -150,6 +157,7 @@ def worker_count(cpus: float) -> int:
 
 def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
     env = dict(base)
+    env.pop(CALLER_CWD_ENV, None)
     env[LEASE_ENV] = reservation.lease_id
     env[CPUS_ENV] = f"{reservation.cpus:g}"
     env[WORKERS_ENV] = str(worker_count(reservation.cpus))
