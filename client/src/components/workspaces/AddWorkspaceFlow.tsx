@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
 import type { WorkspaceCreateResponse } from "../../api/types";
@@ -55,6 +55,14 @@ async function afterAdd(step: () => Promise<unknown>): Promise<unknown> {
  * Anything listing workspaces refreshes on success — the Console's list, the
  * Workspaces page's setup cards, and the workflow each workspace resolves.
  */
+/** What a new workspace makes stale — shared with the agent's workspace.create. */
+export function refreshAfterWorkspaceAdded(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+  void queryClient.invalidateQueries({ queryKey: ["workspace-workflow"] });
+  void queryClient.invalidateQueries({ queryKey: INSTANCES_KEY });
+  void queryClient.invalidateQueries({ queryKey: INTEGRATION_KEY });
+}
+
 export function AddWorkspaceFlow({ existingSlugs, onClose, onCreated }: AddWorkspaceFlowProps) {
   const queryClient = useQueryClient();
   const workflowTemplates = useQuery({ queryKey: ["workflow-templates"], queryFn: api.workflowTemplates });
@@ -80,10 +88,7 @@ export function AddWorkspaceFlow({ existingSlugs, onClose, onCreated }: AddWorks
       return { workspace, followUp, repositoryError, gatesError };
     },
     onSuccess: ({ workspace, followUp, repositoryError, gatesError }) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-workflow"] });
-      void queryClient.invalidateQueries({ queryKey: INSTANCES_KEY });
-      void queryClient.invalidateQueries({ queryKey: INTEGRATION_KEY });
+      refreshAfterWorkspaceAdded(queryClient);
       if (repositoryError) {
         toastActionFailed(`Added ${workspace.name}, but creating its repository`, repositoryError);
       } else if (followUp) {

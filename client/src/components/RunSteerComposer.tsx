@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../api/client";
+import { NotThisTarget } from "../lib/agentActions/registry";
+import { useAgentAction } from "../lib/agentActions/useAgentAction";
 
 /**
  * Sends a correction to a run that is already going.
@@ -32,9 +34,29 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
     meta: { errorTitle: "Send steer message" },
     mutationFn: (content: string) => api.sendRunMessage(runId, content),
     onSuccess: () => {
-      setDraft("");
       qc.invalidateQueries({ queryKey: ["run-messages", runId] });
     },
+  });
+
+  // The draft clears only when the operator's own Send went out — an agent's
+  // steer must not wipe what the operator is typing.
+  const sendDraft = (content: string) => send.mutate(content, { onSuccess: () => setDraft("") });
+
+  // One composer per run on screen; each answers only for its own run.
+  const ownRun = (requested: string) => {
+    if (requested !== runId) throw new NotThisTarget(`no steering composer for run ${requested} is on screen`);
+    if (!isActive) throw new Error(`run ${runId} is not running`);
+  };
+  useAgentAction("run.send_message", async ({ run_id, message }) => {
+    ownRun(run_id);
+    // RunMessage has no author: the marker is how the run, and the operator
+    // reading it, know this steer did not come from a person.
+    return send.mutateAsync(`[from an agent] ${message}`);
+  });
+  useAgentAction("run.cancel", async ({ run_id }) => {
+    ownRun(run_id);
+    await stop.mutateAsync();
+    return { run_id, cancelled: true };
   });
 
   const stop = useMutation({
@@ -132,7 +154,7 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           style={{ display: "flex", gap: 8, marginTop: 8 }}
           onSubmit={(event) => {
             event.preventDefault();
-            if (canSend) send.mutate(draft.trim());
+            if (canSend) sendDraft(draft.trim());
           }}
         >
           <input

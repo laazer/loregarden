@@ -1,7 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { API_BASE } from "../api/client";
+import { API_BASE, api } from "../api/client";
 import { UI_ACTION_LABELS } from "../lib/agentActions/catalog";
 import { uiActionRegistry } from "../lib/agentActions/registry";
 import { UiActionSocket, uiActionSocketUrl } from "../lib/agentActions/uiActionSocket";
@@ -20,6 +21,7 @@ import { pushToast } from "../state/toastStore";
  */
 export function AgentActionHost() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   useAgentAction("navigate.page", async ({ page }) => {
     const path = pathForPage(page);
@@ -34,6 +36,18 @@ export function AgentActionHost() {
     const path = ticketPath(ticket_id);
     navigate(path);
     return { path };
+  });
+
+  // A workspace's runtime is not tied to a page, so it is offered everywhere.
+  // Merged onto the saved settings, so an agent names only what changes; the
+  // same refresh as the settings modal's save.
+  useAgentAction("workspace.set_runtime", async ({ workspace_slug, ...change }) => {
+    if (Object.keys(change).length === 0) throw new Error("no runtime fields to change");
+    const current = await api.workspaceRuntime(workspace_slug);
+    const saved = await api.setWorkspaceRuntime(workspace_slug, { ...current, ...change });
+    void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    void queryClient.invalidateQueries({ queryKey: ["workspace-runtime", workspace_slug] });
+    return saved;
   });
 
   useEffect(() => {

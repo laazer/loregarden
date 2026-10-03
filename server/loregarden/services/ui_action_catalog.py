@@ -16,7 +16,8 @@ from enum import StrEnum
 from typing import Any
 
 from loregarden.models.domain.enums import TicketState
-from pydantic import BaseModel, ConfigDict, Field
+from loregarden.models.domain.schemas import WorkspaceRuntimeUpdate
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
 class UiAction(StrEnum):
@@ -30,6 +31,17 @@ class UiAction(StrEnum):
     WORKSPACE_SET_WORKFLOW = "workspace.set_workflow"
     REFERENCE_REPO_ADD = "reference_repo.add"
     REFERENCE_REPO_SYNC = "reference_repo.sync"
+    TICKET_START_STAGE = "ticket.start_stage"
+    TICKET_STOP = "ticket.stop"
+    TICKET_SET_RUNTIME = "ticket.set_runtime"
+    TRIAGE_SET_RUNTIME = "triage.set_runtime"
+    WORKSPACE_SET_RUNTIME = "workspace.set_runtime"
+    WORKSPACE_CREATE = "workspace.create"
+    WORKSPACE_CREATE_REPOSITORY = "workspace.create_repository"
+    RUN_SEND_MESSAGE = "run.send_message"
+    RUN_CANCEL = "run.cancel"
+    QUEUE_PROMOTE = "queue.promote"
+    QUEUE_CANCEL = "queue.cancel"
     APPROVAL_RESOLVE = "approval.resolve"
 
     @classmethod
@@ -115,6 +127,52 @@ class ReferenceRepoAddArgs(_Args):
 
 class ReferenceRepoSyncArgs(_Args):
     reference_repo_id: str = Field(min_length=1)
+
+
+class TicketStartStageArgs(_Args):
+    ticket_id: str = Field(min_length=1, description="The ticket open in the tab.")
+    stage_key: str = Field(min_length=1, description="The workflow stage to run on its own.")
+
+
+class TicketArgs(_Args):
+    ticket_id: str = Field(min_length=1, description="The ticket open in the tab.")
+
+
+#: A runtime change names only what changes; everything left out keeps its
+#: current value. Built from the update schema so a new runtime field is
+#: offered here without a second list to keep in step.
+_RUNTIME_FIELDS: dict[str, Any] = {
+    name: (field.annotation | None, None)
+    for name, field in WorkspaceRuntimeUpdate.model_fields.items()
+}
+TicketRuntimeArgs = create_model(
+    "TicketRuntimeArgs",
+    __base__=_Args,
+    ticket_id=(str, Field(min_length=1, description="The ticket the runtime belongs to.")),
+    **_RUNTIME_FIELDS,
+)
+WorkspaceRuntimeArgs = create_model(
+    "WorkspaceRuntimeArgs",
+    __base__=_Args,
+    workspace_slug=(str, Field(min_length=1)),
+    **_RUNTIME_FIELDS,
+)
+
+
+class WorkspaceCreateArgs(_Args):
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    repo_path: str = ""
+    workflow_template_slug: str = ""
+
+
+class RunArgs(_Args):
+    run_id: str = Field(min_length=1)
+
+
+class RunSendMessageArgs(_Args):
+    run_id: str = Field(min_length=1)
+    message: str = Field(min_length=1, description="Shown to the run, and in it, as from an agent.")
 
 
 class ApprovalResolveArgs(_Args):
@@ -212,6 +270,83 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "Fetch the latest of a reference repository shown in the open picker.",
             ReferenceRepoSyncArgs,
             offered="while a reference-repo picker listing it is open in Ticket Studio",
+        ),
+        UiActionSpec(
+            UiAction.TICKET_START_STAGE,
+            UiActionEffect.WRITE,
+            "Run one stage of the open ticket on its own, as the stage's Run button does.",
+            TicketStartStageArgs,
+            offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.TICKET_STOP,
+            UiActionEffect.WRITE,
+            "Stop the open ticket's running work.",
+            TicketArgs,
+            offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.TICKET_SET_RUNTIME,
+            UiActionEffect.WRITE,
+            "Change the adapter, model or effort the open ticket's agent runs use. Only the fields given change.",
+            TicketRuntimeArgs,
+            offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.TRIAGE_SET_RUNTIME,
+            UiActionEffect.WRITE,
+            "Change the runtime of a branch's triage chat for its linked ticket. Only the fields given change.",
+            TicketRuntimeArgs,
+            offered="on Branch triage, for a branch with a linked ticket (navigate.page branch-triage)",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_SET_RUNTIME,
+            UiActionEffect.WRITE,
+            "Change a workspace's default runtime. Only the fields given change.",
+            WorkspaceRuntimeArgs,
+            offered="in every open tab",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_CREATE,
+            UiActionEffect.WRITE,
+            "Add a workspace record. Its repository is a separate step: workspace.create_repository.",
+            WorkspaceCreateArgs,
+            offered="on the Workspaces page (navigate.page workspaces)",
+        ),
+        UiActionSpec(
+            UiAction.WORKSPACE_CREATE_REPOSITORY,
+            UiActionEffect.WRITE,
+            "Create the git repository for a workspace whose card offers it.",
+            WorkspaceArgs,
+            offered="on the Workspaces page, on that workspace's card (navigate.page workspaces)",
+        ),
+        UiActionSpec(
+            UiAction.RUN_SEND_MESSAGE,
+            UiActionEffect.WRITE,
+            "Send a steering message to a running stage. It is marked as coming from an agent.",
+            RunSendMessageArgs,
+            offered="while that run's steering composer is on screen",
+        ),
+        UiActionSpec(
+            UiAction.RUN_CANCEL,
+            UiActionEffect.WRITE,
+            "Stop a running stage, as its 'Stop this run' control does.",
+            RunArgs,
+            offered="while that run's steering composer is on screen",
+        ),
+        UiActionSpec(
+            UiAction.QUEUE_PROMOTE,
+            UiActionEffect.WRITE,
+            "Move a queued run to the front of the queue.",
+            RunArgs,
+            offered="on the Queue page, for a run it lists (navigate.page queue)",
+        ),
+        UiActionSpec(
+            UiAction.QUEUE_CANCEL,
+            UiActionEffect.WRITE,
+            "Remove a queued run from the queue.",
+            RunArgs,
+            offered="on the Queue page, for a run it lists (navigate.page queue)",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,

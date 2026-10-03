@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useAgentAction } from "../lib/agentActions/useAgentAction";
+import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
+import { useRunControls } from "./chat/primitives/useRunControls";
 
 /**
  * The open ticket's write actions, offered to agents while a ticket route is
@@ -69,6 +71,44 @@ export function TicketAgentActions() {
       // Straight to the API, not through useAutoFix: that hook keeps a failure in
       // component state, which would report success to the agent.
       return { ticket_id: id, ...(await api.triggerAutoFix(id)) };
+    },
+    ticketId !== "",
+  );
+
+  const runControls = useRunControls(ticketId || undefined);
+
+  useAgentAction(
+    "ticket.start_stage",
+    async ({ ticket_id, stage_key }) => {
+      const id = requireOpen(ticket_id);
+      if (!ticket?.stages.some((stage) => stage.key === stage_key)) {
+        throw new Error(`${ticket?.external_id || id} has no stage ${stage_key}`);
+      }
+      const started = await runControls.start(stage_key);
+      // Admission may park the run rather than start it: say which.
+      return { ticket_id: id, stage_key, admission: started?.admission ?? null };
+    },
+    ticketId !== "",
+  );
+
+  useAgentAction(
+    "ticket.stop",
+    async ({ ticket_id }) => {
+      const id = requireOpen(ticket_id);
+      await runControls.stop();
+      return { ticket_id: id, stopped: true };
+    },
+    ticketId !== "",
+  );
+
+  useAgentAction(
+    "ticket.set_runtime",
+    async ({ ticket_id, ...change }) => {
+      const id = requireOpen(ticket_id);
+      if (Object.keys(change).length === 0) throw new Error("no runtime fields to change");
+      const saved = await api.setTicketRuntime(id, { ...(ticket?.orchestration_runtime ?? DEFAULT_RUNTIME), ...change });
+      void queryClient.invalidateQueries({ queryKey: ["ticket", id] });
+      return saved;
     },
     ticketId !== "",
   );
