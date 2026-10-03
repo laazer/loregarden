@@ -128,6 +128,25 @@ def as_utc(stamp: datetime | None) -> datetime | None:
     return None if stamp is None else _as_utc_aware(stamp)
 
 
+def last_seen_at(lease: DockerLease) -> datetime | None:
+    """The last time a waiter showed it is still there: a served poll, a
+    renewal, or the request itself.
+
+    The abandonment sweep drops a waiter by this, and the board flags a stalled
+    one by it, so the two read one clock and cannot disagree about who is gone.
+    """
+    seen = [
+        stamp
+        for stamp in (
+            as_utc(lease.last_polled_at),
+            as_utc(lease.last_renewed_at),
+            as_utc(lease.requested_at),
+        )
+        if stamp is not None
+    ]
+    return max(seen) if seen else None
+
+
 def container_names(lease: DockerLease) -> list[str]:
     """The container names a lease recorded, or none if the column is unreadable.
 

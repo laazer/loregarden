@@ -8,10 +8,19 @@ that on every poll for every viewer, including those who never open the tab.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from loregarden.models.domain import DockerCeilingSource, DockerFootprint
+from loregarden.models.domain import (
+    DockerCeilingSource,
+    DockerFootprint,
+    DockerLease,
+    DockerLeaseEndReason,
+    DockerLeaseStatus,
+)
 from loregarden.services import docker_leases
 from sqlmodel import Session
+from tests.factories import make_agent_run, make_workspace
 
 
 @pytest.fixture(name="ceiling")
@@ -127,3 +136,125 @@ def test_an_unmeasured_ceiling_is_reported_as_unknown_not_as_zero_capacity(
     if payload["ceiling"]["source"] == "unknown":
         assert payload["ceiling"]["cpus"] == 0
         assert payload["ceiling"]["probed_at"] is None
+
+
+def _hold_and_queue(isolated_db) -> tuple[str, str]:
+    """A holder filling the ceiling's cpus, and one waiter behind it."""
+    with Session(isolated_db) as session:
+        held = docker_leases.reserve(
+            session,
+            holder_label="pre-push client-tests · lg-x-e33a13@claude/lg-x-e33a13 · pid 22339",
+            footprint=DockerFootprint.CUSTOM,
+            cpus=4.0,
+            memory_mb=1024,
+        )
+        queued = docker_leases.reserve(
+            session,
+            holder_label="second",
+            footprint=DockerFootprint.CUSTOM,
+            cpus=1.0,
+            memory_mb=512,
+        )
+        assert held.granted and queued.state.value == "queued"
+        return held.lease_id, queued.lease_id
+
+
+def test_the_label_arrives_split_into_what_where_and_pid(client, isolated_db, ceiling) -> None:
+    _hold_and_queue(isolated_db)
+
+    holder = client.get("/api/docker/capacity").json()["holders"][0]
+
+    assert holder["holder"] == {
+        "what": "pre-push client-tests",
+        "branch": "claude/lg-x-e33a13",
+        "worktree": None,
+        "pid": 22339,
+    }
+
+
+def test_a_waiter_says_how_long_it_has_waited_and_when_it_stopped_asking(
+    client, isolated_db, ceiling
+) -> None:
+    """A stuck waiter and one that just arrived differ in whether they still
+    poll, not only in age — so both are on the row, and the holder carries
+    neither."""
+    _, waiter_id = _hold_and_queue(isolated_db)
+    fresh = client.get("/api/docker/capacity").json()
+    assert fresh["waiting"][0]["poll_stalled"] is False
+    assert fresh["waiting"][0]["waiting_seconds"] >= 0
+    assert fresh["holders"][0]["waiting_seconds"] is None
+
+    with Session(isolated_db) as session:
+        lease = session.get(DockerLease, waiter_id)
+        long_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
+        lease.requested_at = long_ago
+        lease.last_polled_at = long_ago
+        session.add(lease)
+        session.commit()
+
+    waiter = client.get("/api/docker/capacity").json()["waiting"][0]
+    assert waiter["poll_stalled"] is True
+    assert waiter["waiting_seconds"] >= 360
+    assert waiter["last_seen_seconds_ago"] >= 360
+    # Dropped by the abandonment sweep at ten minutes unseen, so about four left.
+    assert 0 < waiter["drops_in_seconds"] <= 240
+
+
+def test_a_lease_naming_only_its_run_links_to_the_runs_ticket(client, isolated_db, ceiling) -> None:
+    with Session(isolated_db) as session:
+        workspace = make_workspace(session)
+        run = make_agent_run(session, workspace_id=workspace.id, ticket_id="ticket-for-run")
+        held = docker_leases.reserve(
+            session,
+            holder_label="stage",
+            footprint=DockerFootprint.STACK,
+            agent_run_id=run.id,
+        )
+        assert held.granted
+
+    holder = client.get("/api/docker/capacity").json()["holders"][0]
+    assert holder["ticket_id"] == "ticket-for-run"
+
+
+def test_releasing_a_holder_frees_it_and_a_second_release_is_not_an_error(
+    client, isolated_db, ceiling
+) -> None:
+    holder_id, _ = _hold_and_queue(isolated_db)
+
+    first = client.post(
+        f"/api/docker/capacity/leases/{holder_id}/release", json={"reason": "stuck push"}
+    )
+    again = client.post(
+        f"/api/docker/capacity/leases/{holder_id}/release", json={"reason": "stuck push"}
+    )
+
+    assert first.status_code == 200 and first.json()["released"] is True
+    assert again.status_code == 200 and again.json()["released"] is False
+    with Session(isolated_db) as session:
+        lease = session.get(DockerLease, holder_id)
+        assert lease.end_reason is DockerLeaseEndReason.FORCE_RELEASED
+        assert lease.note == "force-released: stuck push"
+    # The waiter behind it fits now, and is promoted by the release's drain.
+    board = client.get("/api/docker/capacity").json()
+    assert board["waiting"] == []
+    assert [row["holder_label"] for row in board["holders"]] == ["second"]
+
+
+def test_dropping_a_waiter_takes_it_out_of_the_line(client, isolated_db, ceiling) -> None:
+    _, waiter_id = _hold_and_queue(isolated_db)
+
+    response = client.post(
+        f"/api/docker/capacity/leases/{waiter_id}/release", json={"reason": "gone"}
+    )
+
+    assert response.json()["released"] is True
+    with Session(isolated_db) as session:
+        assert session.get(DockerLease, waiter_id).status is DockerLeaseStatus.RELEASED
+    assert client.get("/api/docker/capacity").json()["waiting"] == []
+
+
+def test_release_names_an_unknown_lease_and_requires_a_reason(client, ceiling) -> None:
+    missing = client.post("/api/docker/capacity/leases/nope/release", json={"reason": "x"})
+    assert missing.status_code == 404
+    blank = client.post("/api/docker/capacity/leases/nope/release", json={"reason": ""})
+    assert blank.status_code == 422

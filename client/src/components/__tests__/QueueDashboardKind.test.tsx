@@ -110,7 +110,19 @@ describe("QueueDashboard queue kinds", () => {
     await waitFor(() => expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument());
     // Assert on the grid, not the title: "Machine capacity" is also the rail's
     // heading, and matching both would pass even if only the rail had switched.
-    expect(await screen.findByTestId("docker-slot-grid")).toBeInTheDocument();
+    expect(await screen.findByTestId("docker-free-slots")).toBeInTheDocument();
     expect(screen.getByText(/Waiting for capacity/)).toBeInTheDocument();
+  });
+
+  it("drops the agent-lane footer on the Machine view", async () => {
+    // It spoke about agent lanes ("dispatch a run…") beside a capacity line it
+    // knew nothing about, and contradicted it whenever that line was not empty.
+    const { container } = render(<QueueDashboard />);
+    expect(container.querySelector(".queue-rail-baxter")).not.toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
+
+    await screen.findByTestId("docker-free-slots");
+    expect(container.querySelector(".queue-rail-baxter")).toBeNull();
   });
 });

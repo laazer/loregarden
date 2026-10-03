@@ -9,16 +9,42 @@
  * that does not exist.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { act, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 
 import { DockerQueueBoard } from "../DockerQueueBoard";
+import { dockerApi } from "../../api/dockerApi";
 import type { DockerCapacityStatus, DockerLeaseRow } from "../../api/dockerTypes";
+import { uiActionRegistry } from "../../lib/agentActions/registry";
+import { pushToast } from "../../state/toastStore";
+
+jest.mock("../../api/dockerApi", () => ({
+  dockerApi: { capacity: jest.fn(), releaseLease: jest.fn() },
+}));
+jest.mock("../../state/toastStore", () => ({
+  ...jest.requireActual("../../state/toastStore"),
+  pushToast: jest.fn(),
+}));
+
+const releaseLease = dockerApi.releaseLease as jest.Mock;
+
+/** The board links to tickets, so it renders inside a router. */
+function render(ui: ReactElement) {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+  return {
+    ...view,
+    rerender: (next: ReactElement) => view.rerender(<MemoryRouter>{next}</MemoryRouter>),
+  };
+}
 
 function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
   return {
     lease_id: "lease-1",
     status: "held",
     holder_label: "e2e suite",
+    holder: { what: "e2e suite", branch: null, worktree: null, pid: null },
     holder_kind: "ad_hoc",
     pool: "docker",
     parent_lease_id: null,
@@ -35,6 +61,11 @@ function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     estimated_wait_seconds: null,
     estimate_basis: "unknown",
     poll_count: 0,
+    requested_at: null,
+    waiting_seconds: null,
+    last_seen_seconds_ago: null,
+    poll_stalled: false,
+    drops_in_seconds: null,
     running_container_count: null,
     last_probe_outcome: "",
     last_probe_error: "",
@@ -76,17 +107,30 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
   };
 }
 
-const idle = { error: "", loading: false };
+const onChanged = jest.fn();
+const idle = { error: "", loading: false, onChanged };
+
+beforeEach(() => {
+  releaseLease.mockReset();
+  onChanged.mockReset();
+  (pushToast as jest.Mock).mockReset();
+});
 
 describe("DockerQueueBoard", () => {
-  it("draws one slot per lease in the machine's ceiling, filled or free", () => {
+  it("draws a card per holder and counts the free slots on one line", () => {
+    // A card per free slot pushed the waiting line below the fold.
     render(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
 
     const grid = screen.getByTestId("docker-slot-grid");
-    // One holder plus three free = the ceiling of four.
-    expect(within(grid).getAllByText(/holding|available/).length).toBe(4);
+    expect(grid.children).toHaveLength(1);
     expect(screen.getByTestId("docker-slot-lease-1")).toBeInTheDocument();
-    expect(screen.getByTestId("docker-slot-free-0")).toBeInTheDocument();
+    expect(screen.getByTestId("docker-free-slots")).toHaveTextContent("3 of 4");
+  });
+
+  it("draws no holder grid on an idle machine, but still counts its slots", () => {
+    render(<DockerQueueBoard status={status({ host: { ...status().host, in_use: { cpus: 0, memory_mb: 0, leases: 0 } } })} {...idle} />);
+    expect(screen.queryByTestId("docker-slot-grid")).not.toBeInTheDocument();
+    expect(screen.getByTestId("docker-free-slots")).toHaveTextContent("4 of 4");
   });
 
   it("draws no grid at all when the ceiling was never measured", () => {
@@ -111,7 +155,7 @@ describe("DockerQueueBoard", () => {
       />,
     );
 
-    expect(screen.queryByTestId("docker-slot-grid")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("docker-free-slots")).not.toBeInTheDocument();
     expect(screen.getByText("Capacity not measured")).toBeInTheDocument();
     expect(screen.getAllByText("not measured").length).toBeGreaterThan(0);
   });
@@ -123,8 +167,7 @@ describe("DockerQueueBoard", () => {
     const child = lease({ lease_id: "child", parent_lease_id: "parent" });
     render(<DockerQueueBoard status={status({ holders: [parent, child] })} {...idle} />);
 
-    const grid = screen.getByTestId("docker-slot-grid");
-    expect(within(grid).getAllByText("available").length).toBe(3);
+    expect(screen.getByTestId("docker-free-slots")).toHaveTextContent("3 of 4");
     expect(within(screen.getByTestId("docker-slot-parent")).getByText(/machine/)).toBeTruthy();
     expect(within(screen.getByTestId("docker-slot-child")).getByText(/nested/)).toBeTruthy();
   });
@@ -152,8 +195,10 @@ describe("DockerQueueBoard", () => {
     expect(screen.getByTestId("docker-head-reason")).toHaveTextContent(
       "needs 4 cpus, 3 cpus free on the machine",
     );
-    const freeSlot = screen.getByTestId("docker-slot-free-0");
-    expect(within(freeSlot).getByText("Free slot, no room")).toBeInTheDocument();
+    // The free-slot line carries the same reason, so it cannot read as room.
+    expect(screen.getByTestId("docker-free-slots")).toHaveTextContent(
+      "needs 4 cpus, 3 cpus free on the machine",
+    );
   });
 
   it("keeps the waiting line shared rather than one queue per slot", () => {
@@ -246,5 +291,130 @@ describe("DockerQueueBoard", () => {
 
     expect(screen.getByText("orphaned")).toBeInTheDocument();
     expect(screen.getByText("unverified")).toBeInTheDocument();
+  });
+
+  it("shows the footprint once on a holder card", () => {
+    render(<DockerQueueBoard status={status({ holders: [lease({ footprint: "heavy" })] })} {...idle} />);
+    const card = screen.getByTestId("docker-slot-lease-1");
+    expect(within(card).getAllByText(/heavy/)).toHaveLength(1);
+  });
+
+  it("names what runs, the branch once, and the pid apart", () => {
+    const row = lease({
+      holder_label: "pre-push client-tests · lg-x-e33a13@claude/lg-x-e33a13 · pid 22339",
+      holder: { what: "pre-push client-tests", branch: "claude/lg-x-e33a13", worktree: null, pid: 22339 },
+    });
+    render(<DockerQueueBoard status={status({ holders: [row] })} {...idle} />);
+
+    const card = screen.getByTestId("docker-slot-lease-1");
+    expect(within(card).getAllByText(/lg-x-e33a13/)).toHaveLength(1);
+    expect(within(card).getByText("pid 22339")).toBeInTheDocument();
+    expect(within(card).queryByText(/in lg-x-e33a13/)).not.toBeInTheDocument();
+  });
+
+  it("links a lease to its ticket only when it names one", () => {
+    render(
+      <DockerQueueBoard
+        status={status({
+          holders: [
+            lease({ lease_id: "staged", ticket_id: "t-1", agent_run_id: "r-1" }),
+            lease({ lease_id: "adhoc" }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(within(screen.getByTestId("docker-slot-staged")).getByRole("link")).toHaveAttribute(
+      "href",
+      "/tickets/t-1/logs",
+    );
+    expect(within(screen.getByTestId("docker-slot-adhoc")).queryByRole("link")).toBeNull();
+  });
+
+  it("shows how long a waiter has queued, and flags one that stopped polling", () => {
+    render(
+      <DockerQueueBoard
+        status={status({
+          waiting: [
+            lease({ lease_id: "w1", status: "waiting", position: 1, waiting_seconds: 1500, last_seen_seconds_ago: 10 }),
+            lease({
+              lease_id: "w2",
+              status: "waiting",
+              position: 2,
+              waiting_seconds: 600,
+              last_seen_seconds_ago: 300,
+              poll_stalled: true,
+              drops_in_seconds: 300,
+            }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(within(screen.getByTestId("docker-waiting-w1")).getByText(/25m/)).toBeInTheDocument();
+    expect(screen.queryByTestId("docker-stalled-w1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("docker-stalled-w2")).toBeInTheDocument();
+  });
+
+  it("releases a holder only after confirming, once, then re-reads the ledger", async () => {
+    let finish: (value: { lease_id: string; released: boolean }) => void = () => {};
+    releaseLease.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Release: e2e suite/ }));
+    expect(releaseLease).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Release" }));
+    expect(releaseLease).toHaveBeenCalledWith("lease-1", expect.any(String));
+    // In flight: both the dialog's button and the row's are held.
+    expect(within(dialog).getByRole("button", { name: /Ending/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Release: e2e suite/ })).toBeDisabled();
+
+    await act(async () => finish({ lease_id: "lease-1", released: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(releaseLease).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("drops a waiter, and says so when the ledger refuses", async () => {
+    releaseLease.mockRejectedValue(new Error("database is locked"));
+    render(
+      <DockerQueueBoard
+        status={status({ waiting: [lease({ lease_id: "w1", status: "waiting", position: 1 })] })}
+        {...idle}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^Drop from line: e2e suite/ }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Drop from line" }));
+
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" })));
+    // The dialog stays, so the operator can try again or cancel.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("closes the confirm on Escape without releasing", async () => {
+    render(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
+    await userEvent.click(screen.getByRole("button", { name: /^Release: e2e suite/ }));
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(releaseLease).not.toHaveBeenCalled();
+  });
+
+  it("offers capacity.release to agents for a lease on the board, and refuses others", async () => {
+    releaseLease.mockResolvedValue({ lease_id: "lease-1", released: true });
+    const view = render(<DockerQueueBoard status={status({ holders: [lease()] })} {...idle} />);
+
+    await act(() => uiActionRegistry.run("capacity.release", { lease_id: "lease-1", reason: "stuck" }));
+    expect(releaseLease).toHaveBeenCalledWith("lease-1", "stuck");
+    await expect(
+      uiActionRegistry.run("capacity.release", { lease_id: "nope", reason: "x" }),
+    ).rejects.toThrow("nope");
+
+    view.unmount();
+    expect(uiActionRegistry.available()).not.toContain("capacity.release");
   });
 });

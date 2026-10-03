@@ -42,6 +42,7 @@ class UiAction(StrEnum):
     RUN_CANCEL = "run.cancel"
     QUEUE_PROMOTE = "queue.promote"
     QUEUE_CANCEL = "queue.cancel"
+    CAPACITY_RELEASE = "capacity.release"
     APPROVAL_RESOLVE = "approval.resolve"
 
     @classmethod
@@ -173,6 +174,11 @@ class RunArgs(_Args):
 class RunSendMessageArgs(_Args):
     run_id: str = Field(min_length=1)
     message: str = Field(min_length=1, description="Shown to the run, and in it, as from an agent.")
+
+
+class CapacityReleaseArgs(_Args):
+    lease_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1, description="Kept on the lease, so its owner knows why.")
 
 
 class ApprovalResolveArgs(_Args):
@@ -347,6 +353,15 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "Remove a queued run from the queue.",
             RunArgs,
             offered="on the Queue page, for a run it lists (navigate.page queue)",
+        ),
+        UiActionSpec(
+            UiAction.CAPACITY_RELEASE,
+            UiActionEffect.WRITE,
+            "End a machine-capacity lease: release a holder's grant, or drop a waiter "
+            "from the line. Its process is not stopped — a holder keeps running "
+            "unaccounted, and a live waiter queues again at the back.",
+            CapacityReleaseArgs,
+            offered="on the Queue page's Machine view, for a lease it lists (navigate.page queue)",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,

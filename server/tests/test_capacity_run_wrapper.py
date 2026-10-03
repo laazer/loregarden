@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from loregarden.services.git_subprocess import run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / ".lefthook" / "scripts" / "capacity-run.sh"
@@ -35,6 +36,7 @@ fi
 started=""
 while [ $# -gt 0 ] && [ "$1" != "--" ]; do
   [ "$1" = "--started-file" ] && started="$2"
+  [ "$1" = "--label" ] && printf '%s' "$2" > "$FAKE_STATE/label"
   shift
 done
 shift
@@ -204,3 +206,35 @@ def test_at_a_terminal_the_person_chooses(
     assert code == expected_code
     assert _calls(tmp_path) == expected_calls
     assert marker.exists() is ran
+
+
+@pytest.mark.parametrize(
+    ("worktree", "branch", "place"),
+    [
+        # A worktree named after its branch: the branch alone, said once.
+        ("lg-x-e33a13", "claude/lg-x-e33a13", "claude/lg-x-e33a13"),
+        # A worktree that says something the branch does not keeps both.
+        (
+            "hungry-solomon-46dbeb",
+            "claude/adapter-21cc50",
+            "hungry-solomon-46dbeb@claude/adapter-21cc50",
+        ),
+    ],
+)
+def test_the_label_names_the_branch_once(tmp_path, fake_cli, worktree, branch, place) -> None:
+    repo = tmp_path / worktree
+    repo.mkdir()
+    run_git(["init", "-q", "-b", branch], cwd=repo, check=True)
+
+    result = subprocess.run(
+        _wrap("true"),
+        env=_env(tmp_path, fake_cli),
+        cwd=repo,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "label").read_text() == f"pre-push test · {place}"

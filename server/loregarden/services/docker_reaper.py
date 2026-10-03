@@ -53,7 +53,7 @@ from loregarden.services.docker_leases import (
     release_lease,
     repair_pool,
 )
-from loregarden.services.docker_ledger import OCCUPYING, as_utc, container_names
+from loregarden.services.docker_ledger import OCCUPYING, as_utc, container_names, last_seen_at
 from loregarden.services.docker_probe import DockerLiveness, probe_lease_liveness
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.parallel_queue import (
@@ -322,16 +322,7 @@ def _drop_abandoned_waiters(session: Session, *, now: datetime, report: ReapRepo
         # A served poll is the waiter saying it is still there — the thing this
         # sweep is asking. Judging by the request time alone dropped every waiter
         # queued longer than the cutoff, however faithfully it polled.
-        seen = [
-            stamp
-            for stamp in (
-                as_utc(lease.last_polled_at),
-                as_utc(lease.last_renewed_at),
-                as_utc(lease.requested_at),
-            )
-            if stamp is not None
-        ]
-        last_seen = max(seen) if seen else None
+        last_seen = last_seen_at(lease)
         if last_seen is not None and now - last_seen > cutoff:
             release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED, drain=False)
             report.reclaimed.append(lease.id)

@@ -75,7 +75,17 @@ fi
 
 repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 branch="$(git branch --show-current 2>/dev/null || true)"
-full_label="$label · $repo${branch:+@$branch}"
+# Where it runs: the branch alone when the worktree is named after it (the
+# usual case — "lg-x-e33a13@claude/lg-x-e33a13" said one thing twice), else
+# worktree@branch. services/capacity_label.py reads both forms back.
+if [ -z "$branch" ]; then
+  place="$repo"
+elif [ "${branch##*/}" = "$repo" ]; then
+  place="$branch"
+else
+  place="$repo@$branch"
+fi
+full_label="$label · $place"
 
 hard_cap="${LOREGARDEN_CAPACITY_HARD_CAP_SECONDS:-3600}"
 quiet_retries="${LOREGARDEN_CAPACITY_RETRIES:-6}"

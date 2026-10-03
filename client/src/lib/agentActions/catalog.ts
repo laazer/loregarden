@@ -47,6 +47,7 @@ export interface UiActionArgs {
   "run.cancel": { run_id: string };
   "queue.promote": { run_id: string };
   "queue.cancel": { run_id: string };
+  "capacity.release": { lease_id: string; reason: string };
   /** Human-only on the server: never invoked by an agent, so nothing registers it. */
   "approval.resolve": { approval_id: string };
 }
@@ -79,5 +80,6 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "run.cancel": "Stopped a run",
   "queue.promote": "Moved a run to the front of the queue",
   "queue.cancel": "Removed a run from the queue",
+  "capacity.release": "Ended a machine-capacity lease",
   "approval.resolve": "Resolved an approval",
 };

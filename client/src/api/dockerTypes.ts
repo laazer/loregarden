@@ -41,10 +41,24 @@ export interface DockerCapacityAmounts {
  */
 export type CapacityPool = "docker" | "host";
 
+/**
+ * A lease's label read back as what / where / pid. `holder_label` stays the raw
+ * string; this is the same thing split by the server, which still reads the
+ * older `worktree@branch` labels that repeated the branch.
+ */
+export interface HolderLabel {
+  what: string;
+  branch: string | null;
+  /** Only when it says something the branch does not. */
+  worktree: string | null;
+  pid: number | null;
+}
+
 export interface DockerLeaseRow {
   lease_id: string;
   status: "waiting" | "held" | "released" | "orphaned";
   holder_label: string;
+  holder: HolderLabel;
   holder_kind: string;
   pool: CapacityPool;
   /** Set on a nested lease, which draws on its parent's grant and books no slot. */
@@ -64,6 +78,16 @@ export interface DockerLeaseRow {
   estimated_wait_seconds: number | null;
   estimate_basis: EstimateBasis;
   poll_count: number;
+  /** ISO-8601: when the claim was made. */
+  requested_at: string | null;
+  /** How long a waiter has been in line; null for a holder. */
+  waiting_seconds: number | null;
+  /** Since a waiter last polled (or was queued); null for a holder. */
+  last_seen_seconds_ago: number | null;
+  /** A waiter that has stopped polling — its process has most likely gone. */
+  poll_stalled: boolean;
+  /** When the abandonment sweep drops a waiter that does not poll again. */
+  drops_in_seconds: number | null;
   /** How many of its containers the last probe found running. */
   running_container_count: number | null;
   last_probe_outcome: string;
@@ -112,4 +136,10 @@ export interface DockerCapacityStatus extends CapacityPoolSummary {
   orphaned: string[];
   /** Leases the reaper could not verify, and why. */
   unverifiable: DockerUnverifiable[];
+}
+
+/** What ending a lease did. `released` is false when it had already ended. */
+export interface ForceReleaseResult {
+  lease_id: string;
+  released: boolean;
 }

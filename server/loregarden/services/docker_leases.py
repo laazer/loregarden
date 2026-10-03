@@ -902,6 +902,28 @@ def release_lease(
     return True
 
 
+class UnknownLease(LookupError):
+    """No lease has this id."""
+
+
+def force_release_lease(session: Session, lease_id: str, *, reason: str) -> bool:
+    """An operator ending a lease: a holder's grant, or a waiter's place in line.
+
+    The board and `loregarden_force_release_docker_lease` both come here, so the
+    two cannot disagree about what "force release" leaves behind. The reason is
+    kept on the row; a lease already settled keeps the note it ended with.
+    Returns whether this call was the one that ended it.
+    """
+    lease = session.get(DockerLease, lease_id)
+    if lease is None:
+        raise UnknownLease(lease_id)
+    if lease.status is DockerLeaseStatus.WAITING or lease.status in OCCUPYING:
+        lease.note = f"force-released: {reason}"
+        session.add(lease)
+        session.commit()
+    return release_lease(session, lease_id, reason=DockerLeaseEndReason.FORCE_RELEASED)
+
+
 def _return_cover(session: Session, child: DockerLease) -> None:
     """Hand a child's covered share back to its parent's allotment, clamped at zero."""
     session.exec(
