@@ -147,11 +147,19 @@ pre-push:
         bash .lefthook/scripts/capacity-run.sh "pre-push server-tests"
         --footprint heavy --workspace loregarden
         -- bash .lefthook/scripts/server-tests.sh
+    # `stack` (2 cpus / 4 GB), not `heavy`: on a 7-cpu host pool a heavy client
+    # run can never sit beside another push's heavy server suite, so a ~30s
+    # jest run waited out a 15-45 minute one. Measured 2026-10-03, full run:
+    # 83s at 4 workers, 132s at 2, peak 2.6-2.9 GB; at 2 workers beside a full
+    # 4-worker server suite, 294s and green, no timeouts. The queue is strictly
+    # first-come, first-served, so this pays off when a client run reaches the
+    # head while a server suite holds. test_prepush_footprints_share_the_host
+    # checks the fit.
     client-tests:
       name: Client tests (oxlint + tsc full + jest --changedSince)
       glob: "client/**/*.{ts,tsx,js,jsx,json}"
       interactive: true
       run: >-
         bash .lefthook/scripts/capacity-run.sh "pre-push client-tests"
-        --footprint heavy --workspace loregarden
+        --footprint stack --workspace loregarden
         -- bash .lefthook/scripts/client-tests.sh

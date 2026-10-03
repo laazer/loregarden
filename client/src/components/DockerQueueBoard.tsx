@@ -17,9 +17,9 @@
  * wherever room appears, and drawing a queue under each slot would imply a
  * choice of line that does not exist.
  *
- * **Slots are the host pool's lease ceiling, not physical hardware.** Every
- * top-level lease books one, whichever pool it claims from; a nested lease draws
- * on its parent and books none. A claim also has to fit on cpus and memory — and
+ * **Slots are the host pool's lease ceiling, not physical hardware.** A lease
+ * books one whichever pool it claims from, except a nested lease (it runs in
+ * its parent's) and an agent run's standing claim, which book none. A claim also has to fit on cpus and memory — and
  * a docker claim on the Docker VM's smaller pool too — so a slot being free does
  * not by itself mean the next waiter can start, which is why the head of the
  * queue shows what it is waiting for rather than just its position.
@@ -420,8 +420,9 @@ export function DockerQueueBoard({
   const { host, holders, waiting } = status;
 
   // Slots are the host pool's lease ceiling. Free slots come from the pool's
-  // own booked count, not from the holder list: a nested lease is a holder but
-  // books no slot, so subtracting holders would hide a free one per child.
+  // own booked count, not from the holder list: a nested lease or an agent
+  // run's standing claim is a holder that books no slot, so subtracting holders
+  // would hide a free slot for each of them.
   // An unmeasured ceiling has no slot count to draw, so the grid is skipped
   // entirely rather than rendered as zero slots — which would read as "the
   // machine is full" when it means "nobody has looked".

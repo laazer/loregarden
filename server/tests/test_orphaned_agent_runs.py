@@ -8,6 +8,7 @@ already idle.
 
 import subprocess
 import sys
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
@@ -18,6 +19,7 @@ from loregarden.models.domain import (
     Ticket,
     WorkItemType,
 )
+from loregarden.services import process_identity
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.process_identity import identify
 from loregarden.services.reconciliation import reconcile_once
@@ -169,7 +171,7 @@ def sleeper_fixture():
 def test_the_orchestration_reaper_spares_a_run_whose_agent_process_is_alive(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid) or "")
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
 
     assert fail_interrupted_orchestration_runs(db_session) == []
 
@@ -182,7 +184,7 @@ def test_the_orchestration_reaper_spares_a_run_whose_agent_process_is_alive(db_s
 def test_the_orchestration_reaper_still_fails_a_run_whose_agent_process_is_gone(db_session):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    # A pid nothing is behind: `still_running` answers False for it.
+    # A pid nothing is behind: `liveness` answers GONE for it.
     child = _child(db_session, ticket, orch, pid=2**22 - 1, identity="not-a-live-process")
 
     failed = fail_interrupted_orchestration_runs(db_session)
@@ -195,7 +197,7 @@ def test_the_orchestration_reaper_still_fails_a_run_whose_agent_process_is_gone(
 def test_finishing_an_orchestration_leaves_a_live_child_process_its_row(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid) or "")
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
 
     OrchestrationCallbackService(db_session).complete_orchestration(
         orch, ticket, status=OrchestrationRunStatus.FAILED, message="stopped"
@@ -205,5 +207,43 @@ def test_finishing_an_orchestration_leaves_a_live_child_process_its_row(db_sessi
     assert child.status == RunStatus.RUNNING
     # ...and the periodic orphan sweep respects the same fact.
     assert settle_orphaned_agent_runs(db_session) == []
+    db_session.refresh(child)
+    assert child.status == RunStatus.RUNNING
+
+
+# 862. A `ps` that cannot answer is not evidence the process is gone. Every
+# reaper above spares a verified-live process; each must spare an unverifiable
+# one too, rather than fail a row that may have a working agent behind it.
+
+
+def _ps_times_out(args, *rest, **kwargs):
+    raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 5))
+
+
+def test_the_orchestration_reaper_spares_a_run_ps_cannot_answer_about(db_session, sleeper):
+    ticket = _ticket(db_session)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+
+    with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
+        assert fail_interrupted_orchestration_runs(db_session) == []
+
+    db_session.refresh(child)
+    assert child.status == RunStatus.RUNNING
+
+
+def test_finishing_an_orchestration_spares_a_child_ps_cannot_answer_about(db_session, sleeper):
+    ticket = _ticket(db_session)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+
+    with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
+        OrchestrationCallbackService(db_session).complete_orchestration(
+            orch, ticket, status=OrchestrationRunStatus.FAILED, message="stopped"
+        )
+        db_session.refresh(child)
+        assert child.status == RunStatus.RUNNING
+        assert settle_orphaned_agent_runs(db_session) == []
+
     db_session.refresh(child)
     assert child.status == RunStatus.RUNNING

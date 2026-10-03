@@ -100,7 +100,7 @@ class Shortfall:
 
 
 def shortfalls(name: CapacityPool, pool: DockerCapacityPool, lease: DockerLease) -> list[Shortfall]:
-    """Every dimension a top-level `lease` does not fit in `pool`; empty when it fits.
+    """Every dimension `lease` does not fit in `pool`; empty when it fits.
 
     Admission's own test, so the board's "waiting for 4 cpus, 3 free" is the
     reason the drain is holding the claim back, not a second opinion of it.

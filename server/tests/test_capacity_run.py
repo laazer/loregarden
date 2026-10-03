@@ -26,6 +26,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 from loregarden.cli import capacity as capacity_cli
 from loregarden.cli.errors import UsageError
 from loregarden.config import settings
@@ -209,38 +210,6 @@ def test_a_line_that_stops_moving_gives_its_place_back(session, host) -> None:
     assert waiter.end_reason is DockerLeaseEndReason.ABANDONED
 
 
-@pytest.mark.parametrize("command", [["sh", "-c", "exit 127"], ["sh", "-c", "exit 126"]])
-def test_a_command_the_shell_could_not_run_is_not_recorded_as_a_hold(
-    isolated_db, session, host, tmp_path, command
-) -> None:
-    """Every capacity-gated push once died at once with "No such file", and
-    those instant clean releases dragged the wait estimate down to seconds."""
-    code = run_holding(
-        lambda: Session(isolated_db), _request(), command, report=lambda _line: None, cwd=tmp_path
-    )
-
-    assert code in (126, 127)
-    (lease,) = _leases(session)
-    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
-
-
-def test_a_command_that_cannot_be_started_is_not_recorded_as_a_hold(
-    isolated_db, session, host, tmp_path
-) -> None:
-    with pytest.raises(FileNotFoundError):
-        run_holding(
-            lambda: Session(isolated_db),
-            _request(),
-            [str(tmp_path / "missing")],
-            report=lambda _line: None,
-            cwd=tmp_path,
-        )
-
-    (lease,) = _leases(session)
-    assert lease.status is DockerLeaseStatus.RELEASED
-    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
-
-
 #: The ledger on 2026-10-03, when a push gave up at "1 ahead" after 3604s: a
 #: 10-core / 64 GB host booking 7 cpus / 48332 MB, one heavy pre-push suite and
 #: one service lease held, six more heavy suites queued behind them.
@@ -380,6 +349,39 @@ def test_the_stall_clock_restarts_whenever_something_ahead_finishes(session, bus
     assert 3000 + 3600 <= clock.now < 3000 + 3600 + 60
 
 
+def _prepush_footprint(command: str) -> DockerFootprint:
+    """The `--footprint` lefthook.yml books for one pre-push command."""
+    config = yaml.safe_load((SERVER_ROOT.parent / "lefthook.yml").read_text())
+    words = config["pre-push"]["commands"][command]["run"].split()
+    return DockerFootprint(words[words.index("--footprint") + 1])
+
+
+def test_prepush_footprints_share_the_host(session, monkeypatch) -> None:
+    """A client run is granted beside another push's server suite, not queued behind it.
+
+    The pool is this machine's: 7 cpus / 48332 MB booked on a 10-core, 64 GB host.
+    """
+    monkeypatch.setattr(settings, "host_capacity_cpus", 7.0)
+    monkeypatch.setattr(settings, "host_capacity_memory_mb", 48332)
+    monkeypatch.setattr(settings, "host_capacity_max_leases", 16)
+    server = docker_leases.reserve(
+        session,
+        holder_label="pre-push server-tests",
+        footprint=_prepush_footprint("server-tests"),
+        pool=CapacityPool.HOST,
+    )
+    assert server.granted
+
+    client = docker_leases.reserve(
+        session,
+        holder_label="pre-push client-tests",
+        footprint=_prepush_footprint("client-tests"),
+        pool=CapacityPool.HOST,
+    )
+
+    assert client.granted
+
+
 def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
     """capacity-run.sh tells "still queued" from "the ledger failed" by this code."""
     args = argparse.Namespace(
@@ -406,6 +408,38 @@ def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
         capacity_cli._run(args)
 
     assert exited.value.code == capacity_cli.EXIT_QUEUE_STALLED == 75
+
+
+@pytest.mark.parametrize("command", [["sh", "-c", "exit 127"], ["sh", "-c", "exit 126"]])
+def test_a_command_the_shell_could_not_run_is_not_recorded_as_a_hold(
+    isolated_db, session, host, tmp_path, command
+) -> None:
+    """Every capacity-gated push once died at once with "No such file", and
+    those instant clean releases dragged the wait estimate down to seconds."""
+    code = run_holding(
+        lambda: Session(isolated_db), _request(), command, report=lambda _line: None, cwd=tmp_path
+    )
+
+    assert code in (126, 127)
+    (lease,) = _leases(session)
+    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
+
+
+def test_a_command_that_cannot_be_started_is_not_recorded_as_a_hold(
+    isolated_db, session, host, tmp_path
+) -> None:
+    with pytest.raises(FileNotFoundError):
+        run_holding(
+            lambda: Session(isolated_db),
+            _request(),
+            [str(tmp_path / "missing")],
+            report=lambda _line: None,
+            cwd=tmp_path,
+        )
+
+    (lease,) = _leases(session)
+    assert lease.status is DockerLeaseStatus.RELEASED
+    assert lease.end_reason is DockerLeaseEndReason.COMMAND_NOT_RUN
 
 
 def test_an_unmeasurable_host_refuses_before_the_command_starts(
@@ -637,7 +671,7 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
             "--",
             "sh",
             "-c",
-            "pwd -P > where",
+            'pwd -P > where; printf %s "${LOREGARDEN_CALLER_CWD-unset}" > inherited',
         ],
         cwd=caller,
         env=_cli_env(tmp_path / "ledger.db"),
@@ -648,6 +682,9 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
 
     assert result.returncode == 0, result.stderr
     assert (caller / "where").read_text().strip() == str(caller.resolve())
+    # The command does not inherit the caller's directory: a nested `loregarden`
+    # started another way, from elsewhere, would run its command here instead.
+    assert (caller / "inherited").read_text() == "unset"
     # And it booked against this test's ledger, not the live one.
     engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
     try:

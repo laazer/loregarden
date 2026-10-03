@@ -133,7 +133,7 @@ def test_a_verified_live_agent_process_outranks_a_stale_lease(db_session, ticket
 
     run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED)
     run.agent_pid = os.getpid()
-    run.agent_pid_identity = identify(os.getpid()) or ""
+    run.agent_pid_identity = identify(os.getpid()).stamp
     db_session.add(run)
     db_session.commit()
 

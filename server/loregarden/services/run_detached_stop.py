@@ -14,8 +14,9 @@ children rather than one stray process.
 
 Three checks, and none is redundant:
 
-1. `still_running(pid, identity)` — the pid is alive and its start-time
-   fingerprint matches. Fails closed with no recorded identity.
+1. `liveness(pid, identity)` is ALIVE — the pid is alive and its start-time
+   fingerprint matches. Fails closed with no recorded identity, and a `ps` that
+   could not answer is never read as either answer (862).
 2. `os.getpgid(pid) == pid` — every agent this control plane spawns is a session
    leader (`start_new_session=True` in `cli._spawn_print_process`), so a live pid
    that is *not* its own group leader cannot be one of ours, whatever the
@@ -39,8 +40,8 @@ import signal
 import time
 
 from loregarden.models.domain import AgentRun
-from loregarden.models.domain.enums import DetachedStopOutcome
-from loregarden.services.process_identity import identify, still_running
+from loregarden.models.domain.process_enums import DetachedStopOutcome, ProcessState
+from loregarden.services.process_identity import identify, liveness
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ _POLL_SECONDS = 0.1
 
 def _is_ours(run: AgentRun) -> bool:
     """Whether this pid is still this run's process, and still one we spawned."""
-    if not still_running(run.agent_pid, run.agent_pid_identity):
+    if liveness(run.agent_pid, run.agent_pid_identity) is not ProcessState.ALIVE:
         return False
     try:
         return os.getpgid(run.agent_pid) == run.agent_pid
@@ -75,13 +76,23 @@ def stop_detached_process(
     """
     if run.agent_pid is None:
         return DetachedStopOutcome.ALREADY_GONE
-    if identify(run.agent_pid) is None:
+    reading = identify(run.agent_pid)
+    if reading.state is ProcessState.GONE:
         # Nothing holds the pid at all. This is the only reading under which
-        # "already gone" is true — `still_running` would also answer False for a
-        # live pid whose fingerprint does not match, and reporting *that* as
-        # gone would tell an operator the run finished when in fact a stranger
-        # holds the number and this run's fate is unknown.
+        # "already gone" is true — `liveness` also answers GONE for a live pid
+        # whose fingerprint does not match, and reporting *that* as gone would
+        # tell an operator the run finished when in fact a stranger holds the
+        # number and this run's fate is unknown.
         return DetachedStopOutcome.ALREADY_GONE
+    if reading.state is ProcessState.UNKNOWN:
+        # `ps` could not answer. Nothing can vouch for the pid, so nothing is
+        # signalled — and the run is not reported as finished either (862).
+        logger.warning(
+            "Refusing to signal pid %s for run %s: could not tell what holds it",
+            run.agent_pid,
+            run.run_code,
+        )
+        return DetachedStopOutcome.NOT_OURS
     if not _is_ours(run):
         logger.warning(
             "Refusing to signal pid %s for run %s: it is alive but not this run's process",
@@ -95,7 +106,7 @@ def stop_detached_process(
 
     deadline = time.monotonic() + grace_seconds
     while time.monotonic() < deadline:
-        if not still_running(run.agent_pid, run.agent_pid_identity):
+        if liveness(run.agent_pid, run.agent_pid_identity) is ProcessState.GONE:
             return DetachedStopOutcome.SIGNALLED
         time.sleep(_POLL_SECONDS)
 

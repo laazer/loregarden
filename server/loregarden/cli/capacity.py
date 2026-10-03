@@ -24,6 +24,7 @@ from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
 from loregarden.services.capacity_run import (
+    CALLER_CWD_ENV,
     DEFAULT_STALL_SECONDS,
     LEASE_ENV,
     CapacityQueueStalled,
@@ -51,12 +52,6 @@ def _workspace_id(slug: str | None) -> str | None:
     if workspace is None:
         raise UsageError(f"no workspace with slug {slug!r}")
     return workspace.id
-
-
-#: Where the caller stood before `scripts/loregarden-cli.sh` moved into
-#: `server/` to start uv. The held command runs there, so a relative path in it
-#: means what the caller meant.
-CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
 
 
 def _caller_cwd() -> Path:

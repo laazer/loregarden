@@ -123,8 +123,8 @@ def test_the_seeded_workspace_passes_its_transition_gates_without_recovery(clien
     real_run = gate_runner._run_command
     ran: list[tuple[str, bool]] = []
 
-    def recording(command, cwd):
-        result = real_run(command, cwd)
+    def recording(command, cwd, **kwargs):
+        result = real_run(command, cwd, **kwargs)
         ran.append((command, result.ok))
         return result
 

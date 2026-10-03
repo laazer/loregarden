@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     OrchestratorDecision,
+    ProcessState,
     RunStatus,
     StageStatus,
     Ticket,
@@ -30,7 +31,7 @@ from loregarden.services.orchestration import (
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
-from loregarden.services.process_identity import still_running
+from loregarden.services.process_identity import liveness
 from loregarden.services.run_capacity import run_capacity
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
@@ -45,7 +46,7 @@ from loregarden.services.run_lease import (
     lease_renewal,
     pid_alive,
 )
-from loregarden.services.run_reattach import surviving_runs
+from loregarden.services.run_reattach import runs_to_spare
 from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.stage_retry_budget import refund_stage_dispatch_charged_before
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
@@ -202,7 +203,7 @@ def fail_interrupted_runs(
         # it rather than a dead one. Failing it would be the reaper killing the
         # row of a working agent — strictly worse than the restart it replaced.
         # A ticket-scoped call still claims it, for the reason above.
-        survivors = {run.id for run in surviving_runs(session)}
+        survivors = {run.id for run in runs_to_spare(session)}
         if survivors:
             query = query.where(col(AgentRun.id).not_in(survivors))
     if stage_key:
@@ -336,7 +337,7 @@ def fail_interrupted_orchestration_runs(
     # parent's completion fail that same child as an orphan of a terminal
     # orchestration — the reaper killing a working agent's row by a second route.
     supervising = {
-        run.orchestration_run_id for run in surviving_runs(session) if run.orchestration_run_id
+        run.orchestration_run_id for run in runs_to_spare(session) if run.orchestration_run_id
     }
     callbacks = OrchestrationCallbackService(session)
     failed: list[OrchestrationRun] = []
@@ -503,18 +504,22 @@ def settle_orphaned_agent_runs(
         parent = session.get(OrchestrationRun, run.orchestration_run_id)
         if parent is None or parent.status in LIVE_ORCHESTRATION_STATUSES:
             continue
-        if still_running(run.agent_pid, run.agent_pid_identity):
+        state = liveness(run.agent_pid, run.agent_pid_identity)
+        if state is not ProcessState.GONE:
             # Residue is a row with nothing behind it. A process still working
             # under a parent that went terminal without it (757) is not residue:
-            # let it finish, and let its completion say what it found.
+            # let it finish, and let its completion say what it found. One `ps`
+            # could not answer about is not knowably residue either (862): the
+            # next sweep asks again.
             logger.warning(
                 "Not settling agent run %s (ticket %s): parent orchestration %s is %s "
-                "but pid %s is still its process",
+                "but pid %s is %s",
                 run.run_code,
                 run.ticket_id,
                 parent.run_code,
                 parent.status.value,
                 run.agent_pid,
+                "still its process" if state is ProcessState.ALIVE else "of unknown state",
             )
             continue
         logger.warning(

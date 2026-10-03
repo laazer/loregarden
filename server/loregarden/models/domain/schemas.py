@@ -619,6 +619,9 @@ class GatesConfigUpdate(SQLModel):
     autofix_commands: list[str] | None = None
     autofix_agent_fallback: bool | None = None
     autofix_max_agent_attempts: int | None = Field(default=None, ge=0, le=10)
+    # The host capacity gate commands hold (services/gate_capacity.py); None
+    # keeps the saved value.
+    capacity_footprint: DockerFootprint | None = None
 
 
 class GateTestRequest(SQLModel):

@@ -125,12 +125,8 @@ failures=0
 delay=1
 while :; do
   rm -f "$started_file"
-  # The CLI runs from its own server/ directory, and a primary checkout older
-  # than LOREGARDEN_CALLER_CWD starts the command there too — where a relative
-  # `.lefthook/scripts/…` does not exist. Start it from here, whatever the CLI.
   "$cli" capacity run --label "$full_label" ${cli_args[@]+"${cli_args[@]}"} \
-    "$stall_flag" "$stall" --started-file "$started_file" \
-    -- /bin/sh -c 'cd "$1" && shift && exec "$@"' capacity-run "$PWD" "$@"
+    "$stall_flag" "$stall" --started-file "$started_file" -- "$@"
   rc=$?
   if [ -e "$started_file" ]; then
     exit "$rc" # the command ran; its status is ours
