@@ -40,6 +40,7 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
     },
     holders: [],
     waiting: [],
+    head_shortfall: null,
     orphaned: [],
     unverifiable: [],
     ...overrides,

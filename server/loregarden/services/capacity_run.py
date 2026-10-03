@@ -428,6 +428,7 @@ def run_holding(
             else None
         )
         interval = heartbeat_seconds or max(1.0, ttl.total_seconds() / 3 if ttl else 60.0)
+        code: int | None = None
         try:
             with _Heartbeat(session_factory, lease_id, interval, report):
                 if started_file is not None:
@@ -438,14 +439,39 @@ def run_holding(
         except Terminated as stopped:
             code = 128 + stopped.signum
         finally:
-            _release(session_factory, lease_id, report)
+            _release(session_factory, lease_id, report, reason=_end_reason(code))
     return code
 
 
-def _release(session_factory: SessionFactory, lease_id: str, report: Report) -> None:
+#: Exit statuses with which a shell reports it could not run the command at all:
+#: 126 found but not executable, 127 not found.
+_NOT_RUN_STATUSES = (126, 127)
+
+
+def _end_reason(code: int | None) -> DockerLeaseEndReason:
+    """How the lease ended, as far as the wait estimator should learn from it.
+
+    A command that never ran — the shell could not find it, or `Popen` raised
+    before there was a status — releases within a second, and counting that as
+    a clean hold teaches every waiter behind the next real run to expect it in
+    seconds. A real run that happens to end 127 is lost as one sample, which is
+    the cheap direction to be wrong in.
+    """
+    if code is None or code in _NOT_RUN_STATUSES:
+        return DockerLeaseEndReason.COMMAND_NOT_RUN
+    return DockerLeaseEndReason.RELEASED
+
+
+def _release(
+    session_factory: SessionFactory,
+    lease_id: str,
+    report: Report,
+    *,
+    reason: DockerLeaseEndReason,
+) -> None:
     try:
         with session_factory() as session:
-            release_lease(session, lease_id)
+            release_lease(session, lease_id, reason=reason)
     except SQLAlchemyError as exc:
         report(
             f"capacity: could not release lease {lease_id} ({exc}); it names pid {os.getpid()}, "

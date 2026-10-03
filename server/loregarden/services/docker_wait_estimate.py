@@ -15,17 +15,22 @@ honest answer walks the queue the way the drain does — head-of-line, releasing
 holders in the order they are predicted to finish — and reports where this
 waiter comes out.
 
-**What predicts a holder's release.** Its footprint's median observed hold when
-there is one, because that reflects what these leases really do, renewals
-included. Otherwise its remaining TTL, which is a bound rather than an estimate
-and is marked as such by producing a coarser answer. A holder with neither makes
+**What predicts a holder's release.** The median of the observed holds of its
+footprint *that ran longer than this one already has*, less the time it has
+already held. A plain median says nothing about a holder already past it: the
+board once predicted a 40-minute suite, 30 minutes in, would finish in 0s, and
+every waiter behind it "≈ 0s". When no recorded hold ran that long, its
+remaining TTL stands in, which is a bound rather than an estimate and is marked
+as such by producing a coarser answer. A holder with neither makes
 every waiter behind it unknown, rather than being skipped — skipping it would
 quietly predict a queue that cannot move.
 
 **Only clean releases count as history.** A lease reclaimed at `TTL_EXPIRED` or
 `ABANDONED` records the moment the reaper noticed, not the moment the work
 finished, so folding those in would teach the estimator that every claim lasts
-exactly one TTL.
+exactly one TTL. `COMMAND_NOT_RUN` is excluded for the opposite reason: a command
+the shell could not start releases in a fraction of a second, and sixteen of
+those once dragged the `heavy` median for a test suite down to seconds.
 """
 
 from __future__ import annotations
@@ -59,29 +64,48 @@ CLEAN_RELEASES = (DockerLeaseEndReason.RELEASED, DockerLeaseEndReason.RUN_COMPLE
 
 @dataclass(frozen=True)
 class HoldStats:
-    """Median seconds a lease is actually held, by footprint and overall."""
+    """Seconds leases were actually held, by footprint and overall.
+
+    The observations themselves rather than their medians, because the useful
+    question about a holder already part-way through is conditional: of the
+    holds that lasted at least this long, how long did they last?
+    """
 
     #: Keyed by pool as well as footprint: a `heavy` test suite and a `heavy`
     #: docker stack share a size, not a duration.
-    by_footprint: dict[tuple[CapacityPool, DockerFootprint], float] = field(default_factory=dict)
-    overall: float | None = None
-    samples: int = 0
+    by_footprint: dict[tuple[CapacityPool, DockerFootprint], tuple[float, ...]] = field(
+        default_factory=dict
+    )
+    overall: tuple[float, ...] = ()
 
-    def predict(self, pool: CapacityPool, footprint: DockerFootprint) -> float | None:
-        """The best available median for this footprint, or None.
+    @property
+    def samples(self) -> int:
+        return len(self.overall)
 
-        Falls back to the overall median rather than to a constant: a machine
+    def predict(
+        self, pool: CapacityPool, footprint: DockerFootprint, *, held_for: float
+    ) -> float | None:
+        """Seconds still to go for a lease already held `held_for` seconds, or None.
+
+        The median of the recorded holds longer than `held_for`, less `held_for`
+        — zero for a claim not yet started. None when nothing recorded ran that
+        long: the history has nothing to say about a holder that has outlived
+        all of it, and "any moment now" is the one answer it certainly cannot
+        support.
+
+        Falls back to the overall history rather than to a constant: a machine
         with history for `stack` and none for `heavy` knows more than nothing
         about `heavy`, and less than it does about `stack`.
         """
-        specific = self.by_footprint.get((pool, footprint))
-        if specific is not None:
-            return specific
-        return self.overall
+        history = self.by_footprint.get((pool, footprint)) or self.overall
+        longer = [held for held in history if held > held_for]
+        if not longer:
+            return None
+        return median(longer) - held_for
 
 
 def observed_hold_times(session: Session, *, now: datetime | None = None) -> HoldStats:
-    """Median hold time per footprint, from leases their holders actually released."""
+    """Hold times per footprint, from leases their holders actually released."""
     stamp = now or datetime.now(timezone.utc)
     cutoff = stamp - timedelta(days=settings.docker_wait_lookback_days)
 
@@ -108,9 +132,8 @@ def observed_hold_times(session: Session, *, now: datetime | None = None) -> Hol
         everything.append(held)
 
     return HoldStats(
-        by_footprint={fp: median(values) for fp, values in per_footprint.items()},
-        overall=median(everything) if everything else None,
-        samples=len(everything),
+        by_footprint={key: tuple(values) for key, values in per_footprint.items()},
+        overall=tuple(everything),
     )
 
 
@@ -158,12 +181,18 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
     holders: list[_Holder] = []
     for lease in leases:
         booking = booked(lease)
-        predicted = stats.predict(lease.pool, lease.footprint)
         granted = as_utc(lease.granted_at)
+        remaining = (
+            stats.predict(
+                lease.pool, lease.footprint, held_for=max(0.0, (now - granted).total_seconds())
+            )
+            if granted is not None
+            else None
+        )
         releases_in: float | None = None
         basis = DockerWaitBasis.UNKNOWN
-        if predicted is not None and granted is not None:
-            releases_in = max(0.0, (granted + timedelta(seconds=predicted) - now).total_seconds())
+        if remaining is not None:
+            releases_in = remaining
             basis = DockerWaitBasis.HISTORY
         else:
             expires = as_utc(lease.expires_at)
@@ -259,7 +288,7 @@ def estimate_waits(
         # it too — the head-of-line rule, carried into the projection.
         for name in charged:
             free[name].add(-waiter.cpus, -waiter.memory_mb, -booked(waiter).count)
-        predicted = hold_stats.predict(waiter.pool, waiter.footprint)
+        predicted = hold_stats.predict(waiter.pool, waiter.footprint, held_for=0.0)
         holders.append(
             _Holder(
                 cpus=waiter.cpus,

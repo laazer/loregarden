@@ -43,6 +43,7 @@ jest.mock("../../api/dockerApi", () => ({
       },
       holders: [],
       waiting: [],
+      head_shortfall: null,
       orphaned: [],
       unverifiable: [],
     }),

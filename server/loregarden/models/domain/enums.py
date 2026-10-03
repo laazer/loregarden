@@ -1385,6 +1385,9 @@ class DockerLeaseEndReason(StrEnum):
     FORCE_RELEASED = "force_released"
     #: Its parent lease ended, and a child cannot outlive the grant it draws on.
     PARENT_RELEASED = "parent_released"
+    #: The shell could not find or execute the held command (exit 126/127), so
+    #: its hold time measures nothing and must not teach the wait estimator.
+    COMMAND_NOT_RUN = "command_not_run"
 
 
 class DockerProbeOutcome(StrEnum):

@@ -65,6 +65,7 @@ from loregarden.services.docker_ledger import (
     booked,
     load_pool,
     pool_ceiling,
+    shortfalls,
 )
 from loregarden.services.docker_poll_guard import note_poll
 from loregarden.services.docker_subprocess import run_docker
@@ -542,7 +543,7 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
             return True
         session.rollback()
         session.expire_all()
-        if not all(_fits(load_pool(session, pool), lease) for pool in pools):
+        if any(shortfalls(pool, load_pool(session, pool), lease) for pool in pools):
             return False  # full, not contended — retrying would only spin
         if time.monotonic() >= deadline:
             # Contended past the budget with room still showing: queue rather
@@ -555,14 +556,6 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
                 CLAIM_CONTENTION_BUDGET_SECONDS,
             )
             return False
-
-
-def _fits(pool: DockerCapacityPool, lease: DockerLease) -> bool:
-    return (
-        pool.held_cpus + lease.cpus <= pool.ceiling_cpus
-        and pool.held_memory_mb + lease.memory_mb <= pool.ceiling_memory_mb
-        and pool.held_count + booked(lease).count <= pool.ceiling_leases
-    )
 
 
 def _held_for_run(
@@ -799,8 +792,7 @@ def _queued_reservation(
         poll_after_seconds=poll_interval_for(estimate),
         message=(
             f"{lease.pool.value.capitalize()} capacity is full. This claim is{already} "
-            f"queued at position "
-            f"{lease.position} with {ahead} ahead.{wait_note} "
+            f"queued at place {ahead + 1} in line.{wait_note} "
             "Waiting is not a failure — poll for this lease rather than reserving again."
         ),
         reused=reused,

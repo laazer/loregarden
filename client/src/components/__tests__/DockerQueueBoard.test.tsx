@@ -69,6 +69,7 @@ function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacitySt
     },
     holders: [],
     waiting: [],
+    head_shortfall: null,
     orphaned: [],
     unverifiable: [],
     ...overrides,
@@ -132,6 +133,27 @@ describe("DockerQueueBoard", () => {
     render(<DockerQueueBoard status={status()} {...idle} />);
     expect(screen.getByRole("meter", { name: "Machine CPU" })).toBeInTheDocument();
     expect(screen.getByRole("meter", { name: "Docker CPU" })).toBeInTheDocument();
+  });
+
+  it("says what the head of the line is short of, and that free slots are no use to it", () => {
+    // A free slot is one of three things a claim needs. Beside a stalled line,
+    // "Available" told people the machine had room it did not have.
+    render(
+      <DockerQueueBoard
+        status={status({
+          holders: [lease()],
+          waiting: [lease({ lease_id: "w1", status: "waiting", position: 1, cpus: 4 })],
+          head_shortfall: [{ pool: "host", resource: "cpus", needed: 4, free: 3 }],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(screen.getByTestId("docker-head-reason")).toHaveTextContent(
+      "needs 4 cpus, 3 cpus free on the machine",
+    );
+    const freeSlot = screen.getByTestId("docker-slot-free-0");
+    expect(within(freeSlot).getByText("Free slot, no room")).toBeInTheDocument();
   });
 
   it("keeps the waiting line shared rather than one queue per slot", () => {

@@ -8,6 +8,7 @@ continues to work unchanged.
 from loregarden.models.domain.block_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.docker_tables import *  # noqa: F401,F403
 from loregarden.models.domain.enums import *  # noqa: F401,F403
+from loregarden.models.domain.enums_capacity import *  # noqa: F401,F403
 from loregarden.models.domain.enums_exit_actions import *  # noqa: F401,F403
 from loregarden.models.domain.gate_eval_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.git_tables import *  # noqa: F401,F403

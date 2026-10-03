@@ -16,9 +16,9 @@
  * wherever room appears, and drawing a queue under each slot would imply a
  * choice of line that does not exist.
  *
- * **Slots are the host pool's lease ceiling, not physical hardware.** Every
- * top-level lease books one, whichever pool it claims from; a nested lease draws
- * on its parent and books none. A claim also has to fit on cpus and memory — and
+ * **Slots are the host pool's lease ceiling, not physical hardware.** A lease
+ * books one whichever pool it claims from, except a nested lease (it runs in
+ * its parent's) and an agent run's standing claim, which book none. A claim also has to fit on cpus and memory — and
  * a docker claim on the Docker VM's smaller pool too — so a slot being free does
  * not by itself mean the next waiter can start, which is why the head of the
  * queue shows what it is waiting for rather than just its position.
@@ -28,6 +28,7 @@ import type { ReactNode } from "react";
 
 import type {
   CapacityPoolSummary,
+  CapacityShortfall,
   DockerCapacityStatus,
   DockerLeaseRow,
 } from "../api/dockerTypes";
@@ -66,6 +67,23 @@ function describeWait(row: DockerLeaseRow): string {
   if (row.estimated_wait_seconds === null) return "wait unknown";
   const amount = formatDuration(row.estimated_wait_seconds);
   return row.estimate_basis === "ttl_bound" ? `starts in ≤ ${amount}` : `starts in ≈ ${amount}`;
+}
+
+const POOL_PLACE: Record<CapacityShortfall["pool"], string> = {
+  host: "on the machine",
+  docker: "in Docker",
+};
+
+/** "needs 4 cpus, 3 cpus free on the machine" — the reason the head is not running. */
+function describeShortfall(gaps: CapacityShortfall[]): string {
+  return gaps
+    .map((gap) => {
+      const where = POOL_PLACE[gap.pool];
+      if (gap.resource === "slots") return `needs a slot, none free ${where}`;
+      const format = gap.resource === "cpus" ? formatCpus : formatMemory;
+      return `needs ${format(gap.needed)}, ${format(gap.free)} free ${where}`;
+    })
+    .join("; ");
 }
 
 function holderStatus(row: DockerLeaseRow): string {
@@ -156,7 +174,12 @@ function HolderSlot({ row }: { row: DockerLeaseRow }) {
   );
 }
 
-function EmptySlot({ index }: { index: number }) {
+/**
+ * A slot no lease holds. `blockedBy` is set when the head of the line still
+ * cannot start — slots are only one of three things a claim needs, so a free
+ * one beside a stalled line must not read as room to start something.
+ */
+function EmptySlot({ index, blockedBy }: { index: number; blockedBy: string | null }) {
   return (
     <div className="queue-slot" data-testid={`docker-slot-free-${index}`}>
       <div className="queue-slot-head">
@@ -167,8 +190,12 @@ function EmptySlot({ index }: { index: number }) {
         </span>
       </div>
       <div className="queue-slot-body">
-        <div className="queue-slot-title">Available</div>
-        <div className="queue-slot-sub">Reserve before a test run, build or container stack</div>
+        <div className="queue-slot-title">{blockedBy ? "Free slot, no room" : "Available"}</div>
+        <div className="queue-slot-sub">
+          {blockedBy
+            ? `The next claim ${blockedBy}`
+            : "Reserve before a test run, build or container stack"}
+        </div>
       </div>
     </div>
   );
@@ -220,13 +247,17 @@ export function DockerQueueBoard({
   const { host, holders, waiting } = status;
 
   // Slots are the host pool's lease ceiling. Free slots come from the pool's
-  // own booked count, not from the holder list: a nested lease is a holder but
-  // books no slot, so subtracting holders would hide a free one per child.
+  // own booked count, not from the holder list: a nested lease or an agent
+  // run's standing claim is a holder that books no slot, so subtracting holders
+  // would hide a free slot for each of them.
   // An unmeasured ceiling has no slot count to draw, so the grid is skipped
   // entirely rather than rendered as zero slots — which would read as "the
   // machine is full" when it means "nobody has looked".
   const slotCeiling = host.ceiling.leases;
   const freeSlots = Math.max(0, slotCeiling - host.in_use.leases);
+  const headBlockedBy = status.head_shortfall?.length
+    ? describeShortfall(status.head_shortfall)
+    : null;
 
   return (
     <div className="queue-panel">
@@ -249,7 +280,7 @@ export function DockerQueueBoard({
             <HolderSlot key={row.lease_id} row={row} />
           ))}
           {Array.from({ length: freeSlots }, (_, index) => (
-            <EmptySlot key={`free-${index}`} index={index} />
+            <EmptySlot key={`free-${index}`} index={index} blockedBy={headBlockedBy} />
           ))}
         </div>
       ) : null}
@@ -271,7 +302,7 @@ export function DockerQueueBoard({
         </div>
       ) : (
         <div className="docker-queue-list">
-          {waiting.map((row) => (
+          {waiting.map((row, index) => (
             <div
               className="queue-lane-item"
               key={row.lease_id}
@@ -286,6 +317,11 @@ export function DockerQueueBoard({
                   {formatCpus(row.cpus)} · {formatMemory(row.memory_mb)} ·{" "}
                   {describePool(row)} · {row.footprint}
                 </div>
+                {index === 0 && headBlockedBy ? (
+                  <div className="docker-queue-head-reason" data-testid="docker-head-reason">
+                    Waiting: {headBlockedBy}
+                  </div>
+                ) : null}
               </div>
               <div className="queue-lane-item-timing">{describeWait(row)}</div>
             </div>
