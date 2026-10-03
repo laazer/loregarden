@@ -14,6 +14,14 @@ when the control-plane server, whose timer normally does that, is not running.
 its TTL. The lease also names this process's pid, so a SIGKILL that skips the
 `finally` still frees the capacity on the next sweep rather than at TTL.
 
+**Waiting has no deadline; a stalled line does.** Six heavy suites queued
+behind a seventh is an orderly line that takes hours to drain, and giving up the
+place in it because the clock ran out is a failure nobody caused. So the limit
+is on the line *not moving*: the clock restarts whenever a lease ahead of this
+one ends. Only a line where nothing ahead has finished for `stall_seconds` gives
+up — and it says so as `CapacityQueueStalled`, naming who is holding, so it is
+never mistaken for the ledger failing.
+
 **Failing to get capacity raises**, with the reason. Running the command
 anyway is the caller's decision to make — the pre-push wrapper asks the person
 at the keyboard — never this module's.
@@ -69,7 +77,7 @@ from loregarden.services.docker_wait_estimate import (
     poll_interval_for,
 )
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, func, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +95,24 @@ Report = Callable[[str], None]
 SessionFactory = Callable[[], Session]
 
 
+#: How long the line may go without anything ahead finishing. Above the longest
+#: hold the ledger has seen for a pre-push suite (2765s for a full server run,
+#: measured 2026-10-03), so one legitimately slow suite does not strand the line
+#: behind it, while a holder that has hung is still noticed within the hour.
+DEFAULT_STALL_SECONDS = 3600.0
+
+
 class CapacityNotGranted(RuntimeError):
-    """The ledger refused, could not be read, or the wait ran out."""
+    """The ledger refused or could not be read."""
+
+
+class CapacityQueueStalled(CapacityNotGranted):
+    """Still in line, but nothing ahead has finished for `stall_seconds`.
+
+    Not a ledger failure: the ledger answered every poll. A subclass so a caller
+    that only knows "capacity was not granted" still stops, and one that can say
+    more — the CLI's exit code, the pre-push wrapper's message — does.
+    """
 
 
 class _Terminated(BaseException):
@@ -110,9 +134,10 @@ class CapacityRequest:
     footprint: DockerFootprint = DockerFootprint.CUSTOM
     cpus: float = 0.0
     memory_mb: int = 0
-    #: Give up the place in line after this long. Zero waits only for an
-    #: immediate grant.
-    max_wait_seconds: float = 3600.0
+    #: Give up the place in line when nothing ahead of it has ended for this
+    #: long. Time spent in a line that is moving never counts. Zero waits only
+    #: for an immediate grant.
+    stall_seconds: float = DEFAULT_STALL_SECONDS
     ttl_seconds: int | None = None
     workspace_id: str | None = None
     #: Nest under this lease: draw on its grant first, never wait in line.
@@ -236,9 +261,10 @@ def _poll_until_granted(
     sleep: Callable[[float], None],
     clock: Callable[[], float],
 ) -> DockerReservation:
-    deadline = clock() + request.max_wait_seconds
+    moved_at = clock()
     last_reap = clock()
     last_line = ""
+    ahead_of_us: set[str] = set()
     while True:
         session.expire_all()
         lease = session.get(DockerLease, reservation.lease_id)
@@ -250,11 +276,17 @@ def _poll_until_granted(
             reservation.position = None
             reservation.expires_at = as_utc(lease.expires_at)
             return reservation
-        if clock() >= deadline:
+
+        front = _leases_ahead(session, lease)
+        if ahead_of_us - front.keys():
+            # Something that stood between this lease and capacity has ended:
+            # the line is moving, however long it still is.
+            moved_at = clock()
+        ahead_of_us = set(front)
+        if clock() - moved_at >= request.stall_seconds:
+            message = _stall_message(session, lease, front, stalled=clock() - moved_at)
             release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED)
-            raise CapacityNotGranted(
-                f"still queued after {request.max_wait_seconds:.0f}s; gave up the place in line"
-            )
+            raise CapacityQueueStalled(message)
 
         note_poll(session, lease, min_interval=0)
         if clock() - last_reap >= _REAP_INTERVAL_SECONDS:
@@ -268,7 +300,60 @@ def _poll_until_granted(
             report(line)
             last_line = line
         session.commit()  # end any read transaction before sleeping on it
-        sleep(max(1.0, min(poll_interval_for(estimate), deadline - clock())))
+        stall_left = request.stall_seconds - (clock() - moved_at)
+        sleep(max(1.0, min(poll_interval_for(estimate), stall_left)))
+
+
+def _leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]:
+    """Every lease this one waits behind: those holding capacity, and waiters ahead.
+
+    A waiter ahead that is granted stays in the set — it moved, but nothing
+    freed up. Only a lease leaving the set means capacity came back.
+    """
+    rows = session.exec(
+        select(DockerLease).where(
+            or_(
+                col(DockerLease.status).in_(OCCUPYING),
+                (DockerLease.status == DockerLeaseStatus.WAITING)
+                & (col(DockerLease.position) < lease.position),
+            )
+        )
+    ).all()
+    return {row.id: row for row in rows}
+
+
+def _stall_message(
+    session: Session, lease: DockerLease, front: Mapping[str, DockerLease], *, stalled: float
+) -> str:
+    ahead = sum(1 for other in front.values() if other.status is DockerLeaseStatus.WAITING)
+    estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
+    now = datetime.now(timezone.utc)
+    holders = sorted(
+        (other for other in front.values() if other.status in OCCUPYING),
+        key=lambda other: as_utc(other.granted_at) or now,
+    )
+    if holders:
+        oldest = holders[0]
+        granted = as_utc(oldest.granted_at)
+        held = f" for {(now - granted).total_seconds():.0f}s" if granted else ""
+        holding = f"'{oldest.holder_label}' has held {oldest.cpus:g} cpus{held}"
+    else:
+        holding = "nothing is holding capacity"
+    return (
+        f"still queued for {lease.pool.value} capacity — {ahead} ahead, "
+        f"{_describe_wait(estimate)} — but nothing ahead has finished for {stalled:.0f}s "
+        f"({holding}); gave up the place in line. The ledger is answering: the line "
+        "stopped moving."
+    )
+
+
+def _describe_wait(estimate: WaitEstimate) -> str:
+    if estimate.seconds is None:
+        return "no estimate yet"
+    if estimate.basis is DockerWaitBasis.TTL_BOUND:
+        # A bound from the holders' TTLs, which they almost always beat.
+        return f"at most {estimate.seconds}s"
+    return f"about {estimate.seconds}s"
 
 
 def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) -> str:
@@ -280,14 +365,10 @@ def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) ->
             col(DockerLease.position) < lease.position,
         )
     ).one()
-    if estimate.seconds is None:
-        when = "no estimate yet"
-    elif estimate.basis is DockerWaitBasis.TTL_BOUND:
-        # A bound from the holders' TTLs, which they almost always beat.
-        when = f"at most {estimate.seconds}s"
-    else:
-        when = f"about {estimate.seconds}s"
-    return f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, {when}"
+    return (
+        f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, "
+        f"{_describe_wait(estimate)}"
+    )
 
 
 class _Heartbeat:
