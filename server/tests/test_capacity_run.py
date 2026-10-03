@@ -26,6 +26,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 from loregarden.cli import capacity as capacity_cli
 from loregarden.cli.errors import UsageError
 from loregarden.config import settings
@@ -346,6 +347,39 @@ def test_the_stall_clock_restarts_whenever_something_ahead_finishes(session, bus
         )
 
     assert 3000 + 3600 <= clock.now < 3000 + 3600 + 60
+
+
+def _prepush_footprint(command: str) -> DockerFootprint:
+    """The `--footprint` lefthook.yml books for one pre-push command."""
+    config = yaml.safe_load((SERVER_ROOT.parent / "lefthook.yml").read_text())
+    words = config["pre-push"]["commands"][command]["run"].split()
+    return DockerFootprint(words[words.index("--footprint") + 1])
+
+
+def test_prepush_footprints_share_the_host(session, monkeypatch) -> None:
+    """A client run is granted beside another push's server suite, not queued behind it.
+
+    The pool is this machine's: 7 cpus / 48332 MB booked on a 10-core, 64 GB host.
+    """
+    monkeypatch.setattr(settings, "host_capacity_cpus", 7.0)
+    monkeypatch.setattr(settings, "host_capacity_memory_mb", 48332)
+    monkeypatch.setattr(settings, "host_capacity_max_leases", 16)
+    server = docker_leases.reserve(
+        session,
+        holder_label="pre-push server-tests",
+        footprint=_prepush_footprint("server-tests"),
+        pool=CapacityPool.HOST,
+    )
+    assert server.granted
+
+    client = docker_leases.reserve(
+        session,
+        holder_label="pre-push client-tests",
+        footprint=_prepush_footprint("client-tests"),
+        pool=CapacityPool.HOST,
+    )
+
+    assert client.granted
 
 
 def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
