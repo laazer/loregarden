@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.repo_templates import from_template
 
 _ROOT = Path(__file__).resolve().parents[2]
 _GATE = _ROOT / ".lefthook" / "scripts" / "ts_theme_check.cjs"
@@ -36,7 +37,16 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=_clean_env())
 
 
-def _init(root: Path, *, primitives: bool) -> Path:
+def _init(tmp_path: Path, *, primitives: bool) -> Path:
+    """A copy of the workspace, built once per process (`tests/repo_templates.py`)."""
+    key = "theme_gate_primitives" if primitives else "theme_gate_bare"
+    return from_template(
+        tmp_path / "repo", key, lambda root: _build_repo(root, primitives=primitives)
+    )
+
+
+def _build_repo(root: Path, *, primitives: bool) -> None:
+    root.mkdir()
     _git(root, "init", "-q", "-b", "main", ".")
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "t")
@@ -48,7 +58,6 @@ def _init(root: Path, *, primitives: bool) -> Path:
         (ui / "Button.tsx").write_text("export const Button = () => null;\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "base")
-    return root
 
 
 @pytest.fixture

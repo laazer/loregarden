@@ -495,15 +495,98 @@ def git_paths_at_head(repo: Optional[Path], paths: Iterable[Path]) -> Set[Path]:
 
 def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
     """Repo-relative paths this diff touches, for callers given no explicit file list."""
-    if unborn_worktree(repo, diff_scope):
-        return sorted(set(git_untracked_paths(repo)))
-    out = _run_git(
-        [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=ACMR", "--"], repo
-    )
-    paths = decoded_git_paths(out)
-    if diff_scope in _UNTRACKED_SCOPES:
-        paths.extend(git_untracked_paths(repo))
-    return sorted(set(paths))
+    return _RunQueries(repo).changed_paths(diff_scope, base_ref)
+
+
+#: `--diff-filter=ACMR`: added, copied, modified, renamed — what a gate can read.
+_CHANGED_STATUSES = frozenset("ACMR")
+
+
+@dataclass(frozen=True)
+class _RawEntry:
+    """One `git diff --raw` line: status letter(s), both modes, the post-image path."""
+
+    status: str
+    modes: Tuple[str, ...]
+    path: str
+
+
+def _parse_raw(out: str) -> List[_RawEntry]:
+    entries: List[_RawEntry] = []
+    for line in out.splitlines():
+        head, _, paths = line.partition("\t")
+        if not line.startswith(":") or not paths:
+            continue
+        fields = head.lstrip(":").split()
+        # A rename or copy names both paths; like `--name-only`, keep the new one.
+        path = decode_git_path(paths.split("\t")[-1])
+        entries.append(_RawEntry(fields[4] if len(fields) > 4 else "", tuple(fields[:2]), path))
+    return entries
+
+
+class _RunQueries:
+    """git's answers for one gate run, each question asked once.
+
+    A gate reads the repository and never writes it, so within one run a
+    repeated question has the answer the first asking got. One gate run asked
+    git 11 questions, 5 of them repeats; at the stage-transition rate that is
+    where a gate's time went.
+
+    Scoped to one `resolve_gate_scope` (or one public helper call), never the
+    process: the gate tests import this module and drive many repositories
+    through one interpreter, where a module-level cache would answer one test
+    with another's repository.
+
+    Changed paths (`--name-only --diff-filter=ACMR`), added paths
+    (`--diff-filter=A`) and submodule pointers all come from one `--raw` diff:
+    the same paths, quoted the same way, with the status and modes alongside.
+    `test_gate_raw_queries.py` holds the derivations to git's own answers.
+    """
+
+    def __init__(self, repo: Path) -> None:
+        self.repo = repo
+        self._has_head: Optional[bool] = None
+        self._untracked: Optional[List[str]] = None
+        self._raw: Dict[Tuple[str, str], List[_RawEntry]] = {}
+
+    def has_head(self) -> bool:
+        if self._has_head is None:
+            self._has_head = git_has_head(self.repo)
+        return self._has_head
+
+    def unborn(self, diff_scope: str) -> bool:
+        """`unborn_worktree`, answered from this run's `has_head`."""
+        return diff_scope == WORKTREE and not self.has_head()
+
+    def untracked(self) -> List[str]:
+        if self._untracked is None:
+            self._untracked = git_untracked_paths(self.repo)
+        return list(self._untracked)
+
+    def raw(self, diff_scope: str, base_ref: str) -> List[_RawEntry]:
+        key = (diff_scope, base_ref)
+        if key not in self._raw:
+            self._raw[key] = (
+                []
+                if self.unborn(diff_scope)
+                else _parse_raw(_run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], self.repo))
+            )
+        return self._raw[key]
+
+    def changed_paths(self, diff_scope: str, base_ref: str) -> List[str]:
+        if self.unborn(diff_scope):
+            return sorted(set(self.untracked()))
+        paths = [e.path for e in self.raw(diff_scope, base_ref) if e.status[:1] in _CHANGED_STATUSES]
+        if diff_scope in _UNTRACKED_SCOPES:
+            paths.extend(self.untracked())
+        return sorted(set(paths))
+
+    def added_paths(self, diff_scope: str, base_ref: str) -> List[str]:
+        # Unborn: every path is untracked, which the caller already treats as whole-file.
+        return [e.path for e in self.raw(diff_scope, base_ref) if e.status[:1] == "A"]
+
+    def gitlink_paths(self, diff_scope: str, base_ref: str) -> List[str]:
+        return sorted({e.path for e in self.raw(diff_scope, base_ref) if GITLINK_MODE in e.modes})
 
 
 def describe_scope(diff_scope: str, base_ref: str) -> str:
@@ -659,21 +742,27 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     ``degraded`` so `resolve_gate_scope` can refuse to call it a pass if the
     narrower scope leaves this gate with nothing to grade.
     """
+    return _resolve_scope(_RunQueries(repo), diff_scope, base_ref)
+
+
+def _resolve_scope(queries: _RunQueries, diff_scope: str, base_ref: str) -> ResolvedScope:
+    """`resolve_scope`, asking git through one run's queries."""
+    repo = queries.repo
     base_ref = effective_base_ref(repo, base_ref)
     if diff_scope != WORKTREE:
         return ResolvedScope(
             diff_scope,
             base_ref,
-            git_changed_paths(repo, diff_scope, base_ref),
+            queries.changed_paths(diff_scope, base_ref),
             describe_scope(diff_scope, base_ref),
         )
-    if not git_has_head(repo):
+    if not queries.has_head():
         # Unborn HEAD: there is no commit to diff against and every file is
-        # untracked, which `git_changed_paths` already collects.
+        # untracked, which `changed_paths` already collects.
         return ResolvedScope(
             WORKTREE,
             base_ref,
-            git_changed_paths(repo, WORKTREE, base_ref),
+            queries.changed_paths(WORKTREE, base_ref),
             "worktree changes (no commits yet)",
         )
     merge_base = git_merge_base(repo, base_ref)
@@ -688,14 +777,14 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
         return ResolvedScope(
             SINCE,
             empty_tree,
-            git_changed_paths(repo, SINCE, empty_tree),
+            queries.changed_paths(SINCE, empty_tree),
             f"whole branch and worktree (no common ancestor with {base_ref!r})",
         )
     if merge_base is None:
         return ResolvedScope(
             WORKTREE,
             base_ref,
-            git_changed_paths(repo, WORKTREE, base_ref),
+            queries.changed_paths(WORKTREE, base_ref),
             f"worktree changes vs HEAD (base {base_ref!r} did not resolve; "
             "branch commits not examined)",
             degraded=True,
@@ -703,7 +792,7 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     return ResolvedScope(
         SINCE,
         merge_base,
-        git_changed_paths(repo, SINCE, merge_base),
+        queries.changed_paths(SINCE, merge_base),
         describe_scope(SINCE, base_ref),
     )
 
@@ -892,24 +981,12 @@ def git_gitlink_paths(repo: Path, diff_scope: str, base_ref: str) -> List[str]:
     filter drops it (it is a directory), and the run prints ``examined 0
     file(s)`` and exits 0 — a change nobody graded, reported as a clean gate.
     """
-    if unborn_worktree(repo, diff_scope):
-        return []
-    out = _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], repo)
-    found: List[str] = []
-    for line in out.splitlines():
-        if not line.startswith(":"):
-            continue
-        head, _, paths = line.partition("\t")
-        if not paths:
-            continue
-        fields = head.lstrip(":").split()
-        if len(fields) < 2 or GITLINK_MODE not in fields[:2]:
-            continue
-        found.append(decode_git_path(paths.split("\t")[-1]))
-    return sorted(set(found))
+    return _RunQueries(repo).gitlink_paths(diff_scope, base_ref)
 
 
-def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -> None:
+def announce_ungraded_submodules(
+    label: str, repo: Path, scope: ResolvedScope, queries: Optional[_RunQueries] = None
+) -> None:
     """Say out loud that a submodule bump went ungraded.
 
     A gate cannot grade another repository's contents, and failing on every
@@ -919,7 +996,7 @@ def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -
     unexamined change is the one option this ticket exists to remove, so the
     run names them.
     """
-    gitlinks = git_gitlink_paths(repo, scope.diff_scope, scope.base_ref)
+    gitlinks = (queries or _RunQueries(repo)).gitlink_paths(scope.diff_scope, scope.base_ref)
     if gitlinks:
         print(
             f"{label}: not examined — {len(gitlinks)} submodule(s) changed "
@@ -952,8 +1029,10 @@ def resolve_gate_scope(
         )
     candidates = list(explicit_files)
     discovered = not candidates and repo is not None
-    if discovered:
-        scope = resolve_scope(repo, diff_scope, base_ref)
+    # Every git question below goes through this one run's queries.
+    queries = _RunQueries(repo) if repo is not None else None
+    if discovered and queries is not None:
+        scope = _resolve_scope(queries, diff_scope, base_ref)
         candidates = [repo / rel for rel in scope.paths]
     else:
         scope = ResolvedScope(diff_scope, base_ref, [], describe_scope(diff_scope, base_ref))
@@ -991,19 +1070,18 @@ def resolve_gate_scope(
     # Counted after filtering, always: the number has to be the number of files
     # the gate read, or it is one more thing that looks like a pass over work.
     print(examined_line(label, len(files), scope.description))
-    if discovered and repo is not None and git_has_head(repo):
-        announce_ungraded_submodules(label, repo, scope)
+    if discovered and queries is not None and queries.has_head():
+        announce_ungraded_submodules(label, queries.repo, scope, queries)
     additions: Dict[str, Set[int]] = {}
     untracked: FrozenSet[str] = frozenset()
     numstat = DiffNumstat({}, frozenset())
-    if repo is not None and files:
+    if queries is not None and files:
+        repo = queries.repo
         diff = git_diff_cached(repo, scope.diff_scope, scope.base_ref)
         additions = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
-        untracked = (
-            frozenset(git_untracked_paths(repo)) if scope.includes_untracked else frozenset()
-        )
+        untracked = frozenset(queries.untracked()) if scope.includes_untracked else frozenset()
         numstat = git_diff_numstat(repo, scope.diff_scope, scope.base_ref)
         # Asked only of the files this gate grades: a path outside them is
         # never looked up, and a deleted path (no `+++ b/`, real counts) would
@@ -1011,7 +1089,7 @@ def resolve_gate_scope(
         graded_rels = frozenset(repo_relative_posix(f, repo) for f in files) - untracked
         numstat = numstat.with_suppressed(
             suppressed_diff_paths(diff, numstat, graded_rels)
-            | (graded_rels & frozenset(git_added_paths(repo, scope.diff_scope, scope.base_ref)))
+            | (graded_rels & frozenset(queries.added_paths(scope.diff_scope, scope.base_ref)))
         )
     return GateRun(
         label=label,
@@ -1163,13 +1241,7 @@ def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
     That pair is indistinguishable from a mode-only ``chmod`` by counts alone,
     so counts alone cannot decide it. "It is new, so all of it is new" can.
     """
-    if unborn_worktree(repo, diff_scope):
-        # Every path is untracked, which the caller already treats as whole-file.
-        return []
-    out = _run_git(
-        [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=A", "--"], repo
-    )
-    return decoded_git_paths(out)
+    return _RunQueries(repo).added_paths(diff_scope, base_ref)
 
 
 def git_diff_numstat(
