@@ -41,6 +41,7 @@ from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import resolve_chat_adapter
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_cancellation import request_cancel
+from loregarden.services.run_capacity import host_capacity_for_run
 from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.run_service import fail_stale_handoff_runs
@@ -265,7 +266,7 @@ def execute_triage_turn_background(run_id: str) -> None:
             # that thinks for longer than AGENT_RUN_LEASE is reaped mid-answer
             # by the sweep — 7 of the 10 lease expiries in the fortnight before
             # this were Baxter turns with `last_seen_at` never stamped.
-            with lease_renewal(run.id):
+            with host_capacity_for_run(session, run), lease_renewal(run.id):
                 TriageTurnExecutor(session).execute(run, ticket)
     except Exception as exc:
         logger.exception("Background triage turn failed: %s", run_id)

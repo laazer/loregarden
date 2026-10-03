@@ -202,6 +202,11 @@ class Settings(BaseSettings):
     host_capacity_max_leases: int = 6
     host_reserved_cpus: float = 1.0
     host_reserved_memory_mb: int = 4096
+    # Every agent run holds a small host lease for its lifetime (see
+    # services/run_capacity.py). A run that cannot get one waits this long in
+    # line, then fails naming the wait.
+    agent_run_capacity_enabled: bool = True
+    agent_run_capacity_wait_seconds: float = 1800.0
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod
