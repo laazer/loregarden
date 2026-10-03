@@ -36,6 +36,7 @@ fallback stays workspace-scoped and never returns an INITIATIVE row.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from loregarden.models.domain import InitiativeNumberPool, Ticket, WorkItemType, Workspace
 from loregarden.models.domain.initiative_tables import GLOBAL_INITIATIVE_POOL_ID
@@ -237,6 +238,30 @@ def _taken_initiative_slugs(session: Session, *, exclude_id: str | None = None) 
         if slug:
             taken.add(slug)
     return frozenset(taken)
+
+
+def taken_spellings(session: Session, spellings: Iterable[str]) -> set[str]:
+    """Which of `spellings` some ticket already answers to, in any workspace or none.
+
+    Both columns, because a supplied ref is kept as `legacy_external_id`; and
+    case-folded, as `_reject_taken_global_spelling` matches. One query for the
+    lot, so a proposal of many refs is not one round-trip each.
+    """
+    wanted = {spelling for spelling in spellings if spelling}
+    candidates = wanted | {spelling.lower() for spelling in wanted}
+    if not candidates:
+        return set()
+    held: set[str] = set()
+    for external_id, legacy_external_id in session.exec(
+        select(Ticket.external_id, Ticket.legacy_external_id).where(
+            or_(
+                col(Ticket.external_id).in_(list(candidates)),
+                col(Ticket.legacy_external_id).in_(list(candidates)),
+            )
+        )
+    ).all():
+        held.update(value for value in (external_id, legacy_external_id) if value)
+    return {spelling for spelling in wanted if spelling in held or spelling.lower() in held}
 
 
 def _reject_taken_global_spelling(session: Session, spelling: str, *, exclude_id: str) -> None:
