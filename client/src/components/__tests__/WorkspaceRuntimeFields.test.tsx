@@ -133,6 +133,29 @@ test("an adapter that takes no pins reports only the adapter", () => {
   expect(summary).not.toHaveTextContent("cli-default");
 });
 
+test("with no provider pinned, the effective line credits each stage's agent", () => {
+  renderFields(
+    { cli_adapter: "default" },
+    {
+      ...OPTIONS,
+      effective: {
+        cli_adapter: "",
+        cli_adapter_source: "agent",
+        model: "",
+        model_source: "agent",
+        effort: "",
+        effort_source: "agent",
+        supports_model: false,
+        supports_effort: false,
+      },
+    },
+  );
+
+  const summary = screen.getByText(/Currently runs as:/);
+  expect(summary).toHaveTextContent("each stage's agent");
+  expect(summary).not.toHaveTextContent("global");
+});
+
 test("runtimeSettingsEqual notices an effort-only change", () => {
   expect(
     runtimeSettingsEqual(DEFAULT_RUNTIME, { ...DEFAULT_RUNTIME, claude_effort: "max" }),

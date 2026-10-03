@@ -498,6 +498,15 @@ export function Dashboard() {
     },
   });
 
+  // The ticket's Model settings dialog reports what *this ticket's* runs use —
+  // its own pin over its own workspace. The page-level query above is scoped to
+  // the sidebar's workspace (often "all"), which can only name the global fallback.
+  const ticketRuntimeOptions = useQuery({
+    queryKey: ["runtime-options", "ticket", selectedId],
+    queryFn: () => api.runtimeOptions({ ticket: selectedId ?? "" }),
+    enabled: ticketModelModalOpen && Boolean(selectedId),
+  });
+
   const setTicketRuntime = useMutation({
     meta: { errorTitle: "Save ticket runtime" },
     mutationFn: (runtime: import("../api/client").WorkspaceRuntimeSettings) => {
@@ -506,6 +515,7 @@ export function Dashboard() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+      qc.invalidateQueries({ queryKey: ["runtime-options", "ticket", selectedId] });
     },
   });
 
@@ -1039,7 +1049,8 @@ export function Dashboard() {
       <TriageModelModal
         open={ticketModelModalOpen}
         runtime={sel?.orchestration_runtime ?? DEFAULT_ORCHESTRATION_RUNTIME}
-        runtimeOptions={runtimeOptions.data}
+        runtimeOptions={ticketRuntimeOptions.data}
+        runtimeOptionsError={ticketRuntimeOptions.error}
         isSaving={setTicketRuntime.isPending}
         scopeLabel="Workflow"
         subtitle="Choose a provider, then pick a model for this ticket's agent runs"
