@@ -6,11 +6,14 @@ import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../api/client";
 import { WorkspaceRuntimeFields, runtimeSettingsEqual } from "./WorkspaceRuntimeFields";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { describeError } from "../state/toastStore";
 
 interface TriageModelModalProps {
   open: boolean;
   runtime: WorkspaceRuntimeSettings;
   runtimeOptions: RuntimeOptions | undefined;
+  /** Why `runtimeOptions` never arrived; without it the body reads "Loading" forever. */
+  runtimeOptionsError?: unknown;
   isSaving: boolean;
   onClose: () => void;
   onSave: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
@@ -22,6 +25,7 @@ export function TriageModelModal({
   open,
   runtime,
   runtimeOptions,
+  runtimeOptionsError,
   isSaving,
   onClose,
   onSave,
@@ -78,6 +82,11 @@ export function TriageModelModal({
               disabled={isSaving}
               onChange={setDraft}
             />
+          ) : runtimeOptionsError ? (
+            <p className="modal-hint" role="alert">
+              {describeError(runtimeOptionsError, "Could not load the model options")}. Close
+              and reopen to retry.
+            </p>
           ) : (
             <p className="modal-hint">Loading runtime options…</p>
           )}

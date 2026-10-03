@@ -324,6 +324,7 @@ def run_holding(
     started_file: Path | None = None,
     environ: Mapping[str, str] | None = None,
     heartbeat_seconds: float | None = None,
+    cwd: Path | None = None,
 ) -> int:
     """Run `command` under a lease and return its exit status (128+N for signal N).
 
@@ -350,7 +351,9 @@ def run_holding(
             with _Heartbeat(session_factory, lease_id, interval, report):
                 if started_file is not None:
                     started_file.touch()
-                code = relay.run(command, child_environment(reservation, environ or os.environ))
+                code = relay.run(
+                    command, child_environment(reservation, environ or os.environ), cwd
+                )
         except Terminated as stopped:
             code = 128 + stopped.signum
         finally:

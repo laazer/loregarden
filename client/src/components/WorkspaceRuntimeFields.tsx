@@ -113,6 +113,11 @@ function sourceLabel(source: string): string {
 }
 
 export function effectiveRuntimeSummary(effective: RuntimeEffective): string {
+  // Nothing above the agent pins a provider: each stage's agent runs on the
+  // adapter and model it declares, so there is no single answer to name.
+  if (effective.cli_adapter_source === "agent") {
+    return "each stage's agent, on the provider and model it declares";
+  }
   const parts = [
     `${effective.cli_adapter} (${sourceLabel(effective.cli_adapter_source)})`,
   ];

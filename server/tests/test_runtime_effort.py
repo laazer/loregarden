@@ -8,7 +8,7 @@ import httpx
 import pytest
 from loregarden.agents.cli_adapters import resolve_cli_invocation
 from loregarden.agents.executors.lmstudio_runner import run_chat
-from loregarden.models.domain import Workspace, WorkspaceRuntimeSettings
+from loregarden.models.domain import Ticket, Workspace, WorkspaceRuntimeSettings
 from loregarden.services import cli_settings
 from loregarden.services.cli_settings import (
     CURSOR_EFFORT_MODELS,
@@ -16,6 +16,7 @@ from loregarden.services.cli_settings import (
     resolve_effort_for_adapter,
     resolve_runtime_effective,
 )
+from sqlmodel import select
 
 
 @pytest.fixture(autouse=True)
@@ -208,6 +209,51 @@ def test_effective_credits_the_ticket_tier_when_it_wins():
 
     assert effective["effort"] == "max"
     assert effective["effort_source"] == "ticket"
+
+
+def test_effective_names_the_agent_tier_when_nothing_pins_a_provider():
+    """With no env/ticket/workspace pin each stage runs on its own agent's adapter;
+    reporting the global setting claimed a provider ("local") no run used."""
+    effective = resolve_runtime_effective(_workspace(cli_adapter="default"))
+
+    assert effective["cli_adapter"] == ""
+    assert effective["cli_adapter_source"] == "agent"
+    assert effective["supports_model"] is False
+
+
+def test_effective_credits_the_ticket_adapter_over_the_workspace_pin():
+    ws = _workspace(cli_adapter="cursor", claude_model="claude-opus-5")
+    ticket = WorkspaceRuntimeSettings(cli_adapter="claude", claude_effort="medium")
+
+    effective = resolve_runtime_effective(ws, ticket_runtime=ticket)
+
+    assert (effective["cli_adapter"], effective["cli_adapter_source"]) == ("claude", "ticket")
+    assert (effective["model"], effective["model_source"]) == ("claude-opus-5", "workspace")
+    assert (effective["effort"], effective["effort_source"]) == ("medium", "ticket")
+
+
+def test_runtime_options_for_a_ticket_resolve_its_own_pin_and_workspace(client, db_session):
+    """The ticket dialog asked with workspace=all and showed the global fallback,
+    so a saved ticket pin never showed up as what the ticket's runs would use."""
+    ticket = db_session.exec(select(Ticket)).first()
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    workspace.cli_adapter = "cursor"
+    ticket.orchestration_runtime_json = json.dumps(
+        {"cli_adapter": "claude", "claude_model": "claude-opus-5"}
+    )
+    db_session.add_all([workspace, ticket])
+    db_session.commit()
+
+    effective = client.get(
+        f"/api/workspaces/runtime-options?workspace=all&ticket={ticket.id}"
+    ).json()["effective"]
+
+    assert (effective["cli_adapter"], effective["cli_adapter_source"]) == ("claude", "ticket")
+    assert (effective["model"], effective["model_source"]) == ("claude-opus-5", "ticket")
+
+
+def test_runtime_options_for_an_unknown_ticket_is_a_404(client):
+    assert client.get("/api/workspaces/runtime-options?ticket=nope").status_code == 404
 
 
 def test_effective_marks_local_adapter_as_taking_no_pins():

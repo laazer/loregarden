@@ -241,6 +241,70 @@ def resolve_effective_adapter(
     return agent_adapter or settings.cli_adapter
 
 
+def adapter_pin_source(*, workspace: Workspace | None, ticket_adapter: str = "default") -> str:
+    """Which tier above the agent pinned the adapter, or "" when the agent's own
+    declared adapter decides. Walks the same chain as ``resolve_effective_adapter``.
+    """
+    if os.environ.get("LOREGARDEN_CLI_ADAPTER"):
+        return "env"
+    if ticket_adapter and ticket_adapter != CliAdapter.DEFAULT:
+        return "ticket"
+    ws = workspace_cli_settings(workspace)
+    if ws.cli_adapter and ws.cli_adapter != CliAdapter.DEFAULT:
+        return "workspace"
+    return ""
+
+
+_PIN_SOURCE_LABEL = {
+    "env": "the LOREGARDEN_CLI_ADAPTER environment variable",
+    "ticket": "this ticket's Model settings",
+    "workspace": "the workspace's provider setting",
+}
+
+
+def adapter_override_warning(
+    *,
+    agent_id: str,
+    agent_adapter: str,
+    selected_adapter: str,
+    pin_source: str,
+    dropped_model: str,
+    model: str,
+) -> str:
+    """Say, in a run's log, that a higher tier replaced the agent's declared adapter.
+
+    The replacement is deliberate, but its side effect is not visible anywhere
+    else: the agent's model pin belongs to the declared provider and is dropped
+    (``adapter_model_pins_apply``), so a run can land on the new provider's own
+    default — a capped "Auto" tier, say — with nothing in the log to say why.
+    Returns "" when the agent declares nothing, got what it declared, or no tier
+    pinned the adapter (a command override replaces the whole invocation).
+    """
+    if not pin_source or adapter_model_pins_apply(
+        agent_adapter=agent_adapter, selected_adapter=selected_adapter
+    ):
+        return ""
+    tier = _PIN_SOURCE_LABEL[pin_source]
+    parts = [
+        f"Agent '{agent_id}' declares adapter '{agent_adapter}', but {tier} pins "
+        f"'{selected_adapter}', so this run uses {selected_adapter}."
+    ]
+    if dropped_model:
+        parts.append(
+            f"Its {agent_adapter} model pin '{dropped_model}' does not apply to "
+            f"{selected_adapter} and was dropped."
+        )
+    if model:
+        parts.append(f"Model: {model}.")
+    else:
+        parts.append(
+            f"No {selected_adapter} model is pinned, so the run is on {selected_adapter}'s "
+            "own default model."
+        )
+    parts.append("To run this agent as declared, set the provider in this ticket's Model settings.")
+    return " ".join(parts)
+
+
 def resolve_chat_adapter(*, agent_adapter: str, override_json: str = "") -> str:
     """The adapter for an interactive chat surface — the workspace pipeline
     adapter deliberately does not reach it.
@@ -703,11 +767,23 @@ def resolve_runtime_effective(
     ticket = ticket_runtime or WorkspaceRuntimeSettings()
     ws = workspace_cli_settings(workspace)
 
-    adapter, adapter_source = _effective_source(
-        (os.environ.get("LOREGARDEN_CLI_ADAPTER", ""), "env"),
-        ("" if ticket.cli_adapter == CliAdapter.DEFAULT else ticket.cli_adapter, "ticket"),
-        ("" if ws.cli_adapter == CliAdapter.DEFAULT else ws.cli_adapter, "workspace"),
-        (settings.cli_adapter, "global"),
+    adapter_source = adapter_pin_source(workspace=workspace, ticket_adapter=ticket.cli_adapter)
+    if not adapter_source:
+        # Nothing above the agent pins a provider, so each stage runs on its own
+        # agent's declared adapter and model — which one depends on the stage, and
+        # naming the global setting here would claim a provider no run uses.
+        return {
+            "cli_adapter": "",
+            "cli_adapter_source": "agent",
+            "model": "",
+            "model_source": "agent",
+            "effort": "",
+            "effort_source": "agent",
+            "supports_model": False,
+            "supports_effort": False,
+        }
+    adapter = resolve_effective_adapter(
+        agent_adapter="", workspace=workspace, ticket_adapter=ticket.cli_adapter
     )
 
     model = resolve_model_for_adapter(
@@ -801,7 +877,10 @@ def resolve_runtime_effective(
 
 
 def runtime_options_payload(
-    *, lmstudio_base_url: str = "", workspace: Workspace | None = None
+    *,
+    lmstudio_base_url: str = "",
+    workspace: Workspace | None = None,
+    ticket_runtime: WorkspaceRuntimeSettings | None = None,
 ) -> dict:
     from loregarden.services.codex_discovery import codex_model_options
     from loregarden.services.lmstudio_discovery import lmstudio_model_options
@@ -819,5 +898,5 @@ def runtime_options_payload(
         "lmstudio_efforts": LMSTUDIO_EFFORT_OPTIONS,
         "opencode_efforts": OPENCODE_EFFORT_OPTIONS,
         "cursor_effort_models": sorted(CURSOR_EFFORT_MODELS),
-        "effective": resolve_runtime_effective(workspace),
+        "effective": resolve_runtime_effective(workspace, ticket_runtime=ticket_runtime),
     }

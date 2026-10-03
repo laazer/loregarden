@@ -380,7 +380,7 @@ def run_registered(
                 report(
                     f"instance: registered {registration.record.id} at {registration.record.url}"
                 )
-            return relay.run(command, environ or os.environ)
+            return relay.run(command, environ or os.environ, None)
         except Terminated as stopped:
             return 128 + stopped.signum
         finally:

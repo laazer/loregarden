@@ -11,6 +11,7 @@ from __future__ import annotations
 import signal
 import subprocess
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 
@@ -60,8 +61,8 @@ class SignalRelay:
             raise Terminated(number)
         self._child.send_signal(number)
 
-    def run(self, command: Sequence[str], env: Mapping[str, str]) -> int:
+    def run(self, command: Sequence[str], env: Mapping[str, str], cwd: Path | None) -> int:
         signal.signal(signal.SIGINT, lambda _number, _frame: None)
-        self._child = subprocess.Popen(list(command), env=dict(env))  # noqa: S603 — the caller's command
+        self._child = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # noqa: S603 — the caller's command
         code = self._child.wait()
         return 128 - code if code < 0 else code

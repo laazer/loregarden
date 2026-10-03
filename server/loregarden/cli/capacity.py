@@ -40,6 +40,22 @@ def _workspace_id(slug: str | None) -> str | None:
     return workspace.id
 
 
+#: Where the caller stood before `scripts/loregarden-cli.sh` moved into
+#: `server/` to start uv. The held command runs there, so a relative path in it
+#: means what the caller meant.
+CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
+
+
+def _caller_cwd() -> Path:
+    raw = os.environ.get(CALLER_CWD_ENV)
+    if not raw:
+        return Path.cwd()
+    caller = Path(raw)
+    if not caller.is_dir():
+        raise UsageError(f"${CALLER_CWD_ENV} is not a directory: {raw}")
+    return caller
+
+
 def _run(args: argparse.Namespace) -> str:
     command = args.held_command[1:] if args.held_command[:1] == ["--"] else args.held_command
     if not command:
@@ -47,6 +63,7 @@ def _run(args: argparse.Namespace) -> str:
     if not args.footprint and not (args.cpus and args.memory_mb):
         raise UsageError("pass --footprint, or both --cpus and --memory-mb")
 
+    cwd = _caller_cwd()
     db_session.init_db()
     request = CapacityRequest(
         label=args.label,
@@ -64,7 +81,8 @@ def _run(args: argparse.Namespace) -> str:
         request,
         command,
         report=_report,
-        started_file=Path(args.started_file) if args.started_file else None,
+        started_file=cwd / args.started_file if args.started_file else None,
+        cwd=cwd,
     )
     # The command's status, not EXIT_OK/EXIT_ERROR: a wrapper must see exactly
     # what the held command returned.

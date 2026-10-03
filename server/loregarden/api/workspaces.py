@@ -13,6 +13,7 @@ from loregarden.models.domain import (
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
+    get_ticket_orchestration_runtime,
     runtime_options_payload,
     validated_effort_pins,
     workspace_cli_settings,
@@ -121,6 +122,7 @@ def restore_workspace(slug: str, session: Session = Depends(get_session)) -> dic
 def get_runtime_options(
     lmstudio_base_url: str = "",
     workspace: str = "",
+    ticket: str = "",
     session: Session = Depends(get_session),
 ) -> dict:
     """Static Claude/Cursor catalogs + live LM Studio chat models when reachable.
@@ -128,11 +130,20 @@ def get_runtime_options(
     Optional ``lmstudio_base_url`` or ``workspace`` (slug) selects which LM Studio
     server to probe — otherwise the global default URL is used. ``workspace`` also
     resolves the ``effective`` block: the adapter/model/effort a run started now
-    would actually use, which the pin selects alone cannot show.
+    would actually use, which the pin selects alone cannot show. ``ticket`` (id)
+    resolves it for that ticket's runs instead: its own runtime pin over its own
+    workspace, whatever ``workspace`` says.
     """
     base_url = lmstudio_base_url.strip()
     ws: Workspace | None = None
-    if workspace.strip():
+    ticket_runtime: WorkspaceRuntimeSettings | None = None
+    if ticket:
+        ticket_row = session.get(Ticket, ticket)
+        if not ticket_row:
+            raise HTTPException(404, "Ticket not found")
+        ws = session.get(Workspace, ticket_row.workspace_id)
+        ticket_runtime = get_ticket_orchestration_runtime(ticket_row)
+    elif workspace.strip():
         ws = session.exec(select(Workspace).where(Workspace.slug == workspace.strip())).first()
     if not base_url and ws and ws.lmstudio_base_url:
         base_url = ws.lmstudio_base_url
@@ -151,7 +162,9 @@ def get_runtime_options(
     # none of them can emit a lazy query.
     session.close()
 
-    return runtime_options_payload(lmstudio_base_url=base_url, workspace=ws)
+    return runtime_options_payload(
+        lmstudio_base_url=base_url, workspace=ws, ticket_runtime=ticket_runtime
+    )
 
 
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)

@@ -6,8 +6,7 @@ of times before behaving like `capacity run`. The policy under test:
 - a ledger failure is retried with backoff, and the command runs once it clears;
 - the command failing is NOT a ledger failure — it is never retried;
 - with no terminal, retries stop at the hard cap and the push fails;
-- at a terminal, the person chooses: proceed unreserved, retry, or stop;
-- the command runs where the caller is, though the CLI changes directory.
+- at a terminal, the person chooses: proceed unreserved, retry, or stop.
 """
 
 from __future__ import annotations
@@ -23,8 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / ".lefthook" / "scripts" / "capacity-run.sh"
 
 #: Fails while its counter is below FAKE_FAILURES; then touches the started file
-#: and runs the command after `--`, as `loregarden capacity run` does — from
-#: another directory, as the real one does (`loregarden-cli.sh` cds to server/).
+#: and runs the command after `--`, as `loregarden capacity run` does.
 FAKE_CLI = """#!/usr/bin/env bash
 count_file="$FAKE_STATE/calls"
 calls=$(( $(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
@@ -40,7 +38,6 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do
 done
 shift
 touch "$started"
-cd /
 "$@"
 """
 
@@ -105,24 +102,6 @@ def test_a_failing_command_is_not_mistaken_for_a_ledger_failure(tmp_path, fake_c
 
     assert result.returncode == 1
     assert _calls(tmp_path) == 1
-
-
-def test_a_relative_command_runs_from_the_callers_directory(tmp_path, fake_cli) -> None:
-    """The hook passes `.lefthook/scripts/server-tests.sh`; the CLI runs from server/."""
-    script = tmp_path / "suite.sh"
-    script.write_text("exit 4\n")
-
-    result = subprocess.run(
-        _wrap("bash", "suite.sh"),
-        env=_env(tmp_path, fake_cli),
-        cwd=tmp_path,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    assert result.returncode == 4, result.stderr
 
 
 def test_without_a_terminal_retries_stop_at_the_hard_cap(tmp_path, fake_cli) -> None:

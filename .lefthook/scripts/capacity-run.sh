@@ -91,12 +91,8 @@ while :; do
   rm -f "$started_file"
   remaining=$((hard_cap - (SECONDS - start)))
   [ "$remaining" -lt 1 ] && remaining=1
-  # Back to this directory before the command: the CLI runs from its checkout's
-  # server/, where a relative command like `.lefthook/scripts/server-tests.sh`
-  # does not exist — the push would wait its turn, then fail on a missing file.
   "$cli" capacity run --label "$full_label" ${cli_args[@]+"${cli_args[@]}"} \
-    --max-wait "$remaining" --started-file "$started_file" \
-    -- bash -c 'cd "$1" && shift && exec "$@"' capacity-run "$PWD" "$@"
+    --max-wait "$remaining" --started-file "$started_file" -- "$@"
   rc=$?
   if [ -e "$started_file" ]; then
     exit "$rc" # the command ran; its status is ours

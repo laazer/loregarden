@@ -26,5 +26,9 @@ if [ -z "${LOREGARDEN_REPO_ROOT:-}" ]; then
 fi
 export LOREGARDEN_REPO_ROOT
 
+# `uv run` needs the server directory, but a command the CLI runs on the
+# caller's behalf (`capacity run -- bash .lefthook/scripts/…`) names paths
+# relative to where the caller stood. Record it before leaving.
+export LOREGARDEN_CALLER_CWD="$PWD"
 cd "$ROOT/server"
 exec uv run loregarden "$@"
