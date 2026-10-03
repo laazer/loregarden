@@ -175,7 +175,7 @@ function HolderIdentity({
       <div className="docker-holder-where">
         {branch ? <span className="docker-holder-branch">{branch}</span> : null}
         {worktree ? <span className="docker-holder-worktree">in {worktree}</span> : null}
-        <span className="docker-holder-cost">{detail}</span>
+        <span>{detail}</span>
         {pid ? <span className="docker-holder-pid">pid {pid}</span> : null}
       </div>
     </>

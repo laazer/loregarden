@@ -23,7 +23,7 @@ from sqlalchemy import Connection, text
 INSTANT_HOLD_SECONDS = 10
 
 
-@migration("20261003_capacity_unrun_holds", after="20261002_capacity_child_leases")
+@migration("20261003_capacity_unrun_holds", after="20261003_capacity_lease_slots")
 def m_capacity_unrun_holds(conn: Connection) -> None:
     if not table_exists(conn, "docker_leases"):
         return
