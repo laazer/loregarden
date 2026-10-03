@@ -10,7 +10,7 @@ import { useTicketAsides } from "../hooks/useTicketAsides";
 import {
   COMPOSER_PLACEHOLDER,
   DOCK_QUICK_PROMPT_LIMIT,
-  quickPrompts as promptsFor,
+  followUpPrompts,
 } from "../lib/dockChatPrompts";
 import { useAgentPresence } from "../state/QueueStatusContext";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
@@ -130,8 +130,10 @@ export function AppActionBar() {
   // one is busy — and aside mode, which routes a busy composer to a read-only
   // question instead of a turn to stop.
   const canStop = Boolean(session?.isBusy && !asideMode);
+  // Kept whether the thread is open or not: they are the quickest reply to the
+  // turn on screen, so they follow the conversation rather than only opening it.
   const quickPrompts = session
-    ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
+    ? followUpPrompts(session.kind, branch, session.messages).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
 
   const send = (content: string, skill = "") => {
@@ -323,7 +325,7 @@ export function AppActionBar() {
         />
       </div>
 
-      {!expanded && quickPrompts.length > 0 && (
+      {quickPrompts.length > 0 && (
         <div className="app-action-bar-quick">
           {quickPrompts.map((prompt) => (
             <button

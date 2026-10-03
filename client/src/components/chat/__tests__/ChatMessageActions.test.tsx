@@ -21,9 +21,18 @@ beforeEach(() => {
 });
 
 describe("per-reply actions", () => {
-  it("offers nothing on a surface that passes no handlers", () => {
+  it("offers Copy on a surface that passes no handlers, and nothing else", () => {
     render(<StudioChatMessages messages={reply} />);
-    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fork" })).not.toBeInTheDocument();
+  });
+
+  it("copies what the operator sent, too", async () => {
+    render(
+      <StudioChatMessages messages={[{ id: "u1", role: "user", content: "Rerun the gate" }]} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(copyText).toHaveBeenCalledWith("Rerun the gate"));
   });
 
   it("copies the reply body", async () => {
