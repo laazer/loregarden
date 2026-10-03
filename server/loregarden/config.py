@@ -207,6 +207,9 @@ class Settings(BaseSettings):
     # line, then fails naming the wait.
     agent_run_capacity_enabled: bool = True
     agent_run_capacity_wait_seconds: float = 1800.0
+    # A transition's gate commands wait this long for their host lease, then the
+    # gate reports UNAVAILABLE naming the wait — never passes unexamined.
+    gate_capacity_wait_seconds: float = 1800.0
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod

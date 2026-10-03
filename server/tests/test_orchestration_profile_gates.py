@@ -11,9 +11,11 @@ writing into the real agent_context/orchestration/ directory.
 import yaml
 from fastapi.testclient import TestClient
 from loregarden.config import settings
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import DockerFootprint, Workspace
 from loregarden.services.orchestration_profile import (
     GatesConfig,
+    _profile_path_for_write,
+    load_profile_from_path,
     orchestration_dir,
     resolve_orchestration_profile,
     update_gates_config,
@@ -45,6 +47,7 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         "autofix_commands": [],
         "autofix_agent_fallback": True,
         "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
+        "capacity_footprint": GatesConfig().capacity_footprint.value,
     }
 
 
@@ -75,6 +78,7 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         "autofix_commands": [],
         "autofix_agent_fallback": True,
         "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
+        "capacity_footprint": GatesConfig().capacity_footprint.value,
     }
 
     profile = resolve_orchestration_profile(ws)
@@ -277,6 +281,25 @@ def test_update_gates_writes_autofix_only_when_supplied(
     assert body["gates_autofix_commands"] == ["ruff format ."]
     assert body["gates_autofix_agent_fallback"] is False
     assert body["gates_autofix_max_agent_attempts"] == 1
+
+
+def test_update_gates_keeps_a_hand_set_capacity_footprint(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    """The gates editor sends enabled/commands/transition_script only. A save from
+    it must not quietly resize every gate lease back to the default."""
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = Workspace(slug="gates-capacity-test", name="Gates Capacity Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+    url = "/api/orchestration/workspaces/gates-capacity-test/profile/gates"
+
+    client.put(url, json={"enabled": True, "commands": ["true"], "capacity_footprint": "stack"})
+    client.put(url, json={"enabled": True, "commands": ["false"], "transition_script": ""})
+
+    profile = load_profile_from_path(_profile_path_for_write(ws))
+    assert profile.gates.commands == ["false"]
+    assert profile.gates.capacity_footprint is DockerFootprint.STACK
 
 
 def test_gate_test_endpoint_runs_every_command_and_saves_nothing(

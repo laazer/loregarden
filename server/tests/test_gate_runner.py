@@ -5,6 +5,7 @@ import textwrap
 from unittest.mock import patch
 
 import pytest
+from loregarden.config import settings
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.gate_runner import (
     build_gate_context,
@@ -17,6 +18,15 @@ from loregarden.services.gate_runner import (
 )
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
 from sqlmodel import Session
+
+
+@pytest.fixture(autouse=True)
+def _no_gate_lease(monkeypatch):
+    """These tests pin what a gate *reports*, over in-memory tickets and
+    workspaces that were never inserted. A gate lease names both by foreign key,
+    so the capacity ledger is switched off here; `test_gate_capacity.py` covers
+    the lease against real rows."""
+    monkeypatch.setattr(settings, "docker_capacity_enabled", False)
 
 
 @pytest.fixture(name="session")

@@ -37,7 +37,7 @@ from loregarden.services.gate_runner import (
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
-    AUTOFIX_GATE_KEYS,
+    PRESERVED_GATE_KEYS,
     GatesConfig,
     GitAutomationConfig,
     default_gate_commands,
@@ -131,7 +131,7 @@ def update_workspace_gates(
     profile = update_gates_config(
         ws,
         GatesConfig.model_validate(supplied),
-        preserve=AUTOFIX_GATE_KEYS - supplied.keys(),
+        preserve=PRESERVED_GATE_KEYS - supplied.keys(),
     )
     return _profile_view(profile, ws)
 

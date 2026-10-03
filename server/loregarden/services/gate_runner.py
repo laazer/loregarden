@@ -13,6 +13,7 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
+from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
@@ -168,7 +169,9 @@ def resolved_transition_script(profile: OrchestrationProfile, workspace: Workspa
     return str(script.relative_to(repo_root)) if script is not None else ""
 
 
-def _run_command(command: str, cwd: Path) -> GateRunResult:
+def _run_command(
+    command: str, cwd: Path, *, extra_env: dict[str, str] | None = None
+) -> GateRunResult:
     # A single malformed or unrunnable command entry (a typo'd Studio gate, a
     # checked-in script missing its execute bit) must degrade to a normal
     # "failed" result — never take down the whole evaluation with an unhandled
@@ -199,7 +202,7 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
             # resolves its own scope through git against the workspace it was
             # handed. An inherited binding aims them at another repository,
             # where they examine nothing and exit 0 — a pass over unread work.
-            env=scrubbed_git_env(),
+            env={**scrubbed_git_env(), **(extra_env or {})},
             capture_output=True,
             text=True,
             timeout=GATE_TIMEOUT_SECONDS,
@@ -346,6 +349,57 @@ def run_transition_gates(
         repo_root=repo_root,
     )
 
+    script = _resolve_transition_script(profile.gates, repo_root)
+    # A blank/whitespace-only entry (a Studio user or hand-edited YAML saving
+    # ["", "  "]) gates nothing — dropped here so it neither crashes the run nor
+    # inflates the "ran" count that lets an operator tell real gates apart.
+    templates = [
+        template
+        for template in collect_gate_commands(
+            profile,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            stage_def=stage_def,
+        )
+        if template.strip()
+    ]
+    if script is None and not templates:
+        return GateRunResult(
+            ok=True, outcome=GateOutcome.SKIPPED, message="no gate commands configured"
+        )
+
+    try:
+        lease = acquire_gate_capacity(
+            session,
+            profile.gates.capacity_footprint,
+            ticket=ticket,
+            workspace=workspace,
+            transition=context["transition"],
+            # Every command is bounded by GATE_TIMEOUT_SECONDS, so this covers
+            # the whole run without a heartbeat.
+            ttl_seconds=GATE_TIMEOUT_SECONDS * (len(templates) + 2),
+        )
+    except GateCapacityUnavailable as exc:
+        return GateRunResult(ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc))
+    try:
+        return _run_gate_commands(
+            session, ticket, repo_root, context, script, templates, env=lease.env
+        )
+    finally:
+        lease.release(session)
+
+
+def _run_gate_commands(
+    session: Session,
+    ticket: Ticket,
+    repo_root: Path,
+    context: dict[str, str],
+    script: Path | None,
+    templates: list[str],
+    *,
+    env: dict[str, str],
+) -> GateRunResult:
+    """Run the transition script, then each configured command, stopping at the first failure."""
     ran = 0
 
     # The workspace transition-gate script runs first, and tolerates transitions
@@ -353,7 +407,6 @@ def run_transition_gates(
     # workspace may gate only some of them. An unmodeled edge is "no gate here"
     # (skip), not a rejection — see _is_undefined_transition. A real gate failure
     # still blocks.
-    script = _resolve_transition_script(profile.gates, repo_root)
     if script is not None:
         # The handoff lives in the database, so point the workspace's gates at an
         # exported tree rather than the repo's tracked checkpoints. The export mirrors
@@ -367,7 +420,7 @@ def run_transition_gates(
             f"--checkpoints-dir {HANDOFF_SCRATCH_SUBDIR}",
             context,
         )
-        result = _run_command(script_command, repo_root)
+        result = _run_command(script_command, repo_root, extra_env=env)
         if result.ok:
             ran += 1
         elif _is_undefined_transition(result):
@@ -382,19 +435,9 @@ def run_transition_gates(
     # Profile- and stage-configured gate commands (lint, static analysis, etc.)
     # are objective checks with no such notion of an "unmodeled" transition, so
     # any failure blocks.
-    for template in collect_gate_commands(
-        profile,
-        from_stage=from_stage,
-        to_stage=to_stage,
-        stage_def=stage_def,
-    ):
-        # A blank/whitespace-only entry (a Studio user or hand-edited YAML saving
-        # ["", "  "]) gates nothing — skip it so it neither crashes the run nor
-        # inflates the "ran" count that lets an operator tell real gates apart.
-        if not template.strip():
-            continue
+    for template in templates:
         command = format_gate_command(template, context)
-        result = _run_command(command, repo_root)
+        result = _run_command(command, repo_root, extra_env=env)
         if not result.ok:
             return _blocking(result)
         ran += 1
