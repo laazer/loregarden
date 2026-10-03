@@ -452,7 +452,8 @@ def _cli_env(database: Path) -> dict[str, str]:
         {
             # Pinned, not inherited: with the repo root at the primary checkout,
             # config applies data/memory.local.json over LOREGARDEN_DATABASE_URL
-            # and the CLI books against the LIVE ledger.
+            # and the CLI writes to the LIVE ledger. scripts/loregarden-cli.sh
+            # keeps a root that is already set.
             "LOREGARDEN_REPO_ROOT": str(database.parent),
             "LOREGARDEN_DATABASE_URL": f"sqlite:///{database}",
             "LOREGARDEN_HOST_CAPACITY_CPUS": "2",
@@ -576,67 +577,53 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
         engine.dispose()
 
 
-# ---- through scripts/loregarden-cli.sh, as CLAUDE.md tells every repo to ----
-
-
-@pytest.fixture(name="uv_shim")
-def uv_shim_fixture(tmp_path) -> Path:
-    """A `uv` that runs `uv run loregarden …` as this interpreter's CLI, without syncing."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    shim = bin_dir / "uv"
-    shim.write_text(
-        "#!/bin/sh\n"
-        '[ "$1" = run ] && [ "$2" = loregarden ] || exit 97\n'
-        "shift 2\n"
-        f'exec "{sys.executable}" -m loregarden.cli.main "$@"\n'
-    )
-    shim.chmod(0o755)
-    return bin_dir
-
-
-def test_a_relative_command_runs_from_where_the_script_was_invoked(tmp_path, uv_shim) -> None:
-    """The script's `export LOREGARDEN_CALLER_CWD` is what puts the command back."""
+# `uv run`, interpreter start-up and every migration on a fresh database:
+# allow for a loaded 4-worker pre-push. The subprocess timeout below is the bound.
+@pytest.mark.timeout(360)
+def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> None:
+    """scripts/loregarden-cli.sh cds into server/ to start Python. The held
+    command must still run in the caller's directory: a pre-push hook passes
+    `bash .lefthook/scripts/server-tests.sh`, relative to the repo, and every
+    loregarden push failed with "No such file or directory" once the primary
+    checkout gained `capacity run`."""
     caller = tmp_path / "caller"
-    (caller / "client").mkdir(parents=True)
-    out = tmp_path / "out"
-    database = tmp_path / "ledger.db"
-    env = _cli_env(database)
-    env["PATH"] = f"{uv_shim}{os.pathsep}{env['PATH']}"
+    caller.mkdir()
+    script = SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"
 
     result = subprocess.run(
         [
             "bash",
-            str(SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"),
+            str(script),
             "capacity",
             "run",
             "--label",
-            "relative",
+            "cwd",
             "--cpus",
             "1",
             "--memory-mb",
-            "512",
+            "256",
             "--",
             "sh",
             "-c",
-            f'cd client && printf "%s|%s" "$PWD" "${{LOREGARDEN_CALLER_CWD-unset}}" > {out}',
+            'pwd -P > where; printf %s "${LOREGARDEN_CALLER_CWD-unset}" > inherited',
         ],
         cwd=caller,
-        env=env,
+        env=_cli_env(tmp_path / "ledger.db"),
         capture_output=True,
         text=True,
-        timeout=120,
-        check=False,
+        timeout=300,
     )
 
     assert result.returncode == 0, result.stderr
-    ran_in, inherited = out.read_text().split("|")
-    assert Path(ran_in).resolve() == (caller / "client").resolve()
-    assert inherited == "unset"
-    engine = create_engine(f"sqlite:///{database}")
+    assert (caller / "where").read_text().strip() == str(caller.resolve())
+    # The command does not inherit the caller's directory: a nested `loregarden`
+    # started another way, from elsewhere, would run its command here instead.
+    assert (caller / "inherited").read_text() == "unset"
+    # And it booked against this test's ledger, not the live one.
+    engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
     try:
         with Session(engine) as session:
             labels = [lease.holder_label for lease in session.exec(select(DockerLease))]
     finally:
         engine.dispose()
-    assert [label.split(" · ")[0] for label in labels] == ["relative"]
+    assert [label.split(" · ")[0] for label in labels] == ["cwd"]
