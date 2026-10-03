@@ -258,13 +258,13 @@ def estimate_waits(
         # This waiter now occupies capacity, and the ones behind it must wait for
         # it too — the head-of-line rule, carried into the projection.
         for name in charged:
-            free[name].add(-waiter.cpus, -waiter.memory_mb, -1)
+            free[name].add(-waiter.cpus, -waiter.memory_mb, -booked(waiter).count)
         predicted = hold_stats.predict(waiter.pool, waiter.footprint)
         holders.append(
             _Holder(
                 cpus=waiter.cpus,
                 memory_mb=waiter.memory_mb,
-                count=1,
+                count=booked(waiter).count,
                 pools=charged,
                 releases_in=None if predicted is None else clock + predicted,
                 basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
@@ -283,7 +283,11 @@ class _Free:
     leases: int
 
     def fits(self, lease: DockerLease) -> bool:
-        return lease.cpus <= self.cpus and lease.memory_mb <= self.memory_mb and self.leases >= 1
+        return (
+            lease.cpus <= self.cpus
+            and lease.memory_mb <= self.memory_mb
+            and self.leases >= booked(lease).count
+        )
 
     def add(self, cpus: float, memory_mb: int, leases: int) -> None:
         self.cpus += cpus
