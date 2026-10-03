@@ -14,6 +14,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden git change-pr --all-workspaces --branch B --title T -- <command> {worktree}
     loregarden capacity run --footprint heavy --label L -- <command>
     loregarden local_main
+    loregarden instance run --name client --kind client --port 5173 -- <command>
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from loregarden.cli import (
     gate_eval,
     git_tools,
     init_db,
+    instance,
     local_main,
     mcp_server,
     mcp_tools,
@@ -67,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     capacity.register(capacity_commands)
 
     local_main.register(groups)
+    instance.register(groups)
 
     return parser
 
