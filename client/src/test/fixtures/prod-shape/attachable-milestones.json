@@ -49,13 +49,6 @@
   "workspace_slug": "loregarden"
  },
  {
-  "external_id": "lg-m8-8",
-  "id": "d66e5ea1-a917-5cb7-bd0c-afe12e9cd110",
-  "state": "backlog",
-  "title": "M08 \u2014 Add gate outcomes on stage transitions",
-  "workspace_slug": "loregarden"
- },
- {
   "external_id": "lg-m9-9",
   "id": "628f03db-3d44-534b-9fd7-dfc8a8641a38",
   "state": "backlog",
@@ -67,13 +60,6 @@
   "id": "48e77f84-88c8-5340-aa20-368b257c9756",
   "state": "backlog",
   "title": "M10 \u2014 Split worktree isolation for chat turns",
-  "workspace_slug": "loregarden"
- },
- {
-  "external_id": "lg-m11-11",
-  "id": "581bf2d7-06fd-53c7-af9a-cc9ee5b24d5e",
-  "state": "in_progress",
-  "title": "M11 \u2014 Add gate outcomes on stage transitions",
   "workspace_slug": "loregarden"
  },
  {
@@ -133,13 +119,6 @@
   "workspace_slug": "loregarden"
  },
  {
-  "external_id": "lg-m20-20",
-  "id": "3b44f5b6-1e21-52c7-b77e-883a71631abc",
-  "state": "backlog",
-  "title": "M20 \u2014 Surface gate outcomes on stage transitions",
-  "workspace_slug": "loregarden"
- },
- {
   "external_id": "lg-m21-21",
   "id": "24aa5af3-725b-59a6-b4cc-10c5a186f634",
   "state": "backlog",
@@ -147,24 +126,10 @@
   "workspace_slug": "loregarden"
  },
  {
-  "external_id": "lg-m22-22",
-  "id": "6e5a21c9-d17b-5da0-b104-e06ea23069ae",
-  "state": "backlog",
-  "title": "M22 \u2014 Surface gate outcomes on stage transitions",
-  "workspace_slug": "loregarden"
- },
- {
   "external_id": "lg-m23-23",
   "id": "d9388773-4c0e-5be0-b102-6359f631239b",
   "state": "backlog",
   "title": "M23 \u2014 Make the run log's live tail",
-  "workspace_slug": "loregarden"
- },
- {
-  "external_id": "lg-m24-24",
-  "id": "84ec349e-dd65-5a9e-b23f-9217eb894cab",
-  "state": "backlog",
-  "title": "M24 \u2014 Split gate outcomes on stage transitions",
   "workspace_slug": "loregarden"
  },
  {
@@ -301,13 +266,6 @@
   "workspace_slug": "loregarden"
  },
  {
-  "external_id": "lg-m44-44",
-  "id": "b99e07b0-dcd7-5df9-bf84-6b5d8244891f",
-  "state": "in_progress",
-  "title": "M44 \u2014 Route gate outcomes on stage transitions",
-  "workspace_slug": "loregarden"
- },
- {
   "external_id": "lg-m45-45",
   "id": "39aa6b34-1f3c-5e0b-b4b2-c6686597d163",
   "state": "backlog",
@@ -350,13 +308,6 @@
   "workspace_slug": "loregarden"
  },
  {
-  "external_id": "lg-m51-51",
-  "id": "49c72617-3c00-5908-bd41-21b0fb323da3",
-  "state": "in_progress",
-  "title": "M51 \u2014 Fix gate outcomes on stage transitions",
-  "workspace_slug": "loregarden"
- },
- {
   "external_id": "lg-m52-52",
   "id": "3c7a0631-745b-55b3-9761-6654bc332fed",
   "state": "backlog",
@@ -389,13 +340,6 @@
   "id": "88cc42c8-2f6f-5b55-aef8-5536eb2c0374",
   "state": "done",
   "title": "M02 \u2014 Show the rework ledger's loop cap",
-  "workspace_slug": "blobert"
- },
- {
-  "external_id": "blob-m3-3",
-  "id": "98f7e12c-0d32-57cb-a201-6e3d724359d9",
-  "state": "in_progress",
-  "title": "M03 \u2014 Stop gate outcomes on stage transitions",
   "workspace_slug": "blobert"
  },
  {
@@ -494,20 +438,6 @@
   "id": "b5144855-3a49-5c63-bef5-b9e5b48c9ac1",
   "state": "backlog",
   "title": "M02 \u2014 Stop stage timeout budgets",
-  "workspace_slug": "loremaker"
- },
- {
-  "external_id": "lmkr-m3-3",
-  "id": "71e07abc-ab8b-5f15-a6f7-e9397b7e7430",
-  "state": "done",
-  "title": "M03 \u2014 Surface gate outcomes on stage transitions",
-  "workspace_slug": "loremaker"
- },
- {
-  "external_id": "lmkr-m4-4",
-  "id": "bb678f4a-0275-5dc4-b35a-1e6baa084013",
-  "state": "in_progress",
-  "title": "M04 \u2014 Show gate outcomes on stage transitions",
   "workspace_slug": "loremaker"
  },
  {

@@ -22,8 +22,10 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from loregarden.models.domain import MonitorArtifactKind, TicketState, WorkItemType
+from loregarden.models.domain import MonitorArtifactKind, Ticket, TicketState, WorkItemType
 from loregarden.services.memory_store import MemoryGraphStore
+from loregarden.services.ticket_ids import assign_initiative_external_id
+from loregarden.services.ticket_rollup import reconcile_parent
 from loregarden.testing.factories import NO_REPO, make_artifact, make_ticket, make_workspace
 
 
@@ -100,6 +102,13 @@ CALIBRATION = Calibration(
     long_documents=30,
 )
 
+#: Live had no initiatives at calibration, with every milestone unclaimed. The
+#: scenario carries one anyway, so the Initiatives page's populated state is seen
+#: at real volume: it claims the milestones of one theme that spans three
+#: workspaces, and leaves the other 65 unclaimed — still the shape that dominates.
+INITIATIVE_THEME = "gate outcomes on stage transitions"
+INITIATIVE_TITLE = "Trustworthy gate outcomes on every stage transition"
+
 _RNG_SEED = 20260928
 _EPOCH = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
@@ -157,6 +166,8 @@ _TAGS = [
 class ProdShapeSummary(BaseModel):
     tickets: int
     milestones: int
+    #: Milestones the scenario's one initiative claims.
+    initiative_milestones: int
     findings: int
     findings_on_finished: int
     long_documents: int
@@ -294,6 +305,7 @@ def build_prod_shape(
     rng = random.Random(_RNG_SEED)
     all_tickets = []
     milestones = 0
+    themed: list[str] = []
     for slug, ws in CALIBRATION.workspaces.items():
         workspace = make_workspace(session, slug=slug, repo_path=NO_REPO)
         prefix = ws.prefix
@@ -310,6 +322,8 @@ def build_prod_shape(
                 state=state,
             )
             ms_ids.append(ms.id)
+            if INITIATIVE_THEME in ms.title.lower():
+                themed.append(ms.id)
         milestones += len(ms_ids)
 
         rest = ws.tickets - ws.milestones
@@ -333,6 +347,7 @@ def build_prod_shape(
                 )
                 all_tickets.append((slug, ticket.id, ticket.external_id, state, parent))
 
+    _add_initiative(session, themed)
     findings = _add_findings(session, all_tickets, rng)
     documents = _add_documents(session, all_tickets, rng)
     memory = {}
@@ -346,11 +361,38 @@ def build_prod_shape(
     return ProdShapeSummary(
         tickets=len(all_tickets) + milestones,
         milestones=milestones,
+        initiative_milestones=len(themed),
         findings=findings,
         findings_on_finished=CALIBRATION.findings_on_finished,
         long_documents=documents,
         memory_records=memory,
     )
+
+
+def _add_initiative(session: Session, milestone_ids: list[str]) -> None:
+    """One initiative over `milestone_ids`, spelled and rolled up by the real services."""
+    initiative_id = prod_shape_id("initiative", 0)
+    is_new = session.get(Ticket, initiative_id) is None
+    initiative = make_ticket(
+        session,
+        workspace_id=None,
+        ticket_id=initiative_id,
+        title=INITIATIVE_TITLE,
+        work_item_type=WorkItemType.INITIATIVE,
+        description=(
+            "Every workspace's stage transitions report the gate outcome they actually got, "
+            "so a ticket never advances on a check that did not run."
+        ),
+    )
+    if is_new:
+        assign_initiative_external_id(session, initiative)
+    for milestone_id in milestone_ids:
+        milestone = session.get(Ticket, milestone_id)
+        milestone.parent_ticket_id = initiative.id
+        session.add(milestone)
+    reconcile_parent(session, initiative)
+    session.add(initiative)
+    session.commit()
 
 
 def _add_findings(session: Session, tickets: list, rng: random.Random) -> int:
