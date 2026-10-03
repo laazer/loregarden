@@ -31,6 +31,7 @@ from loregarden.services.orchestration_callbacks import OrchestrationCallbackSer
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.process_identity import still_running
+from loregarden.services.run_capacity import run_capacity
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
@@ -46,7 +47,6 @@ from loregarden.services.run_lease import (
 )
 from loregarden.services.run_reattach import surviving_runs
 from loregarden.services.scheduling import set_orchestration_scheduler
-from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from loregarden.services.stage_retry_budget import refund_stage_dispatch_charged_before
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
@@ -581,7 +581,7 @@ def execute_agent_run_background(run_id: str) -> None:
                 return
             # Capacity outside the renewal, so a stage that waits for docker
             # is not renewing a lease on a run that has not started.
-            with stage_docker_capacity(session, run), lease_renewal(run.id):
+            with run_capacity(session, run), lease_renewal(run.id):
                 run_svc.executor.execute(run, ticket)
     except Exception as exc:
         logger.exception("Background agent run failed: %s", run_id)
@@ -751,7 +751,7 @@ class RunService:
     ) -> tuple[AgentRun, Ticket]:
         run = self.orchestration.start_run(ticket, stage_key=stage_key)
         self.session.refresh(ticket)
-        with stage_docker_capacity(self.session, run), lease_renewal(run.id):
+        with run_capacity(self.session, run), lease_renewal(run.id):
             completed_run = self.executor.execute(run, ticket)
         self.session.refresh(ticket)
         return completed_run, ticket
