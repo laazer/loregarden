@@ -56,7 +56,7 @@ export interface DockerLeaseRow {
   memory_mb: number;
   compose_project: string;
   container_names: string[];
-  /** Place in line, or null for a holder. */
+  /** Place in line, from 1, for a waiter; null for a holder. */
   position: number | null;
   expires_at: string | null;
   expires_in_seconds: number | null;
@@ -68,6 +68,17 @@ export interface DockerLeaseRow {
   running_container_count: number | null;
   last_probe_outcome: string;
   last_probe_error: string;
+}
+
+/** One dimension a claim must fit in. */
+export type CapacityResource = "cpus" | "memory_mb" | "slots";
+
+/** One way the head of the line does not fit: what it needs, what is free. */
+export interface CapacityShortfall {
+  pool: CapacityPool;
+  resource: CapacityResource;
+  needed: number;
+  free: number;
 }
 
 export interface DockerUnverifiable {
@@ -90,6 +101,11 @@ export interface CapacityPoolSummary {
 export interface DockerCapacityStatus extends CapacityPoolSummary {
   enabled: boolean;
   host: CapacityPoolSummary;
+  /**
+   * What the head of the line is short of, from admission's own test. Null
+   * with nobody waiting; empty when the head fits and is about to start.
+   */
+  head_shortfall: CapacityShortfall[] | null;
   holders: DockerLeaseRow[];
   waiting: DockerLeaseRow[];
   /** Lease ids expired with containers still running. */

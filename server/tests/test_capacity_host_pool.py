@@ -225,9 +225,8 @@ def test_a_host_waiter_behind_a_docker_holder_is_estimated_from_that_holder(sess
     assert _reserve(session, CapacityPool.DOCKER, label="stack", cpus=4).granted
     waiter = _reserve(session, CapacityPool.HOST, label="pytest", cpus=2)
     stats = HoldStats(
-        by_footprint={(CapacityPool.DOCKER, DockerFootprint.CUSTOM): 120.0},
-        overall=120.0,
-        samples=3,
+        by_footprint={(CapacityPool.DOCKER, DockerFootprint.CUSTOM): (120.0, 120.0, 120.0)},
+        overall=(120.0, 120.0, 120.0),
     )
 
     estimate = estimate_waits(session, stats=stats)[waiter.lease_id]

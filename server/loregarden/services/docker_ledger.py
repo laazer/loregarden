@@ -19,6 +19,7 @@ from datetime import datetime
 from loregarden.core.timestamps import as_utc as _as_utc_aware
 from loregarden.models.domain import (
     CapacityPool,
+    CapacityResource,
     DockerCapacityPool,
     DockerLease,
     DockerLeaseStatus,
@@ -77,6 +78,42 @@ def booked(lease: DockerLease) -> Booking:
         memory_mb=lease.memory_mb - lease.covered_memory_mb,
         count=0 if lease.parent_lease_id else 1,
     )
+
+
+@dataclass(frozen=True)
+class Shortfall:
+    """One way a claim does not fit in one pool: what it needs, and what is free."""
+
+    pool: CapacityPool
+    resource: CapacityResource
+    needed: float
+    free: float
+
+    def as_dict(self) -> dict:
+        return {
+            "pool": self.pool.value,
+            "resource": self.resource.value,
+            "needed": self.needed,
+            "free": self.free,
+        }
+
+
+def shortfalls(name: CapacityPool, pool: DockerCapacityPool, lease: DockerLease) -> list[Shortfall]:
+    """Every dimension a top-level `lease` does not fit in `pool`; empty when it fits.
+
+    Admission's own test, so the board's "waiting for 4 cpus, 3 free" is the
+    reason the drain is holding the claim back, not a second opinion of it.
+    """
+    checks = (
+        (CapacityResource.CPUS, lease.cpus, pool.held_cpus, pool.ceiling_cpus),
+        (CapacityResource.MEMORY_MB, lease.memory_mb, pool.held_memory_mb, pool.ceiling_memory_mb),
+        (CapacityResource.SLOTS, 1, pool.held_count, pool.ceiling_leases),
+    )
+    return [
+        Shortfall(pool=name, resource=resource, needed=needed, free=max(0, ceiling - held))
+        for resource, needed, held, ceiling in checks
+        if held + needed > ceiling
+    ]
 
 
 def as_utc(stamp: datetime | None) -> datetime | None:

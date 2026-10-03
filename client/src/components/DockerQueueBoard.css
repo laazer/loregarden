@@ -43,6 +43,13 @@
   gap: 6px;
 }
 
+/* Why the head is not running — the question the line is really asking. */
+.docker-queue-head-reason {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--aml);
+}
+
 /* The head of the line is the one anyone is actually asking about. */
 .docker-queue-list .queue-lane-item:first-child {
   border-color: var(--bd2);

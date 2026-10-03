@@ -109,21 +109,24 @@ def test_only_clean_releases_teach_the_estimator(session) -> None:
 
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 3
-    assert stats.by_footprint[(CapacityPool.DOCKER, DockerFootprint.STACK)] == pytest.approx(120)
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK, held_for=0.0) == pytest.approx(
+        120
+    )
 
 
 def test_no_history_predicts_nothing(session) -> None:
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 0
-    assert stats.overall is None
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK) is None
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK, held_for=0.0) is None
 
 
 def test_a_footprint_with_no_history_falls_back_to_the_overall_median(session) -> None:
     """Less than it knows about `stack`, more than nothing."""
     _history(session, footprint=DockerFootprint.STACK, held_seconds=200)
     stats = observed_hold_times(session, now=NOW)
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY) == pytest.approx(200)
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY, held_for=0.0) == pytest.approx(
+        200
+    )
 
 
 # ---- projection ---------------------------------------------------------
@@ -139,6 +142,61 @@ def test_a_waiter_is_projected_from_when_the_holder_will_release(session) -> Non
     estimates = estimate_waits(session, now=NOW)
     # Held for 100s of a 300s median, so ~200s left.
     assert estimates[waiter.lease_id].seconds == pytest.approx(200, abs=2)
+
+
+def test_a_holder_past_the_median_is_estimated_from_the_holds_that_ran_longer(session) -> None:
+    """A plain median said a 40-minute suite, 30 minutes in, would finish in 0s,
+    and every waiter behind it read "starts in ≈ 0s" for most of an hour."""
+    _history(session, footprint=DockerFootprint.CUSTOM, held_seconds=10, count=3)
+    _history(session, footprint=DockerFootprint.CUSTOM, held_seconds=2400, count=1)
+    _history(session, footprint=DockerFootprint.CUSTOM, held_seconds=2700, count=1)
+    holder = _reserve(session, "holder", cpus=4.0, memory_mb=4096)
+    waiter = _reserve(session, "waiter", cpus=4.0, memory_mb=4096)
+    _granted_at(session, holder.lease_id, seconds_ago=1800)
+
+    estimate = estimate_waits(session, now=NOW)[waiter.lease_id]
+
+    # Of the holds longer than 1800s (2400, 2700) the median is 2550: 750s left.
+    assert estimate.seconds == pytest.approx(750, abs=2)
+    assert estimate.basis is DockerWaitBasis.HISTORY
+
+
+def test_a_holder_that_outlived_all_history_falls_back_to_its_ttl(session) -> None:
+    _history(session, footprint=DockerFootprint.CUSTOM, held_seconds=300)
+    holder = _reserve(session, "holder", cpus=4.0, memory_mb=4096)
+    waiter = _reserve(session, "waiter", cpus=4.0, memory_mb=4096)
+    _granted_at(session, holder.lease_id, seconds_ago=1000)
+    lease = session.get(DockerLease, holder.lease_id)
+    lease.expires_at = NOW + timedelta(seconds=450)
+    session.add(lease)
+    session.commit()
+
+    estimate = estimate_waits(session, now=NOW)[waiter.lease_id]
+
+    assert estimate.seconds == pytest.approx(450, abs=2)
+    assert estimate.basis is DockerWaitBasis.TTL_BOUND
+
+
+def test_a_command_that_never_ran_teaches_nothing(session) -> None:
+    _history(session, footprint=DockerFootprint.HEAVY, held_seconds=1200)
+    session.add(
+        DockerLease(
+            status=DockerLeaseStatus.RELEASED,
+            holder_label="pre-push client-tests",
+            footprint=DockerFootprint.HEAVY,
+            end_reason=DockerLeaseEndReason.COMMAND_NOT_RUN,
+            granted_at=NOW - timedelta(seconds=61),
+            released_at=NOW - timedelta(seconds=60),
+        )
+    )
+    session.commit()
+
+    stats = observed_hold_times(session, now=NOW)
+
+    assert stats.samples == 3
+    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY, held_for=0.0) == pytest.approx(
+        1200
+    )
 
 
 def test_with_no_history_the_wait_is_unknown_rather_than_invented(session) -> None:
@@ -266,7 +324,7 @@ def test_estimates_can_be_computed_from_supplied_stats(session) -> None:
     waiter = _reserve(session, "waiter", cpus=4.0, memory_mb=4096)
     _granted_at(session, holder.lease_id, seconds_ago=0)
     stats = HoldStats(
-        by_footprint={(CapacityPool.DOCKER, DockerFootprint.CUSTOM): 60.0}, overall=60.0, samples=9
+        by_footprint={(CapacityPool.DOCKER, DockerFootprint.CUSTOM): (60.0,)}, overall=(60.0,)
     )
 
     assert estimate_waits(session, now=NOW, stats=stats)[waiter.lease_id].seconds == pytest.approx(
