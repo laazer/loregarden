@@ -16,6 +16,7 @@ from pathlib import Path
 from loregarden.config import settings
 from loregarden.models.domain import (
     AUTO_FIXABLE_CONDITIONS,
+    DockerFootprint,
     MonitorCondition,
     MonitorMode,
     OrchestrationDriver,
@@ -45,6 +46,11 @@ class GatesConfig(BaseModel):
     autofix_commands: list[str] = Field(default_factory=list)
     autofix_agent_fallback: bool = True
     autofix_max_agent_attempts: int = 3
+    # The host capacity a transition's gate commands hold while they run, so
+    # gates across agents and workspaces queue instead of piling onto the
+    # machine (services/gate_capacity.py). `heavy` because pytest/jest dominate;
+    # `none` runs them unreserved.
+    capacity_footprint: DockerFootprint = DockerFootprint.HEAVY
 
 
 class GitAutomationConfig(BaseModel):
@@ -333,13 +339,17 @@ def _merge_block(raw: dict, key: str, values: dict) -> None:
 AUTOFIX_GATE_KEYS = frozenset(
     {"autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"}
 )
+#: Keys a gates editor that does not send them must not overwrite: the autofix
+#: policy, and the gate lease size — both usually hand-set in the YAML, and
+#: neither shown by the editor that saves enabled/commands/transition_script.
+PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {"capacity_footprint"}
 
 
 def update_gates_config(
     workspace: Workspace,
     gates: GatesConfig,
     *,
-    preserve: frozenset[str] = AUTOFIX_GATE_KEYS,
+    preserve: frozenset[str] = PRESERVED_GATE_KEYS,
 ) -> OrchestrationProfile:
     """Persist `gates` into the workspace's orchestration profile YAML, leaving
     every other field in that file untouched (or creating a minimal file with
