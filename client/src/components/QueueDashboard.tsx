@@ -41,7 +41,7 @@ type SidebarTab =
  * The rail's panels, per queue.
  *
  * They differ because the two pools genuinely have different questions behind
- * them: an agent lane has a history, a review and controls; docker capacity has
+ * them: an agent lane has a history, a review and controls; machine capacity has
  * a ceiling and a short list of leases nobody could resolve automatically.
  * Carrying one queue's tabs into the other would offer panels with nothing to
  * put in them, which is worse than a shorter list.
@@ -68,7 +68,7 @@ export function QueueDashboard({
 
   const [queueKind, setQueueKind] = useState<QueueKind>("agents");
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("overview");
-  // One read for both halves of the Docker view, so the rail summary and the
+  // One read for both halves of the Machine view, so the rail summary and the
   // board beside it cannot disagree about the same moment.
   const docker = useDockerCapacity();
 

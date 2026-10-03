@@ -1,28 +1,36 @@
 /**
- * The docker queue, drawn the way the lane board draws the agent queue.
+ * The machine-capacity queue, drawn the way the lane board draws the agent queue.
  *
  * This is the second pool on the machine. The lanes beside it ration how many
- * agents run at once; this rations the containers those agents start, and the
- * question is the same shape — what is occupied, what is behind it, and how
- * long until my turn. So it uses the same vocabulary: a grid of slots across
- * the top, each holding something or idle, and the line waiting underneath.
+ * agents run at once; this rations the CPU and memory their test runs, builds
+ * and containers take. Every lease is charged to the host pool, and a docker
+ * claim to the docker pool as well. The question is the same shape — what is
+ * occupied, what is behind it, and how long until my turn. So it uses the same
+ * vocabulary: a grid of slots across the top, each holding something or idle,
+ * and the line waiting underneath.
  *
  * **One shared queue, not one per slot.** That is the real difference from the
  * lane board and the reason the waiting list sits below the grid rather than
  * inside each slot. A lane is a serial pipeline, so position 3 in lane 1 cannot
- * start in lane 2. Docker capacity is a single pool: the next claim starts
+ * start in lane 2. Capacity is a single shared line: the next claim starts
  * wherever room appears, and drawing a queue under each slot would imply a
  * choice of line that does not exist.
  *
- * **Slots are the lease ceiling, not physical hardware.** A claim also has to
- * fit on cpus and memory, so a slot being free does not by itself mean the next
- * waiter can start — which is why the head of the queue shows what it is waiting
- * for rather than just its position.
+ * **Slots are the host pool's lease ceiling, not physical hardware.** Every
+ * top-level lease books one, whichever pool it claims from; a nested lease draws
+ * on its parent and books none. A claim also has to fit on cpus and memory — and
+ * a docker claim on the Docker VM's smaller pool too — so a slot being free does
+ * not by itself mean the next waiter can start, which is why the head of the
+ * queue shows what it is waiting for rather than just its position.
  */
 
 import type { ReactNode } from "react";
 
-import type { DockerCapacityStatus, DockerLeaseRow } from "../api/dockerTypes";
+import type {
+  CapacityPoolSummary,
+  DockerCapacityStatus,
+  DockerLeaseRow,
+} from "../api/dockerTypes";
 import { CapacityMeter } from "./ui/CapacityMeter";
 import "./DockerQueueBoard.css";
 
@@ -66,13 +74,61 @@ function holderStatus(row: DockerLeaseRow): string {
   return "holding";
 }
 
+/** Which pool a lease draws on, in the reader's words rather than the enum's. */
+function describePool(row: DockerLeaseRow): string {
+  if (row.parent_lease_id) return "nested";
+  return row.pool === "docker" ? "docker" : "machine";
+}
+
+/**
+ * One pool's three meters, named for the pool. The pools nest — docker claims are
+ * charged to the machine too — so they are drawn as two rows, not summed.
+ */
+function PoolMeters({
+  title,
+  summary,
+  leasesLabel,
+}: {
+  title: string;
+  summary: CapacityPoolSummary;
+  leasesLabel: string;
+}) {
+  const { ceiling, in_use: inUse } = summary;
+  return (
+    <section className="docker-board-pool" aria-label={title}>
+      <div className="docker-board-meters">
+        <CapacityMeter
+          label={`${title} CPU`}
+          used={inUse.cpus}
+          total={ceiling.cpus}
+          format={formatCpus}
+        />
+        <CapacityMeter
+          label={`${title} memory`}
+          used={inUse.memory_mb}
+          total={ceiling.memory_mb}
+          format={formatMemory}
+        />
+        <CapacityMeter
+          label={`${title} ${leasesLabel}`}
+          used={inUse.leases}
+          total={ceiling.leases}
+          format={formatLeases}
+        />
+      </div>
+    </section>
+  );
+}
+
 function HolderSlot({ row }: { row: DockerLeaseRow }) {
   const status = holderStatus(row);
   return (
     <div className="queue-slot queue-slot--busy" data-testid={`docker-slot-${row.lease_id}`}>
       <div className="queue-slot-head">
         <span className="queue-slot-dot" aria-hidden />
-        <span className="queue-slot-name">{row.footprint}</span>
+        <span className="queue-slot-name">
+          {describePool(row)} · {row.footprint}
+        </span>
         <span className="queue-slot-badge" data-run-status={status}>
           {status}
         </span>
@@ -112,7 +168,7 @@ function EmptySlot({ index }: { index: number }) {
       </div>
       <div className="queue-slot-body">
         <div className="queue-slot-title">Available</div>
-        <div className="queue-slot-sub">Reserve capacity before starting containers</div>
+        <div className="queue-slot-sub">Reserve before a test run, build or container stack</div>
       </div>
     </div>
   );
@@ -137,7 +193,7 @@ export function DockerQueueBoard({
     return (
       <div className="queue-panel">
         <div className="queue-panel-head">
-          <div className="queue-panel-title">Docker capacity</div>
+          <div className="queue-panel-title">Machine capacity</div>
           {headerSlot}
         </div>
         <div className="queue-idle" role={loading ? "status" : undefined}>
@@ -151,7 +207,7 @@ export function DockerQueueBoard({
     return (
       <div className="queue-panel">
         <div className="queue-panel-head">
-          <div className="queue-panel-title">Docker capacity</div>
+          <div className="queue-panel-title">Machine capacity</div>
           {headerSlot}
         </div>
         <div className="queue-idle">
@@ -161,42 +217,33 @@ export function DockerQueueBoard({
     );
   }
 
-  const { ceiling, in_use: inUse, holders, waiting } = status;
+  const { host, holders, waiting } = status;
 
-  // Slots are the lease ceiling. An unmeasured ceiling has no slot count to
-  // draw, so the grid is skipped entirely rather than rendered as zero slots —
-  // which would read as "the machine is full" when it means "nobody has looked".
-  const freeSlots = Math.max(0, ceiling.leases - holders.length);
+  // Slots are the host pool's lease ceiling. Free slots come from the pool's
+  // own booked count, not from the holder list: a nested lease is a holder but
+  // books no slot, so subtracting holders would hide a free one per child.
+  // An unmeasured ceiling has no slot count to draw, so the grid is skipped
+  // entirely rather than rendered as zero slots — which would read as "the
+  // machine is full" when it means "nobody has looked".
+  const slotCeiling = host.ceiling.leases;
+  const freeSlots = Math.max(0, slotCeiling - host.in_use.leases);
 
   return (
     <div className="queue-panel">
       <div className="queue-panel-head">
-        <div className="queue-panel-title">Docker capacity</div>
+        <div className="queue-panel-title">Machine capacity</div>
         {headerSlot}
         <div className="docker-board-summary">
-          {ceiling.leases > 0
-            ? `${holders.length} of ${ceiling.leases} leases held · ${waiting.length} waiting`
+          {slotCeiling > 0
+            ? `${host.in_use.leases} of ${slotCeiling} slots held · ${waiting.length} waiting`
             : "Capacity not measured"}
         </div>
       </div>
 
-      <div className="docker-board-meters">
-        <CapacityMeter label="CPU" used={inUse.cpus} total={ceiling.cpus} format={formatCpus} />
-        <CapacityMeter
-          label="Memory"
-          used={inUse.memory_mb}
-          total={ceiling.memory_mb}
-          format={formatMemory}
-        />
-        <CapacityMeter
-          label="Leases"
-          used={inUse.leases}
-          total={ceiling.leases}
-          format={formatLeases}
-        />
-      </div>
+      <PoolMeters title="Machine" summary={host} leasesLabel="slots" />
+      <PoolMeters title="Docker" summary={status} leasesLabel="leases" />
 
-      {ceiling.leases > 0 ? (
+      {slotCeiling > 0 ? (
         <div className="queue-slot-grid" data-testid="docker-slot-grid">
           {holders.map((row) => (
             <HolderSlot key={row.lease_id} row={row} />
@@ -219,7 +266,7 @@ export function DockerQueueBoard({
       {waiting.length === 0 ? (
         <div className="queue-idle">
           {holders.length === 0
-            ? "Nothing is holding docker capacity, and nobody is queued for it."
+            ? "Nothing is holding machine capacity, and nobody is queued for it."
             : "Nobody is queued — the next claim starts immediately if it fits."}
         </div>
       ) : (
@@ -236,7 +283,8 @@ export function DockerQueueBoard({
                   {row.holder_label || "unlabelled"}
                 </div>
                 <div className="queue-lane-item-sub">
-                  {formatCpus(row.cpus)} · {formatMemory(row.memory_mb)} · {row.footprint}
+                  {formatCpus(row.cpus)} · {formatMemory(row.memory_mb)} ·{" "}
+                  {describePool(row)} · {row.footprint}
                 </div>
               </div>
               <div className="queue-lane-item-timing">{describeWait(row)}</div>

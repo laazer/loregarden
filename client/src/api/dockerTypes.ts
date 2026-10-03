@@ -1,5 +1,5 @@
 /**
- * The docker capacity ledger, as the board reads it.
+ * The machine capacity ledger — host and docker pools — as the board reads it.
  *
  * Mirrors `services/docker_board.capacity_status`. Own module rather than more
  * of `types.ts`, which is 1142 lines against a 1200 cap — a file this feature
@@ -35,11 +35,20 @@ export interface DockerCapacityAmounts {
   leases: number;
 }
 
+/**
+ * Which pool a lease claims from. They nest: every lease is charged to `host`
+ * (the machine), and a `docker` lease to the Docker VM's pool as well.
+ */
+export type CapacityPool = "docker" | "host";
+
 export interface DockerLeaseRow {
   lease_id: string;
   status: "waiting" | "held" | "released" | "orphaned";
   holder_label: string;
   holder_kind: string;
+  pool: CapacityPool;
+  /** Set on a nested lease, which draws on its parent's grant and books no slot. */
+  parent_lease_id: string | null;
   agent_run_id: string | null;
   ticket_id: string | null;
   footprint: string;
@@ -67,11 +76,20 @@ export interface DockerUnverifiable {
   error: string;
 }
 
-export interface DockerCapacityStatus {
-  enabled: boolean;
+/** One pool's ceiling and what is booked against it. */
+export interface CapacityPoolSummary {
   ceiling: DockerCeiling;
   in_use: DockerCapacityAmounts;
   available: DockerCapacityAmounts;
+}
+
+/**
+ * The top level is the docker pool, as it was before the host pool existed;
+ * `host` is the machine, which docker claims are charged to too.
+ */
+export interface DockerCapacityStatus extends CapacityPoolSummary {
+  enabled: boolean;
+  host: CapacityPoolSummary;
   holders: DockerLeaseRow[];
   waiting: DockerLeaseRow[];
   /** Lease ids expired with containers still running. */
