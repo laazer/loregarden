@@ -36,14 +36,14 @@ from statistics import median
 
 from loregarden.config import settings
 from loregarden.models.domain import (
-    DockerCapacityPool,
+    CapacityPool,
     DockerFootprint,
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
     DockerWaitBasis,
 )
-from loregarden.services.docker_ledger import OCCUPYING, as_utc, load_pool
+from loregarden.services.docker_ledger import CHARGED_POOLS, OCCUPYING, as_utc, load_pool
 from sqlmodel import Session, col, select
 
 #: End reasons whose `released_at` marks the work finishing rather than the
@@ -55,18 +55,20 @@ CLEAN_RELEASES = (DockerLeaseEndReason.RELEASED, DockerLeaseEndReason.RUN_COMPLE
 class HoldStats:
     """Median seconds a lease is actually held, by footprint and overall."""
 
-    by_footprint: dict[DockerFootprint, float] = field(default_factory=dict)
+    #: Keyed by pool as well as footprint: a `heavy` test suite and a `heavy`
+    #: docker stack share a size, not a duration.
+    by_footprint: dict[tuple[CapacityPool, DockerFootprint], float] = field(default_factory=dict)
     overall: float | None = None
     samples: int = 0
 
-    def predict(self, footprint: DockerFootprint) -> float | None:
+    def predict(self, pool: CapacityPool, footprint: DockerFootprint) -> float | None:
         """The best available median for this footprint, or None.
 
         Falls back to the overall median rather than to a constant: a machine
         with history for `stack` and none for `heavy` knows more than nothing
         about `heavy`, and less than it does about `stack`.
         """
-        specific = self.by_footprint.get(footprint)
+        specific = self.by_footprint.get((pool, footprint))
         if specific is not None:
             return specific
         return self.overall
@@ -86,7 +88,7 @@ def observed_hold_times(session: Session, *, now: datetime | None = None) -> Hol
         )
     ).all()
 
-    per_footprint: dict[DockerFootprint, list[float]] = {}
+    per_footprint: dict[tuple[CapacityPool, DockerFootprint], list[float]] = {}
     everything: list[float] = []
     for lease in rows:
         granted = as_utc(lease.granted_at)
@@ -96,7 +98,7 @@ def observed_hold_times(session: Session, *, now: datetime | None = None) -> Hol
         held = (released - granted).total_seconds()
         if held <= 0:
             continue
-        per_footprint.setdefault(lease.footprint, []).append(held)
+        per_footprint.setdefault((lease.pool, lease.footprint), []).append(held)
         everything.append(held)
 
     return HoldStats(
@@ -132,6 +134,8 @@ class _Holder:
 
     cpus: float
     memory_mb: int
+    #: The pools this holder's booking occupies.
+    pools: tuple[CapacityPool, ...]
     #: Seconds from now. None when nothing can predict it — which propagates
     #: rather than being skipped.
     releases_in: float | None
@@ -145,7 +149,7 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
 
     holders: list[_Holder] = []
     for lease in leases:
-        predicted = stats.predict(lease.footprint)
+        predicted = stats.predict(lease.pool, lease.footprint)
         granted = as_utc(lease.granted_at)
         releases_in: float | None = None
         basis = DockerWaitBasis.UNKNOWN
@@ -161,6 +165,7 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
             _Holder(
                 cpus=lease.cpus,
                 memory_mb=lease.memory_mb,
+                pools=CHARGED_POOLS[lease.pool],
                 releases_in=releases_in,
                 basis=basis,
             )
@@ -183,11 +188,15 @@ def estimate_waits(
     """
     stamp = now or datetime.now(timezone.utc)
     hold_stats = stats if stats is not None else observed_hold_times(session, now=stamp)
-    pool: DockerCapacityPool = load_pool(session)
-
-    free_cpus = pool.ceiling_cpus - pool.held_cpus
-    free_memory = pool.ceiling_memory_mb - pool.held_memory_mb
-    free_leases = pool.ceiling_leases - pool.held_count
+    free = {
+        name: _Free(
+            cpus=row.ceiling_cpus - row.held_cpus,
+            memory_mb=row.ceiling_memory_mb - row.held_memory_mb,
+            leases=row.ceiling_leases - row.held_count,
+        )
+        for name in CapacityPool
+        for row in (load_pool(session, name),)
+    }
 
     holders = _holders(session, hold_stats, now=stamp)
     waiters = session.exec(
@@ -208,7 +217,8 @@ def estimate_waits(
     blind = False
 
     for waiter in waiters:
-        while not blind and not _fits(waiter, free_cpus, free_memory, free_leases):
+        charged = CHARGED_POOLS[waiter.pool]
+        while not blind and not all(free[name].fits(waiter) for name in charged):
             pending = [h for h in holders if h.releases_in is not None]
             if not pending:
                 # Either nothing is holding (so the ceiling itself is too small,
@@ -226,9 +236,8 @@ def estimate_waits(
             clock = max(clock, soonest.releases_in or 0.0)
             if soonest.basis is DockerWaitBasis.TTL_BOUND:
                 basis = DockerWaitBasis.TTL_BOUND
-            free_cpus += soonest.cpus
-            free_memory += soonest.memory_mb
-            free_leases += 1
+            for name in soonest.pools:
+                free[name].add(soonest.cpus, soonest.memory_mb, 1)
             holders.remove(soonest)
 
         if blind:
@@ -238,14 +247,14 @@ def estimate_waits(
         estimates[waiter.id] = WaitEstimate(seconds=int(round(clock)), basis=basis)
         # This waiter now occupies capacity, and the ones behind it must wait for
         # it too — the head-of-line rule, carried into the projection.
-        free_cpus -= waiter.cpus
-        free_memory -= waiter.memory_mb
-        free_leases -= 1
-        predicted = hold_stats.predict(waiter.footprint)
+        for name in charged:
+            free[name].add(-waiter.cpus, -waiter.memory_mb, -1)
+        predicted = hold_stats.predict(waiter.pool, waiter.footprint)
         holders.append(
             _Holder(
                 cpus=waiter.cpus,
                 memory_mb=waiter.memory_mb,
+                pools=charged,
                 releases_in=None if predicted is None else clock + predicted,
                 basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
             )
@@ -254,8 +263,21 @@ def estimate_waits(
     return estimates
 
 
-def _fits(lease: DockerLease, cpus: float, memory_mb: int, leases: int) -> bool:
-    return lease.cpus <= cpus and lease.memory_mb <= memory_mb and leases >= 1
+@dataclass
+class _Free:
+    """One pool's unbooked capacity, as the projection walks the queue."""
+
+    cpus: float
+    memory_mb: int
+    leases: int
+
+    def fits(self, lease: DockerLease) -> bool:
+        return lease.cpus <= self.cpus and lease.memory_mb <= self.memory_mb and self.leases >= 1
+
+    def add(self, cpus: float, memory_mb: int, leases: int) -> None:
+        self.cpus += cpus
+        self.memory_mb += memory_mb
+        self.leases += leases
 
 
 def poll_interval_for(estimate: WaitEstimate | None) -> int:

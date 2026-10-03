@@ -39,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
+    CapacityPool,
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
@@ -174,8 +175,11 @@ def reap_docker_leases(
     # Re-measure while there is something to measure for. Behind the probe cache,
     # so this is one `docker info` every few minutes rather than one per sweep —
     # and without it a machine whose Docker allocation changed would enforce the
-    # ceiling it had at boot forever.
-    refresh_ceiling(session, invoke=invoke)
+    # ceiling it had at boot forever. Docker is only asked when a docker claim is
+    # on the board: a sweep over test-suite leases has no reason to wake it.
+    refresh_ceiling(session, pool_name=CapacityPool.HOST)
+    if _has_docker_claims(session):
+        refresh_ceiling(session, pool_name=CapacityPool.DOCKER, invoke=invoke)
 
     for lease in leases:
         outcome = _judge(session, lease, invoke=invoke, now=stamp, report=report)
@@ -195,6 +199,20 @@ def reap_docker_leases(
             report.probe_errors,
         )
     return report
+
+
+def _has_docker_claims(session: Session) -> bool:
+    return (
+        session.exec(
+            select(DockerLease.id)
+            .where(
+                DockerLease.pool == CapacityPool.DOCKER,
+                DockerLease.status.in_((*OCCUPYING, DockerLeaseStatus.WAITING)),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
 
 
 def _judge(
@@ -279,7 +297,26 @@ def _drop_abandoned_waiters(session: Session, *, now: datetime, report: ReapRepo
         ).all()
     )
     for lease in waiting:
-        last_seen = as_utc(lease.last_renewed_at) or as_utc(lease.requested_at)
+        # A waiter whose process is gone will never poll again, and at the head
+        # of the line it blocks everyone behind it for the whole cutoff. Killed
+        # while queued is the ordinary case — a push stopped by a tool timeout.
+        if lease.holder_pid is not None and not pid_alive(lease.holder_pid):
+            release_lease(session, lease.id, reason=DockerLeaseEndReason.PID_GONE, drain=False)
+            report.reclaimed.append(lease.id)
+            continue
+        # A served poll is the waiter saying it is still there — the thing this
+        # sweep is asking. Judging by the request time alone dropped every waiter
+        # queued longer than the cutoff, however faithfully it polled.
+        seen = [
+            stamp
+            for stamp in (
+                as_utc(lease.last_polled_at),
+                as_utc(lease.last_renewed_at),
+                as_utc(lease.requested_at),
+            )
+            if stamp is not None
+        ]
+        last_seen = max(seen) if seen else None
         if last_seen is not None and now - last_seen > cutoff:
             release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED, drain=False)
             report.reclaimed.append(lease.id)

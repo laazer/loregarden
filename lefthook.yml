@@ -131,12 +131,27 @@ pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`
   # without capping both runners' worker counts so they fit on the box together.
   parallel: false
+  # Stream output as it happens: a push queued for capacity prints its place in
+  # line, and buffered until exit that reads exactly like a hang.
+  follow: true
   commands:
+    # Each runs under a host-capacity lease (capacity-run.sh), so pushes from
+    # every repo on this machine queue instead of piling on; the grant sets the
+    # worker count. `interactive` hands the terminal to the wrapper's
+    # proceed/retry/stop prompt when the ledger cannot be reached.
     server-tests:
       name: Server tests (ruff full + pytest on reached tests)
       glob: "server/**/*.py"
-      run: bash .lefthook/scripts/server-tests.sh
+      interactive: true
+      run: >-
+        bash .lefthook/scripts/capacity-run.sh "pre-push server-tests"
+        --footprint heavy --workspace loregarden
+        -- bash .lefthook/scripts/server-tests.sh
     client-tests:
       name: Client tests (oxlint + tsc full + jest --changedSince)
       glob: "client/**/*.{ts,tsx,js,jsx,json}"
-      run: bash .lefthook/scripts/client-tests.sh
+      interactive: true
+      run: >-
+        bash .lefthook/scripts/capacity-run.sh "pre-push client-tests"
+        --footprint heavy --workspace loregarden
+        -- bash .lefthook/scripts/client-tests.sh
