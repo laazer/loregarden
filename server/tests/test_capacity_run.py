@@ -330,3 +330,41 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
             assert lease.status is DockerLeaseStatus.RELEASED
     finally:
         engine.dispose()
+
+
+def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> None:
+    """scripts/loregarden-cli.sh cds into server/ to start Python. The held
+    command must still run in the caller's directory: a pre-push hook passes
+    `bash .lefthook/scripts/server-tests.sh`, relative to the repo, and every
+    loregarden push failed with "No such file or directory" once the primary
+    checkout gained `capacity run`."""
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    script = SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(script),
+            "capacity",
+            "run",
+            "--label",
+            "cwd",
+            "--cpus",
+            "1",
+            "--memory-mb",
+            "256",
+            "--",
+            "sh",
+            "-c",
+            "pwd -P > where",
+        ],
+        cwd=caller,
+        env=_cli_env(tmp_path / "ledger.db"),
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (caller / "where").read_text().strip() == str(caller.resolve())

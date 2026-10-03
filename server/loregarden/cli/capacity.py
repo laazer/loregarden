@@ -25,6 +25,9 @@ from loregarden.services.capacity_run import LEASE_ENV, CapacityRequest, run_hol
 from loregarden.services.docker_capacity import CLASS_WEIGHTS
 from sqlmodel import Session, select
 
+#: Set by scripts/loregarden-cli.sh to the directory it was invoked from.
+CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
+
 
 def _report(line: str) -> None:
     print(line, file=sys.stderr, flush=True)
@@ -65,6 +68,7 @@ def _run(args: argparse.Namespace) -> str:
         command,
         report=_report,
         started_file=Path(args.started_file) if args.started_file else None,
+        cwd=Path(args.cwd),
     )
     # The command's status, not EXIT_OK/EXIT_ERROR: a wrapper must see exactly
     # what the held command returned.
@@ -105,6 +109,13 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     run.add_argument("--ttl", type=int, help="Lease TTL in seconds; renewed every third of it.")
     run.add_argument("--started-file", help="Touched just before the command starts.")
+    run.add_argument(
+        "--cwd",
+        # scripts/loregarden-cli.sh cds into server/ to start Python, so the
+        # process's own cwd is never the caller's; it records the caller's first.
+        default=os.environ.get(CALLER_CWD_ENV) or os.getcwd(),
+        help=f"Where the command runs. Defaults to ${CALLER_CWD_ENV}, else this process's cwd.",
+    )
     run.add_argument(
         "held_command",
         metavar="command",
