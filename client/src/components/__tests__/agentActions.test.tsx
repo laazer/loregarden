@@ -67,7 +67,7 @@ beforeEach(() => {
 
 it("offers navigation everywhere, and ticket writes only on a ticket route", async () => {
   const { unmount } = renderAt("/queue");
-  expect(uiActionRegistry.available()).toEqual(["navigate.page", "ticket.open"]);
+  expect(uiActionRegistry.available()).toEqual(["navigate.page", "ticket.open", "workspace.set_runtime"]);
   unmount();
 
   const view = renderAt(`/tickets/${OPEN.id}/diff`);

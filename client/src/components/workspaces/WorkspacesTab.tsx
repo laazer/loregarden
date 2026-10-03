@@ -8,7 +8,7 @@ import { WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocalInstances";
 import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { describeError, pushToast, toastActionFailed } from "../../state/toastStore";
 import { WorkspaceSetupCard } from "../instances/WorkspaceSetupCard";
-import { AddWorkspaceFlow } from "./AddWorkspaceFlow";
+import { AddWorkspaceFlow, refreshAfterWorkspaceAdded } from "./AddWorkspaceFlow";
 
 const WORKSPACES_KEY = ["workspaces"] as const;
 
@@ -56,6 +56,17 @@ export function WorkspacesTab() {
   };
   useAgentAction("workspace.archive", async ({ workspace_slug }) => agentArchive(workspace_slug, true));
   useAgentAction("workspace.restore", async ({ workspace_slug }) => agentArchive(workspace_slug, false));
+
+  // The workspace record only — the same request the Add flow's first step
+  // makes. Its repository is a separate action on the new card.
+  useAgentAction("workspace.create", async ({ slug, name, repo_path, workflow_template_slug }) => {
+    if (bySlug.has(slug)) throw new Error(`a workspace named ${slug} already exists`);
+    const created = await api.createWorkspace({ slug, name, repo_path, workflow_template_slug });
+    refreshAfterWorkspaceAdded(queryClient);
+    void queryClient.invalidateQueries({ queryKey: WORKSPACE_TEMPLATES_KEY });
+    pushToast({ tone: "success", title: `Added ${created.name}` });
+    return { workspace_slug: created.slug };
+  });
   const all = setups.data ?? [];
   const active = all.filter((w) => !bySlug.get(w.slug)?.archived_at);
   const archived = all.filter((w) => bySlug.get(w.slug)?.archived_at);

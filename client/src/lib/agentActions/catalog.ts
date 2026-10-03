@@ -17,7 +17,7 @@
  */
 
 import type { AppPage } from "../appNavigation";
-import type { TicketState } from "../../api/types";
+import type { TicketState, WorkspaceRuntimeSettings } from "../../api/types";
 
 export interface UiActionArgs {
   "navigate.page": { page: AppPage };
@@ -36,6 +36,17 @@ export interface UiActionArgs {
   "workspace.set_workflow": { workspace_slug: string; template: string };
   "reference_repo.add": { workspace_slug: string; url: string; notes?: string };
   "reference_repo.sync": { reference_repo_id: string };
+  "ticket.start_stage": { ticket_id: string; stage_key: string };
+  "ticket.stop": { ticket_id: string };
+  "ticket.set_runtime": { ticket_id: string } & Partial<WorkspaceRuntimeSettings>;
+  "triage.set_runtime": { ticket_id: string } & Partial<WorkspaceRuntimeSettings>;
+  "workspace.set_runtime": { workspace_slug: string } & Partial<WorkspaceRuntimeSettings>;
+  "workspace.create": { slug: string; name: string; repo_path?: string; workflow_template_slug?: string };
+  "workspace.create_repository": { workspace_slug: string };
+  "run.send_message": { run_id: string; message: string };
+  "run.cancel": { run_id: string };
+  "queue.promote": { run_id: string };
+  "queue.cancel": { run_id: string };
   /** Human-only on the server: never invoked by an agent, so nothing registers it. */
   "approval.resolve": { approval_id: string };
 }
@@ -57,5 +68,16 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "workspace.set_workflow": "Changed a workspace's workflow",
   "reference_repo.add": "Added a reference repo",
   "reference_repo.sync": "Synced a reference repo",
+  "ticket.start_stage": "Started a stage",
+  "ticket.stop": "Stopped the ticket's work",
+  "ticket.set_runtime": "Changed the ticket's runtime",
+  "triage.set_runtime": "Changed the triage runtime",
+  "workspace.set_runtime": "Changed a workspace's runtime",
+  "workspace.create": "Added a workspace",
+  "workspace.create_repository": "Created a workspace's repository",
+  "run.send_message": "Sent a steering message",
+  "run.cancel": "Stopped a run",
+  "queue.promote": "Moved a run to the front of the queue",
+  "queue.cancel": "Removed a run from the queue",
   "approval.resolve": "Resolved an approval",
 };

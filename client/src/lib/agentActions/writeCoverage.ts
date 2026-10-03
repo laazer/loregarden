@@ -23,7 +23,7 @@ import type { api } from "../../api/client";
 import type { UiActionName } from "./catalog";
 
 export type WriteCoverage =
-  | { kind: "agent_action"; action: UiActionName }
+  | { kind: "agent_action"; action: UiActionName | readonly UiActionName[] }
   | { kind: "mcp_tool"; tool: `loregarden_${string}` }
   | { kind: "human_only"; reason: string }
   | { kind: "not_a_write"; reason: string }
@@ -48,16 +48,20 @@ export const API_WRITE_COVERAGE = {
   previewTicketImport: { kind: "not_a_write", reason: DRAFT },
   previewTicketImportPaths: { kind: "not_a_write", reason: DRAFT },
   orchestrate: { kind: "mcp_tool", tool: "loregarden_start_orchestration" },
-  startRun: { kind: "gap" },
-  stopTicket: { kind: "gap" },
-  routeWorkflow: { kind: "gap" },
+  startRun: { kind: "agent_action", action: "ticket.start_stage" },
+  stopTicket: { kind: "agent_action", action: "ticket.stop" },
+  routeWorkflow: {
+    kind: "human_only",
+    reason:
+      "a person's override of the pipeline's routing — it stamps the ticket human-updated; agents route the stages they run with loregarden_complete_stage",
+  },
   advance: { kind: "human_only", reason: GATE },
   openPr: { kind: "not_agent_driven", reason: "publishes to the remote; the pipeline's publish chain does this for agents" },
   commitPush: { kind: "not_agent_driven", reason: "publishes to the remote; the pipeline's publish chain does this for agents" },
   buildTerminalHandoffCommand: { kind: "not_a_write", reason: DRAFT },
   buildExternalHarnessPrompt: { kind: "not_a_write", reason: DRAFT },
-  setTicketRuntime: { kind: "gap" },
-  setTriageRuntime: { kind: "gap" },
+  setTicketRuntime: { kind: "agent_action", action: "ticket.set_runtime" },
+  setTriageRuntime: { kind: "agent_action", action: "triage.set_runtime" },
   sendTriageMessage: { kind: "not_agent_driven", reason: CONVERSATION },
   stopTriageTurn: { kind: "not_agent_driven", reason: CONVERSATION },
   askAside: { kind: "not_agent_driven", reason: CONVERSATION },
@@ -65,9 +69,9 @@ export const API_WRITE_COVERAGE = {
   deleteAside: { kind: "human_only", reason: DELETES },
 
   // Runs and the queue
-  sendRunMessage: { kind: "gap" },
-  cancelRun: { kind: "gap" },
-  queueRunAction: { kind: "gap" },
+  sendRunMessage: { kind: "agent_action", action: "run.send_message" },
+  cancelRun: { kind: "agent_action", action: "run.cancel" },
+  queueRunAction: { kind: "agent_action", action: ["queue.promote", "queue.cancel"] },
   triggerAutoFix: { kind: "agent_action", action: "ticket.trigger_auto_fix" },
   skipCICheck: { kind: "human_only", reason: GATE },
 
@@ -76,12 +80,12 @@ export const API_WRITE_COVERAGE = {
   runHumanAction: { kind: "human_only", reason: GATE },
 
   // Workspaces
-  createWorkspace: { kind: "gap" },
-  createWorkspaceRepository: { kind: "gap" },
+  createWorkspace: { kind: "agent_action", action: "workspace.create" },
+  createWorkspaceRepository: { kind: "agent_action", action: "workspace.create_repository" },
   archiveWorkspace: { kind: "agent_action", action: "workspace.archive" },
   restoreWorkspace: { kind: "agent_action", action: "workspace.restore" },
   setWorkspaceTemplate: { kind: "agent_action", action: "workspace.set_workflow" },
-  setWorkspaceRuntime: { kind: "gap" },
+  setWorkspaceRuntime: { kind: "agent_action", action: "workspace.set_runtime" },
   updateWorkspaceGates: { kind: "human_only", reason: OVERSIGHT },
   testWorkspaceGates: { kind: "not_a_write", reason: DRAFT },
   updateGitAutomation: { kind: "human_only", reason: OVERSIGHT },

@@ -7,6 +7,8 @@ import type { InstallState, WorkspaceTemplates } from "../../api/localInstancesT
 import type { WorkspaceSummary } from "../../api/types";
 import { INITIALIZABLE_REPOSITORY_STATES, type RepositoryState } from "../../api/workspaceRepositoryTypes";
 import { INTEGRATION_KEY, WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocalInstances";
+import { NotThisTarget } from "../../lib/agentActions/registry";
+import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { pushToast, toastActionFailed } from "../../state/toastStore";
 import { WorkspaceGatePresetsPanel } from "../workspaces/WorkspaceGatePresetsPanel";
 import { WorkspaceIntegrationPanel } from "./WorkspaceIntegrationPanel";
@@ -102,6 +104,17 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
   });
   const repoProblem = summary && summary.repo_state !== "repository" ? REPO_PROBLEM[summary.repo_state] : undefined;
   const initializable = summary !== undefined && INITIALIZABLE_REPOSITORY_STATES.has(summary.repo_state);
+
+  // One card per workspace; each answers only for its own, and only when it
+  // would offer the button itself.
+  useAgentAction("workspace.create_repository", async ({ workspace_slug }) => {
+    if (workspace_slug !== workspace.slug) throw new NotThisTarget(`no card for ${workspace_slug} is on screen`);
+    if (!initializable) {
+      throw new Error(`${workspace.slug}'s repository is ${summary?.repo_state ?? "unknown"}; there is nothing to create`);
+    }
+    const created = await createRepository.mutateAsync();
+    return { workspace_slug: workspace.slug, repo_root: created.repo_root, follow_up: created.follow_up };
+  });
 
   return (
     <li className="instances-setup">
