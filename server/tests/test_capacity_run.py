@@ -223,6 +223,10 @@ def _cli_env(database: Path) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if not key.startswith("LOREGARDEN_")}
     env.update(
         {
+            # Pinned, not inherited: with the repo root at the primary checkout,
+            # config applies data/memory.local.json over LOREGARDEN_DATABASE_URL
+            # and the CLI books against the LIVE ledger.
+            "LOREGARDEN_REPO_ROOT": str(database.parent),
             "LOREGARDEN_DATABASE_URL": f"sqlite:///{database}",
             "LOREGARDEN_HOST_CAPACITY_CPUS": "2",
             "LOREGARDEN_HOST_CAPACITY_MEMORY_MB": "4096",
@@ -357,7 +361,6 @@ def test_a_relative_command_runs_from_where_the_cli_was_invoked(tmp_path, uv_shi
     out = tmp_path / "out"
     env = _cli_env(tmp_path / "ledger.db")
     env["PATH"] = f"{uv_shim}{os.pathsep}{env['PATH']}"
-    env["LOREGARDEN_REPO_ROOT"] = str(SERVER_ROOT.parent)
 
     result = subprocess.run(
         [
@@ -388,6 +391,13 @@ def test_a_relative_command_runs_from_where_the_cli_was_invoked(tmp_path, uv_shi
     ran_in, inherited = out.read_text().split("|")
     assert Path(ran_in).resolve() == (caller / "client").resolve()
     assert inherited == "unset"
+    engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
+    try:
+        with Session(engine) as session:
+            labels = [lease.holder_label for lease in session.exec(select(DockerLease))]
+    finally:
+        engine.dispose()
+    assert [label.split(" · ")[0] for label in labels] == ["relative"]
 
 
 def test_a_caller_directory_that_is_gone_is_refused_before_reserving(tmp_path) -> None:
