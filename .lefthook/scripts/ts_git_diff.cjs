@@ -41,11 +41,26 @@ function scopeArgs(diffScope, baseRef) {
   return ["--cached"];
 }
 
+/**
+ * Answered once per repository per process. A gate process is one run, and a
+ * gate reads the tree without writing it, so `changedPaths` and the gate's own
+ * untracked lookup asked git the same question twice. Nothing long-lived loads
+ * this module; if something ever does, this cache must move into a per-run object
+ * as `precommit_git_diff.py`'s `_RunQueries` did.
+ */
+const untrackedByRepo = new Map();
+
 function untrackedPaths(repoRoot) {
-  return git(["ls-files", "--others", "--exclude-standard"], repoRoot)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  if (!untrackedByRepo.has(repoRoot)) {
+    untrackedByRepo.set(
+      repoRoot,
+      git(["ls-files", "--others", "--exclude-standard"], repoRoot)
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    );
+  }
+  return [...untrackedByRepo.get(repoRoot)];
 }
 
 /**
