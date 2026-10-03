@@ -126,6 +126,25 @@ test("an initiative shows its milestones across workspaces with progress", async
   expect(screen.getByRole("button", { name: "Delete initiative" })).toBeDisabled();
 });
 
+test("a markdown brief renders as structure, and a long one opens in the reader", async () => {
+  const brief = [
+    "Ship **one login** across workspaces.",
+    "",
+    "| Milestone | Contributes |",
+    "|---|---|",
+    "| `lg-auth-1` | Sessions |",
+    "",
+    "Background. ".repeat(60),
+  ].join("\n");
+  mockApi.initiatives.mockResolvedValue([initiative({ description: brief })]);
+  renderPage();
+
+  expect(await screen.findByRole("table")).toBeInTheDocument();
+  expect(screen.getByText("one login").tagName).toBe("STRONG");
+  expect(screen.queryByText(/\*\*one login\*\*/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Open Auth migration in the reader" })).toBeInTheDocument();
+});
+
 test("attach and detach reparent the milestone", async () => {
   mockApi.initiatives.mockResolvedValue([initiative()]);
   mockApi.attachableMilestones.mockResolvedValue([

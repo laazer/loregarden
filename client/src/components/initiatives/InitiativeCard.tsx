@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigation";
 import { Button } from "../ui/Button";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
@@ -147,7 +148,14 @@ export function InitiativeCard({
           </Button>
         </div>
       </header>
-      {initiative.description && <p className="initiative-desc">{initiative.description}</p>}
+      {initiative.description && (
+        <MarkdownContent
+          content={initiative.description}
+          className="initiative-desc"
+          readerTitle={initiative.title}
+          readerSubtitle={initiative.external_id}
+        />
+      )}
 
       <div
         className="initiative-progress"
