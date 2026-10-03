@@ -52,10 +52,17 @@
 }
 
 .initiative-desc {
-  margin: 0;
   color: var(--txm);
   font-size: 12px;
-  white-space: pre-wrap;
+}
+
+/* Briefs run to pages of headings and tables. On a card they get a glance's
+   worth; MarkdownContent adds "Open ↗" for exactly these, which reads the rest
+   at full size. Short descriptions have no wrapper and are never cut. */
+.md-expandable > .initiative-desc {
+  max-height: 11em;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, var(--tx) 70%, transparent); /* only alpha matters in a mask */
 }
 
 .initiative-state {
