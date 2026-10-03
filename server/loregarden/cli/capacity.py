@@ -21,7 +21,12 @@ from pathlib import Path
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
-from loregarden.services.capacity_run import LEASE_ENV, CapacityRequest, run_holding
+from loregarden.services.capacity_run import (
+    CALLER_CWD_ENV,
+    LEASE_ENV,
+    CapacityRequest,
+    run_holding,
+)
 from loregarden.services.docker_capacity import CLASS_WEIGHTS
 from sqlmodel import Session, select
 
@@ -40,12 +45,29 @@ def _workspace_id(slug: str | None) -> str | None:
     return workspace.id
 
 
+def _caller_cwd() -> Path | None:
+    """Where the caller ran the CLI, as `scripts/loregarden-cli.sh` recorded it.
+
+    Checked before reserving: a directory that is gone would otherwise fail only
+    after the wait in line, as the command starts.
+    """
+    recorded = os.environ.get(CALLER_CWD_ENV)
+    if not recorded:
+        return None
+    cwd = Path(recorded)
+    if not cwd.is_dir():
+        raise UsageError(f"{CALLER_CWD_ENV}={recorded} is not a directory to run the command in")
+    return cwd
+
+
 def _run(args: argparse.Namespace) -> str:
     command = args.held_command[1:] if args.held_command[:1] == ["--"] else args.held_command
     if not command:
         raise UsageError("give the command to run after `--`")
     if not args.footprint and not (args.cpus and args.memory_mb):
         raise UsageError("pass --footprint, or both --cpus and --memory-mb")
+
+    cwd = _caller_cwd()
 
     db_session.init_db()
     request = CapacityRequest(
@@ -65,6 +87,7 @@ def _run(args: argparse.Namespace) -> str:
         command,
         report=_report,
         started_file=Path(args.started_file) if args.started_file else None,
+        cwd=cwd,
     )
     # The command's status, not EXIT_OK/EXIT_ERROR: a wrapper must see exactly
     # what the held command returned.

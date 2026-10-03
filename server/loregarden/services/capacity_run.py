@@ -79,6 +79,11 @@ LEASE_ENV = "LOREGARDEN_CAPACITY_LEASE_ID"
 CPUS_ENV = "LOREGARDEN_CAPACITY_CPUS"
 WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
 
+#: Where `scripts/loregarden-cli.sh` was invoked, before it moved to server/. The
+#: command runs there; a child does not inherit it, so a nested `loregarden`
+#: started some other way cannot pick up a directory that is not its own.
+CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
+
 #: How often a waiting process runs a reap pass of its own. The server's timer
 #: does this every 30s when it is up; this is the floor when it is not.
 _REAP_INTERVAL_SECONDS = 60.0
@@ -125,6 +130,7 @@ def worker_count(cpus: float) -> int:
 
 def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
     env = dict(base)
+    env.pop(CALLER_CWD_ENV, None)
     env[LEASE_ENV] = reservation.lease_id
     env[CPUS_ENV] = f"{reservation.cpus:g}"
     env[WORKERS_ENV] = str(worker_count(reservation.cpus))
@@ -338,11 +344,13 @@ def run_holding(
     started_file: Path | None = None,
     environ: Mapping[str, str] | None = None,
     heartbeat_seconds: float | None = None,
+    cwd: Path | None = None,
 ) -> int:
     """Run `command` under a lease and return its exit status (128+N for signal N).
 
     A SIGTERM or SIGHUP before the command starts gives the place in line back
     and returns 128+N without starting it; once it runs, they are forwarded to it.
+    `cwd` is where the command starts; None means this process's own directory.
     """
     with _SignalRelay() as relay:
         try:
@@ -364,7 +372,9 @@ def run_holding(
             with _Heartbeat(session_factory, lease_id, interval, report):
                 if started_file is not None:
                     started_file.touch()
-                code = relay.run(command, child_environment(reservation, environ or os.environ))
+                code = relay.run(
+                    command, child_environment(reservation, environ or os.environ), cwd
+                )
         except _Terminated as stopped:
             code = 128 + stopped.signum
         finally:
@@ -406,9 +416,9 @@ class _SignalRelay:
             raise _Terminated(number)
         self._child.send_signal(number)
 
-    def run(self, command: Sequence[str], env: Mapping[str, str]) -> int:
+    def run(self, command: Sequence[str], env: Mapping[str, str], cwd: Path | None) -> int:
         signal.signal(signal.SIGINT, lambda _number, _frame: None)
-        self._child = subprocess.Popen(list(command), env=dict(env))  # noqa: S603 — the caller's command
+        self._child = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # noqa: S603 — the caller's command
         code = self._child.wait()
         return 128 - code if code < 0 else code
 

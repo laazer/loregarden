@@ -26,5 +26,9 @@ if [ -z "${LOREGARDEN_REPO_ROOT:-}" ]; then
 fi
 export LOREGARDEN_REPO_ROOT
 
+# The CLI runs from server/, but a command it starts on the caller's behalf
+# (`capacity run -- <command>`) must run where the caller is, or a relative path
+# in it resolves against server/ instead.
+export LOREGARDEN_CALLER_CWD="$PWD"
 cd "$ROOT/server"
 exec uv run loregarden "$@"

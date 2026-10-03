@@ -330,3 +330,80 @@ def test_sigterm_stops_the_command_and_releases_the_lease(tmp_path) -> None:
             assert lease.status is DockerLeaseStatus.RELEASED
     finally:
         engine.dispose()
+
+
+# ---- through scripts/loregarden-cli.sh, as CLAUDE.md tells every repo to ----
+
+
+@pytest.fixture(name="uv_shim")
+def uv_shim_fixture(tmp_path) -> Path:
+    """A `uv` that runs `uv run loregarden …` as this interpreter's CLI, without syncing."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    shim = bin_dir / "uv"
+    shim.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = run ] && [ "$2" = loregarden ] || exit 97\n'
+        "shift 2\n"
+        f'exec "{sys.executable}" -m loregarden.cli.main "$@"\n'
+    )
+    shim.chmod(0o755)
+    return bin_dir
+
+
+def test_a_relative_command_runs_from_where_the_cli_was_invoked(tmp_path, uv_shim) -> None:
+    caller = tmp_path / "caller"
+    (caller / "client").mkdir(parents=True)
+    out = tmp_path / "out"
+    env = _cli_env(tmp_path / "ledger.db")
+    env["PATH"] = f"{uv_shim}{os.pathsep}{env['PATH']}"
+    env["LOREGARDEN_REPO_ROOT"] = str(SERVER_ROOT.parent)
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"),
+            "capacity",
+            "run",
+            "--label",
+            "relative",
+            "--cpus",
+            "1",
+            "--memory-mb",
+            "512",
+            "--",
+            "sh",
+            "-c",
+            f'cd client && printf "%s|%s" "$PWD" "${{LOREGARDEN_CALLER_CWD-unset}}" > {out}',
+        ],
+        cwd=caller,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    ran_in, inherited = out.read_text().split("|")
+    assert Path(ran_in).resolve() == (caller / "client").resolve()
+    assert inherited == "unset"
+
+
+def test_a_caller_directory_that_is_gone_is_refused_before_reserving(tmp_path) -> None:
+    database = tmp_path / "ledger.db"
+    env = _cli_env(database)
+    env["LOREGARDEN_CALLER_CWD"] = str(tmp_path / "deleted")
+
+    result = subprocess.run(
+        _cli("--label", "gone", "--cpus", "1", "--memory-mb", "512", "--", "true"),
+        cwd=SERVER_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not database.exists()
