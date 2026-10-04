@@ -85,7 +85,7 @@ const profile = (commands: string[] = [GUARDRAIL]): OrchestrationProfileView => 
   gates_autofix_max_agent_attempts: 0,
   gates_placeholders: {},
   gates_suggested_commands: [],
-  max_stages_per_run: 0,
+  max_stages_per_run: 0, source_path: null,
 });
 
 const probeAs = (state: RepositoryState, detail = "") =>

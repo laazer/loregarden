@@ -608,6 +608,9 @@ class OrchestrationProfileView(SQLModel):
     #: The fallback profile's workspace-agnostic checks, offered as one-click adds.
     gates_suggested_commands: list[str] = Field(default_factory=list)
     max_stages_per_run: int = 0
+    #: The profile file these settings live in, repo-relative; None when no file
+    #: stores them yet (the built-in fallback). Gate Studio's "Stored in".
+    source_path: str | None = None
 
 
 class GatesConfigUpdate(SQLModel):

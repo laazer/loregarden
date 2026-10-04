@@ -110,6 +110,46 @@ function decodeSegment(segment: string): string {
   }
 }
 
+// --- Gate Studio (lg-gate-studio-863) ---------------------------------------
+// Three levels, all in the URL so a deep link renders what a click would:
+// /studio/gates/:workspace, /studio/gates/:workspace/:workflow, and
+// /studio/gates/:workspace/:workflow/:controlId. The workflow segment `_` means
+// "workspace-wide" — the transition commands no single workflow owns.
+const GATE_STUDIO_PATH_RE = /^\/studio\/gates(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?\/?$/;
+
+export const GATE_STUDIO_WORKSPACE_SCOPE = "_";
+
+export interface GateStudioTarget {
+  workspaceSlug: string | null;
+  workflowSlug: string | null;
+  controlId: string | null;
+}
+
+export function gateStudioPath(target: GateStudioTarget): string {
+  if (!target.workspaceSlug) return "/studio/gates";
+  const workspace = encodeURIComponent(target.workspaceSlug);
+  if (!target.workflowSlug && !target.controlId) return `/studio/gates/${workspace}`;
+  const workflow = target.workflowSlug
+    ? encodeURIComponent(target.workflowSlug)
+    : GATE_STUDIO_WORKSPACE_SCOPE;
+  if (!target.controlId) return `/studio/gates/${workspace}/${workflow}`;
+  // ':' separates an id's parts and is legal in a path segment, so it stays
+  // readable; each part was already encoded on its own (gateControlModel).
+  const control = encodeURIComponent(target.controlId).replace(/%3A/gi, ":");
+  return `/studio/gates/${workspace}/${workflow}/${control}`;
+}
+
+export function gateStudioTargetFromPath(pathname: string): GateStudioTarget {
+  const match = pathname.match(GATE_STUDIO_PATH_RE);
+  if (!match) return { workspaceSlug: null, workflowSlug: null, controlId: null };
+  const workflowSegment = match[2] ? decodeSegment(match[2]) : null;
+  return {
+    workspaceSlug: match[1] ? decodeSegment(match[1]) : null,
+    workflowSlug: workflowSegment === GATE_STUDIO_WORKSPACE_SCOPE ? null : workflowSegment,
+    controlId: match[3] ? decodeSegment(match[3]) : null,
+  };
+}
+
 export function isStudioNewResource(resourceId: string | null | undefined): boolean {
   return resourceId === STUDIO_NEW_RESOURCE;
 }

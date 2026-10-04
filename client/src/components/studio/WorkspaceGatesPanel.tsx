@@ -6,13 +6,11 @@ import {
   type GateTestCommandResult,
   type GateTestReport,
   type OrchestrationProfileView,
-  type WorkspaceSummary,
 } from "../../api/client";
 import { describeError } from "../../state/toastStore";
 import { GateCommandList, type DraftCommand } from "./GateCommandList";
 import { GateStatusHeader } from "./GateStatusHeader";
 import { PLACEHOLDER_HELP, gateCommandLabel, hasUnbalancedQuotes, insertAt } from "./gateCommand";
-import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
 import "./WorkspaceGatesPanel.css";
 
 type Draft = {
@@ -55,29 +53,25 @@ function payloadOf(draft: Draft) {
   };
 }
 
+/**
+ * The transition-command editor for one workspace: its checks, transition
+ * script and self-repair settings, with test-run and save. Gate Studio mounts
+ * it as the detail of every transition-command control; which workspace, and
+ * what happens to unsaved edits when the operator navigates away, are the
+ * studio's — this reports `dirty` so the studio can ask first (863).
+ */
 export function WorkspaceGatesPanel({
-  workspaces,
-  workspaceSlug,
+  workspaceSlug: selectedSlug,
+  onDirtyChange,
 }: {
-  workspaces: WorkspaceSummary[];
-  /** The app-wide active workspace, so this panel opens where the user is working. */
-  workspaceSlug?: string;
+  workspaceSlug: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const qc = useQueryClient();
-  const [selectedSlug, setSelectedSlug] = useState("");
-  const [pendingSlug, setPendingSlug] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [report, setReport] = useState<GateTestReport | null>(null);
   const activeField = useRef<{ id: number; el: HTMLTextAreaElement } | null>(null);
-
-  // Seed from the app-wide workspace once the list arrives; fall back to the
-  // first one when that workspace isn't in it (or nothing is active yet).
-  useEffect(() => {
-    if (selectedSlug || workspaces.length === 0) return;
-    const preferred = workspaces.find((ws) => ws.slug === workspaceSlug);
-    setSelectedSlug(preferred?.slug ?? workspaces[0].slug);
-  }, [workspaces, workspaceSlug, selectedSlug]);
 
   const profile = useQuery({
     queryKey: ["orchestration-profile", selectedSlug],
@@ -104,6 +98,9 @@ export function WorkspaceGatesPanel({
     [profile.data],
   );
   const dirty = draft !== null && JSON.stringify(payloadOf(draft)) !== baseline;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   const unrunnable = draft ? draft.commands.filter((c) => hasUnbalancedQuotes(c.value)).length : 0;
 
   const saveGates = useMutation({
@@ -136,12 +133,6 @@ export function WorkspaceGatesPanel({
     if (draft && canSave) saveGates.mutate(draft);
   }, [draft, canSave, saveGates]);
 
-  const switchWorkspace = (slug: string) => {
-    if (slug === selectedSlug) return;
-    if (dirty) setPendingSlug(slug);
-    else setSelectedSlug(slug);
-  };
-
   const insertPlaceholder = (name: string) => {
     if (!draft) return;
     const token = `{${name}}`;
@@ -173,44 +164,19 @@ export function WorkspaceGatesPanel({
     report !== null && report.results.some((r) => !runnable.includes(r.template));
 
   return (
-    <div className="studio-shell">
-      <aside className="studio-library-rail">
-        <div className="studio-library-section-label">Workspace</div>
-        {workspaces.length === 0 ? (
-          <p className="studio-preview-hint">No workspaces yet.</p>
-        ) : (
-          <StudioWorkspacePicker
-            workspaces={workspaces}
-            value={selectedSlug}
-            onChange={switchWorkspace}
-          />
-        )}
-        <div className="gate-rail-explainer">
-          <div className="studio-library-section-label">How gates work</div>
-          <p>
-            When a stage finishes, its checks run in the ticket's worktree before the ticket moves
-            on. The first check that exits non-zero stops the handoff; fixers and an agent retry
-            get a chance to repair it before the ticket blocks for you.
-          </p>
-        </div>
-      </aside>
-
-      <div
-        className="studio-editor studio-editor--gates"
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-            e.preventDefault();
-            save();
-          }
-        }}
-      >
-        <div className="studio-editor-inner studio-editor-inner--gates">
-          {!selectedSlug ? (
-            <p className="studio-preview-hint">Select a workspace to view its transition gates.</p>
-          ) : profile.isError ? (
+    <div
+      className="gate-editor"
+      onKeyDown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          save();
+        }
+      }}
+    >
+          {profile.isError ? (
             <div className="gate-load-error" role="alert">
               <p>
-                Couldn't load the gate settings for this workspace:{" "}
+                Couldn't load the gate settings for workspace {selectedSlug}:{" "}
                 {describeError(profile.error, "the request failed")}
               </p>
               <button type="button" className="btn-secondary" onClick={() => profile.refetch()}>
@@ -218,7 +184,11 @@ export function WorkspaceGatesPanel({
               </button>
             </div>
           ) : !profile.data || !draft ? (
-            <div className="gate-skeleton" aria-busy="true" aria-label="Loading gate settings">
+            <div
+              className="gate-skeleton"
+              aria-busy="true"
+              aria-label={`Loading gate settings for ${selectedSlug}`}
+            >
               <div className="gate-skeleton-bar gate-skeleton-bar--title" />
               <div className="gate-skeleton-bar" />
               <div className="gate-skeleton-card" />
@@ -226,34 +196,6 @@ export function WorkspaceGatesPanel({
             </div>
           ) : (
             <>
-              {pendingSlug && (
-                <div className="gate-banner" role="alert">
-                  <span>
-                    You have unsaved gate changes for {profile.data.name}. Switch workspaces and
-                    discard them?
-                  </span>
-                  <div className="gate-banner-actions">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setPendingSlug(null)}
-                    >
-                      Keep editing
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary gate-btn-danger"
-                      onClick={() => {
-                        setSelectedSlug(pendingSlug);
-                        setPendingSlug(null);
-                      }}
-                    >
-                      Discard and switch
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <GateStatusHeader
                 profile={profile.data}
                 enabled={draft.enabled}
@@ -426,7 +368,6 @@ export function WorkspaceGatesPanel({
                   disabled={!dirty || saveGates.isPending}
                   onClick={() => {
                     if (profile.data) setDraft(draftFrom(profile.data));
-                    setPendingSlug(null);
                   }}
                 >
                   Discard
@@ -443,8 +384,6 @@ export function WorkspaceGatesPanel({
               </div>
             </>
           )}
-        </div>
-      </div>
     </div>
   );
 }

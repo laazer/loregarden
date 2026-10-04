@@ -16,7 +16,7 @@ export function GateHandoffEditor({
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
       <section>
         <div className="modal-section-title">Gate checks</div>
-        <p className="modal-hint">Human approval gates before the next stage proceeds.</p>
+        <p className="modal-hint">Criteria shown to the agent before it hands off. Prompt text — nothing enforces it.</p>
         {gateChecks.map((gate, index) => (
           <div key={index} className="state-card" style={{ marginBottom: 8 }}>
             <Select

@@ -217,6 +217,10 @@ class OrchestrationProfile(BaseModel):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     approvals: ApprovalPolicyConfig = Field(default_factory=ApprovalPolicyConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
+    #: Where this profile was read from, repo-relative POSIX — stamped by
+    #: `load_profile_from_path`, never taken from the YAML; None for the
+    #: built-in fallback that no file stores (lg-gate-studio-863).
+    source_path: str | None = None
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0
     # Subtree-wide cap on stages completed across a top-level auto_approve run
@@ -268,7 +272,18 @@ def _parse_profile(path: Path, _inode: int, _mtime_ns: int, _size: int) -> Orche
     raw = _load_yaml(path)
     if "slug" not in raw:
         raw["slug"] = path.stem
-    return OrchestrationProfile.model_validate(raw)
+    # Stamped from where it was actually read: a file cannot claim another.
+    raw.pop("source_path", None)
+    profile = OrchestrationProfile.model_validate(raw)
+    profile.source_path = _repo_relative(path)
+    return profile
+
+
+def _repo_relative(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(settings.repo_root.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
 
 
 def resolve_orchestration_profile(workspace: Workspace) -> OrchestrationProfile:
