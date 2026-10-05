@@ -192,6 +192,18 @@
 
 /* ---- history cards ---- */
 
+.queue-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.queue-history-heading .queue-rail-heading {
+  margin-bottom: 0;
+}
+
 .queue-history-filters {
   margin: 0 0 12px;
   padding: 0;
@@ -311,4 +323,31 @@
     align-self: stretch;
     max-height: min(60vh, 480px);
   }
+}
+
+/* ---- lane count ---- */
+.queue-lane-count-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-lane-count-form input {
+  width: 72px;
+}
+
+.queue-lane-count-label {
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.queue-lane-count-hint {
+  flex-basis: 100%;
+}
+
+.queue-lane-count-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

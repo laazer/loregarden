@@ -32,7 +32,6 @@ class ParallelRunService:
         ticket: Ticket,
         *,
         stage_key: str | None = None,
-        max_concurrent: int = 3,
         preferred_slot: int | None = None,
         auto_approve: bool = False,
         timeout_seconds: int | None = None,
@@ -47,7 +46,6 @@ class ParallelRunService:
         Args:
             ticket: Ticket to run
             stage_key: Stage to start (optional)
-            max_concurrent: Max concurrent runs (default 3)
             preferred_slot: Slot the caller staged this ticket into, honoured
                 when it is still free (optional)
             auto_approve: Auto-approve the CLI's permission prompts for this run
@@ -70,7 +68,7 @@ class ParallelRunService:
         from loregarden.services.run_service import schedule_agent_run
 
         try:
-            queue_service = ParallelQueueService(self.session, max_concurrent=max_concurrent)
+            queue_service = ParallelQueueService(self.session)
 
             # The run row is created now whether or not a slot is free. It used
             # to be deferred with `run_id=""` and a "created on promotion"

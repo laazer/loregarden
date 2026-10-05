@@ -135,12 +135,12 @@ class QueueLaneService:
     def __init__(
         self,
         session: Session,
-        max_concurrent: int = 3,
+        max_concurrent: int | None = None,
         dispatcher: LaneDispatcher | None = None,
     ) -> None:
         self.session = session
-        self.max_concurrent = max_concurrent
         self.slots = ParallelQueueService(session, max_concurrent=max_concurrent)
+        self.max_concurrent = self.slots.max_concurrent
         if dispatcher is None and _dispatcher_factory is not None:
             dispatcher = _dispatcher_factory(session)
         self.dispatcher = dispatcher
@@ -220,6 +220,11 @@ class QueueLaneService:
         slot = self._slot(slot_number)
         if not slot:
             raise ValueError(f"No such execution slot: {slot_number}")
+        if slot_number > self.max_concurrent:
+            raise ValueError(
+                f"Slot {slot_number} is being retired: the lane count is "
+                f"{self.max_concurrent}. Pick a lane from 1 to {self.max_concurrent}."
+            )
 
         existing = self._already_queued(
             ticket_id=ticket.id, entry_kind=entry_kind, stage_key=stage_key
@@ -306,7 +311,13 @@ class QueueLaneService:
         first: this reads the waiting list, and an entry still marked FAILED is
         not in it.
         """
-        entry.position = len(self.waiting_in_lane(entry.slot_number)) + 1
+        lane = entry.slot_number
+        if lane > self.max_concurrent:
+            # Its lane was retired by a lowered lane count while it was out.
+            lane = self._shortest_lane()
+        position = len(self.waiting_in_lane(lane)) + 1
+        entry.slot_number = lane
+        entry.position = position
         self.session.add(entry)
         self.session.commit()
         self._renumber(entry.slot_number)
@@ -569,6 +580,7 @@ class QueueLaneService:
         every status read rather than waiting for a hand-reset.
         """
         self._requeue_stranded_entries()
+        self.rehome_retired_lane_entries()
         # Before the slot sweep: a repairing entry holds a slot whose
         # orchestration is already terminal, so this is the pass that either
         # spends the hold or gives the lane back. `reconcile_slots` leaves those
@@ -1012,7 +1024,7 @@ class QueueLaneService:
         entry = self.session.get(QueuedRun, entry_id)
         if not entry or entry.status not in WAITING_STATUSES:
             return False
-        if not self._slot(slot_number):
+        if not self._slot(slot_number) or slot_number > self.max_concurrent:
             return False
 
         from_lane = entry.slot_number
@@ -1034,7 +1046,46 @@ class QueueLaneService:
         emit_execution_update()
         return True
 
+    def rehome_retired_lane_entries(self) -> int:
+        """Move entries waiting in lanes past the lane count into live lanes.
+
+        A lowered lane count retires the lanes above it; what was waiting in
+        them would otherwise wait forever, because nothing starts a lane that
+        no longer exists. Each goes to the tail of the then-shortest lane, in
+        its old order, so the operator's ordering survives as far as it can.
+        Returns how many moved.
+        """
+        stranded = self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.slot_number > self.max_concurrent)
+            .where(col(QueuedRun.status).in_(WAITING_STATUSES))
+            .order_by(QueuedRun.slot_number, QueuedRun.position)
+        ).all()
+        if not stranded:
+            return 0
+        self.slots.initialize_slots()
+        for entry in stranded:
+            target = self._shortest_lane()
+            # Counted before the entry changes lane: the query autoflushes, so
+            # reading after the assignment counts the entry in its own new lane.
+            position = len(self.waiting_in_lane(target)) + 1
+            entry.slot_number = target
+            entry.position = position
+            self.session.add(entry)
+            self.session.commit()
+        logger.info(
+            "Moved %d waiting entr(ies) out of lanes past the lane count of %d",
+            len(stranded),
+            self.max_concurrent,
+        )
+        return len(stranded)
+
     # ---- internals -----------------------------------------------------
+
+    def _shortest_lane(self) -> int:
+        """The live lane with the fewest waiting entries; the lowest on a tie."""
+        lanes = range(1, self.max_concurrent + 1)
+        return min(lanes, key=lambda number: (len(self.waiting_in_lane(number)), number))
 
     def _slot(self, slot_number: int) -> AgentSlot | None:
         return self.session.exec(

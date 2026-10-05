@@ -808,6 +808,13 @@
   min-height: 0;
 }
 
+.queue-lane-attention-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .queue-lane-attention-label {
   font-size: 10px;
   letter-spacing: 0.04em;

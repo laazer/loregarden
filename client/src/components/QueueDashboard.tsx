@@ -21,6 +21,7 @@ import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueGitAutomation } from "./QueueGitAutomation";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
 import { QueueHistoryRail } from "./QueueHistoryRail";
+import { QueueLaneCount } from "./QueueLaneCount";
 import "./QueueDashboard.css";
 
 export interface QueueDashboardProps {
@@ -322,6 +323,8 @@ export function QueueDashboard({
 
               {activeSidebarTab === "controls" && showControls ? (
                 <>
+                  <QueueLaneCount />
+                  <div className="queue-rail-divider" />
                   {workspaces.map((ws) => (
                     <div key={ws.id}>
                       <QueueGitAutomation workspaceSlug={ws.slug} workspaceName={ws.name} />
