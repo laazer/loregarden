@@ -34,7 +34,6 @@ router = APIRouter(prefix="/api/parallel", tags=["parallel"])
 async def create_parallel_run(
     ticket_id: str = Path(...),
     stage_key: str | None = Query(None),
-    max_concurrent: int = Query(3),
     slot_number: int | None = Query(None, ge=1),
     auto_approve: bool = Query(False),
     timeout_seconds: int | None = Query(None, ge=1),
@@ -48,7 +47,6 @@ async def create_parallel_run(
     Args:
         ticket_id: Ticket ID
         stage_key: Optional stage key to start
-        max_concurrent: Max concurrent runs (default 3)
         slot_number: Slot the caller staged this ticket into. Honoured when
             free, otherwise the lowest free slot takes it.
         auto_approve: Auto-approve the CLI's permission prompts for this run
@@ -71,7 +69,6 @@ async def create_parallel_run(
         result = await ParallelRunService(session).create_parallel_run(
             ticket,
             stage_key=stage_key,
-            max_concurrent=max_concurrent,
             preferred_slot=slot_number,
             auto_approve=auto_approve,
             timeout_seconds=timeout_seconds,

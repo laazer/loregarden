@@ -28,11 +28,14 @@ from loregarden.models.domain import (
     OrchestrationRunStatus,
     QueuedRun,
     QueueEntryKind,
+    QueueHistoryClear,
     QueuePosition,
     Ticket,
     TicketState,
     Workspace,
 )
+from loregarden.models.domain.enums import comparable_utc
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 #: Entry statuses that mean "still on the board" — waiting in a lane or running
@@ -166,6 +169,38 @@ def _history_sort_key(item: QueueHistoryEntry) -> datetime:
     return ts.replace(tzinfo=None) if ts.tzinfo else ts
 
 
+def _card_time(item: QueueHistoryEntry) -> datetime | None:
+    """When a card's attempt ended, or as near to it as the row records."""
+    return item.finished_at or item.started_at or item.created_at
+
+
+def _cleared_before(item: QueueHistoryEntry, cutoff: datetime | None) -> bool:
+    """Whether a Clear at `cutoff` hides this card.
+
+    A card with no timestamp at all predates any clear that could be pressed.
+    One still running when Clear was pressed finishes after it, so it stays.
+    """
+    if cutoff is None:
+        return False
+    stamp = _card_time(item)
+    return stamp is None or comparable_utc(stamp) <= comparable_utc(cutoff)
+
+
+def _superseded(item: QueueHistoryEntry, latest_success: dict[str, datetime]) -> bool:
+    """Whether a later run of the same ticket already got past this stop.
+
+    `RESOLVED_TICKET_STATES` misses the commonest case: a milestone or feature
+    whose orchestration succeeded stays `in_progress` while its children sit in
+    backlog, so its old stop would otherwise hold the lane until someone clicked
+    it away by hand — a finished run reading as a stuck one.
+    """
+    succeeded_at = latest_success.get(item.ticket_id)
+    stopped_at = item.started_at or item.created_at
+    if succeeded_at is None or stopped_at is None:
+        return False
+    return comparable_utc(succeeded_at) > comparable_utc(stopped_at)
+
+
 def _ranges_overlap(
     start_a: datetime | None,
     end_a: datetime | None,
@@ -205,7 +240,8 @@ class QueueHistoryService:
         """Finished entries plus the total matching count, before paging.
 
         `outcome` filters on the derived value, which no column holds, so it is
-        applied after the join rather than in SQL.
+        applied after the join rather than in SQL. Cards a Clear has hidden are
+        left out — see `clear_history`.
         """
         stmt = select(QueuedRun, Ticket, OrchestrationRun).where(
             col(QueuedRun.status).not_in(LIVE_STATUSES)
@@ -238,6 +274,8 @@ class QueueHistoryService:
         entries.extend(
             self._synthetic_direct_admissions(workspace_id=workspace_id, ticket_id=ticket_id)
         )
+        cutoff = self.last_cleared_at()
+        entries = [item for item in entries if not _cleared_before(item, cutoff)]
         entries.sort(key=_history_sort_key, reverse=True)
         if slot_number is not None:
             entries = [item for item in entries if item.slot_number == slot_number]
@@ -257,7 +295,8 @@ class QueueHistoryService:
         A ticket that has since reached `done` or `wont_do` is dropped: the
         stop was real, but nothing is left to look at, and holding the card
         until someone clears it by hand makes a finished lane read as a stuck
-        one. History still has the entry.
+        one. So is a stop a later run of the same ticket succeeded past — see
+        `_superseded`. History still has the entry.
 
         **One card per ticket per lane.** A ticket that keeps stopping in the
         same lane produces one entry per attempt, and the section filled with
@@ -291,6 +330,8 @@ class QueueHistoryService:
             if entry.workspace_id in workspaces
             and derive_outcome(entry, orchestration) in ATTENTION_OUTCOMES
         ]
+        latest_success = self._latest_success({card.ticket_id for card in cards})
+        cards = [card for card in cards if not _superseded(card, latest_success)]
         cards.sort(key=_history_sort_key, reverse=True)
 
         # Newest first, so the first card seen for a (lane, ticket) pair is the
@@ -314,6 +355,55 @@ class QueueHistoryService:
             slot_number: (lane_cards[:MAX_ATTENTION_PER_LANE], len(lane_cards))
             for slot_number, lane_cards in by_lane.items()
         }
+
+    def _latest_success(self, ticket_ids: set[str]) -> dict[str, datetime]:
+        """Per ticket, when its newest succeeded orchestration started."""
+        if not ticket_ids:
+            return {}
+        rows = self.session.exec(
+            select(OrchestrationRun.ticket_id, func.max(OrchestrationRun.started_at))
+            .where(col(OrchestrationRun.ticket_id).in_(ticket_ids))
+            .where(OrchestrationRun.status == OrchestrationRunStatus.SUCCEEDED)
+            .group_by(OrchestrationRun.ticket_id)
+        ).all()
+        return {ticket_id: started for ticket_id, started in rows if started is not None}
+
+    def last_cleared_at(self) -> datetime | None:
+        """The newest Clear's cutoff, or None when history was never cleared."""
+        return self.session.exec(select(func.max(QueueHistoryClear.cleared_at))).one()
+
+    def clear_history(self) -> datetime:
+        """Hide every card that has finished by now from the history rail.
+
+        Nothing is deleted: the rows behind history belong to analytics and to
+        the ticket. Lane attention is untouched too — that section is cleared
+        per lane, by `dismiss_lane`, because a stop nobody has looked at must
+        not vanish because someone tidied a different panel.
+        """
+        clear = QueueHistoryClear()
+        self.session.add(clear)
+        self.session.commit()
+        return clear.cleared_at
+
+    def dismiss_lane(self, slot_number: int) -> int:
+        """Acknowledge every finished, undismissed entry in one lane.
+
+        The bulk form of `dismiss_entry`. Returns how many entries it marked,
+        so zero means the lane had nothing to clear — not that it failed.
+        """
+        entries = self.session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.slot_number == slot_number)
+            .where(col(QueuedRun.status).not_in(LIVE_STATUSES))
+            .where(col(QueuedRun.dismissed_at).is_(None))
+        ).all()
+        now = datetime.now(timezone.utc)
+        for entry in entries:
+            entry.dismissed_at = now
+            self.session.add(entry)
+        if entries:
+            self.session.commit()
+        return len(entries)
 
     def _workspace_labels(self) -> dict[str, WorkspaceLabel]:
         """Every workspace's slug and name, by id."""

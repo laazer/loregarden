@@ -10,11 +10,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  clearQueueHistory,
   listQueueHistory,
   type QueueHistoryEntry,
   type QueueHistoryOutcome,
 } from "../lib/queueHistoryApi";
-import { describeError } from "../state/toastStore";
+import { describeError, toastActionFailed } from "../state/toastStore";
+import { Button } from "./ui/Button";
 import { navigateToTicket } from "../lib/useAppNavigation";
 
 const OUTCOME_FILTERS: { key: string; label: string }[] = [
@@ -41,8 +43,7 @@ function formatDuration(seconds: number | null): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function formatWhen(entry: QueueHistoryEntry): string {
-  const stamp = entry.finished_at ?? entry.started_at ?? entry.created_at;
+function formatStamp(stamp: string | null): string {
   if (!stamp) return "";
   const parsed = new Date(stamp);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -54,17 +55,24 @@ function formatWhen(entry: QueueHistoryEntry): string {
   });
 }
 
+function formatWhen(entry: QueueHistoryEntry): string {
+  return formatStamp(entry.finished_at ?? entry.started_at ?? entry.created_at);
+}
+
 export function QueueHistoryRail() {
   const [entries, setEntries] = useState<QueueHistoryEntry[]>([]);
   const [outcome, setOutcome] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clearedAt, setClearedAt] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const page = await listQueueHistory({ outcome, limit: 25 });
       setEntries(page.entries);
+      setClearedAt(page.cleared_at);
       setError("");
     } catch (err) {
       setError(describeError(err, "Failed to load queue history"));
@@ -77,9 +85,36 @@ export function QueueHistoryRail() {
     void load();
   }, [load]);
 
+  const clear = useCallback(async () => {
+    setClearing(true);
+    try {
+      await clearQueueHistory();
+      await load();
+    } catch (err) {
+      toastActionFailed("Clear queue history", err);
+    } finally {
+      setClearing(false);
+    }
+  }, [load]);
+
+  const emptyCopy = clearedAt
+    ? `Nothing has finished since history was cleared ${formatStamp(clearedAt)}.`
+    : "Nothing has run through a lane yet.";
+
   return (
     <>
-      <div className="queue-rail-heading">Queue history</div>
+      <div className="queue-history-heading">
+        <div className="queue-rail-heading">Queue history</div>
+        <Button
+          variant="plain"
+          compact
+          disabled={clearing || entries.length === 0}
+          title="Hide every finished run from this list. Runs stay on their tickets."
+          onClick={() => void clear()}
+        >
+          {clearing ? "Clearing…" : "Clear"}
+        </Button>
+      </div>
 
       <div className="queue-history-filters tab-bar-scroll" role="tablist" aria-label="History outcomes">
         {OUTCOME_FILTERS.map((filter) => (
@@ -100,7 +135,7 @@ export function QueueHistoryRail() {
 
       {!error && entries.length === 0 ? (
         <p className="queue-rail-empty">
-          {loading ? "Loading…" : "Nothing has run through a lane yet."}
+          {loading ? "Loading…" : emptyCopy}
         </p>
       ) : null}
 

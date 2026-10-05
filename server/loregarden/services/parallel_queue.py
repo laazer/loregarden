@@ -29,6 +29,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.services.lane_count import lane_count
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.queue_cards import orchestration_card, run_card
 from loregarden.services.queue_repair import (
@@ -37,6 +38,7 @@ from loregarden.services.queue_repair import (
     resolve_repair_route,
 )
 from loregarden.services.run_concurrency import orchestration_lease_expired
+from loregarden.services.slot_pool import fit_slot_pool
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
@@ -46,7 +48,6 @@ from loregarden.websocket_events import (
     emit_run_completed,
 )
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select, update
 
 logger = logging.getLogger(__name__)
@@ -301,9 +302,10 @@ def owned_by_shared_queue():
 class ParallelQueueService:
     """Manage queue of agent runs waiting for execution slots."""
 
-    def __init__(self, session: Session, max_concurrent: int = 3):
+    def __init__(self, session: Session, max_concurrent: int | None = None):
         self.session = session
-        self.max_concurrent = max_concurrent
+        #: The configured lane count unless a caller pins one (tests, mostly).
+        self.max_concurrent = max_concurrent if max_concurrent is not None else lane_count(session)
 
     def _dispatch(self, run_id: str) -> None:
         """Hand a promoted run to the executor.
@@ -350,58 +352,8 @@ class ParallelQueueService:
         return datetime.now(timezone.utc) + timedelta(seconds=per_run * (waves + 1))
 
     def initialize_slots(self) -> None:
-        """Top the shared pool up to `max_concurrent` slots (idempotent).
-
-        Only ever adds. A pool that is already over capacity — which migration
-        0058 can leave behind when several workspaces had runs in flight —
-        drains back down through `on_run_complete` rather than by deleting a
-        slot with a live agent in it.
-
-        Read-then-insert is a race, and it was losing: two callers against an
-        empty pool both saw nothing and both inserted a full set, so a limit of
-        three became six slots and the admission gate stopped bounding anything.
-        `slot_number` is unique as of migration 0083, so the loser's insert now
-        fails instead of doubling the pool — it rolls back and re-reads, because
-        the winner has by then created exactly what this was going to create.
-        """
-        for _ in range(2):
-            try:
-                existing = self.session.exec(select(AgentSlot.slot_number)).all()
-                taken = set(existing)
-                missing = [n for n in range(1, self.max_concurrent + 1) if n not in taken]
-                if not missing:
-                    return
-
-                for slot_num in missing:
-                    self.session.add(
-                        AgentSlot(id=str(uuid4()), slot_number=slot_num, is_available=True)
-                    )
-                self.session.commit()
-                logger.info("Initialized %d shared execution slots", len(missing))
-                return
-
-            except IntegrityError:
-                # silent-ok: expected create race; the retry loop re-reads the pool
-                # Someone else created these between the read and the write. The
-                # pool they built is the one this was going to build, so rolling
-                # back and looking again is the whole recovery.
-                self.session.rollback()
-            except Exception:
-                # Rolled back rather than left open: a failed commit poisons the
-                # session, and every later query on it raises instead of
-                # answering — which turned one lost race into a dead caller.
-                self.session.rollback()
-                logger.exception("Error initializing slots")
-                return
-
-        # Falling out of the loop means every attempt lost the race. That is
-        # almost always benign — whoever won built the same pool — but it is not
-        # provable from here, and returning quietly with no slots is how a queue
-        # that never dispatches looks exactly like an idle one.
-        logger.warning(
-            "Slot pool initialization lost the create race on every attempt; "
-            "assuming another worker built the pool"
-        )
+        """Fit the shared pool to `max_concurrent` slots. See `slot_pool`."""
+        fit_slot_pool(self.session, self.max_concurrent)
 
     async def queue_run(
         self,
@@ -973,7 +925,9 @@ class ParallelQueueService:
                 return None
 
             # Claimed atomically: a promotion racing an admission both read the
-            # same free slot and both wrote it.
+            # same free slot and both wrote it. The pool is fitted first, so a
+            # lane retired by a lowered count is gone before anything can claim it.
+            self.initialize_slots()
             available_slot = claim_free_slot(self.session)
 
             if not available_slot:
@@ -1105,13 +1059,12 @@ class ParallelQueueService:
                 }
 
             if slot:
-                total_slots = len(self.session.exec(select(AgentSlot)).all())
-                if total_slots > self.max_concurrent:
-                    # The pool is over capacity — migration 0058 keeps every
-                    # occupied slot when it collapses the per-workspace pools,
-                    # which can exceed `max_concurrent`. Reclaim the surplus as
-                    # it frees rather than refilling it, so the pool converges
-                    # on the real limit instead of staying permanently wide.
+                if slot.slot_number > self.max_concurrent:
+                    # A lane past the limit — a lowered lane count, or migration
+                    # 0058's merged pools — kept running only to finish this
+                    # work. Retire it as it frees rather than refilling it, so
+                    # the pool converges on the real limit. Keyed on the number,
+                    # not the pool's size, so the lanes that remain are 1..N.
                     self.session.delete(slot)
                     logger.info(
                         "Reclaimed surplus slot %d on release of run %s",

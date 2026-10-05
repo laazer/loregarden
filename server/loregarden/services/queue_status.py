@@ -34,10 +34,6 @@ from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_tree_estimate import TicketTreeEstimator
 from sqlmodel import Session, col, select
 
-#: Slots in the shared pool. Matches the default the REST endpoint has always
-#: used. Not per workspace — see parallel_queue for why that changed.
-DEFAULT_MAX_CONCURRENT = 3
-
 _LIVE_AGENT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
 
 
@@ -222,7 +218,7 @@ def _build_lanes(
     """
     from loregarden.services.queue_lanes import QueueLaneService
 
-    lanes_service = QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
+    lanes_service = QueueLaneService(session)
     running_by_slot = {run.get("slot_number"): run for run in active_runs}
 
     waiting_by_slot: dict[int, list[dict[str, Any]]] = {}
@@ -325,7 +321,7 @@ def build_queue_status(session: Session) -> dict[str, Any]:
     websocket — has to hop to a thread itself, or it stalls the event loop and
     with it every other request in the process.
     """
-    queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
+    queue_service = ParallelQueueService(session)
 
     active_runs = queue_service.get_active_runs()
     queued_runs = queue_service.get_queued_runs()
@@ -339,7 +335,7 @@ def build_queue_status(session: Session) -> dict[str, Any]:
     # constant — see run_duration_stats. Drawn from every workspace, because
     # they all contend for the same slots.
     duration_stats = load_duration_stats(session)
-    max_concurrent = stats.get("max_concurrent", DEFAULT_MAX_CONCURRENT)
+    max_concurrent = stats.get("max_concurrent", queue_service.max_concurrent)
     _attach_estimates(session, active_runs, queued_runs, duration_stats, max_concurrent)
 
     medians = duration_stats.by_agent

@@ -24,7 +24,13 @@ jest.mock('../../state/QueueStatusContext', () => ({
 }));
 
 jest.mock('../../lib/queueLanesApi', () => ({
-  queueLanesApi: { add: jest.fn(), remove: jest.fn(), move: jest.fn(), dismiss: jest.fn() },
+  queueLanesApi: {
+    add: jest.fn(),
+    remove: jest.fn(),
+    move: jest.fn(),
+    dismiss: jest.fn(),
+    dismissLane: jest.fn(),
+  },
 }));
 
 jest.mock('../../api/client', () => ({
@@ -815,5 +821,17 @@ describe('what stopped in a lane', () => {
     const section = screen.getByTestId('slot-2-attention');
     expect(section).toHaveTextContent('Stopped in this lane (4)');
     expect(section).toHaveTextContent('3 older not shown');
+  });
+
+  test('Clear all dismisses every stopped card in that lane', async () => {
+    (queueLanesApi.dismissLane as jest.Mock).mockResolvedValue({ dismissed: 4 });
+    withAttention([stoppedCard], 4);
+    render(<ParallelQueueVisualization />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Clear all stopped tickets from slot 2' })
+    );
+
+    await waitFor(() => expect(queueLanesApi.dismissLane).toHaveBeenCalledWith(2));
   });
 });
