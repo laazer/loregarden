@@ -12,11 +12,18 @@
  * scroll window, which is the arrangement this replaces.
  */
 
+/*
+ * The 60px box paints the collapsed rail itself — the same background and
+ * right border the panel has — so wherever the panel is clipped away (below)
+ * the rail underneath looks exactly like the panel did.
+ */
 .app-sidebar {
   width: 60px;
   flex: none;
   position: relative;
   z-index: 5;
+  background: linear-gradient(180deg, var(--bg1), var(--bg0));
+  box-shadow: inset -1px 0 0 var(--bd);
 }
 
 .app-sidebar-panel {
@@ -29,7 +36,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
-  padding: 12px 8px;
+  padding: 0 8px 12px;
   /* Not `auto`: the lists inside scroll, and a second scroll window around
      them is what carries the footer off the bottom. */
   overflow: hidden;
@@ -37,6 +44,27 @@
   border-right: 1px solid var(--bd);
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   transition: width 0.16s ease;
+  /*
+   * **The bars beside the rail stay whole.** Expanded, the panel is cut out of
+   * the topbar's band and the bottom utility bar's band (measured by
+   * `useRailInsets`), so it widens only over the page and never covers — or
+   * gets covered by — either bar. The cuts sit on the rail's own column: at
+   * 59px on top, keeping the rail border under the brand, and at 52px on the
+   * bottom, left of where row labels start (54px), so no clipped text peeks
+   * out beside the bar. Applied in both states so collapsing does not flash
+   * the panel over the topbar while the width transitions. The right edge runs
+   * past 100% to keep the panel's shadow.
+   */
+  clip-path: polygon(
+    0 0,
+    59px 0,
+    59px var(--rail-inset-top, 54px),
+    calc(100% + 64px) var(--rail-inset-top, 54px),
+    calc(100% + 64px) calc(100% - var(--rail-inset-bottom, 0px)),
+    52px calc(100% - var(--rail-inset-bottom, 0px)),
+    52px 100%,
+    0 100%
+  );
 }
 
 .app-sidebar[data-expanded="true"] .app-sidebar-panel {
@@ -61,13 +89,23 @@
   border: 0;
 }
 
+/*
+ * As tall as the topbar less its border, with the panel's 4px gap cancelled,
+ * so the Tools separator below lands on the same line as the topbar's bottom
+ * border.
+ */
 .app-sidebar-brand {
   flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
+  height: calc(var(--rail-inset-top, 54px) - 1px);
   padding: 0 3px;
-  margin-bottom: 10px;
+  margin-bottom: -4px;
+}
+
+.app-sidebar-brand + .app-sidebar-section > .app-sidebar-section-head {
+  margin-top: 0;
 }
 
 .app-sidebar-brand .brand-mark {

@@ -37,6 +37,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -175,6 +176,44 @@ function PinTabMenu({
       ) : null}
     </div>
   );
+}
+
+/**
+ * How much of the rail's height the topbar and a bottom-docked utility bar
+ * take, written onto the `nav` as `--rail-inset-top` / `--rail-inset-bottom`.
+ *
+ * The expanded panel is clipped out of both bands (see `.app-sidebar-panel`),
+ * so the bars beside the rail stay whole instead of being half-covered by — or
+ * half-covering — the panel. The bottom band is not a constant: the dock moves
+ * between edges and grows with the terminal, so it is measured off the screen
+ * area the same way `ToastHost` finds its corner.
+ */
+function useRailInsets(navRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const nav = navRef.current;
+    const area = document.querySelector(".screen-area");
+    if (!nav || !area) return;
+
+    const measure = () => {
+      const rect = area.getBoundingClientRect();
+      const frame = nav.getBoundingClientRect();
+      nav.style.setProperty("--rail-inset-top", `${Math.max(0, rect.top - frame.top)}px`);
+      nav.style.setProperty(
+        "--rail-inset-bottom",
+        `${Math.max(0, frame.bottom - rect.bottom)}px`,
+      );
+    };
+    measure();
+
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(area);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [navRef]);
 }
 
 export function AppSidebar({
@@ -321,6 +360,8 @@ export function AppSidebar({
   }, [pendingDelete, closeView, activeViewId, navigate]);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  useRailInsets(navRef);
 
   /**
    * Bring the entry for the current route into its section's scroll window.
@@ -411,6 +452,7 @@ export function AppSidebar({
   return (
     <>
       <nav
+        ref={navRef}
         className="app-sidebar"
         aria-label="Main navigation"
         data-expanded={expanded ? "true" : "false"}
