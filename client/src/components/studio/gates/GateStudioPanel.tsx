@@ -18,6 +18,7 @@ import {
   gateStudioTargetFromPath,
   type GateStudioTarget,
 } from "../../../lib/appNavigation";
+import { scrollIntoScroller } from "../../../lib/scrollWithin";
 import { describeError, errorStatus } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
 import { WorkspaceGatesPanel } from "../WorkspaceGatesPanel";
@@ -92,8 +93,8 @@ export function GateStudioPanel({
   // blocked click looks like a link that does nothing.
   useEffect(() => {
     if (!pending) return;
-    // `scrollIntoView?.` because jsdom has no implementation of it.
-    banner.current?.scrollIntoView?.({ block: "start" });
+    // Within the panel only — see `scrollWithin` for what `scrollIntoView` did to the app frame.
+    if (banner.current) scrollIntoScroller(banner.current, "start");
     keepEditing.current?.focus({ preventScroll: true });
   }, [pending]);
 
