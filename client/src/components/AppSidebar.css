@@ -16,14 +16,30 @@
  * The 60px box paints the collapsed rail itself — the same background and
  * right border the panel has — so wherever the panel is clipped away (below)
  * the rail underneath looks exactly like the panel did.
+ *
+ * **The shadow lives here, not on the panel.** `drop-shadow` on the parent
+ * follows the shape the clipped panel and the rail make together, so expanded
+ * the sidebar casts onto the topbar and the bottom action bar along the rail's
+ * edge and the panel's top and bottom edges — it reads as lying over both bars
+ * rather than being cut by them. A `box-shadow` on the panel is clipped away
+ * with it. `z-index: 7` puts the shadow above the action bar (6); nothing of
+ * the panel itself overlaps either bar any more, so only the shadow lands there.
  */
 .app-sidebar {
   width: 60px;
   flex: none;
   position: relative;
-  z-index: 5;
+  z-index: 7;
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   box-shadow: inset -1px 0 0 var(--bd);
+  transition: filter 0.16s ease;
+}
+
+.app-sidebar[data-expanded="true"] {
+  /* A tight contact shadow for the edge, then a soft one for the lift: dark on
+     dark reads only as a pair. */
+  filter: drop-shadow(3px 0 6px color-mix(in srgb, var(--shadow) 70%, transparent))
+    drop-shadow(16px 0 36px color-mix(in srgb, var(--shadow) 75%, transparent));
 }
 
 .app-sidebar-panel {
@@ -52,24 +68,47 @@
    * 59px on top, keeping the rail border under the brand, and at 52px on the
    * bottom, left of where row labels start (54px), so no clipped text peeks
    * out beside the bar. Applied in both states so collapsing does not flash
-   * the panel over the topbar while the width transitions. The right edge runs
-   * past 100% to keep the panel's shadow.
+   * the panel over the topbar while the width transitions. The shadow is the
+   * nav's (see `.app-sidebar`), so nothing needs to reach past the right edge.
    */
   clip-path: polygon(
     0 0,
     59px 0,
     59px var(--rail-inset-top, 54px),
-    calc(100% + 64px) var(--rail-inset-top, 54px),
-    calc(100% + 64px) calc(100% - var(--rail-inset-bottom, 0px)),
+    100% var(--rail-inset-top, 54px),
+    100% calc(100% - var(--rail-inset-bottom, 0px)),
     52px calc(100% - var(--rail-inset-bottom, 0px)),
     52px 100%,
     0 100%
   );
 }
 
+/*
+ * The same outline with the panel's two right-hand corners rounded. `shape()`
+ * is the only clip-path form that takes both arcs and `calc()`/`var()` —
+ * `path()` takes neither, and the insets are measured at runtime. Where it is
+ * unsupported the square polygon above stands.
+ */
+@supports (clip-path: shape(from 0 0, line to 1px 1px)) {
+  .app-sidebar-panel {
+    clip-path: shape(
+      from 0 0,
+      hline to 59px,
+      vline to var(--rail-inset-top, 54px),
+      hline to calc(100% - 12px),
+      arc to 100% calc(var(--rail-inset-top, 54px) + 12px) of 12px cw,
+      vline to calc(100% - var(--rail-inset-bottom, 0px) - 12px),
+      arc to calc(100% - 12px) calc(100% - var(--rail-inset-bottom, 0px)) of 12px cw,
+      hline to 52px,
+      vline to 100%,
+      hline to 0,
+      close
+    );
+  }
+}
+
 .app-sidebar[data-expanded="true"] .app-sidebar-panel {
   width: 244px;
-  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.28);
 }
 
 /*

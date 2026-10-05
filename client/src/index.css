@@ -12,6 +12,8 @@
   --bg4: #2c3849;
   --bd: #232f42;
   --bd2: #35455c;
+  /* What a raised surface casts onto what is under it. */
+  --shadow: #000000;
   --tx: #f0efe8;
   --txm: #a5a394;
   --txl: #6b6a5c;
