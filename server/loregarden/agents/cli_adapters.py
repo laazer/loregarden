@@ -1,3 +1,4 @@
+import logging
 import os
 import shlex
 import shutil
@@ -29,6 +30,13 @@ from loregarden.services.cli_settings import (
     ticket_effort_for_adapter,
     ticket_model_for_adapter,
 )
+from loregarden.services.git_subprocess import (
+    GH_USER_ENV,
+    GhAccountUnavailable,
+    configured_gh_token,
+)
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CLAUDE_USER_PROMPT = (
     "Execute the Loregarden stage task described in the appended system prompt. "
@@ -103,9 +111,22 @@ def invocation_env(invocation: CliInvocation) -> dict[str, str]:
     ``RUN_IDENTITY_ENV_VARS``, plus the invocation's own overlay. Taken at call
     time rather than import so a variable the supervising process sets after
     import still reaches the agent.
+
+    ``GH_TOKEN`` is set to the ``LOREGARDEN_GH_USER`` account's token when that
+    is configured, so an agent's own ``gh`` calls act as the same account the
+    server's do. An unresolvable account is logged and the agent spawned
+    anyway: most stages never call ``gh``, the doctor's ``gh_account`` check
+    reports the cause, and an agent ``gh`` call that needed it fails visibly.
     """
     stripped = {*STATE_BINDING_ENV_VARS, *RUN_IDENTITY_ENV_VARS}
     env = {k: v for k, v in os.environ.items() if k not in stripped}
+    try:
+        gh_token = configured_gh_token()
+    except GhAccountUnavailable as exc:
+        logger.warning("agent spawned without the %s account's gh token: %s", GH_USER_ENV, exc)
+        gh_token = None
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
     env.update(invocation.env)
     return env
 

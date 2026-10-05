@@ -282,6 +282,10 @@ class DoctorCheck(str, Enum):
     #: ledger is advisory, so nothing else can tell a ledger everybody uses from
     #: one everybody ignores — both report capacity free and reap nothing.
     DOCKER_UNACCOUNTED = "docker_unaccounted"
+    #: Which `gh` account loregarden's PR, merge and issue calls act as. With
+    #: several signed in and none configured, it is whichever is active — one
+    #: here was read-only on every workspace repo while `git push` still worked.
+    GH_ACCOUNT = "gh_account"
 
 
 class PortabilityState(str, Enum):

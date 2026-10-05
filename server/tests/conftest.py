@@ -15,13 +15,14 @@ from loregarden.models.domain import Workspace
 from loregarden.services import (
     codex_discovery,
     docker_capacity,
+    git_subprocess,
     local_instances,
     opencode_discovery,
     orchestration_profile,
     reference_cache,
 )
 from loregarden.services.cli_settings import ADAPTER_BINARIES
-from loregarden.services.git_subprocess import GH_BINARY_ENV, GIT_LOCATION_ENV_VARS
+from loregarden.services.git_subprocess import GH_BINARY_ENV, GH_USER_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
@@ -186,6 +187,18 @@ def no_installed_gh(monkeypatch, gh_stub):
     or `subprocess.run`, which takes precedence.
     """
     monkeypatch.setenv(GH_BINARY_ENV, str(gh_stub))
+
+
+@pytest.fixture(autouse=True)
+def no_configured_gh_user(monkeypatch):
+    """No test inherits this machine's `LOREGARDEN_GH_USER`, or a token cached by another.
+
+    A developer who sets it for the backend sets it for pytest too; every `run_gh`
+    would then ask the stub for a token, fail, and return exit 4 in place of the
+    behaviour the test meant to exercise.
+    """
+    monkeypatch.delenv(GH_USER_ENV, raising=False)
+    monkeypatch.setattr(git_subprocess, "_gh_tokens", {})
 
 
 @pytest.fixture(autouse=True)

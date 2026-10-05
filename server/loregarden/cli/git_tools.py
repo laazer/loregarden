@@ -24,7 +24,7 @@ from loregarden.services.change_pr import (
     ChangeRequest,
     open_change_pr,
 )
-from loregarden.services.git_subprocess import run_gh
+from loregarden.services.git_subprocess import GhAccountUnavailable, gh_token_for_user
 from loregarden.services.workspace_integration import is_loregarden, primary_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
@@ -47,10 +47,10 @@ def _workspace_repos() -> list[Path]:
 def _gh_token(user: str | None) -> str | None:
     if not user:
         return None
-    result = run_gh(["auth", "token", "--user", user], cwd=Path.cwd())
-    if result.returncode != 0:
-        raise UsageError(f"no gh token for {user!r}: {result.stderr.strip()}")
-    return result.stdout.strip()
+    try:
+        return gh_token_for_user(user)
+    except GhAccountUnavailable as exc:
+        raise UsageError(str(exc)) from exc
 
 
 def _change_pr(args: argparse.Namespace) -> str:

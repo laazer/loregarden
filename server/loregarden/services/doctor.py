@@ -50,7 +50,14 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
-from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
+from loregarden.services.git_subprocess import (
+    GH_USER_ENV,
+    GIT_LOCATION_ENV_VARS,
+    GhAccountUnavailable,
+    configured_gh_user,
+    gh_logins,
+    run_git,
+)
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.stage_parking import park_stage
@@ -612,6 +619,56 @@ def check_migration_chain(session: Session, workspace: Workspace, repo_root: Pat
     )
 
 
+def check_gh_account(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
+    """Which `gh` account loregarden acts as, and whether that is a decision.
+
+    Reads `gh auth status` — account names only, never a token — and asks
+    nothing of GitHub, so it cannot say whether an account can write a given
+    repository. It reports the case that produced that failure: several
+    accounts signed in, and the one in use chosen by `gh auth switch` rather
+    than by loregarden.
+    """
+    configured = configured_gh_user()
+    try:
+        logins = gh_logins()
+    except GhAccountUnavailable as exc:
+        return DoctorFinding(
+            check=DoctorCheck.GH_ACCOUNT,
+            status=DoctorStatus.FAIL if configured else DoctorStatus.WARN,
+            finding=f"Could not list gh accounts: {exc}.",
+            remediation="Install gh and run `gh auth login`; PR, merge and issue calls need it.",
+        )
+    signed_in = [login for login in logins if login.signed_in]
+    names = [login.login for login in signed_in]
+    if configured:
+        if configured in names:
+            return _ok(DoctorCheck.GH_ACCOUNT, f"gh calls act as {configured} ({GH_USER_ENV}).")
+        return DoctorFinding(
+            check=DoctorCheck.GH_ACCOUNT,
+            status=DoctorStatus.FAIL,
+            finding=(
+                f"{GH_USER_ENV}={configured}, but gh is signed in to "
+                f"{', '.join(names) or 'no account'}. Every gh call loregarden makes will fail."
+            ),
+            remediation=f"`gh auth login` as {configured}, or correct {GH_USER_ENV} in .env.",
+        )
+    active = next((login.login for login in signed_in if login.active), None)
+    if len(names) <= 1:
+        return _ok(DoctorCheck.GH_ACCOUNT, f"gh calls act as {active or 'no account'}.")
+    return DoctorFinding(
+        check=DoctorCheck.GH_ACCOUNT,
+        status=DoctorStatus.WARN,
+        finding=(
+            f"gh is signed in to {', '.join(names)}, and loregarden acts as whichever is "
+            f"active (now {active}). A `gh auth switch` anywhere changes who opens and merges PRs."
+        ),
+        remediation=(
+            f"Set {GH_USER_ENV}=<the account that can write the workspace repos> in .env "
+            "and restart the backend."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -629,6 +686,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.DOCKER_UNACCOUNTED: check_docker_unaccounted,
     DoctorCheck.MIGRATION_LEDGER: check_migration_ledger,
     DoctorCheck.MIGRATION_CHAIN: check_migration_chain,
+    DoctorCheck.GH_ACCOUNT: check_gh_account,
 }
 
 
