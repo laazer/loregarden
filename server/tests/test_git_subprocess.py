@@ -7,11 +7,17 @@ from pathlib import Path
 from unittest import mock
 
 import loregarden
+import pytest
+from loregarden.agents.cli_adapters import CliInvocation, invocation_env
 from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_subprocess import (
+    GH_AUTH_REQUIRED_EXIT,
     GH_BINARY_ENV,
+    GH_USER_ENV,
     GIT_LOCATION_ENV_VARS,
+    GhAccountUnavailable,
+    gh_token_for_user,
     run_gh,
     run_git,
     scrubbed_git_env,
@@ -226,3 +232,109 @@ def test_the_argv_scan_sees_a_gh_argv():
     """The scan above proves nothing if it cannot see the shape it bans."""
     assert _gh_argv_sites('subprocess.run(["gh", "pr", "list"])\n') == [1]
     assert _gh_argv_sites('subprocess.run(["other", "status"])\n') == []
+
+
+# -- which gh account -------------------------------------------------------
+
+
+def _gh_answering(token_lookup: subprocess.CompletedProcess):
+    """A `subprocess.run` that answers `gh auth token` with `token_lookup`, else succeeds."""
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs["env"]))
+        if argv[1:3] == ["auth", "token"]:
+            return token_lookup
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="ok", stderr="")
+
+    return run, calls
+
+
+def _token(value: str) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout=f"{value}\n", stderr="")
+
+
+def test_run_gh_acts_as_the_configured_account_not_the_active_one(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    run, calls = _gh_answering(_token("laazer-token"))
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", side_effect=run):
+        result = run_gh(["pr", "create"], cwd=Path("."))
+
+    assert result.returncode == 0
+    lookup, command = calls
+    assert lookup[0][1:] == ["auth", "token", "--user", "laazer"]
+    assert "GH_TOKEN" not in lookup[1]
+    assert command[0][1:] == ["pr", "create"]
+    assert command[1]["GH_TOKEN"] == "laazer-token"
+
+
+def test_the_configured_token_is_looked_up_once(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    run, calls = _gh_answering(_token("laazer-token"))
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", side_effect=run):
+        run_gh(["pr", "view"], cwd=Path("."))
+        run_gh(["pr", "merge"], cwd=Path("."))
+
+    assert [argv[1:3] for argv, _ in calls] == [["auth", "token"], ["pr", "view"], ["pr", "merge"]]
+
+
+def test_an_explicit_token_beats_the_configured_account(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    run, calls = _gh_answering(_token("laazer-token"))
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", side_effect=run):
+        run_gh(["pr", "list"], cwd=Path("."), gh_token="explicit")
+
+    assert [(argv[1:], env["GH_TOKEN"]) for argv, env in calls] == [(["pr", "list"], "explicit")]
+
+
+def test_an_unset_account_leaves_gh_on_its_active_one(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    run, calls = _gh_answering(_token("never-asked"))
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", side_effect=run):
+        run_gh(["pr", "list"], cwd=Path("."))
+
+    assert [(argv[1:], "GH_TOKEN" in env) for argv, env in calls] == [(["pr", "list"], False)]
+
+
+def test_an_unresolvable_account_fails_the_call_instead_of_using_the_active_one(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    missing = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr="no account found for laazer"
+    )
+    run, calls = _gh_answering(missing)
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", side_effect=run):
+        result = run_gh(["pr", "merge"], cwd=Path("."))
+
+    assert [argv[1:3] for argv, _ in calls] == [["auth", "token"]]
+    assert result.returncode == GH_AUTH_REQUIRED_EXIT
+    assert "laazer" in result.stderr and GH_USER_ENV in result.stderr
+
+
+def test_a_failed_lookup_is_not_cached(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    missing = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="no")
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", return_value=missing):
+        with pytest.raises(GhAccountUnavailable):
+            gh_token_for_user("laazer")
+    with mock.patch(
+        "loregarden.services.git_subprocess.subprocess.run", return_value=_token("fixed")
+    ):
+        assert gh_token_for_user("laazer") == "fixed"
+
+
+def test_agents_get_the_configured_accounts_token(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    invocation = CliInvocation(argv=["claude"])
+    with mock.patch(
+        "loregarden.services.git_subprocess.subprocess.run", return_value=_token("laazer-token")
+    ):
+        assert invocation_env(invocation)["GH_TOKEN"] == "laazer-token"
+
+
+def test_an_agent_still_spawns_when_the_account_cannot_be_resolved(monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    invocation = CliInvocation(argv=["claude"])
+    missing = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="no")
+    with mock.patch("loregarden.services.git_subprocess.subprocess.run", return_value=missing):
+        assert "GH_TOKEN" not in invocation_env(invocation)
