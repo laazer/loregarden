@@ -16,6 +16,18 @@ cd "$ROOT/client"
 HOST="${LOREGARDEN_DEV_HOST:-127.0.0.1}"
 PORT="${LOREGARDEN_CLIENT_PORT:-5173}"
 
+# Before anything starts Vite, on either path below: under a Node older than
+# client/package.json engines.node, Vite dies on syntax it cannot parse and the
+# process still exits 0, so the client simply never appears.
+if ! command -v node >/dev/null 2>&1; then
+  echo "dev-client: node not found — install a Node matching client/package.json engines.node (\`nvm use\` in the repo root reads .nvmrc)" >&2
+  exit 1
+fi
+if ! node_problem="$(node scripts/check-node-version.cjs 2>&1)"; then
+  echo "dev-client: $node_problem — run \`nvm use\` in the repo root (reads .nvmrc), or install a supported Node" >&2
+  exit 1
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
   echo "dev-client: uv not found — running unregistered, proxying to ${LOREGARDEN_API_TARGET:-the default http://127.0.0.1:8000}" >&2
   exec npm run dev -- --host "$HOST" --port "$PORT" --strictPort
