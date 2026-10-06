@@ -31,6 +31,7 @@ import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { followUpPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
+import { scrollIntoScroller } from "../lib/scrollWithin";
 import { pushToast } from "../state/toastStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import "./BaxterChatPage.css";
@@ -539,7 +540,8 @@ export function BaxterChatPage() {
       });
       return;
     }
-    node.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Within the thread only — see `scrollWithin` for what `scrollIntoView` did to the app frame.
+    scrollIntoScroller(node, "start", "smooth");
     node.classList.remove("lg-chat-turn--flash");
     // Restarts the highlight when the same card is picked twice in a row.
     void node.offsetWidth;

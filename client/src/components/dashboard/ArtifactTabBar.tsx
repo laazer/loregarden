@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { isArtifactsSubTab, PRIMARY_ARTIFACT_TABS, type ArtifactTab } from "../../lib/appNavigation";
+import { scrollIntoScrollerInline } from "../../lib/scrollWithin";
 import { navigateToTicketTab } from "../../lib/useAppNavigation";
 
 function tabLabel(tab: ArtifactTab): string {
@@ -56,10 +57,10 @@ export function ArtifactTabBar({
   const tabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
 
   useEffect(() => {
-    tabRefs.current[isArtifactsSubTab(artifactTab) ? "artifacts" : artifactTab]?.scrollIntoView?.({
-      block: "nearest",
-      inline: "center",
-    });
+    const tab = tabRefs.current[isArtifactsSubTab(artifactTab) ? "artifacts" : artifactTab];
+    // The strip only: a centred end tab is past what the strip can scroll, and
+    // `scrollIntoView` carried the remainder into the frame (see `scrollWithin`).
+    if (tab) scrollIntoScrollerInline(tab, "center");
   }, [artifactTab]);
 
   return (

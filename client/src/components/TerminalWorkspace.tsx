@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { scrollIntoScrollerInline } from "../lib/scrollWithin";
 import { TerminalPanel } from "./TerminalPanel";
 import "./TerminalWorkspace.css";
 import { AddToTabMenu } from "./AddToTabMenu";
@@ -48,10 +49,11 @@ export function TerminalWorkspace({
    * TerminalWorkspace.css), and its scrollbar is hidden — so a new or
    * newly-active tab past the visible edge is not just off-screen, it is
    * invisible with no affordance that it exists. Every activation carries the
-   * strip to it.
+   * strip to it — the strip only, never the frame around it (see `scrollWithin`).
    */
   useEffect(() => {
-    tabRefs.current.get(activeTabId)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const tab = tabRefs.current.get(activeTabId);
+    if (tab) scrollIntoScrollerInline(tab, "nearest");
   }, [activeTabId]);
 
   useEffect(() => {

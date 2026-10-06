@@ -56,6 +56,7 @@ import {
   type DragHandlers,
   type MoveHandlers,
 } from "./appSidebarRows";
+import { scrollIntoScroller } from "../lib/scrollWithin";
 import "./AppSidebar.css";
 
 /** Drawn before either read lands: no rows, and the same array every render. */
@@ -329,7 +330,8 @@ export function AppSidebar({
    * list that is itself entirely on screen, and nothing about the rail says so —
    * on load the user would simply see no marked entry anywhere. `block:
    * "nearest"` scrolls only as far as it must, so an entry already in view does
-   * not jump.
+   * not jump. Its own list only: `scrollIntoView` would also scroll the
+   * clipped panel and app frame whenever the list itself is not wholly on screen.
    *
    * Focus needs no equivalent: focusing an element scrolls its scroll containers
    * to reveal it, and every keyboard path into a row goes through `focus()`.
@@ -338,7 +340,7 @@ export function AppSidebar({
   useEffect(() => {
     if (!isReady) return;
     const current = panelRef.current?.querySelector<HTMLElement>("[aria-current]");
-    current?.scrollIntoView?.({ block: "nearest" });
+    if (current) scrollIntoScroller(current, "nearest");
   }, [isReady, pathname]);
 
   const handleBlur = (event: FocusEvent<HTMLElement>) => {
