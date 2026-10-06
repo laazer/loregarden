@@ -65,7 +65,10 @@ def test_one_initiative_claims_a_cross_workspace_theme(prod_shape, client):
     [initiative] = client.get("/api/initiatives").json()
     assert prod_shape.initiative_milestones == 10
     assert initiative["external_id"].startswith("init-")
-    assert initiative["progress"] == {"resolved": 1, "total": 10}
+    # The ten themed milestones, plus one open feature it tracks by membership.
+    assert initiative["progress"] == {"resolved": 1, "total": 11}
+    [member] = [m for m in initiative["milestones"] if m["member"]]
+    assert member["work_item_type"] == "feature" and member["home_milestone"]
     assert initiative["workspaces"] == ["blobert", "loregarden", "loremaker"]
     # The children are mixed, so the rollup — not the factory default — set this.
     assert initiative["state"] == "in_progress"
