@@ -30,6 +30,7 @@ export const api = {
   baxterChatSession: jest.fn(),
   createBaxterChatSession: jest.fn(),
   sendBaxterChatMessage: jest.fn(),
+  uploadBaxterChatAttachment: jest.fn(),
   stopBaxterChatTurn: jest.fn(),
   workspaceWorkflow: jest.fn().mockResolvedValue(null),
   approvals: jest.fn().mockResolvedValue([]),

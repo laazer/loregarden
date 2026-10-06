@@ -8,7 +8,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api } from "../../../api/client";
@@ -86,6 +86,36 @@ describe("before it is configured", () => {
 });
 
 describe("a configured pane", () => {
+  it("sends attached files into its thread", async () => {
+    mockApi.uploadBaxterChatAttachment.mockResolvedValue({
+      id: "att-1",
+      name: "trace.log",
+      mime: "text/plain",
+      size: 4,
+      kind: "text",
+    } as never);
+    const { container } = renderPane({ workspace_slug: "loregarden", session_id: "s-1" });
+    await screen.findByText("hello from s-1");
+
+    const picker = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(picker).not.toBeNull();
+    const file = new File(["boom"], "trace.log", { type: "text/plain" });
+    fireEvent.change(picker!, { target: { files: [file] } });
+    expect(await screen.findByRole("button", { name: "Remove trace.log" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(mockApi.sendBaxterChatMessage).toHaveBeenCalledWith(
+        "loregarden",
+        "s-1",
+        "",
+        "",
+        ["att-1"],
+      ),
+    );
+    expect(mockApi.uploadBaxterChatAttachment).toHaveBeenCalledWith("loregarden", "s-1", file);
+  });
+
   it("shows the thread its settings name", async () => {
     renderPane({ workspace_slug: "loregarden", session_id: "s-1" });
 

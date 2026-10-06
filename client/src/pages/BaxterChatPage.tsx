@@ -6,7 +6,6 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
-import { QuickReplies } from "../components/chat/QuickReplies";
 import {
   ComposerAttachButton,
   ComposerAttachmentTray,
@@ -28,8 +27,7 @@ import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
-import { followUpPrompts } from "../lib/dockChatPrompts";
-import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
+import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { pushToast } from "../state/toastStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
@@ -238,7 +236,6 @@ function BaxterReplyDock({
   blocked = false,
   commandOptions,
   menu,
-  quickReplies,
 }: {
   onSend: ComposerSend;
   onStop?: () => void;
@@ -248,17 +245,11 @@ function BaxterReplyDock({
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
   menu: ReactNode;
-  quickReplies: readonly string[];
 }) {
   const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
   return (
     <div className="baxter-chat-dock baxter-chat-dock--fade">
-      <QuickReplies
-        prompts={quickReplies}
-        disabled={busy || blocked}
-        onPick={(prompt) => onSend(prompt, [])}
-      />
       <StudioChatComposer
         {...composer}
         onStop={onStop}
@@ -290,6 +281,7 @@ export function BaxterChatPage() {
    */
   const [galleryTurns, setGalleryTurns] = useState<ChatTurn[] | null>(null);
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
+  const initialFilesRef = useRef(takeHomeBaxterFiles());
   const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
@@ -465,12 +457,14 @@ export function BaxterChatPage() {
 
   useEffect(() => {
     const handedOff = initialPromptRef.current;
-    if (!handedOff) return;
+    const handedOffFiles = initialFilesRef.current;
+    if (!handedOff && !handedOffFiles.length) return;
     // A turn's approval card is snapshotted from the inbox, so bootstrapping
     // before it lands would strip the first reply of its context.
     if (!workspaceSlug || approvalsQ.isLoading) return;
     initialPromptRef.current = "";
-    respond(handedOff);
+    initialFilesRef.current = [];
+    respond(handedOff, "", handedOffFiles);
     // Bootstrap once the workspace and its inbox are known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceSlug, approvalsQ.isLoading]);
@@ -499,12 +493,6 @@ export function BaxterChatPage() {
     }
     return hasThread ? suggestionChips(approvals, tickets) : EMPTY_CHIPS;
   }, [galleryTurns, hasThread, approvals, tickets]);
-
-  // The gallery is a canned thread with nothing to answer; its turns carry their own.
-  const quickReplies = useMemo(
-    () => (galleryTurns ? [] : followUpPrompts("baxter-home", null, chat.messages).slice(0, 3)),
-    [galleryTurns, chat.messages],
-  );
 
   const primitives = useMemo(() => primitiveHistory(threadMessages), [threadMessages]);
 
@@ -678,7 +666,6 @@ export function BaxterChatPage() {
               blocked={!workspaceSlug}
               commandOptions={commandOptions}
               menu={composerMenu}
-              quickReplies={quickReplies}
             />
           </>
         )}

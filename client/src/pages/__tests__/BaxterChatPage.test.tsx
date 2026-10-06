@@ -3,7 +3,11 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ApiError, api, type BaxterChatSnapshot } from "../../api/client";
-import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
+import {
+  HOME_BAXTER_PROMPT_KEY,
+  stashHomeBaxterFiles,
+  takeHomeBaxterFiles,
+} from "../../lib/homeBaxter";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 import { BaxterChatPage } from "../BaxterChatPage";
@@ -437,6 +441,48 @@ describe("BaxterChatPage", () => {
       expect(screen.getByText("Start with the Merge retro-tokens approval.")).toBeInTheDocument();
     });
     expect(sessionStorage.getItem(HOME_BAXTER_PROMPT_KEY)).toBeNull();
+  });
+
+  it("carries files attached on Home into the first turn", async () => {
+    mockedApi.uploadBaxterChatAttachment.mockImplementation(async (_slug, _id, file) => ({
+      id: `att-${file.name}`,
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+      kind: "text",
+    }));
+    const file = new File(["boom"], "trace.log", { type: "text/plain" });
+    sessionStorage.setItem(HOME_BAXTER_PROMPT_KEY, "What broke here?");
+    stashHomeBaxterFiles([file]);
+    fakeChatServer("Line 42.");
+
+    renderChat();
+
+    await waitFor(() =>
+      expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith(
+        "loregarden",
+        expect.any(String),
+        "What broke here?",
+        "",
+        ["att-trace.log"],
+      ),
+    );
+    // Taken once: a later visit to the chat page does not resend them.
+    expect(takeHomeBaxterFiles()).toEqual([]);
+  });
+
+  it("offers no quick replies above the composer — the omnibar carries them", async () => {
+    fakeChatServer("Done.");
+    await renderChatReady();
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "hi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    await screen.findByText("Done.");
+
+    expect(document.querySelector(".baxter-chat-dock")).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "Quick replies" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tell me more" })).not.toBeInTheDocument();
   });
 
   it("renders assistant replies as markdown", async () => {

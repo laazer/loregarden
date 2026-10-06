@@ -9,9 +9,14 @@ import {
   type TicketSummary,
 } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
+import {
+  ComposerAttachButton,
+  ComposerAttachmentTray,
+} from "../components/chat/ComposerAttachments";
 import { StudioChatComposer } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
-import { chatPath, stashHomeBaxterPrompt } from "../lib/homeBaxter";
+import { useComposerAttachments } from "../hooks/useComposerAttachments";
+import { chatPath, stashHomeBaxterFiles, stashHomeBaxterPrompt } from "../lib/homeBaxter";
 import {
   runStatusLabel,
   ticketActivityColor,
@@ -66,6 +71,7 @@ export function HomePage() {
   const workspace = useUiStore((s) => s.workspace);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const [draft, setDraft] = useState("");
+  const attachments = useComposerAttachments();
   const now = useMemo(() => new Date(), []);
 
   const workspaceParam = workspace && workspace !== "all" ? workspace : undefined;
@@ -125,9 +131,12 @@ export function HomePage() {
 
   const sendToBaxter = (text: string) => {
     const content = text.trim();
-    if (!content) return;
+    const files = attachments.items.map((item) => item.file);
+    if (!content && !files.length) return;
     stashHomeBaxterPrompt(content);
+    stashHomeBaxterFiles(files);
     setDraft("");
+    attachments.clear();
     navigate(chatPath());
   };
 
@@ -153,6 +162,12 @@ export function HomePage() {
             value={draft}
             onChange={setDraft}
             onSubmit={() => sendToBaxter(draft)}
+            canSendEmpty={attachments.items.length > 0}
+            onFiles={attachments.add}
+            accessory={
+              <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />
+            }
+            toolbar={<ComposerAttachButton onFiles={attachments.add} />}
             placeholder="What should we ship today?"
             sendLabel="Ask Baxter"
             variant="dock"
