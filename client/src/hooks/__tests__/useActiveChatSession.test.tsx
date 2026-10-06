@@ -153,6 +153,26 @@ it("binds to nothing on Home, whose hero is the way into the same thread", () =>
   expect(result.current.composedOnScreen).toBe(true);
 });
 
+it("binds to nothing on an initiative plan page, whose planner chat composes for itself", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+  });
+
+  expect(result.current.session).toBeNull();
+  expect(result.current.composedOnScreen).toBe(true);
+  // No Baxter model picker: the conversation on that page is the planner's.
+  expect(result.current.archive).toBeNull();
+});
+
+it("keeps Baxter's composer on the initiative suggestions page, which has no planner", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/initiatives/suggest"),
+  });
+
+  expect(result.current.composedOnScreen).toBe(false);
+  expect(result.current.session?.kind).toBe("baxter-home");
+});
+
 it("distinguishes a screen composing for itself from one with no conversation", () => {
   // Both bind nothing; only one should lose the composer. Branch triage with no
   // branch picked still wants the bar to say what to open.
