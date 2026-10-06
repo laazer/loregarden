@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Pre-commit: mypy on staged server Python files.
+# Pre-commit: mypy on staged server Python files, and on the stdlib-only
+# scripts outside server/ (PY_SCRIPT_DIRS in py-staged-paths.sh).
 # Skips tests and migration modules (isolation / generated noise).
+#
+# mypy reads the scripts at server/pyproject.toml's python_version (3.11); it
+# refuses to target 3.9, so 3.9 compatibility is ruff's job (py-review), not
+# this gate's.
 set -euo pipefail
 
 # shellcheck source=hook-noninteractive.sh
@@ -14,9 +19,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SERVER_ROOT="$ROOT/server"
 VENV_PY="$SERVER_ROOT/.venv/bin/python"
+# shellcheck source=py-staged-paths.sh
+source "$SCRIPT_DIR/py-staged-paths.sh"
 
 files=()
 for f in "$@"; do
+  if py_is_script_path "$f"; then
+    files+=("../$f")
+    continue
+  fi
   [[ "$f" == server/* ]] || continue
   [[ "$f" == *.py ]] || continue
   case "$f" in

@@ -47,23 +47,27 @@ pre-commit:
     format-staged:
       name: Format staged (ruff / oxlint --fix)
       priority: 100
-      glob: "{server/**/*.py,client/**/*.{ts,tsx,js,jsx}}"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py,client/**/*.{ts,tsx,js,jsx}}"
       run: bash .lefthook/scripts/format-staged.sh {staged_files}
       stage_fixed: true
     py-review:
       name: Python (Ruff, server/pyproject.toml)
       priority: 1
-      glob: "server/**/*.py"
+      # Python outside server/ that the gates own: Claude Code hooks, the gate
+      # scripts, CI's helper scripts — stdlib-only, run by the system python3.
+      # Same directories as PY_SCRIPT_DIRS in .lefthook/scripts/py-staged-paths.sh,
+      # which is what maps them through to the tool; a glob alone checks nothing.
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/py-review.sh {staged_files}
     py-pylint:
       name: Python (Pylint too-many-statements)
       priority: 1
-      glob: "server/**/*.py"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/py-pylint.sh {staged_files}
     py-complexity:
       name: Python (Ruff C901 McCabe complexity)
       priority: 1
-      glob: "server/**/*.py"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/py-complexity.sh {staged_files}
     py-organization:
       name: Python organization guardrails
@@ -71,12 +75,12 @@ pre-commit:
       # The gate scripts are graded by the rules they enforce. Everything
       # under .lefthook/scripts/ was outside every glob, so a violation planted
       # in a gate went undetected by the gate itself.
-      glob: "{server/**/*.py,.lefthook/scripts/*.py}"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
     py-defensive-normalization:
       name: Python defensive normalization check (code smell)
       priority: 1
-      glob: "server/**/*.py"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
     py-silent-except:
       name: Python silently-caught exceptions
@@ -84,17 +88,17 @@ pre-commit:
       # The gate scripts are graded by the rules they enforce. Everything
       # under .lefthook/scripts/ was outside every glob, so a violation planted
       # in a gate went undetected by the gate itself.
-      glob: "{server/**/*.py,.lefthook/scripts/*.py}"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
       priority: 1
-      glob: "server/**/*.py"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
     py-mypy:
       name: Python (mypy, staged files)
       priority: 1
-      glob: "server/**/*.py"
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/mypy-changed.sh {staged_files}
     client-lint:
       name: Client (oxlint)
@@ -141,7 +145,9 @@ pre-push:
     # proceed/retry/stop prompt when the ledger cannot be reached.
     server-tests:
       name: Server tests (ruff full + pytest on reached tests)
-      glob: "server/**/*.py"
+      # The script directories too: their ruff runs here, and their tests live
+      # in server/tests (select_pytest_targets.py runs the full suite for them).
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       interactive: true
       run: >-
         bash .lefthook/scripts/capacity-run.sh "pre-push server-tests"
