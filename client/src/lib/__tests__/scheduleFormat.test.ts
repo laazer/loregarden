@@ -1,5 +1,6 @@
 import type { InitiativePlan, MilestoneSchedule } from "../../api/initiativeApi";
 import {
+  formatDay,
   formatDrift,
   groupByWorkspace,
   proposalRows,
@@ -123,5 +124,15 @@ describe("proposalRows", () => {
       items: [{ ticket_id: "m1", target_date: "2026-11-01", plan_order: 0 }],
     });
     expect(rows).toEqual([]);
+  });
+});
+
+describe("formatDay", () => {
+  const now = new Date("2026-10-05T12:00:00Z");
+
+  test("names the year only when it is not this year", () => {
+    expect(formatDay("2026-11-26", now)).not.toMatch(/2026/);
+    expect(formatDay("2027-07-07", now)).toMatch(/2027/);
+    expect(formatDay(null, now)).toBe("—");
   });
 });

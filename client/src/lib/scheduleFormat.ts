@@ -50,11 +50,17 @@ export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
-export function formatDay(iso: string | null): string {
+/**
+ * "Nov 26", or "Jul 7, 2027" outside the current year — plans span year ends,
+ * and a bare "Jul 7" next to "Nov 26" reads as already past.
+ */
+export function formatDay(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "—";
+  const sameYear = iso.slice(0, 4) === todayIso(now).slice(0, 4);
   return new Date(isoDay(iso)).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+    year: sameYear ? undefined : "numeric",
     timeZone: "UTC",
   });
 }

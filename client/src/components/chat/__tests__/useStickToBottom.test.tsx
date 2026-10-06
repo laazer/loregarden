@@ -136,4 +136,27 @@ describe("useStickToBottom", () => {
     delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
     expect(() => render(<Thread />)).not.toThrow();
   });
+
+  it("scrolls only the thread's own scroller when a turn arrives, never the app around it", () => {
+    // `scrollIntoView` scrolled every ancestor, overflow:hidden ones included,
+    // and pushed the whole app frame up off the top of the window.
+    const scrollIntoView = jest.fn();
+    const scrollTo = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    Element.prototype.scrollTo = scrollTo as unknown as Element["scrollTo"];
+    try {
+      const { getByTestId, rerender } = render(<Thread turn={0} />);
+      const scroller = getByTestId("scroller");
+      measure(scroller, { scrollHeight: 1400 });
+      scrollTo.mockClear();
+      rerender(<Thread turn={1} />);
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollTo.mock.instances).toEqual([scroller]);
+      expect(scrollTo).toHaveBeenCalledWith({ top: 1400, behavior: "smooth" });
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+      delete (Element.prototype as Partial<Element>).scrollTo;
+    }
+  });
 });
