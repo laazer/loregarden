@@ -21,6 +21,7 @@ import {
 } from "../../api/client";
 import { isStudioNewResource } from "../../lib/appNavigation";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
+import { scrollIntoScroller } from "../../lib/scrollWithin";
 import { TRIAGE_AGENT_NAME } from "../../lib/triageAgent";
 import {
   navigateToStudio,
@@ -201,7 +202,8 @@ export function TicketStudioPanel({
     if (!openQuestionsKey) return;
     // "end", not "nearest": the card can be taller than the chat body, and landing on its
     // foot keeps the newest question and the save control on screen.
-    clarifyCardRef.current?.scrollIntoView?.({ block: "end" });
+    // Within the chat body only — see `scrollWithin` for what `scrollIntoView` did to the app frame.
+    if (clarifyCardRef.current) scrollIntoScroller(clarifyCardRef.current, "end");
   }, [openQuestionsKey, messageCount]);
 
   // Asking for clarifications and answering them both return the updated session

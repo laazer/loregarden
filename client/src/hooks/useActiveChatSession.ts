@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
 import type { WorkspaceRuntimeSettings } from "../api/client";
-import { ticketIdFromPath } from "../lib/appNavigation";
+import { initiativeIdFromPath, ticketIdFromPath } from "../lib/appNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
@@ -116,11 +116,16 @@ export function useActiveChatSession(): ActiveChatSession {
   // the dock on top of the page already showing it.
   const composedOnScreen =
     pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
+  // An initiative's plan page docks its planner chat beside the schedule. That
+  // is a different conversation from Baxter's, so the bar does not bind Baxter
+  // there either: a second composer under the planner's would be asking someone
+  // else.
+  const plannerOnScreen = initiativeIdFromPath(pathname) !== null;
   const chatWorkspaceSlug = useChatWorkspaceSlug();
   // Bound on the chat page too, though the composer half stays hidden there: the
   // model picker lives in the bar on every screen, and it is the same thread.
   const baxterSession = useBaxterChatSession(
-    !onBranchTriage && !ticketId ? chatWorkspaceSlug : "",
+    !onBranchTriage && !ticketId && !plannerOnScreen ? chatWorkspaceSlug : "",
   );
   const baxterArchive: ChatArchive | null = chatWorkspaceSlug
     ? {
@@ -168,6 +173,8 @@ export function useActiveChatSession(): ActiveChatSession {
   // The archive still rides along: the bar owns the model picker everywhere, so
   // the chat page reads it from here rather than drawing its own.
   if (composedOnScreen) return { ...none, composedOnScreen: true, archive: baxterArchive };
+  // No archive: the model picker it carries is Baxter's, not the planner's.
+  if (plannerOnScreen) return { ...none, composedOnScreen: true };
   if (onBranchTriage) {
     return branch
       ? {
