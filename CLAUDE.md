@@ -181,6 +181,14 @@ So a change to a user-facing surface first states three things, as acceptance cr
 of production (`loregarden_launch_instance`, template `loregarden/server`, database `snapshot`).
 Never point a second server at the live database — the sandbox exists so nothing has to.
 
+**The same three answers go in the PR.** A PR touching `client/src/pages` or
+`client/src/components` needs a `## User-facing surfaces` section in its description —
+**Question:**, **Action:**, **Real data:** (with a measured number) — or **No user-visible
+change:** with a reason; see `.github/pull_request_template.md`. The "PR UX section" CI check
+fails without it, and `gh pr create --body`/`--body-file` never shows you that template. A
+`PreToolUse` hook (`.claude/hooks/pr_ux_section_precheck.py`) runs the same check on
+`gh pr create` and `gh pr edit`, and refuses the command until the section is there.
+
 ### Real data, or its shape
 
 - **Where the live database exists, look at it:** `task sandbox` runs this checkout on a copy
