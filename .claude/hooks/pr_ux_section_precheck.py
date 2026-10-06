@@ -26,7 +26,6 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Optional
 
 _CHECK = Path(".github") / "scripts" / "pr_ux_section_check.py"
 _GH_PR = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
@@ -41,7 +40,7 @@ class Unreadable(Exception):
     """The body the command would send cannot be known before it runs."""
 
 
-def _emit(decision: Optional[str], message: str) -> None:
+def _emit(decision: str | None, message: str) -> None:
     output = {"hookEventName": "PreToolUse"}
     if decision is None:
         output["additionalContext"] = message
@@ -67,7 +66,7 @@ def _gh_args(command: str, match: re.Match) -> list[str]:
     return args[3:]  # drop "gh pr create"
 
 
-def _option(args: list[str], *names: str) -> Optional[str]:
+def _option(args: list[str], *names: str) -> str | None:
     for i, arg in enumerate(args):
         for name in names:
             if arg == name and i + 1 < len(args):
@@ -86,7 +85,7 @@ def _workdir(command: str, match: re.Match, cwd: Path) -> Path:
     return target if target.is_absolute() else cwd / target
 
 
-def _body(command: str, match: re.Match, args: list[str], workdir: Path) -> Optional[str]:
+def _body(command: str, match: re.Match, args: list[str], workdir: Path) -> str | None:
     """The description the command sends; None when it sends none (an edit of other fields)."""
     if any(flag in args for flag in ("--fill", "--fill-first", "--fill-verbose", "--web", "-w")):
         raise Unreadable("the body comes from --fill or the browser")
@@ -138,7 +137,7 @@ def _changed(workdir: Path, args: list[str]) -> list[str]:
     raise Unreadable(f"base branch {base!r} is not known locally")
 
 
-def _load_check(root: Path) -> Optional[ModuleType]:
+def _load_check(root: Path) -> ModuleType | None:
     script = root / _CHECK
     if not script.is_file():
         return None
@@ -150,7 +149,7 @@ def _load_check(root: Path) -> Optional[ModuleType]:
     return module
 
 
-def decide(payload: dict) -> Optional[tuple[Optional[str], str]]:
+def decide(payload: dict) -> tuple[str | None, str] | None:
     """(decision, message) for a command this hook has something to say about.
 
     decision is "deny", or None to pass the message to the agent and let the
@@ -192,7 +191,9 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError:
-        _emit(None, "The PR UX section precheck could not read its hook input; CI will still check.")
+        _emit(
+            None, "The PR UX section precheck could not read its hook input; CI will still check."
+        )
         return 0
     verdict = decide(payload)
     if verdict is not None:
