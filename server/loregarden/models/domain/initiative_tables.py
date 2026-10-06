@@ -150,8 +150,26 @@ class AutopilotEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
+class InitiativeMember(SQLModel, table=True):
+    """A ticket an initiative tracks without parenting it.
+
+    Membership is a planning relation, not a tree edge: the ticket keeps its
+    parent, milestone, workspace and integration branch, and brings its whole
+    subtree into the initiative's plan. One row per pair; a ticket may belong
+    to several initiatives. See `services.initiative_coverage`.
+    """
+
+    __tablename__ = "initiative_members"
+
+    initiative_id: str = Field(foreign_key="tickets.id", primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", primary_key=True, index=True)
+    added_at: datetime = Field(default_factory=utcnow)
+    added_by: str = ""
+
+
 __all__ = [
     "GLOBAL_INITIATIVE_POOL_ID",
+    "InitiativeMember",
     "InitiativeNumberPool",
     "InitiativePlan",
     "ScheduleTarget",

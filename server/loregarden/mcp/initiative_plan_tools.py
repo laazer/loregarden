@@ -35,7 +35,7 @@ from loregarden.services.initiative_plan_service import (
     propose_schedule,
 )
 
-_INITIATIVE_PROP = {
+INITIATIVE_PROP = {
     "type": "string",
     "description": "Initiative id, or its external id (e.g. init-tinkercg-build-1).",
 }
@@ -58,7 +58,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"initiative_id": _INITIATIVE_PROP},
+            "properties": {"initiative_id": INITIATIVE_PROP},
             "required": ["initiative_id"],
             "additionalProperties": False,
         },
@@ -74,7 +74,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "initiative_id": _INITIATIVE_PROP,
+                "initiative_id": INITIATIVE_PROP,
                 "rationale": {
                     "type": "string",
                     "description": "2-5 sentences the operator reads beside the diff.",
@@ -117,7 +117,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "initiative_id": _INITIATIVE_PROP,
+                "initiative_id": INITIATIVE_PROP,
                 "enabled": {"type": "boolean"},
                 "max_parallel": {"type": "integer", "minimum": 1, "maximum": 12},
             },
@@ -134,7 +134,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"initiative_id": _INITIATIVE_PROP, "ticket_ids": _TICKET_IDS_PROP},
+            "properties": {"initiative_id": INITIATIVE_PROP, "ticket_ids": _TICKET_IDS_PROP},
             "required": ["initiative_id", "ticket_ids"],
             "additionalProperties": False,
         },
@@ -148,7 +148,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "initiative_id": _INITIATIVE_PROP,
+                "initiative_id": INITIATIVE_PROP,
                 "ticket_ids": _TICKET_IDS_PROP,
                 "needs_person": {"type": "boolean"},
             },
@@ -204,7 +204,7 @@ def _parse(model: type[_Request], tool: McpTool, arguments: dict[str, Any]) -> _
         raise ValueError(f"invalid arguments for {tool.value}: {exc}") from exc
 
 
-def _resolve_initiative_id(session: Session, ref: str) -> str:
+def resolve_initiative_id(session: Session, ref: str) -> str:
     """Accept the uuid or the external id — agents see both."""
     ref = ref.strip()
     if session.get(Ticket, ref) is not None:
@@ -222,12 +222,12 @@ def _resolve_initiative_id(session: Session, ref: str) -> str:
 
 def get_initiative_plan(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_PlanRequest, McpTool.GET_INITIATIVE_PLAN, arguments)
-    return plan_payload(plan_view(session, _resolve_initiative_id(session, request.initiative_id)))
+    return plan_payload(plan_view(session, resolve_initiative_id(session, request.initiative_id)))
 
 
 def propose_initiative_schedule(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_ProposeRequest, McpTool.PROPOSE_INITIATIVE_SCHEDULE, arguments)
-    initiative_id = _resolve_initiative_id(session, request.initiative_id)
+    initiative_id = resolve_initiative_id(session, request.initiative_id)
     proposal = propose_schedule(
         session,
         initiative_id,
@@ -241,7 +241,7 @@ def propose_initiative_schedule(session: Session, arguments: dict[str, Any]) -> 
 
 def set_initiative_autopilot(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_AutopilotRequest, McpTool.SET_INITIATIVE_AUTOPILOT, arguments)
-    initiative_id = _resolve_initiative_id(session, request.initiative_id)
+    initiative_id = resolve_initiative_id(session, request.initiative_id)
     try:
         update = AutopilotUpdate(enabled=request.enabled, max_parallel=request.max_parallel)
     except ValidationError as exc:
@@ -257,7 +257,7 @@ def set_initiative_autopilot(session: Session, arguments: dict[str, Any]) -> str
 
 def start_initiative_work(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_TicketsRequest, McpTool.START_INITIATIVE_WORK, arguments)
-    initiative_id = _resolve_initiative_id(session, request.initiative_id)
+    initiative_id = resolve_initiative_id(session, request.initiative_id)
     return json.dumps(
         start_ready_work(session, initiative_id, request.ticket_ids, actor="planner"), indent=2
     )
@@ -265,7 +265,7 @@ def start_initiative_work(session: Session, arguments: dict[str, Any]) -> str:
 
 def mark_needs_person_tool(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_NeedsPersonRequest, McpTool.MARK_NEEDS_PERSON, arguments)
-    initiative_id = _resolve_initiative_id(session, request.initiative_id)
+    initiative_id = resolve_initiative_id(session, request.initiative_id)
     changed = mark_needs_person(
         session, initiative_id, request.ticket_ids, needs_person=request.needs_person
     )

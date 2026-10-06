@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 
 
 class InitiativeMilestoneView(BaseModel):
-    """A direct child of an initiative: a milestone, or a sprint's feature or bug."""
+    """A top-level ticket of an initiative: a milestone, a sprint's feature or
+    bug, or a member it tracks without parenting (`initiative_coverage`)."""
 
     id: str
     external_id: str
@@ -32,6 +33,14 @@ class InitiativeMilestoneView(BaseModel):
     state: TicketState
     workspace_slug: str
     work_item_type: WorkItemType
+    #: Tracked by membership; it still lives in its own tree.
+    member: bool
+    #: For a member, the milestone it lives under; "" when none, and for children.
+    home_milestone: str
+
+
+class InitiativeMemberAdd(BaseModel):
+    ticket_id: str
 
 
 class InitiativeProgress(BaseModel):
@@ -70,6 +79,9 @@ class MilestoneSchedule(BaseModel):
     title: str
     state: TicketState
     workspace_slug: str
+    work_item_type: WorkItemType
+    #: A member the initiative tracks, rather than a child it parents.
+    member: bool
     plan_order: int
     target_date: date | None
     #: When its last open item lands, scheduled through the dependency graph
@@ -216,6 +228,7 @@ class AutopilotUpdate(BaseModel):
 
 __all__ = [
     "InitiativeMilestoneView",
+    "InitiativeMemberAdd",
     "InitiativeProgress",
     "InitiativeView",
     "WorkspacePace",

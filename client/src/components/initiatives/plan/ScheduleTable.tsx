@@ -43,6 +43,12 @@ function TimelineBar({ row, range }: { row: MilestoneSchedule; range: TimelineRa
   );
 }
 
+/** A phase that is not a milestone the initiative owns says what it is. */
+function phaseKind(row: MilestoneSchedule): string {
+  if (row.member) return `tracked ${row.work_item_type} · `;
+  return row.work_item_type === "milestone" ? "" : `${row.work_item_type} · `;
+}
+
 function workSummary(row: MilestoneSchedule): string {
   const parts = COUNT_LABEL.flatMap(([status, label]) =>
     row.counts[status] ? [`${row.counts[status]} ${label}`] : [],
@@ -101,7 +107,8 @@ function MilestoneRow({
           <span className="plan-mono">{row.external_id}</span> {row.title}
         </Button>
         <div className="plan-muted">
-          {row.workspace_slug} · {workSummary(row)}
+          {row.workspace_slug} · {phaseKind(row)}
+          {workSummary(row)}
         </div>
       </th>
       <td className="plan-progress">
@@ -158,8 +165,9 @@ export function ScheduleTable({
     return (
       <div className="plan-empty">
         <p>
-          This initiative has no milestones yet. Attach milestones from the Initiatives list — each one becomes a phase
-          here, and its forecast follows from its tickets and how fast work is closing.
+          This initiative has no milestones yet. Attach milestones from the Initiatives list, or add a ticket under
+          Tracked tickets — each one becomes a phase here, and its forecast follows from its tickets and how fast work
+          is closing.
         </p>
       </div>
     );

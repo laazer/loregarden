@@ -6,16 +6,18 @@ and no workspace, attach or detach a milestone with `PATCH /tickets/{id}`
 `GET /tickets?ancestor_ticket_id=`.
 
 What lives here beyond reads is the schedule: the plan (targets, order, mode),
-the planner's proposals, and the planner conversation.
+the planner's proposals, and the planner conversation — and membership: a
+ticket the initiative tracks without parenting it (`initiative_membership`).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     DEFAULT_SPRINT_DAYS,
     MAX_SPRINT_DAYS,
     MIN_SPRINT_DAYS,
     AutopilotUpdate,
+    InitiativeMemberAdd,
     InitiativeMilestoneView,
     InitiativePlanUpdate,
     InitiativePlanView,
@@ -32,6 +34,13 @@ from loregarden.services.initiative_autopilot import (
     run_autopilot,
     set_autopilot,
     start_ready_work,
+)
+from loregarden.services.initiative_membership import (
+    InitiativeMembershipError,
+    MembershipConflictError,
+    add_member,
+    member_candidates,
+    remove_member,
 )
 from loregarden.services.initiative_plan_service import (
     ScheduleValidationError,
@@ -147,6 +156,47 @@ def addable_work_endpoint(
 ) -> list[SuggestedItem]:
     """Open features and bugs that could join a sprint-style initiative."""
     return addable_work(session, initiative_id, search)
+
+
+@router.get("/{initiative_id}/member-candidates", response_model=list[InitiativeMilestoneView])
+def member_candidates_endpoint(
+    initiative_id: str,
+    search: str = Query(min_length=2, max_length=200),
+    session: Session = Depends(get_session),
+) -> list[InitiativeMilestoneView]:
+    """Tickets of any type but initiative, in any workspace, it does not cover yet."""
+    try:
+        return member_candidates(session, initiative_id, search)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{initiative_id}/members", response_model=InitiativeView, status_code=201)
+def add_member_endpoint(
+    initiative_id: str, body: InitiativeMemberAdd, session: Session = Depends(get_session)
+) -> InitiativeView:
+    """Track a ticket and its subtree without re-parenting it; returns the initiative."""
+    try:
+        add_member(session, initiative_id, body.ticket_id, actor=_OPERATOR)
+        return get_initiative(session, initiative_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MembershipConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except InitiativeMembershipError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/{initiative_id}/members/{ticket_id}", status_code=204)
+def remove_member_endpoint(
+    initiative_id: str, ticket_id: str, session: Session = Depends(get_session)
+) -> Response:
+    """Stop tracking a member. The ticket itself is not changed."""
+    try:
+        remove_member(session, initiative_id, ticket_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @router.get("/{initiative_id}/plan", response_model=InitiativePlanView)

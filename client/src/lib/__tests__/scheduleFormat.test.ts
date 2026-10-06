@@ -14,6 +14,8 @@ function row(overrides: Partial<MilestoneSchedule> = {}): MilestoneSchedule {
     title: "First",
     state: "backlog",
     workspace_slug: "loregarden",
+    work_item_type: "milestone",
+    member: false,
     plan_order: 0,
     target_date: null,
     forecast_date: null,

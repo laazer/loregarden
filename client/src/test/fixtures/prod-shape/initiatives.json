@@ -6,7 +6,9 @@
   "milestones": [
    {
     "external_id": "lg-m8-8",
+    "home_milestone": "",
     "id": "d66e5ea1-a917-5cb7-bd0c-afe12e9cd110",
+    "member": false,
     "state": "backlog",
     "title": "M08 \u2014 Add gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -14,7 +16,9 @@
    },
    {
     "external_id": "lg-m11-11",
+    "home_milestone": "",
     "id": "581bf2d7-06fd-53c7-af9a-cc9ee5b24d5e",
+    "member": false,
     "state": "in_progress",
     "title": "M11 \u2014 Add gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -22,7 +26,9 @@
    },
    {
     "external_id": "lg-m20-20",
+    "home_milestone": "",
     "id": "3b44f5b6-1e21-52c7-b77e-883a71631abc",
+    "member": false,
     "state": "backlog",
     "title": "M20 \u2014 Surface gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -30,7 +36,9 @@
    },
    {
     "external_id": "lg-m22-22",
+    "home_milestone": "",
     "id": "6e5a21c9-d17b-5da0-b104-e06ea23069ae",
+    "member": false,
     "state": "backlog",
     "title": "M22 \u2014 Surface gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -38,7 +46,9 @@
    },
    {
     "external_id": "lg-m24-24",
+    "home_milestone": "",
     "id": "84ec349e-dd65-5a9e-b23f-9217eb894cab",
+    "member": false,
     "state": "backlog",
     "title": "M24 \u2014 Split gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -46,7 +56,9 @@
    },
    {
     "external_id": "lg-m44-44",
+    "home_milestone": "",
     "id": "b99e07b0-dcd7-5df9-bf84-6b5d8244891f",
+    "member": false,
     "state": "in_progress",
     "title": "M44 \u2014 Route gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -54,15 +66,29 @@
    },
    {
     "external_id": "lg-m51-51",
+    "home_milestone": "",
     "id": "49c72617-3c00-5908-bd41-21b0fb323da3",
+    "member": false,
     "state": "in_progress",
     "title": "M51 \u2014 Fix gate outcomes on stage transitions",
     "work_item_type": "milestone",
     "workspace_slug": "loregarden"
    },
    {
+    "external_id": "lg-m4-57",
+    "home_milestone": "lg-m4-4",
+    "id": "e9b33597-f151-5863-bd09-998dcad602a0",
+    "member": true,
+    "state": "backlog",
+    "title": "Stop the rework ledger's loop cap",
+    "work_item_type": "feature",
+    "workspace_slug": "loregarden"
+   },
+   {
     "external_id": "blob-m3-3",
+    "home_milestone": "",
     "id": "98f7e12c-0d32-57cb-a201-6e3d724359d9",
+    "member": false,
     "state": "in_progress",
     "title": "M03 \u2014 Stop gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -70,7 +96,9 @@
    },
    {
     "external_id": "lmkr-m3-3",
+    "home_milestone": "",
     "id": "71e07abc-ab8b-5f15-a6f7-e9397b7e7430",
+    "member": false,
     "state": "done",
     "title": "M03 \u2014 Surface gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -78,7 +106,9 @@
    },
    {
     "external_id": "lmkr-m4-4",
+    "home_milestone": "",
     "id": "bb678f4a-0275-5dc4-b35a-1e6baa084013",
+    "member": false,
     "state": "in_progress",
     "title": "M04 \u2014 Show gate outcomes on stage transitions",
     "work_item_type": "milestone",
@@ -88,7 +118,7 @@
   "priority": 3,
   "progress": {
    "resolved": 1,
-   "total": 10
+   "total": 11
   },
   "state": "in_progress",
   "title": "Trustworthy gate outcomes on every stage transition",

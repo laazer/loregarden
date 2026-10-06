@@ -11,6 +11,7 @@ import { PlannerPanel } from "../components/initiatives/plan/PlannerPanel";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
+import { TrackedTickets } from "../components/initiatives/plan/TrackedTickets";
 import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { Button } from "../components/ui/Button";
@@ -198,6 +199,14 @@ export function InitiativePlanPage() {
                 }
               />
             ) : null}
+
+            <TrackedTickets
+              initiativeId={data.id}
+              onChanged={() => {
+                void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
+                void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
+              }}
+            />
 
             <AutopilotPanel
               plan={data}

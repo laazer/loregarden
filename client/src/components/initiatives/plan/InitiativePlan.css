@@ -459,6 +459,12 @@
   font-size: 12.5px;
 }
 
+.plan-member-search {
+  display: block;
+  width: min(420px, 100%);
+  margin-top: 4px;
+}
+
 .plan-inline-btn {
   padding: 0 6px;
   font-size: 11.5px;

@@ -45,7 +45,7 @@ from loregarden.models.domain import (
     WorkItemType,
     comparable_utc,
 )
-from loregarden.services.hierarchy_service import descendants_by_root
+from loregarden.services.initiative_coverage import InitiativeCoverage, initiative_coverage
 from loregarden.services.initiative_forecast import (
     Pace,
     duration_stats,
@@ -53,11 +53,7 @@ from loregarden.services.initiative_forecast import (
     measure_paces,
     plan_sequence,
 )
-from loregarden.services.initiative_service import (
-    load_targets,
-    milestones_under,
-    workspace_slugs,
-)
+from loregarden.services.initiative_service import load_targets, workspace_slugs
 from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.ticket_tags import load_tags
@@ -191,11 +187,12 @@ class PlanGraphBuilder:
 
     def build(
         self,
-        milestones: list[Ticket],
+        coverage: InitiativeCoverage,
         slugs: dict[str, str],
         targets: dict[str, ScheduleTarget],
     ) -> tuple[PlanGraph, dict[str, Pace]]:
-        nodes = self._nodes(milestones, slugs)
+        milestones = coverage.roots
+        nodes = self._nodes(coverage, slugs)
         self._edges(nodes, slugs)
         paces = self._paces(nodes)
         self._durations(nodes, paces)
@@ -211,11 +208,13 @@ class PlanGraphBuilder:
 
     # ---- loading -------------------------------------------------------
 
-    def _nodes(self, milestones: list[Ticket], slugs: dict[str, str]) -> dict[str, PlanNode]:
-        trees = descendants_by_root(self.session, [m.id for m in milestones])
+    def _nodes(self, coverage: InitiativeCoverage, slugs: dict[str, str]) -> dict[str, PlanNode]:
+        """Every work item under each phase; a phase with nothing under it is its own
+        one item. A parent carries no work of its own (`ticket_rollup`), so a member
+        feature with capabilities is planned as those capabilities."""
         nodes: dict[str, PlanNode] = {}
-        for milestone in milestones:
-            items = [t for t in trees[milestone.id] if t.work_item_type not in _CONTAINERS]
+        for milestone in coverage.roots:
+            items = [t for t in coverage.trees[milestone.id] if t.work_item_type not in _CONTAINERS]
             for ticket in items or [milestone]:
                 nodes[ticket.id] = PlanNode(
                     ticket=ticket,
@@ -446,7 +445,10 @@ class PlanContext:
     """Everything one read of an initiative's plan is computed from."""
 
     initiative: Ticket
+    #: The plan's phases: the initiative's children and members (its roots).
     milestones: list[Ticket]
+    #: Which of `milestones` the initiative tracks by membership.
+    member_ids: frozenset[str]
     slugs: dict[str, str]
     targets: dict[str, ScheduleTarget]
     graph: PlanGraph
@@ -454,13 +456,14 @@ class PlanContext:
 
 
 def build_plan(session: Session, initiative: Ticket, *, now: datetime) -> PlanContext:
-    milestones = milestones_under(session, [initiative.id])
+    coverage = initiative_coverage(session, initiative.id)
+    milestones = coverage.roots
     targets = load_targets(session, [initiative.id, *(m.id for m in milestones)])
     # Outside prerequisites need their workspace's slug too; resolve after the
     # graph has found them, with the milestones' as the starting set.
     slugs = workspace_slugs(session, milestones)
     builder = PlanGraphBuilder(session, now=now)
-    graph, paces = builder.build(milestones, slugs, targets)
+    graph, paces = builder.build(coverage, slugs, targets)
     outside = [n.ticket for n in graph.nodes.values() if n.external]
     if outside:
         slugs = {**slugs, **workspace_slugs(session, outside)}
@@ -468,4 +471,4 @@ def build_plan(session: Session, initiative: Ticket, *, now: datetime) -> PlanCo
             if node.external:
                 node.lane = f"outside:{slugs.get(node.ticket.workspace_id or '', '')}"
         graph.lanes = sorted({n.lane for n in graph.nodes.values()})
-    return PlanContext(initiative, milestones, slugs, targets, graph, paces)
+    return PlanContext(initiative, milestones, coverage.member_ids, slugs, targets, graph, paces)

@@ -28,6 +28,9 @@ from loregarden.mcp.external_harness_tools import (
     normalize_external_harness_args,
 )
 from loregarden.mcp.github_issue_tool import TOOL_DEFINITION as GITHUB_ISSUE_TOOL_DEFINITION
+from loregarden.mcp.initiative_membership_tools import (
+    TOOL_DEFINITIONS as INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS,
+)
 from loregarden.mcp.initiative_plan_tools import (
     TOOL_DEFINITIONS as INITIATIVE_PLAN_TOOL_DEFINITIONS,
 )
@@ -1141,6 +1144,7 @@ TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_PLAN_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 
 

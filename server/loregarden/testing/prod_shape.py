@@ -22,7 +22,13 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from loregarden.models.domain import MonitorArtifactKind, Ticket, TicketState, WorkItemType
+from loregarden.models.domain import (
+    InitiativeMember,
+    MonitorArtifactKind,
+    Ticket,
+    TicketState,
+    WorkItemType,
+)
 from loregarden.services.memory_store import MemoryGraphStore
 from loregarden.services.ticket_ids import assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_parent
@@ -347,7 +353,7 @@ def build_prod_shape(
                 )
                 all_tickets.append((slug, ticket.id, ticket.external_id, state, parent))
 
-    _add_initiative(session, themed)
+    _add_initiative(session, themed, all_tickets)
     findings = _add_findings(session, all_tickets, rng)
     documents = _add_documents(session, all_tickets, rng)
     memory = {}
@@ -369,8 +375,12 @@ def build_prod_shape(
     )
 
 
-def _add_initiative(session: Session, milestone_ids: list[str]) -> None:
-    """One initiative over `milestone_ids`, spelled and rolled up by the real services."""
+def _add_initiative(session: Session, milestone_ids: list[str], tickets: list) -> None:
+    """One initiative over `milestone_ids`, spelled and rolled up by the real services.
+
+    It also tracks one open feature by membership, from a milestone it does not
+    own — the case membership exists for: the feature keeps its milestone.
+    """
     initiative_id = prod_shape_id("initiative", 0)
     is_new = session.get(Ticket, initiative_id) is None
     initiative = make_ticket(
@@ -390,6 +400,22 @@ def _add_initiative(session: Session, milestone_ids: list[str]) -> None:
         milestone = session.get(Ticket, milestone_id)
         milestone.parent_ticket_id = initiative.id
         session.add(milestone)
+    owned = set(milestone_ids)
+    for _slug, ticket_id, _ext, state, parent in tickets:
+        ticket = session.get(Ticket, ticket_id)
+        if (
+            parent not in owned
+            and ticket.work_item_type == WorkItemType.FEATURE
+            and state not in (TicketState.DONE, TicketState.WONT_DO)
+        ):
+            if session.get(InitiativeMember, (initiative.id, ticket_id)) is None:
+                session.add(
+                    InitiativeMember(
+                        initiative_id=initiative.id, ticket_id=ticket_id, added_by="prod-shape"
+                    )
+                )
+            break
+    session.flush()
     reconcile_parent(session, initiative)
     session.add(initiative)
     session.commit()

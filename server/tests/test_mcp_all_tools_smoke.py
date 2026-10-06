@@ -293,6 +293,15 @@ def _args_for(
         "loregarden_set_initiative_autopilot": {"initiative_id": initiative_id, "enabled": False},
         "loregarden_start_initiative_work": {"initiative_id": initiative_id, "ticket_ids": []},
         "loregarden_mark_needs_person": {"initiative_id": initiative_id, "ticket_ids": []},
+        # Added, then removed again by the next call: the ticket itself is never touched.
+        "loregarden_add_initiative_member": {
+            "initiative_id": initiative_id,
+            "ticket_id": ticket_id,
+        },
+        "loregarden_remove_initiative_member": {
+            "initiative_id": initiative_id,
+            "ticket_id": ticket_id,
+        },
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -432,6 +441,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_set_initiative_autopilot",
         "loregarden_start_initiative_work",
         "loregarden_mark_needs_person",
+        "loregarden_add_initiative_member",
+        "loregarden_remove_initiative_member",
         "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",

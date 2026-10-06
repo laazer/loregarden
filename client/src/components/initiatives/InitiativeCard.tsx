@@ -29,6 +29,13 @@ function StatePill({ state }: { state: InitiativeView["state"] }) {
   );
 }
 
+/** Where a row lives; a member also names the milestone it stays under. */
+function placeLabel(m: InitiativeMilestone): string {
+  const kind = m.work_item_type === "milestone" && !m.member ? "" : `${m.work_item_type} · `;
+  const home = m.home_milestone ? `in ${m.home_milestone} · ` : "";
+  return `${kind}${home}${m.workspace_slug}`;
+}
+
 function milestoneOptionLabel(m: InitiativeMilestone): string {
   return `${m.workspace_slug} · ${m.external_id} — ${m.title}`;
 }
@@ -112,13 +119,13 @@ function MilestoneRow({
       >
         <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
       </button>
-      <span className="initiative-ws-pill">
-        {milestone.work_item_type === "milestone"
-          ? milestone.workspace_slug
-          : `${milestone.work_item_type} · ${milestone.workspace_slug}`}
-      </span>
+      <span className="initiative-ws-pill">{placeLabel(milestone)}</span>
       <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
-      {milestone.work_item_type === "milestone" ? (
+      {milestone.member ? (
+        <span className="initiative-muted" title="Tracked without moving it: remove it from Plan & board">
+          Tracked
+        </span>
+      ) : milestone.work_item_type === "milestone" ? (
         <Button
           variant="secondary"
           className="initiative-small-btn"
@@ -213,7 +220,7 @@ export function InitiativeCard({
         </p>
       )}
 
-      {initiative.milestones.some((m) => m.work_item_type !== "milestone") && (
+      {initiative.milestones.some((m) => !m.member && m.work_item_type !== "milestone") && (
         <AddSprintWork
           initiative={initiative}
           disabled={busyId !== null}
@@ -245,15 +252,19 @@ export function InitiativeCard({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            className="btn-secondary initiative-small-btn"
+          <Button
+            variant="secondary"
+            className="initiative-small-btn"
             disabled={hasMilestones || busyId !== null}
-            title={hasMilestones ? "Detach its milestones before deleting an initiative" : undefined}
+            title={
+              hasMilestones
+                ? "Detach its milestones and remove its tracked tickets before deleting an initiative"
+                : undefined
+            }
             onClick={() => setConfirmDelete(true)}
           >
             Delete initiative
-          </button>
+          </Button>
         )}
       </footer>
     </article>

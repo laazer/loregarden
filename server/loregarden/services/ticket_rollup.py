@@ -27,13 +27,23 @@ What this will not touch:
   of its children.
 - Tickets with no children. A leaf's state comes from its own workflow; this
   module has nothing to say about it.
+
+An initiative is the one parent whose "children" are not only its children: it
+summarizes every top-level ticket it covers, members included
+(`initiative_coverage`). So a member's change also reconciles each initiative
+tracking it, though no `parent_ticket_id` leads there.
 """
 
 from __future__ import annotations
 
 import logging
 
-from loregarden.models.domain import Ticket, TicketState
+from loregarden.models.domain import Ticket, TicketState, WorkItemType
+from loregarden.services.initiative_coverage import (
+    initiative_roots,
+    initiatives_tracking,
+    member_initiative_ids,
+)
 from loregarden.services.ticket_state_service import RESOLVED_STATES, derive
 from sqlmodel import Session, col, select
 
@@ -76,6 +86,10 @@ def has_children(session: Session, ticket_id: str) -> bool:
 
 
 def _child_states(session: Session, parent_id: str) -> list[TicketState]:
+    parent = session.get(Ticket, parent_id)
+    if parent is not None and parent.work_item_type == WorkItemType.INITIATIVE:
+        # Its children and its members (`initiative_coverage`).
+        return [t.state for t in initiative_roots(session, [parent_id])[parent_id].roots]
     return list(
         session.exec(select(Ticket.state).where(Ticket.parent_ticket_id == parent_id)).all()
     )
@@ -115,8 +129,25 @@ def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
             break
         changed.append(parent)
         parent_id = parent.parent_ticket_id
+    changed += _reconcile_tracking(session, [ticket.id, *(t.id for t in changed)], seen)
     if changed:
         session.commit()
+    return changed
+
+
+def _reconcile_tracking(session: Session, moved: list[str], seen: set[str]) -> list[Ticket]:
+    """Reconcile each initiative that tracks one of ``moved`` as a member.
+
+    An initiative has no parent, so nothing above it can change in turn.
+    """
+    changed: list[Ticket] = []
+    for initiative_id in initiatives_tracking(session, moved):
+        if initiative_id in seen:
+            continue
+        seen.add(initiative_id)
+        initiative = session.get(Ticket, initiative_id)
+        if initiative is not None and reconcile_parent(session, initiative):
+            changed.append(initiative)
     return changed
 
 
@@ -154,7 +185,7 @@ def reconcile_all_parents(session: Session) -> list[Ticket]:
             select(Ticket.parent_ticket_id).where(col(Ticket.parent_ticket_id).is_not(None))
         ).all()
         if row
-    }
+    } | member_initiative_ids(session)
     if not parent_ids:
         return []
 
