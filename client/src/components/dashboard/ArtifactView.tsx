@@ -414,6 +414,9 @@ export function ArtifactView({
                     {report.reroute_to_stage && (
                       <div style={{ color: "var(--txm)" }}>Reroute to: {report.reroute_to_stage}</div>
                     )}
+                    {report.reroute_to_agent && (
+                      <div style={{ color: "var(--txm)" }}>Requested agent: {report.reroute_to_agent}</div>
+                    )}
                     {report.reroute_context && (
                       <div style={{ color: "var(--txm)", fontFamily: "var(--mono)" }}>
                         {report.reroute_context}

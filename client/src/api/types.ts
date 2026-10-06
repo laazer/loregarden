@@ -451,6 +451,7 @@ export interface ContextSection {
   status?: string;
   confidence?: number;
   reroute_to_stage?: string | null;
+  reroute_to_agent?: string | null;
   reroute_context?: string;
 }
 
