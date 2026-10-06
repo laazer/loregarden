@@ -41,10 +41,13 @@ const WORKFLOW_KINDS: GateControlKind[] = [
   "agent_handoff_check",
 ];
 
-type LinkFn = (
+type LinkFn = (next: GateStudioTarget, label: string, extra?: { inline?: boolean }) => ReactElement;
+
+/** A rail entry, drawn as the same library card Agent and Workflow Studio use. */
+type RailLinkFn = (
   next: GateStudioTarget,
   label: string,
-  extra?: { current?: boolean; badge?: string; inline?: boolean },
+  extra: { current: boolean; slug?: string; badge?: string },
 ) => ReactElement;
 
 interface ProfileState {
@@ -153,12 +156,31 @@ export function GateStudioPanel({
   const link: LinkFn = (next, label, extra) => (
     <Link
       to={gateStudioPath(next)}
-      className={`gate-studio-link${extra?.inline ? " gate-studio-link--inline" : ""}${extra?.current ? " active" : ""}`}
-      aria-current={extra?.current ? "page" : undefined}
+      className={`gate-studio-link${extra?.inline ? " gate-studio-link--inline" : ""}`}
       onClick={(event) => guard(next, event)}
     >
-      <span>{label}</span>
-      {extra?.badge && <span className="gate-studio-badge">{extra.badge}</span>}
+      {label}
+    </Link>
+  );
+
+  const railLink: RailLinkFn = (next, label, { current, slug, badge }) => (
+    <Link
+      to={gateStudioPath(next)}
+      className={`studio-library-item${current ? " active" : ""}`}
+      aria-current={current ? "page" : undefined}
+      onClick={(event) => guard(next, event)}
+    >
+      <span className="studio-library-item-name">{label}</span>
+      {(slug || badge) && (
+        <span className="studio-library-item-meta">
+          {badge && <span className="studio-library-item-cat gate-studio-badge">{badge}</span>}
+          {slug && (
+            <span className="studio-library-item-slug" aria-hidden="true">
+              {slug}
+            </span>
+          )}
+        </span>
+      )}
     </Link>
   );
 
@@ -178,11 +200,12 @@ export function GateStudioPanel({
         ) : workspaces.length === 0 ? (
           <p className="studio-preview-hint">No workspaces yet — add one from the Workspaces page.</p>
         ) : (
-          <nav className="gate-studio-list" aria-label="Workspaces">
+          <nav className="studio-library-list gate-studio-list" aria-label="Workspaces">
             {workspaces.map((ws) => (
               <div key={ws.slug}>
-                {link({ workspaceSlug: ws.slug, workflowSlug: null, controlId: null }, ws.name || ws.slug, {
+                {railLink({ workspaceSlug: ws.slug, workflowSlug: null, controlId: null }, ws.name || ws.slug, {
                   current: ws.slug === target.workspaceSlug,
+                  slug: ws.slug,
                 })}
               </div>
             ))}
@@ -192,8 +215,8 @@ export function GateStudioPanel({
         {workspace && (
           <>
             <div className="studio-library-section-label">Workspace-wide</div>
-            <nav className="gate-studio-list" aria-label={`Workspace-wide controls for ${workspace.slug}`}>
-              {link({ workspaceSlug: workspace.slug, workflowSlug: null, controlId: null }, "Transition commands", {
+            <nav className="studio-library-list gate-studio-list" aria-label={`Workspace-wide controls for ${workspace.slug}`}>
+              {railLink({ workspaceSlug: workspace.slug, workflowSlug: null, controlId: null }, "Transition commands", {
                 current: !target.workflowSlug && !target.controlId,
               })}
             </nav>
@@ -205,7 +228,7 @@ export function GateStudioPanel({
               error={workflows.isError ? workflows.error : null}
               onRetry={() => workflows.refetch()}
               currentSlug={target.workflowSlug}
-              link={link}
+              railLink={railLink}
             />
           </>
         )}
@@ -275,7 +298,7 @@ function WorkflowRail({
   error,
   onRetry,
   currentSlug,
-  link,
+  railLink,
 }: {
   workspace: WorkspaceSummary;
   workflows: StudioWorkflow[];
@@ -283,7 +306,7 @@ function WorkflowRail({
   error: unknown;
   onRetry: () => void;
   currentSlug: string | null;
-  link: LinkFn;
+  railLink: RailLinkFn;
 }) {
   if (loading) return <p className="studio-preview-hint">Loading workflows for {workspace.slug}…</p>;
   if (error) {
@@ -302,11 +325,12 @@ function WorkflowRail({
     return <p className="studio-preview-hint">No workflows yet — create one in Workflow Studio.</p>;
   }
   return (
-    <nav className="gate-studio-list" aria-label={`Workflows for ${workspace.slug}`}>
+    <nav className="studio-library-list gate-studio-list" aria-label={`Workflows for ${workspace.slug}`}>
       {workflows.map((wf) => (
         <div key={wf.slug}>
-          {link({ workspaceSlug: workspace.slug, workflowSlug: wf.slug, controlId: null }, wf.name || wf.slug, {
+          {railLink({ workspaceSlug: workspace.slug, workflowSlug: wf.slug, controlId: null }, wf.name || wf.slug, {
             current: wf.slug === currentSlug,
+            slug: wf.slug,
             badge: runsHere(wf, workspace) ? "Runs here" : undefined,
           })}
         </div>

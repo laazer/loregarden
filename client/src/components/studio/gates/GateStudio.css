@@ -1,23 +1,20 @@
 /* Gate Studio's own chrome (lg-gate-studio-863). The editor and cards reuse
    WorkspaceGatesPanel.css; every colour here is a theme token. */
 
-.gate-studio-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* The rail reuses Agent/Workflow Studio's library cards (index.css); its
+   entries are router links, so drop the anchor underline. */
+.gate-studio-rail .studio-library-item {
+  text-decoration: none;
 }
 
 .gate-studio-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
+/* In-content links: the breadcrumb, the control list, inline prose links. */
 .gate-studio-link {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 6px;
@@ -31,21 +28,10 @@
   color: var(--tx);
 }
 
-.gate-studio-link.active {
-  background: var(--bg3);
-  color: var(--tx);
-}
-
-/* Light token on the text, the base hue mixed down underneath — the pairing
-   the gate editor's status chips already use, readable in the dark theme. */
+/* "Runs here" chip, styled like the agent rail's category chips. */
 .gate-studio-badge {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--grn) 45%, var(--bd2));
-  background: color-mix(in srgb, var(--grn) 16%, transparent);
   color: var(--grl);
-  font-size: 11px;
+  background: color-mix(in srgb, var(--grn) 16%, transparent);
 }
 
 .gate-studio-breadcrumb {
