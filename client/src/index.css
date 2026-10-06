@@ -183,11 +183,18 @@ textarea::placeholder {
  * `z-index: -1` — a negative layer paints behind its stacking context's root
  * background, so without the isolation the wash would disappear behind this
  * element's own `--bg0`.
+ *
+ * `overflow: clip`, not `hidden`: a `hidden` box is still a scroll container, so
+ * `scrollIntoView`, `focus()`, find-in-page and assistive tech all scroll it —
+ * and it always has room to, because an absolutely positioned `.visually-hidden`
+ * caption deep in a page takes this box as its containing block and so escapes
+ * the page's own scroller. One such scroll lifted the whole app off the top of
+ * the window. A `clip` box is not a scroll container: nothing can move it.
  */
 .app-frame {
   height: 100vh;
   display: flex;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   isolation: isolate;
   background: var(--bg0);

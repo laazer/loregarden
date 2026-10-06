@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 
 import { useAnchoredPanelPosition } from "../../hooks/useAnchoredPanelPosition";
 import type { ComposerMenuItem } from "../../hooks/useComposerCommands";
+import { scrollIntoScroller } from "../../lib/scrollWithin";
 import "./ComposerCommands.css";
 
 /**
@@ -41,10 +42,9 @@ export function ComposerCommandMenu({
   // scrolls out from under the selection and Enter picks something unseen.
   useEffect(() => {
     if (!open) return;
-    panelRef.current
-      ?.querySelectorAll(".lg-composer-menu-item")
-      // `scrollIntoView?.` because jsdom has no implementation of it.
-      [activeIndex]?.scrollIntoView?.({ block: "nearest" });
+    const item = panelRef.current?.querySelectorAll<HTMLElement>(".lg-composer-menu-item")[activeIndex];
+    // The menu's own list only — see `scrollWithin`.
+    if (item) scrollIntoScroller(item, "nearest");
   }, [open, activeIndex]);
 
   if (!open) return null;

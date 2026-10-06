@@ -6,6 +6,7 @@ import { ApiError, api, type BaxterChatSnapshot } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
+import { stubScrolling } from "../../test/scrollStubs";
 import { BaxterChatPage } from "../BaxterChatPage";
 
 jest.mock("../../api/client", () => {
@@ -760,15 +761,22 @@ describe("BaxterChatPage", () => {
     const turns = container.querySelectorAll<HTMLElement>(".lg-chat-turn--assistant[data-message-id]");
     const lastTurn = turns[turns.length - 1];
 
-    // jsdom has no scrollIntoView; stand one in for this assertion only.
-    const original = Element.prototype.scrollIntoView;
-    const scrolled = jest.fn();
-    Element.prototype.scrollIntoView = scrolled;
+    // The thread shows 0..400 and the card sits at 900..1000. "Show in thread"
+    // scrolls the thread itself — never `scrollIntoView`, which scrolled the app
+    // frame too once the last card could not reach the top of the thread.
+    const thread = lastTurn.closest<HTMLElement>(".baxter-chat-thread");
+    const scrolling = stubScrolling(".baxter-chat-thread { overflow-y: auto; }", (element) => {
+      if (element === thread) return { top: 0, bottom: 400 };
+      if (element === lastTurn) return { top: 900, bottom: 1000 };
+      return null;
+    });
     try {
       fireEvent.click(within(workbench).getByRole("button", { name: "Show in thread" }));
-      expect(scrolled.mock.instances[0]).toBe(lastTurn);
+      expect(scrolling.scrollTo.mock.instances).toContain(thread);
+      expect(scrolling.scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+      expect(scrolling.scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      Element.prototype.scrollIntoView = original;
+      scrolling.restore();
     }
 
     // Picking an older card puts that one on show.

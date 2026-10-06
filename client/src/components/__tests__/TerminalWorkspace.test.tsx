@@ -5,6 +5,7 @@ import { fireEvent, screen } from "@testing-library/react";
 // same; the provider is the only thing that changed.
 import { renderWithRouter as render } from "../../test/renderWithRouter";
 
+import { stubScrolling } from "../../test/scrollStubs";
 import { TerminalWorkspace } from "../TerminalWorkspace";
 
 jest.mock("../TerminalPanel", () => ({
@@ -39,6 +40,29 @@ describe("TerminalWorkspace", () => {
 
     expect(firstTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByTestId("terminal-session")).toHaveLength(2);
+  });
+
+  it("carries the tab strip — and only the strip — to a new tab past its edge", () => {
+    // The strip shows 0..300 sideways; a newly active tab lands at 320..420.
+    const scrolling = stubScrolling(".terminal-tabs { overflow-x: auto; }", (element) => {
+      if (element.matches(".terminal-tabs")) return { left: 0, right: 300 };
+      if (element.matches(".terminal-tab.is-active")) return { left: 320, right: 420 };
+      return null;
+    });
+    try {
+      render(<TerminalWorkspace workspaceSlug="loregarden" visible onEmpty={jest.fn()} />);
+      scrolling.scrollTo.mockClear();
+
+      fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+
+      expect(scrolling.scrollTo.mock.instances).toEqual([
+        screen.getByRole("tablist", { name: "Terminal tabs" }),
+      ]);
+      expect(scrolling.scrollTo).toHaveBeenCalledWith({ left: 120, behavior: "auto" });
+      expect(scrolling.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      scrolling.restore();
+    }
   });
 
   it("splits the active tab into independent shell panes", () => {

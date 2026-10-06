@@ -37,6 +37,7 @@ import {
   type SidebarEntry,
   type ViewSummary,
 } from "../../lib/viewsApi";
+import { stubScrolling } from "../../test/scrollStubs";
 
 // Every test here drives the UI through `userEvent`, whose interaction chains
 // are event-loop bound rather than CPU bound. On a loaded machine — the
@@ -394,19 +395,26 @@ test("entry names inside a scrolling list are still text in the row", async () =
 
 // AC7 — the active entry is scrolled into view on load.
 
-test("the entry for the current route is scrolled into its section's window", async () => {
-  // jsdom implements no scrolling at all, so `scrollIntoView` does not exist on
-  // an element and has to be supplied. What is checked is that the sidebar asks
-  // for the *marked* entry to be revealed, and asks with `nearest` so an entry
-  // already in view does not jump. Whether the browser then scrolls far enough
-  // is a browser check.
-  const scrollIntoView = jest.fn();
-  Element.prototype.scrollIntoView = scrollIntoView;
+test("the entry for the current route is scrolled into its section's window, and only that", async () => {
+  // jsdom has no layout, so the boxes are given: the Tabs list shows 0..300 and
+  // the marked entry sits at 700..740, below its fold. What is checked is that
+  // the sidebar reveals the *marked* entry by scrolling its own list just far
+  // enough — never with `scrollIntoView`, which also scrolls the clipped panel
+  // and the app frame around it whenever the list cannot reveal the entry alone.
+  const scrolling = stubScrolling(".app-sidebar-list { overflow-y: auto; }", (element) => {
+    if (element.matches(".app-sidebar-list")) return { top: 0, bottom: 300 };
+    if (element.matches("[aria-current]")) return { top: 700, bottom: 740 };
+    return null;
+  });
+  try {
+    await renderLoadedSidebar("/view/v-tab-20");
 
-  await renderLoadedSidebar("/view/v-tab-20");
-
-  const active = await screen.findByRole("link", { name: "Tab 20" });
-  expect(active).toHaveAttribute("aria-current", "page");
-  expect(scrollIntoView.mock.instances).toContain(active);
-  expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    const active = await screen.findByRole("link", { name: "Tab 20" });
+    expect(active).toHaveAttribute("aria-current", "page");
+    expect(scrolling.scrollTo.mock.instances).toContain(sectionList("Tabs"));
+    expect(scrolling.scrollTo).toHaveBeenCalledWith({ top: 440, behavior: "auto" });
+    expect(scrolling.scrollIntoView).not.toHaveBeenCalled();
+  } finally {
+    scrolling.restore();
+  }
 });
