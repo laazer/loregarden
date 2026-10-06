@@ -85,6 +85,10 @@ echo "pre-push: ruff check ..."
 echo "pre-push: ruff format --check ..."
 "${RUFF_CMD[@]}" format --check .
 
+echo "pre-push: ruff on the scripts outside server/ ..."
+bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" check
+bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" format --check
+
 # Base for "what is being pushed": the remote-tracking commit when the branch
 # already exists there, otherwise everything this branch adds to main.
 BASE="${LOREGARDEN_TESTS_BASE:-}"

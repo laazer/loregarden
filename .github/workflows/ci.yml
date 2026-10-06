@@ -56,6 +56,14 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check .
 
+      # `ruff check .` from server/ never reaches the stdlib scripts outside
+      # it (.claude/hooks, .lefthook/scripts, .github/scripts), which run
+      # under the system python3 — see .lefthook/scripts/py-staged-paths.sh.
+      - name: Ruff lint + format check (scripts outside server/)
+        run: |
+          bash ../.lefthook/scripts/py-scripts-ruff.sh check
+          bash ../.lefthook/scripts/py-scripts-ruff.sh format --check
+
       - name: Pytest
         run: uv run pytest -q -n auto
         env:

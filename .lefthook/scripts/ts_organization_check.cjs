@@ -374,7 +374,7 @@ const TRUNK_REF_CANDIDATES = ["master", "trunk", "develop"];
  * `resolve_gate_scope` / `GateRun`.
  */
 /**
- * Ask `precommit_git_diff.py` what this run should examine.
+ * Ask `gate_scope_json.py` what this run should examine.
  *
  * This used to be ~560 lines of hand-ported Python living in this file: the
  * error classes, git-path decoding, env scrubbing, ref validation, scope
@@ -401,7 +401,7 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
     "bash",
     [
       path.join(scriptDir, "server_python.sh"),
-      path.join(scriptDir, "precommit_git_diff.py"),
+      path.join(scriptDir, "gate_scope_json.py"),
       "--emit-scope-json",
       ...(repoRoot === null ? [] : ["--repo", repoRoot]),
       "--scope",
