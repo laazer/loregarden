@@ -73,6 +73,8 @@ class McpTool(StrEnum):
     SET_INITIATIVE_AUTOPILOT = "loregarden_set_initiative_autopilot"
     START_INITIATIVE_WORK = "loregarden_start_initiative_work"
     MARK_NEEDS_PERSON = "loregarden_mark_needs_person"
+    ADD_INITIATIVE_MEMBER = "loregarden_add_initiative_member"
+    REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:

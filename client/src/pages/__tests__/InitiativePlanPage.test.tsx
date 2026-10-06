@@ -91,6 +91,8 @@ function milestones(): MilestoneSchedule[] {
     title: m.title,
     state: "backlog",
     workspace_slug: m.slug,
+    work_item_type: "milestone",
+    member: false,
     plan_order: i,
     target_date: i === 1 ? "2026-10-05" : null,
     forecast_date: m.forecast,
@@ -194,6 +196,17 @@ beforeEach(() => {
   jest.clearAllMocks();
   setNarrow(false);
   mockApi.initiativePlan.mockResolvedValue(plan());
+  mockApi.initiative.mockResolvedValue({
+    id: "init1",
+    external_id: "init-tinkercg-build-1",
+    title: "TinkerCG build",
+    description: "",
+    state: "in_progress",
+    priority: 3,
+    milestones: [],
+    progress: { resolved: 0, total: 0 },
+    workspaces: [],
+  });
   mockApi.plannerChat.mockResolvedValue(emptyChat);
   mockApi.tickets.mockResolvedValue(boardTickets());
   mockApi.updateInitiativePlan.mockResolvedValue(plan());

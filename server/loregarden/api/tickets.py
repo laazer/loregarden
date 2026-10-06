@@ -58,7 +58,8 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.external_harness import build_external_harness_prompt
-from loregarden.services.hierarchy_service import build_tree, child_count, descendants_by_root
+from loregarden.services.hierarchy_service import build_tree, child_count
+from loregarden.services.initiative_coverage import covered_ticket_ids
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -520,9 +521,8 @@ def list_tickets(
         query = query.where(Ticket.parent_ticket_id.is_(None))
     if ancestor_ticket_id:
         # Every level below it, in whichever workspaces they live — an
-        # initiative's board spans repositories.
-        subtree = descendants_by_root(session, [ancestor_ticket_id])[ancestor_ticket_id]
-        query = query.where(col(Ticket.id).in_([t.id for t in subtree]))
+        # initiative's board spans repositories, and shows its members too.
+        query = query.where(col(Ticket.id).in_(covered_ticket_ids(session, ancestor_ticket_id)))
     query = query.order_by(Ticket.priority, Ticket.created_at)
     if limit is not None:
         # Paged in SQL, not after the fact: the cost this endpoint carries is

@@ -4,9 +4,9 @@
  "sprint": {
   "basis": "workspace_throughput",
   "capacity": 4998,
-  "committed": 0,
+  "committed": 1,
   "days": 14,
-  "planned": 393
+  "planned": 392
  },
  "suggestions": [
   {
@@ -624,7 +624,6 @@
     "lg-m37-37",
     "lg-m38-38",
     "lg-m39-39",
-    "lg-m4-4",
     "lg-m41-41",
     "lg-m42-42",
     "lg-m43-43",
@@ -758,16 +757,6 @@
      "title": "Split memory recall ranking",
      "work_item_type": "feature",
      "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m4-57",
-     "from_milestone": "lg-m4-4",
-     "id": "e9b33597-f151-5863-bd09-998dcad602a0",
-     "state": "backlog",
-     "title": "Stop the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
     },
     {
      "cost": 1,

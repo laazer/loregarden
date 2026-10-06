@@ -1,10 +1,12 @@
 """Initiatives as a whole: every milestone, whichever workspace it lives in.
 
 Creating, attaching, detaching and deleting go through the ordinary ticket
-writers (`TicketService`, `reparent_ticket`) — the hierarchy rules live there.
-This module only reads, because the one thing no ticket endpoint can do is
-show an initiative with all of its milestones: each of them is scoped to one
-workspace, and an initiative is bound to none.
+writers (`TicketService`, `reparent_ticket`) — the hierarchy rules live there;
+members are added and removed by `initiative_membership`. This module only
+reads, because the one thing no ticket endpoint can do is show an initiative
+with all of its milestones: each of them is scoped to one workspace, and an
+initiative is bound to none. What an initiative covers is
+`initiative_coverage`'s answer.
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.initiative_coverage import (
+    InitiativeRoots,
+    initiative_roots,
+    tracked_ticket_ids,
+)
 from loregarden.services.ticket_rollup import RESOLVED_STATES
 from sqlmodel import Session, col, select
 
@@ -30,7 +37,38 @@ def workspace_slugs(session: Session, tickets: list[Ticket]) -> dict[str, str]:
     return dict(rows.all())
 
 
-def _milestone_view(ticket: Ticket, slugs: dict[str, str]) -> InitiativeMilestoneView:
+def home_milestones(session: Session, tickets: list[Ticket]) -> dict[str, Ticket]:
+    """Ticket id -> the nearest milestone above it; absent when there is none.
+
+    Where a member lives in its own tree. One query per level for the batch.
+    """
+    found: dict[str, Ticket] = {}
+    loaded: dict[str, Ticket] = {}
+    pending = {t.id: t.parent_ticket_id for t in tickets if t.parent_ticket_id}
+    seen: dict[str, set[str]] = {ticket_id: {ticket_id} for ticket_id in pending}
+    while pending:
+        wanted = {pid for pid in pending.values() if pid and pid not in loaded}
+        if wanted:
+            for row in session.exec(select(Ticket).where(col(Ticket.id).in_(wanted))).all():
+                loaded[row.id] = row
+        following: dict[str, str | None] = {}
+        for ticket_id, parent_id in pending.items():
+            parent = loaded.get(parent_id or "")
+            if parent is None or parent.id in seen[ticket_id]:
+                continue  # dangling parent, or a parent loop: no milestone above
+            if parent.work_item_type == WorkItemType.MILESTONE:
+                found[ticket_id] = parent
+                continue
+            seen[ticket_id].add(parent.id)
+            if parent.parent_ticket_id:
+                following[ticket_id] = parent.parent_ticket_id
+        pending = following
+    return found
+
+
+def milestone_view(
+    ticket: Ticket, slugs: dict[str, str], *, member: bool, home: Ticket | None
+) -> InitiativeMilestoneView:
     return InitiativeMilestoneView(
         id=ticket.id,
         external_id=ticket.external_id,
@@ -38,13 +76,26 @@ def _milestone_view(ticket: Ticket, slugs: dict[str, str]) -> InitiativeMileston
         state=ticket.state,
         workspace_slug=slugs.get(ticket.workspace_id or "", ""),
         work_item_type=ticket.work_item_type,
+        member=member,
+        home_milestone=home.external_id if home is not None else "",
     )
 
 
 def _initiative_view(
-    initiative: Ticket, milestones: list[Ticket], slugs: dict[str, str]
+    initiative: Ticket,
+    roots: InitiativeRoots,
+    slugs: dict[str, str],
+    homes: dict[str, Ticket],
 ) -> InitiativeView:
-    views = [_milestone_view(m, slugs) for m in milestones]
+    views = [
+        milestone_view(
+            m,
+            slugs,
+            member=roots.is_member(m.id),
+            home=homes.get(m.id) if roots.is_member(m.id) else None,
+        )
+        for m in roots.roots
+    ]
     return InitiativeView(
         id=initiative.id,
         external_id=initiative.external_id,
@@ -54,26 +105,30 @@ def _initiative_view(
         priority=initiative.priority,
         milestones=views,
         progress=InitiativeProgress(
-            resolved=sum(1 for m in milestones if m.state in RESOLVED_STATES),
-            total=len(milestones),
+            resolved=sum(1 for m in roots.roots if m.state in RESOLVED_STATES),
+            total=len(roots.roots),
         ),
         workspaces=sorted({v.workspace_slug for v in views if v.workspace_slug}),
     )
 
 
-def milestones_under(session: Session, parent_ids: list[str]) -> list[Ticket]:
-    if not parent_ids:
-        return []
-    query = (
-        select(Ticket)
-        .where(col(Ticket.parent_ticket_id).in_(parent_ids))
-        .order_by(Ticket.priority, Ticket.created_at)
-    )
-    return list(session.exec(query).all())
+def _initiative_views(session: Session, initiatives: list[Ticket]) -> list[InitiativeView]:
+    """Views for many initiatives in a fixed number of queries, not N+1."""
+    by_initiative = initiative_roots(session, [i.id for i in initiatives])
+    every_root = [t for roots in by_initiative.values() for t in roots.roots]
+    members = [t for roots in by_initiative.values() for t in roots.roots if roots.is_member(t.id)]
+    slugs = workspace_slugs(session, every_root)
+    homes = home_milestones(session, members)
+    return [_initiative_view(i, by_initiative[i.id], slugs, homes) for i in initiatives]
+
+
+def milestones_under(session: Session, initiative_id: str) -> list[Ticket]:
+    """The initiative's phases: its children and its members (`initiative_coverage`)."""
+    return initiative_roots(session, [initiative_id])[initiative_id].roots
 
 
 def list_initiatives(session: Session) -> list[InitiativeView]:
-    """Every initiative, each with all of its milestones. Three queries, not N+1."""
+    """Every initiative, each with all of its milestones and members."""
     initiatives = list(
         session.exec(
             select(Ticket)
@@ -81,24 +136,15 @@ def list_initiatives(session: Session) -> list[InitiativeView]:
             .order_by(Ticket.priority, Ticket.created_at)
         ).all()
     )
-    milestones = milestones_under(session, [i.id for i in initiatives])
-    slugs = workspace_slugs(session, milestones)
-    by_parent: dict[str, list[Ticket]] = {}
-    for milestone in milestones:
-        by_parent.setdefault(milestone.parent_ticket_id or "", []).append(milestone)
-    return [_initiative_view(i, by_parent.get(i.id, []), slugs) for i in initiatives]
+    return _initiative_views(session, initiatives)
 
 
 def get_initiative(session: Session, initiative_id: str) -> InitiativeView:
-    initiative = session.get(Ticket, initiative_id)
-    if initiative is None or initiative.work_item_type != WorkItemType.INITIATIVE:
-        raise LookupError(f"Initiative not found: {initiative_id}")
-    milestones = milestones_under(session, [initiative.id])
-    return _initiative_view(initiative, milestones, workspace_slugs(session, milestones))
+    return _initiative_views(session, [load_initiative(session, initiative_id)])[0]
 
 
 def attachable_milestones(session: Session) -> list[InitiativeMilestoneView]:
-    """Milestones in any workspace that no initiative owns yet."""
+    """Milestones in any workspace that no initiative parents or tracks yet."""
     milestones = list(
         session.exec(
             select(Ticket)
@@ -109,8 +155,10 @@ def attachable_milestones(session: Session) -> list[InitiativeMilestoneView]:
             .order_by(Ticket.priority, Ticket.created_at)
         ).all()
     )
+    tracked = tracked_ticket_ids(session, [m.id for m in milestones])
+    milestones = [m for m in milestones if m.id not in tracked]
     slugs = workspace_slugs(session, milestones)
-    return [_milestone_view(m, slugs) for m in milestones]
+    return [milestone_view(m, slugs, member=False, home=None) for m in milestones]
 
 
 def load_initiative(session: Session, initiative_id: str) -> Ticket:

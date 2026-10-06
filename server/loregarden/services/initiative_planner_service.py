@@ -148,10 +148,10 @@ def planner_workspace(session: Session, initiative: Ticket) -> Workspace:
     the CLI refuses a directory that does not exist, and a milestone can live in
     a workspace not checked out on this machine. The first one that is wins.
     """
-    milestones = milestones_under(session, [initiative.id])
+    milestones = milestones_under(session, initiative.id)
     if not milestones:
         raise ValueError(
-            f"Initiative {initiative.external_id} has no milestones yet — attach one before planning."
+            f"Initiative {initiative.external_id} has no milestones or members yet — attach one, or add a ticket, before planning."
         )
     missing: list[str] = []
     for milestone in milestones:

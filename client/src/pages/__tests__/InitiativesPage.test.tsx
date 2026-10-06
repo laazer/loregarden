@@ -17,6 +17,8 @@ function milestone(overrides: Partial<InitiativeMilestone> = {}): InitiativeMile
     state: "done",
     workspace_slug: "loregarden",
     work_item_type: "milestone",
+    member: false,
+    home_milestone: "",
     ...overrides,
   };
 }

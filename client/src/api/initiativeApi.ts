@@ -2,9 +2,8 @@ import type { ChatMessageView } from "../components/chat/chatUtils";
 import { request } from "./http";
 import type { TicketDetail, TicketState, WorkItemType } from "./types";
 
-/** A direct child of an initiative — a milestone, or a sprint's feature or bug —
- * tagged with the workspace it lives in. */
-export interface InitiativeMilestone {
+/** A ticket an initiative view lists, tagged with the workspace it lives in. */
+export interface InitiativeItem {
   id: string;
   external_id: string;
   title: string;
@@ -13,10 +12,19 @@ export interface InitiativeMilestone {
   work_item_type: WorkItemType;
 }
 
+/** A top-level ticket of an initiative — a milestone, a sprint's feature or bug,
+ * or a member it tracks without parenting. */
+export interface InitiativeMilestone extends InitiativeItem {
+  /** Tracked by membership: it keeps its own parent, milestone and branch. */
+  member: boolean;
+  /** For a member, the milestone it lives under; "" when none, and for children. */
+  home_milestone: string;
+}
+
 export type SuggestionKind = "theme" | "sprint";
 
 /** Open work a suggestion may claim. */
-export interface SuggestedItem extends InitiativeMilestone {
+export interface SuggestedItem extends InitiativeItem {
   /** The milestone a feature or bug would leave; blank for a milestone. */
   from_milestone: string;
   /** Open work items it carries, in the unit pace is measured in. */
@@ -98,6 +106,9 @@ export interface MilestoneSchedule {
   title: string;
   state: TicketState;
   workspace_slug: string;
+  work_item_type: WorkItemType;
+  /** A member the initiative tracks, rather than a child it parents. */
+  member: boolean;
   plan_order: number;
   target_date: string | null;
   /** When its last open item lands, scheduled through the dependency graph. */
@@ -230,6 +241,20 @@ export interface PlannerSnapshot {
  * workspace-scoped ticket list. Writes reuse the ticket endpoints. */
 export const initiativeApi = {
   initiatives: () => request<InitiativeView[]>("/api/initiatives"),
+  initiative: (id: string) => request<InitiativeView>(`/api/initiatives/${id}`),
+  /** Tickets of any type but initiative, in any workspace, the initiative does not cover yet. */
+  initiativeMemberCandidates: (id: string, search: string) =>
+    request<InitiativeMilestone[]>(
+      `/api/initiatives/${id}/member-candidates?search=${encodeURIComponent(search)}`,
+    ),
+  /** Track a ticket and its subtree without re-parenting it. */
+  addInitiativeMember: (id: string, ticketId: string) =>
+    request<InitiativeView>(`/api/initiatives/${id}/members`, {
+      method: "POST",
+      body: JSON.stringify({ ticket_id: ticketId }),
+    }),
+  removeInitiativeMember: (id: string, ticketId: string) =>
+    request<void>(`/api/initiatives/${id}/members/${ticketId}`, { method: "DELETE" }),
   attachableMilestones: () =>
     request<InitiativeMilestone[]>("/api/initiatives/attachable-milestones"),
   createInitiative: (body: { title: string; description?: string; priority?: number }) =>

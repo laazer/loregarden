@@ -129,6 +129,8 @@ def _milestone_views(ctx: PlanContext, mode: ScheduleMode, today: date) -> list[
                 title=milestone.title,
                 state=milestone.state,
                 workspace_slug=ctx.slugs.get(milestone.workspace_id or "", ""),
+                work_item_type=milestone.work_item_type,
+                member=milestone.id in ctx.member_ids,
                 plan_order=position,
                 target_date=target_date,
                 forecast_date=forecast,
@@ -234,8 +236,8 @@ def plan_view(
 
 
 def _validate_items(session: Session, initiative: Ticket, items: list[ScheduleTargetInput]) -> None:
-    """Targets belong on the initiative and its milestones — nowhere else."""
-    allowed = {initiative.id, *(m.id for m in milestones_under(session, [initiative.id]))}
+    """Targets belong on the initiative and its phases (children, members) — nowhere else."""
+    allowed = {initiative.id, *(m.id for m in milestones_under(session, initiative.id))}
     unknown = sorted({item.ticket_id for item in items} - allowed)
     if unknown:
         raise ScheduleValidationError(
@@ -281,7 +283,7 @@ def _apply_items(
     the first one dated would be the only one with an order, and would sort
     ahead of all the rest — setting a date would silently reorder the plan.
     """
-    milestones = milestones_under(session, [initiative.id])
+    milestones = milestones_under(session, initiative.id)
     rows = _targets(session, [initiative.id, *(m.id for m in milestones)])
     now = utcnow()
     for position, milestone in enumerate(_reorder(plan_sequence(milestones, rows), items)):

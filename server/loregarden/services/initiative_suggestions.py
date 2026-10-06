@@ -39,11 +39,17 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     WorkItemType,
+    comparable_utc,
 )
 from loregarden.services.hierarchy_service import (
     descendants_by_root,
     reparent_ticket,
     validate_parent_child,
+)
+from loregarden.services.initiative_coverage import (
+    initiative_coverage,
+    initiative_roots,
+    tracked_ticket_ids,
 )
 from loregarden.services.initiative_forecast import measure_paces
 from loregarden.services.initiative_plan_service import update_plan
@@ -146,7 +152,7 @@ def _sprint_order(ticket: Ticket, milestone: Ticket) -> tuple:
 
 def build_pool(session: Session, *, days: int, now: datetime | None = None) -> SuggestionPool:
     now = now or clock()
-    milestones = [
+    unowned = [
         m
         for m in session.exec(
             select(Ticket)
@@ -158,22 +164,19 @@ def build_pool(session: Session, *, days: int, now: datetime | None = None) -> S
         ).all()
         if _is_open(m)
     ]
+    committed = _committed_work(session)
+    # A member is owned as surely as a child: no suggestion may claim it again.
+    tracked = tracked_ticket_ids(session, [m.id for m in unowned])
+    milestones = [m for m in unowned if m.id not in tracked]
     by_id = {m.id: m for m in milestones}
     open_children = _open_work_under(session, list(by_id))
+    tracked = tracked_ticket_ids(session, [t.id for t in open_children])
     children = [
         t
         for t in open_children
         # An integration review depends on its siblings, so it stays with them.
-        if t.state not in _STALLED and not t.is_integration_review
+        if t.state not in _STALLED and not t.is_integration_review and t.id not in tracked
     ]
-    committed = _open_work_under(
-        session,
-        list(
-            session.exec(
-                select(Ticket.id).where(Ticket.work_item_type == WorkItemType.INITIATIVE)
-            ).all()
-        ),
-    )
     trees = descendants_by_root(session, [t.id for t in [*children, *committed]])
     milestone_trees = descendants_by_root(session, list(by_id))
     slugs = workspace_slugs(session, [*milestones, *children, *committed])
@@ -226,6 +229,23 @@ def build_pool(session: Session, *, days: int, now: datetime | None = None) -> S
             stem for slug in slugs.values() for part in slug.split("-") for stem in _words(part)
         ),
     )
+
+
+def _committed_work(session: Session) -> list[Ticket]:
+    """Open work items some initiative already covers at its top level.
+
+    Children and members alike (`initiative_coverage`); milestones are phases,
+    not items, and a ticket in two initiatives is charged once.
+    """
+    initiative_ids = list(
+        session.exec(select(Ticket.id).where(Ticket.work_item_type == WorkItemType.INITIATIVE))
+    )
+    found: dict[str, Ticket] = {}
+    for roots in initiative_roots(session, initiative_ids).values():
+        for ticket in roots.roots:
+            if _is_open(ticket) and ticket.work_item_type != WorkItemType.MILESTONE:
+                found[ticket.id] = ticket
+    return sorted(found.values(), key=lambda t: comparable_utc(t.created_at))
 
 
 def _open_work_under(session: Session, parent_ids: list[str]) -> list[Ticket]:
@@ -450,16 +470,17 @@ def addable_work(session: Session, initiative_id: str, search: str) -> list[Sugg
     """Open features and bugs matching `search` that could join this initiative.
 
     Leaves out what a sprint must not take — integration reviews, which run
-    after their siblings — and what is already directly under an initiative.
+    after their siblings — and what this initiative already covers.
     """
     needle = f"%{search.strip()}%"
+    covered = initiative_coverage(session, initiative_id).ticket_ids()
     rows = session.exec(
         select(Ticket)
         .where(
             col(Ticket.work_item_type).in_([WorkItemType.FEATURE, WorkItemType.BUG]),
             col(Ticket.state).not_in(list(RESOLVED_STATES)),
             col(Ticket.is_integration_review).is_(False),
-            col(Ticket.parent_ticket_id) != initiative_id,
+            col(Ticket.id).not_in(covered),
             col(Ticket.title).ilike(needle) | col(Ticket.external_id).ilike(needle),
         )
         .order_by(Ticket.priority, Ticket.created_at)
