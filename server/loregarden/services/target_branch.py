@@ -21,6 +21,12 @@ merge into a branch the orchestrator owns needs neither.
 The root keys the branch rather than the nearest parent so a feature's tasks
 and the feature's own siblings share one branch; the tree lands in dependency
 order, so nothing on it is ever ahead of what its dependents need.
+
+An initiative is never a root. It spans workspaces, never orchestrates, and
+never completes the way a tree does, so a branch named after it would collect
+every milestone's work in each repository and publish none of it. The walk
+stops below it: a milestone keeps its own branch whether or not it is filed
+under an initiative.
 """
 
 from __future__ import annotations
@@ -28,10 +34,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.git_branch import validate_branch_name
 from loregarden.services.git_merge_noco import BranchTips, merge_tips, read_branch_tips
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.hierarchy_service import validate_parent_child
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
 
@@ -45,24 +52,54 @@ class TargetBranchError(RuntimeError):
 
 
 def subtree_root(session: Session, ticket: Ticket) -> Ticket:
-    """The topmost ancestor of ``ticket`` — ``ticket`` itself when it has none.
+    """The topmost ancestor of ``ticket`` below any initiative — ``ticket``
+    itself when it has none.
 
-    A dangling ``parent_ticket_id`` (the parent row is gone) ends the walk at
-    the last ticket that exists: it is the effective root of what remains.
+    The one definition of a tree's root: landing, publishing and dependency
+    readiness all reach it through here. A dangling ``parent_ticket_id`` (the
+    parent row is gone) ends the walk at the last ticket that exists: it is the
+    effective root of what remains.
+
+    Raises :class:`TargetBranchError` for an initiative, which roots no tree,
+    and for a ticket under one that the hierarchy does not allow there.
     """
+    _refuse_initiative(ticket)
     current = ticket
     seen = {ticket.id}
     while current.parent_ticket_id:
         parent = session.get(Ticket, current.parent_ticket_id)
         if parent is None or parent.id in seen:
             break
+        if parent.work_item_type is WorkItemType.INITIATIVE:
+            _require_initiative_child(parent, current)
+            break
         seen.add(parent.id)
         current = parent
     return current
 
 
+def _refuse_initiative(ticket: Ticket) -> None:
+    if ticket.work_item_type is WorkItemType.INITIATIVE:
+        raise TargetBranchError(
+            f"Initiative {ticket.external_id or ticket.id[:8]} is not a landing tree: "
+            "its milestones each land on their own integration branch"
+        )
+
+
+def _require_initiative_child(initiative: Ticket, child: Ticket) -> None:
+    try:
+        validate_parent_child(WorkItemType.INITIATIVE, child.work_item_type)
+    except ValueError as exc:
+        raise TargetBranchError(
+            f"{child.work_item_type.value} {child.external_id or child.id[:8]} sits directly "
+            f"under initiative {initiative.external_id or initiative.id[:8]}, which the "
+            f"hierarchy does not allow, so it has no tree to land in: {exc}"
+        ) from exc
+
+
 def integration_branch_for(root: Ticket) -> str:
     """The integration branch a tree rooted at ``root`` lands on."""
+    _refuse_initiative(root)
     slug = root.external_id.strip() or root.id[:8]
     branch = f"{INTEGRATION_PREFIX}{slug}"
     validate_branch_name(branch)

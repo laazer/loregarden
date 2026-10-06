@@ -171,3 +171,30 @@ def test_with_open_pr_on_a_single_pr_is_opened_from_the_integration_branch(
     assert create[create.index("--base") + 1] == "main"
     assert "ms" in create[create.index("--title") + 1]
     assert not any(c[:2] == ["pr", "merge"] for c in calls), "auto_merge stays off"
+
+
+def test_a_milestone_under_an_initiative_publishes_its_own_branch_on_completion(
+    session, workspace, repo
+):
+    """An initiative never completes as a tree; its milestones still must."""
+    initiative = Ticket(
+        external_id="init-pub",
+        title="init",
+        workspace_id=None,
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    session.add(initiative)
+    session.commit()
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    ms.parent_ticket_id = initiative.id
+    session.add(ms)
+    session.commit()
+    assert target == "integration/ms"
+    at_terminal_stage(session, ms)
+
+    OrchestrationService(session).advance_stage(ms)
+
+    session.refresh(ms)
+    assert ms.state == TicketState.DONE
+    assert _remote_sha(repo, target) == _sha(repo, target)
+    assert (ms.landed_branch, ms.landed_sha) == (target, _sha(repo, target))
