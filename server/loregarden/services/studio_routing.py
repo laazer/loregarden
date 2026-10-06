@@ -582,17 +582,21 @@ def resolve_scope_reroute_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[
     pinned = (ticket.scope_reroute_agent or "").strip()
     if not pinned or not get_agent(pinned):
         return None
-    if stage.classify_routes:
-        for route in stage.classify_routes:
-            if route.agent_id == pinned:
-                return pinned, route.skill_name or stage.skill_name
-        # Fall through rather than giving up here: a classify stage can also name
-        # a static `agent_id` that is not repeated as a route, and that agent can
-        # still run the stage. Returning None on a route-table miss dropped a
-        # valid pin for exactly that shape, sending the stage back to keyword
-        # scoring — which is what pinned it to the wrong specialist to begin with.
-    if (stage.agent_id or "").strip() == pinned:
-        return pinned, stage.skill_name or ""
+    return stage_offers_agent(stage, pinned)
+
+
+def stage_offers_agent(stage: WorkflowStageDef, agent_id: str) -> tuple[str, str] | None:
+    """``(agent_id, skill)`` when ``stage`` can run ``agent_id``, else None."""
+    for route in stage.classify_routes:
+        if route.agent_id == agent_id:
+            return agent_id, route.skill_name or stage.skill_name
+    # Checked even when the route table missed: a classify stage can also name
+    # a static `agent_id` that is not repeated as a route, and that agent can
+    # still run the stage. Returning None on a route-table miss dropped a
+    # valid pin for exactly that shape, sending the stage back to keyword
+    # scoring — which is what pinned it to the wrong specialist to begin with.
+    if (stage.agent_id or "").strip() == agent_id:
+        return agent_id, stage.skill_name or ""
     return None
 
 

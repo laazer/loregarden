@@ -212,6 +212,9 @@ def _reroute_or_block_for_rework(
             from_key=run.stage_key,
             outcome="reject",
             next_stage_key=report.reroute_to_stage or "",
+            # The same channel `loregarden_complete_stage(next_agent=...)` uses,
+            # so a reject reported either way dispatches the same agent next.
+            next_agent=report.reroute_to_agent or "",
             blocking_issues=_blocking_issue(orch.session, ticket, run, full_context),
         )
     except ValueError:

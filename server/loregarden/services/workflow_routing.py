@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from loregarden.agents.registry import get_agent
 from loregarden.core.state_machine import StageRoutePlan, StateMachine
 from loregarden.models.domain import (
     OrchestrationRun,
@@ -17,6 +18,7 @@ from loregarden.services.studio_routing import (
     resolve_classify_branch,
     resolve_stage_execution,
     should_skip_stage,
+    stage_offers_agent,
 )
 from loregarden.services.workflow_state import (
     parse_stage_map,
@@ -280,9 +282,19 @@ def apply_stage_route(
         )
         ticket.workflow_stage_key = plan.to_key
         ticket.workflow_stage_status = StageStatus.PENDING
-        if misroute_reason:
-            note = f"({misroute_reason}; routed to '{plan.to_key}' instead.)"
-            blocking_issues = f"{blocking_issues}\n\n{note}" if blocking_issues else note
+        blocking_issues = _rework_blocking_issues(
+            blocking_issues,
+            misroute_reason=misroute_reason,
+            to_key=plan.to_key,
+            pin_refusal=_pin_reject_agent(
+                ticket,
+                stages,
+                outcome=outcome,
+                from_key=from_key,
+                to_key=plan.to_key,
+                next_agent=next_agent,
+            ),
+        )
         if blocking_issues:
             ticket.blocking_issues = blocking_issues[:2000]
         else:
@@ -332,6 +344,63 @@ def apply_stage_route(
     if orch_run is not None:
         orch_run.current_stage_key = plan.to_key
     return plan
+
+
+def _rework_blocking_issues(
+    blocking_issues: str, *, misroute_reason: str, to_key: str, pin_refusal: str
+) -> str:
+    """The rework message with the router's own notes about what it did not honour."""
+    if misroute_reason:
+        note = f"({misroute_reason}; routed to '{to_key}' instead.)"
+        blocking_issues = f"{blocking_issues}\n\n{note}" if blocking_issues else note
+    if pin_refusal:
+        # First, not last: the field is cut at 2000 characters and rework
+        # context routinely fills it, which would drop the one line saying the
+        # requested agent was not honoured.
+        note = f"({pin_refusal}.)"
+        blocking_issues = f"{note}\n\n{blocking_issues}" if blocking_issues else note
+    return blocking_issues
+
+
+def _pin_reject_agent(
+    ticket: Ticket,
+    stages: list[WorkflowStageDef],
+    *,
+    outcome: str,
+    from_key: str,
+    to_key: str,
+    next_agent: str,
+) -> str:
+    """Pin the agent a reject named for the rework it sends back. Returns why not, or "".
+
+    The pin is `tickets.scope_reroute_agent`: classify routing honours it above
+    its own keyword score, and dispatch consumes it once the pinned agent runs —
+    so it steers exactly one re-run and cannot go stale (the 441 design). Without
+    it a reject could only *ask* for a specialist in prose, and content routing
+    re-dispatched the one it was rejecting, eight rounds running on
+    blob-procedural-sdf-39 (lg-workflow-integrity-765).
+
+    Valid only for an agent some stage in the rework span — the target through
+    the rejecting stage — can run. Any other name would never be consumed and
+    would sit on the ticket, so it is refused, and said so, rather than pinned.
+    """
+    agent_id = next_agent.strip()
+    if outcome != "reject" or not agent_id:
+        return ""
+    by_key = {stage.key: stage for stage in stages}
+    # A non-strict caller may route from a key the template no longer has; the
+    # span then shrinks to the target rather than raising mid-reroute.
+    ends = [by_key[key].order for key in (to_key, from_key) if key in by_key]
+    span = [stage for stage in stages if min(ends) <= stage.order <= max(ends)]
+    if get_agent(agent_id) is not None and any(stage_offers_agent(s, agent_id) for s in span):
+        ticket.scope_reroute_agent = agent_id
+        return ""
+    reason = (
+        f"Reject named agent '{agent_id}', which no stage from '{to_key}' to '{from_key}' "
+        f"runs; no agent was pinned and routing chooses as usual"
+    )
+    logger.warning("%s (ticket %s)", reason, ticket.external_id)
+    return reason
 
 
 def normalize_transitions_for_api(transitions_json: str) -> list[dict[str, str]]:
