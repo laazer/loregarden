@@ -60,9 +60,16 @@ def build_tree(
     tickets: list[Ticket],
     *,
     stage_names: dict[str, str] | None = None,
+    members: dict[str, list[str]] | None = None,
 ) -> list[TicketTreeNode]:
-    """Assemble a forest from a flat ticket list (roots = no parent)."""
+    """Assemble a forest from a flat ticket list (roots = no parent).
+
+    ``members`` maps an initiative id to the ids it tracks without parenting
+    them. Each one present in ``tickets`` is listed again under the initiative,
+    after its children, as a leaf ``member_link`` copy.
+    """
     stage_names = stage_names or {}
+    members = members or {}
     by_id = {t.id: t for t in tickets}
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
@@ -89,8 +96,7 @@ def build_tree(
         }
         return (type_order.get(t.work_item_type, 9), t.priority, t.external_id)
 
-    def node_for(ticket: Ticket) -> TicketTreeNode:
-        kids = sorted(children_map.get(ticket.id, []), key=sort_key)
+    def leaf(ticket: Ticket) -> TicketTreeNode:
         return TicketTreeNode(
             id=ticket.id,
             external_id=ticket.external_id,
@@ -101,9 +107,31 @@ def build_tree(
             workspace_slug=workspace_slugs.get(ticket.workspace_id, ""),
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
-            child_count=len(kids),
-            children=[node_for(k) for k in kids],
         )
+
+    def member_node(ticket: Ticket) -> TicketTreeNode:
+        # The real parent may be filtered out of `tickets`; the identity map usually has it.
+        parent = session.get(Ticket, ticket.parent_ticket_id) if ticket.parent_ticket_id else None
+        return leaf(ticket).model_copy(
+            update={
+                "member_link": True,
+                "home_parent_external_id": parent.external_id if parent else "",
+            }
+        )
+
+    def node_for(ticket: Ticket) -> TicketTreeNode:
+        kids = sorted(children_map.get(ticket.id, []), key=sort_key)
+        # Parented wins, as in `initiative_coverage`: a child is not listed twice.
+        tracked = sorted(
+            (
+                by_id[mid]
+                for mid in members.get(ticket.id, [])
+                if mid in by_id and by_id[mid].parent_ticket_id != ticket.id
+            ),
+            key=sort_key,
+        )
+        children = [node_for(k) for k in kids] + [member_node(m) for m in tracked]
+        return leaf(ticket).model_copy(update={"child_count": len(children), "children": children})
 
     roots = sorted(children_map.get(None, []), key=sort_key)
     return [node_for(r) for r in roots]

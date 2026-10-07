@@ -158,3 +158,15 @@ def tracked_ticket_ids(session: Session, ticket_ids: list[str]) -> set[str]:
 def member_initiative_ids(session: Session) -> set[str]:
     """Every initiative with at least one member."""
     return set(session.exec(select(InitiativeMember.initiative_id).distinct()).all())
+
+
+def members_among(session: Session, ticket_ids: list[str]) -> dict[str, list[str]]:
+    """Initiative id -> which of ``ticket_ids`` it holds as members."""
+    if not ticket_ids:
+        return {}
+    by_initiative: dict[str, list[str]] = defaultdict(list)
+    for row in session.exec(
+        select(InitiativeMember).where(col(InitiativeMember.ticket_id).in_(ticket_ids))
+    ).all():
+        by_initiative[row.initiative_id].append(row.ticket_id)
+    return dict(by_initiative)

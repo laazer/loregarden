@@ -60,6 +60,15 @@ function TreeRowTrail({
   );
 }
 
+/** Says a row is an initiative's member, and where the ticket really lives. */
+function MemberNote({ node }: { node: TicketTreeNode }) {
+  return (
+    <div className="tree-member-note">
+      Member · {node.home_parent_external_id ? `lives under ${node.home_parent_external_id}` : "no parent"}
+    </div>
+  );
+}
+
 function TreeRow({
   node,
   selectedId,
@@ -87,7 +96,9 @@ function TreeRow({
   const expanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
   const workflowRunning = node.workflow_stage_status === "running";
-  const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
+  const isMember = Boolean(node.member_link);
+  // A member copy is a pointer: children are added at the real row.
+  const showAddChild = !isMember && !!onAddChild && canHaveChildren(node.work_item_type);
   const stateColor = TICKET_STATE_COLORS[node.state];
   const wfColor = stageStatusColor(node.workflow_stage_status);
   const isV6 = presentation === "v6";
@@ -107,6 +118,7 @@ function TreeRow({
           "tree-row",
           "list-btn",
           isV6 ? "tree-row--v6" : null,
+          isMember ? "tree-row--member" : null,
           isSelected ? "active" : null,
         ]
           .filter(Boolean)
@@ -158,6 +170,7 @@ function TreeRow({
                   ) : null
                 }
               />
+              {isMember ? <MemberNote node={node} /> : null}
             </div>
             {showTrail ? (
               <TreeRowTrail
@@ -233,6 +246,7 @@ function TreeRow({
                 />
               ) : null}
             </div>
+            {isMember ? <MemberNote node={node} /> : null}
             {node.workflow_stage_name ? (
               <div className="tree-card-workflow">
                 <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
@@ -281,7 +295,8 @@ interface TicketTreeProps {
 export function findAncestorIds(nodes: TicketTreeNode[], targetId: string): string[] {
   function walk(items: TicketTreeNode[], ancestors: string[]): string[] | null {
     for (const node of items) {
-      if (node.id === targetId) return ancestors;
+      // A member copy is not where the ticket lives; expand the path to the real row.
+      if (node.id === targetId && !node.member_link) return ancestors;
       const found = walk(node.children, [...ancestors, node.id]);
       if (found) return found;
     }
@@ -317,7 +332,7 @@ export function TicketTree({
     <div className="ticket-tree" role={depth === 0 ? "tree" : undefined}>
       {nodes.map((node) => (
         <TreeRow
-          key={node.id}
+          key={node.member_link ? `member:${node.id}` : node.id}
           node={node}
           selectedId={selectedId}
           expandedIds={expandedIds}

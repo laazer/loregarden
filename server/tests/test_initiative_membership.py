@@ -504,6 +504,68 @@ def test_mcp_refusal_is_an_error_not_a_success(client, db_session):
     assert "is an initiative" in body["result"]["content"][0]["text"]
 
 
+# --- the Console tree --------------------------------------------------------
+
+
+def _console_tree(client, **params: str) -> list[dict[str, Any]]:
+    resp = client.get("/api/tickets/tree", params={"include_members": "true", **params})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _node(nodes: list[dict[str, Any]], ticket_id: str) -> dict[str, Any]:
+    return next(n for n in nodes if n["id"] == ticket_id)
+
+
+def test_the_console_lists_members_under_the_initiative_and_their_parent(client, db_session, tree):
+    initiative = _initiative(db_session)
+    add_member(db_session, initiative.id, tree["feature"].id, actor="test")
+
+    roots = _console_tree(client, workspace="loregarden")
+
+    # The initiative binds to no workspace; its member brings it into this one.
+    listed = _node(roots, initiative.id)
+    [copy] = listed["children"]
+    assert listed["child_count"] == 1
+    assert (copy["id"], copy["member_link"], copy["home_parent_external_id"]) == (
+        tree["feature"].id,
+        True,
+        "ms-491",
+    )
+    assert copy["children"] == []
+    # The real ticket stays where it is, subtree and all.
+    real = _node(_node(roots, tree["milestone"].id)["children"], tree["feature"].id)
+    assert not real["member_link"]
+    assert [c["id"] for c in real["children"]] == [tree["capability"].id]
+
+
+def test_without_the_flag_the_tree_follows_parent_links_only(client, db_session, tree):
+    initiative = _initiative(db_session)
+    add_member(db_session, initiative.id, tree["feature"].id, actor="test")
+
+    roots = client.get("/api/tickets/tree", params={"workspace": "loregarden"}).json()
+    assert initiative.id not in {n["id"] for n in roots}
+
+
+def test_a_filtered_out_member_leaves_no_copy_and_no_initiative(client, db_session, tree):
+    initiative = _initiative(db_session)
+    add_member(db_session, initiative.id, tree["feature"].id, actor="test")
+
+    roots = _console_tree(client, workspace="loregarden", state="done")
+    assert initiative.id not in {n["id"] for n in roots}
+
+
+def test_a_member_reparented_under_the_initiative_is_listed_once(client, db_session, tree):
+    initiative = _initiative(db_session)
+    add_member(db_session, initiative.id, tree["feature"].id, actor="test")
+    tree["feature"].parent_ticket_id = initiative.id
+    db_session.add(tree["feature"])
+    db_session.commit()
+
+    [child] = _node(_console_tree(client), initiative.id)["children"]
+    assert (child["id"], child["member_link"]) == (tree["feature"].id, False)
+
+
 # --- migration ---------------------------------------------------------------
 
 
