@@ -11,7 +11,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import { api } from '../../api/client';
 import type { GitAutomationView } from '../../api/types';
-import { QueueGitAutomation } from '../QueueGitAutomation';
+import { QueueGitAutomation, QueueGitAutomationList } from '../QueueGitAutomation';
 
 jest.mock('../../api/client', () => ({
   api: { gitAutomation: jest.fn(), updateGitAutomation: jest.fn() },
@@ -194,4 +194,61 @@ test('reports a save failure rather than showing a stale state as saved', async 
   fireEvent.click(toggle('Commit'));
 
   expect(await screen.findByText(/Could not save/)).toBeInTheDocument();
+});
+
+test('the base branch saves once, on blur, not per keystroke', async () => {
+  renderPanel();
+  const field = (await screen.findByLabelText('Base branch')) as HTMLInputElement;
+
+  fireEvent.change(field, { target: { value: 'rel' } });
+  fireEvent.change(field, { target: { value: 'release' } });
+  expect(mockUpdate).not.toHaveBeenCalled();
+
+  fireEvent.blur(field);
+
+  await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+  expect(mockUpdate).toHaveBeenCalledWith('proj', { ...CONFIG, base_branch: 'release' });
+});
+
+describe('several workspaces', () => {
+  const WORKSPACES = [
+    { id: '1', slug: 'alpha', name: 'Alpha' },
+    { id: '2', slug: 'beta', name: 'Beta' },
+  ];
+
+  function renderList() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <QueueGitAutomationList workspaces={WORKSPACES} />
+      </QueryClientProvider>,
+    );
+  }
+
+  test('each is a collapsed summary of the steps it runs', async () => {
+    mockGet.mockImplementation((slug: string) =>
+      Promise.resolve(slug === 'alpha' ? { ...CONFIG, commit: true, push: true } : CONFIG),
+    );
+    renderList();
+
+    expect(await screen.findByText('Worktree · Commit · Push → main')).toBeInTheDocument();
+    expect(await screen.findByText('Worktree · nothing committed')).toBeInTheDocument();
+    // No switches until one is opened.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  test('opening one closes the other', async () => {
+    renderList();
+    const alpha = await screen.findByRole('button', { name: /Alpha/ });
+    const beta = screen.getByRole('button', { name: /Beta/ });
+
+    fireEvent.click(alpha);
+    expect(alpha).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(6);
+
+    fireEvent.click(beta);
+    expect(alpha).toHaveAttribute('aria-expanded', 'false');
+    expect(beta).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('checkbox')).toHaveLength(6);
+  });
 });
