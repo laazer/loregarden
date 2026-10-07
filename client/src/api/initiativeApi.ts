@@ -91,8 +91,8 @@ export interface InitiativeView {
   workspaces: string[];
 }
 
-export type ScheduleMode = "fixed" | "rolling";
-export type ScheduleStatus = "done" | "on_track" | "behind" | "late" | "unscheduled" | "no_forecast";
+export type ScheduleMode = "fixed" | "rolling" | "pace";
+export type ScheduleStatus = "done" | "on_track" | "behind" | "late" | "unscheduled" | "no_forecast" | "paced";
 export type ForecastBasis =
   | "initiative_throughput"
   | "workspace_throughput"

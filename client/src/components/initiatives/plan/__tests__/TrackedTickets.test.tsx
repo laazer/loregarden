@@ -59,15 +59,16 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
 });
 
-test("lists only members, each with the milestone and workspace it stays in", async () => {
+test("tables only members, each with the milestone and workspace it stays in", async () => {
   mockApi.initiative.mockResolvedValue(view([OWNED, item()]));
   renderPanel();
 
-  const list = await screen.findByRole("list", { name: "Tracked tickets" });
-  const rows = within(list).getAllByRole("listitem");
+  const table = await screen.findByRole("table", { name: "Tracked tickets" });
+  const rows = within(table).getAllByRole("row").slice(1);
   expect(rows).toHaveLength(1);
-  expect(rows[0]).toHaveTextContent("lg-milestone-that-780");
-  expect(rows[0]).toHaveTextContent("feature · in lg-milestone-that-491 · loregarden");
+  const cells = within(rows[0]).getAllByRole("cell").map((cell) => cell.textContent);
+  expect(within(rows[0]).getByRole("rowheader")).toHaveTextContent("lg-milestone-that-780");
+  expect(cells.slice(0, 3)).toEqual(["feature", "lg-milestone-that-491", "loregarden"]);
   expect(screen.getByRole("heading", { name: "Tracked tickets (1)" })).toBeInTheDocument();
 });
 
@@ -75,7 +76,7 @@ test("with no members it says what one is and how to add it", async () => {
   mockApi.initiative.mockResolvedValue(view([OWNED]));
   renderPanel();
   expect(await screen.findByText(/None yet\. Add a ticket below/)).toBeInTheDocument();
-  expect(screen.queryByRole("list", { name: "Tracked tickets" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("table", { name: "Tracked tickets" })).not.toBeInTheDocument();
 });
 
 test("a failed load says so in place, with a retry", async () => {
@@ -85,7 +86,7 @@ test("a failed load says so in place, with a retry", async () => {
 
   mockApi.initiative.mockResolvedValue(view([item()]));
   await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-  expect(await screen.findByRole("list", { name: "Tracked tickets" })).toBeInTheDocument();
+  expect(await screen.findByRole("table", { name: "Tracked tickets" })).toBeInTheDocument();
 });
 
 test("searching and adding a ticket tracks it and refreshes the plan", async () => {
@@ -99,7 +100,7 @@ test("searching and adding a ticket tracks it and refreshes the plan", async () 
   await userEvent.click(add);
 
   await waitFor(() => expect(mockApi.addInitiativeMember).toHaveBeenCalledWith("init1", "f780"));
-  expect(await screen.findByRole("list", { name: "Tracked tickets" })).toHaveTextContent("lg-milestone-that-780");
+  expect(await screen.findByRole("table", { name: "Tracked tickets" })).toHaveTextContent("lg-milestone-that-780");
   expect(onChanged).toHaveBeenCalled();
   expect(screen.getByLabelText("Add a ticket")).toHaveValue("");
 });

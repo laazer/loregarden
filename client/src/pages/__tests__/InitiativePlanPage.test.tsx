@@ -398,14 +398,54 @@ test("the board acts on a selection from one toolbar, and caps long columns", as
   await waitFor(() => expect(mockApi.startInitiativeWork).toHaveBeenCalledWith("init1", ["t0-2", "t0-1"]));
 });
 
-test("Draft schedule asks the planner for a whole schedule", async () => {
+test("Draft schedule asks the planner for a whole schedule straight away when there is none", async () => {
+  const unscheduled = plan();
+  mockApi.initiativePlan.mockResolvedValue({
+    ...unscheduled,
+    target_date: null,
+    milestones: unscheduled.milestones.map((m) => ({ ...m, target_date: null })),
+  });
   mockApi.sendPlannerMessage.mockResolvedValue({ ...emptyChat, active_turn_id: "turn1" });
   const user = userEvent.setup();
   renderPage();
 
   await user.click(await screen.findByRole("button", { name: "Draft schedule" }));
 
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await waitFor(() => expect(mockApi.sendPlannerMessage).toHaveBeenCalledWith("init1", "", "draft"));
+});
+
+test("with a schedule set, Draft schedule warns what it replaces before asking", async () => {
+  mockApi.sendPlannerMessage.mockResolvedValue({ ...emptyChat, active_turn_id: "turn1" });
+  const user = userEvent.setup();
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: "Draft schedule" }));
+  let dialog = screen.getByRole("dialog", { name: "Replace the current schedule?" });
+  await user.click(within(dialog).getByRole("button", { name: "Keep the current schedule" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(mockApi.sendPlannerMessage).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("button", { name: "Draft schedule" }));
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Draft schedule" }));
+  dialog = screen.getByRole("dialog", { name: "Replace the current schedule?" });
+  await user.click(within(dialog).getByRole("button", { name: "Draft a new schedule" }));
+  await waitFor(() => expect(mockApi.sendPlannerMessage).toHaveBeenCalledWith("init1", "", "draft"));
+});
+
+test("pace mode drops targets and shows where the work will likely land", async () => {
+  mockApi.initiativePlan.mockResolvedValue(plan({ mode: "pace", status: "paced" }));
+  renderPage();
+
+  const table = await screen.findByRole("table", { name: "Milestones in phase order" });
+  expect(within(table).queryByRole("columnheader", { name: "Target" })).not.toBeInTheDocument();
+  expect(within(table).getByRole("columnheader", { name: "Likely done" })).toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Target date for/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Pace" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("Projected")).toBeInTheDocument();
 });
 
 test("on a narrow screen the planner is a tab, not a panel below everything", async () => {

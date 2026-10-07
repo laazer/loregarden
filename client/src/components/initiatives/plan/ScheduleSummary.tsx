@@ -20,6 +20,11 @@ const MODES: { mode: ScheduleMode; label: string; hint: string }[] = [
     label: "Rolling",
     hint: "The planned dates follow the forecast as work speeds up or slows down.",
   },
+  {
+    mode: "pace",
+    label: "Pace",
+    hint: "No official dates: shows where the work will likely land at the current pace. Targets are kept for when you switch back.",
+  },
 ];
 
 export function StatusChip({ status }: { status: InitiativePlan["status"] }) {
@@ -43,6 +48,8 @@ export function ScheduleSummary({
   onTargetChange: (date: string | null) => Promise<unknown>;
 }) {
   const drift = formatDrift(plan.drift_days);
+  // Pace mode has no dates in force: the forecast is the whole answer.
+  const paced = plan.mode === "pace";
   return (
     <section className="plan-summary" aria-label="Schedule summary">
       <div className="plan-summary-dates">
@@ -52,12 +59,14 @@ export function ScheduleSummary({
             <StatusChip status={plan.status} />
           </div>
         </div>
+        {paced ? null : (
+          <div>
+            <div className="plan-label">Planned</div>
+            <div className="plan-value plan-figure">{formatDay(plan.planned_date)}</div>
+          </div>
+        )}
         <div>
-          <div className="plan-label">Planned</div>
-          <div className="plan-value plan-figure">{formatDay(plan.planned_date)}</div>
-        </div>
-        <div>
-          <div className="plan-label">Forecast</div>
+          <div className="plan-label">{paced ? "Likely done" : "Forecast"}</div>
           <div className="plan-value plan-figure">
             {plan.forecast_date
               ? formatDay(plan.forecast_date)
@@ -67,16 +76,18 @@ export function ScheduleSummary({
           </div>
           {drift ? <div className="plan-under">{drift}</div> : null}
         </div>
-        <div>
-          <div className="plan-label">Target</div>
-          <div className="plan-value">
-            <TargetDateField
-              value={plan.target_date}
-              label={`Target date for ${plan.title}`}
-              onCommit={onTargetChange}
-            />
+        {paced ? null : (
+          <div>
+            <div className="plan-label">Target</div>
+            <div className="plan-value">
+              <TargetDateField
+                value={plan.target_date}
+                label={`Target date for ${plan.title}`}
+                onCommit={onTargetChange}
+              />
+            </div>
           </div>
-        </div>
+        )}
         <div role="group" aria-label="Schedule mode">
           <div className="plan-label">Mode</div>
           <div className="plan-value plan-mode-buttons">

@@ -1,8 +1,10 @@
 import { useState } from "react";
 
 import { useInitiativePlanner } from "../../../hooks/useInitiativePlanner";
+import type { ScheduleToReplace } from "../../../lib/scheduleFormat";
 import { Button } from "../../ui/Button";
 import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat";
+import { RedraftConfirmModal } from "./RedraftConfirmModal";
 
 const PLANNER_LABEL = "Planner";
 
@@ -16,16 +18,20 @@ const PLANNER_LABEL = "Planner";
 export function PlannerPanel({
   initiativeId,
   canPlan,
+  replaces,
   inTab = false,
 }: {
   initiativeId: string;
   /** False while the initiative has no milestones: there is nothing to schedule. */
   canPlan: boolean;
+  /** What a new draft would replace; null when there is no schedule yet, and drafting goes straight through. */
+  replaces: ScheduleToReplace | null;
   /** Shown as a tab on a narrow screen rather than docked beside the plan. */
   inTab?: boolean;
 }) {
   const planner = useInitiativePlanner(initiativeId);
   const [draft, setDraft] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   const submit = () => {
     const content = draft.trim();
@@ -48,7 +54,7 @@ export function PlannerPanel({
           compact
           disabled={!canPlan || planner.isBusy}
           title={canPlan ? undefined : "Attach a milestone to this initiative first"}
-          onClick={planner.draft}
+          onClick={() => (replaces ? setConfirming(true) : planner.draft())}
         >
           {planner.isBusy ? "Planning…" : "Draft schedule"}
         </Button>
@@ -94,6 +100,15 @@ export function PlannerPanel({
         placeholder={canPlan ? "Ask the planner…" : "Attach a milestone first"}
         error={planner.sendError}
         dense
+      />
+
+      <RedraftConfirmModal
+        replaces={confirming ? replaces : null}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          planner.draft();
+        }}
       />
     </aside>
   );

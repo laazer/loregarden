@@ -20,6 +20,7 @@ export const SCHEDULE_STATUS_LABEL: Record<ScheduleStatus, string> = {
   late: "Late",
   unscheduled: "No target",
   no_forecast: "No forecast",
+  paced: "Projected",
 };
 
 /** Token per status, so a status reads the same wherever it is drawn. */
@@ -30,6 +31,7 @@ export const SCHEDULE_STATUS_COLOR: Record<ScheduleStatus, string> = {
   late: "var(--red)",
   unscheduled: "var(--txl)",
   no_forecast: "var(--txl)",
+  paced: "var(--blue)",
 };
 
 export const BASIS_LABEL: Record<ForecastBasis, string> = {
@@ -184,7 +186,7 @@ export function proposalRows(plan: InitiativePlan, proposal: ScheduleProposal): 
 }
 
 /** Whether any row has a date the timeline could draw. */
-export function hasTimelineDates(rows: MilestoneSchedule[]): boolean {
+export function hasTimelineDates(rows: Pick<MilestoneSchedule, "target_date" | "forecast_date">[]): boolean {
   return rows.some((row) => row.target_date || row.forecast_date);
 }
 
@@ -226,4 +228,18 @@ export function proposedSequence(plan: InitiativePlan, proposal: ScheduleProposa
 export function proposedInitiativeTarget(plan: InitiativePlan, proposal: ScheduleProposal): string | null {
   const proposed = proposal.items.find((item) => item.ticket_id === plan.id)?.target_date;
   return proposed === undefined ? plan.target_date : proposed;
+}
+
+export interface ScheduleToReplace {
+  /** Target dates set now, on the initiative and its milestones — overwritten when a new draft is accepted. */
+  targets: number;
+  /** A proposal still waiting — superseded the moment a new draft is filed. */
+  pendingProposal: boolean;
+}
+
+/** What drafting again would replace, or null when there is no schedule to lose. */
+export function scheduleToReplace(plan: InitiativePlan): ScheduleToReplace | null {
+  const targets = [plan.target_date, ...plan.milestones.map((m) => m.target_date)].filter(Boolean).length;
+  const pendingProposal = plan.pending_proposal !== null;
+  return targets > 0 || pendingProposal ? { targets, pendingProposal } : null;
 }

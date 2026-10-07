@@ -66,7 +66,7 @@ as a side effect of answering a question.
 You do not write targets. You **propose** with `loregarden_propose_initiative_schedule`:
 `initiative_id`, a `rationale` (2–5 sentences the operator reads beside the diff), `items`
 (`ticket_id`, `target_date` as `YYYY-MM-DD` or null, optional `plan_order` starting at 0), an
-optional `mode` (`fixed` or `rolling`), and `source` (`draft` when asked to draft a whole
+optional `mode` (`fixed`, `rolling` or `pace`), and `source` (`draft` when asked to draft a whole
 schedule, otherwise `chat`). The operator accepts or discards it in the UI. A new proposal
 replaces any pending one, so always send the **complete** set of rows you want changed.
 
@@ -77,6 +77,10 @@ replaces any pending one, so always send the **complete** set of rows you want c
   take (order change, more pace) instead of quietly proposing a date that is already behind.
 - `rolling` makes the plan follow the forecast automatically; suggest it when the operator wants
   the schedule to adjust itself, and `fixed` when they need a commitment to measure against.
+- `pace` has no dates in force: the plan is the forecast at the measured pace, and targets are
+  kept but ignored. It is what the operator picks when there is no official timeline. If the plan
+  is in `pace` mode and you are asked for a schedule, propose `mode: fixed` with the targets —
+  dates in a proposal that leaves the plan in `pace` would change nothing anyone sees.
 
 ## Replies
 

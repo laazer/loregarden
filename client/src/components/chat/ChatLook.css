@@ -342,9 +342,17 @@
   box-shadow: none;
 }
 
+/*
+ * One line, as tall as the send chip, text centred in it: the chip sits on the
+ * last line (`align-items: flex-end` below), so a two-row box left the
+ * placeholder at the top and the chip at the bottom, looking misaligned.
+ */
 .lg-chat-composer-wrap--dense .lg-chat-composer-input {
-  min-height: 32px;
+  min-height: 34px;
+  padding: 7px 0;
   font-size: 13.5px;
+  line-height: 20px;
+  overflow-y: auto;
 }
 
 /*
@@ -355,8 +363,8 @@
  * costs its own ~32px whatever the box does. Side by side, the same pane
  * measures about 48px.
  *
- * Only safe because `dense` has one caller and it passes no `toolbar` content —
- * a row with buttons in it would squash the input. `align-items: flex-end`
+ * Only safe while no `dense` caller (view panes, the initiative planner) passes
+ * `toolbar` content — a row with buttons in it would squash the input. `align-items: flex-end`
  * keeps the send chip on the last line as the textarea grows.
  */
 .lg-chat-composer-wrap--dense .lg-chat-composer {

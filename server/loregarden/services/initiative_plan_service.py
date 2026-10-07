@@ -48,6 +48,7 @@ from loregarden.services.initiative_forecast import (
     plan_mode,
     plan_sequence,
     planned,
+    target_in_force,
 )
 from loregarden.services.initiative_graph import PlanContext, PlanNode, build_plan
 from loregarden.services.initiative_service import (
@@ -135,9 +136,11 @@ def _milestone_views(ctx: PlanContext, mode: ScheduleMode, today: date) -> list[
                 target_date=target_date,
                 forecast_date=forecast,
                 planned_date=planned(mode, target_date, forecast),
-                drift_days=None if resolved else drift(target_date, forecast),
+                drift_days=None
+                if resolved
+                else drift(target_in_force(mode, target_date), forecast),
                 status=classify(
-                    resolved=resolved, target=target_date, forecast=forecast, today=today
+                    mode=mode, resolved=resolved, target=target_date, forecast=forecast, today=today
                 ),
                 basis=last.basis if last is not None else ForecastBasis.NONE,
                 remaining=len(open_nodes),
@@ -209,8 +212,10 @@ def plan_view(
         target_date=target_date,
         forecast_date=None if resolved else forecast_date,
         planned_date=planned(mode, target_date, forecast_date),
-        drift_days=None if resolved else drift(target_date, forecast_date),
-        status=classify(resolved=resolved, target=target_date, forecast=forecast_date, today=today),
+        drift_days=None if resolved else drift(target_in_force(mode, target_date), forecast_date),
+        status=classify(
+            mode=mode, resolved=resolved, target=target_date, forecast=forecast_date, today=today
+        ),
         unforecast_milestones=unforecast,
         milestones=milestones,
         paces=[
