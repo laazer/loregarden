@@ -33,9 +33,12 @@
  *     without something over it, a drag that crosses a web embed can be swallowed
  *     by it. The shield, and `user-select: none`, are why this works over live
  *     content.
- *   - **Every item is keyed by its item id.** Restacking reorders the array, and
- *     under index keys React hands the terminal at index 2 the instance that was
- *     at index 1 — a new shell with no scrollback in it.
+ *   - **Every item is keyed by its item id, and drawn in a stable order.**
+ *     Restacking reorders the array, and under index keys React hands the
+ *     terminal at index 2 the instance that was at index 1 — a new shell with no
+ *     scrollback in it. Keys alone are not enough: React then *moves* the raised
+ *     element, and a moved element loses the pointer capture of the drag whose
+ *     press raised it. Stacking is `z-index`; DOM order is `inDrawnOrder`.
  */
 
 import {
@@ -57,6 +60,7 @@ import {
   DEFAULT_ITEM_WIDTH,
   addItem,
   contentBounds,
+  inDrawnOrder,
   moveItem,
   readCanvasItems,
   removeItem,
@@ -138,6 +142,17 @@ export function CanvasSurface({
   const [gesturing, setGesturing] = useState(false);
 
   const items = useMemo(() => readCanvasItems(layout), [layout]);
+  /**
+   * The ids in the order they are in the DOM. Read and written only inside the
+   * memo below; rewriting it with that memo's own output is a no-op, so a
+   * `StrictMode` double invoke cannot change the order.
+   */
+  const drawnIds = useRef<string[]>([]);
+  const drawn = useMemo(() => {
+    const ordered = inDrawnOrder(drawnIds.current, items);
+    drawnIds.current = ordered.map((item) => item.id);
+    return ordered;
+  }, [items]);
   const containers = useMemo(() => asJson(layout.containers) ?? {}, [layout]);
 
   /**
@@ -570,7 +585,7 @@ export function CanvasSurface({
                 transform: zoom === 1 ? undefined : `scale(${zoom})`,
               }}
             >
-              {items.map((item) => (
+              {drawn.map((item) => (
                 <CanvasItemView
                   key={item.id}
                   item={item}
