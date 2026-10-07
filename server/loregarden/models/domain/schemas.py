@@ -253,6 +253,11 @@ class TicketTreeNode(SQLModel):
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
     children: list["TicketTreeNode"] = []
+    #: A copy of a ticket listed under an initiative that tracks it as a member
+    #: (`initiative_members`). The ticket also sits under its real parent; the
+    #: copy is a leaf, and `home_parent_external_id` names that parent.
+    member_link: bool = False
+    home_parent_external_id: str = ""
 
 
 class TicketDependencyRef(SQLModel):

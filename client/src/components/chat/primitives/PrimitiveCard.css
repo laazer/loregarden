@@ -1854,3 +1854,16 @@
   border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
   color: var(--red);
 }
+
+/* An initiative's member, listed under it; the real row sits under its parent. */
+.lg-primitive-ticket-list--v6 .tree-row--v6.tree-row--member,
+.tree-row--member {
+  border-style: dashed;
+}
+
+.tree-member-note {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}

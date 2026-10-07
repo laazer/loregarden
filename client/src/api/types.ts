@@ -91,6 +91,10 @@ export interface TicketTreeNode {
   workflow_stage_status: StageStatus;
   child_count: number;
   children: TicketTreeNode[];
+  /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
+  member_link?: boolean;
+  /** The member's real parent (empty when it has none). */
+  home_parent_external_id?: string;
 }
 
 export interface WorkflowStageView {

@@ -1,9 +1,10 @@
 import type { TicketTreeNode, WorkItemType } from "../api/client";
 import { allowedParentTypes, canHaveChildren } from "./workItemHierarchy";
 
+/** The ticket's real node — never a `member_link` copy, which has no children. */
 export function findTicketTreeNode(nodes: TicketTreeNode[], ticketId: string): TicketTreeNode | null {
   for (const node of nodes) {
-    if (node.id === ticketId) return node;
+    if (node.id === ticketId && !node.member_link) return node;
     const child = findTicketTreeNode(node.children, ticketId);
     if (child) return child;
   }

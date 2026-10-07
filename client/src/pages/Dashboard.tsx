@@ -63,10 +63,11 @@ function formatDeleteTicketError(error: Error): string {
 /** Stable while the tree loads, so memos keyed on it do not recompute every render. */
 const NO_NODES: TicketTreeNode[] = [];
 
+/** Every ticket once: an initiative's member copies are skipped, the real rows counted. */
 function flattenTree(nodes: TicketTreeNode[]): TicketTreeNode[] {
   const out: TicketTreeNode[] = [];
   for (const n of nodes) {
-    out.push(n);
+    if (!n.member_link) out.push(n);
     out.push(...flattenTree(n.children));
   }
   return out;
@@ -141,6 +142,7 @@ export function Dashboard() {
         state: stateFilters.length ? stateFilters : undefined,
         work_item_type: typeFilters.length ? typeFilters : undefined,
         search: search.trim() || undefined,
+        include_members: true,
       }),
     refetchInterval: (query) =>
       treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000,
@@ -530,7 +532,7 @@ export function Dashboard() {
 
   const unfilteredTree = useQuery({
     queryKey: ["ticket-tree", workspace, "unfiltered"],
-    queryFn: () => api.ticketTree({ workspace: wsParam }),
+    queryFn: () => api.ticketTree({ workspace: wsParam, include_members: true }),
     enabled: filtersNarrowTree && Boolean(selectedId),
     refetchInterval: (query) => (treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000),
   });
@@ -809,7 +811,7 @@ export function Dashboard() {
                 >
                   Update state…
                 </button>
-                {sel.child_count > 0 ? (
+                {sel.child_count > 0 || selChildren.length > 0 ? (
                   <div>
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets

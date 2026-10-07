@@ -109,6 +109,7 @@ function ticketQuery(params?: {
   roots_only?: boolean;
   milestone?: string;
   search?: string;
+  include_members?: boolean;
   limit?: number;
   offset?: number;
 }) {
@@ -131,6 +132,7 @@ function ticketQuery(params?: {
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
   if (params?.search) q.set("search", params.search);
+  if (params?.include_members) q.set("include_members", "true");
   if (params?.limit !== undefined) q.set("limit", String(params.limit));
   if (params?.offset !== undefined) q.set("offset", String(params.offset));
   const suffix = q.toString() ? `?${q}` : "";
@@ -292,6 +294,8 @@ export const api = {
     state?: TicketState | TicketState[];
     work_item_type?: WorkItemType | WorkItemType[];
     search?: string;
+    /** List initiative members under their initiative too (`member_link` copies). */
+    include_members?: boolean;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
   stopTicket: (id: string) =>

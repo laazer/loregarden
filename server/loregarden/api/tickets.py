@@ -59,7 +59,7 @@ from loregarden.services.cli_settings import (
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.external_harness import build_external_harness_prompt
 from loregarden.services.hierarchy_service import build_tree, child_count
-from loregarden.services.initiative_coverage import covered_ticket_ids
+from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -446,8 +446,15 @@ def ticket_tree(
     work_item_type: list[WorkItemType] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
+    include_members: bool = False,
     session: Session = Depends(get_session),
 ) -> list[TicketTreeNode]:
+    """The forest of matching tickets, anchored under their ancestors.
+
+    ``include_members`` also lists each initiative's members under it (see
+    `build_tree`), and brings in any initiative tracking a listed ticket:
+    initiatives bind to no workspace, so a workspace filter never matches one.
+    """
     ws = _workspace_filter(session, workspace)
     if ws is False:
         return []
@@ -469,10 +476,17 @@ def ticket_tree(
 
     # Ancestors keep matching tickets anchored in the hierarchy even when the filter excludes them.
     all_tickets = tickets + _collect_ancestors(session, tickets)
+    members = members_among(session, [t.id for t in all_tickets]) if include_members else {}
+    listed = {t.id for t in all_tickets}
+    all_tickets += [
+        initiative
+        for initiative_id in members
+        if initiative_id not in listed and (initiative := session.get(Ticket, initiative_id))
+    ]
     with stage_resolution_memo():
         prime_workflow_instances(session, [t.id for t in all_tickets])
         stage_names = _build_stage_names(session, all_tickets)
-    return build_tree(session, all_tickets, stage_names=stage_names)
+    return build_tree(session, all_tickets, stage_names=stage_names, members=members)
 
 
 @router.get("", response_model=list[TicketSummary])
