@@ -673,3 +673,36 @@
     display: none;
   }
 }
+
+/* The Schedule tab holds the proposal, tracked tickets and autopilot with the
+   dates they act on, so the Board is one click below the summary. */
+.plan-schedule-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* A pending proposal stays findable while another tab is open. */
+.plan-tab-flag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.75em;
+  background: color-mix(in srgb, var(--ac) 18%, transparent);
+  color: var(--ac);
+}
+
+/* Proposal timeline: the proposed target is the accent, the one it replaces fades. */
+.plan-timeline-target-proposed {
+  border-color: var(--ac);
+}
+
+.plan-timeline-target-was {
+  border-color: var(--txl);
+  opacity: 0.6;
+}
+
+.plan-timeline-total th,
+.plan-timeline-total td {
+  font-weight: 600;
+}

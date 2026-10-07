@@ -1,10 +1,23 @@
+import { useState } from "react";
+
 import type { InitiativePlan, ScheduleProposal } from "../../../api/initiativeApi";
 import { proposalRows } from "../../../lib/scheduleFormat";
 import { Button } from "../../ui/Button";
+import { ProposalTimeline } from "./ProposalTimeline";
+
+type ProposalView = "timeline" | "changes";
+
+const VIEWS: { view: ProposalView; label: string }[] = [
+  { view: "timeline", label: "Timeline" },
+  { view: "changes", label: "Changes only" },
+];
 
 /**
  * The planner's pending proposal. Nothing it suggests is in the plan until
  * someone presses Accept — this is that moment, so it shows exactly what moves.
+ *
+ * It opens on the timeline — the whole plan as accepting would leave it —
+ * because a draft is judged by its shape; the changed cells alone are a click away.
  */
 export function ProposalReview({
   plan,
@@ -19,6 +32,7 @@ export function ProposalReview({
   onAccept: () => void;
   onDiscard: () => void;
 }) {
+  const [view, setView] = useState<ProposalView>("timeline");
   const rows = proposalRows(plan, proposal);
   return (
     <section className="plan-proposal" aria-labelledby="plan-proposal-title">
@@ -38,7 +52,22 @@ export function ProposalReview({
           </Button>
         </div>
       </header>
-      {rows.length === 0 ? (
+      <div className="plan-mode-buttons" role="group" aria-label="Proposal view">
+        {VIEWS.map(({ view: key, label }) => (
+          <Button
+            key={key}
+            variant="plain"
+            className={`plan-mode-btn${view === key ? " active" : ""}`}
+            aria-pressed={view === key}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      {view === "timeline" ? (
+        <ProposalTimeline plan={plan} proposal={proposal} />
+      ) : rows.length === 0 ? (
         <p className="plan-muted">It matches the current plan — accepting changes nothing but the notes.</p>
       ) : (
         <table className="plan-table">

@@ -186,42 +186,6 @@ export function InitiativePlanPage() {
               onTargetChange={(date) => edit.mutateAsync({ targets: [{ ticket_id: data.id, target_date: date }] })}
             />
 
-            {data.pending_proposal ? (
-              <ProposalReview
-                plan={data}
-                proposal={data.pending_proposal}
-                busy={busy}
-                onAccept={() =>
-                  data.pending_proposal && resolve.mutate({ proposalId: data.pending_proposal.id, action: "accept" })
-                }
-                onDiscard={() =>
-                  data.pending_proposal && resolve.mutate({ proposalId: data.pending_proposal.id, action: "discard" })
-                }
-              />
-            ) : null}
-
-            <TrackedTickets
-              initiativeId={data.id}
-              onChanged={() => {
-                void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
-                void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
-              }}
-            />
-
-            <AutopilotPanel
-              plan={data}
-              busy={busy}
-              onAutopilot={(change) => autopilot.mutate(change)}
-              onNeedsPerson={(ids, value) => needsPerson.mutate({ ids, value })}
-            />
-
-            {data.notes ? (
-              <details className="plan-notes">
-                <summary>Why the dates are what they are</summary>
-                <p>{data.notes}</p>
-              </details>
-            ) : null}
-
             <div className="tab-bar">
               <div className="tab-bar-scroll" role="tablist" aria-label="Plan views">
                 {tabs.map((key) => (
@@ -236,13 +200,54 @@ export function InitiativePlanPage() {
                     onClick={() => setTab(key)}
                   >
                     {TAB_LABEL[key]}
+                    {key === "schedule" && data.pending_proposal ? (
+                      <span className="plan-tab-flag">proposal waiting</span>
+                    ) : null}
                   </Button>
                 ))}
               </div>
             </div>
             <div role="tabpanel" id={`plan-panel-${activeTab}`} aria-labelledby={`plan-tab-${activeTab}`}>
               {activeTab === "schedule" ? (
-                <ScheduleTable plan={data} busy={busy} onReorder={reorder} onTarget={setTarget} />
+                <div className="plan-schedule-panel">
+                  {data.pending_proposal ? (
+                    <ProposalReview
+                      plan={data}
+                      proposal={data.pending_proposal}
+                      busy={busy}
+                      onAccept={() =>
+                        data.pending_proposal && resolve.mutate({ proposalId: data.pending_proposal.id, action: "accept" })
+                      }
+                      onDiscard={() =>
+                        data.pending_proposal && resolve.mutate({ proposalId: data.pending_proposal.id, action: "discard" })
+                      }
+                    />
+                  ) : null}
+
+                  <ScheduleTable plan={data} busy={busy} onReorder={reorder} onTarget={setTarget} />
+
+                  <TrackedTickets
+                    initiativeId={data.id}
+                    onChanged={() => {
+                      void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
+                      void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
+                    }}
+                  />
+
+                  <AutopilotPanel
+                    plan={data}
+                    busy={busy}
+                    onAutopilot={(change) => autopilot.mutate(change)}
+                    onNeedsPerson={(ids, value) => needsPerson.mutate({ ids, value })}
+                  />
+
+                  {data.notes ? (
+                    <details className="plan-notes">
+                      <summary>Why the dates are what they are</summary>
+                      <p>{data.notes}</p>
+                    </details>
+                  ) : null}
+                </div>
               ) : activeTab === "board" ? (
                 <InitiativeBoard
                   initiativeId={data.id}

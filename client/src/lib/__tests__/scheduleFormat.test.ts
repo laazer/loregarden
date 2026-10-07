@@ -4,6 +4,8 @@ import {
   formatDrift,
   groupByWorkspace,
   proposalRows,
+  proposedInitiativeTarget,
+  proposedSequence,
   timelinePercent,
   timelineRange,
 } from "../scheduleFormat";
@@ -124,6 +126,38 @@ describe("proposalRows", () => {
       items: [{ ticket_id: "m1", target_date: "2026-11-01", plan_order: 0 }],
     });
     expect(rows).toEqual([]);
+  });
+});
+
+describe("proposedSequence", () => {
+  const milestones = ["a", "b", "c", "d"].map((id, index) =>
+    row({ id, external_id: id, plan_order: index, target_date: "2026-11-01" }),
+  );
+
+  test("orders as the server's _reorder does, duplicate positions included, and keeps unproposed dates", () => {
+    // Oracle: loregarden.services.initiative_plan_service._reorder on the same items gives c, b, d, a.
+    const proposal = {
+      id: "p",
+      source: "draft" as const,
+      mode: null,
+      rationale: "",
+      created_at: "",
+      items: [
+        { ticket_id: "d", plan_order: 0, target_date: "2026-11-20" },
+        { ticket_id: "c", plan_order: 0, target_date: null },
+        { ticket_id: "b", plan_order: 1 },
+        { ticket_id: "i1", target_date: "2027-01-05" },
+      ],
+    };
+    const result = proposedSequence(plan(milestones), proposal);
+    expect(result.map((r) => [r.milestone.id, r.position, r.target])).toEqual([
+      ["c", 0, null],
+      ["b", 1, "2026-11-01"],
+      ["d", 2, "2026-11-20"],
+      ["a", 3, "2026-11-01"],
+    ]);
+    expect(proposedInitiativeTarget(plan(milestones), proposal)).toBe("2027-01-05");
+    expect(proposedInitiativeTarget(plan(milestones), { ...proposal, items: [] })).toBe("2026-12-01");
   });
 });
 

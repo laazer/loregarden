@@ -293,6 +293,60 @@ test("a pending proposal shows what moves and is accepted in one click", async (
   await waitFor(() => expect(mockApi.resolveScheduleProposal).toHaveBeenCalledWith("init1", "p1", "accept"));
 });
 
+test("a drafted schedule opens on its timeline; the changed cells are one click away", async () => {
+  mockApi.initiativePlan.mockResolvedValue(
+    plan({
+      pending_proposal: {
+        id: "p1",
+        source: "draft",
+        mode: null,
+        rationale: "",
+        items: [{ ticket_id: "m3", target_date: "2026-12-15" }],
+        created_at: "2026-10-01T12:00:00Z",
+      },
+    }),
+  );
+  const user = userEvent.setup();
+  const { container } = renderPage();
+
+  const proposal = await screen.findByRole("region", { name: /Drafted schedule/ });
+  expect(within(proposal).getByRole("button", { name: "Timeline" })).toHaveAttribute("aria-pressed", "true");
+  const timeline = within(proposal).getByRole("table", { name: "Proposed schedule in phase order" });
+  // Every phase is drawn, not only the one that changed.
+  expect(within(timeline).getAllByRole("rowheader")).toHaveLength(plan().milestones.length + 1);
+  expect(findUsabilityProblems(container)).toEqual([]);
+
+  await user.click(within(proposal).getByRole("button", { name: "Changes only" }));
+  expect(within(proposal).queryByRole("table", { name: "Proposed schedule in phase order" })).not.toBeInTheDocument();
+  expect(within(proposal).getByRole("columnheader", { name: "Proposed" })).toBeInTheDocument();
+});
+
+test("the board is reachable above a pending proposal, and the schedule tab says one is waiting", async () => {
+  mockApi.initiativePlan.mockResolvedValue(
+    plan({
+      pending_proposal: {
+        id: "p1",
+        source: "draft",
+        mode: null,
+        rationale: "",
+        items: [{ ticket_id: "m3", target_date: "2026-12-15" }],
+        created_at: "2026-10-01T12:00:00Z",
+      },
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+
+  const proposal = await screen.findByRole("region", { name: /Drafted schedule/ });
+  const boardTab = screen.getByRole("tab", { name: "Board" });
+  expect(boardTab.compareDocumentPosition(proposal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("tab", { name: /Schedule.*proposal waiting/ })).toBeInTheDocument();
+
+  await user.click(boardTab);
+  expect(screen.queryByRole("region", { name: /Drafted schedule/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: /proposal waiting/ })).toBeInTheDocument();
+});
+
 test("the autopilot panel says what waits on a person, what starts next, and what holds the date", async () => {
   mockApi.setAutopilot.mockResolvedValue(plan());
   mockApi.markNeedsPerson.mockResolvedValue(plan());
