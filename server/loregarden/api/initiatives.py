@@ -28,6 +28,8 @@ from loregarden.models.domain import (
     SuggestionApply,
     SuggestionApplyResult,
     SuggestionRequest,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
 )
 from loregarden.services.initiative_autopilot import (
     mark_needs_person,
@@ -55,6 +57,7 @@ from loregarden.services.initiative_planner_service import (
     cancel_planner_turn,
     planner_snapshot,
     schedule_planner_turn,
+    set_planner_runtime,
     start_turn,
 )
 from loregarden.services.initiative_service import (
@@ -327,3 +330,15 @@ def stop_planner_endpoint(
         return planner_snapshot(session, initiative_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/{initiative_id}/planner/runtime", response_model=WorkspaceRuntimeSettings)
+def update_planner_runtime_endpoint(
+    initiative_id: str, body: WorkspaceRuntimeUpdate, session: Session = Depends(get_session)
+) -> WorkspaceRuntimeSettings:
+    try:
+        return set_planner_runtime(session, initiative_id, body)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -714,6 +714,29 @@ def validated_effort_pins(body: WorkspaceRuntimeUpdate) -> dict[str, str]:
     return pins
 
 
+def runtime_override_json(body: WorkspaceRuntimeUpdate) -> str:
+    """A validated override blob for one of the `*_runtime_json` columns.
+
+    ``ValueError`` names the bad field, so a write endpoint can answer 400 rather
+    than store a pin the resolver would drop at run time.
+    """
+    if body.cli_adapter not in VALID_CLI_ADAPTERS:
+        raise ValueError(f"Invalid cli_adapter: {body.cli_adapter}")
+    efforts = validated_effort_pins(body)
+    return json.dumps(
+        {
+            "cli_adapter": body.cli_adapter,
+            "claude_model": body.claude_model.strip(),
+            "cursor_model": body.cursor_model.strip(),
+            "codex_model": body.codex_model.strip(),
+            "lmstudio_base_url": body.lmstudio_base_url.strip(),
+            "lmstudio_model": body.lmstudio_model.strip(),
+            "opencode_model": body.opencode_model.strip(),
+            **efforts,
+        }
+    )
+
+
 def get_ticket_orchestration_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
     return parse_runtime_settings(ticket.orchestration_runtime_json)
 
@@ -723,20 +746,7 @@ def set_ticket_orchestration_runtime(
     ticket: Ticket,
     body: WorkspaceRuntimeUpdate,
 ) -> WorkspaceRuntimeSettings:
-    if body.cli_adapter not in VALID_CLI_ADAPTERS:
-        raise ValueError(f"Invalid cli_adapter: {body.cli_adapter}")
-    efforts = validated_effort_pins(body)
-    payload = {
-        "cli_adapter": body.cli_adapter,
-        "claude_model": body.claude_model.strip(),
-        "cursor_model": body.cursor_model.strip(),
-        "codex_model": body.codex_model.strip(),
-        "lmstudio_base_url": body.lmstudio_base_url.strip(),
-        "lmstudio_model": body.lmstudio_model.strip(),
-        "opencode_model": body.opencode_model.strip(),
-        **efforts,
-    }
-    ticket.orchestration_runtime_json = json.dumps(payload)
+    ticket.orchestration_runtime_json = runtime_override_json(body)
     ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     session.commit()

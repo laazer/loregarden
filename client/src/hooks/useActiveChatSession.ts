@@ -9,6 +9,7 @@ import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
 import { useChatWorkspaceSlug } from "./useChatWorkspace";
+import { useInitiativePlanner } from "./useInitiativePlanner";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
 
@@ -39,9 +40,27 @@ export interface ChatArchive {
    * action in the thread; `/fork` still copies the whole conversation.
    */
   forkFromMessage: (messageId: string) => Promise<unknown>;
+}
+
+/**
+ * The provider and model the bound conversation's next turn runs on.
+ *
+ * Separate from the archive because the two do not travel together: the
+ * initiative planner keeps one conversation per initiative — nothing to swap
+ * between — yet its model is as much the operator's choice as Baxter's.
+ */
+export interface ChatModelBinding {
+  /** Who answers, as the picker's tooltip names them: "Baxter", "the initiative planner". */
+  assistant: string;
+  /** The model dialog's eyebrow: "Baxter", "Initiative planner". */
+  scopeLabel: string;
+  /** Whose runtime options (LM Studio server, effective defaults) apply; "" for global. */
+  workspaceSlug: string;
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
+  /** A turn is running; changing the model under it would not affect it. */
+  isBusy: boolean;
 }
 
 export interface ActiveChatSession {
@@ -73,6 +92,8 @@ export interface ActiveChatSession {
   branch: string | null;
   /** Past threads of this conversation, or null when it keeps none. */
   archive: ChatArchive | null;
+  /** The bound conversation's model picker, or null when its model is not the operator's to pick. */
+  model: ChatModelBinding | null;
   /**
    * The screen is this conversation's own surface and composes for it.
    *
@@ -128,7 +149,8 @@ export function useActiveChatSession(): ActiveChatSession {
   // is a different conversation from Baxter's, so the bar does not bind Baxter
   // there either: a second composer under the planner's would be asking someone
   // else.
-  const plannerOnScreen = initiativeIdFromPath(pathname) !== null;
+  const initiativeId = initiativeIdFromPath(pathname);
+  const plannerOnScreen = initiativeId !== null;
   const chatWorkspaceSlug = useChatWorkspaceSlug();
   // Bound on the chat page too, though the composer half stays hidden there: the
   // model picker lives in the bar on every screen, and it is the same thread.
@@ -144,11 +166,31 @@ export function useActiveChatSession(): ActiveChatSession {
         sendInNewChat: baxterSession.sendInNewChat,
         forkSession: baxterSession.forkSession,
         forkFromMessage: baxterSession.forkFromMessage,
+      }
+    : null;
+  const baxterModel: ChatModelBinding | null = chatWorkspaceSlug
+    ? {
+        assistant: "Baxter",
+        scopeLabel: "Baxter",
+        workspaceSlug: chatWorkspaceSlug,
         runtime: baxterSession.runtime,
         setRuntime: baxterSession.setRuntime,
         isSavingRuntime: baxterSession.isSavingRuntime,
+        isBusy: baxterSession.isBusy,
       }
     : null;
+  // Same query key as the plan page's planner panel, so binding it here costs
+  // no request of its own; an empty id issues none off the plan page.
+  const planner = useInitiativePlanner(initiativeId ?? "");
+  const plannerModel: ChatModelBinding = {
+    assistant: "the initiative planner",
+    scopeLabel: "Initiative planner",
+    workspaceSlug: planner.workspaceSlug,
+    runtime: planner.runtime,
+    setRuntime: planner.setRuntime,
+    isSavingRuntime: planner.isSavingRuntime,
+    isBusy: planner.isBusy,
+  };
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
   const { pending } = useTriageSession(ticketId ?? undefined);
@@ -172,6 +214,7 @@ export function useActiveChatSession(): ActiveChatSession {
     pendingApprovals: [],
     branch: null,
     archive: null,
+    model: null,
     composedOnScreen: false,
     screenSession: null,
   };
@@ -179,18 +222,20 @@ export function useActiveChatSession(): ActiveChatSession {
   // there is not enough on its own: the bar would still offer a dead composer
   // reading "open a ticket or a branch", which is wrong twice over — there is a
   // conversation, and it is right there on the page.
-  // The archive still rides along: the bar owns the model picker everywhere, so
-  // the chat page reads it from here rather than drawing its own.
+  // The archive and model still ride along: the bar owns the model picker
+  // everywhere, so the chat page reads it from here rather than drawing its own.
   if (composedOnScreen) {
     return {
       ...none,
       composedOnScreen: true,
       archive: baxterArchive,
+      model: baxterModel,
       screenSession: chatWorkspaceSlug ? baxterSession : null,
     };
   }
-  // No archive: the model picker it carries is Baxter's, not the planner's.
-  if (plannerOnScreen) return { ...none, composedOnScreen: true };
+  // No archive — the planner keeps one conversation per initiative — but the
+  // bar's model picker is the planner's here, not Baxter's.
+  if (plannerOnScreen) return { ...none, composedOnScreen: true, model: plannerModel };
   if (onBranchTriage) {
     return branch
       ? {
@@ -200,6 +245,7 @@ export function useActiveChatSession(): ActiveChatSession {
           pendingApprovals: [],
           branch,
           archive: null,
+          model: null,
           composedOnScreen: false,
           screenSession: null,
         }
@@ -213,6 +259,7 @@ export function useActiveChatSession(): ActiveChatSession {
       pendingApprovals: pending,
       branch: ticket?.branch || null,
       archive: null,
+      model: null,
       composedOnScreen: false,
       screenSession: null,
     };
@@ -227,5 +274,6 @@ export function useActiveChatSession(): ActiveChatSession {
     composedOnScreen: false,
     screenSession: null,
     archive: baxterArchive,
+    model: baxterModel,
   };
 }

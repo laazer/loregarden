@@ -66,6 +66,9 @@ class InitiativePlan(SQLModel, table=True):
     paused_reason: str = ""
     #: When autopilot was last turned on — its failure count starts here.
     autopilot_since: datetime | None = None
+    #: Provider/model override for the planner conversation, layered over the
+    #: workspace it runs in (`cli_settings.apply_runtime_overrides`). `{}` is none.
+    planner_runtime_json: str = "{}"
     updated_at: datetime = Field(default_factory=utcnow)
 
 

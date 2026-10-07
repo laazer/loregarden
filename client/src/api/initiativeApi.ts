@@ -1,6 +1,6 @@
 import type { ChatMessageView } from "../components/chat/chatUtils";
 import { request } from "./http";
-import type { TicketDetail, TicketState, WorkItemType } from "./types";
+import type { TicketDetail, TicketState, WorkItemType, WorkspaceRuntimeSettings } from "./types";
 
 /** A ticket an initiative view lists, tagged with the workspace it lives in. */
 export interface InitiativeItem {
@@ -235,6 +235,10 @@ export interface PlannerSnapshot {
   messages: PlannerMessage[];
   /** The running turn's assistant row; null when idle. */
   active_turn_id: string | null;
+  /** The provider/model the next turn runs on. */
+  runtime: WorkspaceRuntimeSettings;
+  /** The workspace the next turn runs in; null while none is checked out. */
+  workspace_slug: string | null;
 }
 
 /** Initiatives span workspaces, so they are read here rather than through the
@@ -318,6 +322,11 @@ export const initiativeApi = {
     }),
   stopPlannerTurn: (id: string) =>
     request<PlannerSnapshot>(`/api/initiatives/${id}/planner/stop`, { method: "POST" }),
+  setPlannerRuntime: (id: string, body: WorkspaceRuntimeSettings) =>
+    request<WorkspaceRuntimeSettings>(`/api/initiatives/${id}/planner/runtime`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   /** `initiativeId` null detaches the milestone, leaving it a workspace root. */
   setMilestoneInitiative: (milestoneId: string, initiativeId: string | null) =>
     request<TicketDetail>(`/api/tickets/${milestoneId}`, {

@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
+import { api } from "../../api/client";
 import { useActiveChatSession } from "../useActiveChatSession";
 import { useUiStore } from "../../state/uiStore";
 
@@ -29,6 +30,23 @@ jest.mock("../../api/client", () => ({
         lmstudio_effort: "",
       },
       run_status: "idle",
+    }),
+    plannerChat: jest.fn().mockResolvedValue({
+      initiative_id: "init-tinkercg-build-1",
+      messages: [],
+      active_turn_id: null,
+      runtime: {
+        cli_adapter: "claude",
+        claude_model: "opus",
+        cursor_model: "",
+        codex_model: "",
+        lmstudio_base_url: "",
+        lmstudio_model: "",
+        claude_effort: "",
+        cursor_effort: "",
+        lmstudio_effort: "",
+      },
+      workspace_slug: "tinkercg",
     }),
   },
 }));
@@ -160,8 +178,30 @@ it("binds to nothing on an initiative plan page, whose planner chat composes for
 
   expect(result.current.session).toBeNull();
   expect(result.current.composedOnScreen).toBe(true);
-  // No Baxter model picker: the conversation on that page is the planner's.
+  // No Baxter archive: the conversation on that page is the planner's.
   expect(result.current.archive).toBeNull();
+});
+
+it("binds the planner's model, not Baxter's, on an initiative plan page", async () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+  });
+
+  await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
+  expect(result.current.model?.scopeLabel).toBe("Initiative planner");
+  // Options come from the workspace the planner runs in, not the chat workspace.
+  expect(result.current.model?.workspaceSlug).toBe("tinkercg");
+  expect(api.plannerChat).toHaveBeenCalledWith("init-tinkercg-build-1");
+});
+
+it("asks for no planner conversation off an initiative page", () => {
+  (api.plannerChat as jest.Mock).mockClear();
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/queue"),
+  });
+
+  expect(result.current.model?.scopeLabel).toBe("Baxter");
+  expect(api.plannerChat).not.toHaveBeenCalled();
 });
 
 it("keeps Baxter's composer on the initiative suggestions page, which has no planner", () => {

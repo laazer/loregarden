@@ -330,6 +330,68 @@ def test_planner_needs_a_milestone_and_one_turn_at_a_time(client, db_session, wo
     assert stopped.json()["messages"][-1]["status"] == "failed"
 
 
+def test_planner_model_pin_persists_and_reaches_the_cli(
+    client, db_session, workspaces, monkeypatch
+):
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    _milestone(db_session, here, "M", initiative)
+    monkeypatch.delenv("LOREGARDEN_INITIATIVE_PLANNER_STUB_RESPONSE", raising=False)
+
+    before = client.get(f"/api/initiatives/{initiative.id}/planner").json()
+    assert before["runtime"]["cli_adapter"] == "default"
+    assert before["workspace_slug"] == here.slug
+
+    pinned = client.patch(
+        f"/api/initiatives/{initiative.id}/planner/runtime",
+        json={"cli_adapter": "claude", "claude_model": " opus "},
+    )
+    assert pinned.status_code == 200, pinned.text
+    assert pinned.json()["claude_model"] == "opus"
+    snapshot = client.get(f"/api/initiatives/{initiative.id}/planner").json()
+    assert snapshot["runtime"]["cli_adapter"] == "claude"
+    assert snapshot["runtime"]["claude_model"] == "opus"
+
+    with patch(
+        "loregarden.services.initiative_planner_service.run_cli_agent_turn",
+        return_value="ok",
+    ) as run:
+        sent = client.post(
+            f"/api/initiatives/{initiative.id}/planner/messages", json={"content": "hi"}
+        )
+    assert sent.status_code == 202, sent.text
+    ran_on = run.call_args.kwargs["workspace"]
+    assert (ran_on.cli_adapter, ran_on.claude_model) == ("claude", "opus")
+    # The pin is the conversation's, not the workspace's.
+    db_session.refresh(here)
+    assert here.claude_model != "opus"
+
+
+def test_planner_model_pin_rejects_what_it_cannot_run(client, db_session):
+    initiative = _initiative(db_session)
+
+    bad = client.patch(
+        f"/api/initiatives/{initiative.id}/planner/runtime", json={"cli_adapter": "nope"}
+    )
+    assert bad.status_code == 400
+    assert "cli_adapter" in bad.json()["detail"]
+    missing = client.patch(
+        "/api/initiatives/no-such-initiative/planner/runtime", json={"cli_adapter": "claude"}
+    )
+    assert missing.status_code == 404
+
+
+def test_planner_snapshot_has_no_workspace_until_one_is_checked_out(client, db_session, workspaces):
+    _, there = workspaces
+    initiative = _initiative(db_session)
+    _milestone(db_session, there, "Away", initiative)
+
+    snapshot = client.get(f"/api/initiatives/{initiative.id}/planner")
+
+    assert snapshot.status_code == 200
+    assert snapshot.json()["workspace_slug"] is None
+
+
 # --- MCP ---------------------------------------------------------------------
 
 

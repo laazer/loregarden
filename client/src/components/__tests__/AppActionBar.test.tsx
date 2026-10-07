@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
-import { useActiveChatSession } from "../../hooks/useActiveChatSession";
+import { useActiveChatSession, type ChatModelBinding } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
@@ -41,6 +41,19 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     screenSession: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
+}
+
+function model(overrides: Partial<ChatModelBinding> = {}): ChatModelBinding {
+  return {
+    assistant: "Baxter",
+    scopeLabel: "Baxter",
+    workspaceSlug: "loregarden",
+    runtime: DEFAULT_RUNTIME,
+    setRuntime: jest.fn().mockResolvedValue(undefined),
+    isSavingRuntime: false,
+    isBusy: false,
+    ...overrides,
+  };
 }
 
 function session(overrides = {}) {
@@ -304,9 +317,6 @@ it("turns Send into Stop while a Baxter turn is in flight", () => {
         sendInNewChat: jest.fn().mockResolvedValue(undefined),
         forkSession: jest.fn().mockResolvedValue(undefined),
         forkFromMessage: jest.fn().mockResolvedValue(undefined),
-        runtime: DEFAULT_RUNTIME,
-        setRuntime: jest.fn(),
-        isSavingRuntime: false,
       },
     }),
   );
@@ -482,10 +492,8 @@ describe("a screen that composes for its own thread", () => {
           sendInNewChat: jest.fn().mockResolvedValue(undefined),
           forkSession: jest.fn().mockResolvedValue(undefined),
           forkFromMessage: jest.fn().mockResolvedValue(undefined),
-          runtime: DEFAULT_RUNTIME,
-          setRuntime,
-          isSavingRuntime: false,
         },
+        model: model({ setRuntime }),
       }),
     );
 
@@ -522,9 +530,6 @@ describe("the chat options", () => {
     sendInNewChat: jest.fn().mockResolvedValue(undefined),
     forkSession: jest.fn().mockResolvedValue(undefined),
     forkFromMessage: jest.fn().mockResolvedValue(undefined),
-    runtime: DEFAULT_RUNTIME,
-    setRuntime: jest.fn().mockResolvedValue({}),
-    isSavingRuntime: false,
     ...overrides,
   });
 
@@ -537,6 +542,7 @@ describe("the chat options", () => {
 
     expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Model ·/ })).not.toBeInTheDocument();
   });
 
   it("offers model settings for the omnibar Baxter conversation", async () => {
@@ -546,12 +552,59 @@ describe("the chat options", () => {
         label: "Baxter · loregarden",
         ticketId: null,
         archive: archive(),
+        model: model(),
       }),
     );
 
     renderBar();
 
     expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeInTheDocument();
+  });
+
+  it("sets the initiative planner's model from the bar on its plan page", async () => {
+    // The planner keeps one conversation per initiative, so there is no archive
+    // to carry the picker — the model binding stands on its own.
+    const setRuntime = jest.fn().mockResolvedValue(undefined);
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        model: model({
+          assistant: "the initiative planner",
+          scopeLabel: "Initiative planner",
+          workspaceSlug: "",
+          setRuntime,
+        }),
+      }),
+    );
+
+    renderBar();
+    const picker = await screen.findByRole("button", { name: /Model · Workspace default/i });
+    expect(picker).toHaveAttribute("title", expect.stringMatching(/initiative planner/));
+    // No workspace checked out yet: the global options, not some other workspace's.
+    expect(mockApi.runtimeOptions).toHaveBeenCalledWith(undefined);
+    fireEvent.click(picker);
+    expect(screen.getByRole("dialog")).toHaveTextContent("Initiative planner");
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "cursor" } });
+    fireEvent.change(screen.getByLabelText("Cursor model"), { target: { value: "gpt-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(setRuntime).toHaveBeenCalledWith(
+        expect.objectContaining({ cli_adapter: "cursor", cursor_model: "gpt-5" }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+  });
+
+  it("holds the model while a turn is running", async () => {
+    mockResolver.mockReturnValue(
+      bind({ composedOnScreen: true, ticketId: null, model: model({ isBusy: true }) }),
+    );
+
+    renderBar();
+
+    expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeDisabled();
   });
 
   it("starts a fresh thread and shows it", () => {

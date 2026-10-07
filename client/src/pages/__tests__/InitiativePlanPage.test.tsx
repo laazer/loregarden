@@ -13,6 +13,7 @@ import type {
   PlannerSnapshot,
 } from "../../api/initiativeApi";
 import type { TicketState, TicketSummary } from "../../api/types";
+import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { InitiativePlanPage } from "../InitiativePlanPage";
 
@@ -168,7 +169,13 @@ function boardTickets(): TicketSummary[] {
     );
 }
 
-const emptyChat: PlannerSnapshot = { initiative_id: "init1", messages: [], active_turn_id: null };
+const emptyChat: PlannerSnapshot = {
+  initiative_id: "init1",
+  messages: [],
+  active_turn_id: null,
+  runtime: DEFAULT_RUNTIME,
+  workspace_slug: "loregarden",
+};
 
 function setNarrow(narrow: boolean) {
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
