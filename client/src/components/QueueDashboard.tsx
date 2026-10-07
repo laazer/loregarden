@@ -18,7 +18,7 @@ import { DockerQueueBoard } from "./DockerQueueBoard";
 import { QueueKindToggle, type QueueKind } from "./QueueKindToggle";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
-import { QueueGitAutomation } from "./QueueGitAutomation";
+import { QueueGitAutomationList } from "./QueueGitAutomation";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
 import { QueueHistoryRail } from "./QueueHistoryRail";
 import { QueueLaneCount } from "./QueueLaneCount";
@@ -325,12 +325,8 @@ export function QueueDashboard({
                 <>
                   <QueueLaneCount />
                   <div className="queue-rail-divider" />
-                  {workspaces.map((ws) => (
-                    <div key={ws.id}>
-                      <QueueGitAutomation workspaceSlug={ws.slug} workspaceName={ws.name} />
-                      <div className="queue-rail-divider" />
-                    </div>
-                  ))}
+                  <QueueGitAutomationList workspaces={workspaces} />
+                  <div className="queue-rail-divider" />
                   <QueueAdvancedControls
                     activeRuns={activeRuns || []}
                     queuedRuns={queuedRuns || []}

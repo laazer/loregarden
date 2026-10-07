@@ -179,7 +179,9 @@
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
   flex: 1 1 0;
-  min-height: 0;
+  /* Never shorter than its heading plus the scroller's floor. At 0 the section
+     collapsed while its rows did not, and they painted over the add button. */
+  min-height: min-content;
 }
 
 .queue-lane-queue-label {
@@ -503,9 +505,10 @@
      button all stay put while you read down a long lane.
 
      The bound is whatever height the lane's row in the grid gives it, so a tall
-     window spends its space on more rows per lane. */
+     window spends its space on more rows per lane. When even the lists' floors
+     do not fit, the body scrolls: hidden clipped the add button off the card. */
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* The scrolling part of a lane list: its heading is a sibling above it, so the
@@ -803,9 +806,12 @@
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
   /* Basis 0, so a long list does not inflate the lane's intrinsic height and,
-     through it, the panel's — the panel sizes the lanes, not the reverse. */
+     through it, the panel's — the panel sizes the lanes, not the reverse.
+     The floor is the heading plus the scroller's own min-height, not 0: at 0 the
+     box collapsed to its padding and the rows spilled over the add button. A
+     long list still scrolls inside that floor rather than raising it. */
   flex: 1 1 0;
-  min-height: 0;
+  min-height: min-content;
 }
 
 .queue-lane-attention-header {

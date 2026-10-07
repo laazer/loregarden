@@ -497,15 +497,15 @@
 
 /* Per-reply actions: copy, fork, and the overflow. Present in the DOM at all
    times — a control that only exists on hover is a control no keyboard can
-   reach — and faded until the turn is hovered or something in the row has
-   focus. */
+   reach — and invisible until the turn is hovered or something in the row has
+   focus. Opacity, not display: the row keeps its space, so revealing it does
+   not shift the thread under the pointer. */
 .lg-chat-message-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-top: -6px;
-  /* Faint rather than hidden: Copy should be findable without hunting for it. */
-  opacity: 0.45;
+  opacity: 0;
   transition: opacity 120ms ease;
 }
 
