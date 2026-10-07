@@ -32,6 +32,9 @@ from loregarden.models.domain import (
     PlannerTurnStatus,
     Ticket,
     Workspace,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
+    utcnow,
 )
 from loregarden.services.chat_primitives import (
     EMPTY_PARTS_JSON,
@@ -44,7 +47,12 @@ from loregarden.services.chat_thinking import (
     with_thinking_part,
 )
 from loregarden.services.cli_agent_runner import CliAgentProfile, run_cli_agent_turn, stub_response
-from loregarden.services.initiative_plan_service import load_initiative, plan_view
+from loregarden.services.cli_settings import (
+    apply_runtime_overrides,
+    parse_runtime_settings,
+    runtime_override_json,
+)
+from loregarden.services.initiative_plan_service import load_initiative, plan_row, plan_view
 from loregarden.services.initiative_service import milestones_under
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -96,6 +104,11 @@ class PlannerChatSnapshot(BaseModel):
     messages: list[PlannerMessageView]
     #: The pending assistant row, when a turn is running; null when idle.
     active_turn_id: str | None
+    #: The provider/model override the next turn runs on.
+    runtime: WorkspaceRuntimeSettings
+    #: The workspace the next turn runs in, whose defaults `runtime` overrides;
+    #: null while the initiative has none checked out (sending says why).
+    workspace_slug: str | None
 
 
 def list_messages(session: Session, initiative_id: str) -> list[InitiativePlannerMessage]:
@@ -119,8 +132,35 @@ def latest_pending_turn(session: Session, initiative_id: str) -> InitiativePlann
     ).first()
 
 
+def get_planner_runtime(session: Session, initiative_id: str) -> WorkspaceRuntimeSettings:
+    return parse_runtime_settings(plan_row(session, initiative_id).planner_runtime_json)
+
+
+def set_planner_runtime(
+    session: Session, initiative_id: str, body: WorkspaceRuntimeUpdate
+) -> WorkspaceRuntimeSettings:
+    """Pin the planner conversation's provider/model; ``ValueError`` on a bad pin."""
+    initiative = load_initiative(session, initiative_id)
+    plan = plan_row(session, initiative.id)
+    plan.planner_runtime_json = runtime_override_json(body)
+    plan.updated_at = utcnow()
+    session.add(plan)
+    session.commit()
+    return get_planner_runtime(session, initiative.id)
+
+
+def _planner_workspace_slug(session: Session, initiative: Ticket) -> str | None:
+    try:
+        return planner_workspace(session, initiative).slug
+    except ValueError:
+        # Not a failure of the snapshot: the initiative has nowhere to run yet,
+        # and `start_turn` refuses a send with the reason. The picker still
+        # works, against the global defaults.
+        return None
+
+
 def planner_snapshot(session: Session, initiative_id: str) -> PlannerChatSnapshot:
-    load_initiative(session, initiative_id)
+    initiative = load_initiative(session, initiative_id)
     pending = latest_pending_turn(session, initiative_id)
     return PlannerChatSnapshot(
         initiative_id=initiative_id,
@@ -137,6 +177,8 @@ def planner_snapshot(session: Session, initiative_id: str) -> PlannerChatSnapsho
             for msg in list_messages(session, initiative_id)
         ],
         active_turn_id=pending.id if pending is not None else None,
+        runtime=get_planner_runtime(session, initiative.id),
+        workspace_slug=_planner_workspace_slug(session, initiative),
     )
 
 
@@ -329,6 +371,7 @@ def invoke_planner_model(
         return stub
     initiative = load_initiative(session, assistant.initiative_id)
     workspace = planner_workspace(session, initiative)
+    runtime_json = plan_row(session, initiative.id).planner_runtime_json
     history = [m for m in list_messages(session, initiative.id) if m.id != assistant.id]
     prompt = build_planner_prompt(
         session, initiative, history, latest_user_message, mode=assistant.turn_mode
@@ -337,7 +380,7 @@ def invoke_planner_model(
     try:
         return run_cli_agent_turn(
             INITIATIVE_PLANNER_CLI_PROFILE,
-            workspace=workspace,
+            workspace=apply_runtime_overrides(workspace, runtime_json),
             prompt=prompt,
             thinking_sink=thinking,
             run_id=assistant.id,

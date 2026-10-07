@@ -49,6 +49,7 @@ export function AppActionBar() {
     pendingApprovals,
     branch,
     archive,
+    model,
     composedOnScreen,
     screenSession,
   } = useActiveChatSession();
@@ -103,10 +104,11 @@ export function AppActionBar() {
     queryFn: () => api.ticket(ticketId as string),
     enabled: Boolean(ticketId),
   });
+  const modelWorkspace = model?.workspaceSlug ?? "";
   const runtimeOptions = useQuery({
-    queryKey: ["runtime-options", archive?.workspaceSlug ?? ""],
-    queryFn: () => api.runtimeOptions({ workspace: archive!.workspaceSlug }),
-    enabled: Boolean(archive?.workspaceSlug),
+    queryKey: ["runtime-options", modelWorkspace],
+    queryFn: () => api.runtimeOptions(modelWorkspace ? { workspace: modelWorkspace } : undefined),
+    enabled: Boolean(model),
   });
 
   const logLines = ticket?.artifacts?.logs ?? [];
@@ -251,26 +253,26 @@ export function AppActionBar() {
   // The picker is the bar's on every screen, chat pages included — the model a
   // question runs on is a property of the conversation, not of the composer
   // drawing it, and the page's composer would otherwise carry a second copy.
-  const modelControl = archive ? (
+  const modelControl = model ? (
     <>
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="app-action-bar-chat-model"
-        title="Choose Baxter's provider and model for this conversation"
-        disabled={!runtimeOptions.data || archive.isSavingRuntime || session?.isBusy}
+        title={`Choose ${model.assistant}'s provider and model for this conversation`}
+        disabled={!runtimeOptions.data || model.isSavingRuntime || model.isBusy}
         onClick={() => setModelModalOpen(true)}
       >
-        Model · {runtimeSummaryLabel(archive.runtime, runtimeOptions.data)}
-      </button>
+        Model · {runtimeSummaryLabel(model.runtime, runtimeOptions.data)}
+      </Button>
       <TriageModelModal
         open={modelModalOpen}
-        runtime={archive.runtime}
+        runtime={model.runtime}
         runtimeOptions={runtimeOptions.data}
-        isSaving={archive.isSavingRuntime}
-        scopeLabel="Baxter"
+        isSaving={model.isSavingRuntime}
+        scopeLabel={model.scopeLabel}
         subtitle="Choose a provider, then pick a model for this conversation"
         onClose={() => setModelModalOpen(false)}
-        onSave={archive.setRuntime}
+        onSave={model.setRuntime}
       />
     </>
   ) : null;

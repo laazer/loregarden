@@ -308,7 +308,7 @@ def _apply_items(
         session.add(row)
 
 
-def _plan_row(session: Session, initiative_id: str) -> InitiativePlan:
+def plan_row(session: Session, initiative_id: str) -> InitiativePlan:
     return session.get(InitiativePlan, initiative_id) or InitiativePlan(initiative_id=initiative_id)
 
 
@@ -319,7 +319,7 @@ def update_plan(
     _validate_items(session, initiative, update.targets)
     _apply_items(session, initiative, update.targets, actor=actor)
     if update.mode is not None or update.notes is not None:
-        plan = _plan_row(session, initiative.id)
+        plan = plan_row(session, initiative.id)
         if update.mode is not None:
             plan.mode = update.mode
         if update.notes is not None:
@@ -381,7 +381,7 @@ def accept_proposal(
     # Re-checked: a milestone can be detached between proposing and accepting.
     _validate_items(session, initiative, items)
     _apply_items(session, initiative, items, actor=actor)
-    plan = _plan_row(session, initiative.id)
+    plan = plan_row(session, initiative.id)
     if proposal.mode is not None:
         plan.mode = proposal.mode
     if proposal.rationale:

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
-import { api } from "../api/client";
+import { api, type WorkspaceRuntimeSettings } from "../api/client";
 import type { PlannerSnapshot } from "../api/initiativeApi";
+import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 import { describeError } from "../state/toastStore";
 
 export function plannerQueryKey(initiativeId: string) {
@@ -20,6 +21,9 @@ export function planQueryKey(initiativeId: string) {
  * the POST, and an optimistic user row covers the gap. When a turn settles the
  * plan is refetched too — a planner reply usually comes with a new proposal,
  * and the operator should see it without reloading.
+ *
+ * An empty `initiativeId` issues no requests, so a caller above `<Routes>` can
+ * call it on every screen and bind it only where an initiative is on screen.
  */
 export function useInitiativePlanner(initiativeId: string) {
   const qc = useQueryClient();
@@ -28,6 +32,7 @@ export function useInitiativePlanner(initiativeId: string) {
   const chat = useQuery({
     queryKey: key,
     queryFn: () => api.plannerChat(initiativeId),
+    enabled: Boolean(initiativeId),
     refetchInterval: (query) => (query.state.data?.active_turn_id ? 2000 : 15_000),
     meta: { errorTitle: "Load planner conversation" },
   });
@@ -51,6 +56,8 @@ export function useInitiativePlanner(initiativeId: string) {
       const previous = qc.getQueryData<PlannerSnapshot>(key);
       qc.setQueryData<PlannerSnapshot>(key, (current) => ({
         initiative_id: initiativeId,
+        runtime: current?.runtime ?? DEFAULT_RUNTIME,
+        workspace_slug: current?.workspace_slug ?? null,
         messages: [
           ...(current?.messages ?? []),
           {
@@ -82,6 +89,13 @@ export function useInitiativePlanner(initiativeId: string) {
     },
   });
 
+  const saveRuntime = useMutation({
+    meta: { errorTitle: "Save planner model" },
+    mutationFn: (runtime: WorkspaceRuntimeSettings) => api.setPlannerRuntime(initiativeId, runtime),
+    onSuccess: (runtime) =>
+      qc.setQueryData<PlannerSnapshot>(key, (current) => (current ? { ...current, runtime } : current)),
+  });
+
   return {
     messages: chat.data?.messages ?? [],
     activeTurnId:
@@ -99,5 +113,13 @@ export function useInitiativePlanner(initiativeId: string) {
     draft: () => send.mutate({ content: "", mode: "draft" }),
     stop: () => stop.mutate(),
     isStopping: stop.isPending,
+    runtime: chat.data?.runtime ?? DEFAULT_RUNTIME,
+    /** Rejects on failure (after the toast), so the model dialog stays open. */
+    setRuntime: async (runtime: WorkspaceRuntimeSettings) => {
+      await saveRuntime.mutateAsync(runtime);
+    },
+    isSavingRuntime: saveRuntime.isPending,
+    /** Where the next turn runs, for its runtime options; "" while it has nowhere. */
+    workspaceSlug: chat.data?.workspace_slug ?? "",
   };
 }
