@@ -10,7 +10,10 @@
 /* In the action bar the composer is one item of a row, so it has to claim the
    space itself; in a panel the column already gives it the full width. */
 .lg-composer-commands--bar {
-  flex: 1;
+  flex: 1 1 220px;
+  /* A floor, so the suggestions and pills beside it shrink first: without one
+     a full bar squeezed the input to nothing and left only the chips. */
+  min-width: 180px;
 }
 
 /* Placement is measured against the input (see ComposerCommandMenu) — the same

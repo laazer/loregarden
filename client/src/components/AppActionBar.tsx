@@ -1,8 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
+import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
@@ -12,6 +14,8 @@ import {
   DOCK_QUICK_PROMPT_LIMIT,
   followUpPrompts,
 } from "../lib/dockChatPrompts";
+import { chatPath } from "../lib/homeBaxter";
+import type { ChatSession } from "../lib/chatSession";
 import { useAgentPresence } from "../state/QueueStatusContext";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
@@ -19,6 +23,9 @@ import { describeError } from "../state/toastStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { ChatModePill, type ChatModeFix } from "./ChatModePill";
+import { ComposerAttachButton, ComposerAttachmentTray } from "./chat/ComposerAttachments";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 import { ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerNotes } from "./chat/ComposerNotes";
 import { TriageModelModal } from "./TriageModelModal";
@@ -35,8 +42,16 @@ const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
  * a message sent here is the same turn the on-screen panel would have sent.
  */
 export function AppActionBar() {
-  const { session, label, ticketId, pendingApprovals, branch, archive, composedOnScreen } =
-    useActiveChatSession();
+  const {
+    session,
+    label,
+    ticketId,
+    pendingApprovals,
+    branch,
+    archive,
+    composedOnScreen,
+    screenSession,
+  } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
   const chatOpen = useUiStore((s) => s.copilotOpen);
@@ -51,6 +66,7 @@ export function AppActionBar() {
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [attachLogs, setAttachLogs] = useState(false);
+  const attachments = useComposerAttachments();
   const qc = useQueryClient();
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -130,15 +146,22 @@ export function AppActionBar() {
   // one is busy — and aside mode, which routes a busy composer to a read-only
   // question instead of a turn to stop.
   const canStop = Boolean(session?.isBusy && !asideMode);
-  // Kept whether the thread is open or not: they are the quickest reply to the
-  // turn on screen, so they follow the conversation rather than only opening it.
-  const quickPrompts = session
-    ? followUpPrompts(session.kind, branch, session.messages).slice(0, DOCK_QUICK_PROMPT_LIMIT)
-    : [];
+  // Only the Baxter thread has an attachments endpoint, and an aside is a
+  // read-only question to an observer, which takes no files either.
+  const canAttach = session?.kind === "baxter-home" && !asideMode;
+  const files = canAttach ? attachments.items.map((item) => item.file) : [];
+
+  // A conversation's files belong to it; carried over, they would go out with
+  // a message to whichever chat the next screen binds.
+  const clearAttachments = attachments.clear;
+  useEffect(() => {
+    clearAttachments();
+  }, [session?.kind, session?.id, clearAttachments]);
 
   const send = (content: string, skill = "") => {
-    if (!session || !content.trim()) return;
+    if (!session) return;
     const question = content.trim();
+    if (!question && !files.length) return;
     setDraft("");
     // Open the thread on the way out: a reply arriving behind a collapsed dock
     // is a message the operator never sees.
@@ -153,7 +176,8 @@ export function AppActionBar() {
     const message = excerpt
       ? `Question about the run logs below:\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${question}`
       : question;
-    void session.send(message, { autoApprove, skill }).catch(() => {
+    attachments.clear();
+    void session.send(message, { autoApprove, skill, ...(files.length ? { files } : {}) }).catch(() => {
       // silent-ok: send is a mutation carrying meta.errorTitle, so the global
       // MutationCache toast fires and session.error renders in the bar's pill.
     });
@@ -259,6 +283,7 @@ export function AppActionBar() {
     return (
       <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
         <span className="app-action-bar-spacer" aria-hidden />
+        {screenSession ? <ScreenSessionQuickPrompts session={screenSession} /> : null}
         {modelControl}
         {screenControls}
       </footer>
@@ -286,7 +311,14 @@ export function AppActionBar() {
 
       <div className="app-action-bar-notes">
         <ComposerNotes commands={commands} />
+        {canAttach ? (
+          <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />
+        ) : null}
       </div>
+
+      {canAttach ? (
+        <ComposerAttachButton onFiles={attachments.add} disabled={!sendable} />
+      ) : null}
 
       <div className="lg-composer-commands lg-composer-commands--bar">
         <ComposerCommandMenu
@@ -297,7 +329,7 @@ export function AppActionBar() {
           onHover={commands.setActiveIndex}
           onPick={commands.accept}
         />
-        <input
+        <Input
           ref={commands.inputRef as React.Ref<HTMLInputElement>}
           className="app-action-bar-input"
           value={draft}
@@ -314,6 +346,13 @@ export function AppActionBar() {
           onChange={(e) => commands.handleChange(e.target.value, e.target)}
           onFocus={() => session && setChatOpen(true)}
           onBlur={() => commands.close()}
+          onPaste={(e) => {
+            if (!canAttach) return;
+            const pasted = Array.from(e.clipboardData.files);
+            if (!pasted.length) return;
+            e.preventDefault();
+            attachments.add(pasted);
+          }}
           onKeyDown={(e) => {
             // While the menu is open it owns Enter, Tab and the arrows.
             if (commands.handleKeyDown(e)) return;
@@ -325,21 +364,16 @@ export function AppActionBar() {
         />
       </div>
 
-      {quickPrompts.length > 0 && (
-        <div className="app-action-bar-quick">
-          {quickPrompts.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              className="app-action-bar-quick-btn"
-              disabled={!sendable || session?.isBusy}
-              onClick={() => submit(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Kept whether the thread is open or not: they are the quickest reply
+          to the turn on screen, so they follow the conversation rather than
+          only opening it. */}
+      {session ? (
+        <ActionBarQuickPrompts
+          prompts={followUpPrompts(session.kind, branch, session.messages)}
+          disabled={!sendable || session.isBusy}
+          onPick={(prompt) => submit(prompt)}
+        />
+      ) : null}
 
       <ActionBarStatus
         label={label}
@@ -455,8 +489,8 @@ export function AppActionBar() {
         </button>
       ) : null}
 
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : ""}`}
         aria-label={
           canStop
@@ -470,7 +504,7 @@ export function AppActionBar() {
         disabled={
           canStop
             ? Boolean(session?.isStopping)
-            : !sendable || !draft.trim() || asides.isAsking
+            : !sendable || (!draft.trim() && !files.length) || asides.isAsking
         }
         onClick={() => {
           // `stop` is required on ChatSession now, so the only question left
@@ -494,9 +528,66 @@ export function AppActionBar() {
             <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
           </svg>
         )}
-      </button>
+      </Button>
       {screenControls}
     </footer>
+  );
+}
+
+/** The bar's one-click replies, capped to what fits beside the composer. */
+function ActionBarQuickPrompts({
+  prompts,
+  disabled,
+  onPick,
+}: {
+  prompts: readonly string[];
+  disabled: boolean;
+  onPick: (prompt: string) => void;
+}) {
+  const shown = prompts.slice(0, DOCK_QUICK_PROMPT_LIMIT);
+  if (shown.length === 0) return null;
+  return (
+    <div className="app-action-bar-quick">
+      {shown.map((prompt) => (
+        <Button
+          key={prompt}
+          variant="plain"
+          className="app-action-bar-quick-btn"
+          title={prompt}
+          disabled={disabled}
+          onClick={() => onPick(prompt)}
+        >
+          {prompt}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Suggestions for the thread a page composes for itself (Home, `/chat`).
+ *
+ * The page owns the composer, so the bar offers only the one-click replies. A
+ * pick sends into that thread and lands on `/chat`, where the reply is drawn:
+ * from Home, the answer would otherwise arrive somewhere nothing shows it.
+ */
+function ScreenSessionQuickPrompts({ session }: { session: ChatSession }) {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const pick = (prompt: string) => {
+    if (session.isBusy || session.loadError) return;
+    if (pathname !== chatPath()) navigate(chatPath());
+    void session.send(prompt).catch(() => {
+      // silent-ok: send is a mutation carrying meta.errorTitle, so the global
+      // MutationCache toast fires and the chat page renders session.error.
+    });
+  };
+  return (
+    <ActionBarQuickPrompts
+      prompts={followUpPrompts(session.kind, null, session.messages)}
+      disabled={session.isBusy || session.loadError}
+      onPick={pick}
+    />
   );
 }
 

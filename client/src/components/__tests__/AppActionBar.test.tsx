@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
@@ -37,6 +38,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     branch: null,
     archive: null,
     composedOnScreen: false,
+    screenSession: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }
@@ -665,3 +667,105 @@ describe("advisory rails", () => {
     expect(screen.getByText("can act")).toBeInTheDocument();
   });
 });
+
+describe("suggestions on a screen that composes for its own thread", () => {
+  function renderAt(pathname: string) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[pathname]}>
+          <AppActionBar />
+          <Routes>
+            <Route path="*" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("offers the thread's openers in the bar and sends one into it", () => {
+    const send = jest.fn().mockResolvedValue({});
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenSession: session({ kind: "baxter-home", id: "s1", send }),
+      }),
+    );
+
+    renderAt("/chat");
+    fireEvent.click(screen.getByRole("button", { name: "What should I work on next?" }));
+
+    expect(send).toHaveBeenCalledWith("What should I work on next?");
+    expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+  });
+
+  it("takes a pick made on Home to the chat page, where the reply is drawn", () => {
+    const send = jest.fn().mockResolvedValue({});
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenSession: session({ kind: "baxter-home", id: "s1", send }),
+      }),
+    );
+
+    renderAt("/");
+    fireEvent.click(screen.getByRole("button", { name: "What should I work on next?" }));
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+  });
+
+  it("disables them while a turn is in flight", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenSession: session({ kind: "baxter-home", id: "s1", isBusy: true }),
+      }),
+    );
+
+    renderAt("/chat");
+
+    expect(screen.getByRole("button", { name: "What should I work on next?" })).toBeDisabled();
+  });
+});
+
+describe("attachments in the bar", () => {
+  const file = () => new File(["hello"], "notes.txt", { type: "text/plain" });
+
+  it("sends attached files with a Baxter turn", async () => {
+    const send = jest.fn().mockResolvedValue({});
+    mockResolver.mockReturnValue(
+      bind({ ticketId: null, session: session({ kind: "baxter-home", id: "s1", send }) }),
+    );
+
+    renderBar();
+    fireEvent.paste(screen.getByLabelText("Message this conversation"), {
+      clipboardData: { files: [file()] },
+    });
+    expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(send).toHaveBeenCalledWith(
+      "",
+      expect.objectContaining({ files: [expect.objectContaining({ name: "notes.txt" })] }),
+    );
+    await waitFor(() => expect(screen.queryByText("notes.txt")).not.toBeInTheDocument());
+  });
+
+  it("offers no paperclip on a thread with no attachments endpoint", () => {
+    mockResolver.mockReturnValue(bind({ session: session() }));
+
+    renderBar();
+
+    expect(screen.getByLabelText("Message this conversation")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Attach files" })).not.toBeInTheDocument();
+  });
+});
+
+function LocationProbe() {
+  const { pathname } = useLocation();
+  return <span data-testid="location">{pathname}</span>;
+}

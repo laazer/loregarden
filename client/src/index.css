@@ -2326,6 +2326,11 @@ label:is(
   /* Anchors the post-it strip and the `/` menu, both of which open upward out
      of a bar that already sits on the bottom edge of the screen. */
   position: relative;
+  /* More controls than a narrow window has room for: past it they take a
+     second row rather than pushing Send off the edge or squeezing the
+     suggestions to nothing. */
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 9px 14px 9px 16px;
   border-top: 1px solid var(--bd2);
   background: linear-gradient(180deg, var(--bg1), #070a10);
@@ -2381,10 +2386,11 @@ label:is(
 }
 
 .app-action-bar-quick {
+  /* Whole or wrapped, never shrunk: a chip cut to "Wh…" is not a suggestion. */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 7px;
-  min-width: 0;
 }
 
 .app-action-bar-quick-btn {

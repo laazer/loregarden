@@ -82,6 +82,14 @@ export interface ActiveChatSession {
    * disable them.
    */
   composedOnScreen: boolean;
+  /**
+   * The conversation a `composedOnScreen` page composes for, or null.
+   *
+   * `session` stays null there so nothing draws a second composer or thread
+   * for it; this is read only for what the bar still offers on those screens —
+   * its suggestions, which are one click rather than a composer.
+   */
+  screenSession: ChatSession | null;
 }
 
 /**
@@ -165,6 +173,7 @@ export function useActiveChatSession(): ActiveChatSession {
     branch: null,
     archive: null,
     composedOnScreen: false,
+    screenSession: null,
   };
   // Home and `/chat` are the same conversation's own surfaces. Binding nothing
   // there is not enough on its own: the bar would still offer a dead composer
@@ -172,7 +181,14 @@ export function useActiveChatSession(): ActiveChatSession {
   // conversation, and it is right there on the page.
   // The archive still rides along: the bar owns the model picker everywhere, so
   // the chat page reads it from here rather than drawing its own.
-  if (composedOnScreen) return { ...none, composedOnScreen: true, archive: baxterArchive };
+  if (composedOnScreen) {
+    return {
+      ...none,
+      composedOnScreen: true,
+      archive: baxterArchive,
+      screenSession: chatWorkspaceSlug ? baxterSession : null,
+    };
+  }
   // No archive: the model picker it carries is Baxter's, not the planner's.
   if (plannerOnScreen) return { ...none, composedOnScreen: true };
   if (onBranchTriage) {
@@ -185,6 +201,7 @@ export function useActiveChatSession(): ActiveChatSession {
           branch,
           archive: null,
           composedOnScreen: false,
+          screenSession: null,
         }
       : none;
   }
@@ -197,6 +214,7 @@ export function useActiveChatSession(): ActiveChatSession {
       branch: ticket?.branch || null,
       archive: null,
       composedOnScreen: false,
+      screenSession: null,
     };
   }
   if (!chatWorkspaceSlug) return none;
@@ -207,6 +225,7 @@ export function useActiveChatSession(): ActiveChatSession {
     pendingApprovals: baxterSession.pendingApprovals,
     branch: null,
     composedOnScreen: false,
+    screenSession: null,
     archive: baxterArchive,
   };
 }
