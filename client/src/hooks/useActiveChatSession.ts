@@ -3,7 +3,8 @@ import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
 import type { WorkspaceRuntimeSettings } from "../api/client";
-import { initiativeIdFromPath, ticketIdFromPath } from "../lib/appNavigation";
+import { initiativeIdFromPath } from "../lib/appNavigation";
+import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
@@ -139,7 +140,8 @@ export function useActiveChatSession(): ActiveChatSession {
   const branch = useUiStore((s) => s.branchTriageBranch);
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
-  const ticketId = onBranchTriage ? null : ticketIdFromPath(pathname);
+  const pathTicketId = useTicketIdFromPath();
+  const ticketId = onBranchTriage ? null : pathTicketId;
   // `/chat` composes for this thread itself, and Home's hero is the way into
   // the same one; a second composer for the same conversation would only open
   // the dock on top of the page already showing it.

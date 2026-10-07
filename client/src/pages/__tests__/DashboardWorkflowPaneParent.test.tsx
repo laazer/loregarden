@@ -9,8 +9,8 @@ import { Dashboard } from '../Dashboard';
 
 jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock'));
 
-const PARENT_ID = 'ticket-parent';
-const CHILD_ID = 'ticket-child';
+const PARENT_ID = '00000000-0000-4000-8000-0000000000aa';
+const CHILD_ID = '00000000-0000-4000-8000-0000000000bb';
 
 const mkWorkspace = (): apiClient.WorkspaceSummary => ({
   id: 'ws-1',

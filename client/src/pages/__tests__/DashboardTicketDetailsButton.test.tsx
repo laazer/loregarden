@@ -104,12 +104,12 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden', name: 'Loregarden' })];
       const mockTree = [
         createMockTreeNode({
-          id: 'ticket-1',
+          id: '00000000-0000-4000-8000-000000000001',
           title: 'Modal Feature',
         }),
       ];
       const mockTicket = createMockTicket({
-        id: 'ticket-1',
+        id: '00000000-0000-4000-8000-000000000001',
         title: 'Modal Feature',
         external_id: '16-modal-with-ticket-details',
       });
@@ -154,17 +154,17 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // SPEC: Button should update when different ticket is selected
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
       const mockTree = [
-        createMockTreeNode({ id: 'ticket-1', title: 'First Ticket' }),
-        createMockTreeNode({ id: 'ticket-2', title: 'Second Ticket' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001', title: 'First Ticket' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000002', title: 'Second Ticket' }),
       ];
-      const mockTicket1 = createMockTicket({ id: 'ticket-1', title: 'First Ticket' });
-      const mockTicket2 = createMockTicket({ id: 'ticket-2', title: 'Second Ticket' });
+      const mockTicket1 = createMockTicket({ id: '00000000-0000-4000-8000-000000000001', title: 'First Ticket' });
+      const mockTicket2 = createMockTicket({ id: '00000000-0000-4000-8000-000000000002', title: 'Second Ticket' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
       jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => {
-        if (id === 'ticket-1') return mockTicket1;
-        if (id === 'ticket-2') return mockTicket2;
+        if (id === '00000000-0000-4000-8000-000000000001') return mockTicket1;
+        if (id === '00000000-0000-4000-8000-000000000002') return mockTicket2;
         return createMockTicket({ id });
       });
 
@@ -186,9 +186,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should open modal when Details button is clicked', async () => {
       // SPEC: Clicking button should open modal with full ticket details
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
       const mockTicket = createMockTicket({
-        id: 'ticket-1',
+        id: '00000000-0000-4000-8000-000000000001',
         title: 'Test Feature',
         description: 'This is a test feature',
       });
@@ -219,9 +219,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should display full ticket details in modal', async () => {
       // SPEC: Modal should show complete ticket information
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
       const mockTicket = createMockTicket({
-        id: 'ticket-1',
+        id: '00000000-0000-4000-8000-000000000001',
         title: 'Complete Feature',
         external_id: '16-modal-with-ticket-details',
         description: 'Full description',
@@ -268,8 +268,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should close modal when Close button is clicked', async () => {
       // SPEC: Modal should close when user clicks close button
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -298,8 +298,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should allow reopening modal after closing', async () => {
       // SPEC: Button should work multiple times
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -334,10 +334,10 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // SPEC: Modal should not block interaction with other panes
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
       const mockTree = [
-        createMockTreeNode({ id: 'ticket-1', title: 'Ticket 1' }),
-        createMockTreeNode({ id: 'ticket-2', title: 'Ticket 2' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001', title: 'Ticket 1' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000002', title: 'Ticket 2' }),
       ];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -359,8 +359,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should maintain modal state when pane visibility changes', async () => {
       // SPEC: Modal should stay open/closed independently of pane toggles
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -385,17 +385,17 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // SPEC: Opening details for new ticket should handle previous modal gracefully
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
       const mockTree = [
-        createMockTreeNode({ id: 'ticket-1', title: 'First' }),
-        createMockTreeNode({ id: 'ticket-2', title: 'Second' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001', title: 'First' }),
+        createMockTreeNode({ id: '00000000-0000-4000-8000-000000000002', title: 'Second' }),
       ];
-      const mockTicket1 = createMockTicket({ id: 'ticket-1', title: 'First' });
-      const mockTicket2 = createMockTicket({ id: 'ticket-2', title: 'Second' });
+      const mockTicket1 = createMockTicket({ id: '00000000-0000-4000-8000-000000000001', title: 'First' });
+      const mockTicket2 = createMockTicket({ id: '00000000-0000-4000-8000-000000000002', title: 'Second' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
       jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => {
-        if (id === 'ticket-1') return mockTicket1;
-        if (id === 'ticket-2') return mockTicket2;
+        if (id === '00000000-0000-4000-8000-000000000001') return mockTicket1;
+        if (id === '00000000-0000-4000-8000-000000000002') return mockTicket2;
         return createMockTicket({ id });
       });
 
@@ -425,8 +425,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should have button with descriptive aria-label in pane header', async () => {
       // SPEC: Button must be accessible to screen readers
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1', title: 'Test' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001', title: 'Test' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -441,8 +441,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should support keyboard navigation to open modal', async () => {
       // SPEC: Button must be accessible via keyboard
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -462,7 +462,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should show error message if ticket details fail to load', async () => {
       // SPEC: Should handle API errors gracefully
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -484,8 +484,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     it('should allow retry if details fail to load', async () => {
       // SPEC: User should be able to retry loading details
       const mockWorkspaces = [mkWorkspace({ slug: 'loregarden' })];
-      const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
-      const mockTicket = createMockTicket({ id: 'ticket-1' });
+      const mockTree = [createMockTreeNode({ id: '00000000-0000-4000-8000-000000000001' })];
+      const mockTicket = createMockTicket({ id: '00000000-0000-4000-8000-000000000001' });
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
@@ -515,7 +515,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 // Helper functions
 function createMockTreeNode(overrides?: Partial<apiClient.TicketTreeNode>): apiClient.TicketTreeNode {
   return {
-    id: 'ticket-123',
+    id: '00000000-0000-4000-8000-000000000123',
     external_id: '16-modal-with-ticket-details',
     title: 'Test Ticket',
     state: 'in_progress',
@@ -531,7 +531,7 @@ function createMockTreeNode(overrides?: Partial<apiClient.TicketTreeNode>): apiC
 
 function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClient.TicketDetail {
   return {
-    id: 'ticket-123',
+    id: '00000000-0000-4000-8000-000000000123',
     external_id: '16-modal-with-ticket-details',
     title: 'Test Ticket',
     description: 'Test description',

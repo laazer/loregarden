@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
+import { useTicketRefStore } from "../../state/ticketRefStore";
 import { TicketRouteResolver } from "../TicketRouteResolver";
 
 jest.mock("../../api/client", () => ({
@@ -28,7 +30,7 @@ function renderAt(path: string) {
             path="/tickets/:ticketId/:artifactTab"
             element={
               <TicketRouteResolver>
-                <div data-testid="ticket-page">ticket page</div>
+                <TicketPage />
               </TicketRouteResolver>
             }
           />
@@ -39,47 +41,76 @@ function renderAt(path: string) {
   );
 }
 
+const REF = "lor-mcp-gateway-142";
+
+/** Counts mounts, so a test can tell an address swap from a page reload. */
+let pageMounts = 0;
+function TicketPage() {
+  useEffect(() => {
+    pageMounts += 1;
+  }, []);
+  return <div data-testid="ticket-page">ticket page</div>;
+}
+
 beforeEach(() => {
   api.ticket.mockReset();
+  pageMounts = 0;
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
 });
 
-test("a UUID route renders the page without resolving anything", async () => {
-  renderAt(`/tickets/${UUID}/diff`);
+test("a shareable id stays in the address bar and the page renders", async () => {
+  api.ticket.mockResolvedValue({ id: UUID, external_id: REF });
+
+  renderAt(`/tickets/${REF}/logs`);
+
+  expect(await screen.findByTestId("ticket-page")).toBeInTheDocument();
+  expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${REF}/logs`);
+  expect(api.ticket).toHaveBeenCalledWith(REF);
+  expect(useTicketRefStore.getState().uuidByRef[REF]).toBe(UUID);
+});
+
+test("a shareable id already known is not asked for again", async () => {
+  useTicketRefStore.getState().remember({ id: UUID, external_id: REF });
+
+  renderAt(`/tickets/${REF}/diff`);
 
   expect(await screen.findByTestId("ticket-page")).toBeInTheDocument();
   expect(api.ticket).not.toHaveBeenCalled();
 });
 
-test("a shareable id is rewritten to the canonical UUID path", async () => {
-  api.ticket.mockResolvedValue({ id: UUID, external_id: "lor-mcp-gateway-142" });
+test("a UUID address is swapped for the shareable id without reloading the page", async () => {
+  api.ticket.mockResolvedValue({ id: UUID, external_id: REF });
 
-  renderAt("/tickets/lor-mcp-gateway-142/logs");
+  renderAt(`/tickets/${UUID}/diff?run=abc`);
 
-  await waitFor(() => {
-    expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${UUID}/logs`);
-  });
-  expect(api.ticket).toHaveBeenCalledWith("lor-mcp-gateway-142");
+  // The page does not wait on the lookup: it is keyed by the UUID already.
   expect(await screen.findByTestId("ticket-page")).toBeInTheDocument();
-});
-
-test("the tab and query string survive the rewrite", async () => {
-  api.ticket.mockResolvedValue({ id: UUID, external_id: "lor-mcp-gateway-142" });
-
-  renderAt("/tickets/lor-mcp-gateway-142/diff?run=abc");
-
   await waitFor(() => {
-    expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${UUID}/diff?run=abc`);
+    expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${REF}/diff?run=abc`);
   });
+  expect(pageMounts).toBe(1);
 });
 
-test("a pre-restructure id resolves the same way", async () => {
-  api.ticket.mockResolvedValue({ id: UUID, external_id: "lor-mcp-gateway-142" });
+test("a UUID address for a ticket with no shareable id stays put", async () => {
+  api.ticket.mockResolvedValue({ id: UUID, external_id: "" });
+
+  renderAt(`/tickets/${UUID}/diff`);
+
+  await waitFor(() => expect(api.ticket).toHaveBeenCalledWith(UUID));
+  expect(await screen.findByTestId("ticket-page")).toBeInTheDocument();
+  expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${UUID}/diff`);
+});
+
+test("a pre-restructure id moves to the current shareable id", async () => {
+  api.ticket.mockResolvedValue({ id: UUID, external_id: REF });
 
   renderAt("/tickets/456-one-dispatch-decision-instead-of-three/diff");
 
   await waitFor(() => {
-    expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${UUID}/diff`);
+    expect(screen.getByTestId("path")).toHaveTextContent(`/tickets/${REF}/diff`);
   });
+  expect(await screen.findByTestId("ticket-page")).toBeInTheDocument();
+  expect(api.ticket).toHaveBeenCalledWith("456-one-dispatch-decision-instead-of-three");
 });
 
 test("an id that resolves to nothing says so instead of bouncing home", async () => {
