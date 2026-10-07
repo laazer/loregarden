@@ -112,7 +112,10 @@ export interface TimelineRange {
 }
 
 /** The span the timeline draws: today to the latest date any row names, with a little air. */
-export function timelineRange(rows: MilestoneSchedule[], today: string): TimelineRange {
+export function timelineRange(
+  rows: Pick<MilestoneSchedule, "target_date" | "forecast_date">[],
+  today: string,
+): TimelineRange {
   const start = isoDay(today);
   let end = start + 14 * MS_PER_DAY;
   for (const row of rows) {
@@ -183,4 +186,44 @@ export function proposalRows(plan: InitiativePlan, proposal: ScheduleProposal): 
 /** Whether any row has a date the timeline could draw. */
 export function hasTimelineDates(rows: MilestoneSchedule[]): boolean {
   return rows.some((row) => row.target_date || row.forecast_date);
+}
+
+export interface ProposedMilestone {
+  milestone: MilestoneSchedule;
+  /** The target after accepting: the proposed date, or the current one when the proposal leaves it alone. */
+  target: string | null;
+  /** The phase position after accepting, 0-based. */
+  position: number;
+}
+
+/**
+ * The milestones as accepting would leave them, in their new order.
+ *
+ * Mirrors the server's `_reorder`: `plan_order=k` means "move to position k of
+ * the one cross-workspace sequence", applied lowest position first — so what
+ * this draws is what Accept writes, not what the planner meant to ask for.
+ */
+export function proposedSequence(plan: InitiativePlan, proposal: ScheduleProposal): ProposedMilestone[] {
+  const items = new Map(proposal.items.map((item) => [item.ticket_id, item]));
+  const order = [...plan.milestones];
+  const moves = proposal.items
+    .filter((item) => item.plan_order != null)
+    .sort((a, b) => (a.plan_order ?? 0) - (b.plan_order ?? 0));
+  for (const move of moves) {
+    const index = order.findIndex((m) => m.id === move.ticket_id);
+    if (index < 0) continue;
+    const [moved] = order.splice(index, 1);
+    order.splice(Math.min(move.plan_order ?? 0, order.length), 0, moved);
+  }
+  return order.map((milestone, position) => {
+    const proposed = items.get(milestone.id)?.target_date;
+    // An absent key was not proposed; null clears the date.
+    return { milestone, position, target: proposed === undefined ? milestone.target_date : proposed };
+  });
+}
+
+/** The initiative's own target after accepting. */
+export function proposedInitiativeTarget(plan: InitiativePlan, proposal: ScheduleProposal): string | null {
+  const proposed = proposal.items.find((item) => item.ticket_id === plan.id)?.target_date;
+  return proposed === undefined ? plan.target_date : proposed;
 }
