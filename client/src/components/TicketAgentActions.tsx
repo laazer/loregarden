@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useAgentAction } from "../lib/agentActions/useAgentAction";
+import { useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 import { useRunControls } from "./chat/primitives/useRunControls";
 
@@ -16,7 +16,7 @@ import { useRunControls } from "./chat/primitives/useRunControls";
  * nothing itself.
  */
 export function TicketAgentActions() {
-  const { ticketId = "" } = useParams<{ ticketId: string }>();
+  const ticketId = useTicketIdFromRoute() ?? "";
   const queryClient = useQueryClient();
   const { data: ticket } = useQuery({
     queryKey: ["ticket", ticketId],

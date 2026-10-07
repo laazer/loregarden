@@ -1,5 +1,6 @@
 import { useLocation, useParams } from "react-router-dom";
 
+import { useTicketRefStore } from "../state/ticketRefStore";
 import { getRouterNavigate } from "./routerBridge";
 import {
   artifactTabFromPath,
@@ -13,7 +14,9 @@ import {
   studioResourceFromPath,
   studioResourcePath,
   studioSectionFromPath,
+  ticketIdFromPath,
   ticketPath,
+  ticketUuidForRef,
   type AppPage,
   type ArtifactTab,
   type StudioSection,
@@ -42,6 +45,7 @@ export {
   studioWorkflowPath,
   ticketIdFromPath,
   ticketPath,
+  ticketUuidForRef,
 } from "./appNavigation";
 
 export function navigateToPage(page: AppPage, replace = false) {
@@ -120,9 +124,21 @@ export function useAppPage(): AppPage {
   return pageFromPath(pathname);
 }
 
+/** The open ticket's UUID, from a `/tickets/:ticketId` route param.
+ *
+ * The param is usually the shareable id; see `ticketIdFromPath`.
+ */
 export function useTicketIdFromRoute(): string | null {
   const { ticketId } = useParams<{ ticketId?: string }>();
-  return ticketId ?? null;
+  const uuidByRef = useTicketRefStore((s) => s.uuidByRef);
+  return ticketId ? ticketUuidForRef(ticketId, uuidByRef) : null;
+}
+
+/** The open ticket's UUID, for chrome that sits outside the ticket route. */
+export function useTicketIdFromPath(): string | null {
+  const { pathname } = useLocation();
+  const uuidByRef = useTicketRefStore((s) => s.uuidByRef);
+  return ticketIdFromPath(pathname, uuidByRef);
 }
 
 export function useArtifactTabFromRoute(defaultTab: ArtifactTab = "diff"): ArtifactTab {

@@ -1,3 +1,4 @@
+import { useTicketRefStore } from "../state/ticketRefStore";
 import { looksLikeTicketUuid } from "./ticketIds";
 
 export type AppPage =
@@ -200,25 +201,43 @@ export function isStudioSection(value: string | undefined | null): value is Stud
   return Boolean(value && STUDIO_SECTIONS.includes(value as StudioSection));
 }
 
+/** The link to a ticket tab, under the ticket's shareable id when it is known.
+ *
+ * Most callers hold only a UUID (a run row, a queue entry). If this tab has
+ * already learned that ticket's shareable id the link uses it; otherwise the
+ * UUID link opens the same page and `TicketRouteResolver` swaps the address for
+ * the readable one once it has the ticket.
+ */
 export function ticketPath(ticketId: string, tab: ArtifactTab = "diff"): string {
-  const encodedId = encodeURIComponent(ticketId);
-  return `/tickets/${encodedId}/${tab}`;
+  const ref = useTicketRefStore.getState().refByUuid[ticketId] ?? ticketId;
+  return `/tickets/${encodeURIComponent(ref)}/${tab}`;
 }
 
-/** The ticket id in the path, when it is one the API can be called with.
+/** The ticket UUID a ticket path stands for, or null if it is not known yet.
  *
- * A ticket route also accepts a shareable id (`/tickets/lor-mcp-gateway-142`),
- * which `TicketRouteResolver` swaps for the UUID. App chrome reads the path
- * directly rather than through that route, so during the swap it would see a
- * ref that no ticket-scoped endpoint is keyed by and fetch 404s with it. Null is
- * the honest answer for that moment — every caller already handles "no ticket
- * here" — and the real id arrives with the rewritten URL a tick later.
+ * The address bar holds a ticket's shareable id (`/tickets/lor-mcp-gateway-142`)
+ * or, for a moment after following a UUID link, the UUID itself. Every
+ * ticket-scoped endpoint takes the UUID, so a shareable id is looked up in
+ * `uuidByRef` — what `TicketRouteResolver` has learned. Before it has, null is
+ * the honest answer: every caller already handles "no ticket here", and
+ * answering with the ref would fetch 404s under an id no endpoint accepts.
  */
-export function ticketIdFromPath(pathname: string): string | null {
+export function ticketIdFromPath(
+  pathname: string,
+  uuidByRef: Readonly<Record<string, string>>,
+): string | null {
   const match = pathname.match(TICKET_PATH_RE);
   if (!match) return null;
-  const id = decodeSegment(match[1]);
-  return looksLikeTicketUuid(id) ? id : null;
+  return ticketUuidForRef(decodeSegment(match[1]), uuidByRef);
+}
+
+/** A ticket route param as the UUID it names, or null if not yet known. */
+export function ticketUuidForRef(
+  ref: string,
+  uuidByRef: Readonly<Record<string, string>>,
+): string | null {
+  if (looksLikeTicketUuid(ref)) return ref;
+  return uuidByRef[ref] ?? null;
 }
 
 export function artifactTabFromPath(pathname: string): ArtifactTab | null {

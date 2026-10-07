@@ -11,20 +11,20 @@
  * ask says *that*, rather than both reading as an empty list.
  */
 
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { duration } from "../lib/duration";
-import { ticketIdFromPath, ticketPath } from "../lib/appNavigation";
+import { ticketPath } from "../lib/appNavigation";
+import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import { LIVE_RUN_STATUSES, runningTickets } from "../lib/runningTickets";
 import { runStatusLabel, ticketStateColor } from "../lib/ticketStates";
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { blurOnClick } from "./appSidebarBlur";
 
 export function SidebarRunningSection({ headingId }: { headingId: string }) {
-  const { pathname } = useLocation();
   const { activeRuns, error, loading } = useQueueStatus();
   const running = runningTickets(activeRuns);
-  const currentTicketId = ticketIdFromPath(pathname);
+  const currentTicketId = useTicketIdFromPath();
 
   let body;
   if (running.length > 0) {
