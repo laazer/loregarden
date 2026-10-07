@@ -565,3 +565,47 @@
   border-radius: 9px;
   box-shadow: none;
 }
+
+/*
+ * Running: a status dot where the other sections draw an icon, so a collapsed
+ * rail still shows how many slots are busy and whether each is moving.
+ */
+.app-sidebar-run-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.app-sidebar-run-dot.is-live {
+  animation: app-sidebar-run-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes app-sidebar-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar-run-dot.is-live {
+    animation: none;
+  }
+}
+
+.app-sidebar-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--txl);
+}
+
+/* Empty and error lines: words, not a control, so no row hover. */
+.app-sidebar-note {
+  padding: 6px 6px 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--txl);
+}

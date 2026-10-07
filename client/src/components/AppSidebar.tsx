@@ -1,5 +1,6 @@
 /**
- * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest.
+ * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest,
+ * then the tickets running right now.
  *
  * **Tools is not stored.** It is the static page catalog, rendered directly.
  * The seven built-in pages are the application's own navigation, and reaching
@@ -18,7 +19,7 @@
  *     still leave the name unreadable to a screen reader on a collapsed rail.
  *   - **Expansion answers focus as well as hover**, so the rail is usable
  *     without a pointer, and it never traps focus once expanded.
- *   - **Each section scrolls, the panel does not.** The three lists are three
+ *   - **Each section scrolls, the panel does not.** The four lists are four
  *     scroll containers, so no list can push another — or the footer, which
  *     holds the controls for fixing a crowded rail — off the bottom. The
  *     containers are the `ul`s themselves, which add no tab stop of their own:
@@ -49,6 +50,7 @@ import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { SIDEBAR_PAGES } from "./appSidebarPages";
+import { SidebarRunningSection } from "./AppSidebarRunning";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import {
   ControlIcon,
@@ -241,6 +243,7 @@ export function AppSidebar({
   const toolsHeadingId = useId();
   const pinnedHeadingId = useId();
   const tabsHeadingId = useId();
+  const runningHeadingId = useId();
 
   const { entries, viewsById, isReady, swapEntries, dropEntry } = tabs;
 
@@ -506,6 +509,8 @@ export function AppSidebar({
               {viewRows(false)}
             </ul>
           </div>
+
+          <SidebarRunningSection headingId={runningHeadingId} />
 
           <div className="app-sidebar-spacer" />
 
