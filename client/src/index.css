@@ -372,6 +372,13 @@ textarea::placeholder {
   border-color: var(--bd);
 }
 
+/* A panel toggle (History, Workbench) shows whether its panel is open. */
+.topbar-action-btn.btn-secondary[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd));
+  background: color-mix(in srgb, var(--ac) 12%, var(--bg2));
+  color: var(--tx);
+}
+
 .topbar-action-btn--strong.btn-secondary {
   border-color: var(--bd2);
   color: var(--tx);

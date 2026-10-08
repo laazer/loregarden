@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
 import { AUTOPILOT_ACTION_LABEL, formatWhen } from "../../../lib/scheduleFormat";
@@ -23,7 +25,8 @@ function TicketLink({ node }: { node: PlanNode }) {
  * Who is driving the plan, and what is waiting on a person.
  *
  * Answers "what is running, what starts next, and what needs me?". The actions
- * are the autopilot switch, the parallel cap, and — per ticket waiting on a
+ * are the autopilot switch, the parallel cap (applied with Update, so a
+ * mis-pick on the dropdown changes nothing), and — per ticket waiting on a
  * person — opening it, or clearing the mark when an agent can do it after all.
  */
 export function AutopilotPanel({
@@ -44,6 +47,11 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
+  // One ticket per lane at a time, so the lanes with open work cap it too.
+  const openLanes = new Set(plan.nodes.filter((n) => !n.external && n.status !== "done").map((n) => n.lane)).size;
+  const [draftParallel, setDraftParallel] = useState<number | null>(null);
+  const parallel = draftParallel ?? autopilot.max_parallel;
+  const parallelChanged = parallel !== autopilot.max_parallel;
 
   return (
     <section className="plan-autopilot" aria-labelledby="plan-autopilot-title">
@@ -62,9 +70,9 @@ export function AutopilotPanel({
           <Select
             aria-label="Most tickets the autopilot runs at once"
             className="plan-parallel-select"
-            value={String(autopilot.max_parallel)}
+            value={String(parallel)}
             disabled={busy}
-            onChange={(e) => onAutopilot({ max_parallel: Number(e.target.value) })}
+            onChange={(e) => setDraftParallel(Number(e.target.value))}
           >
             {PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -72,6 +80,15 @@ export function AutopilotPanel({
               </option>
             ))}
           </Select>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || !parallelChanged}
+            title={parallelChanged ? `Run at most ${parallel} at once` : "Pick a different number first"}
+            onClick={() => onAutopilot({ max_parallel: parallel })}
+          >
+            Update
+          </Button>
           <Button
             variant={autopilot.enabled ? "secondary" : "primary"}
             compact
@@ -84,6 +101,14 @@ export function AutopilotPanel({
           </Button>
         </div>
       </header>
+
+      {openLanes > 0 && parallel > openLanes ? (
+        <p className="plan-hint">
+          Only {openLanes} {openLanes === 1 ? "lane has" : "lanes have"} open work, and it runs one ticket per lane — so
+          at most {openLanes} run at once whatever this is set to. Tag tickets <span className="plan-mono">lane-…</span>{" "}
+          to split a workspace into more lanes.
+        </p>
+      ) : null}
 
       {autopilot.available ? null : (
         <p className="plan-hint">
