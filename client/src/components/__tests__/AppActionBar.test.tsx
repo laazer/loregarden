@@ -736,21 +736,20 @@ describe("suggestions on a screen that composes for its own thread", () => {
     );
   }
 
-  it("offers the thread's openers in the bar and sends one into it", () => {
-    const send = jest.fn().mockResolvedValue({});
+  it("leaves them to the chat page, which offers them under its own composer", () => {
     mockResolver.mockReturnValue(
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenSession: session({ kind: "baxter-home", id: "s1", send }),
+        screenSession: session({ kind: "baxter-home", id: "s1" }),
       }),
     );
 
     renderAt("/chat");
-    fireEvent.click(screen.getByRole("button", { name: "What should I work on next?" }));
 
-    expect(send).toHaveBeenCalledWith("What should I work on next?");
-    expect(screen.getByTestId("location")).toHaveTextContent("/chat");
+    expect(
+      screen.queryByRole("button", { name: "What should I work on next?" }),
+    ).not.toBeInTheDocument();
   });
 
   it("takes a pick made on Home to the chat page, where the reply is drawn", () => {
@@ -766,7 +765,7 @@ describe("suggestions on a screen that composes for its own thread", () => {
     renderAt("/");
     fireEvent.click(screen.getByRole("button", { name: "What should I work on next?" }));
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("What should I work on next?");
     expect(screen.getByTestId("location")).toHaveTextContent("/chat");
   });
 
@@ -779,7 +778,7 @@ describe("suggestions on a screen that composes for its own thread", () => {
       }),
     );
 
-    renderAt("/chat");
+    renderAt("/");
 
     expect(screen.getByRole("button", { name: "What should I work on next?" })).toBeDisabled();
   });

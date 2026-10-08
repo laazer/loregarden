@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { baxterChatSessionsKey } from "../../hooks/useBaxterChatSession";
+import { useDialogDismiss } from "../../hooks/useDialogDismiss";
+import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { relativeTime } from "./relativeTime";
 
 const PRIMITIVE_LABELS = [
@@ -47,27 +52,40 @@ export function ChatHistorySidebar({
     enabled: open && Boolean(workspaceSlug),
     staleTime: 10_000,
   });
+  const [query, setQuery] = useState("");
+  // Deleting is permanent, so the trash control asks first; this is the row asking.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const trapRef = useDialogFocusTrap<HTMLElement>();
+  // Escape backs out of a pending delete before it closes the drawer.
+  useDialogDismiss(open ? () => (confirmingId ? setConfirmingId(null) : onClose()) : null);
 
   if (!open) return null;
 
   const entries = sessions.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? entries.filter((entry) =>
+        `${entry.title}\n${entry.preview}`.toLowerCase().includes(needle),
+      )
+    : entries;
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="baxter-history-scrim"
         aria-label="Close chat history"
+        tabIndex={-1}
         onClick={onClose}
       />
-      <aside className="baxter-history-panel" aria-label="Chat history">
+      <aside ref={trapRef} className="baxter-history-panel" aria-label="Chat history" tabIndex={-1}>
         <header className="baxter-history-head">
           <div>
             <p className="baxter-history-eyebrow">Baxter archive</p>
             <h2>Chat history</h2>
           </div>
-          <button
-            type="button"
+          <Button
+            variant="plain"
             className="baxter-history-close"
             aria-label="Close chat history"
             onClick={onClose}
@@ -75,8 +93,20 @@ export function ChatHistorySidebar({
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path d="m6 6 12 12M18 6 6 18" />
             </svg>
-          </button>
+          </Button>
         </header>
+
+        {entries.length ? (
+          <div className="baxter-history-search">
+            <Input
+              type="search"
+              aria-label="Search chats"
+              placeholder="Search chats by title or last reply"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        ) : null}
 
         <div className="baxter-history-list">
           {sessions.isLoading ? <p className="baxter-history-note">Loading conversations…</p> : null}
@@ -88,16 +118,24 @@ export function ChatHistorySidebar({
               No conversations yet. Ask Baxter something and it will be saved here.
             </p>
           ) : null}
+          {needle && entries.length > 0 && shown.length === 0 ? (
+            <p className="baxter-history-note">
+              No chats match “{query.trim()}”.{" "}
+              <Button variant="plain" className="baxter-history-clear" onClick={() => setQuery("")}>
+                Clear search
+              </Button>
+            </p>
+          ) : null}
 
-          {entries.map((entry) => (
+          {shown.map((entry) => (
             <div
               key={entry.id}
               className={`baxter-history-row${
                 entry.id === activeSessionId ? " baxter-history-row--active" : ""
               }`}
             >
-              <button
-                type="button"
+              <Button
+                variant="plain"
                 className="baxter-history-entry"
                 aria-current={entry.id === activeSessionId ? "true" : undefined}
                 onClick={() => onSelectSession(entry.id)}
@@ -114,22 +152,47 @@ export function ChatHistorySidebar({
                     {entry.message_count} message{entry.message_count === 1 ? "" : "s"}
                   </span>
                 </span>
-              </button>
-              <button
-                type="button"
-                className="baxter-history-delete"
-                aria-label={`Delete ${entry.title}`}
-                onClick={() => onDeleteSession(entry.id)}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-                </svg>
-              </button>
+              </Button>
+              {confirmingId === entry.id ? (
+                <div className="baxter-history-confirm" role="group" aria-label={`Delete ${entry.title}?`}>
+                  <span>Delete this chat for good?</span>
+                  <Button
+                    variant="plain"
+                    className="baxter-history-confirm-delete"
+                    onClick={() => {
+                      setConfirmingId(null);
+                      onDeleteSession(entry.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                  <Button
+                    variant="plain"
+                    className="baxter-history-confirm-cancel"
+                    autoFocus
+                    onClick={() => setConfirmingId(null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="plain"
+                  className="baxter-history-delete"
+                  aria-label={`Delete ${entry.title}`}
+                  title="Delete this chat"
+                  onClick={() => setConfirmingId(entry.id)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                  </svg>
+                </Button>
+              )}
             </div>
           ))}
 
-          <button
-            type="button"
+          <Button
+            variant="plain"
             className="baxter-history-entry"
             onClick={onOpenPrimitiveGallery}
           >
@@ -153,7 +216,7 @@ export function ChatHistorySidebar({
             <svg className="baxter-history-entry-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path d="m9 18 6-6-6-6" />
             </svg>
-          </button>
+          </Button>
         </div>
       </aside>
     </>

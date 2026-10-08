@@ -12,8 +12,7 @@
 }
 
 .chat-side-card-head,
-.chat-side-card-row,
-.chat-side-card-stage-meta {
+.chat-side-card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -35,8 +34,7 @@
   min-width: 0;
 }
 
-.chat-side-card-section h3,
-.chat-side-card-subhead {
+.chat-side-card-section h3 {
   margin: 0;
   font-family: var(--mono);
   font-size: 10px;
@@ -44,10 +42,6 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--txl);
-}
-
-.chat-side-card-subhead {
-  margin-top: 4px;
 }
 
 .chat-side-card-icon-btn {
@@ -80,7 +74,6 @@
   text-decoration: underline;
 }
 
-.chat-side-suggestions,
 .chat-side-history {
   list-style: none;
   margin: 0;
@@ -88,78 +81,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.chat-side-suggestion {
-  width: 100%;
-  padding: 8px 11px;
-  border: 1px solid var(--bd2);
-  border-radius: 10px;
-  background: var(--bg2);
-  color: var(--tx);
-  font-size: 12.5px;
-  line-height: 1.35;
-  text-align: left;
-  cursor: pointer;
-}
-
-.chat-side-suggestion:hover:not(:disabled) {
-  border-color: var(--ac);
-  color: var(--ac2);
-}
-
-.chat-side-suggestion:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.chat-side-card-stage {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--bd2);
-  border-radius: 12px;
-  background: var(--bg0);
-}
-
-.chat-side-card-stage-meta span {
-  font-size: 11.5px;
-  color: var(--txm);
-}
-
-/* Primitives size against their container; here that is the card, not the thread. */
-.chat-side-card-primitive {
-  container-type: inline-size;
-  min-width: 0;
-  --lg-primitive-regular: 100%;
-  --lg-primitive-wide: 100%;
-  --lg-primitive-full: 100%;
-  --lg-primitive-breakout-max: 100%;
-  max-height: 420px;
-  /* Every visible part fits at this width; what overflowed sideways was
-     invisible (measured: nothing painted past the edge), and a horizontal
-     scrollbar for it read as a broken card. */
-  overflow: hidden auto;
-}
-
-.chat-side-card-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 4px 2px 2px;
-}
-
-.chat-side-card-summary strong {
-  font-size: 13px;
-  color: var(--tx);
-  overflow-wrap: anywhere;
-}
-
-.chat-side-card-summary span {
-  font-size: 12px;
-  color: var(--txm);
 }
 
 .chat-side-history-entry {
@@ -177,7 +98,7 @@
 }
 
 .chat-side-history-entry:hover,
-.chat-side-history-entry[aria-current="true"] {
+.chat-side-history-entry:focus-visible {
   border-color: color-mix(in srgb, var(--ac) 50%, var(--bd2));
   background: var(--bg2);
 }
@@ -226,7 +147,18 @@
   color: var(--tx);
 }
 
-/* A narrow window gives the thread the width; the card overlays when opened. */
+/* A narrow window gives the thread the width; the card overlays when opened, over a scrim
+   that closes it. Keep the breakpoint in step with WORKBENCH_OVERLAY_QUERY. */
+.chat-side-card-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--bg0) 55%, transparent);
+  cursor: default;
+}
+
 @media (max-width: 1100px) {
   .chat-side-card {
     position: absolute;

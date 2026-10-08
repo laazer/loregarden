@@ -5,6 +5,7 @@ import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
+import { ChatPromptRow } from "../components/chat/ChatPromptRow";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
 import {
   ComposerAttachButton,
@@ -25,8 +26,10 @@ import {
 } from "../hooks/useComposerCommands";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
+import { withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { pushToast } from "../state/toastStore";
@@ -57,13 +60,16 @@ type ChatTurn = {
 /** Always offered: the question the workbench exists to make one click. */
 const MOST_VALUABLE_TICKET = "Find the most valuable ticket";
 
+/** Openers for a new chat. The composer's placeholder already asks "what should we ship". */
 const EMPTY_CHIPS = [
   MOST_VALUABLE_TICKET,
-  "What should we ship today?",
   "What should I look at first?",
   "Review what's waiting on me",
   "Triage the stuck tickets",
 ] as const;
+
+/** As many as one line under the composer holds at the reading width. */
+const PROMPT_LIMIT = 4;
 
 function pendingApprovals(approvals: Approval[] | undefined): Approval[] {
   return (approvals ?? []).filter((a) => !a.status || a.status === "pending");
@@ -112,15 +118,23 @@ function suggestionChips(approvals: Approval[], tickets: TicketSummary[]): strin
 
 const WORKBENCH_STORAGE_KEY = "loregarden.chat.workbenchOpen";
 
-/** Remembered per browser; a wide window opens with it, a narrow one without. */
+/** Below this the workbench overlays the thread instead of sitting beside it (ChatSideCard.css). */
+const WORKBENCH_OVERLAY_QUERY = "(max-width: 1100px)";
+
+/**
+ * Remembered per browser on a wide window. A narrow one always starts without
+ * it: there it covers the thread, so a remembered "open" greeted a phone with
+ * no chat at all.
+ */
 function initialWorkbenchOpen(): boolean {
+  if (window.matchMedia?.(WORKBENCH_OVERLAY_QUERY).matches) return false;
   try {
     const saved = window.localStorage.getItem(WORKBENCH_STORAGE_KEY);
     if (saved === "1" || saved === "0") return saved === "1";
   } catch {
-    /* silent-ok: storage blocked (private window); fall through to the width default */
+    /* silent-ok: storage blocked (private window); fall through to the wide-window default */
   }
-  return window.matchMedia?.("(min-width: 1101px)").matches ?? true;
+  return true;
 }
 
 function rememberWorkbenchOpen(open: boolean): void {
@@ -193,6 +207,7 @@ function BaxterHeroAsk({
   blocked = false,
   commandOptions,
   menu,
+  prompts,
 }: {
   onSend: ComposerSend;
   onStop?: () => void;
@@ -202,6 +217,7 @@ function BaxterHeroAsk({
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
   menu: ReactNode;
+  prompts: ReactNode;
 }) {
   const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
@@ -222,6 +238,7 @@ function BaxterHeroAsk({
           variant="dock"
           iconOnlySend={false}
         />
+        {prompts}
       </div>
     </section>
   );
@@ -236,6 +253,7 @@ function BaxterReplyDock({
   blocked = false,
   commandOptions,
   menu,
+  prompts,
 }: {
   onSend: ComposerSend;
   onStop?: () => void;
@@ -245,6 +263,7 @@ function BaxterReplyDock({
   blocked?: boolean;
   commandOptions: ComposerHostOptions;
   menu: ReactNode;
+  prompts: ReactNode;
 }) {
   const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
@@ -260,6 +279,7 @@ function BaxterReplyDock({
         disabled={blocked}
         variant="dock"
       />
+      {prompts}
     </div>
   );
 }
@@ -482,7 +502,9 @@ export function BaxterChatPage() {
     [galleryTurns, chat.messages],
   );
 
-  const sideSuggestions = useMemo<readonly string[]>(() => {
+  // The one set of one-click prompts: what the latest reply calls for, then what
+  // the workspace's state does (approvals, blocked work).
+  const prompts = useMemo<readonly string[]>(() => {
     if (galleryTurns) {
       return (
         [...galleryTurns]
@@ -491,8 +513,19 @@ export function BaxterChatPage() {
         EMPTY_CHIPS
       );
     }
-    return hasThread ? suggestionChips(approvals, tickets) : EMPTY_CHIPS;
-  }, [galleryTurns, hasThread, approvals, tickets]);
+    if (!hasThread) return EMPTY_CHIPS;
+    return withReplyPrompts(suggestionChips(approvals, tickets), chat.messages).slice(
+      0,
+      PROMPT_LIMIT,
+    );
+  }, [galleryTurns, hasThread, approvals, tickets, chat.messages]);
+
+  const promptsDisabled = busy || !workspaceSlug;
+  // One place at a time: the workbench while it is open, under the composer
+  // while it is closed — so closing the workbench never takes the prompts away.
+  const promptRow = (
+    <ChatPromptRow prompts={prompts} disabled={promptsDisabled} onPick={(text) => respond(text)} />
+  );
 
   const primitives = useMemo(() => primitiveHistory(threadMessages), [threadMessages]);
 
@@ -510,6 +543,7 @@ export function BaxterChatPage() {
   );
 
   const [workbenchOpen, setWorkbenchOpenState] = useState(initialWorkbenchOpen);
+  const workbenchOverlays = useMediaQuery(WORKBENCH_OVERLAY_QUERY);
   const setWorkbenchOpen = useCallback((open: boolean) => {
     setWorkbenchOpenState(open);
     rememberWorkbenchOpen(open);
@@ -585,6 +619,7 @@ export function BaxterChatPage() {
               blocked={!workspaceSlug}
               commandOptions={commandOptions}
               menu={composerMenu}
+              prompts={workbenchOpen ? null : promptRow}
             />
             {sendError}
           </div>
@@ -666,18 +701,19 @@ export function BaxterChatPage() {
               blocked={!workspaceSlug}
               commandOptions={commandOptions}
               menu={composerMenu}
+              prompts={workbenchOpen ? null : promptRow}
             />
           </>
         )}
       </div>
       {workbenchOpen ? (
         <ChatSideCard
-          suggestions={sideSuggestions}
-          onSuggestion={(text) => respond(text)}
-          suggestionsDisabled={busy || !workspaceSlug}
+          overlay={workbenchOverlays}
+          prompts={prompts}
+          promptsDisabled={promptsDisabled}
+          onPrompt={(text) => respond(text)}
           primitives={primitives}
           onJumpTo={jumpToMessage}
-          onPrimitiveSubmit={(content) => respond(content)}
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
         />

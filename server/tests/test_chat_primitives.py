@@ -16,7 +16,11 @@ from loregarden.models.domain.chat_primitives import (
     TodoListPart,
     WorkspacePart,
 )
-from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
+from loregarden.services.chat_primitives.parser import (
+    parse_primitive_parts,
+    parts_to_jsonable,
+    reply_preview,
+)
 from loregarden.services.chat_primitives.resolver import resolve_parts
 from loregarden.services.chat_primitives.storage import load_parts_json
 from sqlmodel import Session, select
@@ -267,3 +271,35 @@ def test_qa_fence_with_no_questions_stays_visible_text():
     assert len(parts) == 1
     assert isinstance(parts[0], TextPart)
     assert parts[0].content == raw
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        pytest.param(
+            'Filed it:\n\n```loregarden\n{"primitive":"ticket","ticket_id":"t1"}\n```\n\nDone.',
+            "Filed it: Done.",
+            id="parsed-card-dropped",
+        ),
+        pytest.param(
+            'Which?\n\n```loregarden\n{"primitive":"qa","question":"x","options":[]}\n```',
+            "Which?",
+            id="unparsed-card-dropped-too",
+        ),
+        pytest.param(
+            '```loregarden\n{"primitive":"todo_list","owner":"agent","title":"Ship it",'
+            '"items":[{"id":"a","text":"A"}]}\n```',
+            "Ship it",
+            id="card-only-named-by-title",
+        ),
+        pytest.param(
+            '```loregarden\n{"primitive":"thinking","content":"hm"}\n```\n'
+            '```loregarden\n{"primitive":"parent_ticket","ticket_id":"t1"}\n```',
+            "Parent ticket card",
+            id="card-only-named-by-kind-not-reasoning",
+        ),
+        pytest.param("", "", id="empty"),
+    ],
+)
+def test_reply_preview_shows_prose_never_card_json(text: str, expected: str):
+    assert reply_preview(text) == expected
