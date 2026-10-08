@@ -3,6 +3,7 @@ import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import type { ApprovalHistoryItem } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
 import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
@@ -478,6 +479,8 @@ export const api = {
     request<Approval[]>(
       ticketId ? `/api/inbox/approvals?ticket_id=${encodeURIComponent(ticketId)}` : "/api/inbox/approvals",
     ),
+  approvalHistory: (ticketId: string) =>
+    request<ApprovalHistoryItem[]>(`/api/inbox/approvals/history?ticket_id=${encodeURIComponent(ticketId)}`),
   resolveApproval: (
     id: string,
     body: {
