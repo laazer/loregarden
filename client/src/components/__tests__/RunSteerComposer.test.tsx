@@ -99,6 +99,7 @@ it("distinguishes a queued message from a delivered one", async () => {
       message({ id: "m2", content: "second", delivered_at: null }),
     ],
     refusal: "",
+    cancel_requested_at: null,
   });
 
   renderComposer();
@@ -128,6 +129,7 @@ it("keeps showing what was sent after the run finishes", async () => {
       }),
     ],
     refusal: "Run is succeeded, so there is nothing to steer.",
+    cancel_requested_at: null,
   });
 
   renderComposer(false);
@@ -224,6 +226,15 @@ it("offers no stop for a run that is already finished", async () => {
 // still working its way to a detached process group. A second press then
 // signals a process group the server no longer owns. So the label is LATCHED
 // off `cancel_requested_at`, newly returned by GET /api/runs/{id}/messages.
+
+function cancelled() {
+  return {
+    id: "run-1",
+    status: "running",
+    cancel_requested_at: "2026-10-08T12:00:00+00:00",
+    refusal: "",
+  };
+}
 
 function messagesPayload(overrides: Record<string, unknown> = {}) {
   return { messages: [], refusal: "", cancel_requested_at: null, ...overrides };
@@ -354,12 +365,13 @@ it("fires exactly one cancel however many times Confirm stop is pressed", async 
     refusal: "",
     cancel_requested_at: null,
   });
-  let resolveCancel: (value: unknown) => void = () => {};
+  type CancelResult = Awaited<ReturnType<typeof api.cancelRun>>;
+  let resolveCancel: (value: CancelResult) => void = () => {};
   mockApi.cancelRun.mockImplementation(
     () =>
-      new Promise((resolve) => {
+      new Promise<CancelResult>((resolve) => {
         resolveCancel = resolve;
-      }) as ReturnType<typeof api.cancelRun>,
+      }),
   );
 
   renderComposer();
@@ -373,7 +385,7 @@ it("fires exactly one cancel however many times Confirm stop is pressed", async 
 
   await waitFor(() => expect(mockApi.cancelRun).toHaveBeenCalled());
   expect(mockApi.cancelRun).toHaveBeenCalledTimes(1);
-  resolveCancel({ ok: true });
+  resolveCancel(cancelled());
 });
 
 it("does not re-arm the stop in the window before the next poll answers", async () => {
@@ -385,9 +397,7 @@ it("does not re-arm the stop in the window before the next poll answers", async 
     refusal: "",
     cancel_requested_at: null,
   });
-  mockApi.cancelRun.mockResolvedValue({ ok: true } as Awaited<
-    ReturnType<typeof api.cancelRun>
-  >);
+  mockApi.cancelRun.mockResolvedValue(cancelled());
 
   renderComposer();
   fireEvent.click(

@@ -398,18 +398,31 @@ it("does not fall back to another lane when the ledger refetch fails", async () 
   // AC25. The fallback-to-next-lane path is for a lane that genuinely dropped
   // out. A transient fetch failure during a server restart is exactly when it
   // must NOT fire — react-query keeps the last ledger, so the lanes stand.
+  // Lanes are labelled by their agent, as every other case in this file reads
+  // them — RunningLaneTabs gains no control for this ticket (AC35), so the two
+  // lanes are told apart the way the strip actually tells them apart.
   api.ticketLedger.mockResolvedValueOnce(
-    ledger([visit({ attempts: [attempt({ run_id: "r1" }), attempt({ run_id: "r2" })] })]),
+    ledger([
+      visit({
+        attempts: [
+          attempt({ run_id: "r1", agent_id: "planner" }),
+          attempt({ run_id: "r2", agent_id: "gatekeeper" }),
+        ],
+      }),
+    ]),
   );
   const { queryClient } = renderPanel(makeTicket());
   await screen.findByText("content for r1");
-  fireEvent.click(screen.getByRole("tab", { name: /r2/i }));
+  fireEvent.click(screen.getByRole("tab", { name: /gatekeeper/ }));
   await screen.findByText("content for r2");
 
   api.ticketLedger.mockRejectedValue(new Error("Failed to fetch"));
   await refetchLedger(queryClient, "t1");
 
   expect(screen.getAllByRole("tab")).toHaveLength(2);
-  expect(screen.getByRole("tab", { name: /r2/i })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tab", { name: /gatekeeper/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(screen.getByText("content for r2")).toBeInTheDocument();
 });
