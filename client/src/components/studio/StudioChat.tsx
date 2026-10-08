@@ -392,6 +392,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   );
 });
 
+
+/** How tall a dense composer's box grows before it scrolls — about eight lines. */
+const DENSE_MAX_INPUT_PX = 168;
 export function StudioChatComposer({
   value,
   onChange,
@@ -460,6 +463,16 @@ export function StudioChatComposer({
   canSendEmpty?: boolean;
 }) {
   const [dropActive, setDropActive] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Dense opens on one line beside the send chip, so it grows with what is
+  // typed (up to DENSE_MAX_INPUT_PX) instead of scrolling a single line — and
+  // shrinks back when a send clears it.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!dense || !input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, DENSE_MAX_INPUT_PX)}px`;
+  }, [dense, value]);
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
   const canSend = (value.trim().length > 0 || canSendEmpty) && !isSending && !disabled;
   const showStop = Boolean(isSending && onStop);
@@ -532,7 +545,10 @@ export function StudioChatComposer({
           ) : null}
           <Textarea
             aria-label="Message"
-            ref={commands?.inputRef as React.Ref<HTMLTextAreaElement>}
+            ref={(element) => {
+              inputRef.current = element;
+              if (commands) commands.inputRef.current = element;
+            }}
             className="lg-chat-composer-input"
             value={value}
             onChange={(e) =>
@@ -552,7 +568,7 @@ export function StudioChatComposer({
             }
             placeholder={placeholder}
             disabled={disabled}
-            rows={variant === "dock" ? 1 : 2}
+            rows={variant === "dock" || dense ? 1 : 2}
             onKeyDown={(e) => {
               // The menu owns Enter, Tab and the arrows while it is open, so a
               // completion is accepted rather than sent as a half-typed draft.

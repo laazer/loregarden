@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     ScheduleMode,
     ScheduleProposal,
     ScheduleProposalCreate,
+    ScheduleStatus,
     ScheduleTargetInput,
     Ticket,
     TicketState,
@@ -464,6 +465,40 @@ def test_an_omitted_date_is_left_alone_and_null_clears_it(db_session, workspaces
         actor="t",
     )
     assert _by_id(plan_view(db_session, initiative.id, now=NOW), m).target_date is None
+
+
+def test_pace_mode_projects_from_pace_and_keeps_but_ignores_targets(db_session, workspaces):
+    """No official timeline: where the work will likely land, with nothing to be late against."""
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    _items(db_session, here, m, open_count=2, done_days_ago=[1, 2, 3, 4, 5, 6])
+    _set_target(db_session, initiative, m, TODAY - timedelta(days=3), 0)
+    fixed = _by_id(plan_view(db_session, initiative.id, now=NOW), m)
+    assert fixed.status == ScheduleStatus.LATE
+    assert fixed.forecast_date is not None
+
+    update_plan(db_session, initiative.id, InitiativePlanUpdate(mode=ScheduleMode.PACE), actor="t")
+    view = plan_view(db_session, initiative.id, now=NOW)
+    paced = _by_id(view, m)
+    assert (paced.status, paced.drift_days) == (ScheduleStatus.PACED, None)
+    assert paced.planned_date == paced.forecast_date == fixed.forecast_date
+    assert paced.target_date == TODAY - timedelta(days=3)
+    assert view.status == ScheduleStatus.PACED
+    assert view.planned_date == view.forecast_date
+
+    update_plan(db_session, initiative.id, InitiativePlanUpdate(mode=ScheduleMode.FIXED), actor="t")
+    assert _by_id(plan_view(db_session, initiative.id, now=NOW), m).status == ScheduleStatus.LATE
+
+
+def test_pace_mode_without_a_measured_pace_says_so(db_session, workspaces):
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    _items(db_session, here, m, open_count=2)
+    update_plan(db_session, initiative.id, InitiativePlanUpdate(mode=ScheduleMode.PACE), actor="t")
+    row = _by_id(plan_view(db_session, initiative.id, now=NOW), m)
+    assert (row.forecast_date, row.status) == (None, ScheduleStatus.NO_FORECAST)
 
 
 def test_dating_a_milestone_does_not_move_it(db_session, workspaces):

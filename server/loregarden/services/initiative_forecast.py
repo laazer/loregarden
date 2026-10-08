@@ -168,11 +168,23 @@ def measure_paces(
     return paces
 
 
+def target_in_force(mode: ScheduleMode, target: date | None) -> date | None:
+    """The target the plan measures against: none in pace mode, which keeps but ignores it."""
+    return None if mode == ScheduleMode.PACE else target
+
+
 def classify(
-    *, resolved: bool, target: date | None, forecast: date | None, today: date
+    *,
+    mode: ScheduleMode,
+    resolved: bool,
+    target: date | None,
+    forecast: date | None,
+    today: date,
 ) -> ScheduleStatus:
     if resolved:
         return ScheduleStatus.DONE
+    if mode == ScheduleMode.PACE:
+        return ScheduleStatus.NO_FORECAST if forecast is None else ScheduleStatus.PACED
     if target is None:
         return ScheduleStatus.UNSCHEDULED
     if target < today:
@@ -183,6 +195,8 @@ def classify(
 
 
 def planned(mode: ScheduleMode, target: date | None, forecast: date | None) -> date | None:
+    if mode == ScheduleMode.PACE:
+        return forecast
     if mode == ScheduleMode.ROLLING and forecast is not None:
         return forecast
     return target

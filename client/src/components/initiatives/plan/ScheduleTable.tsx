@@ -23,7 +23,7 @@ const COUNT_LABEL: [NodeStatus, string][] = [
   ["waiting", "waiting"],
 ];
 
-function TimelineBar({ row, range }: { row: MilestoneSchedule; range: TimelineRange }) {
+function TimelineBar({ row, range, paced }: { row: MilestoneSchedule; range: TimelineRange; paced: boolean }) {
   // Decorative: every date it draws is in the row's own columns as text.
   return (
     <div className="plan-timeline" aria-hidden>
@@ -36,7 +36,7 @@ function TimelineBar({ row, range }: { row: MilestoneSchedule; range: TimelineRa
           }}
         />
       ) : null}
-      {row.target_date ? (
+      {row.target_date && !paced ? (
         <span className="plan-timeline-target" style={{ left: `${timelinePercent(row.target_date, range)}%` }} />
       ) : null}
     </div>
@@ -59,6 +59,7 @@ function workSummary(row: MilestoneSchedule): string {
 function MilestoneRow({
   row,
   range,
+  paced,
   first,
   last,
   busy,
@@ -67,6 +68,8 @@ function MilestoneRow({
 }: {
   row: MilestoneSchedule;
   range: TimelineRange | null;
+  /** Pace mode: no targets in force, so no target column or marker. */
+  paced: boolean;
   first: boolean;
   last: boolean;
   busy: boolean;
@@ -114,13 +117,15 @@ function MilestoneRow({
       <td className="plan-progress">
         {row.total - row.remaining}/{row.total}
       </td>
-      <td>
-        {done ? (
-          formatDay(row.target_date)
-        ) : (
-          <TargetDateField value={row.target_date} label={`Target date for ${row.title}`} onCommit={onTarget} />
-        )}
-      </td>
+      {paced ? null : (
+        <td>
+          {done ? (
+            formatDay(row.target_date)
+          ) : (
+            <TargetDateField value={row.target_date} label={`Target date for ${row.title}`} onCommit={onTarget} />
+          )}
+        </td>
+      )}
       <td title={forecastExplanation(row)}>
         {done ? "—" : row.forecast_date ? formatDay(row.forecast_date) : "Unknown"}
         {row.assumed > 0 && !done ? (
@@ -136,7 +141,7 @@ function MilestoneRow({
       </td>
       {range ? (
         <td className="plan-timeline-cell">
-          <TimelineBar row={row} range={range} />
+          <TimelineBar row={row} range={range} paced={paced} />
         </td>
       ) : null}
     </tr>
@@ -173,7 +178,10 @@ export function ScheduleTable({
     );
   }
 
-  const range = hasTimelineDates(rows) ? timelineRange(rows, todayIso(new Date(plan.generated_at))) : null;
+  const paced = plan.mode === "pace";
+  // In pace mode a kept target is not drawn, so it must not stretch the axis either.
+  const drawn = paced ? rows.map((row) => ({ target_date: null, forecast_date: row.forecast_date })) : rows;
+  const range = hasTimelineDates(drawn) ? timelineRange(drawn, todayIso(new Date(plan.generated_at))) : null;
   const assumed = rows.some((row) => row.assumed > 0 && row.status !== "done");
   return (
     <div className="plan-groups">
@@ -181,11 +189,13 @@ export function ScheduleTable({
         <p className="plan-muted plan-legend">
           {range ? (
             <>
+              {paced ? null : (
+                <span aria-hidden>
+                  <span className="plan-legend-target" /> target
+                </span>
+              )}
               <span aria-hidden>
-                <span className="plan-legend-target" /> target
-              </span>
-              <span aria-hidden>
-                <span className="plan-legend-forecast" /> forecast
+                <span className="plan-legend-forecast" /> {paced ? "likely done at the current pace" : "forecast"}
               </span>
               <span>timeline to {formatDay(new Date(range.end).toISOString().slice(0, 10))}</span>
             </>
@@ -202,8 +212,8 @@ export function ScheduleTable({
             </th>
             <th scope="col">Milestone</th>
             <th scope="col">Done</th>
-            <th scope="col">Target</th>
-            <th scope="col">Forecast</th>
+            {paced ? null : <th scope="col">Target</th>}
+            <th scope="col">{paced ? "Likely done" : "Forecast"}</th>
             <th scope="col">Status</th>
             {range ? <th scope="col">Timeline</th> : null}
           </tr>
@@ -214,6 +224,7 @@ export function ScheduleTable({
               key={row.id}
               row={row}
               range={range}
+              paced={paced}
               first={index === 0}
               last={index === rows.length - 1}
               busy={busy}

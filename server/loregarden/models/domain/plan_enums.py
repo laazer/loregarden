@@ -19,6 +19,10 @@ class ScheduleMode(StrEnum):
     #: The planned date follows the forecast, so the schedule slides as work
     #: speeds up or slows down. Targets are kept as the baseline it drifts from.
     ROLLING = "rolling"
+    #: No official dates: the plan is where the work will likely land at the
+    #: measured pace. Targets are kept but not in force, so switching back
+    #: restores them.
+    PACE = "pace"
 
 
 class ScheduleStatus(StrEnum):
@@ -33,8 +37,12 @@ class ScheduleStatus(StrEnum):
     LATE = "late"
     #: Open, but nobody has set a target.
     UNSCHEDULED = "unscheduled"
-    #: A target exists but nothing measured can price the remaining work.
+    #: A target exists but nothing measured can price the remaining work —
+    #: or, in pace mode, there is no measured pace to project from.
     NO_FORECAST = "no_forecast"
+    #: Pace mode: open, projected from the measured pace, with no target to
+    #: be ahead of or behind.
+    PACED = "paced"
 
 
 class ForecastBasis(StrEnum):

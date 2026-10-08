@@ -18,6 +18,7 @@ import { Button } from "../components/ui/Button";
 import { planQueryKey } from "../hooks/useInitiativePlanner";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { navigateToPage } from "../lib/useAppNavigation";
+import { scheduleToReplace } from "../lib/scheduleFormat";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/plan/InitiativePlan.css";
 
@@ -257,11 +258,22 @@ export function InitiativePlanPage() {
                   onStart={(ids) => startWork.mutateAsync(ids)}
                 />
               ) : (
-                <PlannerPanel initiativeId={data.id} canPlan={data.milestones.length > 0} inTab />
+                <PlannerPanel
+                  initiativeId={data.id}
+                  canPlan={data.milestones.length > 0}
+                  replaces={scheduleToReplace(data)}
+                  inTab
+                />
               )}
             </div>
           </main>
-          {narrow ? null : <PlannerPanel initiativeId={data.id} canPlan={data.milestones.length > 0} />}
+          {narrow ? null : (
+            <PlannerPanel
+              initiativeId={data.id}
+              canPlan={data.milestones.length > 0}
+              replaces={scheduleToReplace(data)}
+            />
+          )}
         </>
       ) : null}
     </div>

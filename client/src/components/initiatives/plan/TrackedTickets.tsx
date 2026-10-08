@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../../api/client";
 import type { InitiativeMilestone } from "../../../api/initiativeApi";
 import { useDebounced } from "../../../hooks/useDebounced";
+import { ticketStateLabel } from "../../../lib/ticketStates";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
 import { describeError } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
@@ -104,23 +105,45 @@ export function TrackedTickets({ initiativeId, onChanged }: { initiativeId: stri
           moving it.
         </p>
       ) : (
-        <ul className="plan-list" aria-label="Tracked tickets">
-          {members.map((m) => (
-            <li key={m.id}>
-              <TicketButton item={m} />
-              <span className="plan-muted"> · {whereItLives(m)}</span>
-              <Button
-                variant="plain"
-                className="plan-inline-btn"
-                aria-label={`Stop tracking ${m.external_id} in this initiative`}
-                disabled={busy}
-                onClick={() => remove.mutate(m.id)}
-              >
-                {remove.isPending && remove.variables === m.id ? "Removing…" : "Remove"}
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <table className="plan-table plan-members-table">
+          <caption className="visually-hidden">Tracked tickets</caption>
+          <thead>
+            <tr>
+              <th scope="col">Ticket</th>
+              <th scope="col">Type</th>
+              <th scope="col">Lives in</th>
+              <th scope="col">Workspace</th>
+              <th scope="col">State</th>
+              <th scope="col">
+                <span className="visually-hidden">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.id}>
+                <th scope="row">
+                  <TicketButton item={m} />
+                </th>
+                <td>{m.work_item_type}</td>
+                <td className="plan-mono plan-muted">{m.home_milestone || "—"}</td>
+                <td>{m.workspace_slug}</td>
+                <td>{ticketStateLabel(m.state)}</td>
+                <td>
+                  <Button
+                    variant="plain"
+                    className="plan-inline-btn"
+                    aria-label={`Stop tracking ${m.external_id} in this initiative`}
+                    disabled={busy}
+                    onClick={() => remove.mutate(m.id)}
+                  >
+                    {remove.isPending && remove.variables === m.id ? "Removing…" : "Remove"}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
       <div>

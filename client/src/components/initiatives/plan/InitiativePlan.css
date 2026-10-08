@@ -706,3 +706,20 @@
 .plan-timeline-total td {
   font-weight: 600;
 }
+
+.plan-redraft-body ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--txm);
+}
+
+/* Only the title wraps; ids and states read as one token each. */
+.plan-members-table td {
+  white-space: nowrap;
+}
+
+.plan-members-table td:last-child {
+  text-align: right;
+}
