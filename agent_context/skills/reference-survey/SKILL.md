@@ -29,9 +29,11 @@ Resolve what the user means before working. Never substitute a different project
 
 1. **Prior work.** `loregarden_search_prior_work` on the project's domain. If a
    survey already covered it, extend that record rather than starting over.
-2. **Read the source for mechanisms**, not features. A design decision with a
-   number or a failure mode behind it is worth more than a feature list. Record
-   where you looked, so a negative finding means something.
+2. **Map the whole tree before reading any of it** — every top-level directory
+   with a file count. Pick where to go deep from that map and keep it: it is what
+   you report coverage against, and the first interesting file is not the survey.
+   Then read for **mechanisms**, not features: a decision carrying a number or a
+   failure mode beats a feature list.
 3. **Match the backlog before writing anything.** Most findings answer a ticket
    that exists. See [references/backlog-match.md](references/backlog-match.md).
 4. **Write, then verify byte-exact.** See
@@ -39,9 +41,9 @@ Resolve what the user means before working. Never substitute a different project
 
 ## Finish honestly
 
-Distinguish **observed, inferred, and unknown** in every claim. Say what you could
-not run and what you did not read. A limitation stated once in the append is worth
-more than a confident summary.
+Distinguish **observed, inferred, and unknown** in every claim. Name what you could
+not run and, against the pass-2 map, every directory you did not open.
+A limitation stated once in the append is worth more than a confident summary.
 
 Before finishing, revisit what you set out to answer and mark each question
 answered, partially answered, or unresolved. Do not call a survey complete while
