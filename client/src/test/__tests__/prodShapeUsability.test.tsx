@@ -5,9 +5,12 @@ import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { KnowledgeGraph } from "../../api/memoryApi";
-import type { InitiativeMilestone, InitiativeSuggestionSet, InitiativeView } from "../../api/client";
-import type { MonitorFinding } from "../../api/types";
+import type { InitiativeMilestone, InitiativeSuggestionSet, InitiativeView, TicketDetail } from "../../api/client";
+import type { MonitorFinding, TicketArtifactsFeed, TicketLedger } from "../../api/types";
+import { TicketOutputs } from "../../components/dashboard/TicketOutputs";
+import { TicketTimeline } from "../../components/dashboard/TicketTimeline";
 import { WorkflowMonitorView } from "../../components/dashboard/WorkflowMonitorView";
+import { stageFanoutApi } from "../../lib/stageFanoutApi";
 import { MemoryMap } from "../../components/knowledge/MemoryMap";
 import { StructuredContent } from "../../components/reader/StructuredContent";
 import { inferredEdges } from "../../lib/memoryInferred";
@@ -20,6 +23,8 @@ import suggestions from "../fixtures/prod-shape/initiative-suggestions.json";
 import initiatives from "../fixtures/prod-shape/initiatives.json";
 import memoryGraph from "../fixtures/prod-shape/memory-graph-loregarden.json";
 import monitorFindings from "../fixtures/prod-shape/monitor-findings.json";
+import historyArtifacts from "../fixtures/prod-shape/ticket-history-artifacts.json";
+import historyLedger from "../fixtures/prod-shape/ticket-history-ledger.json";
 
 /**
  * The surfaces that shipped unusable, rendered over the API's own responses on
@@ -31,6 +36,7 @@ import monitorFindings from "../fixtures/prod-shape/monitor-findings.json";
  */
 
 jest.mock("../../api/client");
+jest.mock("../../lib/stageFanoutApi");
 const mockApi = api as jest.Mocked<typeof api>;
 
 const findings = monitorFindings as unknown as MonitorFinding[];
@@ -134,4 +140,52 @@ it("a production-sized plan artifact renders as a document, not escaped JSON", (
   expect(container.textContent).not.toMatch(/\\n|"document":/);
   expect(screen.getByRole("heading", { name: "Steps" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Left out" })).toBeInTheDocument();
+});
+
+describe("A worked ticket's history at the live p90 (33 runs, 172 rows)", () => {
+  const feed = historyArtifacts as unknown as TicketArtifactsFeed;
+  const ledger = historyLedger as unknown as TicketLedger;
+  const ticketId = "worked";
+
+  beforeEach(() => {
+    mockApi.ticketArtifacts.mockResolvedValue(feed);
+    mockApi.ticketLedger.mockResolvedValue(ledger);
+    (stageFanoutApi.list as jest.Mock).mockResolvedValue({ groups: [], open_group_id: null });
+  });
+
+  it("control: every row in one flat list is flagged", () => {
+    const { container } = render(
+      <ul>
+        {feed.items.map((item) => (
+          <li key={item.id}>
+            {item.kind} {item.title}
+          </li>
+        ))}
+      </ul>,
+    );
+
+    expect(findUsabilityProblems(container).map((p) => p.kind)).toEqual(
+      expect.arrayContaining(["dead-end-list", "unfiltered-long-list"]),
+    );
+  });
+
+  it("the Timeline is not", async () => {
+    const ticket = { id: ticketId, stages: [], blocking_issues: "", artifacts: {} } as unknown as TicketDetail;
+    const { container } = render(
+      withProviders(
+        <TicketTimeline ticket={ticket} runs={[]} isActive={false} pendingApprovals={0} onOpenRunLog={() => {}} />,
+      ),
+    );
+
+    await screen.findByText(/33 runs/);
+    expect(findUsabilityProblems(container)).toEqual([]);
+  });
+
+  it("Outputs is not, and hides the bookkeeping", async () => {
+    const { container } = render(withProviders(<TicketOutputs ticketId={ticketId} isActive={false} />));
+
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: /Show 69 system records/ })).not.toBeChecked();
+    expect(findUsabilityProblems(container)).toEqual([]);
+  });
 });

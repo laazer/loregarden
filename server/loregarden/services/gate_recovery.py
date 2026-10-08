@@ -292,7 +292,7 @@ class GateRecovery:
                 blocking_summary=(
                     f"The transition gate at '{from_stage}' could not run, so nothing was "
                     "checked — this is not a finding in the ticket's code. Repair the "
-                    "environment it reported (see the Errors tab), then requeue the stage."
+                    "environment it reported (see the Timeline tab), then requeue the stage."
                 ),
             )
             return GateDecision.BLOCKED
@@ -488,7 +488,7 @@ class GateRecovery:
         """Mechanical fixers couldn't clear the gate. Route back to this stage so
         its agent gets another pass — this time with the gate failure in its
         context — and let the run loop re-run it inline instead of stalling for a
-        human. The full gate output still goes to the Errors tab; blocking_issues
+        human. The full gate output still goes to the Timeline tab; blocking_issues
         carries a trimmed, fix-directed copy (capped by apply_stage_route) so the
         re-run agent can actually act on it.
         """
@@ -591,7 +591,7 @@ class GateRecovery:
     ) -> None:
         """Automatic fixes are exhausted. Reroute back to the stage (self-redo)
         and pause for a human — the pre-existing gate-failure behaviour. The raw
-        gate output goes to the Errors tab; blocking_issues, rendered directly in
+        gate output goes to the Timeline tab; blocking_issues, rendered directly in
         the workflow pane, stays a short pointer rather than a wall of text.
 
         `blocking_summary` overrides that pointer for a caller whose failure is
@@ -621,7 +621,7 @@ class GateRecovery:
             next_stage_key=from_stage,
             blocking_issues=(
                 blocking_summary
-                or f"Transition gate failed at '{from_stage}' — see the Errors tab for details."
+                or f"Transition gate failed at '{from_stage}' — see the Timeline tab for details."
             ),
             orch_run=orch_run,
         )

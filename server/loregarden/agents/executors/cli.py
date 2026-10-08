@@ -51,6 +51,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.artifact_records import RUN_CONTEXT_ARTIFACT_TITLE
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
@@ -1061,7 +1062,7 @@ class CliAgentExecutor:
         return [
             {
                 "kind": "context",
-                "title": "Run context",
+                "title": RUN_CONTEXT_ARTIFACT_TITLE,
                 "content": {
                     "sections": [
                         {

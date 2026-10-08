@@ -4,9 +4,9 @@ import { useTicketRefStore } from "../state/ticketRefStore";
 import { getRouterNavigate } from "./routerBridge";
 import {
   artifactTabFromPath,
+  canonicalArtifactTab,
   INITIATIVE_SUGGESTIONS_PATH,
   initiativePath,
-  isArtifactTab,
   isStudioSection,
   pageFromPath,
   pathForPage,
@@ -25,6 +25,7 @@ import {
 export type { AppPage, ArtifactTab, StudioSection } from "./appNavigation";
 export {
   artifactTabFromPath,
+  canonicalArtifactTab,
   INITIATIVE_SUGGESTIONS_PATH,
   initiativeIdFromPath,
   initiativePath,
@@ -144,7 +145,8 @@ export function useTicketIdFromPath(): string | null {
 export function useArtifactTabFromRoute(defaultTab: ArtifactTab = "diff"): ArtifactTab {
   const { pathname } = useLocation();
   const { artifactTab } = useParams<{ artifactTab?: string }>();
-  if (artifactTab && isArtifactTab(artifactTab)) return artifactTab;
+  const fromParam = canonicalArtifactTab(artifactTab);
+  if (fromParam) return fromParam;
   return artifactTabFromPath(pathname) ?? defaultTab;
 }
 

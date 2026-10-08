@@ -71,7 +71,7 @@ class DirtyPrimaryCheckoutError(ValueError):
         )
 
     def artifact_content(self, *, stage_key: str) -> dict:
-        """An ERROR artifact body in the shape the Errors tab renders."""
+        """An ERROR artifact body in the shape the Timeline tab renders."""
         return {
             "message": str(self),
             "run_code": "",

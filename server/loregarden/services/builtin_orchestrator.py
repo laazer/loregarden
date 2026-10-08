@@ -424,7 +424,7 @@ class BuiltinOrchestrator:
         stage = ticket.workflow_stage_key or "unknown stage"
         return (
             f"Run ended blocked at '{stage}' with no reason recorded on the ticket. "
-            "See the ticket's Errors tab for the stage's own output."
+            "See the ticket's Timeline tab for the stage's own output."
         )
 
     def _advance_after_stage(

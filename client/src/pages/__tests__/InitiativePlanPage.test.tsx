@@ -364,6 +364,24 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
 });
 
+test("the parallel cap changes only on Update, and says when lanes cap it lower", async () => {
+  mockApi.setAutopilot.mockResolvedValue(plan({ autopilot: { ...plan().autopilot, max_parallel: 8 } }));
+  const user = userEvent.setup();
+  renderPage();
+
+  const panel = await screen.findByRole("region", { name: "Autopilot" });
+  const update = within(panel).getByRole("button", { name: "Update" });
+  expect(update).toBeDisabled();
+
+  await user.selectOptions(within(panel).getByRole("combobox", { name: /Most tickets/ }), "8");
+  expect(mockApi.setAutopilot).not.toHaveBeenCalled();
+  expect(within(panel).getByText(/Only 5 lanes have open work/)).toBeInTheDocument();
+
+  await user.click(update);
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 8 }));
+  await waitFor(() => expect(within(panel).getByRole("button", { name: "Update" })).toBeDisabled());
+});
+
 test("a paused autopilot says why", async () => {
   mockApi.initiativePlan.mockResolvedValue(
     plan({
@@ -385,7 +403,10 @@ test("the board acts on a selection from one toolbar, and caps long columns", as
 
   await user.click(await screen.findByRole("tab", { name: "Board" }));
   expect(await screen.findByText("84 work items")).toBeInTheDocument();
-  expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  // The toolbar is there before anything is ticked, so the checkboxes explain themselves.
+  const idle = screen.getByRole("toolbar", { name: "Selected tickets" });
+  expect(within(idle).getByText(/Tick tickets to move, start, or mark them/)).toBeInTheDocument();
+  expect(within(idle).getByRole("button", { name: "Start now" })).toBeDisabled();
   expect(screen.getAllByRole("button", { name: /Show all/ }).length).toBeGreaterThan(0);
   expect(findUsabilityProblems(container)).toEqual([]);
 

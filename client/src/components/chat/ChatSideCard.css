@@ -124,29 +124,6 @@
   color: var(--txm);
 }
 
-/* Collapsed: a slim tab on the page's right edge brings the card back. */
-.chat-side-card-reopen {
-  position: absolute;
-  top: 14px;
-  right: 0;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 8px;
-  border: 1px solid var(--bd2);
-  border-right: none;
-  border-radius: 9px 0 0 9px;
-  background: var(--bg1);
-  color: var(--txm);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.chat-side-card-reopen:hover {
-  color: var(--tx);
-}
-
 /* A narrow window gives the thread the width; the card overlays when opened, over a scrim
    that closes it. Keep the breakpoint in step with WORKBENCH_OVERLAY_QUERY. */
 .chat-side-card-scrim {

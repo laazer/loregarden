@@ -327,7 +327,7 @@ describe("DockerQueueBoard", () => {
 
     expect(within(screen.getByTestId("docker-slot-staged")).getByRole("link")).toHaveAttribute(
       "href",
-      "/tickets/t-1/logs",
+      "/tickets/t-1/timeline",
     );
     expect(within(screen.getByTestId("docker-slot-adhoc")).queryByRole("link")).toBeNull();
   });

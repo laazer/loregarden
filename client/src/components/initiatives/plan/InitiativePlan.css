@@ -571,12 +571,46 @@
   background: var(--bg1);
 }
 
+.plan-tile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .plan-tile-select {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 11px;
+  color: var(--txm);
   cursor: pointer;
+}
+
+/* The native dark checkbox draws a dim grey box; size it up and brighten its
+   label so it reads as a control, not a disabled one. */
+.plan-tile-select > input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.plan-tile-select:hover,
+.plan-tile-select:has(input:checked) {
+  color: var(--tx);
+}
+
+.plan-tile-hint {
+  font-size: 11px;
+  color: var(--txm);
+  padding: 1px 6px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+}
+
+.lg-primitive-ticket-tile:has(.plan-tile-select input:checked) {
+  border-color: var(--ac);
 }
 
 /* Planner */

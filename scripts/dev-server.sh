@@ -37,6 +37,14 @@ fi
 # Note: this token is scoped to inference only, so it fixes Baxter but the
 # Usage modal's live rate-limit numbers may still show HTTP 403 — see
 # usage_service.py's _format_usage_http_error for why.
+#
+# The setup token cannot read usage, so the Usage modal needs the interactive
+# login too — scripts/check-claude-login.sh asks for it. `task dev` runs that
+# check before starting the server and client side by side (where Vite would
+# bury the prompt and take the keystrokes), and sets
+# LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK=1 so it is not asked twice.
+"$ROOT/scripts/check-claude-login.sh"
+
 CLAUDE_OAUTH_TOKEN_FILE="$ROOT/data/.claude-oauth-token"
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -s "$CLAUDE_OAUTH_TOKEN_FILE" ]]; then
   export CLAUDE_CODE_OAUTH_TOKEN="$(<"$CLAUDE_OAUTH_TOKEN_FILE")"

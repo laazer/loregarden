@@ -227,16 +227,25 @@ def make_artifact(
     title: str,
     content: dict,
     artifact_id: str | None = None,
+    run_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> Artifact:
     """An artifact on an existing ticket, its content serialised the way the
-    attach tools store it."""
+    attach tools store it. `created_at` defaults to now; pass it where the
+    row's place in a history matters."""
     if artifact_id:
         existing = session.get(Artifact, artifact_id)
         if existing:
             return existing
     artifact = Artifact(
-        ticket_id=ticket_id, kind=kind, title=title, content_json=json.dumps(content)
+        ticket_id=ticket_id,
+        run_id=run_id,
+        kind=kind,
+        title=title,
+        content_json=json.dumps(content),
     )
+    if created_at is not None:
+        artifact.created_at = created_at
     if artifact_id:
         artifact.id = artifact_id
     session.add(artifact)

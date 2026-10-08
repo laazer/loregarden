@@ -6,6 +6,7 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     env:
       LOREGARDEN_REPO_ROOT: "{{.ROOT_DIR}}"
+      LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "{{.LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK}}"
     cmds:
       - ./scripts/dev-server.sh
     interactive: true
@@ -61,8 +62,19 @@ tasks:
 
   dev:
     desc: Start client and server together
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      # Before the parallel start: Vite shares the terminal, reads stdin, and
+      # would bury the login prompt and take its answer.
+      - ./scripts/check-claude-login.sh
+      - task: dev:run
+    interactive: true
+
+  dev:run:
+    internal: true
     deps:
-      - server
+      - task: server
+        vars: { LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "1" }
       - client
 
   sandbox:

@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -140,6 +140,44 @@ def test_claude_oauth_reads_cached_token_file_when_no_env_var(monkeypatch):
     oauth = usage_service._claude_oauth()
 
     assert oauth == {"accessToken": "cached-token"}
+
+
+def test_claude_oauth_prefers_login_token_over_setup_token(monkeypatch):
+    """The setup token cannot read usage; letting it replace a logged-in session's
+    token meant `claude /login` could never fix the usage meters."""
+    login = {"accessToken": "login-token", "refreshToken": "r", "scopes": ["user:profile"]}
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "setup-token")
+    monkeypatch.setattr(usage_service, "_read_claude_credentials_file", lambda: None)
+    monkeypatch.setattr(
+        usage_service, "_read_claude_keychain_credentials", lambda: {"claudeAiOauth": login}
+    )
+
+    assert usage_service._claude_oauth() == login
+
+
+def test_claude_usage_on_setup_token_names_the_login_fix(monkeypatch):
+    """A 429 on the inference-only token never lifts, so the error must say to log in
+    rather than only "backing off"."""
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: {"accessToken": "setup-token"})
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda: [])
+    monkeypatch.setattr(
+        usage_service,
+        "_claude_login_diagnosis",
+        lambda: "session is logged out — run `claude /login`.",
+    )
+    monkeypatch.setattr(
+        usage_service,
+        "_claude_usage_request",
+        lambda client, token: httpx.Response(429, json={"error": {"type": "rate_limit_error"}}),
+    )
+
+    fresh = usage_service._fetch_claude_usage_oauth(MagicMock(), None)
+    backing_off = usage_service._fetch_claude_usage_oauth(
+        MagicMock(), {"rate_limited_until": fresh.rate_limited_until}
+    )
+
+    for result in (fresh, backing_off):
+        assert "claude /login" in (result.error or "")
 
 
 def test_claude_oauth_token_file_persists_across_restarts(tmp_path, monkeypatch):
