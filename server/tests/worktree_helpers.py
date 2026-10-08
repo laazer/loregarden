@@ -170,7 +170,7 @@ def at_terminal_stage(session, ticket):
 
 
 def blocking_text(session, ticket) -> str:
-    """Everything a blocked ticket recorded: the inline issue plus the Errors tab.
+    """Everything a blocked ticket recorded: the inline issue plus its error artifact.
 
     `record_blocking_issue` keeps a short message inline and files a long one
     as an ERROR artifact behind a pointer, so a test that wants git's own words

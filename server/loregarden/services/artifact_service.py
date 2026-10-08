@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_records import is_system_record
+from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
@@ -1056,7 +1057,7 @@ def record_blocking_issue(
 ) -> str:
     """Cap what lands in ticket.blocking_issues, which the workflow pane
     renders verbatim — raw agent/gate output over the inline limit is filed
-    as an error artifact for the Errors tab instead, leaving a short pointer
+    as an error artifact for the Timeline tab instead, leaving a short pointer
     here so the pane stays readable.
 
     ``run_id`` is an ``agent_runs`` id or None. An orchestration run is not an
@@ -1081,7 +1082,7 @@ def record_blocking_issue(
         },
     )
     pointer = f"Stage '{stage_key}'" if stage_key else "This stage"
-    return f"{pointer} hit a blocking issue — see the Errors tab for details."
+    return f"{pointer} {BLOCKING_POINTER_PHRASE} for details."
 
 
 def refresh_execution_artifacts(

@@ -106,7 +106,7 @@ def test_blocked_self_report_with_long_context_files_error_artifact(db_session: 
     db_session.refresh(ticket)
     assert ticket.state == TicketState.BLOCKED
     assert len(ticket.blocking_issues) < 200
-    assert "Errors tab" in ticket.blocking_issues
+    assert "Timeline tab" in ticket.blocking_issues
     assert _RAW_DUMP not in ticket.blocking_issues
 
     error_artifacts = db_session.exec(
@@ -143,7 +143,7 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
     db_session.refresh(ticket)
     assert ticket.state == TicketState.BLOCKED
     assert len(ticket.blocking_issues) < 200
-    assert "Errors tab" in ticket.blocking_issues
+    assert "Timeline tab" in ticket.blocking_issues
     assert _RAW_DUMP not in ticket.blocking_issues
 
     error_artifacts = db_session.exec(
