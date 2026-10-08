@@ -273,22 +273,39 @@ def _claude_keychain_item_exists() -> bool:
 
 
 def _claude_oauth() -> dict[str, Any] | None:
-    env_token = (
-        os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
-        or _read_claude_oauth_token_file()
-        or ""
-    )
+    """The credential to read usage with: an interactive login before a setup token.
+
+    A ``claude setup-token`` token (env var or cached file) is inference-scoped,
+    and the usage endpoint refuses it — with 403, or with a 429 that never clears.
+    It used to replace a working login's token, so a fresh ``claude /login`` could
+    not fix usage. It is now only the last resort, returned bare so callers can
+    tell it apart (no ``refreshToken``).
+    """
     file_data = _read_claude_credentials_file()
     keychain_data = _read_claude_keychain_credentials()
     for data in (keychain_data, file_data):
         oauth = (data or {}).get("claudeAiOauth") or {}
         if oauth.get("accessToken"):
-            if env_token:
-                oauth = {**oauth, "accessToken": env_token}
             return oauth
+    env_token = (
+        os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+        or _read_claude_oauth_token_file()
+        or ""
+    )
     if env_token:
         return {"accessToken": env_token}
     return None
+
+
+def _with_login_hint(error: str, oauth: dict[str, Any]) -> str:
+    """Name the real fix when only the inference-scoped setup token is available.
+
+    That token can never read usage, so "rate limited — backing off" alone sends
+    the operator waiting for a limit that will not lift.
+    """
+    if str(oauth.get("refreshToken") or "").strip():
+        return error
+    return f"{error} Using the inference-only setup token: {_claude_login_diagnosis()}"
 
 
 def _claude_login_diagnosis() -> str:
@@ -730,7 +747,7 @@ def _fetch_claude_usage_oauth(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
-            error=_rate_limit_backoff_error("claude", backoff_until),
+            error=_with_login_hint(_rate_limit_backoff_error("claude", backoff_until), oauth),
             breakdown=_scan_claude_logs(),
             rate_limited_until=backoff_until,
         )
@@ -755,10 +772,13 @@ def _fetch_claude_usage_oauth(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
-            error=_format_usage_http_error(
-                "claude",
-                response,
-                has_refresh_token=bool(str(oauth.get("refreshToken") or "").strip()),
+            error=_with_login_hint(
+                _format_usage_http_error(
+                    "claude",
+                    response,
+                    has_refresh_token=bool(str(oauth.get("refreshToken") or "").strip()),
+                ),
+                oauth,
             ),
             breakdown=_scan_claude_logs(),
             rate_limited_until=rate_limited_until,

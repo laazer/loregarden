@@ -37,6 +37,47 @@ fi
 # Note: this token is scoped to inference only, so it fixes Baxter but the
 # Usage modal's live rate-limit numbers may still show HTTP 403 — see
 # usage_service.py's _format_usage_http_error for why.
+#
+# The setup token cannot read usage, so the Usage modal needs the interactive
+# login too. Check it here, where a person is at the keyboard to fix it:
+# the server itself cannot open a browser, and only says "run claude /login"
+# after the fact. CLAUDE_CODE_OAUTH_TOKEN is unset for the check because
+# `claude auth status` reports that token as logged in.
+# LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK=1 skips it.
+check_claude_login() {
+  [[ "${LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK:-}" == "1" ]] && return 0
+  local claude_bin="${LOREGARDEN_CLAUDE_BIN:-claude}"
+  if ! command -v "$claude_bin" >/dev/null 2>&1; then
+    echo "warning: '$claude_bin' not found — Claude agents and usage meters will not work." >&2
+    return 0
+  fi
+  local status
+  status="$(env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY "$claude_bin" auth status --json 2>&1)" || true
+  if [[ "$status" =~ \"loggedIn\":[[:space:]]*true ]]; then
+    return 0
+  fi
+  if [[ ! "$status" =~ \"loggedIn\":[[:space:]]*false ]]; then
+    echo "warning: could not read Claude login status: ${status:-no output}" >&2
+    return 0
+  fi
+  echo "Claude Code is logged out — the Usage modal cannot show live Claude limits." >&2
+  if [[ ! -t 0 ]]; then
+    echo "  Run \`claude auth login\` in a terminal." >&2
+    return 0
+  fi
+  local choice=""
+  # Times out to skip, so an unattended start never hangs on the prompt.
+  read -r -t 30 -p "  [l]og in now or [s]kip? (skips in 30s) [s] " choice || echo
+  case "$choice" in
+    l|L|login)
+      env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY "$claude_bin" auth login \
+        || echo "warning: login did not complete — continuing without it." >&2
+      ;;
+    *) echo "  Skipped. Run \`claude auth login\` any time." >&2 ;;
+  esac
+}
+check_claude_login
+
 CLAUDE_OAUTH_TOKEN_FILE="$ROOT/data/.claude-oauth-token"
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -s "$CLAUDE_OAUTH_TOKEN_FILE" ]]; then
   export CLAUDE_CODE_OAUTH_TOKEN="$(<"$CLAUDE_OAUTH_TOKEN_FILE")"
