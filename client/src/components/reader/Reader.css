@@ -98,7 +98,26 @@
   font-size: 12.5px;
 }
 
-.reader-measure /* Label and value on one line, labels in a column — read down, not around a grid of boxes. */
+.reader-measure .reader-measure .sc-facts {
+  font-size: 13px;
+}
+
+.reader-source {
+  font-size: 12.5px;
+  max-height: none;
+}
+
+/* ── StructuredContent ──────────────────────────────────────────────── */
+
+.sc-root,
+.sc-record {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Label and value on one line, labels in a column — read down, not around a grid of boxes. */
 .sc-facts {
   display: grid;
   grid-template-columns: minmax(10ch, max-content) minmax(0, 1fr);

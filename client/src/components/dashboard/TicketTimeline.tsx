@@ -288,13 +288,13 @@ function AttemptRow({
   const failed = isFailedStatus(attempt.status);
   const excerpt = failed && stderr ? stderr.trim().split("\n").slice(-STDERR_PREVIEW_LINES).join("\n") : "";
   return (
-    <li className="tl-attempt">
+    <li>
       <div className="tl-attempt-row">
         <span className="tl-agent">
           {attempt.agent_id}
           {attempt.skill_name ? <span className="tl-skill"> · {attempt.skill_name}</span> : null}
         </span>
-        <span className={`tl-status tl-status--${running ? "active" : failed ? "bad" : "plain"}`}>
+        <span className={`tl-status${running ? " tl-status--active" : failed ? " tl-status--bad" : ""}`}>
           {attempt.status.replace("_", " ")}
         </span>
         <span className="tl-attempt-time" title={formatLocalTimestamp(attempt.started_at)}>
