@@ -85,6 +85,9 @@
   min-height: 0;
   overflow: auto;
   padding: 28px 22px 4px;
+  /* The dock below has no scrollbar. Reserving the gutter on both edges keeps the thread's
+     centred column on the same axis as the dock's composer instead of half a scrollbar left. */
+  scrollbar-gutter: stable both-edges;
   /* Query container so primitives can size against the thread, not the viewport. */
   container-type: inline-size;
 }
@@ -121,7 +124,9 @@
   max-width: 100%;
 }
 
-.baxter-chat-thread .lg-chat-user-bubble {
+/* The cap belongs on the column, which is sized against the turn. On the bubble a percentage
+   resolves against a column already shrunk to the text, so every message wrapped. */
+.baxter-chat-thread .lg-chat-user-col {
   max-width: min(640px, 92%);
 }
 
@@ -134,7 +139,7 @@
 .baxter-chat-thread .lg-chat-messages-tail {
   min-height: 0;
   height: 0;
-  margin-top: -18px; /* cancel .lg-chat-messages gap */
+  margin-top: calc(-1 * var(--lg-chat-turn-gap)); /* cancel .lg-chat-messages gap */
   overflow: hidden;
   pointer-events: none;
 }
@@ -143,7 +148,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 36px 36px 48px;
+  /* Extra bottom padding sits the block a little above centre, where the eye lands. */
+  padding: 36px 36px 12vh;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -151,6 +157,16 @@
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+/* Centred vertically with auto margins rather than justify-content, which would clip the
+   top of the greeting out of reach of the scrollbar on a short window. */
+.baxter-chat-welcome > :first-child {
+  margin-top: auto;
+}
+
+.baxter-chat-welcome > :last-child {
+  margin-bottom: auto;
 }
 
 .baxter-chat-intro {
@@ -349,6 +365,11 @@
   margin: 0 auto;
 }
 
+.baxter-chat-dock .lg-chat-prompt-row {
+  max-width: var(--baxter-reading, 880px);
+  margin: 8px auto 0;
+}
+
 .baxter-chat-footnote {
   max-width: var(--baxter-reading, 880px);
   margin: 8px auto 0;
@@ -449,11 +470,10 @@
   gap: 9px;
 }
 
-/* A saved thread: no leading mark, and the delete control rides alongside. */
+/* A saved thread: no leading mark. Its delete control sits inside the card, bottom-right
+   beside the message count, and shows on hover or focus (always on touch). */
 .baxter-history-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
+  position: relative;
 }
 
 .baxter-history-row .baxter-history-entry {
@@ -473,23 +493,89 @@
 }
 
 .baxter-history-delete {
-  flex: none;
-  width: 34px;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--bd);
-  border-radius: 11px;
-  background: var(--bg1);
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--txl);
-  cursor: pointer;
+  opacity: 0;
   transition:
+    opacity 120ms ease,
     color 140ms ease,
     border-color 140ms ease;
 }
 
-.baxter-history-delete:hover {
-  color: var(--dg, #e2555f);
-  border-color: color-mix(in srgb, var(--dg, #e2555f) 45%, var(--bd));
+.baxter-history-row:hover .baxter-history-delete,
+.baxter-history-delete:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .baxter-history-delete {
+    opacity: 1;
+  }
+}
+
+.baxter-history-delete:hover,
+.baxter-history-delete:focus-visible {
+  color: var(--rdl);
+  border-color: color-mix(in srgb, var(--rdl) 45%, var(--bd));
+}
+
+/* Asking before a delete that cannot be undone, over the card's bottom edge. */
+.baxter-history-confirm {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--rdl) 45%, var(--bd2));
+  border-radius: 9px;
+  background: var(--bg1);
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.baxter-history-confirm > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.baxter-history-confirm-delete,
+.baxter-history-confirm-cancel {
+  padding: 4px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.baxter-history-confirm-delete {
+  border-color: color-mix(in srgb, var(--rdl) 55%, var(--bd2));
+  color: var(--rdl);
+}
+
+.baxter-history-search {
+  flex: none;
+  padding: 12px 14px 0;
+}
+
+.baxter-history-search input {
+  width: 100%;
+}
+
+.baxter-history-clear {
+  color: var(--ac2);
+  font-size: inherit;
+  text-decoration: underline;
 }
 
 .baxter-history-list .baxter-history-note {

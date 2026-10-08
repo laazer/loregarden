@@ -134,10 +134,22 @@ export function followUpPrompts(
 ): string[] {
   const openers = quickPrompts(kind, branch);
   if (messages.length === 0) return openers;
+  return withReplyPrompts([...openers, ELABORATE_PROMPT], messages);
+}
+
+/**
+ * `candidates` behind the latest reply's own follow-ups, minus anything the
+ * operator already sent — so a host with its own openers orders them the same
+ * way the bar does.
+ */
+export function withReplyPrompts(
+  candidates: readonly string[],
+  messages: readonly ChatMessageView[],
+): string[] {
   const asked = new Set(
     messages.filter((m) => m.role === "user").map((m) => normalise(m.content)),
   );
-  return unique([...replyPrompts(messages), ...openers, ELABORATE_PROMPT]).filter(
+  return unique([...replyPrompts(messages), ...candidates]).filter(
     (prompt) => !asked.has(normalise(prompt)),
   );
 }

@@ -471,18 +471,41 @@ describe("BaxterChatPage", () => {
     expect(takeHomeBaxterFiles()).toEqual([]);
   });
 
-  it("offers no quick replies above the composer — the omnibar carries them", async () => {
-    fakeChatServer("Done.");
+  it("offers the prompts in the open workbench, and under the composer once it is closed", async () => {
+    fakeChatServer("Shall I file it?");
     await renderChatReady();
+    const hero = screen.getByLabelText("Ask Baxter");
+    const workbench = screen.getByRole("complementary", { name: "Workbench" });
+    // One place at a time.
+    expect(screen.getAllByRole("group", { name: "Suggested prompts" })).toHaveLength(1);
+    expect(within(workbench).getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
+    expect(within(hero).queryByRole("group", { name: "Suggested prompts" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide the workbench" }));
+    expect(within(hero).getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
+
     fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
       target: { value: "hi" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
-    await screen.findByText("Done.");
+    await screen.findByText("Shall I file it?");
 
-    expect(document.querySelector(".baxter-chat-dock")).not.toBeNull();
-    expect(screen.queryByRole("group", { name: "Quick replies" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Tell me more" })).not.toBeInTheDocument();
+    const dock = document.querySelector<HTMLElement>(".baxter-chat-dock");
+    const rows = screen.getAllByRole("group", { name: "Suggested prompts" });
+    expect(rows).toHaveLength(1);
+    expect(dock!.contains(rows[0])).toBe(true);
+    // The reply ended on a question, so its answers lead.
+    const picks = within(rows[0]).getAllByRole("button").map((b) => b.textContent);
+    expect(picks.slice(0, 2)).toEqual(["Yes, go ahead", "No, leave it as is"]);
+    expect(picks.length).toBeLessThanOrEqual(4);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+    expect(dock!.querySelector("[aria-label='Suggested prompts']")).toBeNull();
+    expect(
+      within(screen.getByRole("complementary", { name: "Workbench" })).getByRole("button", {
+        name: "Yes, go ahead",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("renders assistant replies as markdown", async () => {
@@ -644,7 +667,7 @@ describe("BaxterChatPage", () => {
     act(() => useUiStore.getState().setBaxterHistoryOpen(true));
 
     // The row also holds a delete control naming the same thread, so anchor the match.
-    // The workbench offers the same words as a suggestion, so look in the archive.
+    // The prompt row offers the same words, so look in the archive.
     const archive = await screen.findByRole("complementary", { name: "Chat history" });
     const entry = await within(archive).findByRole("button", { name: /^Triage the stuck tickets/ });
     fireEvent.click(entry);
@@ -665,11 +688,62 @@ describe("BaxterChatPage", () => {
 
     act(() => useUiStore.getState().setBaxterHistoryOpen(true));
     fireEvent.click(await screen.findByRole("button", { name: /Delete Delete me/i }));
+    // Permanent, so it asks first; nothing is deleted on the first click.
+    const confirm = screen.getByRole("group", { name: "Delete Delete me?" });
+    expect(mockedApi.deleteBaxterChatSession).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete" }));
 
     await waitFor(() =>
       expect(mockedApi.deleteBaxterChatSession).toHaveBeenCalledWith("loregarden", "s1"),
     );
     await waitFor(() => expect(useUiStore.getState().baxterChatSessionId).toBe(""));
+  });
+
+  it("backs out of a delete with Cancel or Escape, then Escape closes the archive", async () => {
+    await renderChatReady();
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "Keep me" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    await waitFor(() => expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalled());
+
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    fireEvent.click(await screen.findByRole("button", { name: /Delete Keep me/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: "Delete Keep me?" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete Keep me/i }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Delete Keep me?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Chat history" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(useUiStore.getState().baxterHistoryOpen).toBe(false);
+    expect(mockedApi.deleteBaxterChatSession).not.toHaveBeenCalled();
+  });
+
+  it("searches saved chats by title and last reply", async () => {
+    fakeChatServer("Shipped the Home polish.");
+    await renderChatReady();
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "Triage the stuck tickets" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    await screen.findByText("Shipped the Home polish.");
+
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    const archive = await screen.findByRole("complementary", { name: "Chat history" });
+    const saved = () => within(archive).queryByRole("button", { name: /^Triage the stuck tickets/ });
+    await waitFor(() => expect(saved()).toBeInTheDocument());
+    const search = within(archive).getByRole("searchbox", { name: "Search chats" });
+
+    fireEvent.change(search, { target: { value: "home polish" } });
+    expect(saved()).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "nothing like this" } });
+    expect(saved()).not.toBeInTheDocument();
+    fireEvent.click(within(archive).getByRole("button", { name: "Clear search" }));
+    expect(saved()).toBeInTheDocument();
   });
 
   it("opens the fallback history and loads the primitive gallery", async () => {
@@ -773,11 +847,10 @@ describe("BaxterChatPage", () => {
 
   it("offers the most valuable ticket from the workbench, and sends it in one click", async () => {
     await renderChatReady();
-    const workbench = screen.getByRole("complementary", { name: "Suggestions and cards" });
+    const workbench = screen.getByRole("complementary", { name: "Workbench" });
+    const row = within(workbench).getByRole("group", { name: "Suggested prompts" });
 
-    fireEvent.click(
-      within(workbench).getByRole("button", { name: "Find the most valuable ticket" }),
-    );
+    fireEvent.click(within(row).getByRole("button", { name: "Find the most valuable ticket" }));
 
     await waitFor(() =>
       expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith(
@@ -790,48 +863,82 @@ describe("BaxterChatPage", () => {
     );
   });
 
-  it("collects the thread's cards in the workbench, newest first", async () => {
+  it("indexes the thread's cards in the workbench, newest first, each a jump to its card", async () => {
     const { container } = renderChat();
     act(() => useUiStore.getState().setBaxterHistoryOpen(true));
     await screen.findByRole("complementary", { name: "Chat history" });
     fireEvent.click(screen.getByRole("button", { name: /UI Primitive gallery/i }));
 
-    const workbench = await screen.findByRole("complementary", { name: "Suggestions and cards" });
+    const workbench = await screen.findByRole("complementary", { name: "Workbench" });
     await waitFor(() =>
       expect(workbench.querySelectorAll(".chat-side-history-entry").length).toBeGreaterThan(1),
     );
+    // An index, not a second rendering of the card.
+    expect(workbench.querySelector(".lg-primitive-parts")).toBeNull();
     const entries = workbench.querySelectorAll<HTMLButtonElement>(".chat-side-history-entry");
-    // Newest first: the card on show is the last assistant turn's.
-    expect(entries[0].getAttribute("aria-current")).toBe("true");
     const turns = container.querySelectorAll<HTMLElement>(".lg-chat-turn--assistant[data-message-id]");
-    const lastTurn = turns[turns.length - 1];
 
     // jsdom has no scrollIntoView; stand one in for this assertion only.
     const original = Element.prototype.scrollIntoView;
     const scrolled = jest.fn();
     Element.prototype.scrollIntoView = scrolled;
     try {
-      fireEvent.click(within(workbench).getByRole("button", { name: "Show in thread" }));
-      expect(scrolled.mock.instances[0]).toBe(lastTurn);
+      // Newest first: the top entry is the last assistant turn's card.
+      fireEvent.click(entries[0]);
+      expect(scrolled.mock.instances[0]).toBe(turns[turns.length - 1]);
     } finally {
       Element.prototype.scrollIntoView = original;
     }
-
-    // Picking an older card puts that one on show.
-    fireEvent.click(entries[entries.length - 1]);
-    expect(entries[entries.length - 1].getAttribute("aria-current")).toBe("true");
-    expect(entries[0].getAttribute("aria-current")).toBeNull();
   });
 
   it("hides the workbench and brings it back", async () => {
     await renderChatReady();
     fireEvent.click(screen.getByRole("button", { name: "Hide the workbench" }));
     expect(
-      screen.queryByRole("complementary", { name: "Suggestions and cards" }),
+      screen.queryByRole("complementary", { name: "Workbench" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
-    expect(screen.getByRole("complementary", { name: "Suggestions and cards" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+  });
+
+  it("starts a narrow window without the workbench, which covers the thread there", async () => {
+    localStorage.setItem("loregarden.chat.workbenchOpen", "1");
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 1100px)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      await renderChatReady();
+      expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close the workbench" }));
+      expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+
+      // A prompt picked there sends, and gets out of the way of its reply.
+      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      const workbench = screen.getByRole("complementary", { name: "Workbench" });
+      fireEvent.click(within(workbench).getByRole("button", { name: "Find the most valuable ticket" }));
+      expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+      await waitFor(() => expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalled());
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it("leaves a docked workbench open on Escape", async () => {
+    await renderChatReady();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
   });
 
   it("keeps the chat's actions in the composer", async () => {

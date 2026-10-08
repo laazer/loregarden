@@ -15,9 +15,12 @@
   --lg-primitive-regular: min(620px, 100%);
   --lg-primitive-wide: 100%;
   --lg-primitive-full: 100%;
+  /* Room between turns for the hover actions row, which hangs in it (see
+     .lg-chat-message-actions) instead of reserving height under every turn. */
+  --lg-chat-turn-gap: 32px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--lg-chat-turn-gap);
   flex: 1 0 auto;
 }
 
@@ -487,7 +490,11 @@
 }
 
 .lg-chat-user-col > .lg-chat-message-actions {
-  margin-top: 0;
+  right: 0;
+}
+
+.lg-chat-assistant-col > .lg-chat-message-actions {
+  left: 0;
 }
 
 .lg-chat-user-stack {
@@ -506,13 +513,21 @@
 /* Per-reply actions: copy, fork, and the overflow. Present in the DOM at all
    times — a control that only exists on hover is a control no keyboard can
    reach — and invisible until the turn is hovered or something in the row has
-   focus. Opacity, not display: the row keeps its space, so revealing it does
-   not shift the thread under the pointer. */
+   focus. Opacity, not display, and out of flow: the row hangs in the gap
+   below its column, so it neither shifts the thread when it appears nor adds
+   a blank band under every turn while it is hidden. */
+.lg-chat-user-col,
+.lg-chat-assistant-col {
+  position: relative;
+}
+
 .lg-chat-message-actions {
+  position: absolute;
+  top: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: -6px;
+  margin-top: 3px;
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -572,4 +587,57 @@
   border-color: var(--bd2);
   background: var(--bg4);
   color: var(--tx);
+}
+
+/* One line of one-click prompts under a composer. Fixed height and no wrap, so what it
+   offers can change without moving anything above it. A row wider than the composer
+   scrolls sideways rather than shrinking every prompt to its first word; only a prompt
+   wider than the whole row truncates, keeping its full text in `title`. */
+.lg-chat-prompt-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lg-chat-prompt {
+  flex: none;
+  max-width: 100%;
+  padding: 5px 11px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lg-chat-prompt:hover:not(:disabled),
+.lg-chat-prompt:focus-visible {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.lg-chat-prompt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* In a side column: one prompt per line, wrapping instead of scrolling. */
+.lg-chat-prompt-row--stacked {
+  flex-direction: column;
+  overflow: visible;
+}
+
+.lg-chat-prompt-row--stacked .lg-chat-prompt {
+  border-radius: 10px;
+  padding: 8px 11px;
+  color: var(--tx);
+  text-align: left;
+  white-space: normal;
 }

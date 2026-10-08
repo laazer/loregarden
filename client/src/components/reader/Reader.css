@@ -245,3 +245,22 @@ h4.sc-heading {
   border: 1px solid var(--bd);
   background: var(--bg2);
 }
+
+/* ── A card fence the server could not parse ───────────────────────── */
+
+.md-unparsed-card {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+  color: var(--txm);
+  font-size: 12.5px;
+}
+
+.md-unparsed-card > summary {
+  cursor: pointer;
+}
+
+.md-unparsed-card[open] > summary {
+  margin-bottom: 8px;
+}

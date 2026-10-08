@@ -567,15 +567,19 @@ function ActionBarQuickPrompts({
 }
 
 /**
- * Suggestions for the thread a page composes for itself (Home, `/chat`).
+ * Suggestions for the thread Home composes for.
  *
  * The page owns the composer, so the bar offers only the one-click replies. A
  * pick sends into that thread and lands on `/chat`, where the reply is drawn:
  * from Home, the answer would otherwise arrive somewhere nothing shows it.
+ * `/chat` draws its own row under its composer.
  */
 function ScreenSessionQuickPrompts({ session }: { session: ChatSession }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  // The chat page offers them under its own composer; a second row down here
+  // was the same choice in a different place, with different words.
+  if (pathname === chatPath()) return null;
   const pick = (prompt: string) => {
     if (session.isBusy || session.loadError) return;
     if (pathname !== chatPath()) navigate(chatPath());
