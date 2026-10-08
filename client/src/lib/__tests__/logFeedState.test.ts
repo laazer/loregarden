@@ -49,13 +49,17 @@ it("errors to a blank pane only when there is nothing on screen", () => {
 it("keeps the last-known feed when a refetch fails with lines present", () => {
   // AC30, the defect. The condition is `lines.length === 0 && !live`, and it is
   // written here rather than in each pane.
-  expect(logFeedState(input({ isError: true, lines: [{}, {}] }))).toBe("reconnecting");
+  expect(logFeedState(input({ isError: true, lines: [{}, {}] }))).toBe(
+    "reconnecting",
+  );
   expect(LOG_FEED_RECONNECTING).toBe("Reconnecting to the control plane…");
 });
 
 it("treats a live partial line as content worth keeping on an error", () => {
   // A run that has streamed only a partial message has something on screen.
-  expect(logFeedState(input({ isError: true, live: "thinking about the…" }))).toBe("reconnecting");
+  expect(
+    logFeedState(input({ isError: true, live: "thinking about the…" })),
+  ).toBe("reconnecting");
 });
 
 it("says a finished run recorded nothing", () => {
@@ -67,7 +71,9 @@ it("says a finished run recorded nothing", () => {
 it("says a running detached run has not spoken yet", () => {
   // AC32. Otherwise a detached run that has not spoken is indistinguishable
   // from a dead one — which is the reading this ticket exists to remove.
-  expect(logFeedState(input({ isRunning: true, transport: "tmux" }))).toBe("empty-detached");
+  expect(logFeedState(input({ isRunning: true, transport: "tmux" }))).toBe(
+    "empty-detached",
+  );
   expect(detachedEmptyText("tmux")).toBe(
     "No output yet — the agent is running detached on tmux.",
   );
@@ -88,6 +94,94 @@ it("renders the feed whenever there is anything to render", () => {
 
 it("ranks loading above error, and error above empty", () => {
   // The first fetch of a run that errors must not read as "recorded nothing".
-  expect(logFeedState(input({ isPending: true, isError: true }))).toBe("loading");
-  expect(logFeedState(input({ isError: true, isRunning: true, transport: "tmux" }))).toBe("error");
+  expect(logFeedState(input({ isPending: true, isError: true }))).toBe(
+    "loading",
+  );
+  expect(
+    logFeedState(input({ isError: true, isRunning: true, transport: "tmux" })),
+  ).toBe("error");
+});
+
+// --- lg-durable-remote-336, AC30/AC32: the whole input space, not 11 cells --
+//
+// The cases above pin the states that matter one at a time. The two panes read
+// one payload and must stay identical, so the DECISION has to be total: every
+// combination of the five inputs resolves, and the three invariants hold over
+// all of them. The one that matters is the middle assertion — a pane that
+// already has lines may never show the blank error state, which is the defect
+// AC30 names and the one that fires during exactly the 10-30 seconds this
+// ticket exists for.
+
+const BOOLS = [false, true];
+const TRANSPORTS = ["", "tmux", "file"];
+
+it("resolves every combination of its inputs to a known state", () => {
+  const states = new Set<string>();
+  for (const isPending of BOOLS) {
+    for (const isError of BOOLS) {
+      for (const isRunning of BOOLS) {
+        for (const transport of TRANSPORTS) {
+          for (const lines of [[], [{}], [{}, {}]]) {
+            for (const live of [null, "", "mid-sentence"]) {
+              const state = logFeedState({
+                lines,
+                live,
+                isPending,
+                isError,
+                isRunning,
+                transport,
+              });
+              states.add(state);
+              const where = JSON.stringify({
+                isPending,
+                isError,
+                isRunning,
+                transport,
+                lines: lines.length,
+                live,
+              });
+
+              expect([
+                "loading",
+                "error",
+                "reconnecting",
+                "empty",
+                "empty-detached",
+                "feed",
+              ]).toContain(state);
+
+              // AC30: content on screen is never replaced by the blank error.
+              if (lines.length > 0 || live) {
+                expect(state).not.toBe("error");
+                expect(state).not.toBe("empty");
+                expect(state).not.toBe("empty-detached");
+              }
+              // AC31: nothing loading-shaped once the first fetch is done.
+              if (!isPending) {
+                expect(state).not.toBe("loading");
+              }
+              // AC28: the detached wording is only ever used when the row says
+              // which transport — never guessed for the 1,449 rows that do not.
+              if (state === "empty-detached") {
+                expect(transport).not.toBe("");
+                expect(isRunning).toBe(true);
+                expect(where).toContain('"lines":0');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // The sweep has to actually reach every branch, or the invariants above are
+  // satisfied by a decision that only ever returns one thing.
+  expect([...states].sort()).toEqual([
+    "empty",
+    "empty-detached",
+    "error",
+    "feed",
+    "loading",
+    "reconnecting",
+  ]);
 });

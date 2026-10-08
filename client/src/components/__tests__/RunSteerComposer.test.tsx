@@ -9,7 +9,9 @@ jest.mock("../../api/client");
 const mockApi = api as jest.Mocked<typeof api>;
 
 function renderComposer(isActive = true) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={client}>
       <RunSteerComposer runId="run-1" isActive={isActive} />
@@ -33,7 +35,11 @@ beforeEach(() => {
 });
 
 it("sends a message to a steerable run", async () => {
-  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "", cancel_requested_at: null });
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
   mockApi.sendRunMessage.mockResolvedValue(message());
 
   renderComposer();
@@ -42,12 +48,19 @@ it("sends a message to a steerable run", async () => {
   fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
   await waitFor(() =>
-    expect(mockApi.sendRunMessage).toHaveBeenCalledWith("run-1", "prefer the existing seam"),
+    expect(mockApi.sendRunMessage).toHaveBeenCalledWith(
+      "run-1",
+      "prefer the existing seam",
+    ),
   );
 });
 
 it("will not send an empty message", async () => {
-  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "", cancel_requested_at: null });
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
 
   renderComposer();
   await screen.findByLabelText(/message to this run/i);
@@ -59,13 +72,18 @@ it("explains why a run cannot be steered instead of taking input", async () => {
   // run it is executing. Accepting a message here would be a lie.
   mockApi.runMessages.mockResolvedValue({
     messages: [],
-    refusal: "The backend_implementer agent runs on the cursor adapter, which cannot receive input once started.",
+    refusal:
+      "The backend_implementer agent runs on the cursor adapter, which cannot receive input once started.",
     cancel_requested_at: null,
   });
 
   renderComposer();
-  expect(await screen.findByText(/cannot receive input once started/i)).toBeInTheDocument();
-  expect(screen.queryByLabelText(/message to this run/i)).not.toBeInTheDocument();
+  expect(
+    await screen.findByText(/cannot receive input once started/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/message to this run/i),
+  ).not.toBeInTheDocument();
 });
 
 it("distinguishes a queued message from a delivered one", async () => {
@@ -73,7 +91,11 @@ it("distinguishes a queued message from a delivered one", async () => {
   // believes the run was corrected.
   mockApi.runMessages.mockResolvedValue({
     messages: [
-      message({ id: "m1", content: "first", delivered_at: "2026-07-20T10:00:05" }),
+      message({
+        id: "m1",
+        content: "first",
+        delivered_at: "2026-07-20T10:00:05",
+      }),
       message({ id: "m2", content: "second", delivered_at: null }),
     ],
     refusal: "",
@@ -99,17 +121,28 @@ it("stays out of the way on a finished run with no history", async () => {
 
 it("keeps showing what was sent after the run finishes", async () => {
   mockApi.runMessages.mockResolvedValue({
-    messages: [message({ content: "check the migration", delivered_at: "2026-07-20T10:00:05" })],
+    messages: [
+      message({
+        content: "check the migration",
+        delivered_at: "2026-07-20T10:00:05",
+      }),
+    ],
     refusal: "Run is succeeded, so there is nothing to steer.",
   });
 
   renderComposer(false);
   expect(await screen.findByText("check the migration")).toBeInTheDocument();
-  expect(screen.queryByLabelText(/message to this run/i)).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/message to this run/i),
+  ).not.toBeInTheDocument();
 });
 
 it("stops a run after asking once", async () => {
-  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "", cancel_requested_at: null });
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
   mockApi.cancelRun.mockResolvedValue({
     id: "run-1",
     status: "running",
@@ -121,7 +154,9 @@ it("stops a run after asking once", async () => {
 
   // One click arms it, it does not fire. The button sits beside a text input
   // and ending a turn cannot be undone.
-  fireEvent.click(await screen.findByRole("button", { name: /stop this run/i }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /stop this run/i }),
+  );
   expect(mockApi.cancelRun).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: /confirm stop/i }));
@@ -129,13 +164,21 @@ it("stops a run after asking once", async () => {
 });
 
 it("lets an operator back out of a stop", async () => {
-  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "", cancel_requested_at: null });
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
 
   renderComposer();
-  fireEvent.click(await screen.findByRole("button", { name: /stop this run/i }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /stop this run/i }),
+  );
   fireEvent.click(screen.getByRole("button", { name: /keep going/i }));
 
-  expect(screen.getByRole("button", { name: /stop this run/i })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /stop this run/i }),
+  ).toBeInTheDocument();
   expect(mockApi.cancelRun).not.toHaveBeenCalled();
 });
 
@@ -143,13 +186,16 @@ it("can stop a run that cannot be steered", async () => {
   // A cursor-adapter run takes no input, and must not therefore be unstoppable.
   mockApi.runMessages.mockResolvedValue({
     messages: [],
-    refusal: "The reviewer agent runs on the cursor adapter, which cannot receive input once started.",
+    refusal:
+      "The reviewer agent runs on the cursor adapter, which cannot receive input once started.",
     cancel_requested_at: null,
   });
 
   renderComposer();
 
-  expect(await screen.findByRole("button", { name: /stop this run/i })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("button", { name: /stop this run/i }),
+  ).toBeInTheDocument();
 });
 
 it("offers no stop for a run that is already finished", async () => {
@@ -162,7 +208,9 @@ it("offers no stop for a run that is already finished", async () => {
   renderComposer(false);
 
   await screen.findByText(/use the existing helper/i);
-  expect(screen.queryByRole("button", { name: /stop this run/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /stop this run/i }),
+  ).not.toBeInTheDocument();
 });
 
 // --- lg-durable-remote-336: stopping a run the server no longer owns ---------
@@ -191,15 +239,21 @@ it("reads Stopping… once a stop has been requested, and stays disabled", async
 
   const stopping = await screen.findByRole("button", { name: /stopping…/i });
   expect(stopping).toBeDisabled();
-  expect(screen.queryByRole("button", { name: /^stop this run$/i })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /confirm stop/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /^stop this run$/i }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /confirm stop/i }),
+  ).not.toBeInTheDocument();
 });
 
 it("does not revert to Stop this run when the cancel POST returns", async () => {
   // AC33, the defect. The mutation settles long before the process does.
   mockApi.runMessages
     .mockResolvedValueOnce(messagesPayload())
-    .mockResolvedValue(messagesPayload({ cancel_requested_at: "2026-10-08T12:00:00+00:00" }));
+    .mockResolvedValue(
+      messagesPayload({ cancel_requested_at: "2026-10-08T12:00:00+00:00" }),
+    );
   mockApi.cancelRun.mockResolvedValue({
     id: "run-1",
     status: "running",
@@ -208,12 +262,18 @@ it("does not revert to Stop this run when the cancel POST returns", async () => 
   });
 
   renderComposer();
-  fireEvent.click(await screen.findByRole("button", { name: /^stop this run$/i }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^stop this run$/i }),
+  );
   fireEvent.click(screen.getByRole("button", { name: /confirm stop/i }));
 
   await waitFor(() => expect(mockApi.cancelRun).toHaveBeenCalledWith("run-1"));
-  expect(await screen.findByRole("button", { name: /stopping…/i })).toBeDisabled();
-  expect(screen.queryByRole("button", { name: /^stop this run$/i })).not.toBeInTheDocument();
+  expect(
+    await screen.findByRole("button", { name: /stopping…/i }),
+  ).toBeDisabled();
+  expect(
+    screen.queryByRole("button", { name: /^stop this run$/i }),
+  ).not.toBeInTheDocument();
 });
 
 it("disables the steer input and Send for the same window", async () => {
@@ -244,8 +304,12 @@ it("takes the control away entirely once the run is no longer active", async () 
   renderComposer(false);
 
   await waitFor(() => expect(mockApi.runMessages).toHaveBeenCalled());
-  expect(screen.queryByRole("button", { name: /stopping…/i })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /^stop this run$/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /stopping…/i }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /^stop this run$/i }),
+  ).not.toBeInTheDocument();
 });
 
 it("explains in words that a detached run has no stdin to write into", async () => {
@@ -262,8 +326,79 @@ it("explains in words that a detached run has no stdin to write into", async () 
 
   renderComposer();
 
-  expect(await screen.findByText(/no stdin to write into/i)).toBeInTheDocument();
-  expect(screen.queryByLabelText(/message to this run/i)).not.toBeInTheDocument();
+  expect(
+    await screen.findByText(/no stdin to write into/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText(/message to this run/i),
+  ).not.toBeInTheDocument();
   // Still stoppable: a run that cannot take a message must not be unstoppable.
-  expect(screen.getByRole("button", { name: /^stop this run$/i })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /^stop this run$/i }),
+  ).toBeInTheDocument();
+});
+
+// --- lg-durable-remote-336, AC33: the double-fire, not just the label -------
+//
+// The existing AC33 cases assert what the control READS. This one asserts what
+// it DOES: a stop that has been requested must not be requested again. The
+// label test passes on a control that re-enables for the few hundred
+// milliseconds between the click and the first poll carrying
+// `cancel_requested_at` — and in that window a second press signals a detached
+// process group the server no longer owns, which after this ticket is a real
+// group of real processes rather than one dead child handle.
+
+it("fires exactly one cancel however many times Confirm stop is pressed", async () => {
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
+  let resolveCancel: (value: unknown) => void = () => {};
+  mockApi.cancelRun.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveCancel = resolve;
+      }) as ReturnType<typeof api.cancelRun>,
+  );
+
+  renderComposer();
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^stop this run$/i }),
+  );
+  const confirm = screen.getByRole("button", { name: /confirm stop/i });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+
+  await waitFor(() => expect(mockApi.cancelRun).toHaveBeenCalled());
+  expect(mockApi.cancelRun).toHaveBeenCalledTimes(1);
+  resolveCancel({ ok: true });
+});
+
+it("does not re-arm the stop in the window before the next poll answers", async () => {
+  // react-query's `isPending` is false again the instant the POST resolves, but
+  // `cancel_requested_at` only appears on the NEXT poll. A control latched off
+  // the mutation alone is clickable in between.
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "",
+    cancel_requested_at: null,
+  });
+  mockApi.cancelRun.mockResolvedValue({ ok: true } as Awaited<
+    ReturnType<typeof api.cancelRun>
+  >);
+
+  renderComposer();
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^stop this run$/i }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /confirm stop/i }));
+  await waitFor(() => expect(mockApi.cancelRun).toHaveBeenCalledTimes(1));
+
+  const rearmed = screen.queryByRole("button", { name: /^stop this run$/i });
+  expect(rearmed).not.toBeInTheDocument();
+  const confirmAgain = screen.queryByRole("button", { name: /confirm stop/i });
+  expect(confirmAgain).not.toBeInTheDocument();
+  expect(mockApi.cancelRun).toHaveBeenCalledTimes(1);
 });
