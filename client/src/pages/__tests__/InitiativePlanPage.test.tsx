@@ -385,7 +385,10 @@ test("the board acts on a selection from one toolbar, and caps long columns", as
 
   await user.click(await screen.findByRole("tab", { name: "Board" }));
   expect(await screen.findByText("84 work items")).toBeInTheDocument();
-  expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  // The toolbar is there before anything is ticked, so the checkboxes explain themselves.
+  const idle = screen.getByRole("toolbar", { name: "Selected tickets" });
+  expect(within(idle).getByText(/Tick tickets to move, start, or mark them/)).toBeInTheDocument();
+  expect(within(idle).getByRole("button", { name: "Start now" })).toBeDisabled();
   expect(screen.getAllByRole("button", { name: /Show all/ }).length).toBeGreaterThan(0);
   expect(findUsabilityProblems(container)).toEqual([]);
 
