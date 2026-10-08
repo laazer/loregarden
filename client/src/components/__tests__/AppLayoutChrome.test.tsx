@@ -116,6 +116,27 @@ it("keeps the utility dock on chat too, for the tools that are not the chat", ()
   ).toBeInTheDocument();
 });
 
+it("toggles the chat workbench from the topbar, beside History, and shows which way it is", () => {
+  localStorage.removeItem("loregarden.chat.workbenchOpen");
+  useUiStore.setState({ baxterWorkbenchOpen: null });
+  wrap(<div>chat body</div>, "/chat");
+  const toggle = screen.getByRole("button", { name: "Workbench" });
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(useUiStore.getState().baxterWorkbenchOpen).toBe(false);
+  expect(localStorage.getItem("loregarden.chat.workbenchOpen")).toBe("0");
+
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+});
+
+it("offers the workbench toggle only on the chat page", () => {
+  wrap(<div>console body</div>, "/console");
+  expect(screen.queryByRole("button", { name: "Workbench" })).not.toBeInTheDocument();
+});
+
 it("leaves the composer to the chat page, which draws its own", () => {
   wrap(<div>chat body</div>, "/chat");
   expect(screen.queryByLabelText("Message this conversation")).not.toBeInTheDocument();

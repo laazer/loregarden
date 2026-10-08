@@ -26,7 +26,7 @@ import {
 } from "../hooks/useComposerCommands";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useChatWorkbench } from "../hooks/useChatWorkbench";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { withReplyPrompts } from "../lib/dockChatPrompts";
@@ -114,35 +114,6 @@ function suggestionChips(approvals: Approval[], tickets: TicketSummary[]): strin
     "Open the Console",
     "Start a Ticket Studio session",
   ];
-}
-
-const WORKBENCH_STORAGE_KEY = "loregarden.chat.workbenchOpen";
-
-/** Below this the workbench overlays the thread instead of sitting beside it (ChatSideCard.css). */
-const WORKBENCH_OVERLAY_QUERY = "(max-width: 1100px)";
-
-/**
- * Remembered per browser on a wide window. A narrow one always starts without
- * it: there it covers the thread, so a remembered "open" greeted a phone with
- * no chat at all.
- */
-function initialWorkbenchOpen(): boolean {
-  if (window.matchMedia?.(WORKBENCH_OVERLAY_QUERY).matches) return false;
-  try {
-    const saved = window.localStorage.getItem(WORKBENCH_STORAGE_KEY);
-    if (saved === "1" || saved === "0") return saved === "1";
-  } catch {
-    /* silent-ok: storage blocked (private window); fall through to the wide-window default */
-  }
-  return true;
-}
-
-function rememberWorkbenchOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(WORKBENCH_STORAGE_KEY, open ? "1" : "0");
-  } catch {
-    /* silent-ok: a preference that cannot be saved still applies for this visit */
-  }
 }
 
 /**
@@ -542,12 +513,11 @@ export function BaxterChatPage() {
     [inGallery, chat.snapshot?.messages],
   );
 
-  const [workbenchOpen, setWorkbenchOpenState] = useState(initialWorkbenchOpen);
-  const workbenchOverlays = useMediaQuery(WORKBENCH_OVERLAY_QUERY);
-  const setWorkbenchOpen = useCallback((open: boolean) => {
-    setWorkbenchOpenState(open);
-    rememberWorkbenchOpen(open);
-  }, []);
+  const {
+    open: workbenchOpen,
+    overlays: workbenchOverlays,
+    setOpen: setWorkbenchOpen,
+  } = useChatWorkbench();
 
   const jumpToMessage = useCallback((messageId: string) => {
     const node = document.querySelector<HTMLElement>(
@@ -717,19 +687,7 @@ export function BaxterChatPage() {
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
         />
-      ) : (
-        <button
-          type="button"
-          className="chat-side-card-reopen"
-          aria-label="Show the workbench"
-          onClick={() => setWorkbenchOpen(true)}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          Workbench
-        </button>
-      )}
+      ) : null}
       <ChatHistorySidebar
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

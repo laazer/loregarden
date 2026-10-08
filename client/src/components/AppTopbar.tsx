@@ -1,14 +1,37 @@
 import { AppTopbarActions } from "./AppTopbarActions";
+import { useChatWorkbench } from "../hooks/useChatWorkbench";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { TopbarPageSlot } from "./TopbarPageSlot";
+import { Button } from "./ui/Button";
 
 const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   dashboard: "Agent SDLC · Console",
   chat: "Agent SDLC · Chat",
   home: "Agent SDLC · Home",
 };
+
+/** Beside History: the chat's other panel, toggled from the same place. */
+function ChatWorkbenchToggle() {
+  const { open, setOpen } = useChatWorkbench();
+  return (
+    <Button
+      variant="secondary"
+      className="topbar-action-btn topbar-action-btn--collapsible"
+      aria-pressed={open}
+      aria-label="Workbench"
+      title={open ? "Hide the workbench" : "Show the workbench"}
+      onClick={() => setOpen(!open)}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16" />
+      </svg>
+      <span className="topbar-action-label">Workbench</span>
+    </Button>
+  );
+}
 
 /** Chat answers from one workspace, so the topbar names which one. */
 function ChatWorkspacePicker() {
@@ -86,6 +109,7 @@ export function AppTopbar() {
             </svg>
             <span className="topbar-action-label">History</span>
           </button>
+          <ChatWorkbenchToggle />
           <button
             type="button"
             className="btn-secondary topbar-action-btn topbar-action-btn--collapsible"
