@@ -205,13 +205,17 @@ def record_block(
 
 #: What `record_blocking_issue` leaves inline when the real message went to an
 #: error artifact — classifying this text would call every long block `work`.
-_ERRORS_TAB_POINTER = "hit a blocking issue — see the Errors tab"
+#: New writes name the Timeline tab; rows stored before the Errors tab merged
+#: into it still carry the legacy wording, so both must be recognised.
+BLOCKING_POINTER_PHRASE = "hit a blocking issue — see the Timeline tab"
+LEGACY_BLOCKING_POINTER_PHRASE = "hit a blocking issue — see the Errors tab"
+_BLOCKING_POINTER_PHRASES = (BLOCKING_POINTER_PHRASE, LEGACY_BLOCKING_POINTER_PHRASE)
 
 
 def block_message_for(session: Session, ticket: Ticket) -> str:
     """The block's own words: the inline text, or the artifact it points at."""
     inline = ticket.blocking_issues or ""
-    if _ERRORS_TAB_POINTER not in inline:
+    if not any(phrase in inline for phrase in _BLOCKING_POINTER_PHRASES):
         return inline
     artifact = session.exec(
         select(Artifact)

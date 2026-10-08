@@ -14,7 +14,7 @@ import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
  * is not one: the run died of infrastructure — a lost CLI login, a reaped lease
  * — and the stage was re-armed rather than blocked, so the work is in progress.
  *
- * It lives on the Errors tab all the same, since that is where an operator looks
+ * It lives on the Timeline tab all the same, since that is where an operator looks
  * when asking "why is this taking so long", and the honest answer is "it has
  * attempted this twice". Without this panel a retry is invisible: the ticket is
  * deliberately unblocked, `blocking_issues` is empty by design, and a stage that

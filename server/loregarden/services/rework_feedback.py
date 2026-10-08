@@ -44,7 +44,7 @@ from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-# Feedback context, not a failure — kept off the Errors tab. The re-run agent's
+# Feedback context, not a failure — kept off the Timeline tab. The re-run agent's
 # context is assembled from these; the human-facing error artifact that
 # ``record_blocking_issue`` already files is a separate, unchanged concern.
 #
