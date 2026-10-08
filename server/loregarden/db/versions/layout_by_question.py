@@ -12,6 +12,7 @@ from loregarden.db.migrations_role_refresh import refresh_role_from_seed
 from loregarden.db.versions import migration
 from sqlalchemy import Connection
 
+#: Spelled again in the decorator: the shared-database guard reads ids from source literals.
 MIGRATION_ID = "20261007_layout_by_question"
 
 #: (slug, seed file, a heading only the new seed carries).
@@ -29,7 +30,7 @@ ROLES = (
 )
 
 
-@migration(MIGRATION_ID, after="20261007_initiative_planner_runtime")
+@migration("20261007_layout_by_question", after="20261007_initiative_planner_runtime")
 def m_layout_by_question(conn: Connection) -> None:
     if not (table_exists(conn, "studio_agents") and table_exists(conn, "studio_agent_versions")):
         return
