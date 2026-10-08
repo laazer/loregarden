@@ -57,6 +57,7 @@ from loregarden.api import (
     workspaces,
 )
 from loregarden.config import settings
+from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
@@ -161,6 +162,7 @@ def _start_sandbox_endpoint_check() -> asyncio.Task[None]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_console_logging()
     if not settings.api_token:
         logger.warning(
             "LOREGARDEN_API_TOKEN is not set — the API (which writes files and "

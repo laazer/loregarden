@@ -20,6 +20,7 @@ line naming which one.
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 from pathlib import Path
 
 from loregarden.core.state_machine import StateMachine
@@ -113,6 +114,25 @@ def _service_for(session: Session, workspace_id: str) -> WorktreeService | None:
     return WorktreeService(session, repo_path=str(resolve_workspace_root(workspace)))
 
 
+class KeepReason(StrEnum):
+    """Why a finished worktree's checkout stays on disk."""
+
+    UNCOMMITTED = "uncommitted changes"
+    NOTHING_COMMITTED = "no commits beyond its base"
+
+
+def _keep_reason(worktree: Worktree) -> KeepReason | None:
+    """The premise that fails for removing this checkout, or None when both hold."""
+    path = Path(worktree.worktree_path) if worktree.worktree_path else None
+    if path is None or not path.is_dir():
+        return None
+    if _is_dirty(path):
+        return KeepReason.UNCOMMITTED
+    if not _has_preserved_commits(path, worktree):
+        return KeepReason.NOTHING_COMMITTED
+    return None
+
+
 def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> bool:
     """Remove a worktree's checkout, unless doing so would lose something.
 
@@ -123,26 +143,47 @@ def retire_worktree(session: Session, service: WorktreeService, worktree: Worktr
     in through an underscore is how a safety bar gets relaxed by someone who
     never saw the caller relying on it.
     """
-    path = Path(worktree.worktree_path) if worktree.worktree_path else None
-    if path and path.is_dir():
-        if _is_dirty(path):
-            logger.warning(
-                "Worktree %s at %s has uncommitted changes; leaving it on disk",
-                worktree.id,
-                path,
-            )
-            return False
-        if not _has_preserved_commits(path, worktree):
-            logger.warning(
-                "Worktree %s at %s: branch %s has no commits beyond %s, so removing "
-                "it would preserve nothing; leaving it on disk",
-                worktree.id,
-                path,
-                worktree.branch or "HEAD",
-                worktree.parent_branch,
-            )
-            return False
+    reason = _keep_reason(worktree)
+    if reason is KeepReason.UNCOMMITTED:
+        logger.warning(
+            "Worktree %s at %s has uncommitted changes; leaving it on disk",
+            worktree.id,
+            worktree.worktree_path,
+        )
+        return False
+    if reason is KeepReason.NOTHING_COMMITTED:
+        logger.warning(
+            "Worktree %s at %s: branch %s has no commits beyond %s, so removing "
+            "it would preserve nothing; leaving it on disk",
+            worktree.id,
+            worktree.worktree_path,
+            worktree.branch or "HEAD",
+            worktree.parent_branch,
+        )
+        return False
     return service.cleanup_worktree(worktree)
+
+
+def _kept_summary(kept: dict[KeepReason, list[Worktree]]) -> str:
+    """One grouped block for every finished tree startup left on disk.
+
+    A restart after a busy week kept a dozen trees, each as its own wall-width
+    line; grouped by reason, the two that hold real work stand apart from the
+    ten that merely hold nothing.
+    """
+    total = sum(len(trees) for trees in kept.values())
+    lines = [f"Kept {total} finished ticket worktree(s) on disk:"]
+    for reason in KeepReason:
+        trees = kept.get(reason, [])
+        if not trees:
+            continue
+        lines.append(f"  {reason.value} ({len(trees)}):")
+        for tree in sorted(trees, key=lambda t: t.worktree_path or ""):
+            detail = tree.worktree_path or tree.id
+            if reason is KeepReason.NOTHING_COMMITTED:
+                detail += f"  [{tree.branch or 'HEAD'} = {tree.parent_branch}]"
+            lines.append(f"    {detail}")
+    return "\n".join(lines)
 
 
 def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
@@ -212,6 +253,7 @@ def reconcile_worktrees(session: Session) -> int:
     """
     rows = session.exec(select(Worktree).where(Worktree.state == WorktreeState.ACTIVE)).all()
     settled = 0
+    kept: dict[KeepReason, list[Worktree]] = {}
     for worktree in rows:
         service = _service_for(session, worktree.workspace_id)
         if not service:
@@ -225,10 +267,16 @@ def reconcile_worktrees(session: Session) -> int:
             continue
 
         ticket = session.get(Ticket, worktree.ticket_id) if worktree.ticket_id else None
-        if ticket and ticket.state in StateMachine.TERMINAL_TICKET_STATES:
-            if retire_worktree(session, service, worktree):
-                settled += 1
+        if not ticket or ticket.state not in StateMachine.TERMINAL_TICKET_STATES:
+            continue
+        reason = _keep_reason(worktree)
+        if reason is not None:
+            kept.setdefault(reason, []).append(worktree)
+        elif service.cleanup_worktree(worktree):
+            settled += 1
 
+    if kept:
+        logger.warning(_kept_summary(kept))
     if settled:
         logger.info("Reconciled %d orphaned worktree(s) at startup", settled)
     return settled
