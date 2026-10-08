@@ -64,6 +64,10 @@ skipped in substance, and you cannot judge a purpose nobody wrote down. Report `
 with `reroute_to_stage: ui-design`, naming which of the three is missing — do not invent the
 criteria yourself and grade against them.
 
+## Check the layout fits the question
+
+Ask whether the layout matches the question the surface answers. Items that each repeat a name and four or more attributes, which the operator compares, are a table even when they render as a list. One record's label/value pairs are a `<dl>`, not a table. A grid of `<div>`s drawn as a table, with no `role=table`, fails, because a screen reader or agent cannot read its columns. The visual-qa script reports the first two as `tabular-list` and `key-value-table`. Read each hit against the design criteria. Do not pass a hit unread, and do not fail one the criteria justify.
+
 ## Rules
 
 - **Every surface, every time.** The script enumerates them so "most pages look fine" cannot pass. A route that was never visited counts against the run — a check that silently skips a surface is evidence of something untrue.

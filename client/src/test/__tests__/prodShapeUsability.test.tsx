@@ -112,7 +112,19 @@ it("Suggested initiatives at production volume names each group and stays operab
   for (const suggestion of data.suggestions) {
     expect(await screen.findByDisplayValue(suggestion.title)).toBeInTheDocument();
   }
-  expect(findUsabilityProblems(container)).toEqual([]);
+  const problems = findUsabilityProblems(container).filter((p) => p.kind !== "tabular-list");
+  expect(problems).toEqual([]);
+});
+
+// lg-initiatives-cross-899 — open: SprintCard lists 392 members that each repeat
+// five fields. When it becomes a table this passes, `failing` turns that into a
+// red run, and the case above drops its filter.
+it.failing("Suggested initiatives compares a sprint's members in a table", async () => {
+  mockApi.initiativeSuggestions.mockResolvedValue(suggestions as unknown as InitiativeSuggestionSet);
+  const { container } = render(withProviders(<InitiativeSuggestionsPage />));
+
+  await screen.findByDisplayValue((suggestions as unknown as InitiativeSuggestionSet).suggestions[0].title);
+  expect(findUsabilityProblems(container).map((p) => p.kind)).not.toContain("tabular-list");
 });
 
 it("a production-sized plan artifact renders as a document, not escaped JSON", () => {

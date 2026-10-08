@@ -210,6 +210,29 @@ scenario; and when the live shape drifts, re-measure `CALIBRATION` rather than l
 become a fixture again. A scenario that disagrees with production is worse than none — it once
 claimed 20 near-duplicate learnings that production did not have.
 
+### Lists, tables, or something else
+
+Choose the layout by the operator's question, not by what the last page used:
+
+| The operator is asking | Use | Not when |
+|---|---|---|
+| "How do these compare?" — reading values across rows and sorting | **Table**: one row per record, a header per field | Items do not share fields, or there is one record |
+| "Which one do I open?" | **List**: a name plus up to three short tags, and the item is a link or button | Each item has a name and four or more attributes (that is a table) |
+| "What are this one record's details?" | **`<dl>`** of label/value pairs | Never a two-column "Field / Value" table |
+| "What stage is each item in?" (and moving items between stages) | **Board**: one column per state | Items never change state |
+| "When, in what order, how long?" | **Timeline** | Nothing has a date or a duration |
+| "What belongs under what?" | **Tree** or nested list | Only one level deep (use a grouped list) |
+| "What connects to what?" | **Graph** | There are no edges (a list shows the same) |
+| A few summaries of equal weight | **Cards**, about 12 at most | They are records (use a table or list) |
+
+Whatever the layout:
+
+- **A table is a `<table>`.** Use `<th scope>`, sort controls that set `aria-sort`, numbers right-aligned in `tabular-nums`, and a list again at phone width. A CSS grid of `<div>`s styled as rows reads as one blob to a screen reader and to an agent. If it must stay a grid, it carries `role=table`/`row`/`columnheader`/`cell` throughout.
+- **One primary action per row or item**, on its name.
+- **Volume decides the rest.** Over 12 near-identical rows, group them with a count; over 50, add a filter beside the list.
+
+`findUsabilityProblems` flags the two mix-ups a static gate cannot see: `tabular-list` (8+ list items sharing one shape of five or more text fields) and `key-value-table` (two-cell rows with no column header).
+
 ### The five states
 
 A change to a user-facing surface is not specified until all five are decided. A ticket that
