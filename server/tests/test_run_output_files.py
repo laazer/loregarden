@@ -152,6 +152,21 @@ def test_attach_command_is_empty_for_a_run_that_is_not_supervised(status):
     assert attach_command(_run(AgentTransport.TMUX, status)) == ""
 
 
+def test_attach_command_is_offered_while_a_run_waits_for_a_permission_answer():
+    """The second member of `run_lease.SUPERVISED`, and the only row above that
+    distinguishes `status in SUPERVISED` from `status is RunStatus.RUNNING`.
+
+    An awaiting-permission run is a LIVE agent — its session exists and its pane
+    is exactly what an operator wants to look at while deciding. Writing the
+    predicate as an equality against RUNNING satisfies every other case in this
+    module, so without this row the narrower implementation ships and the attach
+    command disappears at the moment it is most useful.
+    """
+    command = attach_command(_run(AgentTransport.TMUX, RunStatus.AWAITING_PERMISSION))
+
+    assert command == f"tmux attach -t lg-{RUN_CODE}-{RUN_ID[:8]}"
+
+
 # --- S2: the wrapper --------------------------------------------------------
 
 

@@ -344,3 +344,44 @@ def test_queueing_a_message_for_a_detached_run_is_refused_with_that_reason(
 
     with pytest.raises(ValueError, match="no stdin to write into"):
         queue_message(db_session, run, "please try the other helper")
+
+
+def test_a_detached_run_that_has_already_finished_still_says_so(db_session: Session):
+    """AC34's placement from above: the status check outranks the transport.
+
+    `steer_refusal`'s first real branch is "there is nothing to steer", and the
+    1,449 settled rows this ticket will eventually add a transport to are all
+    past it. A branch written at the top of the function — the obvious place to
+    put a new one — passes every other AC34 case in this module and tells an
+    operator looking at a finished run about stdin instead of about the run
+    being over.
+    """
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket, status=RunStatus.SUCCEEDED)
+    run.agent_transport = AgentTransport.TMUX
+    db_session.add(run)
+    db_session.commit()
+
+    assert steer_refusal(run) == "Run is succeeded, so there is nothing to steer."
+
+
+def test_a_detached_chat_run_is_still_pointed_back_at_the_chat(db_session: Session):
+    """AC34 pins the branch AFTER the `ticket_id` check, and this is that half.
+
+    A workspace-scoped chat run has no ticket, and the answer an operator needs
+    is where to type instead — not a fact about the transport, which does not
+    tell them what to do next. The sibling case above covers the
+    `cancel_requested_at` check; between them the two checks AC34 names as
+    senior are both asserted, rather than one asserted and one described in a
+    docstring.
+    """
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+    run.ticket_id = None
+    run.agent_transport = AgentTransport.FILE
+    db_session.add(run)
+    db_session.commit()
+
+    assert steer_refusal(run) == (
+        "Workspace-scoped chat runs are steered by replying in the chat, not here."
+    )

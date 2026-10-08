@@ -1,6 +1,7 @@
 """GET /api/runs/{run_id}/log — the source for the run-log modal."""
 
 import json
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import AgentRun, AgentTransport, Artifact, RunStatus, Ticket
@@ -221,3 +222,30 @@ def test_run_messages_reports_when_a_stop_was_requested(client: TestClient, db_s
     after = client.get(f"/api/runs/{run.id}/messages").json()
 
     assert after["cancel_requested_at"] is not None
+
+
+def test_the_stop_timestamp_is_the_same_iso_shape_as_the_rest_of_the_payload(
+    client: TestClient, db_session: Session
+):
+    """AC33's shape, not just its presence.
+
+    The sibling case above asserts the key stops being null, which `str(dt)`,
+    an epoch float and a bare date all satisfy — and the client types the field
+    `string | null`, so none of them is a type error either. It is read by
+    `Boolean(...)`, so a wrong shape latches the control correctly and then
+    misleads anyone who renders it. Pin it to the stored instant in the
+    encoding every other timestamp on this payload uses.
+    """
+    run = _seed_run(db_session, status=RunStatus.RUNNING)
+
+    client.post(f"/api/runs/{run.id}/cancel")
+    db_session.refresh(run)
+    body = client.get(f"/api/runs/{run.id}/messages").json()
+
+    stamped = body["cancel_requested_at"]
+    assert datetime.fromisoformat(stamped) == run.cancel_requested_at.replace(
+        tzinfo=run.cancel_requested_at.tzinfo or timezone.utc
+    )
+    assert stamped.endswith("Z") or "+" in stamped, (
+        f"{stamped!r} carries no zone, so the client cannot place it on a clock"
+    )
