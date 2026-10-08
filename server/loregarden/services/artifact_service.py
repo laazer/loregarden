@@ -20,12 +20,14 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.artifact_records import is_system_record
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -1202,27 +1204,36 @@ def list_ticket_artifacts(
     context/error/pr). Agents — especially local models — attach arbitrary kinds
     (`test_spec`, `source_analysis`, …) that never appear there. This list is the
     raw row feed so operators can watch attachments land during a run.
+
+    Each row says which stage it belongs to when that is known — from its run,
+    else from a `stage_key` its content names — and whether it is the platform's
+    own bookkeeping (`system`), so the reader can put outputs on the timeline and
+    hide machinery without guessing from titles.
     """
     rows = session.exec(
-        select(Artifact)
+        select(Artifact, AgentRun)
+        .join(AgentRun, Artifact.run_id == AgentRun.id, isouter=True)
         .where(Artifact.ticket_id == ticket_id)
         .order_by(Artifact.created_at.desc())
         .limit(limit)
     ).all()
     items: list[dict[str, Any]] = []
-    for art in rows:
+    for art, run in rows:
         raw = art.content_json or "{}"
         try:
             content = json.loads(raw)
         except json.JSONDecodeError:
             # silent-ok: unparseable content is handed to the caller verbatim under _raw
             content = {"_raw": raw}
+        run_code = run.run_code if run else None
         items.append(
             {
                 "id": art.id,
                 "kind": art.kind,
                 "title": art.title,
                 "run_id": art.run_id,
+                "stage_key": (run.stage_key if run else None) or _content_stage_key(content),
+                "system": is_system_record(kind=art.kind, title=art.title, run_code=run_code),
                 "evidence_kind": art.evidence_kind,
                 "commit_sha": art.commit_sha,
                 "created_at": art.created_at.isoformat() if art.created_at else None,
@@ -1231,3 +1242,19 @@ def list_ticket_artifacts(
             }
         )
     return {"items": items, "total": len(items)}
+
+
+class _StageTagged(BaseModel):
+    """The one field of an artifact's free-form content the feed reads."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    stage_key: str | None = None
+
+
+def _content_stage_key(content: Any) -> str | None:
+    try:
+        return _StageTagged.model_validate(content).stage_key or None
+    except ValidationError:
+        # silent-ok: content is agent-shaped JSON; a non-object, or a stage_key that is not a string, names no stage and the row is placed by time instead
+        return None

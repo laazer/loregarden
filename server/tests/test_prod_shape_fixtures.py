@@ -26,10 +26,10 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
-from loregarden.models.domain import Artifact
+from loregarden.models.domain import AgentRun, Artifact
 from loregarden.services import initiative_suggestions
 from loregarden.services.memory_store import AgentMemoryService
-from loregarden.testing.prod_shape import build_prod_shape, prod_shape_id
+from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape, prod_shape_id
 from sqlmodel import Session
 
 FIXTURES = (
@@ -51,7 +51,15 @@ ENDPOINTS = {
     # The ticket carrying the scenario's first plan document; resolved per run.
     "ticket-artifacts.json": ("/api/tickets/{plan_ticket}/artifacts", {}),
     "initiative-suggestions.json": ("/api/initiatives/suggestions", {}),
+    # The scenario's worked ticket, at the live p90 of runs and artifact rows.
+    "ticket-history-artifacts.json": ("/api/tickets/{worked_ticket}/artifacts", {}),
+    "ticket-history-ledger.json": ("/api/tickets/{worked_ticket}/ledger", {}),
 }
+
+#: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
+#: as recorded — and must stay unpinned, because where a row sits on the ticket's
+#: timeline is read from them.
+_STAMPED = {"ticket-history-artifacts.json", "ticket-history-ledger.json"}
 
 #: Fixtures whose response is computed from "now" (the sprint's dates), recorded
 #: with the clock pinned. The scenario's own timestamps are stamped at build
@@ -89,15 +97,19 @@ def test_fixture_matches_the_api(api, isolated_db, name):
     path, params = ENDPOINTS[name]
     with Session(isolated_db) as session:
         plan_ticket = session.get(Artifact, prod_shape_id("plan", 0)).ticket_id
+        worked_ticket = session.get(AgentRun, prod_shape_id("worked-run", 0)).ticket_id
     with ExitStack() as stack:
         if name in _CLOCKED:
             pinned = datetime.fromisoformat(_PINNED.replace("Z", "+00:00")).astimezone(timezone.utc)
             stack.enter_context(
                 mock.patch.object(initiative_suggestions, "clock", return_value=pinned)
             )
-        response = api.get(path.format(plan_ticket=plan_ticket), params=params)
+        response = api.get(
+            path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket), params=params
+        )
     assert response.status_code == 200, response.text
-    body = json.dumps(_pin(response.json()), indent=1, sort_keys=True) + "\n"
+    payload = response.json() if name in _STAMPED else _pin(response.json())
+    body = json.dumps(payload, indent=1, sort_keys=True) + "\n"
 
     target = FIXTURES / name
     if RECORD:
@@ -110,3 +122,12 @@ def test_fixture_matches_the_api(api, isolated_db, name):
         "intended, re-record with LOREGARDEN_RECORD_FIXTURES=1 and review the jest tests "
         "that read it."
     )
+
+
+def test_worked_ticket_matches_its_calibration(isolated_db):
+    """The history the Timeline and Outputs fixtures are recorded from is the
+    live p90 — a drifted scenario is a fixture again."""
+    with Session(isolated_db) as session:
+        summary = build_prod_shape(session)
+    assert summary.worked_runs == CALIBRATION.worked_runs
+    assert summary.worked_artifacts == CALIBRATION.worked_artifacts

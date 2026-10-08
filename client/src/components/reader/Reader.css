@@ -35,6 +35,32 @@
   overflow-wrap: anywhere;
 }
 
+.reader-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  vertical-align: 3px;
+}
+
+.reader-badge--good {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+}
+
+.reader-badge--bad {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+
+.reader-badge--warn {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 14%, transparent);
+}
+
 .reader-subtitle {
   margin: 4px 0 0;
   font-family: var(--mono);
@@ -72,51 +98,104 @@
   font-size: 12.5px;
 }
 
-.reader-measure .sc-facts {
-  font-size: 13px;
-}
-
-.reader-source {
-  font-size: 12.5px;
-  max-height: none;
-}
-
-/* ── StructuredContent ──────────────────────────────────────────────── */
-
-.sc-root,
-.sc-record {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-
+.reader-measure /* Label and value on one line, labels in a column — read down, not around a grid of boxes. */
 .sc-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(10ch, max-content) minmax(0, 1fr);
+  gap: 5px 18px;
   margin: 0;
   font-size: 12px;
 }
 
 .sc-fact {
-  padding: 8px 10px;
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  background: var(--bg2);
-  min-width: 0;
+  display: contents;
 }
 
 .sc-fact dt {
-  font-size: 10.5px;
   color: var(--txl);
-  margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .sc-fact dd {
   margin: 0;
   color: var(--tx);
   overflow-wrap: anywhere;
+}
+
+.sc-table-wrap {
+  overflow-x: auto;
+}
+
+.sc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.sc-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.85em;
+  color: var(--txl);
+  padding: 4px 10px 6px 0;
+  border-bottom: 1px solid var(--bd2);
+  white-space: nowrap;
+}
+
+.sc-table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: top;
+  color: var(--tx);
+  /* break-word, not anywhere: `anywhere` lets a column shrink to one letter and split "complete". */
+  overflow-wrap: break-word;
+}
+
+.sc-table td.sc-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-yes {
+  color: var(--grl);
+}
+
+.sc-no {
+  color: var(--rdl);
+}
+
+.sc-diff {
+  margin: 0;
+  padding: 8px 0;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg1);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.sc-diff-line {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+  color: var(--txm);
+}
+
+.sc-diff-line--a {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 9%, transparent);
+}
+
+.sc-diff-line--d {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
+.sc-diff-line--h {
+  color: var(--bll);
+  margin-top: 4px;
 }
 
 .sc-section {
@@ -233,17 +312,6 @@ h4.sc-heading {
   .reader-measure .markdown-preview {
     font-size: 14px;
   }
-}
-
-/* An artifact expanded inline in the Artifacts tab: formatted, bounded, with
-   the reader one click away for anything longer than the box. */
-.artifact-body {
-  max-height: 460px;
-  overflow: auto;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--bd);
-  background: var(--bg2);
 }
 
 /* ── A card fence the server could not parse ───────────────────────── */

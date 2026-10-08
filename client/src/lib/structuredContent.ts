@@ -145,3 +145,100 @@ export function plainPreview(text: string, maxChars = 180): string {
 export function isLongProse(text: string): boolean {
   return text.length > 600 || text.split("\n").length > 12;
 }
+
+/*
+ * Shapes worth their own layout. The generic split above handles prose and
+ * facts; these are the recurring structures it laid out badly — measured over
+ * the live artifact table, where each is hundreds to thousands of rows.
+ */
+
+export interface KeyValueRow {
+  k: string;
+  v: JsonScalar;
+}
+
+/**
+ * `[{k, v}, …]` — how every `context` artifact (2,800 live) carries its table.
+ * Laid out as cards it became a box per key and a box per value.
+ */
+export function asKeyValueRows(value: unknown): KeyValueRow[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const rows: KeyValueRow[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.k !== "string" || !isScalar(item.v)) return null;
+    if (Object.keys(item).some((key) => key !== "k" && key !== "v")) return null;
+    rows.push({ k: item.k, v: item.v });
+  }
+  return rows;
+}
+
+/** A row that says nothing: no value, or a value the facts above already give. */
+export function isRedundantRow(row: KeyValueRow, factKeys: ReadonlySet<string>): boolean {
+  if (row.v === null || row.v === "" || row.v === "—") return true;
+  return factKeys.has(row.k);
+}
+
+export interface RecordTable {
+  columns: string[];
+  rows: Record<string, JsonScalar>[];
+}
+
+/** Longest cell a table keeps; past it the item is prose and reads better as a card. */
+const TABLE_CELL_MAX_CHARS = 400;
+const TABLE_MAX_COLUMNS = 7;
+
+/**
+ * Two or more objects with the same fields, every field a short scalar — a
+ * handoff checklist, gate criteria, a plan's corrections. That is a table:
+ * stacked as cards, the eye could not compare one item's `status` with the next.
+ */
+export function asRecordTable(value: unknown): RecordTable | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const columns: string[] = [];
+  const rows: Record<string, JsonScalar>[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return null;
+    for (const [key, cell] of Object.entries(item)) {
+      if (!isScalar(cell)) return null;
+      if (typeof cell === "string" && (cell.length > TABLE_CELL_MAX_CHARS || cell.includes("\n"))) return null;
+      if (!columns.includes(key)) columns.push(key);
+    }
+    rows.push(item as Record<string, JsonScalar>);
+  }
+  // Same fields throughout, give or take an optional one — not a grab-bag.
+  if (rows.some((row) => Object.keys(row).length < columns.length - 1)) return null;
+  const shown = columns.filter((column) => rows.some((row) => !isEmptyValue(row[column])));
+  if (shown.length < 2 || shown.length > TABLE_MAX_COLUMNS) return null;
+  return { columns: shown, rows };
+}
+
+export interface DiffLine {
+  /** `h` hunk header, `a` added, `d` deleted, `c` context — the diff artifact's encoding. */
+  type: string;
+  text: string;
+}
+
+const DIFF_TYPES = new Set(["h", "a", "d", "c"]);
+
+/** The `lines` of a diff artifact section, which rendered as one JSON card per line. */
+export function asDiffLines(value: unknown): DiffLine[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const lines: DiffLine[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.type !== "string" || !DIFF_TYPES.has(item.type)) return null;
+    if (typeof item.text !== "string") return null;
+    lines.push({ type: item.type, text: item.text });
+  }
+  return lines;
+}
+
+/**
+ * `{handoff: {…}}` — a record whose only content is one nested record. Its key
+ * names the document the reader already titled, so it earns no heading.
+ */
+export function unwrapSingleRecord(record: Record<string, unknown>): Record<string, unknown> | null {
+  const present = Object.entries(record).filter(([, value]) => !isEmptyValue(value));
+  if (present.length !== 1) return null;
+  const [[, inner]] = present;
+  return isRecord(inner) ? inner : null;
+}

@@ -41,6 +41,7 @@ from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFI
 from loregarden.mcp.run_resolution import (
     ORCHESTRATION_RUN_ID_DESCRIPTION,
     TICKET_RUN_ID_DESCRIPTION,
+    attributed_agent_run_id,
     resolve_run_ref,
 )
 from loregarden.mcp.ticket_edit_tools import (
@@ -1213,7 +1214,23 @@ def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> st
     return json.dumps(_run_view(run), indent=2)
 
 
-def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -> str:
+def _attach_artifact(svc, ticket, arguments: dict[str, Any], *, run_id: str | None) -> str:
+    content = {}
+    if arguments.get("content_json"):
+        content = json.loads(arguments["content_json"])
+    artifact = svc.attach_artifact(
+        ticket,
+        kind=arguments.get("kind", "log"),
+        title=arguments.get("title", ""),
+        content=content,
+        run_id=run_id,
+    )
+    return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
+
+
+def _attach_evidence(
+    session: Session, svc, ticket, arguments: dict[str, Any], *, run_id: str | None
+) -> str:
     """Record proof of behaviour, stamped with the commit it proves."""
     evidence_kind = arguments["evidence_kind"]
     if evidence_kind not in EVIDENCE_KINDS:
@@ -1232,6 +1249,7 @@ def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -
         content=content,
         evidence_kind=evidence_kind,
         commit_sha=resolve_head_sha(session, ticket),
+        run_id=run_id,
     )
     return json.dumps(
         {"ok": True, "artifact_id": artifact.id, "commit_sha": artifact.commit_sha}, indent=2
@@ -1343,28 +1361,20 @@ def execute_tool(
     if memory_result is not None:
         return memory_result
 
-    run_id = arguments.get("run_id")
-    if not run_id:
+    named_run = arguments.get("run_id")
+    if not named_run:
         raise ValueError("run_id is required")
 
-    run_ref = resolve_run_ref(session, run_id)
+    run_ref = resolve_run_ref(session, named_run)
     ticket = svc.resolve_ticket(ticket_id=run_ref.ticket_id)
+    source_run_id = attributed_agent_run_id(session, run_ref, transport_run_id=run_id)
 
     # Ticket-scoped: a standalone stage run, with no orchestration, may use these.
     if name == McpTool.ATTACH_ARTIFACT:
-        content = {}
-        if arguments.get("content_json"):
-            content = json.loads(arguments["content_json"])
-        artifact = svc.attach_artifact(
-            ticket,
-            kind=arguments.get("kind", "log"),
-            title=arguments.get("title", ""),
-            content=content,
-        )
-        return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
+        return _attach_artifact(svc, ticket, arguments, run_id=source_run_id)
 
     if name == McpTool.ATTACH_EVIDENCE:
-        return _attach_evidence(session, svc, ticket, arguments)
+        return _attach_evidence(session, svc, ticket, arguments, run_id=source_run_id)
 
     if name == McpTool.REQUEST_APPROVAL:
         approval = svc.request_approval(

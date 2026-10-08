@@ -9,7 +9,6 @@ import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
 import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
-import { ReworkRequiredNotice } from "../components/dashboard/ReworkRequiredNotice";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions, orchestrateBody } from "../components/AgentsAssembleModal";
@@ -41,7 +40,7 @@ import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from 
 import { TriageModelModal } from "../components/TriageModelModal";
 import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
-import { isArtifactTab } from "../lib/appNavigation";
+import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
@@ -187,7 +186,8 @@ export function Dashboard() {
   useEffect(() => {
     if (!routeTicketId || !rawArtifactTab) return;
     if (!isArtifactTab(rawArtifactTab)) {
-      navigateToTicket(routeTicketId, { tab: "diff", replace: true });
+      // A retired tab (/logs, /errors, /artifacts…) lands on the view that holds it now.
+      navigateToTicket(routeTicketId, { tab: canonicalArtifactTab(rawArtifactTab) ?? "diff", replace: true });
     }
   }, [routeTicketId, rawArtifactTab]);
 
@@ -304,7 +304,7 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["runs", selectedId] });
-      navigateToTicketTab(selectedId!, "logs");
+      navigateToTicketTab(selectedId!, "timeline");
       setRunConfirmStageKey(null);
     },
     onError: () => {
@@ -642,7 +642,7 @@ export function Dashboard() {
     if (artifactTab !== "diff") return;
 
     if (sel.blocking_issues || sel.artifacts?.error) {
-      navigateToTicketTab(sel.id, "errors", true);
+      navigateToTicketTab(sel.id, "timeline", true);
     }
   }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, artifactTab]);
 
@@ -800,6 +800,7 @@ export function Dashboard() {
                 </div>
                 <WorkflowPaneTicketMeta
                   ticket={sel}
+                  hasRunErrors={hasRunErrors}
                   onOpenParent={selectTicket}
                   onAddChild={openCreateSubTicket}
                 />
@@ -844,35 +845,6 @@ export function Dashboard() {
                   onSaveBranch={(branch) => saveTicketBranch(sel.id, branch)}
                   onPostureChange={(posture) => setCompatibilityPosture.mutate(posture)}
                 />
-                <ReworkRequiredNotice text={sel.blocking_issues} />
-
-                {hasRunErrors && (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      padding: "10px 12px",
-                      borderRadius: 11,
-                      background: "rgba(240,96,63,.1)",
-                      border: "1px solid rgba(240,96,63,.3)",
-                      fontSize: 12,
-                      color: "var(--rdl)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <span>Run or workflow issue recorded</span>
-                    <button
-                      type="button"
-                      className="btn-secondary btn-compact"
-                      onClick={() => selectedId && navigateToTicketTab(selectedId, "errors")}
-                    >
-                      View Errors
-                    </button>
-                  </div>
-                )}
-
                 <div style={{ marginTop: 24 }}>
                   <div
                     className="workflow-lifecycle-label"
@@ -1006,7 +978,7 @@ export function Dashboard() {
               artifactTab={artifactTab}
               selectedId={selectedId}
               hasRunErrors={hasRunErrors}
-              artifactCount={artifactsFeed.data?.total ?? 0}
+              outputCount={artifactsFeed.data?.items.filter((item) => !item.system).length ?? 0}
               approvalCount={humanApprovalCount}
               hasPr={!!sel?.artifacts?.pr}
             />
@@ -1024,7 +996,7 @@ export function Dashboard() {
               ticket={sel}
               runs={ticketRuns.data ?? []}
               hasActiveRun={hasActiveRun}
-              hasRunErrors={hasRunErrors}
+              pendingApprovals={humanApprovalCount}
               selectedId={selectedId}
               activeWorkspaceSlug={activeWorkspaceSlug}
               isOpeningPr={openPr.isPending}
