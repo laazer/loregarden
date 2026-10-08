@@ -20,7 +20,9 @@ export type UsabilityProblemKind =
   | "repeated-text"
   | "dead-end-list"
   | "edgeless-graph"
-  | "unfiltered-long-list";
+  | "unfiltered-long-list"
+  | "tabular-list"
+  | "key-value-table";
 
 export interface UsabilityProblem {
   kind: UsabilityProblemKind;
@@ -37,6 +39,17 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   const ACTIONABLE =
     "a[href], button, input, select, textarea, summary, [role='button'], [role='link'], [tabindex]";
   const NARROWING = "input[type='search'], input[type='text'], select, [role='searchbox']";
+  /**
+   * Items that each repeat this many text fields are records, and records are
+   * rows. A name and three short tags is still a list (an issue tracker's); a
+   * name and four attributes is a row read across.
+   */
+  const TABULAR_FIELDS = 5;
+  /** Controls hold labels and choices, not the item's fields. */
+  const CONTROL = "button, select, textarea, option";
+  const TABULAR_ITEMS = 8;
+  /** Two-cell rows this many deep, with no column header, are one record's fields. */
+  const KEY_VALUE_ROWS = 3;
 
   const problems: UsabilityProblem[] = [];
 
@@ -82,6 +95,45 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
           detail: `a list of ${items.length} items with no search or filter near it`,
         });
       }
+    }
+  }
+
+  // A list item's shape is the sequence of elements that hold its text. When
+  // most items share one shape of several fields, the reader is comparing the
+  // same attributes down the page — that is a table without its columns.
+  for (const list of Array.from(root.querySelectorAll("ul, ol"))) {
+    const items = Array.from(list.children).filter((c) => c.tagName === "LI");
+    if (items.length < TABULAR_ITEMS) continue;
+    const shapes = new Map<string, number>();
+    for (const item of items) {
+      if (item.querySelector("ul, ol, table")) continue;
+      const fields = [item, ...Array.from(item.querySelectorAll("*"))].filter(
+        (el) =>
+          !el.closest(CONTROL) &&
+          Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim() !== ""),
+      );
+      if (fields.length < TABULAR_FIELDS) continue;
+      const shape = fields.map((el) => `${el.tagName}.${el.getAttribute("class") ?? ""}`).join("|");
+      shapes.set(shape, (shapes.get(shape) ?? 0) + 1);
+    }
+    const common = Math.max(0, ...shapes.values());
+    if (common >= TABULAR_ITEMS && common >= items.length * 0.8) {
+      problems.push({
+        kind: "tabular-list",
+        detail: `${common} list items repeat the same ${TABULAR_FIELDS}+ fields — compare them in a table`,
+      });
+    }
+  }
+
+  // Label/value rows with no column header describe one record: a <dl>.
+  for (const table of Array.from(root.querySelectorAll("table"))) {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    const headed = rows.some((row) => Array.from(row.children).every((cell) => cell.tagName === "TH"));
+    if (rows.length >= KEY_VALUE_ROWS && !headed && rows.every((row) => row.children.length === 2)) {
+      problems.push({
+        kind: "key-value-table",
+        detail: `a ${rows.length}-row table of label/value pairs — one record's fields belong in a <dl>`,
+      });
     }
   }
 
