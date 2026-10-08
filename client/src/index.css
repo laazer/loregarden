@@ -411,6 +411,39 @@ textarea::placeholder {
   }
 }
 
+/* The phone-width overflow menu. Hidden until the breakpoint below, where it
+   takes GitHub, Instances and Usage off the row. */
+.topbar-overflow {
+  display: none;
+  position: relative;
+  flex: none;
+}
+
+.topbar-overflow .overflow-menu-trigger {
+  height: 34px;
+  min-width: 34px;
+  border-radius: 9px;
+  border-color: var(--bd);
+}
+
+.topbar-overflow .overflow-menu-item {
+  align-items: center;
+}
+
+/* The near-limit Usage warning still has to be seen once Usage is folded away. */
+.topbar-overflow--warning::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--aml);
+  border: 2px solid var(--bg1);
+  pointer-events: none;
+}
+
 /* The chat's picker holds its width; it has nothing to give back. */
 .topbar-workspace-picker--fixed {
   flex: none;
@@ -476,6 +509,68 @@ textarea::placeholder {
   padding: 0 14px;
   font-size: 12.5px;
   border-radius: 9px;
+}
+
+/* Phone width: next to the ~60px rail the row has ~300px. The rail already
+   carries the logo, so the brand goes; the secondary actions fold into the
+   overflow menu; the workspace picker and the inbox stay. */
+@media (max-width: 640px) {
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .ide-topbar-brand,
+  /* Doubled: `.btn-secondary` sets `display` later in this file. */
+  .topbar-action-btn.topbar-action-btn--overflowable,
+  .topbar-action-btn--phone-icon .topbar-action-label,
+  .topbar-search kbd {
+    display: none;
+  }
+
+  .topbar-overflow {
+    display: block;
+  }
+
+  /* Doubled with `.btn-secondary`, whose padding comes later in this file. */
+  .topbar-action-btn.btn-secondary {
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .topbar-search {
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .topbar-page:not(:empty) {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /* Icon-only buttons go square. */
+  .topbar-action-btn--collapsible.btn-secondary {
+    padding: 0 9px;
+  }
+
+  /* With search on the row, it is what fills the space — not the spacer. */
+  .app-topbar:has(.topbar-search) .topbar-spacer {
+    display: none;
+  }
+
+  /* The picker is the one control here that can give width back: it shrinks
+     (truncating the name) before anything is pushed off the edge. */
+  .topbar-workspace-picker--fixed {
+    flex: 0 1 130px;
+    min-width: 72px;
+  }
+
+  .topbar-workspace-picker-select.btn-secondary {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 72px;
+    max-width: 130px;
+  }
 }
 
 .studio-subtabs {
