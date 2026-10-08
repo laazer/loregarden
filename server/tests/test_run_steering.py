@@ -1,12 +1,19 @@
 """Steering a run that is already going."""
 
 import json
+from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
 from loregarden.agents.executors import permission_bridge
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner, _LoopState
-from loregarden.models.domain import AgentRun, RunMessage, RunStatus, Ticket
+from loregarden.models.domain import (
+    AgentRun,
+    AgentTransport,
+    RunMessage,
+    RunStatus,
+    Ticket,
+)
 from loregarden.services.run_steering import (
     MAX_MESSAGE_CHARS,
     POLL_INTERVAL_SECONDS,
@@ -242,3 +249,98 @@ def test_the_api_round_trips_a_message(client, db_session: Session):
 def test_messages_for_an_unknown_run_are_404(client):
     assert client.get("/api/runs/nope/messages").status_code == 404
     assert client.post("/api/runs/nope/messages", json={"content": "x"}).status_code == 404
+
+
+# --- lg-durable-remote-336: a detached run has no stdin (AC34) ---------------
+#
+# This closes a pre-existing void rather than adding a limit: `print_mode.py`
+# never drains `RunMessage` — only `permission_bridge.py` does — so a claude
+# print-mode run has always shown an input that goes nowhere. Detach makes
+# print mode the path this ticket ships, so the composer would be inviting text
+# into a void on precisely the runs being created.
+#
+# Scope is the refusal string only. No delivery mechanism is added, and
+# `STEERABLE_ADAPTERS` is unchanged.
+
+
+@pytest.mark.parametrize(
+    ("transport", "word"), [(AgentTransport.TMUX, "tmux"), (AgentTransport.FILE, "file")]
+)
+def test_a_detached_run_says_it_has_no_stdin_to_write_into(db_session: Session, transport, word):
+    """AC34, verbatim. The run reports itself steerable on every other check."""
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+    assert steer_refusal(run) == "", "precondition: this run is otherwise steerable"
+    run.agent_transport = transport
+    db_session.add(run)
+    db_session.commit()
+
+    assert steer_refusal(run) == (
+        f"This run is detached on {word}, which has no stdin to write into, "
+        "so it cannot be steered."
+    )
+
+
+def test_the_detached_refusal_sits_after_the_stop_and_chat_checks(db_session: Session):
+    """AC34's placement, from the other side.
+
+    A stop already in flight outranks anything queued behind it, and a
+    workspace-scoped chat run is steered by replying in the chat. Both answers
+    must survive a transport being set, or an operator who pressed stop is told
+    about stdin instead.
+    """
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+    run.agent_transport = AgentTransport.TMUX
+    run.cancel_requested_at = datetime.now(timezone.utc)
+    db_session.add(run)
+    db_session.commit()
+
+    assert steer_refusal(run) == "Run is stopping, so it cannot be steered."
+
+
+def test_the_detached_refusal_sits_before_the_adapter_check(db_session: Session):
+    """AC34's placement, the half that actually fires.
+
+    A claude run reports itself steerable today, so a branch placed after the
+    adapter check would never be reached on the runs this ticket creates.
+    """
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+    run.agent_transport = AgentTransport.FILE
+    db_session.add(run)
+    db_session.commit()
+
+    refusal = steer_refusal(run)
+
+    assert "stdin" in refusal
+    assert "cannot receive input once started" not in refusal
+
+
+def test_a_run_with_no_transport_keeps_the_answer_it_has_today(db_session: Session):
+    """1,449 rows have no transport. The refusal must not grow for them."""
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+
+    assert steer_refusal(run) == ""
+
+
+def test_the_steerable_adapters_set_is_unchanged(db_session: Session):
+    """AC34's scope line: the refusal string only, no delivery mechanism."""
+    from loregarden.services.run_steering import STEERABLE_ADAPTERS
+
+    assert STEERABLE_ADAPTERS == frozenset({"claude"})
+
+
+def test_queueing_a_message_for_a_detached_run_is_refused_with_that_reason(
+    db_session: Session,
+):
+    """`queue_message` raises the refusal, so the POST cannot bypass the UI."""
+    ticket = db_session.exec(select(Ticket)).first()
+    run = _run(db_session, ticket)
+    run.agent_transport = AgentTransport.TMUX
+    db_session.add(run)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="no stdin to write into"):
+        queue_message(db_session, run, "please try the other helper")

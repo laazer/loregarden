@@ -22,6 +22,7 @@ import pytest
 from loregarden.agents.executors import launch_gate
 from loregarden.agents.executors.launch_gate import acquire_launch_slot
 from loregarden.agents.executors.print_mode import run_print_mode
+from loregarden.config import settings
 from sqlmodel import Session
 
 
@@ -47,9 +48,18 @@ def _no_leaked_launch_slot():
 class _CollectingStreamer:
     def __init__(self) -> None:
         self.lines: list[str] = []
+        #: Set by `run_print_mode` after every appended line (spec S4/S5).
+        self.tail_offset = 0
 
     def append_stream_line(self, line: str) -> None:
         self.lines.append(line)
+
+
+@pytest.fixture(name="run_log_dir", autouse=True)
+def run_log_dir_fixture(tmp_path, monkeypatch):
+    """The agent writes its own output files now; keep them out of the repo."""
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run-logs")
+    return tmp_path / "run-logs"
 
 
 def _acquire_in_thread(adapter: str) -> tuple[threading.Event, threading.Thread, list]:
@@ -172,6 +182,7 @@ def test_print_mode_frees_the_slot_once_the_process_emits(db_session: Session, t
                 timeout=60,
                 streamer=streamer,
                 run_id="test-launch-gate-run",
+                run_code="run_gate001",
             )
         )
 

@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 from loregarden.agents.executors.print_mode import run_print_mode
+from loregarden.config import settings
 from loregarden.models.domain import RunStatus
 from loregarden.services.run_errors import RunTimeoutKind
 from sqlmodel import Session
@@ -24,9 +25,18 @@ from sqlmodel import Session
 class _CollectingStreamer:
     def __init__(self) -> None:
         self.lines: list[str] = []
+        #: Set by `run_print_mode` after every appended line (spec S4/S5).
+        self.tail_offset = 0
 
     def append_stream_line(self, line: str) -> None:
         self.lines.append(line)
+
+
+@pytest.fixture(name="run_log_dir", autouse=True)
+def run_log_dir_fixture(tmp_path, monkeypatch):
+    """The agent writes its own output files now; keep them out of the repo."""
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run-logs")
+    return tmp_path / "run-logs"
 
 
 def _invocation(script: str) -> SimpleNamespace:
@@ -49,6 +59,7 @@ def _run(db_session: Session, script: str, timeout: int):
         timeout=timeout,
         streamer=_CollectingStreamer(),
         run_id="test-print-mode-run",
+        run_code="run_tmo001",
     )
 
 

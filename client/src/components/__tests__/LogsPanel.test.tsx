@@ -74,6 +74,8 @@ function runLogFor(runId: string, text: string): RunLog {
     lines: [{ time: "10:00:00", tag: "OUT", text }],
     live: null,
     stderr: "",
+    transport: "file",
+    attach_command: "",
   };
 }
 
@@ -388,4 +390,26 @@ it("reverts to the ticket-level feed when the last running lane drops out", asyn
 
   await waitFor(() => expect(screen.queryByRole("tablist")).not.toBeInTheDocument());
   expect(await screen.findByText("ticket-level line")).toBeInTheDocument();
+});
+
+// --- lg-durable-remote-336: a lane that survives a restart stays a lane ------
+
+it("does not fall back to another lane when the ledger refetch fails", async () => {
+  // AC25. The fallback-to-next-lane path is for a lane that genuinely dropped
+  // out. A transient fetch failure during a server restart is exactly when it
+  // must NOT fire — react-query keeps the last ledger, so the lanes stand.
+  api.ticketLedger.mockResolvedValueOnce(
+    ledger([visit({ attempts: [attempt({ run_id: "r1" }), attempt({ run_id: "r2" })] })]),
+  );
+  const { queryClient } = renderPanel(makeTicket());
+  await screen.findByText("content for r1");
+  fireEvent.click(screen.getByRole("tab", { name: /r2/i }));
+  await screen.findByText("content for r2");
+
+  api.ticketLedger.mockRejectedValue(new Error("Failed to fetch"));
+  await refetchLedger(queryClient, "t1");
+
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.getByRole("tab", { name: /r2/i })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByText("content for r2")).toBeInTheDocument();
 });

@@ -3,7 +3,7 @@
 import json
 
 from fastapi.testclient import TestClient
-from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
+from loregarden.models.domain import AgentRun, AgentTransport, Artifact, RunStatus, Ticket
 from sqlmodel import Session, select
 
 
@@ -140,3 +140,84 @@ def test_run_log_isolates_each_concurrent_running_run(client: TestClient, db_ses
 
 def test_run_log_missing_run_returns_404(client: TestClient):
     assert client.get("/api/runs/does-not-exist/log").status_code == 404
+
+
+# --- lg-durable-remote-336: the transport and the attach command (AC27, AC33) ---
+#
+# `attach_command` is composed SERVER-SIDE by one pure function: the client
+# cannot know the session name, and the `lg-` prefix has exactly one home.
+
+
+def test_run_log_reports_the_transport_a_live_run_is_detached_on(
+    client: TestClient, db_session: Session
+):
+    """AC27. This is how AC18's "visible in the run record" is satisfied."""
+    run = _seed_run(db_session, status=RunStatus.RUNNING)
+    run.agent_transport = AgentTransport.TMUX
+    db_session.add(run)
+    db_session.commit()
+
+    body = client.get(f"/api/runs/{run.id}/log").json()
+
+    assert body["transport"] == "tmux"
+    assert body["attach_command"] == f"tmux attach -t lg-run_modal1-{run.id[:8]}"
+
+
+def test_run_log_offers_no_attach_command_for_a_file_transport_run(
+    client: TestClient, db_session: Session
+):
+    """There is no session to attach to, and "" is how the UI knows to render
+    no copy control rather than a command that would fail."""
+    run = _seed_run(db_session, status=RunStatus.RUNNING)
+    run.agent_transport = AgentTransport.FILE
+    db_session.add(run)
+    db_session.commit()
+
+    body = client.get(f"/api/runs/{run.id}/log").json()
+
+    assert body["transport"] == "file"
+    assert body["attach_command"] == ""
+
+
+def test_run_log_reports_an_empty_transport_for_a_run_that_never_recorded_one(
+    client: TestClient, db_session: Session
+):
+    """AC28's server half. 1,449 of 2,285 runs have no process identity and
+    will never have a transport; reporting "file" would assert something the
+    row does not say. Same fail-closed direction as `run_reattach.liveness`."""
+    run = _seed_run(db_session, status=RunStatus.SUCCEEDED)
+
+    body = client.get(f"/api/runs/{run.id}/log").json()
+
+    assert body["transport"] == ""
+    assert body["attach_command"] == ""
+
+
+def test_run_log_offers_no_attach_command_for_a_settled_run(
+    client: TestClient, db_session: Session
+):
+    """The session is gone with the run; its attach command is a dead end."""
+    run = _seed_run(db_session, status=RunStatus.SUCCEEDED)
+    run.agent_transport = AgentTransport.TMUX
+    db_session.add(run)
+    db_session.commit()
+
+    body = client.get(f"/api/runs/{run.id}/log").json()
+
+    assert body["transport"] == "tmux"
+    assert body["attach_command"] == ""
+
+
+def test_run_messages_reports_when_a_stop_was_requested(client: TestClient, db_session: Session):
+    """AC33. Without it the client cannot tell "stopping" from any other
+    refusal — and `isPending` resets as soon as the POST returns, so a second
+    press would signal a process group the server no longer owns."""
+    run = _seed_run(db_session, status=RunStatus.RUNNING)
+
+    before = client.get(f"/api/runs/{run.id}/messages").json()
+    assert before["cancel_requested_at"] is None
+
+    client.post(f"/api/runs/{run.id}/cancel")
+    after = client.get(f"/api/runs/{run.id}/messages").json()
+
+    assert after["cancel_requested_at"] is not None
