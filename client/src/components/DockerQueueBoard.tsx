@@ -205,7 +205,7 @@ function LeaseActions({
       {row.ticket_id ? (
         <Link
           className="docker-lease-link"
-          to={ticketPath(row.ticket_id, row.agent_run_id ? "logs" : "diff")}
+          to={ticketPath(row.ticket_id, row.agent_run_id ? "timeline" : "diff")}
         >
           {row.agent_run_id ? "Open run" : "Open ticket"}
         </Link>

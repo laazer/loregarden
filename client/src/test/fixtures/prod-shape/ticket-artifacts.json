@@ -26,6 +26,8 @@
    "id": "635a7dca-5422-5804-b731-64b2177acff9",
    "kind": "review",
    "run_id": null,
+   "stage_key": null,
+   "system": false,
    "title": "Review \u2014 lg-m2-55"
   },
   {
@@ -54,6 +56,8 @@
    "id": "47185059-8974-559c-a959-f75c7dcd102d",
    "kind": "plan",
    "run_id": null,
+   "stage_key": null,
+   "system": false,
    "title": "Plan \u2014 Retry gate outcomes on stage transitions"
   },
   {
@@ -76,6 +80,8 @@
    "id": "ca53edbf-a03f-542b-a8ce-b929152ebcdc",
    "kind": "monitor_finding",
    "run_id": null,
+   "stage_key": "spec",
+   "system": false,
    "title": "unbudgeted_repeat:spec:68"
   },
   {
@@ -98,6 +104,8 @@
    "id": "7427f753-dcf6-5010-876b-336b812ead05",
    "kind": "monitor_finding",
    "run_id": null,
+   "stage_key": "script_review",
+   "system": false,
    "title": "stage_thrash:script_review:34"
   },
   {
@@ -120,6 +128,8 @@
    "id": "65fec289-dbef-58ca-8a3e-0649ba03b76f",
    "kind": "monitor_finding",
    "run_id": null,
+   "stage_key": "review",
+   "system": false,
    "title": "stage_thrash:review:0"
   }
  ],

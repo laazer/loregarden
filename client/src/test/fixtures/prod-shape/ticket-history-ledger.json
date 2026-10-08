@@ -1,0 +1,461 @@
+{
+ "reworked_stages": [
+  "implement",
+  "review",
+  "verify"
+ ],
+ "total_runs": 33,
+ "total_seconds": 25680.0,
+ "visits": [
+  {
+   "attempts": [
+    {
+     "agent_id": "ticket_scoper",
+     "duration_seconds": 840.0,
+     "finished_at": "2026-09-11T00:14:00+00:00",
+     "run_code": "run_w00000",
+     "run_id": "b52c0f17-8859-5f77-b3de-bc511915045b",
+     "skill_name": "",
+     "started_at": "2026-09-11T00:00:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "triage",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "planner",
+     "duration_seconds": 1260.0,
+     "finished_at": "2026-09-11T00:36:00+00:00",
+     "run_code": "run_w00001",
+     "run_id": "a272de08-f68c-5a15-b8ea-66d9545584e3",
+     "skill_name": "plan-simplest",
+     "started_at": "2026-09-11T00:15:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "planner",
+     "duration_seconds": 1380.0,
+     "finished_at": "2026-09-11T00:38:00+00:00",
+     "run_code": "run_w00002",
+     "run_id": "c9d05de0-b7b4-555b-bf32-b026cb0e0094",
+     "skill_name": "plan-risk",
+     "started_at": "2026-09-11T00:15:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "planner",
+     "duration_seconds": 360.0,
+     "finished_at": "2026-09-11T00:21:00+00:00",
+     "run_code": "run_w00003",
+     "run_id": "67785b24-017f-55b2-9044-df0db00df634",
+     "skill_name": "plan-seams",
+     "started_at": "2026-09-11T00:15:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "planner",
+     "duration_seconds": 180.0,
+     "finished_at": "2026-09-11T00:18:00+00:00",
+     "run_code": "run_w00004",
+     "run_id": "2208d372-e179-568b-88ab-192db56c87fc",
+     "skill_name": "plan-user",
+     "started_at": "2026-09-11T00:15:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "planner",
+     "duration_seconds": 120.0,
+     "finished_at": "2026-09-11T00:17:00+00:00",
+     "run_code": "run_w00005",
+     "run_id": "96b6d29e-8aef-55f6-90a8-81b4c7aa912e",
+     "skill_name": "plan-ops",
+     "started_at": "2026-09-11T00:15:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": true,
+   "stage_key": "plan",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "ui_design_decision",
+     "duration_seconds": 1320.0,
+     "finished_at": "2026-09-11T01:01:00+00:00",
+     "run_code": "run_w00006",
+     "run_id": "181ec12c-6994-52ca-8b34-6933c0194e8c",
+     "skill_name": "",
+     "started_at": "2026-09-11T00:39:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "ui-design",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "planner",
+     "duration_seconds": 1260.0,
+     "finished_at": "2026-09-11T01:23:00+00:00",
+     "run_code": "run_w00007",
+     "run_id": "22ead11f-362c-52f4-8c63-19ea73709854",
+     "skill_name": "plan-synthesis",
+     "started_at": "2026-09-11T01:02:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "plan-synthesis",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "spec",
+     "duration_seconds": 1020.0,
+     "finished_at": "2026-09-11T01:41:00+00:00",
+     "run_code": "run_w00008",
+     "run_id": "dcaa3047-1955-599f-aa87-dcdcb4546220",
+     "skill_name": "",
+     "started_at": "2026-09-11T01:24:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "spec",
+     "duration_seconds": 660.0,
+     "finished_at": "2026-09-11T01:53:00+00:00",
+     "run_code": "run_w00009",
+     "run_id": "280a534e-ee42-567d-b49f-1553eb5e5844",
+     "skill_name": "",
+     "started_at": "2026-09-11T01:42:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "spec",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "test_designer",
+     "duration_seconds": 360.0,
+     "finished_at": "2026-09-11T02:00:00+00:00",
+     "run_code": "run_w00010",
+     "run_id": "d158dfe4-bd56-581f-afb2-95d68313f62f",
+     "skill_name": "",
+     "started_at": "2026-09-11T01:54:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "test-design",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "test_breaker",
+     "duration_seconds": 480.0,
+     "finished_at": "2026-09-11T02:09:00+00:00",
+     "run_code": "run_w00011",
+     "run_id": "cf4fd6aa-6d64-5f7b-b1bf-49cf46c44c89",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:01:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "test_breaker",
+     "duration_seconds": 540.0,
+     "finished_at": "2026-09-11T02:19:00+00:00",
+     "run_code": "run_w00012",
+     "run_id": "f25e03d1-cd1d-5dd8-a7db-00b4dba76500",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:10:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "test-break",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 180.0,
+     "finished_at": "2026-09-11T02:23:00+00:00",
+     "run_code": "run_w00013",
+     "run_id": "261dd5a0-a333-5a3d-80b1-777c46e2a020",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:20:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 240.0,
+     "finished_at": "2026-09-11T02:28:00+00:00",
+     "run_code": "run_w00014",
+     "run_id": "de5d4c39-096b-5f1d-89bf-1a7fd4a8bf94",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:24:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 240.0,
+     "finished_at": "2026-09-11T02:33:00+00:00",
+     "run_code": "run_w00015",
+     "run_id": "0117e88b-9cef-5531-8b9d-fc64d684f4af",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:29:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "implement",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "verifier",
+     "duration_seconds": 960.0,
+     "finished_at": "2026-09-11T02:50:00+00:00",
+     "run_code": "run_w00016",
+     "run_id": "3900ab87-e827-5ba4-98a6-7ec7c0ea0ee8",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:34:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "verify",
+   "status": "succeeded",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 1140.0,
+     "finished_at": "2026-09-11T03:10:00+00:00",
+     "run_code": "run_w00017",
+     "run_id": "d1c1505d-843a-5506-bf54-0fb4c5f4c6ec",
+     "skill_name": "",
+     "started_at": "2026-09-11T02:51:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 780.0,
+     "finished_at": "2026-09-11T03:24:00+00:00",
+     "run_code": "run_w00018",
+     "run_id": "71f17d17-4a35-5dfb-a3a1-b4f2665f71e7",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:11:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "implement",
+   "status": "succeeded",
+   "visit_number": 2
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "verifier",
+     "duration_seconds": 720.0,
+     "finished_at": "2026-09-11T03:37:00+00:00",
+     "run_code": "run_w00019",
+     "run_id": "31425002-30ec-5f85-869d-b0c19bebc5fe",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:25:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "verifier",
+     "duration_seconds": 960.0,
+     "finished_at": "2026-09-11T03:54:00+00:00",
+     "run_code": "run_w00020",
+     "run_id": "099b38e9-c52b-55ee-987b-6a77efdf32de",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:38:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "verify",
+   "status": "succeeded",
+   "visit_number": 2
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "static_qa",
+     "duration_seconds": 1140.0,
+     "finished_at": "2026-09-11T04:14:00+00:00",
+     "run_code": "run_w00021",
+     "run_id": "4b515dd3-b308-56d9-adf7-efcb1339ab13",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:55:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "architecture_reviewer",
+     "duration_seconds": 900.0,
+     "finished_at": "2026-09-11T04:10:00+00:00",
+     "run_code": "run_w00022",
+     "run_id": "9590483a-c998-5b70-a2af-686c2ff3bc64",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:55:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "security_reviewer",
+     "duration_seconds": 240.0,
+     "finished_at": "2026-09-11T03:59:00+00:00",
+     "run_code": "run_w00023",
+     "run_id": "fbede813-e4f4-52c2-8183-9c9f05a2b702",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:55:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "visual_qa",
+     "duration_seconds": 1080.0,
+     "finished_at": "2026-09-11T04:13:00+00:00",
+     "run_code": "run_w00024",
+     "run_id": "05a6cca4-b871-5e1e-a356-508829c2fcdd",
+     "skill_name": "",
+     "started_at": "2026-09-11T03:55:00+00:00",
+     "status": "failed"
+    }
+   ],
+   "is_parallel": true,
+   "stage_key": "review",
+   "status": "failed",
+   "visit_number": 1
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "backend_implementer",
+     "duration_seconds": 840.0,
+     "finished_at": "2026-09-11T04:29:00+00:00",
+     "run_code": "run_w00025",
+     "run_id": "135f5156-d550-5453-a309-0f9587ded235",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:15:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "implement",
+   "status": "succeeded",
+   "visit_number": 3
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "static_qa",
+     "duration_seconds": 300.0,
+     "finished_at": "2026-09-11T04:35:00+00:00",
+     "run_code": "run_w00026",
+     "run_id": "74bf3c05-d580-5284-be0f-2ab64cd77990",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:30:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "architecture_reviewer",
+     "duration_seconds": 1080.0,
+     "finished_at": "2026-09-11T04:48:00+00:00",
+     "run_code": "run_w00027",
+     "run_id": "fd639ab5-acf1-5f17-8936-ae37bc1a4c31",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:30:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "security_reviewer",
+     "duration_seconds": 960.0,
+     "finished_at": "2026-09-11T04:46:00+00:00",
+     "run_code": "run_w00028",
+     "run_id": "37a4b3f1-b817-5cb7-b403-3a499ed60d29",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:30:00+00:00",
+     "status": "succeeded"
+    },
+    {
+     "agent_id": "visual_qa",
+     "duration_seconds": 840.0,
+     "finished_at": "2026-09-11T04:44:00+00:00",
+     "run_code": "run_w00029",
+     "run_id": "f05f35de-90c8-5dda-8331-c54bdb5b5b86",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:30:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": true,
+   "stage_key": "review",
+   "status": "succeeded",
+   "visit_number": 2
+  },
+  {
+   "attempts": [
+    {
+     "agent_id": "gatekeeper",
+     "duration_seconds": 840.0,
+     "finished_at": "2026-09-11T05:03:00+00:00",
+     "run_code": "run_w00030",
+     "run_id": "8af948bb-396c-580c-b0df-7d046e5609b9",
+     "skill_name": "",
+     "started_at": "2026-09-11T04:49:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "gatekeeper",
+     "duration_seconds": 1380.0,
+     "finished_at": "2026-09-11T05:27:00+00:00",
+     "run_code": "run_w00031",
+     "run_id": "d336d8b3-1e08-5f30-880d-421edbf15b73",
+     "skill_name": "",
+     "started_at": "2026-09-11T05:04:00+00:00",
+     "status": "failed"
+    },
+    {
+     "agent_id": "gatekeeper",
+     "duration_seconds": 1080.0,
+     "finished_at": "2026-09-11T05:46:00+00:00",
+     "run_code": "run_w00032",
+     "run_id": "3d7ee78d-a35d-5a76-818c-8e8eca8bd8ae",
+     "skill_name": "",
+     "started_at": "2026-09-11T05:28:00+00:00",
+     "status": "succeeded"
+    }
+   ],
+   "is_parallel": false,
+   "stage_key": "gate",
+   "status": "succeeded",
+   "visit_number": 1
+  }
+ ]
+}

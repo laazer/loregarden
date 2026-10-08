@@ -41,6 +41,8 @@ class RunRef:
     named: str
     ticket_id: str
     orchestration: OrchestrationRun | None
+    #: The agent run it named, when it named one rather than an orchestration.
+    agent_run_id: str | None
 
     def require_orchestration(self, tool: str) -> OrchestrationRun:
         if self.orchestration is None:
@@ -57,7 +59,12 @@ def resolve_run_ref(session: Session, run_ref: str) -> RunRef:
         session, OrchestrationRun, run_ref
     )
     if orchestration is not None:
-        return RunRef(named=run_ref, ticket_id=orchestration.ticket_id, orchestration=orchestration)
+        return RunRef(
+            named=run_ref,
+            ticket_id=orchestration.ticket_id,
+            orchestration=orchestration,
+            agent_run_id=None,
+        )
 
     agent_run = session.get(AgentRun, run_ref) or _one_by_code(session, AgentRun, run_ref)
     if agent_run is None:
@@ -71,7 +78,33 @@ def resolve_run_ref(session: Session, run_ref: str) -> RunRef:
         if agent_run.orchestration_run_id
         else None
     )
-    return RunRef(named=run_ref, ticket_id=agent_run.ticket_id, orchestration=parent)
+    return RunRef(
+        named=run_ref,
+        ticket_id=agent_run.ticket_id,
+        orchestration=parent,
+        agent_run_id=agent_run.id,
+    )
+
+
+def attributed_agent_run_id(
+    session: Session, run_ref: RunRef, *, transport_run_id: str
+) -> str | None:
+    """The agent run an attachment came from, so it can be stored on the row.
+
+    Before this, `attach_artifact` and `attach_evidence` resolved `run_id` only
+    to find the ticket and then dropped it: half the rows in `artifacts` had no
+    run, and nothing could say which stage produced a plan or a piece of
+    evidence. The transport's run (the supervised run whose MCP config made the
+    call) is preferred, because most prompts hand the agent the orchestration id,
+    which names no single run. It is used only when it is a run of the same
+    ticket — a header naming some other ticket's run is not this attachment's
+    source.
+    """
+    if transport_run_id:
+        supervised = session.get(AgentRun, transport_run_id)
+        if supervised is not None and supervised.ticket_id == run_ref.ticket_id:
+            return supervised.id
+    return run_ref.agent_run_id
 
 
 def _one_by_code(session: Session, model: type[RunT], run_code: str) -> RunT | None:

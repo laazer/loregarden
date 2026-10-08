@@ -1,6 +1,6 @@
 import {
   artifactTabFromPath,
-  isArtifactsSubTab,
+  canonicalArtifactTab,
   pageFromPath,
   pathForPage,
   PRIMARY_ARTIFACT_TABS,
@@ -69,22 +69,22 @@ describe("appNavigation", () => {
 
   it("builds and parses ticket routes", () => {
     expect(ticketPath("abc-123")).toBe("/tickets/abc-123/diff");
-    expect(ticketPath("abc-123", "logs")).toBe("/tickets/abc-123/logs");
-    expect(artifactTabFromPath("/tickets/abc-123/logs")).toBe("logs");
+    expect(ticketPath("abc-123", "timeline")).toBe("/tickets/abc-123/timeline");
+    expect(artifactTabFromPath("/tickets/abc-123/timeline")).toBe("timeline");
     expect(artifactTabFromPath("/tickets/abc-123")).toBeNull();
   });
 
-  it("keeps artifacts sub-tabs routable but off the primary bar", () => {
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("errors");
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("context");
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("ledger");
-    expect(PRIMARY_ARTIFACT_TABS).toContain("artifacts");
-    expect(isArtifactsSubTab("artifacts")).toBe(true);
-    expect(isArtifactsSubTab("errors")).toBe(true);
-    expect(isArtifactsSubTab("context")).toBe(true);
-    expect(isArtifactsSubTab("ledger")).toBe(true);
-    expect(isArtifactsSubTab("diff")).toBe(false);
-    expect(artifactTabFromPath("/tickets/abc-123/errors")).toBe("errors");
+  it("opens a retired tab's link on the view that holds it now", () => {
+    // Links written before Timeline/Outputs merged them must not land on Diff.
+    for (const retired of ["logs", "errors", "context", "ledger"]) {
+      expect(canonicalArtifactTab(retired)).toBe("timeline");
+      expect(artifactTabFromPath(`/tickets/abc-123/${retired}`)).toBe("timeline");
+    }
+    for (const retired of ["artifacts", "tests"]) {
+      expect(canonicalArtifactTab(retired)).toBe("outputs");
+    }
+    expect(canonicalArtifactTab("nonsense")).toBeNull();
+    expect(PRIMARY_ARTIFACT_TABS).not.toContain("monitor");
   });
 
   it("builds and parses studio routes", () => {
@@ -145,7 +145,7 @@ describe("appNavigation", () => {
 
   it("links a ticket by its shareable id once it is known", () => {
     useTicketRefStore.getState().remember({ id: UUID, external_id: "lor-mcp-gateway-142" });
-    expect(ticketPath(UUID, "logs")).toBe("/tickets/lor-mcp-gateway-142/logs");
+    expect(ticketPath(UUID, "timeline")).toBe("/tickets/lor-mcp-gateway-142/timeline");
   });
 
   it("keeps the UUID for a ticket with no shareable id", () => {

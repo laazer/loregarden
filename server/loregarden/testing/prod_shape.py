@@ -20,19 +20,34 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    ArtifactKind,
     InitiativeMember,
     MonitorArtifactKind,
+    RunStatus,
+    StageBudgetArtifactKind,
     Ticket,
     TicketState,
     WorkItemType,
 )
+from loregarden.services.artifact_records import (
+    RUN_CONTEXT_ARTIFACT_TITLE,
+    run_log_artifact_title,
+)
 from loregarden.services.memory_store import MemoryGraphStore
 from loregarden.services.ticket_ids import assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_parent
-from loregarden.testing.factories import NO_REPO, make_artifact, make_ticket, make_workspace
+from loregarden.testing.factories import (
+    NO_REPO,
+    make_agent_run,
+    make_artifact,
+    make_ticket,
+    make_workspace,
+)
 
 
 class WorkspaceShape(BaseModel):
@@ -58,6 +73,12 @@ class Calibration(BaseModel):
     memory: dict[str, int]
     #: Plan + review pairs; plans average ~8KB live, reviews ~1.6KB.
     long_documents: int
+    #: One worked ticket at the live p90, measured 2026-10-08 over the 128 tickets
+    #: with runs: runs (median 15, p90 33, max 76), artifact rows (median 73, p90
+    #: 172, max 397), and the share of rows that are platform bookkeeping (40%).
+    worked_runs: int
+    worked_artifacts: int
+    worked_system_share: float
 
 
 #: Measured from the live database, 2026-09-28 (read-only).
@@ -106,6 +127,9 @@ CALIBRATION = Calibration(
     findings_on_finished=85,
     memory={"loregarden": 34, "blobert": 106},
     long_documents=30,
+    worked_runs=33,
+    worked_artifacts=172,
+    worked_system_share=0.40,
 )
 
 #: Live had no initiatives at calibration, with every milestone unclaimed. The
@@ -178,6 +202,8 @@ class ProdShapeSummary(BaseModel):
     findings_on_finished: int
     long_documents: int
     memory_records: dict[str, int]
+    worked_runs: int
+    worked_artifacts: int
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -356,6 +382,10 @@ def build_prod_shape(
     _add_initiative(session, themed, all_tickets)
     findings = _add_findings(session, all_tickets, rng)
     documents = _add_documents(session, all_tickets, rng)
+    # Its own stream, so adding the history did not reshuffle every row drawn after it.
+    worked_runs, worked_artifacts = _add_worked_history(
+        session, all_tickets, random.Random(_RNG_SEED + 1)
+    )
     memory = {}
     if graph_path is not None:
         for slug, count in CALIBRATION.memory.items():
@@ -372,6 +402,8 @@ def build_prod_shape(
         findings_on_finished=CALIBRATION.findings_on_finished,
         long_documents=documents,
         memory_records=memory,
+        worked_runs=worked_runs,
+        worked_artifacts=worked_artifacts,
     )
 
 
@@ -480,3 +512,221 @@ def _add_documents(session: Session, tickets: list, rng: random.Random) -> int:
             },
         )
     return count * 2
+
+
+#: The worked ticket's pipeline: (stage, lanes as (agent, skill), statuses per
+#: attempt). One lane with several statuses retries; several lanes fan out. The
+#: same stage after another is a revisit — implement and review both come back,
+#: as they do live when verify or a reviewer sends work back.
+_WORKED_PIPELINE: list[tuple[str, list[tuple[str, str]], list[RunStatus]]] = [
+    ("triage", [("ticket_scoper", "")], [RunStatus.SUCCEEDED]),
+    (
+        "plan",
+        [("planner", f"plan-{lens}") for lens in ("simplest", "risk", "seams", "user", "ops")],
+        [RunStatus.SUCCEEDED] * 5,
+    ),
+    ("ui-design", [("ui_design_decision", "")], [RunStatus.SUCCEEDED]),
+    ("plan-synthesis", [("planner", "plan-synthesis")], [RunStatus.SUCCEEDED]),
+    ("spec", [("spec", "")], [RunStatus.FAILED, RunStatus.SUCCEEDED]),
+    ("test-design", [("test_designer", "")], [RunStatus.SUCCEEDED]),
+    ("test-break", [("test_breaker", "")], [RunStatus.FAILED, RunStatus.SUCCEEDED]),
+    (
+        "implement",
+        [("backend_implementer", "")],
+        [RunStatus.FAILED, RunStatus.FAILED, RunStatus.SUCCEEDED],
+    ),
+    ("verify", [("verifier", "")], [RunStatus.SUCCEEDED]),
+    ("implement", [("backend_implementer", "")], [RunStatus.FAILED, RunStatus.SUCCEEDED]),
+    ("verify", [("verifier", "")], [RunStatus.FAILED, RunStatus.SUCCEEDED]),
+    (
+        "review",
+        [
+            (agent, "")
+            for agent in ("static_qa", "architecture_reviewer", "security_reviewer", "visual_qa")
+        ],
+        [RunStatus.SUCCEEDED, RunStatus.SUCCEEDED, RunStatus.SUCCEEDED, RunStatus.FAILED],
+    ),
+    ("implement", [("backend_implementer", "")], [RunStatus.SUCCEEDED]),
+    (
+        "review",
+        [
+            (agent, "")
+            for agent in ("static_qa", "architecture_reviewer", "security_reviewer", "visual_qa")
+        ],
+        [RunStatus.SUCCEEDED] * 4,
+    ),
+    ("gate", [("gatekeeper", "")], [RunStatus.FAILED, RunStatus.FAILED, RunStatus.SUCCEEDED]),
+]
+
+#: Work-output kinds the filler draws from, weighted toward the live mix.
+_WORKED_FILLER = ["evidence", "test", "handoff", "review", "spec", "source_analysis", "test_spec"]
+
+
+def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> tuple[int, int]:
+    """One in-progress ticket worked to the live p90: runs grouped into stage
+    visits with retries, fan-outs and revisits, and an artifact feed of the
+    same size and system share as production.
+
+    Every row is stamped inside its run's window, so the Timeline places it as
+    it would a live row. About half the work outputs carry their run, as live
+    rows written before attach_artifact recorded one do not.
+    """
+    # Idempotent like the rest of the scenario: a rebuild reuses the ticket the
+    # first build chose, rather than picking another now that this one has rows.
+    first_run = session.get(AgentRun, prod_shape_id("worked-run", 0))
+    if first_run is not None:
+        ticket_id = first_run.ticket_id
+        ext = session.get(Ticket, ticket_id).external_id
+    else:
+        with_artifacts = {row.ticket_id for row in session.exec(select(Artifact)).all()}
+        _slug, ticket_id, ext, _state, _parent = next(
+            row
+            for row in tickets
+            if row[0] == "loregarden"
+            and row[3] == TicketState.IN_PROGRESS
+            and row[1] not in with_artifacts
+        )
+    workspace_id = session.get(Ticket, ticket_id).workspace_id
+    clock = _EPOCH + timedelta(days=10)
+    run_n = 0
+    rows: list[dict] = []
+    for stage, lanes, statuses in _WORKED_PIPELINE:
+        rows.append(
+            {
+                "kind": StageBudgetArtifactKind.DISPATCH.value,
+                "title": f"stage-dispatch:{stage}",
+                "at": clock - timedelta(seconds=5),
+                "system": True,
+            }
+        )
+        parallel = len(lanes) > 1
+        visit_start = clock
+        for attempt, status in enumerate(statuses):
+            agent, skill = lanes[attempt % len(lanes)]
+            start = visit_start if parallel else clock
+            finish = start + timedelta(minutes=rng.randint(2, 25))
+            run = make_agent_run(
+                session,
+                workspace_id=workspace_id,
+                ticket_id=ticket_id,
+                run_id=prod_shape_id("worked-run", run_n),
+                run_code=f"run_w{run_n:05d}",
+                agent_id=agent,
+                skill_name=skill,
+                stage_key=stage,
+                status=status,
+                command="",
+                stdout="",
+                stderr="Traceback (most recent call last):\n  ...\nAssertionError: gate failed"
+                if status == RunStatus.FAILED
+                else "",
+                created_at=start,
+                started_at=start,
+                finished_at=finish,
+            )
+            run_n += 1
+            mid = start + (finish - start) / 2
+            rows.append(
+                {
+                    "kind": ArtifactKind.CONTEXT.value,
+                    "title": RUN_CONTEXT_ARTIFACT_TITLE,
+                    "run": run.id,
+                    "at": start,
+                    "system": True,
+                }
+            )
+            rows.append(
+                {
+                    "kind": ArtifactKind.LOG.value,
+                    "title": run_log_artifact_title(run.run_code),
+                    "run": run.id,
+                    "at": finish,
+                    "system": True,
+                }
+            )
+            verdict = "fail" if status == RunStatus.FAILED else "pass"
+            rows.append(
+                {
+                    "kind": ArtifactKind.CONTEXT.value,
+                    "title": f"Stage report — {stage} ({agent})",
+                    "run": run.id if run_n % 2 else None,
+                    "at": finish,
+                    "content": {
+                        "stage_key": stage,
+                        "status": verdict,
+                        "confidence": round(rng.uniform(0.7, 0.95), 2),
+                    },
+                }
+            )
+            if status == RunStatus.FAILED:
+                rows.append(
+                    {
+                        "kind": "error",
+                        "title": f"{stage} failed — {agent}",
+                        "at": finish,
+                        "content": {
+                            "stage_key": stage,
+                            "message": long_markdown(rng, "Failure", 1),
+                        },
+                    }
+                )
+            if parallel and skill.startswith("plan-"):  # each planning lens writes its plan
+                rows.append(
+                    {
+                        "kind": ArtifactKind.PLAN.value,
+                        "title": f"Plan ({skill}) — {ext}",
+                        "run": run.id,
+                        "at": mid,
+                        "content": {
+                            "verdict": _title(rng),
+                            "steps": [_title(rng) for _ in range(5)],
+                        },
+                    }
+                )
+            clock = max(clock, finish + timedelta(minutes=1))
+        rows.append(
+            {
+                "kind": "handoff",
+                "title": f"handoff {stage} → next",
+                "at": clock - timedelta(seconds=30),
+                "content": {"from_stage": stage, "checklist": [_title(rng) for _ in range(3)]},
+            }
+        )
+
+    # Trim bookkeeping to the live share — run-log pointers go first, as live
+    # runs that never streamed a line have none — then fill work outputs to the
+    # live size, each stamped inside some run's window.
+    system_budget = round(CALIBRATION.worked_artifacts * CALIBRATION.worked_system_share)
+    system = [row for row in rows if row.get("system")]
+    work = [row for row in rows if not row.get("system")]
+    surplus = max(0, len(system) - system_budget)
+    pointers = [row for row in system if row["kind"] == ArtifactKind.LOG.value]
+    dropped = {id(row) for row in pointers[::2][:surplus]}
+    system = [row for row in system if id(row) not in dropped]
+    runs = session.exec(select(AgentRun).where(AgentRun.ticket_id == ticket_id)).all()
+    n = 0
+    while len(system) + len(work) < CALIBRATION.worked_artifacts:
+        run = runs[n % len(runs)]
+        kind = _WORKED_FILLER[n % len(_WORKED_FILLER)]
+        work.append(
+            {
+                "kind": kind,
+                "title": f"{kind.replace('_', ' ').capitalize()} — {_title(rng)}",
+                "at": run.started_at + (run.finished_at - run.started_at) / 3,
+                "content": {"summary": long_markdown(rng, "Summary", 1)},
+            }
+        )
+        n += 1
+
+    for i, row in enumerate(system + work):
+        make_artifact(
+            session,
+            artifact_id=prod_shape_id("worked-artifact", i),
+            ticket_id=ticket_id,
+            run_id=row.get("run"),
+            kind=row["kind"],
+            title=row["title"],
+            content=row.get("content", {}),
+            created_at=row["at"],
+        )
+    return run_n, len(system) + len(work)
