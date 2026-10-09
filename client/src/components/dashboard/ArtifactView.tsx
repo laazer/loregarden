@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
-import { MarkdownContent } from "../chat/MarkdownContent";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
+import { TicketPullRequestPanel } from "./TicketPullRequestPanel";
 
 /**
  * The Diff and PR tabs. Everything about a ticket's history — runs, errors,
@@ -56,53 +56,14 @@ export function ArtifactView({
   }
 
   if (tab === "pr") {
-    const pr = art.pr;
-    if (!pr) {
-      return (
-        <EmptyArtifacts label="No pull request opened">
-          Open a PR from the approval step when human sign-off is required.
-          {(onCommitPush || onOpenPr) && (
-            <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "center" }}>
-              {onCommitPush && (
-                <button type="button" className="btn-secondary" disabled={isCommittingPush} onClick={onCommitPush}>
-                  {isCommittingPush ? "Committing…" : "Commit & push"}
-                </button>
-              )}
-              {onOpenPr && (
-                <button type="button" className="btn-secondary" disabled={isOpeningPr} onClick={onOpenPr}>
-                  {isOpeningPr ? "Opening PR…" : "Open PR"}
-                </button>
-              )}
-            </div>
-          )}
-        </EmptyArtifacts>
-      );
-    }
     return (
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="state-card">
-          <div className="state-label">Pull request</div>
-          <div style={{ fontWeight: 600, marginTop: 8 }}>{pr.title}</div>
-          {pr.number && (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
-              #{pr.number} · {pr.branch}
-            </div>
-          )}
-          <a
-            href={pr.url}
-            target="_blank"
-            rel="noreferrer"
-            style={{ display: "inline-block", marginTop: 12, color: "var(--ac2)", fontSize: 13 }}
-          >
-            {pr.url}
-          </a>
-        </div>
-        {pr.body && (
-          <div className="list-btn" style={{ padding: "12px 16px" }}>
-            <MarkdownContent content={pr.body} normalize={false} readerTitle={`PR #${pr.number}`} />
-          </div>
-        )}
-      </div>
+      <TicketPullRequestPanel
+        ticketId={ticket.id}
+        onOpenPr={onOpenPr}
+        isOpeningPr={isOpeningPr}
+        onCommitPush={onCommitPush}
+        isCommittingPush={isCommittingPush}
+      />
     );
   }
 

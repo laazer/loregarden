@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
 import { useUiStore } from "../state/uiStore";
 import { describeError, toastActionFailed } from "../state/toastStore";
 
@@ -35,6 +36,7 @@ export function useTicketCommitPush() {
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      qc.invalidateQueries({ queryKey: ticketPullRequestKey(ticketId) });
     },
     onError: (error, ticketId) => {
       setCopilotOpen(true);

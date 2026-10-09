@@ -1,0 +1,230 @@
+"""A ticket's pull request, as GitHub reports it now.
+
+The PR tab used to read only the `pr` artifact, which exists when Loregarden's
+own "Open PR" button made the PR. A PR opened any other way (by hand, by an
+agent with `gh`, by `publish_tree`) never wrote one, so the tab said "No pull
+request opened" beside an open PR with a failing check. GitHub is the source of
+truth for whether a branch has a PR, so this asks it, and keeps "there is none"
+apart from "the lookup failed".
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import subprocess
+
+from loregarden.models.domain import (
+    Artifact,
+    ArtifactKind,
+    PullRequestCheckOutcome,
+    PullRequestLookup,
+    PullRequestReview,
+    PullRequestState,
+    Ticket,
+    Workspace,
+)
+from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.git_subprocess import run_gh
+from loregarden.services.workspace_paths import resolve_workspace_root
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
+
+GH_TIMEOUT_SECONDS = 15
+_GH_FIELDS = (
+    "number,url,title,state,isDraft,baseRefName,headRefName,additions,deletions,"
+    "changedFiles,reviewDecision,mergeable,statusCheckRollup,body"
+)
+#: What `gh pr view` prints, on exit 1, when the branch simply has no PR.
+_NO_PR_MARKER = "no pull requests found"
+
+# GitHub's vocabularies, which we do not own.
+_PASSING_CONCLUSIONS = frozenset({"SUCCESS"})  # py-org: allow-string
+_SKIPPED_CONCLUSIONS = frozenset({"SKIPPED", "NEUTRAL"})  # py-org: allow-string
+_PENDING_STATES = frozenset(
+    {"PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"}
+)  # py-org: allow-string
+_REVIEW = {
+    "APPROVED": PullRequestReview.APPROVED,  # py-org: allow-string
+    "CHANGES_REQUESTED": PullRequestReview.CHANGES_REQUESTED,  # py-org: allow-string
+    "REVIEW_REQUIRED": PullRequestReview.REVIEW_REQUIRED,  # py-org: allow-string
+}
+_STATE = {
+    "OPEN": PullRequestState.OPEN,  # py-org: allow-string
+    "MERGED": PullRequestState.MERGED,  # py-org: allow-string
+    "CLOSED": PullRequestState.CLOSED,  # py-org: allow-string
+}
+
+
+class _GhCheck(BaseModel):
+    """One `statusCheckRollup` entry: a CheckRun or a legacy StatusContext."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = ""
+    context: str = ""
+    status: str = ""
+    conclusion: str = ""
+    state: str = ""
+    details_url: str = Field("", alias="detailsUrl")
+    target_url: str = Field("", alias="targetUrl")
+
+
+class _GhPullRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    number: int
+    url: str
+    title: str
+    state: str
+    is_draft: bool = Field(False, alias="isDraft")
+    base: str = Field("", alias="baseRefName")
+    head: str = Field("", alias="headRefName")
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = Field(0, alias="changedFiles")
+    review_decision: str = Field("", alias="reviewDecision")
+    mergeable: str = ""
+    checks: list[_GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
+    body: str = ""
+
+
+class PullRequestCheck(BaseModel):
+    name: str
+    outcome: PullRequestCheckOutcome
+    url: str = ""
+
+
+class PullRequestStatus(BaseModel):
+    number: int
+    url: str
+    title: str
+    state: PullRequestState
+    is_draft: bool
+    base: str
+    head: str
+    additions: int
+    deletions: int
+    changed_files: int
+    review: PullRequestReview
+    has_conflicts: bool
+    checks: list[PullRequestCheck]
+    body: str
+
+
+class RecordedPullRequest(BaseModel):
+    """The PR Loregarden's own "Open PR" recorded, shown when GitHub cannot be asked."""
+
+    url: str
+    number: str = ""
+    title: str = ""
+
+
+class TicketPullRequest(BaseModel):
+    lookup: PullRequestLookup
+    branch: str
+    pull_request: PullRequestStatus | None = None
+    #: Why the lookup failed, in `gh`'s words. Empty unless `lookup` is FAILED.
+    error: str = ""
+    recorded: RecordedPullRequest | None = None
+
+
+def _check_outcome(check: _GhCheck) -> PullRequestCheckOutcome:
+    # A CheckRun reports `status` then `conclusion`; a StatusContext only `state`.
+    verdict = check.conclusion or check.state
+    if (
+        check.status and check.status != "COMPLETED"
+    ) or verdict in _PENDING_STATES:  # py-org: allow-string
+        return PullRequestCheckOutcome.PENDING
+    if verdict in _PASSING_CONCLUSIONS:
+        return PullRequestCheckOutcome.PASSING
+    if verdict in _SKIPPED_CONCLUSIONS:
+        return PullRequestCheckOutcome.SKIPPED
+    if not verdict:
+        return PullRequestCheckOutcome.PENDING
+    return PullRequestCheckOutcome.FAILING
+
+
+def _to_status(raw: _GhPullRequest) -> PullRequestStatus:
+    return PullRequestStatus(
+        number=raw.number,
+        url=raw.url,
+        title=raw.title,
+        state=_STATE.get(raw.state, PullRequestState.OPEN),
+        is_draft=raw.is_draft,
+        base=raw.base,
+        head=raw.head,
+        additions=raw.additions,
+        deletions=raw.deletions,
+        changed_files=raw.changed_files,
+        review=_REVIEW.get(raw.review_decision, PullRequestReview.NOT_REQUIRED),
+        has_conflicts=raw.mergeable == "CONFLICTING",  # py-org: allow-string
+        checks=[
+            PullRequestCheck(
+                name=check.name or check.context,
+                outcome=_check_outcome(check),
+                url=check.details_url or check.target_url,
+            )
+            for check in raw.checks
+        ],
+        body=raw.body,
+    )
+
+
+def _recorded(session: Session, ticket: Ticket) -> RecordedPullRequest | None:
+    artifact = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.PR)
+        .order_by(col(Artifact.created_at).desc())
+    ).first()
+    if artifact is None:
+        return None
+    try:
+        return RecordedPullRequest.model_validate_json(artifact.content_json or "{}")
+    except ValidationError:
+        logger.warning(
+            "PR artifact %s on %s is malformed", artifact.id, ticket.external_id, exc_info=True
+        )
+        return None
+
+
+def _failed(session: Session, ticket: Ticket, branch: str, error: str) -> TicketPullRequest:
+    logger.warning("PR lookup for %s (%s) failed: %s", ticket.external_id, branch, error)
+    return TicketPullRequest(
+        lookup=PullRequestLookup.FAILED,
+        branch=branch,
+        error=error,
+        recorded=_recorded(session, ticket),
+    )
+
+
+def ticket_pull_request(
+    session: Session, ticket: Ticket, workspace: Workspace
+) -> TicketPullRequest:
+    """Ask GitHub for the pull request on ``ticket``'s branch."""
+    branch = resolve_ticket_branch(ticket)
+    repo_root = resolve_workspace_root(workspace)
+    if not (repo_root / ".git").exists():
+        return _failed(session, ticket, branch, f"{repo_root} is not a git repository")
+    try:
+        proc = run_gh(
+            ["pr", "view", branch, "--json", _GH_FIELDS], cwd=repo_root, timeout=GH_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        return _failed(session, ticket, branch, f"gh did not answer within {GH_TIMEOUT_SECONDS}s")
+    except OSError as exc:
+        return _failed(session, ticket, branch, f"could not run gh: {exc}")
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        if _NO_PR_MARKER in detail:
+            return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=branch)
+        return _failed(session, ticket, branch, detail or f"gh pr view exited {proc.returncode}")
+    try:
+        raw = _GhPullRequest.model_validate(json.loads(proc.stdout or "{}"))
+    except (ValueError, ValidationError) as exc:
+        return _failed(session, ticket, branch, f"unexpected gh output: {exc}")
+    return TicketPullRequest(
+        lookup=PullRequestLookup.FOUND, branch=branch, pull_request=_to_status(raw)
+    )

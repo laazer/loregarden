@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -264,6 +265,7 @@ export function Dashboard() {
     mutationFn: (ticketId: string) => api.openPr(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ticketPullRequestKey(ticketId) });
       navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
     },

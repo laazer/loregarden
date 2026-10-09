@@ -3,6 +3,7 @@ import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import { ticketPullRequestApi } from "./ticketPullRequestApi";
 import type { ApprovalHistoryItem } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
 import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
@@ -448,6 +449,7 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...ticketPullRequestApi,
   ...initiativeApi,
   ...memoryApi,
   openPr: (id: string) =>

@@ -1,0 +1,240 @@
+/* The PR tab. The pane sits beside two others, so it is narrow even on a wide
+ * screen: everything wraps, and nothing relies on horizontal room. */
+
+.prp {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.prp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  min-width: 0;
+}
+
+.prp-number {
+  color: var(--txm);
+}
+
+.prp-branches {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.prp-badge {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.prp-badge--open {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+}
+
+.prp-badge--draft,
+.prp-badge--closed {
+  color: var(--txm);
+  background: var(--bg3);
+}
+
+.prp-badge--merged {
+  color: var(--vil);
+  background: color-mix(in srgb, var(--vio) 14%, transparent);
+}
+
+.prp-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.prp-title a {
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.prp-title a:hover,
+.prp-title a:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.prp-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.prp-add {
+  color: var(--grl);
+}
+
+.prp-del {
+  color: var(--rdl);
+}
+
+.prp-verdict {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border-left: 3px solid currentcolor;
+}
+
+.prp-verdict--good {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 10%, transparent);
+}
+
+.prp-verdict--bad {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.prp-verdict--warn {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 10%, transparent);
+}
+
+.prp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.prp-actions--start {
+  justify-content: flex-start;
+}
+
+.prp-link-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.prp-section {
+  border-top: 1px solid var(--bd);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prp-section-title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.prp-body summary {
+  cursor: pointer;
+}
+
+.prp-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prp-check {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.prp-check a {
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.prp-outcome {
+  flex: 0 0 64px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.prp-outcome--passing {
+  color: var(--grl);
+}
+
+.prp-outcome--failing {
+  color: var(--rdl);
+  font-weight: 600;
+}
+
+.prp-outcome--pending {
+  color: var(--aml);
+}
+
+.prp-outcome--skipped {
+  color: var(--txl);
+}
+
+.prp-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  font-size: 12.5px;
+}
+
+.prp-facts dt {
+  color: var(--txl);
+}
+
+.prp-facts dd {
+  margin: 0;
+  color: var(--txm);
+}
+
+.prp-muted {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--txl);
+}
+
+.prp-branch,
+.prp-error {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.prp-error {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--rdl);
+}
