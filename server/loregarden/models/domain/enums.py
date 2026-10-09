@@ -393,6 +393,9 @@ class ArtifactKind(StrEnum):
     PLAN = "plan"
     #: A handoff between stages, validated against its item keys.
     HANDOFF = "handoff"
+    #: A handoff no gate checked. A notice, not a failure: it was filed as
+    #: `error` until 2026-10, where it read as a block on tickets that were fine.
+    HANDOFF_NOT_VALIDATED = "handoff_not_validated"
     #: A pull request this run opened.
     PR = "pr"
     #: A gate evaluation recorded against a workflow transition.

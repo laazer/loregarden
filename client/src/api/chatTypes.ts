@@ -97,6 +97,21 @@ export interface Approval {
   allowed_actions?: ApprovalResolutionAction[];
 }
 
+/** One decided approval, from `/api/inbox/approvals/history` — newest first. */
+export interface ApprovalHistoryItem {
+  id: string;
+  title: string;
+  kind: Approval["kind"];
+  stage_key: string;
+  stage_name: string;
+  status: "approved" | "rejected";
+  /** "automation" for an auto_approve run's own sign-off; "" for a person. */
+  resolved_by: string;
+  resolved_at: string;
+  ticket_id: string;
+  ticket_external_id: string;
+}
+
 /** A file uploaded with a Home chat turn. Text is inlined for the agent; images go by path. */
 export interface ChatAttachment {
   id: string;

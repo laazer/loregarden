@@ -16,7 +16,7 @@ from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_na
 from loregarden.models.domain import Artifact, Ticket, Workspace
 from loregarden.services.handoff_store import boundary_from_doc, latest_handoff_doc
 from loregarden.services.handoff_writer import HandoffWriteError, write_handoff
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 from tests.worktree_helpers import git, make_repo
 
 # A stub gate: PASSes only when the written file exists and carries the
@@ -465,7 +465,7 @@ def test_an_unvalidated_handoff_reaches_the_ticket_not_just_the_agent(isolated_d
     checked. The live example read `required_items_met: 2 of 4` with items marked
     incomplete, written, never validated, and persisting.
     """
-    from loregarden.models.domain import Artifact
+    from loregarden.models.domain import Artifact, ArtifactKind
     from sqlmodel import select
 
     repo = tmp_path / "repo"
@@ -485,7 +485,10 @@ def test_an_unvalidated_handoff_reaches_the_ticket_not_just_the_agent(isolated_d
 
     with Session(isolated_db) as session:
         errors = session.exec(
-            select(Artifact).where(Artifact.ticket_id == ticket_pk, Artifact.kind == "error")
+            select(Artifact).where(
+                Artifact.ticket_id == ticket_pk,
+                Artifact.kind == ArtifactKind.HANDOFF_NOT_VALIDATED,
+            )
         ).all()
         assert len(errors) == 1
         body = errors[0].content_json or ""
@@ -500,7 +503,7 @@ def test_an_unvalidated_handoff_reaches_the_ticket_not_just_the_agent(isolated_d
 def test_a_validated_handoff_files_no_error(isolated_db, tmp_path):
     """The surface is for the unchecked case. A gate that ran and passed must not
     leave an error artifact behind — that would train operators to ignore them."""
-    from loregarden.models.domain import Artifact
+    from loregarden.models.domain import Artifact, ArtifactKind
     from sqlmodel import select
 
     repo = tmp_path / "repo"
@@ -519,10 +522,13 @@ def test_a_validated_handoff_files_no_error(isolated_db, tmp_path):
     assert result["status"] == "PASS"
 
     with Session(isolated_db) as session:
-        errors = session.exec(
-            select(Artifact).where(Artifact.ticket_id == ticket_pk, Artifact.kind == "error")
+        notices = session.exec(
+            select(Artifact).where(
+                Artifact.ticket_id == ticket_pk,
+                col(Artifact.kind).in_([ArtifactKind.ERROR, ArtifactKind.HANDOFF_NOT_VALIDATED]),
+            )
         ).all()
-        assert errors == []
+        assert notices == []
 
 
 def test_each_way_the_gate_can_fail_to_run_names_itself(isolated_db, tmp_path):

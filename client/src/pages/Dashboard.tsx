@@ -625,10 +625,13 @@ export function Dashboard() {
     (sel?.workflow_stage_key === stageKey && workflowBusy) ||
     (startRun.isPending && startRun.variables?.stageKey === stageKey);
 
+  // The latest run only (the list is newest first): a failure that a later run
+  // has already moved past is history on the Timeline, not "Run failed" now.
+  const latestRun = ticketRuns.data?.[0];
   const hasRunErrors = Boolean(
     sel?.blocking_issues ||
       sel?.artifacts?.error ||
-      ticketRuns.data?.some((r) => r.status === "failed" && r.stderr),
+      (latestRun?.status === "failed" && latestRun.stderr),
   );
 
   const lastAutoTabTicketId = useRef<string | null>(null);
