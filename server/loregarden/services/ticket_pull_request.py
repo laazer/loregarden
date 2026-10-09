@@ -26,6 +26,8 @@ from loregarden.models.domain import (
 )
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_gh
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlmodel import Session, col, select
@@ -129,6 +131,10 @@ class TicketPullRequest(BaseModel):
     #: Why the lookup failed, in `gh`'s words. Empty unless `lookup` is FAILED.
     error: str = ""
     recorded: RecordedPullRequest | None = None
+    #: The integration branch this ticket's work ships on, when it is inside a
+    #: tree; "" for a ticket that ships its own branch. A tree member gets no PR
+    #: of its own (`github_pr_service._refuse_tree_member`).
+    ships_with: str = ""
 
 
 def _check_outcome(check: _GhCheck) -> PullRequestCheckOutcome:
@@ -200,10 +206,25 @@ def _failed(session: Session, ticket: Ticket, branch: str, error: str) -> Ticket
     )
 
 
+def _ships_with(session: Session, ticket: Ticket, workspace: Workspace) -> str:
+    try:
+        target = target_branch_name(session, ticket, workspace)
+    except TargetBranchError:
+        logger.warning("No landing target for %s", ticket.external_id, exc_info=True)
+        return ""
+    return "" if target == resolve_orchestration_profile(workspace).git.base_branch else target
+
+
 def ticket_pull_request(
     session: Session, ticket: Ticket, workspace: Workspace
 ) -> TicketPullRequest:
     """Ask GitHub for the pull request on ``ticket``'s branch."""
+    result = _lookup(session, ticket, workspace)
+    result.ships_with = _ships_with(session, ticket, workspace)
+    return result
+
+
+def _lookup(session: Session, ticket: Ticket, workspace: Workspace) -> TicketPullRequest:
     branch = resolve_ticket_branch(ticket)
     repo_root = resolve_workspace_root(workspace)
     if not (repo_root / ".git").exists():

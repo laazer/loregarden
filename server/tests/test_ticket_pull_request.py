@@ -197,3 +197,15 @@ def test_unparseable_gh_output_is_a_failure(session, workspace, ticket):
         result = ticket_pull_request(session, ticket, workspace)
 
     assert result.lookup is PullRequestLookup.FAILED
+
+
+def test_a_tree_member_says_which_integration_branch_it_ships_with(session, workspace, ticket):
+    child = Ticket(
+        external_id="LG-2", workspace_id=workspace.id, title="Child", parent_ticket_id=ticket.id
+    )
+    session.add(child)
+    session.commit()
+
+    with _gh(1, stderr="no pull requests found for branch"):
+        assert ticket_pull_request(session, child, workspace).ships_with == "integration/LG-1"
+        assert ticket_pull_request(session, ticket, workspace).ships_with == ""

@@ -8,6 +8,11 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr_ux_section_precheck.py\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr_duplicate_work_precheck.py\"",
+            "timeout": 30
           }
         ]
       }
