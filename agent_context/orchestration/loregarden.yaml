@@ -30,6 +30,8 @@ gates:
     - bash {loregarden_root}/.lefthook/scripts/workspace-gates.sh --repo {workspace_root} --scope worktree
     # loregarden only: it asks for loregarden's components/ui primitives and :root tokens.
     - node {loregarden_root}/.lefthook/scripts/ts_theme_check.cjs --repo {workspace_root} --scope worktree
+    # loregarden only for now: it asks for the --t-* motion tokens on :root.
+    - node {loregarden_root}/.lefthook/scripts/ts_motion_check.cjs --repo {workspace_root} --scope worktree
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."
     - bash -c "cd server && uv run ruff format ."
