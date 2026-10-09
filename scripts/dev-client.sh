@@ -45,8 +45,17 @@ echo "dev-client: proxying to $LOREGARDEN_API_TARGET" >&2
 
 # Vite itself, not `npm run dev`: npm takes the SIGTERM the wrapper forwards and
 # does not pass it on, so the client would outlive its registration.
-if [[ ! -x node_modules/.bin/vite ]]; then
-  echo "dev-client: client/node_modules is missing — run \`npm ci\` in client/ first" >&2
+# node_modules has to exist *and* match the lockfile. The vite binary alone is
+# not enough: a pull that adds a dependency leaves the old binary in place, so
+# the client starts and then dies on an import nothing checked. npm rewrites
+# node_modules/.package-lock.json on every install, so that file being older
+# than package-lock.json means this tree predates the lockfile it was built from.
+if [[ ! -x node_modules/.bin/vite || ! -f node_modules/.package-lock.json ]]; then
+  echo "dev-client: client/node_modules is missing — run \`task setup\` first" >&2
+  exit 1
+fi
+if [[ package-lock.json -nt node_modules/.package-lock.json ]]; then
+  echo "dev-client: client/node_modules predates client/package-lock.json — run \`task setup\` first" >&2
   exit 1
 fi
 

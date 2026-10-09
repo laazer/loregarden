@@ -15,8 +15,8 @@ earlier. 717 finished its whole pipeline, reported done, and landed nothing
 Outcomes:
 
 - Landed, or nothing to land: a `TicketLanded` event; the caller derives done.
-  A tree's root has nothing of its own to land, so its completion publishes
-  its tree instead (771).
+  A root has nothing to land locally, so its completion publishes instead: a
+  tree's root its integration branch (771), a ticket with no tree its own.
 - Anything else — a conflict, a ref that moved underneath, git refusing: the
   terminal stage goes BLOCKED and the ticket blocks with the reason, from the
   control plane's own words. The orchestration that drove the stage sees a
@@ -84,9 +84,10 @@ def land_before_done(
     result = land_ticket(session, ticket, workspace)
     _publish(session, ticket, result)
     if result.ok:
-        # A tree's root has nothing of its own to land — no branch, or a
-        # target that is the base — but its tree does (771). `publish_tree`
-        # is a no-op for anything that is not a root.
+        # A root lands nothing locally — its target is the base — but it
+        # publishes: a tree's root its integration branch (771), a ticket
+        # with no tree its own branch. `publish_tree` is a no-op for anything
+        # that is not a root.
         if result.skipped is LandSkip.NO_REPOSITORY:
             return True
         if result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
