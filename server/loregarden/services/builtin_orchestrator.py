@@ -641,6 +641,14 @@ class BuiltinOrchestrator:
         )
         if ok:
             return False
+        if orch_run.status is OrchestrationRunStatus.BLOCKED:
+            # The stage's own routing already blocked the ticket and ended this
+            # run — a rework pause at the loop cap, or a transient failure with
+            # no repair turn left — and filed its own inbox item. Blocking again
+            # re-reads the reviewers' joined text as an agent's handover, and a
+            # reviewer writing "for a human" files a second, empty HUMAN_ACTION
+            # card beside the pause (lg-durable-remote-336).
+            return True
         self.callbacks.block_ticket(
             orch_run,
             ticket,
