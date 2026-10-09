@@ -27,14 +27,12 @@ from pathlib import Path
 from loregarden.models.domain import (
     AgentRun,
     BaxterChatSession,
-    Ticket,
     Workspace,
     Worktree,
 )
-from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
+from loregarden.services.git_automation_config import enabled_steps
 from loregarden.services.git_branch import (
     chat_session_branch,
-    resolve_ticket_branch,
     validate_branch_name,
 )
 from loregarden.services.git_subprocess import run_gh, run_git
@@ -90,25 +88,6 @@ class PublishSubject:
     commit_message: str
     pr_title: str
     pr_body: str
-
-
-def subject_for_ticket(session: Session, run: AgentRun, ticket: Ticket) -> PublishSubject:
-    """How a ticket's work is published — unchanged from when this was inline."""
-    return PublishSubject(
-        branch=_branch_for_run(session, run, ticket),
-        commit_message=f"{ticket.external_id}: {ticket.title}",
-        pr_title=f"{ticket.external_id}: {ticket.title}",
-        pr_body="\n".join(
-            [
-                ticket.description.strip() or "_No description._",
-                "",
-                f"- Ticket: `{ticket.external_id}`",
-                f"- Workflow stage: `{ticket.workflow_stage_key or '—'}`",
-                "",
-                "_Opened automatically by the Loregarden queue._",
-            ]
-        ),
-    )
 
 
 def subject_for_chat_session(
@@ -238,8 +217,9 @@ def publish_run(
     """Run the configured publish steps for a finished run's checkout.
 
     Owner-agnostic: everything owner-specific is already decided in ``subject``.
-    :func:`run_git_automation` is the ticket entry point and
-    ``chat_publish.publish_chat_turn`` the conversational one.
+    ``chat_publish.publish_chat_turn`` is its caller. A ticket's work reaches
+    the base through ``landing`` and ``publish_tree`` instead, once its
+    workflow finishes, not per run.
     """
     result = AutomationResult()
     if not config.commit:
@@ -311,43 +291,6 @@ def publish_branch(
         if not result.ok:
             return result
     return result
-
-
-def run_git_automation(
-    session: Session,
-    run: AgentRun,
-    ticket: Ticket,
-    config: GitAutomationConfig | None = None,
-) -> AutomationResult:
-    """Run the configured publish steps for a finished ticket run."""
-    workspace = session.get(Workspace, ticket.workspace_id)
-    if not workspace:
-        result = AutomationResult()
-        result.steps.append(StepResult("resolve", False, "workspace not found"))
-        return result
-
-    return publish_run(
-        session,
-        run,
-        workspace,
-        subject_for_ticket(session, run, ticket),
-        config or resolve_git_automation(workspace, ticket),
-    )
-
-
-def _branch_for_run(session: Session, run: AgentRun, ticket: Ticket) -> str:
-    """The branch this run's work is on.
-
-    A run in a worktree is on the branch that worktree was created with, which
-    is not necessarily the ticket's branch — the ticket may have been retargeted
-    since. Pushing the ticket's branch from a worktree checked out on another
-    one pushes the wrong commits.
-    """
-    if run.worktree_id:
-        worktree = session.get(Worktree, run.worktree_id)
-        if worktree and worktree.branch:
-            return worktree.branch
-    return resolve_ticket_branch(ticket)
 
 
 def _branch_for_chat_run(session: Session, run: AgentRun, chat_session: BaxterChatSession) -> str:
