@@ -213,7 +213,7 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
 
     For a ticket that finished before landing ran at the terminal stage (717
     was the first), or one closed by hand. Idempotent: an already-landed
-    branch records its tip and merges nothing. A root publishes its tree.
+    branch records its tip and merges nothing. A root publishes its work.
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
     workspace = session.get(Workspace, ticket.workspace_id)
