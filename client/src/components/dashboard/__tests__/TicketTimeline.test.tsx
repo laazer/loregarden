@@ -120,15 +120,15 @@ beforeEach(() => {
   useReaderStore.getState().close();
 });
 
-it("lists every stage visit by its workflow name, in order", async () => {
+it("lists every stage visit by its workflow name, most recent first", async () => {
   renderTimeline();
 
   await screen.findByRole("button", { name: /Planning/ });
   const heads = screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-controls"));
   expect(heads.map((head) => head.querySelector(".tl-stage")?.textContent)).toEqual([
-    "Planning",
-    "Implementation",
     "Quality Gate",
+    "Implementation",
+    "Planning",
   ]);
 });
 
