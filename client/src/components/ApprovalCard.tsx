@@ -227,6 +227,9 @@ export function ApprovalCard({
       <div ref={bodyRef} style={{ padding: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
+          {/* Gate titles name the stage, not the ticket, so a batch of tickets
+              parked at one gate read as the same card repeated. */}
+          {approval.ticket_external_id && <span>{approval.ticket_external_id} · </span>}
           {approval.stage_name}
           {approval.kind === "workflow_gate" &&
             categoryLabels.map((label) => (
