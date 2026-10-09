@@ -12,7 +12,6 @@ from loregarden.agents.cli_adapters import (
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
-from loregarden.agents.executors.agent_spawn import resolve_transport, transport_line
 from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
@@ -46,8 +45,6 @@ from loregarden.agents.prompt_blocks import (
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
-from loregarden.config import settings
-from loregarden.dot_line import SYS
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
@@ -93,7 +90,6 @@ from loregarden.services.run_errors import (
     agent_timeout_message,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
-from loregarden.services.run_output_files import run_file_stem
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.target_branch import resolve_target_branch
@@ -298,12 +294,12 @@ class CliAgentExecutor:
                     )
                     stdout, stderr, status = result.stdout, result.stderr, result.status
                 else:
-                    transport = resolve_transport(settings.agent_detach_transport)
-                    streamer.append(
-                        SYS.name,
-                        transport_line(transport, run_file_stem(run.run_code, run.id)),
-                        force=True,
-                    )
+                    # The transport is resolved by whoever performs the spawn,
+                    # and announced from the answer that spawn returned — see
+                    # `print_mode.run_print_mode`. Resolved here as well it was
+                    # two independent readings of one fact, and the SYS line was
+                    # written BEFORE the spawn, so a tmux spawn that raised left
+                    # a line in the feed naming a session that never existed.
                     stdout, stderr, status = run_print_mode(
                         invocation=invocation,
                         repo_root=repo_root,

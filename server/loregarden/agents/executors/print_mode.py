@@ -43,9 +43,11 @@ from loregarden.agents.executors.agent_spawn import (
     record_agent_transport,
     resolve_transport,
     spawn_agent,
+    transport_line,
 )
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.config import settings
+from loregarden.dot_line import SYS
 from loregarden.models.domain import RunStatus
 from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
@@ -61,6 +63,7 @@ from loregarden.services.run_output_files import (
     paths_for,
     read_output_text,
     recorded_exit_status,
+    run_file_stem,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,6 +253,14 @@ def run_print_mode(
     # pid stored without one is a number a later process can wear.
     record_process_identity(run_id, spawned.pid)
     record_agent_transport(run_id, spawned.transport_used)
+    # Announced from `transport_used` rather than from a second reading of the
+    # host, and AFTER the spawn rather than before it: a tmux spawn that raises
+    # must not leave a line in the feed naming a session that never existed.
+    streamer.append(
+        SYS.name,
+        transport_line(spawned.transport_used, run_file_stem(run_code, run_id)),
+        force=True,
+    )
 
     stdout_lines: list[str] = []
     tail = RunOutputTail(paths.out)

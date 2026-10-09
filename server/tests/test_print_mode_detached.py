@@ -52,10 +52,24 @@ class _CollectingStreamer:
         #: the ordering — the offset is set immediately AFTER the append — and
         #: S5 depends on it.
         self.offset_after_each: list[int] = []
+        #: (tag, text, force) for every `append` — the SYS transport line among
+        #: them.
+        self.tagged: list[tuple[str, str, bool]] = []
 
     def append_stream_line(self, line: str) -> None:
         self.lines.append(line)
         self.offset_after_each.append(self.tail_offset)
+
+    def append(self, tag: str, text: str, *, force: bool = False) -> None:
+        """The tagged-line sink `RunLogStreamer` also exposes.
+
+        `run_print_mode` announces the transport it actually spawned on through
+        this, beside `record_agent_transport` — the line used to be composed in
+        `cli.py` from a second, independent reading of the host and appended
+        BEFORE the spawn. Collected separately from the stream lines so the
+        output assertions below still see only the agent's own output.
+        """
+        self.tagged.append((tag, text, force))
 
 
 @pytest.fixture(name="run_log_dir")

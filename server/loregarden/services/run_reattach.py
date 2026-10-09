@@ -29,7 +29,6 @@ from loregarden.services.run_lease import (
     SUPERVISED,
     renew_agent_run_lease,
 )
-from loregarden.services.run_resupervise import resupervise
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -82,14 +81,23 @@ def runs_to_spare(session: Session) -> list[AgentRun]:
 def _supervise(run_id: str, interval_seconds: float) -> None:
     """The thread's entry point: resume `run_id`, and report a crash as one.
 
+    `run_resupervise` is imported HERE rather than at module scope, and not to
+    dodge a cycle: it pulls in `OrchestrationService`, and this module is on the
+    boot-reaper path that S6's split exists to keep orchestration off. Importing
+    it at the top undoes the split while leaving every test of it green. The
+    cost is one import inside a thread that is about to supervise a run for
+    minutes to hours.
+
     An exception escaping a daemon thread reaches `threading.excepthook` and
     nothing else — no log line naming the run, no record on the row. A
     supervisor that died leaves its run at RUNNING for the lease reaper to
     settle, which is the honest fallback, but only if somebody can find out it
     happened.
     """
+    from loregarden.services import run_resupervise
+
     try:
-        resupervise(run_id, interval_seconds=interval_seconds)
+        run_resupervise.resupervise(run_id, interval_seconds=interval_seconds)
     except Exception:  # noqa: BLE001 — logged, and the lease reaper is the fallback
         logger.exception(
             "Resupervising run %s failed; it stays in flight for the lease reaper", run_id[:8]

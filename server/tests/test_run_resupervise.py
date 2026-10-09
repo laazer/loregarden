@@ -196,10 +196,18 @@ def _stage_status_of(db_session: Session, ticket_id: str, stage_key: str) -> Sta
 
 
 def test_reattach_starts_resupervise_for_every_adopted_run(db_session: Session, adopted):
-    """AC11. The adopted run gets a resume, not a lease renewer."""
+    """AC11. The adopted run gets a resume, not a lease renewer.
+
+    Patched on `run_resupervise` rather than on `run_reattach`: the import moved
+    into `_supervise` so that importing the boot reaper does not pull
+    `OrchestrationService` onto the boot path (AC11's "`run_reattach` keeps only
+    its predicates"). The assertion is unchanged — one resume per adopted run,
+    with this run's id — only the seam it is observed through moved with the
+    name.
+    """
     with (
         mock.patch.object(run_reattach, "liveness", return_value=ProcessState.ALIVE),
-        mock.patch.object(run_reattach, "resupervise") as started,
+        mock.patch.object(run_resupervise, "resupervise") as started,
     ):
         run_reattach.reattach_surviving_runs(db_session, interval_seconds=0.01)
         # It is started on a daemon thread, so `start()` returning does not mean
@@ -659,3 +667,111 @@ def test_the_process_identity_is_what_the_loop_asks_about(db_session: Session, a
     flat = [value for args, kwargs in seen for value in (*args, *kwargs.values())]
     assert 4242 in flat
     assert "a start time no later pid can wear" in flat
+
+
+# --- AC7 / AC12: the partial the reattached path drops ------------------------
+#
+# Added at `test-break`. Every reattach test above ends its `.out` with a line
+# that forces the stream buffer to flush — a stage report, a plain line, an
+# unterminated remainder — so the buffer is always empty by the time settlement
+# runs and the divergence below cannot show. A `content_block_delta` arriving
+# LAST is the case that exposes it, and it is the normal shape of a run killed
+# mid-sentence: the restart boundary this ticket exists for.
+
+
+def _delta(text: str) -> str:
+    """One partial-message `stream_event`, as the adapters emit them.
+
+    Short on purpose: `_maybe_chunk_flush` only promotes a buffer to a row at
+    CHUNK_FLUSH_CHARS, so anything under that stays buffered and reaches
+    `run_log_lines` only through `finalize`'s opening flush.
+    """
+    return json.dumps({"type": "content_block_delta", "delta": {"text": text}})
+
+
+TRAILING_PARTIAL = "the last thing the agent managed to say"
+
+
+def test_an_unflushed_stream_partial_reaches_the_log_on_the_reattached_path(
+    db_session: Session, adopted
+):
+    """AC7 ("partials reach run_log_lines identically across the restart
+    boundary") and AC12 ("no duplication and no gap").
+
+    RED at 39abcc99. `_finalize_log` builds a SECOND `RunLogStreamer` for this
+    run and calls `_hydrate()`, which sets `_stream_buffer = ""`.
+    `RunLogStreamer.finalize` opens with `_flush_stream_buffer(force=True)`, so
+    the text the loop had buffered is flushed on the live path — where `cli.py`
+    finalizes the same streamer the loop fed — and dropped here. The streamer
+    `resupervise` already holds is threaded through `_supervise_until_gone` and
+    `_drain_to_end` and then discarded at `_settle`.
+    """
+    _write_output(adopted, out=_report("pass") + _delta(TRAILING_PARTIAL) + "\n", rc="0")
+
+    with mock.patch.object(run_resupervise, "liveness", _gone):
+        resupervise(adopted.id, interval_seconds=0)
+
+    db_session.expire_all()
+    texts = _log_lines(db_session, adopted)
+    assert any(TRAILING_PARTIAL in text for text in texts), (
+        "the buffered partial was lost between the loop's streamer and the one "
+        f"settlement built; rows were {texts}"
+    )
+
+
+def test_the_live_path_keeps_the_same_partial(db_session: Session, adopted):
+    """The control for the test above, so its failure reads as a divergence
+    between the two paths rather than as a property neither path has.
+
+    This is the live shape: one streamer, fed by the loop and finalized by
+    `cli.py`. GREEN at 39abcc99.
+    """
+    from loregarden.services.run_log_stream import RunLogStreamer
+
+    streamer = RunLogStreamer(
+        run_id=adopted.id,
+        ticket_id=adopted.ticket_id,
+        run_code=adopted.run_code,
+        agent_id=adopted.agent_id,
+        skill_name="",
+    )
+    streamer.append_stream_line(_delta(TRAILING_PARTIAL))
+    streamer.finalize(status=RunStatus.SUCCEEDED, stderr="")
+
+    db_session.expire_all()
+    texts = _log_lines(db_session, adopted)
+    assert any(TRAILING_PARTIAL in text for text in texts), texts
+
+
+def test_one_run_gets_one_log_streamer_through_settlement(db_session: Session, adopted):
+    """AC7/AC12, as the invariant rather than as the symptom.
+
+    One run's log is mutable state — a buffer, a live line, a sequence cursor
+    and an offset. Two instances of it means two answers, and `_hydrate()`
+    reconstructs only the half that is durable. Pinning the count is what stops
+    the next reader of this module from reaching for a fresh streamer again.
+
+    This also closes the private seam that made it possible: `_hydrate` is
+    reached into from another module, so a public resume is what the settlement
+    path should be calling if it needs one at all.
+    """
+    built: list[str] = []
+    real = run_resupervise.RunLogStreamer
+
+    class _Counting(real):  # type: ignore[misc, valid-type]
+        def __init__(self, **kwargs):
+            built.append(kwargs["run_id"])
+            super().__init__(**kwargs)
+
+    _write_output(adopted, out="work happened\n" + _report("pass"), rc="0")
+
+    with (
+        mock.patch.object(run_resupervise, "liveness", _gone),
+        mock.patch.object(run_resupervise, "RunLogStreamer", _Counting),
+    ):
+        resupervise(adopted.id, interval_seconds=0)
+
+    assert built == [adopted.id], (
+        f"{len(built)} streamers were built for one run; settlement should use "
+        "the one the supervising loop already fed"
+    )

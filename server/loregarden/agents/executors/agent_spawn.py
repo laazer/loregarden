@@ -151,6 +151,35 @@ def _spawn_detached(wrapped: list[str], *, cwd: str, env: dict[str, str]) -> sub
     )
 
 
+#: Where `env` lives on both supported hosts. Spelled absolutely on purpose: the
+#: pane command is resolved by the tmux SERVER's PATH, and the server's
+#: environment is the thing this prefix exists to stop mattering.
+_ENV_BIN = "/usr/bin/env"
+
+
+def _under_env(env: dict[str, str], wrapped: list[str]) -> list[str]:
+    """`wrapped`, prefixed so the pane runs under exactly `env` and nothing else.
+
+    `subprocess.run(..., env=env)` hands the environment to the tmux CLIENT. The
+    pane is forked by the tmux SERVER, whose environment was frozen by whichever
+    `new-session` started it — so the FIRST spawn on a host works and every
+    later one inherits the first one's environment for as long as that server
+    lives. For a parallel stage that means lanes two and three run under lane
+    one's run identity, MCP config, model and effort, and every MCP write they
+    make claims lane one. It does not present as a crash: an expired OAuth token
+    exits 0, so the lane reads as an empty SUCCEEDED run.
+
+    `env -i` rather than tmux's own `-e K=V`: `invocation_env` STRIPS
+    `RUN_IDENTITY_ENV_VARS` and `STATE_BINDING_ENV_VARS` out of the supervising
+    process's environment precisely so a run's identity can only come from the
+    invocation's overlay, and `-e` can only *add* — a stripped variable the
+    server happens to carry would survive it. `-i` makes the pane's environment
+    exactly the one computed here. It also has no tmux version floor, where `-e`
+    needs 3.2.
+    """
+    return [_ENV_BIN, "-i", *(f"{name}={value}" for name, value in env.items()), *wrapped]
+
+
 def _spawn_in_tmux(wrapped: list[str], *, cwd: str, env: dict[str, str], stem: str) -> int:
     """Run the wrapper as a detached tmux pane, and report the pane's pid.
 
@@ -159,10 +188,15 @@ def _spawn_in_tmux(wrapped: list[str], *, cwd: str, env: dict[str, str], stem: s
     the agent through. A tmux that cannot start the session raises rather than
     falling back — reporting FILE for a run nobody can attach to would be the
     column asserting something untrue.
+
+    The pane command carries its own environment (`_under_env`) because `env=`
+    below reaches only the tmux client. `cwd` does NOT need the same treatment:
+    the client resolves it and hands the server the result as the session's
+    start directory.
     """
     session = tmux_session_name(stem)
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", session, *wrapped],
+        ["tmux", "new-session", "-d", "-s", session, *_under_env(env, wrapped)],
         cwd=cwd,
         env=env,
         check=True,

@@ -135,7 +135,7 @@ def resupervise(run_id: str, *, interval_seconds: float = RENEWAL_INTERVAL_SECON
         interval_seconds=interval_seconds,
     )
     _drain_to_end(tail, streamer)
-    _settle(adopted.run_id, paths=paths)
+    _settle(adopted.run_id, paths=paths, streamer=streamer)
 
 
 def _adopted(run_id: str) -> _Adopted | None:
@@ -170,7 +170,7 @@ def _hydrated_streamer(adopted: _Adopted) -> RunLogStreamer:
         agent_id=adopted.agent_id,
         skill_name=adopted.skill_name,
     )
-    streamer._hydrate()
+    streamer.resume()
     return streamer
 
 
@@ -276,8 +276,18 @@ def _claim_settlement(session: Session, run_id: str) -> bool:
     return bool(result.rowcount == 1)
 
 
-def _settle(run_id: str, *, paths: RunOutputPaths) -> None:
-    """Record how the run ended, route its stage, and delete its output files."""
+def _settle(run_id: str, *, paths: RunOutputPaths, streamer: RunLogStreamer) -> None:
+    """Record how the run ended, route its stage, and delete its output files.
+
+    `streamer` is the one the supervising loop fed, not a fresh one: a run's log
+    is mutable state — a stream buffer, a live line, a sequence cursor and a
+    tail offset — and `finalize` opens by flushing that buffer. A second
+    instance can only reload the durable half, so everything the loop had
+    buffered and not yet promoted to a row (a `content_block_delta` under
+    CHUNK_FLUSH_CHARS — the normal shape of an agent killed mid-sentence) would
+    be dropped here, while the live path, which finalizes the streamer it fed,
+    keeps it.
+    """
     with Session(db_session_module.engine) as session:
         run = session.get(AgentRun, run_id)
         if run is None:
@@ -290,7 +300,7 @@ def _settle(run_id: str, *, paths: RunOutputPaths) -> None:
         status = RunStatus.SUCCEEDED if code == 0 else RunStatus.FAILED
         stderr = _stderr_for(paths, code=code)
         stdout = _transcript(paths)
-        _finalize_log(run, status=status, stderr=stderr)
+        streamer.finalize(status=status, stderr=stderr)
         try:
             _complete(session, run, status=status, stdout=stdout, stderr=stderr)
         except Exception:
@@ -325,18 +335,6 @@ def _transcript(paths: RunOutputPaths) -> str:
     want what the live path hands them, which is this.
     """
     return read_output_text(paths.out)
-
-
-def _finalize_log(run: AgentRun, *, status: RunStatus, stderr: str) -> None:
-    streamer = RunLogStreamer(
-        run_id=run.id,
-        ticket_id=run.ticket_id,
-        run_code=run.run_code,
-        agent_id=run.agent_id,
-        skill_name=run.skill_name or "",
-    )
-    streamer._hydrate()
-    streamer.finalize(status=status, stderr=stderr)
 
 
 def _complete(
@@ -458,9 +456,17 @@ def _delete_output_files(paths: RunOutputPaths) -> None:
     prompt, and nothing reads it once the agent has exited.
 
     Safe only in that order: deleting them while the rows were still unwritten
-    would destroy the only copy. Orphans — a run whose row was never settled —
-    are swept at boot by the existing `worktree_lifecycle.reconcile_worktrees`;
-    there is no second deletion policy here.
+    would destroy the only copy.
+
+    This is the ONLY place anything under `settings.run_log_dir` is deleted, so
+    a run that settled on the live path leaves its four files behind, and so
+    does a run whose row was never settled. Nothing sweeps them:
+    `worktree_lifecycle.reconcile_worktrees` works off `Worktree` rows and
+    cannot relate an output stem to one, and nothing else reads `run_log_dir`.
+    A retention policy matches no acceptance criterion on this ticket and is
+    filed rather than improvised here — stated plainly rather than asserted
+    away, because a docstring claiming a sweep that does not exist is how the
+    gap stays invisible.
     """
     for path in (paths.out, paths.err, paths.rc, paths.prompt):
         try:

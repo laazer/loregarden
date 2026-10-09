@@ -715,6 +715,18 @@ class RunLogStreamer:
         self._hydrate()
         return list(self._lines)
 
+    def resume(self) -> None:
+        """Adopt the durable log of a run this process did not start.
+
+        The public name for reloading the rows, the live line and `tail_offset`
+        off the log artifact. Public because the settlement path used to reach
+        into `_hydrate` from another module, and a private seam reached across a
+        module boundary is what made it look reasonable to build a SECOND
+        streamer for one run — two copies of one run's buffer, sequence cursor
+        and offset, of which `_hydrate` reconstructs only the durable half.
+        """
+        self._hydrate()
+
     def touch(self) -> None:
         """Re-persist the current log snapshot (heartbeat during long waits)."""
         self._update_live_from_buffer()
@@ -846,7 +858,7 @@ def finalize_run_log_artifact(run: AgentRun, *, status: RunStatus, stderr: str =
         agent_id=run.agent_id,
         skill_name=run.skill_name or "",
     )
-    streamer._hydrate()
+    streamer.resume()
     if streamer.artifact_id or streamer._lines:
         streamer.finalize(status=status, stderr=stderr)
 
