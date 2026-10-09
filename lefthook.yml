@@ -130,6 +130,11 @@ pre-commit:
       priority: 1
       glob: "client/**/*.{ts,tsx,css}"
       run: bash .lefthook/scripts/ts-theme.sh {staged_files}
+    ts-motion:
+      name: Motion check (layout-property animation, hardcoded durations, reduced-motion policy)
+      priority: 1
+      glob: "client/**/*.css"
+      run: bash .lefthook/scripts/ts-motion.sh {staged_files}
 
 pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`
