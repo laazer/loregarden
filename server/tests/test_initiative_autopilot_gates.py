@@ -2,7 +2,7 @@
 
 A gate parks a stage with no live run, so the ticket used to read idle and the
 next tick queued it again — `lg-durable-remote-336` was queued a second time one
-second after its Break Tests gate opened. A parked ticket holds its lane; the
+second after its Break Tests gate opened. A parked ticket stays in flight; the
 tick answers the gates that are its to answer and leaves the rest to a person.
 """
 
@@ -100,19 +100,20 @@ def _approving_service(session: Session) -> MagicMock:
     return service
 
 
-def test_a_gated_ticket_holds_its_lane_and_is_not_queued_again(db_session, workspaces, queue):
+def test_a_gated_ticket_is_not_queued_again(db_session, workspaces, queue):
     lanes, _ = queue
     here, _ = workspaces
     initiative = _initiative(db_session)
     m = _milestone(db_session, here, "M", initiative)
     parked = _item(db_session, here, m, "parked", lane="a")
     _gate(db_session, parked, "ship-to-users")  # a real question: the tick leaves it alone
-    _item(db_session, here, m, "same-lane", lane="a")
+    sibling = _item(db_session, here, m, "same-lane", lane="a")
     set_autopilot(db_session, initiative.id, AutopilotUpdate(enabled=True), actor="t")
 
     run_autopilot(db_session, initiative.id, now=NOW)
 
-    assert _queued(lanes) == []  # not the parked ticket, and not behind it in its lane
+    # Lanes no longer cap the autopilot (#539): the sibling may run, the parked ticket may not.
+    assert _queued(lanes) == [sibling.id]
     node = next(n for n in plan_view(db_session, initiative.id, now=NOW).nodes if n.id == parked.id)
     assert node.status == NodeStatus.NEEDS_PERSON
 
