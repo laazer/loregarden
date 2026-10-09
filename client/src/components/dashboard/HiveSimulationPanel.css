@@ -315,7 +315,6 @@
   inset: 0;
   overflow: hidden;
   image-rendering: pixelated;
-  --hive-agent-ms: 850ms;
   --hive-flyer-ms: 1050ms;
   background:
     radial-gradient(120% 90% at 50% 0%, rgba(111, 174, 143, 0.06), transparent 55%),
@@ -490,11 +489,6 @@
   gap: 6px;
   pointer-events: none;
   width: 148px;
-  transition: left var(--hive-agent-ms) linear, top var(--hive-agent-ms) linear;
-}
-
-.hive-css__agent--pathing {
-  transition: none;
 }
 
 .hive-css__agent--walking .hive-css__agent-avatar {
@@ -1034,6 +1028,8 @@
   inset: 0;
   pointer-events: none;
   z-index: 6;
+  /* Flyers move with `translate` in cqw/cqh units: the floor's size, not the flyer's. */
+  container-type: size;
 }
 
 .hive-css__flyer {
@@ -1042,9 +1038,10 @@
   height: 16px;
   border-radius: 2px;
   transform: translate(-50%, -50%);
+  left: 0;
+  top: 0;
   transition:
-    left var(--hive-flyer-ms) ease-in-out,
-    top var(--hive-flyer-ms) ease-in-out,
+    translate var(--hive-flyer-ms) ease-in-out,
     opacity var(--hive-flyer-ms) ease-in-out;
   opacity: 1;
   display: flex;

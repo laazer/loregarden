@@ -108,7 +108,9 @@
   height: 100%;
   background: linear-gradient(90deg, var(--ac), var(--ac2));
   border-radius: 3px;
-  transition: width 0.4s;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
 .queue-stat-sub {
@@ -647,7 +649,9 @@
   height: 100%;
   background: var(--blue);
   border-radius: 3px;
-  transition: width 0.4s;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
 /* No median to measure against: a travelling sliver says "running, duration

@@ -122,6 +122,12 @@ def test_transition_all_is_reported(repo: Path):
     assert "'transition: all'" in result.stderr
 
 
+def test_transition_none_is_not_transition_all(repo: Path):
+    _write(repo, "a.css", ".a { transition: none; }\n.b { transition-property: none; }\n")
+    result = _run(repo)
+    assert result.returncode == 0, result.stderr
+
+
 def test_a_shorthand_with_no_property_means_all(repo: Path):
     _write(repo, "a.css", ".a { transition: var(--t-fast) ease-out; }\n")
     assert "'transition: all'" in _run(repo).stderr

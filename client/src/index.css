@@ -5861,7 +5861,11 @@ label:is(
   cursor: pointer;
   font-family: var(--ui);
   line-height: 1.2;
-  transition: all 150ms ease;
+  transition:
+      background var(--t-fast) var(--ease-out),
+      border-color var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      opacity var(--t-fast) var(--ease-out);
 }
 
 .import-mode-option:not(:disabled):hover {
@@ -5976,7 +5980,7 @@ label:is(
   border: 1px solid var(--bd);
   border-radius: 10px;
   background: var(--bg2);
-  transition: all 0.2s ease;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .view-kind-option:hover {
