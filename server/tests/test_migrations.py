@@ -1063,7 +1063,9 @@ def test_ux_design_stage_is_pointed_at_the_agent_it_was_named_for(tmp_path):
     # Required, or the stage the user's experience depends on is the one a run
     # prunes when it is in a hurry.
     assert design["optional"] is False
-    assert design["skip_when"] == "routed_as_light_work"
+    # 0123 set `routed_as_light_work`; 20261009_ui_design_skip_without_ui widens
+    # it to `no_ui_work`, which still includes the light route.
+    assert design["skip_when"] == "no_ui_work"
     # The brief is what tells the agent where a decision goes in this repo.
     assert "acceptance criteria" in design["stage_brief"]
 
