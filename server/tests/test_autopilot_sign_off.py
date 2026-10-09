@@ -266,3 +266,45 @@ def test_a_gate_on_a_child_of_work_it_started_is_signed(db_session, world):
 
     assert gate.status is ApprovalStatus.APPROVED
     assert decision_kinds(db_session, ticket.id) == ["approved_legacy_sign_off"]
+
+
+def _auto_approve(session: Session, orch: OrchestrationRun) -> None:
+    orch.auto_approve = True
+    session.add(orch)
+    session.commit()
+
+
+def test_an_auto_approve_run_signs_off_break_tests_without_the_autopilot(db_session, world):
+    ticket, _, orch = world
+    _auto_approve(db_session, orch)
+
+    gate = _finish_stage(db_session, ticket, orch, BREAK_TESTS)
+
+    assert gate.status is ApprovalStatus.APPROVED
+    assert gate.resolved_by == "automation"
+    assert gate.resolving_orchestration_run_id == orch.id
+    assert decision_kinds(db_session, ticket.id) == ["approved_legacy_sign_off"]
+    assert _signed_off_events(db_session, ticket) == [], "the autopilot did not sign this"
+
+
+def test_an_auto_approve_run_leaves_an_authored_judgment_gate_to_a_person(db_session, world):
+    """AC-6 still holds: auto-approve answers the legacy sign-off and nothing else."""
+    ticket, _, orch = world
+    _auto_approve(db_session, orch)
+
+    gate = _finish_stage(db_session, ticket, orch, RELEASE_CALL)
+
+    assert gate.status is ApprovalStatus.PENDING
+    assert decision_kinds(db_session, ticket.id) == []
+
+
+def test_an_auto_approve_loop_signs_off_a_gate_parked_before_it(db_session, world):
+    ticket, _, orch = world
+    gate = _finish_stage(db_session, ticket, orch, BREAK_TESTS)
+    assert gate.status is ApprovalStatus.PENDING
+    _auto_approve(db_session, orch)
+
+    assert resolve_gate_if_permitted(db_session, ticket, orch, BREAK_TESTS, auto_approve=True)
+    db_session.refresh(gate)
+    assert gate.status is ApprovalStatus.APPROVED
+    assert decision_kinds(db_session, ticket.id) == ["approved_legacy_sign_off"]

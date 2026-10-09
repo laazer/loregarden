@@ -42,7 +42,9 @@ from loregarden.services.artifact_service import (
     refresh_execution_artifacts,
 )
 from loregarden.services.autopilot_sign_off import (
+    auto_approve_may_sign_off,
     autopilot_may_sign_off,
+    record_auto_approve_sign_off,
     record_autopilot_sign_off,
 )
 from loregarden.services.block_classification import classify_block_message
@@ -325,11 +327,12 @@ def _sign_off_gate_if_permitted(
 ) -> None:
     """The post-run gate, signed off unattended when something may sign it.
 
-    Two may: the parent orchestration, for a design-plan stage when it was
-    started with `approve_design_plans` (746), and the initiative autopilot, for
-    a legacy stage sign-off on a ticket it started (`autopilot_sign_off`).
-    `auto_approve` alone never signs a gate. Otherwise the gate waits for a
-    person. Recorded in the history either way.
+    Three may: the parent orchestration, for a design-plan stage when it was
+    started with `approve_design_plans` (746); the initiative autopilot, for a
+    legacy stage sign-off on a ticket it started; and a parent run started with
+    `auto_approve`, for a legacy stage sign-off and nothing else
+    (`autopilot_sign_off`). Otherwise the gate waits for a person. Recorded in
+    the history either way.
     """
     parent = (
         orch.session.get(OrchestrationRun, run.orchestration_run_id)
@@ -343,7 +346,10 @@ def _sign_off_gate_if_permitted(
         and orchestrator_may_sign_off(parent, stage_def, auto_approve=False)
     )
     autopilot = None if design_plan else autopilot_may_sign_off(orch.session, ticket, gate_approval)
-    if not design_plan and autopilot is None:
+    by_run = (
+        not design_plan and autopilot is None and auto_approve_may_sign_off(parent, gate_approval)
+    )
+    if not design_plan and autopilot is None and not by_run:
         return
     # A sign-off answers operator judgment and nothing else: a grant or a
     # recheck is a person's to make, and the gate stays in the inbox for them.
@@ -364,6 +370,9 @@ def _sign_off_gate_if_permitted(
     if autopilot is not None:
         orch.session.refresh(gate_approval)
         record_autopilot_sign_off(orch.session, ticket, autopilot, gate_approval)
+    elif by_run and parent is not None:
+        orch.session.refresh(gate_approval)
+        record_auto_approve_sign_off(orch.session, ticket, parent, gate_approval)
     elif parent is not None:
         record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
 
