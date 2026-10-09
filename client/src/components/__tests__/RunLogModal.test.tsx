@@ -48,7 +48,7 @@ beforeEach(() => {
 
 it("renders nothing and fetches nothing when no run is selected", () => {
   renderModal(null);
-  expect(screen.queryByTestId("modal-content")).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(api.runLog).not.toHaveBeenCalled();
 });
 
@@ -75,7 +75,9 @@ it("closes on Escape and on overlay click", async () => {
   fireEvent.keyDown(document, { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  fireEvent.click(screen.getByTestId("modal-backdrop"));
+  const backdrop = document.querySelector(".modal-overlay--shell");
+  if (!backdrop) throw new Error("no backdrop");
+  fireEvent.click(backdrop);
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 

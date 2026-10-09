@@ -33,12 +33,24 @@ function modalDialogSources(): { path: string; source: string }[] {
     .filter(({ source }) => /modal-overlay|modal-backdrop|aria-modal="true"/.test(source));
 }
 
+/** Dialogs drawn through ModalShell, which owns the overlay, the trap and Escape. */
+function shellDialogSources(): string[] {
+  return sourceFiles(SRC)
+    .map((path) => ({ path: path.slice(SRC.length + 1), source: readFileSync(path, "utf8") }))
+    .filter(({ source }) => source.includes("<ModalShell"))
+    .map(({ path }) => path);
+}
+
 describe("modal dialogs", () => {
   const dialogs = modalDialogSources();
+  const shellDialogs = shellDialogSources();
 
   it("finds the app's dialogs at all", () => {
     // A scan that quietly matched nothing would pass every assertion below.
-    expect(dialogs.length).toBeGreaterThan(20);
+    // A dialog on ModalShell no longer spells out role="dialog" itself, so it
+    // is counted here and covered by the shell's own entry in the scan.
+    expect(dialogs.length + shellDialogs.length).toBeGreaterThan(20);
+    expect(dialogs.map((entry) => entry.path)).toContain("components/ui/ModalShell.tsx");
   });
 
   it.each(dialogs.map(({ path }) => path))("%s traps focus", (path) => {
