@@ -35,6 +35,7 @@ from loregarden.models.domain.enums import (
     str_enum_column,
     utcnow,
 )
+from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.models.domain.work_item_types import WorkItemType
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -455,6 +456,14 @@ class AgentRun(SQLModel, table=True):
     #: this one names a process this server spawned. See services/process_identity.
     agent_pid: int | None = None
     agent_pid_identity: str = ""
+    #: How that process was detached. NULL is the truthful value for every run
+    #: that predates the column — 1,449 of them have no process identity either
+    #: and never will — so the UI renders it as an em dash rather than guessing
+    #: `file`. See models.domain.process_enums.AgentTransport.
+    agent_transport: AgentTransport | None = Field(
+        default=None,
+        sa_column=str_enum_column(AgentTransport, nullable=True),
+    )
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None

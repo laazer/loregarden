@@ -282,6 +282,11 @@ class DoctorCheck(str, Enum):
     #: ledger is advisory, so nothing else can tell a ledger everybody uses from
     #: one everybody ignores — both report capacity free and reap nothing.
     DOCKER_UNACCOUNTED = "docker_unaccounted"
+    #: tmux absent, so detached agent runs fall back to the file transport.
+    #: Survival is unaffected — that is the wrapper's job — but there is then no
+    #: session for an operator to attach to, and reported here so the fallback
+    #: is visible BEFORE a run rather than inferred from a column after one.
+    AGENT_DETACH_TRANSPORT = "agent_detach_transport"
     #: Which `gh` account loregarden's PR, merge and issue calls act as. With
     #: several signed in and none configured, it is whichever is active — one
     #: here was read-only on every workspace repo while `git push` still worked.

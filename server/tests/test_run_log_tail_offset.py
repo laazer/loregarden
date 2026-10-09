@@ -184,13 +184,16 @@ def test_a_failed_persist_advances_neither_the_rows_nor_the_offset(ticket_id, is
     """
     streamer = _streamer(ticket_id)
     streamer.start("claude -p 'go'")
-    streamer.append_stream_line("durable")
+    # The offset is set BEFORE the append, which is the ordering the owner uses:
+    # `append_stream_line` can persist by itself, and the offset written in that
+    # transaction has to be the one just past the row it goes with. Setting it
+    # afterwards is the lag this module exists to rule out, and a test written
+    # that way asserts the defect.
     streamer.tail_offset = 8
-    streamer.touch()
+    streamer.append_stream_line("durable")
     rows_before = _row_count(isolated_db)
     assert _stored_content(isolated_db)["tail_offset"] == 8
 
-    streamer.append_stream_line("lost in a locked database")
     streamer.tail_offset = 34
     with (
         mock.patch.object(

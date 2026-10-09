@@ -379,6 +379,15 @@ class RunLogStreamer:
         #: row — the old full-rewrite shape got in-place edits for free.
         self._line_seq: list[int | None] = []
         self._line_written: list[str] = []
+        #: Bytes of this run's `.out` file that have been ingested. Set by the
+        #: owner immediately after each `append_stream_line`, and written into
+        #: the log artifact inside `_persist`'s own transaction — alongside the
+        #: `RunLogLine` rows it points past. An offset that moved without its
+        #: rows loses every line between them at the next restart; one that
+        #: lagged them re-ingests. A byte offset rather than `_persisted_seq`
+        #: because one raw stream line maps to 0..N formatted lines, so a
+        #: sequence number cannot be converted back into a file position.
+        self.tail_offset: int = 0
 
     def _persist_interval(self) -> float:
         """How long to wait before rewriting the log again.
@@ -405,6 +414,10 @@ class RunLogStreamer:
             content = json.loads(artifact.content_json or "{}")
             self._lines = list(read_log_lines(session, self.run_id, content))
             self._live = content.get("live") or ""
+            # Absent on every artifact written before this key existed, which
+            # means "nothing to tail" — no output file exists for such a run —
+            # rather than "re-ingest from byte 0".
+            self.tail_offset = int(content.get("tail_offset") or 0)
             self._stream_buffer = ""
             if stored_as_rows(content):
                 # Resume the sequence where the rows end, so reattaching appends
@@ -737,7 +750,11 @@ class RunLogStreamer:
         only the ones added since the last, so write size tracks new output
         rather than run length.
         """
-        content = {"live": self._live or None, "storage": LOG_STORAGE_ROWS}
+        content = {
+            "live": self._live or None,
+            "storage": LOG_STORAGE_ROWS,
+            "tail_offset": self.tail_offset,
+        }
         payload = json.dumps(content)
 
         def write() -> None:

@@ -161,7 +161,7 @@ def test_the_doctor_reports_the_fallback_before_a_run_rather_than_after_one(
     assert workspace
 
     with mock.patch("shutil.which", return_value=None):
-        findings = doctor.run_doctor(
+        findings = doctor.run_checks(
             db_session,
             workspace,
             Path(workspace.repo_path),
@@ -169,7 +169,7 @@ def test_the_doctor_reports_the_fallback_before_a_run_rather_than_after_one(
         )
 
     assert len(findings) == 1
-    assert findings[0].status is not DoctorStatus.OK
+    assert findings[0].status is not DoctorStatus.PASS
     assert "tmux" in findings[0].finding
 
 
@@ -178,14 +178,14 @@ def test_the_doctor_is_quiet_when_tmux_is_present(db_session: Session):
     assert workspace
 
     with mock.patch("shutil.which", return_value="/usr/bin/tmux"):
-        findings = doctor.run_doctor(
+        findings = doctor.run_checks(
             db_session,
             workspace,
             Path(workspace.repo_path),
             checks=(DoctorCheck.AGENT_DETACH_TRANSPORT,),
         )
 
-    assert findings[0].status is DoctorStatus.OK
+    assert findings[0].status is DoctorStatus.PASS
 
 
 # --- AC18: both transports, one wrapper --------------------------------------

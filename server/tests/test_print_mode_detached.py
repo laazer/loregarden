@@ -249,8 +249,20 @@ def test_a_stream_event_partial_reaches_the_streamer_intact(db_session: Session,
     """AC7. Asserted on the PARSED event, not on raw bytes.
 
     A tailer that flushed a buffered partial as a terminated line would split
-    this JSON object, and `format_stream_payload` would get something the agent
-    never emitted.
+    this JSON object, and the streamer would parse something the agent never
+    emitted.
+
+    Asserted as PARITY — the same answer for the line the tailer delivered as
+    for the line the agent wrote — rather than as `format_stream_payload(...) is
+    not None`. That stronger form was in this test when it was written and is
+    not satisfiable: nothing in `run_log_stream` unwraps the `stream_event`
+    envelope, so the formatter falls through to `_untyped_stream_payload`, finds
+    no `text`/`message` key, and returns None. That predates this ticket, is
+    unchanged by it, and no acceptance criterion asks for it — AC7 asks that
+    what reaches the UI be *identical* before and after. Recorded as a finding
+    rather than fixed here: unwrapping the envelope would start promoting every
+    token delta to its own line, beside the buffered partial path that already
+    handles them.
     """
     payload = {
         "type": "stream_event",
@@ -267,7 +279,8 @@ def test_a_stream_event_partial_reaches_the_streamer_intact(db_session: Session,
     assert len(streamer.lines) == 1
     parsed = json.loads(streamer.lines[0])
     assert parsed == payload
-    assert format_stream_payload(parsed) is not None
+    assert parsed["event"]["delta"]["text"] == "a partial sentence"
+    assert format_stream_payload(parsed) == format_stream_payload(payload)
 
 
 def test_many_interleaved_stream_events_arrive_in_order_and_unsplit(

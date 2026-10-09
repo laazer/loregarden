@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.services.path_resolve import (
     expand_path,
     resolve_icloud_root,
@@ -64,6 +65,15 @@ class Settings(BaseSettings):
     #: Files attached to Home chat turns, one directory per conversation.
     #: Relative paths resolve against ``repo_root``, beside the database.
     chat_attachments_dir: Path = Path("data/chat-attachments")
+    #: Where a detached agent writes its own stdout, stderr and exit code, one
+    #: `<run_code>-<run_id[:8]>.{out,err,rc}` trio per run. Resolved against
+    #: ``repo_root`` below, beside the other data dirs: the agent runs with a
+    #: ticket worktree as its cwd, so a relative path would scatter these.
+    run_log_dir: Path = Path("data/run-logs")
+    #: How an agent process is detached from this server. ``None`` means decide
+    #: at spawn — tmux when it is installed, files otherwise — which is not the
+    #: same as pinning FILE. The per-run toggle is lg-durable-remote-338.
+    agent_detach_transport: AgentTransport | None = None
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"
@@ -220,6 +230,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+settings.run_log_dir = settings.repo_root / settings.run_log_dir
 settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 

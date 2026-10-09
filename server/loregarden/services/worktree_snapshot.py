@@ -96,17 +96,6 @@ class TreeSnapshot:
     def readable(self) -> bool:
         return self.dirty_paths is not None
 
-    def bracket_paths(self) -> set[str]:
-        """The dirty paths to bracket a run's edits with — none if unreadable.
-
-        Treating "could not answer" as "nothing was dirty" is the conservative
-        direction *for bracketing only*: the delta taken after the run then
-        attributes everything it finds to the run rather than silently dropping
-        paths, and the post-run read reports its own failure. Nowhere else may
-        an unreadable tree read as a clean one.
-        """
-        return set(self.dirty_paths or ())
-
 
 def read_tree(repo_root: Path) -> TreeSnapshot:
     """One `git status` of `repo_root`: HEAD, branch, and every dirty path.

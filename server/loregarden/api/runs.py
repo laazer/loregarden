@@ -7,6 +7,7 @@ from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, Ru
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_cancellation import cancel_refusal, request_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
+from loregarden.services.run_output_files import attach_command
 from loregarden.services.run_service import (
     HANDOFF_EXITED_MESSAGE,
     TERMINAL_HANDOFF_COMMAND_PREFIX,
@@ -170,6 +171,13 @@ def get_run_log(run_id: str, session: Session = Depends(get_session)) -> dict:
         "lines": lines if isinstance(lines, list) else [],
         "live": live if isinstance(live, str) else None,
         "stderr": normalize_timeout_stderr(run.stderr or ""),
+        # How this run's process was detached, as one word the modal renders
+        # directly. "" for the 1,449 rows that predate the column, which the
+        # client shows as an em dash rather than guessing `file`.
+        "transport": run.agent_transport.value if run.agent_transport else "",
+        # Composed here: the client cannot know the tmux session name, and ""
+        # is how it knows to render no copy control at all.
+        "attach_command": attach_command(run),
     }
 
 
@@ -196,6 +204,10 @@ def get_run_messages(run_id: str, session: Session = Depends(get_session)) -> di
     return {
         "messages": [_message_payload(m) for m in list_messages(session, run_id)],
         "refusal": steer_refusal(run),
+        # What latches the stop control at "Stopping…". The mutation's own
+        # pending flag resets as soon as the POST returns, and a second press
+        # signals a detached process group the server no longer owns.
+        "cancel_requested_at": iso_utc(run.cancel_requested_at),
     }
 
 

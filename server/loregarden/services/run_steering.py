@@ -53,6 +53,21 @@ def steer_refusal(run: AgentRun | None) -> str:
         return "Run is stopping, so it cannot be steered."
     if not run.ticket_id:
         return "Workspace-scoped chat runs are steered by replying in the chat, not here."
+    if run.agent_transport is not None:
+        # After this one the only remaining check is the adapter's, and a claude
+        # run reports itself steerable today — so a branch placed below it would
+        # never fire on the runs this ticket creates. Placed below the stop and
+        # chat checks instead, because both of those tell the operator what to
+        # do next and this only tells them a fact about the process.
+        #
+        # This closes a pre-existing void rather than adding a limit:
+        # `print_mode` never drained `RunMessage` — only `permission_bridge`
+        # does — so a claude print-mode run has always shown an input that goes
+        # nowhere. Detach makes print mode the path this control plane ships.
+        return (
+            f"This run is detached on {run.agent_transport.value}, which has no stdin "
+            "to write into, so it cannot be steered."
+        )
     adapter = (get_agent(run.agent_id) or {}).get("adapter", "")
     if adapter not in STEERABLE_ADAPTERS:
         return (

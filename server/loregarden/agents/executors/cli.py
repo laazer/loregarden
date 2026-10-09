@@ -12,11 +12,16 @@ from loregarden.agents.cli_adapters import (
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
+from loregarden.agents.executors.agent_spawn import resolve_transport, transport_line
 from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
-from loregarden.agents.executors.run_evidence import record_run_evidence
+from loregarden.agents.executors.run_evidence import (
+    record_run_evidence,
+    run_context_artifacts,
+    run_paths_before,
+)
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -41,6 +46,8 @@ from loregarden.agents.prompt_blocks import (
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
+from loregarden.config import settings
+from loregarden.dot_line import SYS
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
@@ -86,6 +93,7 @@ from loregarden.services.run_errors import (
     agent_timeout_message,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.run_output_files import run_file_stem
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.target_branch import resolve_target_branch
@@ -179,12 +187,11 @@ class CliAgentExecutor:
         stage_def = self._resolve_stage_def(ticket, run)
         ticket_runtime = get_ticket_orchestration_runtime(ticket)
 
-        # Bracket the run so its commit can be scoped to what it touched. Paths
-        # already dirty beforehand belong to whatever else is in the workspace
-        # and must not be attributed to this ticket.
-        # One read serves the boundary and the evidence ledger too: nothing
-        # between here and the agent's start touches the tree. See
-        # `TreeSnapshot.bracket_paths` for an unreadable tree.
+        # One read serves the run's git boundary and the evidence ledger:
+        # nothing between here and the agent's start touches the tree. What the
+        # run inherited is read back off its own row afterwards
+        # (`run_paths_before`), so the reattaching path and this one give one
+        # answer rather than two.
         before = read_tree(repo_root)
 
         parked = self._record_and_check_boundary(
@@ -291,12 +298,19 @@ class CliAgentExecutor:
                     )
                     stdout, stderr, status = result.stdout, result.stderr, result.status
                 else:
+                    transport = resolve_transport(settings.agent_detach_transport)
+                    streamer.append(
+                        SYS.name,
+                        transport_line(transport, run_file_stem(run.run_code, run.id)),
+                        force=True,
+                    )
                     stdout, stderr, status = run_print_mode(
                         invocation=invocation,
                         repo_root=repo_root,
                         timeout=timeout,
                         streamer=streamer,
                         run_id=run.id,
+                        run_code=run.run_code,
                     )
 
                 streamer.finalize(status=status, stderr=stderr)
@@ -304,11 +318,11 @@ class CliAgentExecutor:
                     self.session,
                     run,
                     repo_root=repo_root,
-                    paths_before=before.bracket_paths(),
+                    paths_before=run_paths_before(run),
                     stdout=stdout,
                     invocation=invocation,
                 )
-                artifacts = self._build_context_artifact(ticket, run, status)
+                artifacts = run_context_artifacts(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
                     status=status,
@@ -326,7 +340,7 @@ class CliAgentExecutor:
                     invocation=invocation,
                     fallback_timeout=timeout,
                     repo_root=repo_root,
-                    paths_before=before.bracket_paths(),
+                    paths_before=run_paths_before(run),
                     streamer=streamer,
                     advance_workflow=advance_workflow,
                 )
@@ -1051,32 +1065,3 @@ class CliAgentExecutor:
             },
             run_id=run.id,
         )
-
-    def _build_context_artifact(
-        self,
-        ticket: Ticket,
-        run: AgentRun,
-        status: RunStatus,
-    ) -> list[dict]:
-        return [
-            {
-                "kind": "context",
-                "title": "Run context",
-                "content": {
-                    "sections": [
-                        {
-                            "title": "Execution",
-                            "rows": [
-                                {"k": "Run", "v": run.run_code},
-                                {"k": "Ticket", "v": ticket.external_id},
-                                {"k": "Agent", "v": run.agent_id},
-                                {"k": "Skill", "v": run.skill_name or "—"},
-                                {"k": "Stage", "v": run.stage_key},
-                                {"k": "Command", "v": run.command or "—"},
-                                {"k": "Status", "v": status.value},
-                            ],
-                        }
-                    ]
-                },
-            },
-        ]

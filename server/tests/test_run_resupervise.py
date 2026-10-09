@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from unittest import mock
 from uuid import uuid4
@@ -45,7 +46,7 @@ from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_output_files import paths_for
 from loregarden.services.run_resupervise import resupervise
-from loregarden.services.workflow_state import initial_stages_json
+from loregarden.services.workflow_state import initial_stages_json, set_stage_status
 from sqlmodel import Session, select
 
 IMPLEMENT = "implement"
@@ -128,14 +129,18 @@ def adopted_fixture(db_session: Session, tmp_path) -> AgentRun:
     db_session.add(ticket)
     db_session.commit()
     db_session.refresh(ticket)
-    db_session.add(
-        WorkflowInstance(
-            ticket_id=ticket.id,
-            template_id=template.id,
-            current_stage_key=IMPLEMENT,
-            stages_json=initial_stages_json(stages),
-        )
+    instance = WorkflowInstance(
+        ticket_id=ticket.id,
+        template_id=template.id,
+        current_stage_key=IMPLEMENT,
+        stages_json=initial_stages_json(stages),
     )
+    # The stage the surviving run belongs to is RUNNING on the instance too, not
+    # just on the ticket. `initial_stages_json` marks every stage pending, so a
+    # fixture that stopped there describes a ticket nobody has started — and the
+    # cursor assertions are read off this map, not off the ticket column.
+    set_stage_status(ticket, instance, stages, IMPLEMENT, StageStatus.RUNNING)
+    db_session.add(instance)
 
     run = AgentRun(
         workspace_id=workspace.id,
@@ -178,9 +183,13 @@ def _log_lines(db_session: Session, run: AgentRun) -> list[str]:
 
 
 def _stage_status(db_session: Session, ticket_id: str) -> StageStatus:
+    return _stage_status_of(db_session, ticket_id, IMPLEMENT)
+
+
+def _stage_status_of(db_session: Session, ticket_id: str, stage_key: str) -> StageStatus:
     ticket = db_session.get(Ticket, ticket_id)
     assert ticket
-    return OrchestrationService(db_session).stage_status(ticket, IMPLEMENT)
+    return OrchestrationService(db_session).stage_status(ticket, stage_key)
 
 
 # --- AC11: reattach starts a resume, not a watch -----------------------------
@@ -193,6 +202,12 @@ def test_reattach_starts_resupervise_for_every_adopted_run(db_session: Session, 
         mock.patch.object(run_reattach, "resupervise") as started,
     ):
         run_reattach.reattach_surviving_runs(db_session, interval_seconds=0.01)
+        # It is started on a daemon thread, so `start()` returning does not mean
+        # the target has been entered. Waited for inside the patch window —
+        # outside it the real `resupervise` would run against a live row.
+        deadline = time.monotonic() + 10
+        while started.call_count == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
 
     assert started.call_count == 1
     assert (
@@ -270,7 +285,17 @@ def test_the_stage_cursor_moves_when_a_reattached_run_passes(db_session: Session
     """AC12, asserted on the STAGE CURSOR rather than on log text.
 
     The whole point of gap #2: today the stage never completes, commits or
-    routes, so the ticket sits on `implement` with nothing alive behind it.
+    routes, so the ticket sits on `implement` RUNNING with nothing alive behind
+    it, until the lease boundary settles it as un-supervised.
+
+    The cursor is the (stage, status) pair, and a pass leaves it on the finished
+    stage reading `done` — it is the next DISPATCH that moves `workflow_stage_key`
+    on, not completion (`tests/test_cursor_move_status.py` is the record of why:
+    a cursor move that implied a status once fabricated a completed stage). This
+    test asserted `workflow_stage_key == "verify"` when it was written, which
+    `execute()` does not produce either: both paths converge on `complete_run`,
+    which is AC13. So what is asserted is that the stage really finished and the
+    next one is now the one waiting to run.
     """
     ticket_id = adopted.ticket_id
     assert _stage_status(db_session, ticket_id) is StageStatus.RUNNING
@@ -281,7 +306,9 @@ def test_the_stage_cursor_moves_when_a_reattached_run_passes(db_session: Session
 
     db_session.expire_all()
     assert _stage_status(db_session, ticket_id) is StageStatus.DONE
-    assert db_session.get(Ticket, ticket_id).workflow_stage_key == "verify"
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket.workflow_stage_status is StageStatus.DONE
+    assert _stage_status_of(db_session, ticket_id, "verify") is StageStatus.PENDING
 
 
 def test_the_stage_report_from_the_file_is_what_routes(db_session: Session, adopted):
@@ -430,6 +457,28 @@ def test_renewal_is_skipped_on_a_reading_that_cannot_answer(db_session: Session,
         resupervise(adopted.id, interval_seconds=0)
 
     assert renew.call_count == 1
+
+
+def test_the_beat_skips_on_unknown_and_stops_only_on_gone(db_session: Session, adopted):
+    """A transient `ps` failure mid-supervision must not end renewal for good.
+
+    Moved here with the watcher it tests (AC11): this was
+    `test_run_reattach.py::test_the_watch_skips_a_beat_on_unknown_and_stops_only_on_gone`
+    against `run_reattach._watch`, which is now `_supervise_until_gone`. The
+    assertion is unchanged — four readings, two of them ALIVE, two renewals.
+    """
+    _write_output(adopted, out="working\n", rc="0")
+    readings = iter(
+        [ProcessState.ALIVE, ProcessState.UNKNOWN, ProcessState.ALIVE, ProcessState.GONE]
+    )
+
+    with (
+        mock.patch.object(run_resupervise, "liveness", side_effect=lambda *_: next(readings)),
+        mock.patch.object(run_resupervise, "renew_agent_run_lease") as renew,
+    ):
+        resupervise(adopted.id, interval_seconds=0)
+
+    assert renew.call_count == 2
 
 
 # --- AC13: one settlement path -----------------------------------------------

@@ -47,10 +47,9 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.parallel_stage import (
-    ParallelMemberResult,
     latest_member_run,
     member_passed,
-    member_result_from_run,
+    member_runs_and_results,
     member_skill_name,
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
@@ -308,7 +307,7 @@ def _begin_parallel_stage(
         # Every member had already been settled while the stage sat RUNNING.
         # Reconciling is what finalizes it; returning an empty checkout without
         # doing so would leave the harness asking for this stage forever.
-        _, results = _member_runs_and_results(session, ticket, stage_def, stage_key)
+        _, results = member_runs_and_results(session, ticket, stage_def, stage_key)
         reconcile_parallel_stage(session, ticket, orch_run, stage_key, results)
         session.refresh(ticket)
         return ExternalStageView(
@@ -457,25 +456,6 @@ def _begin_external_stage(
     )
 
 
-def _member_runs_and_results(
-    session: Session, ticket: Ticket, stage_def: WorkflowStageDef, stage_key: str
-) -> tuple[int, list[ParallelMemberResult]]:
-    """How many members are still outstanding, and how the settled ones judged.
-
-    A member is outstanding while it has no run of this stage at all, or its
-    latest one is still in flight. The stage cannot settle until none are.
-    """
-    outstanding = 0
-    results: list[ParallelMemberResult] = []
-    for spec in stage_def.parallel_agents:
-        latest = latest_member_run(session, ticket, stage_def, stage_key, spec)
-        if latest is None or latest.status == RunStatus.RUNNING:
-            outstanding += 1
-            continue
-        results.append(member_result_from_run(latest))
-    return outstanding, results
-
-
 def _record_external_usage(
     session: Session,
     run: AgentRun,
@@ -583,7 +563,7 @@ def finish_external_stage(
     outstanding = 0
     stage_finalized = True
     if parallel:
-        outstanding, results = _member_runs_and_results(session, ticket, stage_def, run.stage_key)
+        outstanding, results = member_runs_and_results(session, ticket, stage_def, run.stage_key)
         stage_finalized = outstanding == 0
         if stage_finalized:
             if orch_run is None:
