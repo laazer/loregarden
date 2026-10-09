@@ -37,9 +37,16 @@
   cursor: ns-resize;
 }
 
+/* Out of flow, along the dock's left edge. The dock is a column at both edges,
+   so an in-flow grip with `height: 100%` took the whole column as its main size
+   and left the body — and every message in it — 0px tall. */
 .dock-resize-handle--vertical {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
   width: 7px;
-  height: 100%;
   cursor: ew-resize;
 }
 
@@ -71,6 +78,7 @@
 }
 
 .copilot-dock--edge-right {
+  position: relative;
   flex: 1 1 auto;
   border-top: none;
   max-height: none;
