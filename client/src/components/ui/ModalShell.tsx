@@ -12,6 +12,8 @@ interface ModalShellProps {
   onDismiss: (() => void) | undefined;
   /** Id of the element that names the dialog. */
   labelledBy: string;
+  /** Id of the element that describes it, when there is one (`aria-describedby`). */
+  describedBy?: string;
   /** Extra classes for the panel, e.g. `modal-panel-wide`. */
   panelClassName?: string;
   children: ReactNode;
@@ -31,7 +33,14 @@ interface ModalShellProps {
  * moves `y` by 2% of the panel's height. Reduced motion: the global CSS rule
  * covers the entrance, the root `MotionConfig` the exit.
  */
-export function ModalShell({ open, onDismiss, labelledBy, panelClassName, children }: ModalShellProps) {
+export function ModalShell({
+  open,
+  onDismiss,
+  labelledBy,
+  describedBy,
+  panelClassName,
+  children,
+}: ModalShellProps) {
   // Registered from the shell, not the panel: a closed dialog stops claiming
   // Escape at once, not when its exit finishes.
   useDialogDismiss(open ? onDismiss : null);
@@ -47,6 +56,7 @@ export function ModalShell({ open, onDismiss, labelledBy, panelClassName, childr
             key="modal"
             onDismiss={onDismiss}
             labelledBy={labelledBy}
+            describedBy={describedBy}
             panelClassName={panelClassName}
           >
             {children}
@@ -60,6 +70,7 @@ export function ModalShell({ open, onDismiss, labelledBy, panelClassName, childr
 function ModalShellContent({
   onDismiss,
   labelledBy,
+  describedBy,
   panelClassName,
   children,
 }: Omit<ModalShellProps, "open">) {
@@ -100,6 +111,7 @@ function ModalShellContent({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         inert={!isPresent}
         aria-hidden={isPresent ? undefined : true}
         style={leaving}

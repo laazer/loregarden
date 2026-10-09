@@ -1,8 +1,7 @@
 import type { ScheduleToReplace } from "../../../lib/scheduleFormat";
-import { useDialogDismiss } from "../../../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../../../hooks/useDialogFocusTrap";
 import { IconCloseButton } from "../../IconCloseButton";
 import { Button } from "../../ui/Button";
+import { ModalShell } from "../../ui/ModalShell";
 
 /**
  * The warning "Draft schedule" goes through once a schedule exists.
@@ -21,55 +20,46 @@ export function RedraftConfirmModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  useDialogDismiss(replaces ? onClose : null);
-  if (!replaces) return null;
+  if (!replaces) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="redraft-confirm-title">{null}</ModalShell>;
+  }
 
   return (
-    <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby="redraft-confirm-title"
-        aria-describedby="redraft-confirm-body"
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Schedule</div>
-            <h2 id="redraft-confirm-title" className="modal-title">
-              Replace the current schedule?
-            </h2>
-          </div>
-          <IconCloseButton onClick={onClose} />
+    <ModalShell open onDismiss={onClose} labelledBy="redraft-confirm-title" describedBy="redraft-confirm-body">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Schedule</div>
+          <h2 id="redraft-confirm-title" className="modal-title">
+            Replace the current schedule?
+          </h2>
         </div>
-
-        <div id="redraft-confirm-body" className="modal-body plan-redraft-body">
-          <ul>
-            {replaces.pendingProposal ? (
-              <li>The proposal waiting for you is replaced as soon as the new draft is filed.</li>
-            ) : null}
-            {replaces.targets > 0 ? (
-              <li>
-                Accepting the new draft overwrites the {replaces.targets} target date
-                {replaces.targets === 1 ? "" : "s"} set now, and can reorder the milestones.
-              </li>
-            ) : null}
-          </ul>
-          <p className="plan-muted">Your current dates stay in force until you press Accept on the new draft.</p>
-        </div>
-
-        <div className="modal-footer">
-          <Button variant="secondary" onClick={onClose}>
-            Keep the current schedule
-          </Button>
-          <Button variant="primary" onClick={onConfirm}>
-            Draft a new schedule
-          </Button>
-        </div>
+        <IconCloseButton onClick={onClose} />
       </div>
-    </>
+
+      <div id="redraft-confirm-body" className="modal-body plan-redraft-body">
+        <ul>
+          {replaces.pendingProposal ? (
+            <li>The proposal waiting for you is replaced as soon as the new draft is filed.</li>
+          ) : null}
+          {replaces.targets > 0 ? (
+            <li>
+              Accepting the new draft overwrites the {replaces.targets} target date
+              {replaces.targets === 1 ? "" : "s"} set now, and can reorder the milestones.
+            </li>
+          ) : null}
+        </ul>
+        <p className="plan-muted">Your current dates stay in force until you press Accept on the new draft.</p>
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" onClick={onClose}>
+          Keep the current schedule
+        </Button>
+        <Button variant="primary" onClick={onConfirm}>
+          Draft a new schedule
+        </Button>
+      </div>
+    </ModalShell>
   );
 }
