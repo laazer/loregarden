@@ -234,7 +234,7 @@ export function HiveCssAgent({
   return (
     <div
       ref={rootRef}
-      className={`hive-css__agent hive-css__agent--pathing hive-css__agent--${agent.motion}${
+      className={`hive-css__agent hive-css__agent--${agent.motion}${
         agent.pulsing ? " hive-css__agent--pulse" : ""
       }`}
       style={{ left: initialPos.left, top: initialPos.top, color: agent.color }}

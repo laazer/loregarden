@@ -6,6 +6,7 @@ import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigati
 import { Button } from "../ui/Button";
 import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
+import { progressFillStyle } from "../../lib/progressFill";
 
 interface InitiativeCardProps {
   initiative: InitiativeView;
@@ -191,7 +192,7 @@ export function InitiativeCard({
         aria-valuemax={100}
         aria-valuenow={pct}
       >
-        <div className="initiative-progress-fill" style={{ width: `${pct}%` }} />
+        <div className="initiative-progress-fill" style={progressFillStyle(pct)} />
       </div>
       <div className="initiative-muted">
         {total === 0

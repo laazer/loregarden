@@ -20,6 +20,7 @@
  */
 
 import "./CapacityMeter.css";
+import { progressFillStyle } from "../../lib/progressFill";
 
 export type CapacityTone = "normal" | "tight" | "full" | "unknown";
 
@@ -85,7 +86,7 @@ export function CapacityMeter({
         data-tone={resolved}
       >
         {measured ? (
-          <span className="capacity-meter-fill" style={{ width: `${percent}%` }} aria-hidden />
+          <span className="capacity-meter-fill" style={progressFillStyle(percent)} aria-hidden />
         ) : null}
       </div>
     </div>

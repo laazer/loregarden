@@ -208,7 +208,7 @@ function cssErrors(filePath, content, added, waivers, facts) {
       flag(decl, `a keyframe animates '${decl.prop}', which relayouts the page every frame; animate transform (translate/scale) or opacity instead`);
       return;
     }
-    if (decl.prop === "transition" || decl.prop === "transition-property") {
+    if ((decl.prop === "transition" || decl.prop === "transition-property") && !isNone(decl.value)) {
       for (const prop of transitionedProperties(decl)) {
         if (prop === "all") {
           flag(decl, `'transition: all' animates whatever changes, layout included; name the properties (transform, opacity, …)`);

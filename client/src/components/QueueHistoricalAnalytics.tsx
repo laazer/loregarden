@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { API_BASE } from '../api/client';
 import { describeError } from '../state/toastStore';
 import './QueueHistoricalAnalytics.css';
+import { progressFillStyle } from '../lib/progressFill';
 
 export interface RunMetrics {
   ticket_type: string;
@@ -160,7 +161,7 @@ export function QueueHistoricalAnalytics({
                   className={`success-fill ${getSuccessColor(
                     metric.success_rate
                   )}`}
-                  style={{ width: `${metric.success_rate * 100}%` }}
+                  style={progressFillStyle(metric.success_rate * 100)}
                 />
               </div>
 

@@ -198,6 +198,8 @@
 .lg-chat-loading-track {
   --lg-chat-walker-size: 56px;
   position: relative;
+  /* The walker crosses the track with `translate` in cqw: the track's width, not its own. */
+  container-type: inline-size;
   width: 100%;
   height: calc(var(--lg-chat-walker-size) + 8px);
   overflow: hidden;
@@ -215,7 +217,7 @@
   width: var(--lg-chat-walker-size);
   height: var(--lg-chat-walker-size);
   animation: lg-chat-pace 3.6s linear infinite;
-  will-change: left, transform;
+  will-change: translate, transform;
 }
 
 .lg-chat-loading-walker .baxter-avatar {
@@ -238,23 +240,23 @@
 
 @keyframes lg-chat-pace {
   0% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(1);
   }
   46% {
-    left: calc(100% - var(--lg-chat-walker-size));
+    translate: calc(100cqw - var(--lg-chat-walker-size)) 0;
     transform: scaleX(1);
   }
   50% {
-    left: calc(100% - var(--lg-chat-walker-size));
+    translate: calc(100cqw - var(--lg-chat-walker-size)) 0;
     transform: scaleX(-1);
   }
   96% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(-1);
   }
   100% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(1);
   }
 }
