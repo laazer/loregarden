@@ -22,7 +22,10 @@ from loregarden.models.domain import (
     WorkItemType,
 )
 from loregarden.services.autopilot_sign_off import (
+    RESOLVED_BY_AUTOMATION,
+    auto_approve_may_sign_off,
     autopilot_may_sign_off,
+    record_auto_approve_sign_off,
     record_autopilot_sign_off,
 )
 from loregarden.services.design_plan_gate import (
@@ -137,9 +140,10 @@ def resolve_gate_if_permitted(
     """Resolve the awaiting gate on `stage` when the run is allowed to.
 
     Design-plan stages under `approve_design_plans`, and legacy stage sign-offs
-    on a ticket the initiative autopilot started (`autopilot_sign_off`).
-    `auto_approve` never bypasses human-required exit actions (AC-6). Returns
-    True when a gate was resolved and the loop may continue.
+    on a ticket the initiative autopilot started or under an `auto_approve` run
+    (`autopilot_sign_off`). `auto_approve` never bypasses any other
+    human-required exit action (AC-6). Returns True when a gate was resolved and
+    the loop may continue.
     """
     design_plan = orchestrator_may_sign_off(orch_run, stage, auto_approve=auto_approve)
     approval = session.exec(
@@ -153,7 +157,8 @@ def resolve_gate_if_permitted(
     if not approval:
         return False
     autopilot = None if design_plan else autopilot_may_sign_off(session, ticket, approval)
-    if not design_plan and autopilot is None:
+    by_run = not design_plan and autopilot is None and auto_approve_may_sign_off(orch_run, approval)
+    if not design_plan and autopilot is None and not by_run:
         return False
     # Operator judgment only: an authority grant or a recheck is never made
     # unattended, so such a gate pauses the run for a person.
@@ -162,14 +167,16 @@ def resolve_gate_if_permitted(
     ApprovalService(session).resolve(approval.id, approved=True)
     approval = session.get(Approval, approval.id)
     if approval is not None:
-        approval.resolved_by = "automation"
+        approval.resolved_by = RESOLVED_BY_AUTOMATION
         approval.resolving_orchestration_run_id = orch_run.id
         session.add(approval)
         session.commit()
-    if autopilot is None:
+    if design_plan:
         record_design_plan_sign_off(session, ticket, orch_run, stage.key)
-    elif approval is not None:
+    elif approval is not None and autopilot is not None:
         record_autopilot_sign_off(session, ticket, autopilot, approval)
+    elif approval is not None:
+        record_auto_approve_sign_off(session, ticket, orch_run, approval)
     session.refresh(ticket)
     return True
 

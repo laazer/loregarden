@@ -33,6 +33,7 @@ from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.oversized_ticket_split import split_oversized_ticket
 from loregarden.services.parallel_stage import (
     ParallelMemberResult,
     latest_member_run,
@@ -187,6 +188,10 @@ class BuiltinOrchestrator:
             if orch_run.timeout_override_seconds is not None
             else timeout_seconds
         )
+
+        # Before any stage: an oversized ticket becomes an aggregator over its
+        # parts, which the loop below then runs as children.
+        split_oversized_ticket(self.session, ticket, self.callbacks)
 
         stages_run = 0
         try:

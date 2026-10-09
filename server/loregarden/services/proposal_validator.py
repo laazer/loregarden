@@ -28,7 +28,10 @@ class ProposalValidator:
     MAX_TITLE_LENGTH = 1024
     MAX_DESCRIPTION_LENGTH = 10000
     MAX_ACCEPTANCE_CRITERIA_ITEMS = 10
-    MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH = 500
+    # Measured 2026-10-09: 142 of 5,921 live criteria exceed 500 chars, the
+    # longest 1,419. A split carries criteria over verbatim, so 500 refused the
+    # very tickets that most needed splitting.
+    MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH = 2000
     PRIORITY_MIN = 1
     PRIORITY_MAX = 3
     MAX_HIERARCHY_DEPTH = 10

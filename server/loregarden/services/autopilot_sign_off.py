@@ -7,6 +7,11 @@ while the autopilot is still on, the operator has already said who drives — so
 the autopilot answers that gate itself, the way `approve_design_plans` answers a
 design plan's, and says so in the ticket history and in its own log.
 
+An orchestration started with `auto_approve` signs the same gates: the
+operator asked for the run to proceed unattended, and this gate asks nothing
+beyond "may it proceed". Without this, an auto-approve run outside an
+initiative parked at every one for a person.
+
 Deliberately narrow. Every outstanding action on the gate must be the legacy
 sign-off: a gate authored as a real question, an authority grant or a recheck
 stays a person's (AC-6). Turning the autopilot off hands these gates back.
@@ -19,6 +24,7 @@ from loregarden.models.domain import (
     AutopilotAction,
     AutopilotEvent,
     InitiativePlan,
+    OrchestrationRun,
     OrchestratorDecision,
     Ticket,
 )
@@ -34,6 +40,9 @@ LEGACY_SIGN_OFF_KEY = "legacy-stage-sign-off"
 
 #: `Approval.resolved_by` for a gate the autopilot signed.
 RESOLVED_BY_AUTOPILOT = "autopilot"
+
+#: `Approval.resolved_by` for a gate an orchestration run signed.
+RESOLVED_BY_AUTOMATION = "automation"
 
 
 def _gate_is_legacy_sign_off_only(approval: Approval) -> bool:
@@ -82,6 +91,35 @@ def autopilot_may_sign_off(
     if not _gate_is_legacy_sign_off_only(approval):
         return None
     return autopilot_driving(session, ticket)
+
+
+def auto_approve_may_sign_off(orch_run: OrchestrationRun | None, approval: Approval) -> bool:
+    """Whether an `auto_approve` run signs this gate: legacy sign-off only."""
+    return (
+        orch_run is not None and orch_run.auto_approve and _gate_is_legacy_sign_off_only(approval)
+    )
+
+
+def record_auto_approve_sign_off(
+    session: Session, ticket: Ticket, orch_run: OrchestrationRun, approval: Approval
+) -> None:
+    """Say in the ticket history that the auto-approve run, not a person, approved."""
+    approval.resolved_by = RESOLVED_BY_AUTOMATION
+    approval.resolving_orchestration_run_id = orch_run.id
+    session.add(approval)
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.APPROVED_LEGACY_SIGN_OFF,
+        stage_key=approval.stage_key,
+        reason=(
+            f"Approved the '{approval.stage_key}' stage gate on the run's behalf, as the run "
+            "was started with auto-approve. Start it without auto-approve to approve these "
+            "gates yourself."
+        ),
+        evidence={"orchestration_run_code": orch_run.run_code, "approval_id": approval.id},
+    )
+    session.commit()
 
 
 def record_autopilot_sign_off(
