@@ -4293,6 +4293,13 @@ label:is(
   flex-direction: column;
 }
 
+/* A dialog rendered through ModalShell animates in JS, enter and exit both;
+   the CSS entrance above would play a second time underneath it. */
+.modal-overlay--shell,
+.modal-panel--shell {
+  animation: none;
+}
+
 .modal-panel-wide {
   width: min(720px, calc(100vw - 32px));
 }
