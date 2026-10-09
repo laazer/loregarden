@@ -122,7 +122,7 @@
   border-radius: 999px;
   background: var(--bg3);
   border: 1px solid var(--bd2);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
   position: relative;
 }
 
@@ -134,7 +134,7 @@
   height: 14px;
   border-radius: 50%;
   background: var(--txm);
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: transform var(--t-fast) ease, background var(--t-fast) ease;
 }
 
 .topbar-switch-input:checked + .topbar-switch-track {

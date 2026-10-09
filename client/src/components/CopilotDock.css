@@ -54,7 +54,7 @@
   border-radius: 999px;
   background: var(--bd2);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--t-fast) ease;
 }
 
 .dock-resize-handle--horizontal .dock-resize-handle-grip {
