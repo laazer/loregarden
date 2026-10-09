@@ -26,7 +26,7 @@ The database is the source of truth for tickets, workflow templates, agent defin
 
   ![Parallel execution queue with three worktree lanes](docs/screenshots/queue.png)
 
-- Initiatives: a cross-workspace layer above milestones, with a dependency-graph planning page, suggested sprints, and an autopilot that paces tickets into the queue
+- Initiatives, which group milestones across workspaces, with a dependency-graph planning page, suggested sprints, and an autopilot that paces tickets into the queue
 
   ![Initiative plan with a milestone schedule and the planning agent](docs/screenshots/initiatives.png)
 
@@ -43,7 +43,7 @@ The database is the source of truth for tickets, workflow templates, agent defin
 - A host and Docker capacity ledger that queues agent runs and gates so concurrent work does not overload the machine
 - A run monitor that turns thrashing, stalled, and drifted runs into tickets
 - Two-way sync between tickets and GitHub issues
-- Instances: launch, inspect, and stop branch servers and clients per workspace, from the UI or over MCP
+- Instances for launching, inspecting, and stopping a workspace's branch servers and clients, from the UI or over MCP
 - A memory graph of learnings and knowledge, with a Memory page to browse it and an optional Obsidian export
 
 ## Prerequisites
@@ -70,7 +70,7 @@ task server   # FastAPI at http://127.0.0.1:8000
 task client   # Vite at http://localhost:5173
 ```
 
-`task dev` checks your Claude Code login first, so the prompt is not buried under Vite's output.
+`task dev` checks your Claude Code login before it starts Vite, because Vite's output would otherwise bury the prompt.
 
 To try a change against a copy of your real data without touching the live database, run `task sandbox` (server on :8123, client on :5174). Without a live database it seeds a production-shaped one instead (`task sandbox -- --seeded`).
 
@@ -136,7 +136,7 @@ task workspace:docs  -- <workspace-root>   # control-plane section in AGENTS.md
 > [!WARNING]
 > The desktop app is under active development and not yet working. Use the browser IDE (`task dev`) instead.
 
-Loregarden ships as a Tauri desktop app using the same React frontend and FastAPI backend:
+The desktop app is a Tauri shell around the same React frontend and FastAPI backend:
 
 ```bash
 npm install
@@ -187,11 +187,11 @@ For contributors and coding agents, [AGENTS.md](AGENTS.md) is the repository map
 
 ## More docs
 
-- [AGENTS.md](AGENTS.md) — repository map and code layout
-- [CLAUDE.md](CLAUDE.md) — operating manual for coding agents working in this repo
-- [docs/tauri.md](docs/tauri.md) — desktop backend lifecycle and packaging
-- [docs/ci-setup.md](docs/ci-setup.md) — CI configuration
-- [docs/AUDIT.md](docs/AUDIT.md) — architecture/security audit notes
+- [AGENTS.md](AGENTS.md): repository map and code layout
+- [CLAUDE.md](CLAUDE.md): operating manual for coding agents working in this repo
+- [docs/tauri.md](docs/tauri.md): desktop backend lifecycle and packaging
+- [docs/ci-setup.md](docs/ci-setup.md): CI configuration
+- [docs/AUDIT.md](docs/AUDIT.md): architecture/security audit notes
 
 ## License
 
