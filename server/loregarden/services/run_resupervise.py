@@ -453,14 +453,19 @@ def _delete_output_files(paths: RunOutputPaths) -> None:
     """This run's files, now that the transcript is durable in `run_log_lines`.
 
     The prompt goes with them: it is the run's stdin, it is as large as a stage
-    prompt, and nothing reads it once the agent has exited.
+    prompt, and nothing reads it once the agent has exited. `.env` is in the
+    list as a BACKSTOP only — a tmux pane deletes its own env file between
+    sourcing it and `exec`, so it is normally gone within milliseconds of the
+    spawn, and the case this covers is a pane that died before it got that far.
+    It holds the host's API tokens, so it is the one of these files that must
+    not be left to a retention policy that does not exist.
 
     Safe only in that order: deleting them while the rows were still unwritten
     would destroy the only copy.
 
-    This is the ONLY place anything under `settings.run_log_dir` is deleted, so
-    a run that settled on the live path leaves its four files behind, and so
-    does a run whose row was never settled. Nothing sweeps them:
+    This is the only place the TRANSCRIPT files are deleted, so a run that
+    settled on the live path leaves `.out`, `.err`, `.rc` and `.prompt` behind,
+    and so does a run whose row was never settled. Nothing sweeps them:
     `worktree_lifecycle.reconcile_worktrees` works off `Worktree` rows and
     cannot relate an output stem to one, and nothing else reads `run_log_dir`.
     A retention policy matches no acceptance criterion on this ticket and is
@@ -468,7 +473,7 @@ def _delete_output_files(paths: RunOutputPaths) -> None:
     away, because a docstring claiming a sweep that does not exist is how the
     gap stays invisible.
     """
-    for path in (paths.out, paths.err, paths.rc, paths.prompt):
+    for path in (paths.out, paths.err, paths.rc, paths.prompt, paths.env):
         try:
             path.unlink(missing_ok=True)
         except OSError:

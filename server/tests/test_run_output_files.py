@@ -82,7 +82,7 @@ def test_two_runs_sharing_a_run_code_do_not_share_a_stem():
     assert run_file_stem(RUN_CODE, RUN_ID) != run_file_stem(RUN_CODE, other)
 
 
-def test_the_four_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
+def test_the_five_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
     paths = paths_for(RUN_CODE, RUN_ID)
     stem = run_file_stem(RUN_CODE, RUN_ID)
 
@@ -91,6 +91,7 @@ def test_the_four_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
         err=run_log_dir / f"{stem}.err",
         rc=run_log_dir / f"{stem}.rc",
         prompt=run_log_dir / f"{stem}.prompt",
+        env=run_log_dir / f"{stem}.env",
     )
 
 

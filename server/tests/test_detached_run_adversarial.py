@@ -47,7 +47,9 @@ a half-written `.rc` file actually takes.
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -66,6 +68,7 @@ from loregarden.services.run_output_files import (
     recorded_exit_status,
     run_file_stem,
     tmux_session_name,
+    write_env_file,
 )
 
 has_tmux = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
@@ -82,7 +85,13 @@ def run_log_dir_fixture(tmp_path, monkeypatch) -> Path:
     return target
 
 
-def _invocation(script: str, *, run_id: str, stdin_prompt: str | None = None) -> SimpleNamespace:
+def _invocation(
+    script: str,
+    *,
+    run_id: str,
+    stdin_prompt: str | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> SimpleNamespace:
     """A print-mode invocation carrying this run's identity, as `cli.py` builds it.
 
     `invocation.env` is the overlay that matters: `invocation_env` STRIPS
@@ -97,7 +106,7 @@ def _invocation(script: str, *, run_id: str, stdin_prompt: str | None = None) ->
         stdin_prompt=stdin_prompt,
         interactive=False,
         adapter="local",
-        env={RUN_ID_ENV: run_id, ORCHESTRATED_ENV: "1"},
+        env={RUN_ID_ENV: run_id, ORCHESTRATED_ENV: "1", **(extra_env or {})},
     )
 
 
@@ -108,9 +117,10 @@ def _spawn(
     run_id: str,
     run_code: str,
     stdin_prompt: str | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> SpawnedAgent:
     return spawn_agent(
-        _invocation(script, run_id=run_id, stdin_prompt=stdin_prompt),
+        _invocation(script, run_id=run_id, stdin_prompt=stdin_prompt, extra_env=extra_env),
         Path.cwd(),
         run_id=run_id,
         run_code=run_code,
@@ -127,11 +137,20 @@ def _kill_session(stem: str) -> None:
 
 
 def _wait_for_rc(run_code: str, run_id: str, timeout: float = 20.0) -> str:
+    """Block until `.rc` holds an exit code — CONTENT, not just existence.
+
+    `printf %s "$rc" > rc` creates the file and then writes it, so a poll on
+    `exists()` alone can read the empty window between the two and report `""`
+    as this run's exit status. Nothing in production reads `.rc` that early:
+    both settlement paths read it only once the wrapper is gone, and the
+    wrapper writes it before it exits.
+    """
     paths = paths_for(run_code, run_id)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if paths.rc.exists():
-            return paths.rc.read_text(encoding="utf-8")
+        recorded = paths.rc.read_text(encoding="utf-8") if paths.rc.exists() else ""
+        if recorded:
+            return recorded
         time.sleep(0.05)
     raise AssertionError(f"{run_code} never recorded an exit code")
 
@@ -155,8 +174,13 @@ def stale_tmux_server_fixture():
     panes, and killing the server would kill them. Creating one more session is
     enough — after this fixture a server certainly exists, and it certainly does
     not carry the run id the test is about to spawn.
+
+    The decoy's own name carries a uuid for the same reason every run file does:
+    `tmux new-session -d -s <existing>` exits 1, and this repo runs its suite
+    under `pytest -n` against one host-global tmux server, so a literal name is
+    a collision between workers rather than a session.
     """
-    decoy = "lg-stale-server-decoy"
+    decoy = f"lg-stale-server-decoy-{uuid4().hex[:8]}"
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", decoy, "sh", "-c", "sleep 300"],
         env={**{RUN_ID_ENV: POISON_RUN_ID}, "PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": "/tmp"},
@@ -310,6 +334,119 @@ def test_a_tmux_run_whose_log_dir_contains_a_space_still_records_its_output(
         _kill_session(stem)
 
     assert seen == "landed\n"
+
+
+# --- The pane command is argv, and argv is public ----------------------------
+
+#: A stand-in for the real thing. The live values are CLAUDE_CODE_OAUTH_TOKEN,
+#: CURSOR_API_KEY, OPENAI_API_KEY and GH_TOKEN, every one of which
+#: `invocation_env` passes through to the agent.
+SECRET_ENV = "LOREGARDEN_TEST_FAKE_TOKEN"
+SECRET_VALUE = "sk-test-5f3c9a-not-a-real-token"
+
+
+@has_tmux
+def test_a_tmux_pane_receives_its_secrets_without_putting_them_in_argv(stale_tmux_server):
+    """The pane must run under THIS run's environment (the finding above) without
+    that environment becoming readable by every user on the host.
+
+    `_under_env` has to exist, because a pane inherits the tmux *server's*
+    environment. But its first shape spelled the values into the pane command,
+    which is argv: `ps` shows it for the length of the client call, and
+    `tmux list-panes -F '#{pane_start_command}'` shows it for the session's
+    whole life. The pre-change `Popen(env=...)` exposed nothing, so that would
+    have been a regression introduced by the fix for one.
+
+    Both halves are asserted together on purpose: an implementation can satisfy
+    either one alone — by dropping the environment, or by spelling it in argv.
+    """
+    run_id = str(uuid4())
+    run_code = "run_sec001"
+    stem = run_file_stem(run_code, run_id)
+    script = f"import os, time;print(os.environ.get({SECRET_ENV!r}, '<absent>'));time.sleep(3)"
+    try:
+        _spawn(
+            AgentTransport.TMUX,
+            script,
+            run_id=run_id,
+            run_code=run_code,
+            extra_env={SECRET_ENV: SECRET_VALUE},
+        )
+        listed = subprocess.run(
+            ["tmux", "list-panes", "-t", tmux_session_name(stem), "-F", "#{pane_start_command}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert _wait_for_rc(run_code, run_id) == "0"
+        seen = paths_for(run_code, run_id).out.read_text(encoding="utf-8").strip()
+    finally:
+        _kill_session(stem)
+
+    assert seen == SECRET_VALUE, f"the agent was handed {seen!r} instead of its token"
+    assert not paths_for(run_code, run_id).env.exists(), (
+        "the env file outlived the pane's sourcing of it; it holds this host's "
+        "tokens and nothing reads it after `exec`"
+    )
+    assert SECRET_VALUE not in listed.stdout, (
+        "the run's token is in the pane command, where `ps` and `tmux "
+        "list-panes` show it to every user on the host"
+    )
+
+
+@has_tmux
+def test_the_env_file_the_pane_sources_is_readable_only_by_its_owner():
+    """The file that replaces argv must not be the same exposure on disk.
+
+    `run_log_dir` is an ordinary directory under the repo, so a 0644 env file
+    would hand the same tokens to anything that can read the tree — and a
+    `write_text` followed by a `chmod` leaves a window where it is exactly
+    that. Asserted on the mode bits rather than on the call shape.
+    """
+    paths = paths_for("run_mod001", str(uuid4()))
+    paths.out.parent.mkdir(parents=True, exist_ok=True)
+
+    write_env_file(paths, {SECRET_ENV: SECRET_VALUE})
+
+    assert stat.S_IMODE(paths.env.stat().st_mode) == 0o600
+    assert paths.env.read_text(encoding="utf-8").strip() == (
+        f"{SECRET_ENV}={shlex.quote(SECRET_VALUE)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "plain",
+        "with a space",
+        'quote\'and"double"',
+        "dollar $HOME and `id`",
+        "newline\nand\ttab",
+        "trailing\n",
+        "",
+    ],
+)
+def test_every_shape_of_env_value_survives_being_sourced(value, tmp_path, monkeypatch):
+    """The env file is shell syntax, so every value in it is an injection
+    surface and a quoting one. A `$`, a backtick or a newline that the pane's
+    `.` re-parses is both a mangled environment and a way to run a command as
+    the agent — so this asserts the value the POSIX shell reads back, not the
+    bytes written.
+    """
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "logs")
+    paths = paths_for("run_qte001", str(uuid4()))
+    paths.out.parent.mkdir(parents=True, exist_ok=True)
+
+    write_env_file(paths, {SECRET_ENV: value, "SECOND": "intact"})
+    readback = subprocess.run(
+        ["/bin/sh", "-c", f'set -a; . {shlex.quote(str(paths.env))}; printf %s "${SECRET_ENV}"'],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+
+    assert readback.stdout == value
 
 
 # --- AC13 / S8: one authoritative transport, resolved once -------------------

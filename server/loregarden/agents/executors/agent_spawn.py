@@ -18,6 +18,7 @@ rather than assumed complete.
 from __future__ import annotations
 
 import logging
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from loregarden.services.run_output_files import (
     run_file_stem,
     tmux_session_name,
     wrap_for_files,
+    write_env_file,
     write_prompt_file,
 )
 from sqlmodel import Session
@@ -119,7 +121,13 @@ def spawn_agent(
     cwd = invocation.cwd or str(repo_root)
     env = invocation_env(invocation)
     if transport is AgentTransport.TMUX:
-        pid = _spawn_in_tmux(wrapped, cwd=cwd, env=env, stem=run_file_stem(run_code, run_id))
+        # Only this transport needs the environment on disk: `Popen(env=...)`
+        # hands it to the child directly, and a FILE-transport run should not
+        # leave its credentials in a file nothing reads.
+        write_env_file(paths, env)
+        pid = _spawn_in_tmux(
+            wrapped, cwd=cwd, env=env, paths=paths, stem=run_file_stem(run_code, run_id)
+        )
         return SpawnedAgent(pid=pid, transport_used=transport, paths=paths, handle=None)
     proc = _spawn_detached(wrapped, cwd=cwd, env=env)
     return SpawnedAgent(pid=proc.pid, transport_used=transport, paths=paths, handle=proc)
@@ -151,14 +159,15 @@ def _spawn_detached(wrapped: list[str], *, cwd: str, env: dict[str, str]) -> sub
     )
 
 
-#: Where `env` lives on both supported hosts. Spelled absolutely on purpose: the
-#: pane command is resolved by the tmux SERVER's PATH, and the server's
-#: environment is the thing this prefix exists to stop mattering.
+#: Where `env` and `sh` live on both supported hosts. Spelled absolutely on
+#: purpose: the pane command is resolved by the tmux SERVER's PATH, and the
+#: server's environment is the thing this prefix exists to stop mattering.
 _ENV_BIN = "/usr/bin/env"
+_SH_BIN = "/bin/sh"
 
 
-def _under_env(env: dict[str, str], wrapped: list[str]) -> list[str]:
-    """`wrapped`, prefixed so the pane runs under exactly `env` and nothing else.
+def _under_env(paths: RunOutputPaths, wrapped: list[str]) -> list[str]:
+    """`wrapped`, prefixed so the pane runs under exactly this run's environment.
 
     `subprocess.run(..., env=env)` hands the environment to the tmux CLIENT. The
     pane is forked by the tmux SERVER, whose environment was frozen by whichever
@@ -176,11 +185,35 @@ def _under_env(env: dict[str, str], wrapped: list[str]) -> list[str]:
     server happens to carry would survive it. `-i` makes the pane's environment
     exactly the one computed here. It also has no tmux version floor, where `-e`
     needs 3.2.
+
+    The values are SOURCED from `paths.env` rather than spelled in this list,
+    because this list is argv: a pane command is readable by `ps` for the length
+    of the client call and by `tmux list-panes -F '#{pane_start_command}'` for
+    the session's whole life, and it carries the host's API tokens. `set -a`
+    exports what the file defines and `exec "$@"` replaces the sourcing shell
+    with the wrapper — so the pane process is still the wrapper, still the
+    session leader whose group a `killpg` reaches the agent through.
+
+    The pane removes the file itself, between sourcing it and `exec`. Nothing
+    reads it after that point, and deleting it here rather than at settlement
+    is what keeps the window it exists in a few milliseconds wide instead of the
+    run's whole lifetime — the environment holds credentials, and the settlement
+    sweep still covers the case where the pane died before it got this far. Not
+    `&&`: a delete that fails must not stop the agent from starting.
     """
-    return [_ENV_BIN, "-i", *(f"{name}={value}" for name, value in env.items()), *wrapped]
+    quoted = shlex.quote(str(paths.env))
+    source = f'set -a; . {quoted}; set +a; rm -f {quoted}; exec "$@"'
+    return [_ENV_BIN, "-i", _SH_BIN, "-c", source, _SH_BIN, *wrapped]
 
 
-def _spawn_in_tmux(wrapped: list[str], *, cwd: str, env: dict[str, str], stem: str) -> int:
+def _spawn_in_tmux(
+    wrapped: list[str],
+    *,
+    cwd: str,
+    env: dict[str, str],
+    paths: RunOutputPaths,
+    stem: str,
+) -> int:
     """Run the wrapper as a detached tmux pane, and report the pane's pid.
 
     The pane process IS the wrapper, so the recorded pid is the same kind of pid
@@ -189,14 +222,14 @@ def _spawn_in_tmux(wrapped: list[str], *, cwd: str, env: dict[str, str], stem: s
     falling back — reporting FILE for a run nobody can attach to would be the
     column asserting something untrue.
 
-    The pane command carries its own environment (`_under_env`) because `env=`
+    The pane command sources its own environment (`_under_env`) because `env=`
     below reaches only the tmux client. `cwd` does NOT need the same treatment:
     the client resolves it and hands the server the result as the session's
     start directory.
     """
     session = tmux_session_name(stem)
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", session, *_under_env(env, wrapped)],
+        ["tmux", "new-session", "-d", "-s", session, *_under_env(paths, wrapped)],
         cwd=cwd,
         env=env,
         check=True,

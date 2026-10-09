@@ -31,6 +31,7 @@ the wrong one.
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import time
 from dataclasses import dataclass
@@ -76,6 +77,7 @@ class RunOutputPaths:
     err: Path
     rc: Path
     prompt: Path
+    env: Path
 
 
 def paths_for(run_code: str, run_id: str) -> RunOutputPaths:
@@ -86,6 +88,7 @@ def paths_for(run_code: str, run_id: str) -> RunOutputPaths:
         err=root / f"{stem}.err",
         rc=root / f"{stem}.rc",
         prompt=root / f"{stem}.prompt",
+        env=root / f"{stem}.env",
     )
 
 
@@ -123,6 +126,36 @@ def write_prompt_file(paths: RunOutputPaths, prompt: str) -> None:
     timeout. A prompt that cannot be written must stop the spawn instead.
     """
     paths.prompt.write_text(prompt, encoding="utf-8")
+
+
+#: `.env` is created with these bits and no others, in one `os.open` rather
+#: than a write followed by a `chmod`: the values in it are the run's
+#: credentials, and a world-readable window — however short — is a window.
+_ENV_FILE_MODE = 0o600
+
+
+def write_env_file(paths: RunOutputPaths, env: dict[str, str]) -> None:
+    """This run's environment, as a file only its owner can read.
+
+    It exists for the tmux transport, which cannot be handed an environment the
+    way `Popen(env=...)` can: a pane is forked by the tmux *server*, so the
+    environment has to travel in the pane command. Spelling the values there
+    puts every one of them — `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
+    `GH_TOKEN` — into argv, where `ps` shows them to every user on the host for
+    the length of the client call and `tmux list-panes -F
+    '#{pane_start_command}'` shows them for the session's whole life. A file
+    sourced by the pane's own shell keeps the environment exact and keeps the
+    values off every process table.
+
+    Each line is `name=<shlex-quoted value>`, so a value carrying a newline, a
+    quote or a `$` survives `.`-sourcing verbatim. Raises rather than
+    degrading: a pane that sourced half an environment would run under a
+    half-built identity, which is the defect this whole file exists to rule out.
+    """
+    body = "".join(f"{name}={shlex.quote(value)}\n" for name, value in env.items())
+    descriptor = os.open(paths.env, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, _ENV_FILE_MODE)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(body)
 
 
 def wrap_for_files(

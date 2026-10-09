@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors.print_mode import run_print_mode
@@ -27,9 +28,20 @@ class _CollectingStreamer:
         self.lines: list[str] = []
         #: Set by `run_print_mode` after every appended line (spec S4/S5).
         self.tail_offset = 0
+        #: (tag, text, force) for every `append` — the SYS transport line.
+        self.tagged: list[tuple[str, str, bool]] = []
 
     def append_stream_line(self, line: str) -> None:
         self.lines.append(line)
+
+    def append(self, tag: str, text: str, *, force: bool = False) -> None:
+        """The tagged-line sink `RunLogStreamer` also exposes.
+
+        `run_print_mode` announces the transport it spawned on through this,
+        beside `record_agent_transport`. Collected separately from the stream
+        lines so this module's assertions still see only the agent's output.
+        """
+        self.tagged.append((tag, text, force))
 
 
 @pytest.fixture(name="run_log_dir", autouse=True)
@@ -58,8 +70,13 @@ def _run(db_session: Session, script: str, timeout: int):
         repo_root=Path.cwd(),
         timeout=timeout,
         streamer=_CollectingStreamer(),
-        run_id="test-print-mode-run",
-        run_code="run_tmo001",
+        # Per call, not per module: `run_file_stem` is deterministic, so a
+        # fixed pair gives every spawning test in this module one tmux session
+        # name — and the second `tmux new-session -d -s <existing>` exits 1.
+        # Under `pytest -n`, which is how this repo runs its suite, that is a
+        # different failing subset every run.
+        run_id=f"test-print-mode-run-{uuid4().hex[:8]}",
+        run_code=f"run_{uuid4().hex[:6]}",
     )
 
 

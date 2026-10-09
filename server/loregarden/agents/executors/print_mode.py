@@ -266,12 +266,14 @@ def run_print_mode(
     tail = RunOutputTail(paths.out)
     budgets = _Budgets.starting_now(timeout)
     cancelled = False
+    timed_out = False
     try:
         while True:
             now = time.time()
             expired = budgets.expired(now)
             if expired is not None:
                 _kill_agent_group(spawned)
+                timed_out = True
                 raise _timeout_expired(invocation.argv, budgets.start, stdout_lines, kind=expired)
             if cancel_requested(run_id):
                 _kill_agent_group(spawned)
@@ -310,7 +312,7 @@ def run_print_mode(
             budgets=budgets,
             argv=invocation.argv,
             stdout_lines=stdout_lines,
-            cancelled=cancelled,
+            settled=cancelled or timed_out,
         )
 
     if cancelled:
@@ -332,14 +334,24 @@ def _reap(
     budgets: _Budgets,
     argv,
     stdout_lines: list[str],
-    cancelled: bool,
+    settled: bool,
 ) -> None:
     """Make sure the agent is gone before the caller reads its files.
 
     Reached on every exit from the loop, including the one that is already
-    raising. A process still running here has outlived the hard cap, so its
-    group is killed and — unless the operator is the one who stopped it — it is
-    reported as a hard-cap timeout rather than left to look like a clean exit.
+    raising. A process still running here and NOT already accounted for has
+    outlived the hard cap, so its group is killed and it is reported as a
+    hard-cap timeout rather than left to look like a clean exit.
+
+    `settled` says the loop already decided this run's outcome — the operator
+    cancelled it, or a budget expired and the loop is raising that budget's
+    timeout right now. The group still gets killed; the verdict does not get
+    overwritten. Without it the tmux transport mislabels every timeout:
+    `handle` is None there, so there is nothing to wait on, and the raise below
+    would replace the IDLE timeout propagating out of the loop with a HARD_CAP
+    one — a one-second hang reported as a four-second runaway, which is the
+    only difference the operator has between "the agent wedged" and "the agent
+    would not stop talking".
     """
     if _wrapper_exited(spawned):
         return
@@ -350,10 +362,11 @@ def _reap(
         except subprocess.TimeoutExpired:
             pass
     _kill_agent_group(spawned)
-    if not cancelled:
-        raise _timeout_expired(
-            argv, budgets.start, stdout_lines, kind=RunTimeoutKind.HARD_CAP
-        ) from None
+    if settled:
+        return
+    raise _timeout_expired(
+        argv, budgets.start, stdout_lines, kind=RunTimeoutKind.HARD_CAP
+    ) from None
 
 
 def _print_mode_result(

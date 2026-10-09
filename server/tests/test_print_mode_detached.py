@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NamedTuple
+from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors import print_mode
@@ -30,16 +32,50 @@ from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
 from loregarden.models.domain import AgentTransport, RunStatus
 from loregarden.services import subprocess_lines
+from loregarden.services.run_errors import RunTimeoutKind
 from loregarden.services.run_log_stream import format_stream_payload
 from loregarden.services.run_output_files import (
+    RunOutputPaths,
     paths_for,
     run_file_stem,
     tmux_session_name,
 )
 from sqlmodel import Session
 
-RUN_ID = "test-print-mode-detached"
-RUN_CODE = "run_det001"
+
+class RunKey(NamedTuple):
+    """One test's run identity, and the files and session it implies."""
+
+    code: str
+    id: str
+
+    @property
+    def paths(self) -> RunOutputPaths:
+        return paths_for(self.code, self.id)
+
+    @property
+    def session(self) -> str:
+        return tmux_session_name(run_file_stem(self.code, self.id))
+
+
+@pytest.fixture(name="run_key")
+def run_key_fixture() -> RunKey:
+    """A run identity unique to THIS test, because tmux is process-global.
+
+    `run_file_stem` is deterministic, so a module-level run id gives every test
+    in the module one session name — and `tmux new-session -d -s <existing>`
+    exits 1 with "duplicate session", which `_spawn_in_tmux` runs `check=True`.
+    Serially the sessions are killed between tests and nothing shows; under
+    `pytest -n`, which is how this repo runs its suite, a different subset fails
+    every run. `tmp_path` and `monkeypatch` cannot help: the tmux server is
+    shared by every worker on the host.
+
+    That is AC22's collision-free property, which production has and the tests
+    had dropped — so they are built from the same `run_file_stem` rather than
+    from a literal.
+    """
+    unique = uuid4().hex[:8]
+    return RunKey(code=f"run_{unique[:6]}", id=f"test-print-mode-detached-{unique}")
 
 
 class _CollectingStreamer:
@@ -80,7 +116,7 @@ def run_log_dir_fixture(tmp_path, monkeypatch) -> Path:
 
 
 @pytest.fixture(name="pinned_transport")
-def pinned_transport_fixture(monkeypatch):
+def pinned_transport_fixture(monkeypatch, run_key):
     """Pin `settings.agent_detach_transport`, and clean up what tmux leaves.
 
     `run_print_mode` resolves the transport from this setting, so a test that
@@ -94,7 +130,7 @@ def pinned_transport_fixture(monkeypatch):
             pytest.skip("tmux is not installed on this host")
         monkeypatch.setattr(settings, "agent_detach_transport", transport)
         if transport is AgentTransport.TMUX:
-            created.append(tmux_session_name(run_file_stem(RUN_CODE, RUN_ID)))
+            created.append(run_key.session)
 
     yield pin
     for session in created:
@@ -112,58 +148,68 @@ def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamesp
     )
 
 
-def _run(db_session: Session, script: str, *, timeout: int = 20, stdin_prompt=None, streamer=None):
+def _run(
+    db_session: Session,
+    run_key: RunKey,
+    script: str,
+    *,
+    timeout: int = 20,
+    stdin_prompt=None,
+    streamer=None,
+):
     """`db_session` is where the spawned run's process identity is recorded."""
     return run_print_mode(
         invocation=_invocation(script, stdin_prompt=stdin_prompt),
         repo_root=Path.cwd(),
         timeout=timeout,
         streamer=streamer or _CollectingStreamer(),
-        run_id=RUN_ID,
-        run_code=RUN_CODE,
+        run_id=run_key.id,
+        run_code=run_key.code,
     )
 
 
 # --- AC1/AC8: the child writes the files ------------------------------------
 
 
-def test_the_agents_stdout_lands_in_the_out_file(db_session: Session, run_log_dir):
+def test_the_agents_stdout_lands_in_the_out_file(db_session: Session, run_log_dir, run_key):
     """AC1. The bytes stdout used to carry are now in `.out`."""
-    _run(db_session, "print('alpha')\nprint('beta')")
+    _run(db_session, run_key, "print('alpha')\nprint('beta')")
 
-    assert paths_for(RUN_CODE, RUN_ID).out.read_text() == "alpha\nbeta\n"
+    assert run_key.paths.out.read_text() == "alpha\nbeta\n"
 
 
-def test_the_agents_stderr_lands_in_its_own_file(db_session: Session, run_log_dir):
+def test_the_agents_stderr_lands_in_its_own_file(db_session: Session, run_log_dir, run_key):
     """AC1/AC8. Two files; `2>&1` would change what `failure_reason()` sees."""
     script = "import sys\nprint('out')\nsys.stderr.write('boom\\n')"
-    _run(db_session, script)
+    _run(db_session, run_key, script)
 
-    paths = paths_for(RUN_CODE, RUN_ID)
+    paths = run_key.paths
     assert paths.out.read_text() == "out\n"
     assert paths.err.read_text() == "boom\n"
 
 
-def test_the_agents_exit_code_lands_in_the_rc_file(db_session: Session, run_log_dir):
+def test_the_agents_exit_code_lands_in_the_rc_file(db_session: Session, run_log_dir, run_key):
     """AC1's third file, which is what the reattached path reads."""
-    _run(db_session, "raise SystemExit(3)")
+    _run(db_session, run_key, "raise SystemExit(3)")
 
-    assert paths_for(RUN_CODE, RUN_ID).rc.read_text() == "3"
+    assert run_key.paths.rc.read_text() == "3"
 
 
-def test_the_result_reads_stderr_from_the_err_file(db_session: Session, run_log_dir):
+def test_the_result_reads_stderr_from_the_err_file(db_session: Session, run_log_dir, run_key):
     """AC8. `proc.stderr` is DEVNULL now, so this is the only source left."""
     script = "import sys\nsys.stderr.write('the real reason\\n')\nraise SystemExit(1)"
 
-    _stdout, stderr, status = _run(db_session, script)
+    _stdout, stderr, status = _run(db_session, run_key, script)
 
     assert stderr.strip() == "the real reason"
     assert status is RunStatus.FAILED
 
 
-def test_a_missing_err_file_reads_as_empty_rather_than_raising(db_session: Session, run_log_dir):
+def test_a_missing_err_file_reads_as_empty_rather_than_raising(
+    db_session: Session, run_log_dir, run_key
+):
     """The agent may never write a byte to stderr; `.err` then may not exist."""
-    _stdout, stderr, status = _run(db_session, "print('quiet')")
+    _stdout, stderr, status = _run(db_session, run_key, "print('quiet')")
 
     assert stderr == ""
     assert status is RunStatus.SUCCEEDED
@@ -172,35 +218,39 @@ def test_a_missing_err_file_reads_as_empty_rather_than_raising(db_session: Sessi
 # --- AC2: the status ---------------------------------------------------------
 
 
-def test_an_agent_that_exits_non_zero_fails_the_run(db_session: Session, run_log_dir):
+def test_an_agent_that_exits_non_zero_fails_the_run(db_session: Session, run_log_dir, run_key):
     """AC2. The plan's wrapper would have reported this SUCCEEDED."""
-    _stdout, _stderr, status = _run(db_session, "print('did some work')\nraise SystemExit(9)")
+    _stdout, _stderr, status = _run(
+        db_session, run_key, "print('did some work')\nraise SystemExit(9)"
+    )
 
     assert status is RunStatus.FAILED
-    assert paths_for(RUN_CODE, RUN_ID).rc.read_text() == "9"
+    assert run_key.paths.rc.read_text() == "9"
 
 
-def test_an_agent_that_exits_zero_succeeds(db_session: Session, run_log_dir):
-    _stdout, _stderr, status = _run(db_session, "print('fine')")
+def test_an_agent_that_exits_zero_succeeds(db_session: Session, run_log_dir, run_key):
+    _stdout, _stderr, status = _run(db_session, run_key, "print('fine')")
 
     assert status is RunStatus.SUCCEEDED
-    assert paths_for(RUN_CODE, RUN_ID).rc.read_text() == "0"
+    assert run_key.paths.rc.read_text() == "0"
 
 
-def test_the_rc_file_and_the_wrappers_own_exit_status_agree(db_session: Session, run_log_dir):
+def test_the_rc_file_and_the_wrappers_own_exit_status_agree(
+    db_session: Session, run_log_dir, run_key
+):
     """AC2. `.rc` is authoritative because the reattached path reads it — but on
     the live path `exit "$rc"` makes `proc.returncode` say the same thing, and a
     divergence here is the two settlement paths disagreeing about one run."""
-    _run(db_session, "raise SystemExit(5)")
+    _run(db_session, run_key, "raise SystemExit(5)")
 
-    rc_file = int(paths_for(RUN_CODE, RUN_ID).rc.read_text())
+    rc_file = int(run_key.paths.rc.read_text())
     assert rc_file == 5
 
 
 # --- AC5: the loop terminator ------------------------------------------------
 
 
-def test_the_last_line_of_the_transcript_survives(db_session: Session, run_log_dir):
+def test_the_last_line_of_the_transcript_survives(db_session: Session, run_log_dir, run_key):
     """AC5. A truncated tail loses the stage report, and the stage never routes."""
     report = '{"status": "pass", "confidence": 0.9, "reroute_to_stage": null}'
     script = (
@@ -211,25 +261,27 @@ def test_the_last_line_of_the_transcript_survives(db_session: Session, run_log_d
     )
     streamer = _CollectingStreamer()
 
-    stdout, _stderr, status = _run(db_session, script, streamer=streamer)
+    stdout, _stderr, status = _run(db_session, run_key, script, streamer=streamer)
 
     assert status is RunStatus.SUCCEEDED
     assert stdout.splitlines()[-1] == "<<<END_STAGE_REPORT>>>"
     assert streamer.lines[-1].rstrip("\n") == "<<<END_STAGE_REPORT>>>"
 
 
-def test_an_unterminated_final_line_survives_via_flush_partial(db_session: Session, run_log_dir):
+def test_an_unterminated_final_line_survives_via_flush_partial(
+    db_session: Session, run_log_dir, run_key
+):
     """AC5. The agent is killed, or simply never prints its newline."""
     script = "import sys\nsys.stdout.write('first\\n')\nsys.stdout.write('no trailing newline')"
     streamer = _CollectingStreamer()
 
-    stdout, _stderr, _status = _run(db_session, script, streamer=streamer)
+    stdout, _stderr, _status = _run(db_session, run_key, script, streamer=streamer)
 
     assert [line.rstrip("\n") for line in streamer.lines] == ["first", "no trailing newline"]
     assert stdout.splitlines()[-1] == "no trailing newline"
 
 
-def test_a_quiet_stretch_mid_run_does_not_end_the_loop(db_session: Session, run_log_dir):
+def test_a_quiet_stretch_mid_run_does_not_end_the_loop(db_session: Session, run_log_dir, run_key):
     """AC5's root cause: a file at EOF looks exactly like a finished one.
 
     The agent says nothing for longer than one poll, then speaks again. A loop
@@ -237,24 +289,24 @@ def test_a_quiet_stretch_mid_run_does_not_end_the_loop(db_session: Session, run_
     """
     script = "import time\nprint('before', flush=True)\ntime.sleep(1.5)\nprint('after', flush=True)"
 
-    stdout, _stderr, status = _run(db_session, script, timeout=20)
+    stdout, _stderr, status = _run(db_session, run_key, script, timeout=20)
 
     assert status is RunStatus.SUCCEEDED
     assert stdout.splitlines() == ["before", "after"]
 
 
-def test_a_run_that_exits_immediately_does_not_hang(db_session: Session, run_log_dir):
+def test_a_run_that_exits_immediately_does_not_hang(db_session: Session, run_log_dir, run_key):
     """The opposite failure of the one above: if EOF no longer ends the loop,
     something still has to. A process that is gone, with nothing left to drain,
     must return rather than run to its hard cap."""
-    _stdout, _stderr, status = _run(db_session, "pass", timeout=20)
+    _stdout, _stderr, status = _run(db_session, run_key, "pass", timeout=20)
 
     assert status is RunStatus.SUCCEEDED
 
 
-def test_a_run_whose_agent_writes_nothing_still_returns(db_session: Session, run_log_dir):
+def test_a_run_whose_agent_writes_nothing_still_returns(db_session: Session, run_log_dir, run_key):
     """An empty `.out` is a legitimate transcript, not a reason to wait."""
-    stdout, _stderr, status = _run(db_session, "raise SystemExit(0)", timeout=20)
+    stdout, _stderr, status = _run(db_session, run_key, "raise SystemExit(0)", timeout=20)
 
     assert stdout == ""
     assert status is RunStatus.SUCCEEDED
@@ -265,7 +317,7 @@ def test_a_run_whose_agent_writes_nothing_still_returns(db_session: Session, run
 
 @pytest.mark.parametrize("transport", list(AgentTransport))
 def test_the_prompt_still_reaches_the_agent_on_stdin(
-    db_session: Session, run_log_dir, pinned_transport, transport
+    db_session: Session, run_log_dir, run_key, pinned_transport, transport
 ):
     """AC1/AC3/AC18, on EVERY transport rather than the one this host resolves.
 
@@ -281,7 +333,7 @@ def test_the_prompt_still_reaches_the_agent_on_stdin(
     pinned_transport(transport)
     script = "import sys\nsys.stdout.write(sys.stdin.read())"
 
-    stdout, _stderr, status = _run(db_session, script, stdin_prompt="the whole prompt\n")
+    stdout, _stderr, status = _run(db_session, run_key, script, stdin_prompt="the whole prompt\n")
 
     assert status is RunStatus.SUCCEEDED
     assert stdout.strip() == "the whole prompt"
@@ -289,7 +341,7 @@ def test_the_prompt_still_reaches_the_agent_on_stdin(
 
 @pytest.mark.parametrize("transport", list(AgentTransport))
 def test_a_prompt_larger_than_the_pipe_buffer_still_arrives(
-    db_session: Session, run_log_dir, pinned_transport, transport
+    db_session: Session, run_log_dir, run_key, pinned_transport, transport
 ):
     """AC3, on every transport. A real stage prompt is tens of kilobytes.
 
@@ -301,16 +353,43 @@ def test_a_prompt_larger_than_the_pipe_buffer_still_arrives(
     prompt = "line of prompt text\n" * 20_000  # ~400KB
     script = "import sys\nsys.stdout.write(str(len(sys.stdin.read())))"
 
-    stdout, _stderr, status = _run(db_session, script, stdin_prompt=prompt, timeout=60)
+    stdout, _stderr, status = _run(db_session, run_key, script, stdin_prompt=prompt, timeout=60)
 
     assert status is RunStatus.SUCCEEDED
     assert int(stdout.strip()) == len(prompt)
 
 
+# --- AC5: which budget fired, on both transports -----------------------------
+
+
+@pytest.mark.parametrize("transport", list(AgentTransport))
+def test_a_silent_run_reports_the_idle_budget_on_every_transport(
+    db_session: Session, run_log_dir, run_key, pinned_transport, transport
+):
+    """AC5 says the two budget clocks are behaviourally unchanged, and the
+    transport is what broke that.
+
+    `_reap` runs in the loop's `finally`, so it runs while the IDLE timeout is
+    propagating. It used to re-raise a HARD_CAP timeout whenever the wrapper was
+    not yet confirmed gone — and on tmux there is no `Popen` to wait on, so that
+    was EVERY tmux timeout: a one-second hang reported as a four-second
+    runaway. The FILE transport hid it (the wait succeeds and returns), which is
+    why this is pinned per transport rather than once.
+    """
+    pinned_transport(transport)
+
+    with pytest.raises(subprocess.TimeoutExpired) as excinfo:
+        _run(db_session, run_key, "import time\ntime.sleep(30)", timeout=1)
+
+    assert excinfo.value.kind is RunTimeoutKind.IDLE
+
+
 # --- AC7: output parity ------------------------------------------------------
 
 
-def test_a_stream_event_partial_reaches_the_streamer_intact(db_session: Session, run_log_dir):
+def test_a_stream_event_partial_reaches_the_streamer_intact(
+    db_session: Session, run_log_dir, run_key
+):
     """AC7. Asserted on the PARSED event, not on raw bytes.
 
     A tailer that flushed a buffered partial as a terminated line would split
@@ -339,7 +418,7 @@ def test_a_stream_event_partial_reaches_the_streamer_intact(db_session: Session,
     script = f"import json\nprint(json.dumps({payload!r}))"
     streamer = _CollectingStreamer()
 
-    _run(db_session, script, streamer=streamer)
+    _run(db_session, run_key, script, streamer=streamer)
 
     assert len(streamer.lines) == 1
     parsed = json.loads(streamer.lines[0])
@@ -349,7 +428,7 @@ def test_a_stream_event_partial_reaches_the_streamer_intact(db_session: Session,
 
 
 def test_many_interleaved_stream_events_arrive_in_order_and_unsplit(
-    db_session: Session, run_log_dir
+    db_session: Session, run_log_dir, run_key
 ):
     """AC7 at volume: the largest run in the live database carries 1,667 lines."""
     script = (
@@ -360,14 +439,14 @@ def test_many_interleaved_stream_events_arrive_in_order_and_unsplit(
     )
     streamer = _CollectingStreamer()
 
-    _run(db_session, script, timeout=60, streamer=streamer)
+    _run(db_session, run_key, script, timeout=60, streamer=streamer)
 
     seqs = [json.loads(line)["seq"] for line in streamer.lines]
     assert seqs == list(range(500))
 
 
 def test_the_owner_records_the_tail_offset_after_every_appended_line(
-    db_session: Session, run_log_dir
+    db_session: Session, run_log_dir, run_key
 ):
     """S4/AC9's ordering. The offset must be the position just PAST the line it
     was recorded with — the other way round and a restart re-ingests a line or
@@ -375,7 +454,7 @@ def test_the_owner_records_the_tail_offset_after_every_appended_line(
     script = "print('aaa')\nprint('bbbb')"
     streamer = _CollectingStreamer()
 
-    _run(db_session, script, streamer=streamer)
+    _run(db_session, run_key, script, streamer=streamer)
 
     assert streamer.offset_after_each == [len(b"aaa\n"), len(b"aaa\nbbbb\n")]
     assert streamer.tail_offset == len(b"aaa\nbbbb\n")

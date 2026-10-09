@@ -47,7 +47,11 @@ from loregarden.services import run_resupervise
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_output_files import RunOutputTail, paths_for
 from sqlmodel import Session, select
-from tests.test_print_mode_detached import _CollectingStreamer, _invocation
+from tests.test_print_mode_detached import (  # noqa: F401 -- run_key_fixture used by name
+    _CollectingStreamer,
+    _invocation,
+    run_key_fixture,
+)
 from tests.test_run_resupervise import (  # noqa: F401 -- fixtures, used by name
     NO_RC_STDERR,
     _gone,
@@ -58,18 +62,18 @@ from tests.test_run_resupervise import (  # noqa: F401 -- fixtures, used by name
     run_log_dir_fixture,
 )
 
-PRINT_RUN_ID = "test-print-mode-adversarial"
-PRINT_RUN_CODE = "run_adv002"
 
-
-def _print_run(script: str, *, timeout: int = 20, streamer=None):
+def _print_run(run_key, script: str, *, timeout: int = 20, streamer=None):
+    """`run_key` is per-test (see `run_key_fixture`): a module-level run id gives
+    every tmux test in the module one session name, and the second
+    `tmux new-session -d -s <existing>` of a parallel run exits 1."""
     return run_print_mode(
         invocation=_invocation(script),
         repo_root=Path.cwd(),
         timeout=timeout,
         streamer=streamer or _CollectingStreamer(),
-        run_id=PRINT_RUN_ID,
-        run_code=PRINT_RUN_CODE,
+        run_id=run_key.id,
+        run_code=run_key.code,
     )
 
 
@@ -114,7 +118,9 @@ _PID_AND_SPIN = (
 )
 
 
-def test_a_cancelled_run_leaves_no_orphan_agent(db_session: Session, run_log_dir, tmp_path):
+def test_a_cancelled_run_leaves_no_orphan_agent(
+    db_session: Session, run_log_dir, run_key, tmp_path
+):
     """AC17, reached through the loop rather than through `run_detached_stop`.
 
     The cancel branch calls `proc.kill()`. Before this ticket that handle was
@@ -128,7 +134,7 @@ def test_a_cancelled_run_leaves_no_orphan_agent(db_session: Session, run_log_dir
     script = _PID_AND_SPIN.format(marker=str(marker))
 
     with mock.patch.object(print_mode, "cancel_requested", return_value=True):
-        _stdout, _stderr, status = _print_run(script, timeout=60)
+        _stdout, _stderr, status = _print_run(run_key, script, timeout=60)
 
     assert status is RunStatus.CANCELLED
     if not marker.exists():
@@ -144,7 +150,7 @@ def test_a_cancelled_run_leaves_no_orphan_agent(db_session: Session, run_log_dir
 
 
 def test_a_run_that_blows_its_hard_cap_leaves_no_orphan_agent(
-    db_session: Session, run_log_dir, tmp_path
+    db_session: Session, run_log_dir, run_key, tmp_path
 ):
     """The same defect on the other branch. A timeout that kills only the
     wrapper reports a timeout to the operator while the agent keeps going, and
@@ -153,7 +159,7 @@ def test_a_run_that_blows_its_hard_cap_leaves_no_orphan_agent(
     script = _PID_AND_SPIN.format(marker=str(marker))
 
     with pytest.raises(Exception):  # noqa: B017 -- RunTimeout; the point is the orphan
-        _print_run(script, timeout=1)
+        _print_run(run_key, script, timeout=1)
 
     agent_pid = _await_pid_file(marker)
     try:
@@ -165,7 +171,7 @@ def test_a_run_that_blows_its_hard_cap_leaves_no_orphan_agent(
 
 
 def test_output_written_before_a_cancel_is_still_reported(
-    db_session: Session, run_log_dir, tmp_path
+    db_session: Session, run_log_dir, run_key, tmp_path
 ):
     """A cancelled run's partial transcript is the only record of what it did.
 
@@ -182,7 +188,7 @@ def test_output_written_before_a_cancel_is_still_reported(
         return calls["n"] > 12
 
     with mock.patch.object(print_mode, "cancel_requested", cancel_after_first_look):
-        stdout, _stderr, status = _print_run(script, timeout=60)
+        stdout, _stderr, status = _print_run(run_key, script, timeout=60)
 
     agent_pid = marker.read_text().strip() if marker.exists() else ""
     try:
@@ -196,20 +202,22 @@ def test_output_written_before_a_cancel_is_still_reported(
 # --- AC1/AC2: the live path's edges -------------------------------------------
 
 
-def test_an_agent_killed_by_a_signal_fails_rather_than_succeeding(db_session: Session, run_log_dir):
+def test_an_agent_killed_by_a_signal_fails_rather_than_succeeding(
+    db_session: Session, run_log_dir, run_key
+):
     """AC2. A segfaulting or OOM-killed agent exits by signal, so `.rc` is
     128+N — and the one thing it must not be read as is success."""
     script = "import os, signal\nos.kill(os.getpid(), signal.SIGKILL)"
 
-    _stdout, _stderr, status = _print_run(script)
+    _stdout, _stderr, status = _print_run(run_key, script)
 
     assert status is RunStatus.FAILED
-    rc = paths_for(PRINT_RUN_CODE, PRINT_RUN_ID).rc
+    rc = run_key.paths.rc
     assert rc.read_text() == str(128 + signal.SIGKILL)
 
 
 def test_the_servers_own_streams_are_not_polluted_by_the_agent(
-    db_session: Session, run_log_dir, capfd
+    db_session: Session, run_log_dir, run_key, capfd
 ):
     """AC1's `stdout=DEVNULL`/`stderr=DEVNULL`, asserted on what the parent
     sees. Inheriting the server's fds would interleave every agent's output
@@ -221,17 +229,17 @@ def test_the_servers_own_streams_are_not_polluted_by_the_agent(
         "sys.stderr.write('AGENT-STDERR-MARKER\\n')\n"
     )
 
-    _print_run(script)
+    _print_run(run_key, script)
 
     captured = capfd.readouterr()
     assert "AGENT-STDOUT-MARKER" not in captured.out
     assert "AGENT-STDOUT-MARKER" not in captured.err
     assert "AGENT-STDERR-MARKER" not in captured.err
-    assert "AGENT-STDOUT-MARKER" in paths_for(PRINT_RUN_CODE, PRINT_RUN_ID).out.read_text()
+    assert "AGENT-STDOUT-MARKER" in run_key.paths.out.read_text()
 
 
 def test_a_single_line_of_several_megabytes_survives_the_whole_path(
-    db_session: Session, run_log_dir
+    db_session: Session, run_log_dir, run_key
 ):
     """AC7 at the size a tool result really reaches. A tailer that emits when
     its buffer fills would deliver this as several lines, and every one of
@@ -242,13 +250,15 @@ def test_a_single_line_of_several_megabytes_survives_the_whole_path(
     )
     streamer = _CollectingStreamer()
 
-    _print_run(script, timeout=60, streamer=streamer)
+    _print_run(run_key, script, timeout=60, streamer=streamer)
 
     assert len(streamer.lines) == 1, "the line was split"
     assert json.loads(streamer.lines[0])["text"] == "y" * 2_000_000
 
 
-def test_invalid_utf8_on_stderr_does_not_raise_on_the_result_path(db_session: Session, run_log_dir):
+def test_invalid_utf8_on_stderr_does_not_raise_on_the_result_path(
+    db_session: Session, run_log_dir, run_key
+):
     """S4 pins `errors="replace"` for the `.err` read, and this is why: a tool
     the agent shelled out to writes whatever bytes it likes to stderr, and a
     strict decode would raise AFTER the agent finished — turning a completed
@@ -260,7 +270,7 @@ def test_invalid_utf8_on_stderr_does_not_raise_on_the_result_path(db_session: Se
         "raise SystemExit(3)\n"
     )
 
-    _stdout, stderr, status = _print_run(script)
+    _stdout, stderr, status = _print_run(run_key, script)
 
     assert status is RunStatus.FAILED
     assert "broken on stderr" in stderr

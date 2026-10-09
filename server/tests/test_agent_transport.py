@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors.agent_spawn import (
@@ -44,9 +45,21 @@ from loregarden.services.run_output_files import (
 )
 from sqlmodel import Session, select
 
-RUN_ID = "7c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f"
-RUN_CODE = "run_tpt001"
-STEM = f"{RUN_CODE}-{RUN_ID[:8]}"
+#: The stem the pure-string assertions use. Anything that SPAWNS takes its
+#: identity from `run_key` instead — a module-level one gives every tmux test in
+#: the module one session name, and `tmux new-session -d -s <existing>` exits 1
+#: under `pytest -n` (see `run_key_fixture`).
+STEM = "run_tpt001-7c1d2e3f"
+
+
+@pytest.fixture(name="run_key")
+def run_key_fixture() -> tuple[str, str]:
+    """(run_code, run_id), unique to this test. The tmux server is host-global,
+    so AC22's collision-free stem is what keeps parallel tests off each other's
+    sessions — the same property, for the same reason, as in production."""
+    unique = uuid4().hex[:8]
+    return f"run_{unique[:6]}", f"{unique}-4a5b-6c7d-8e9f-0a1b2c3d4e5f"
+
 
 has_tmux = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
 
@@ -59,11 +72,11 @@ def run_log_dir_fixture(tmp_path, monkeypatch) -> Path:
 
 
 @pytest.fixture(name="tmux_cleanup")
-def tmux_cleanup_fixture():
+def tmux_cleanup_fixture(run_key):
     """Kill the session this test created, whatever the assertions did."""
     yield
     subprocess.run(
-        ["tmux", "kill-session", "-t", tmux_session_name(STEM)],
+        ["tmux", "kill-session", "-t", tmux_session_name(run_file_stem(*run_key))],
         capture_output=True,
         check=False,
     )
@@ -81,23 +94,37 @@ def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamesp
 
 
 def _spawn(
-    transport: AgentTransport, script: str, *, stdin_prompt: str | None = None
+    run_key: tuple[str, str],
+    transport: AgentTransport,
+    script: str,
+    *,
+    stdin_prompt: str | None = None,
 ) -> SpawnedAgent:
+    run_code, run_id = run_key
     return spawn_agent(
         _invocation(script, stdin_prompt=stdin_prompt),
         Path.cwd(),
-        run_id=RUN_ID,
-        run_code=RUN_CODE,
+        run_id=run_id,
+        run_code=run_code,
         transport=transport,
     )
 
 
-def _wait_for_rc(timeout: float = 20.0) -> str:
-    paths = paths_for(RUN_CODE, RUN_ID)
+def _wait_for_rc(run_key: tuple[str, str], timeout: float = 20.0) -> str:
+    """Block until `.rc` holds an exit code — CONTENT, not just existence.
+
+    `printf %s "$rc" > rc` creates the file and then writes it, so a poll on
+    `exists()` alone can read the empty window in between and report `""` as
+    this run's exit status. Under `pytest -n` that window is wide enough to hit.
+    Nothing in production reads `.rc` that early: both settlement paths read it
+    only once the wrapper is gone, and the wrapper writes it before it exits.
+    """
+    paths = paths_for(*run_key)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if paths.rc.exists():
-            return paths.rc.read_text()
+        recorded = paths.rc.read_text() if paths.rc.exists() else ""
+        if recorded:
+            return recorded
         time.sleep(0.05)
     raise AssertionError("the agent never recorded an exit code")
 
@@ -193,22 +220,22 @@ def test_the_doctor_is_quiet_when_tmux_is_present(db_session: Session):
 # --- AC18: both transports, one wrapper --------------------------------------
 
 
-def test_the_file_transport_runs_the_agent_and_records_its_output(run_log_dir):
+def test_the_file_transport_runs_the_agent_and_records_its_output(run_log_dir, run_key):
     """AC18. The dependency-free path, which is the one that must always work."""
-    spawned = _spawn(AgentTransport.FILE, "print('from the file transport')")
+    spawned = _spawn(run_key, AgentTransport.FILE, "print('from the file transport')")
 
     assert spawned.transport_used is AgentTransport.FILE
     assert spawned.pid > 0
     assert spawned.handle is not None, "the FILE transport owns a Popen handle"
-    assert _wait_for_rc() == "0"
-    assert paths_for(RUN_CODE, RUN_ID).out.read_text() == "from the file transport\n"
+    assert _wait_for_rc(run_key) == "0"
+    assert paths_for(*run_key).out.read_text() == "from the file transport\n"
 
 
-def test_the_file_transport_pid_is_a_session_leader(run_log_dir):
+def test_the_file_transport_pid_is_a_session_leader(run_log_dir, run_key):
     """AC17. `run_detached_stop`'s second identity guard is
     `os.getpgid(recorded_pid) == recorded_pid`, and the whole stop path rests
     on it. The recorded pid is now the `sh` wrapper's."""
-    spawned = _spawn(AgentTransport.FILE, "import time; time.sleep(5)")
+    spawned = _spawn(run_key, AgentTransport.FILE, "import time; time.sleep(5)")
     try:
         assert os.getpgid(spawned.pid) == spawned.pid
     finally:
@@ -216,30 +243,32 @@ def test_the_file_transport_pid_is_a_session_leader(run_log_dir):
 
 
 @has_tmux
-def test_the_tmux_transport_runs_the_agent_and_records_its_output(run_log_dir, tmux_cleanup):
+def test_the_tmux_transport_runs_the_agent_and_records_its_output(
+    run_log_dir, run_key, tmux_cleanup
+):
     """AC18. Same wrapper, same three files — only the parent differs."""
-    spawned = _spawn(AgentTransport.TMUX, "print('from the tmux transport')")
+    spawned = _spawn(run_key, AgentTransport.TMUX, "print('from the tmux transport')")
 
     assert spawned.transport_used is AgentTransport.TMUX
     assert spawned.handle is None, "tmux owns the process; there is no Popen to hold"
     assert spawned.pid > 0
-    assert _wait_for_rc() == "0"
-    assert paths_for(RUN_CODE, RUN_ID).out.read_text() == "from the tmux transport\n"
+    assert _wait_for_rc(run_key) == "0"
+    assert paths_for(*run_key).out.read_text() == "from the tmux transport\n"
 
 
 @has_tmux
-def test_tmux_ls_shows_the_runs_own_session(run_log_dir, tmux_cleanup):
+def test_tmux_ls_shows_the_runs_own_session(run_log_dir, run_key, tmux_cleanup):
     """AC18. This is what makes `attach_command` usable: the session is there."""
-    _spawn(AgentTransport.TMUX, "import time; print('up', flush=True); time.sleep(5)")
+    _spawn(run_key, AgentTransport.TMUX, "import time; print('up', flush=True); time.sleep(5)")
 
     listed = subprocess.run(["tmux", "ls"], capture_output=True, text=True, check=False)
 
-    assert tmux_session_name(STEM) in listed.stdout
-    assert tmux_session_name(run_file_stem(RUN_CODE, RUN_ID)) == f"lg-{STEM}"
+    assert tmux_session_name(run_file_stem(*run_key)) in listed.stdout
+    assert tmux_session_name(run_file_stem(*run_key)) == f"lg-{run_file_stem(*run_key)}"
 
 
 @has_tmux
-def test_the_tmux_pane_pid_is_also_a_session_leader(run_log_dir, tmux_cleanup):
+def test_the_tmux_pane_pid_is_also_a_session_leader(run_log_dir, run_key, tmux_cleanup):
     """AC17, the half that could break the already-shipped group kill.
 
     tmux `setsid()`s each pane and the wrapper is the pane process, so this
@@ -247,15 +276,15 @@ def test_the_tmux_pane_pid_is_also_a_session_leader(run_log_dir, tmux_cleanup):
     dispatch inside `run_detached_stop` — never a tmux branch in `print_mode`
     or `agent_spawn`.
     """
-    spawned = _spawn(AgentTransport.TMUX, "import time; time.sleep(5)")
+    spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
 
     assert os.getpgid(spawned.pid) == spawned.pid
 
 
 @has_tmux
-def test_both_transports_run_the_identical_wrapper(run_log_dir):
+def test_both_transports_run_the_identical_wrapper(run_log_dir, run_key):
     """AC18. One wrapper is what keeps S4-S6 transport-blind."""
-    paths = paths_for(RUN_CODE, RUN_ID)
+    paths = paths_for(*run_key)
     wrapper = wrap_for_files(_invocation("print(1)").argv, paths)
 
     assert wrapper[:2] == ["sh", "-c"]
@@ -264,7 +293,7 @@ def test_both_transports_run_the_identical_wrapper(run_log_dir):
 
 
 @has_tmux
-def test_a_tmux_spawn_that_cannot_start_a_session_is_not_silently_a_file_run(run_log_dir):
+def test_a_tmux_spawn_that_cannot_start_a_session_is_not_silently_a_file_run(run_log_dir, run_key):
     """A failure to detach must be visible. Reporting FILE for a run that
     nobody can attach to is the column asserting something untrue."""
     with (
@@ -274,14 +303,14 @@ def test_a_tmux_spawn_that_cannot_start_a_session_is_not_silently_a_file_run(run
         ),
         pytest.raises(subprocess.SubprocessError),
     ):
-        _spawn(AgentTransport.TMUX, "print('never runs')")
+        _spawn(run_key, AgentTransport.TMUX, "print('never runs')")
 
 
 # --- AC1/AC3/AC18: the prompt arrives on EVERY transport ---------------------
 
 
 @pytest.mark.parametrize("transport", list(AgentTransport))
-def test_every_transport_delivers_the_whole_prompt(transport, run_log_dir, tmux_cleanup):
+def test_every_transport_delivers_the_whole_prompt(transport, run_log_dir, run_key, tmux_cleanup):
     """AC1/AC3/AC18, parity rather than whatever this host happens to resolve.
 
     The tmux transport once ignored `stdin_prompt` entirely: a pane's stdin is
@@ -299,20 +328,20 @@ def test_every_transport_delivers_the_whole_prompt(transport, run_log_dir, tmux_
     prompt = "line of prompt text\n" * 20_000  # ~400KB
     script = "import sys\nsys.stdout.write(str(len(sys.stdin.read())))"
 
-    spawned = _spawn(transport, script, stdin_prompt=prompt)
+    spawned = _spawn(run_key, transport, script, stdin_prompt=prompt)
 
     assert spawned.transport_used is transport
-    assert _wait_for_rc(timeout=60) == "0"
-    paths = paths_for(RUN_CODE, RUN_ID)
+    assert _wait_for_rc(run_key, timeout=60) == "0"
+    paths = paths_for(*run_key)
     assert int(paths.out.read_text().strip()) == len(prompt)
     assert paths.prompt.read_text() == prompt
 
 
 @pytest.mark.parametrize("transport", list(AgentTransport))
-def test_the_wrapper_redirects_stdin_only_when_there_is_a_prompt(transport, run_log_dir):
+def test_the_wrapper_redirects_stdin_only_when_there_is_a_prompt(transport, run_log_dir, run_key):
     """The redirect is per-run. A run with no prompt writes no prompt file, so
     an unconditional `< <prompt>` would fail the spawn with nothing to read."""
-    paths = paths_for(RUN_CODE, RUN_ID)
+    paths = paths_for(*run_key)
     argv = _invocation("print(1)").argv
 
     assert str(paths.prompt) not in wrap_for_files(argv, paths)[2]
@@ -359,7 +388,7 @@ def test_the_transport_column_is_nullable_and_is_not_backfilled(isolated_db):
 # --- S8: the run record ------------------------------------------------------
 
 
-def test_the_spawn_announces_its_transport_as_a_sys_line(run_log_dir):
+def test_the_spawn_announces_its_transport_as_a_sys_line(run_log_dir, run_key):
     """AC29. In the existing SYS house style: `noun · detail`."""
     from loregarden.agents.executors import agent_spawn
 
@@ -372,7 +401,7 @@ def test_the_spawn_announces_its_transport_as_a_sys_line(run_log_dir):
 # --- AC10: the output outlives the reader -------------------------------------
 
 
-def test_the_agent_keeps_writing_after_its_spawner_lets_go(run_log_dir):
+def test_the_agent_keeps_writing_after_its_spawner_lets_go(run_log_dir, run_key):
     """AC10's mechanism, without killing the test runner.
 
     The defect this replaces: `stdout=PIPE` means the SERVER is the reader, so
@@ -388,8 +417,8 @@ def test_the_agent_keeps_writing_after_its_spawner_lets_go(run_log_dir):
         "for i in range(6):\n"
         "    sys.stdout.write(f'line {i}\\n'); sys.stdout.flush(); time.sleep(0.15)\n"
     )
-    spawned = _spawn(AgentTransport.FILE, script)
-    paths = paths_for(RUN_CODE, RUN_ID)
+    spawned = _spawn(run_key, AgentTransport.FILE, script)
+    paths = paths_for(*run_key)
 
     # Whatever has landed so far is what the "old" server ingested.
     first = RunOutputTail(paths.out)
@@ -408,7 +437,7 @@ def test_the_agent_keeps_writing_after_its_spawner_lets_go(run_log_dir):
         assert spawned.handle.stdout is None
         assert spawned.handle.stderr is None
 
-    assert _wait_for_rc() == "0"
+    assert _wait_for_rc(run_key) == "0"
     later = RunOutputTail(paths.out, start_offset=resume_at)
     resumed = []
     while (line := later.readline(timeout=0)) is not None:
