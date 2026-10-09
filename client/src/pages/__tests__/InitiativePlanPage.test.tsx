@@ -388,7 +388,7 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
 });
 
-test("the parallel cap changes only on Update, and says when lanes cap it lower", async () => {
+test("the parallel cap changes only on Update", async () => {
   mockApi.setAutopilot.mockResolvedValue(plan({ autopilot: { ...plan().autopilot, max_parallel: 8 } }));
   const user = userEvent.setup();
   renderPage();
@@ -399,7 +399,6 @@ test("the parallel cap changes only on Update, and says when lanes cap it lower"
 
   await user.selectOptions(within(panel).getByRole("combobox", { name: /Most tickets/ }), "8");
   expect(mockApi.setAutopilot).not.toHaveBeenCalled();
-  expect(within(panel).getByText(/Only 5 lanes have open work/)).toBeInTheDocument();
 
   await user.click(update);
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 8 }));

@@ -47,8 +47,6 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
-  // One ticket per lane at a time, so the lanes with open work cap it too.
-  const openLanes = new Set(plan.nodes.filter((n) => !n.external && n.status !== "done").map((n) => n.lane)).size;
   const [draftParallel, setDraftParallel] = useState<number | null>(null);
   const parallel = draftParallel ?? autopilot.max_parallel;
   const parallelChanged = parallel !== autopilot.max_parallel;
@@ -62,8 +60,8 @@ export function AutopilotPanel({
           </h2>
           <p className="plan-muted">
             {autopilot.enabled
-              ? `On — ${autopilot.in_flight} of ${autopilot.max_parallel} running. It queues ready work every minute, critical path first, one ticket per lane.`
-              : "Off. Turn it on to queue ready work as prerequisites land — critical path first, one ticket per lane, never work marked for a person."}
+              ? `On — ${autopilot.in_flight} of ${autopilot.max_parallel} running. It queues ready work every minute, critical path first.`
+              : "Off. Turn it on to queue ready work as prerequisites land — critical path first, never work marked for a person."}
           </p>
         </div>
         <div className="plan-autopilot-controls">
@@ -101,14 +99,6 @@ export function AutopilotPanel({
           </Button>
         </div>
       </header>
-
-      {openLanes > 0 && parallel > openLanes ? (
-        <p className="plan-hint">
-          Only {openLanes} {openLanes === 1 ? "lane has" : "lanes have"} open work, and it runs one ticket per lane — so
-          at most {openLanes} run at once whatever this is set to. Tag tickets <span className="plan-mono">lane-…</span>{" "}
-          to split a workspace into more lanes.
-        </p>
-      ) : null}
 
       {autopilot.available ? null : (
         <p className="plan-hint">
