@@ -32,7 +32,7 @@
   z-index: 7;
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   box-shadow: inset -1px 0 0 var(--bd);
-  transition: filter 0.16s ease;
+  transition: filter var(--t-fast) ease;
 }
 
 .app-sidebar[data-expanded="true"] {

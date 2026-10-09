@@ -531,7 +531,7 @@
   gap: 4px;
   margin-top: 3px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--t-fast) ease;
 }
 
 .lg-chat-turn:hover .lg-chat-message-actions,
