@@ -476,6 +476,20 @@ in `.ts`/`.tsx`/`.css` the gate rejects:
 Waive a case with `theme-ok:` plus a substantive reason; as with `ux-ok:`, the reason is a claim
 for the reviewer to check.
 
+The `ts-motion` gate (`ts_motion_check.cjs`, loregarden only) does the same for motion. Durations
+and easings are tokens on `:root` (`--t-fast`/`--t-med`/`--t-slow`/`--t-stagger`, `--ease-out`),
+mirrored from `@lore-eden/ui`, whose `tokens/specs.ts` holds the rules. A global
+`prefers-reduced-motion` rule in `index.css` covers every stylesheet. On changed lines in `.css`
+the gate rejects:
+
+- a transition or keyframe on a layout property (`width`, `top`, `margin`, …) or `transition:
+  all`; animate `transform` and `opacity`.
+- a hardcoded UI duration (400ms or less); use the token. Longer ambient loops are exempt.
+- motion in a repo with no reduced-motion rule, globally or in the file.
+
+Waive with `motion-ok:` plus a reason. Motion in JS (`requestAnimationFrame`, a library) is not
+covered by the CSS rule and must check the preference itself.
+
 ## Knowing when a ticket is done
 
 A ticket is done when its **acceptance criteria** are met, not when reviewers stop finding

@@ -35,12 +35,43 @@
   --ui: "IBM Plex Sans", system-ui, sans-serif;
   --dp: "Fredoka", "Sora", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Motion. Same names and values as @lore-eden/ui's motion tokens
+     (ts/src/tokens/specs.ts), which hold the rules; keep the two in step until
+     this client consumes the kit. Motion explains a change of state, never
+     decorates. fast: hover, press, tooltip. med: toggle, dropdown, toast in.
+     slow: modal or panel in. An exit runs one step faster than its entrance.
+     Animate transform and opacity only. */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.12, 0.4, 1);
+  --t-fast: 0.12s;
+  --t-med: 0.2s;
+  --t-slow: 0.3s;
+  --t-stagger: 0.04s;
 }
 
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: #2e3626 transparent;
+}
+
+/* Motion is suppressed wholesale, not per animation: 17 of the client's
+   animated stylesheets had no reduced-motion rule of their own, and a reader
+   who asked for less motion did not mean less of the ones someone remembered.
+   Durations go to near zero rather than `none`, so every animation lands on
+   its end state and animationend/transitionend still fire for code that waits
+   on them. !important also beats inline `style` animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 html,
