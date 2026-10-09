@@ -75,7 +75,7 @@ it("closes on Escape and on overlay click", async () => {
   fireEvent.keyDown(document, { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  const backdrop = document.querySelector(".modal-overlay--shell");
+  const backdrop = document.querySelector(".modal-overlay");
   if (!backdrop) throw new Error("no backdrop");
   fireEvent.click(backdrop);
   expect(onClose).toHaveBeenCalledTimes(2);

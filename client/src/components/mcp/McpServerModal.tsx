@@ -2,8 +2,7 @@
 import type { McpServerInput, McpServerView } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { McpServerForm } from "./McpServerForm";
-import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
-import { useDialogDismiss } from "../../hooks/useDialogDismiss";
+import { ModalShell } from "../ui/ModalShell";
 
 /**
  * Register or edit a server, over the gateway rather than instead of it.
@@ -28,46 +27,35 @@ export function McpServerModal({
   onSubmit: (body: McpServerInput) => void;
   onClose: () => void;
 }) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Through the shared stack rather than a listener of its own: two of these
-  // mounted at once both closed on a single press, because nothing decided
-  // whose press it was.
-  useDialogDismiss(open ? onClose : null);
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="mcp-server-modal-title">{null}</ModalShell>;
+  }
 
   return (
-    <>
-      <div className="modal-overlay" data-testid="modal-backdrop" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby="mcp-server-modal-title"
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <h2 className="modal-title" id="mcp-server-modal-title">
-              {server ? `Edit ${server.name}` : "Register MCP server"}
-            </h2>
-            <p className="modal-subtitle">
-              A registered server is composed into every agent&rsquo;s MCP config at start —
-              there is no per-agent grant, so registering it grants it to all of them.
-            </p>
-          </div>
-          <IconCloseButton onClick={onClose} />
+    <ModalShell open onDismiss={onClose} labelledBy="mcp-server-modal-title">
+      <div className="modal-header">
+        <div>
+          <h2 className="modal-title" id="mcp-server-modal-title">
+            {server ? `Edit ${server.name}` : "Register MCP server"}
+          </h2>
+          <p className="modal-subtitle">
+            A registered server is composed into every agent&rsquo;s MCP config at start —
+            there is no per-agent grant, so registering it grants it to all of them.
+          </p>
         </div>
-        <div className="modal-body">
-          <McpServerForm
-            server={server}
-            isSaving={isSaving}
-            error={error}
-            onSubmit={onSubmit}
-            onCancel={onClose}
-          />
-        </div>
+        <IconCloseButton onClick={onClose} />
       </div>
-    </>
+      <div className="modal-body">
+        <McpServerForm
+          server={server}
+          isSaving={isSaving}
+          error={error}
+          onSubmit={onSubmit}
+          onCancel={onClose}
+        />
+      </div>
+    </ModalShell>
   );
 }

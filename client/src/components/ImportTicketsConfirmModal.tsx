@@ -17,8 +17,8 @@ import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { ImportQuickCreate } from "./ImportQuickCreate";
 import { ImportTicketPreviewCard } from "./ImportTicketPreviewCard";
 import { Select } from "./ui/Select";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 export interface ImportTicketsConfirmModalProps {
   open: boolean;
@@ -48,10 +48,6 @@ export function ImportTicketsConfirmModal({
   onClose,
   onConfirm,
 }: ImportTicketsConfirmModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open || !preview ? null : isImporting ? undefined : onClose);
   const [draftTickets, setDraftTickets] = useState<TicketImportItem[]>([]);
   const [bulkMilestoneId, setBulkMilestoneId] = useState("");
   const bulkMilestoneFieldId = useId();
@@ -87,7 +83,10 @@ export function ImportTicketsConfirmModal({
   const hasTickets = fileTickets.length > 0;
   const canImport = hasTickets && !hasBlockingErrors && draftIssues.length === 0 && !isImporting;
 
-  if (!open || !preview) return null;
+  if (!open || !preview) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="import-tickets-title">{null}</ModalShell>;
+  }
 
   const updateTicket = (index: number, ticket: TicketImportItem) => {
     setDraftTickets((current) => current.map((item, i) => (i === index ? ticket : item)));
@@ -201,192 +200,181 @@ export function ImportTicketsConfirmModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isImporting ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel import-confirm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="import-tickets-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">{workspaceSlug}</div>
-            <h2 id="import-tickets-title" className="modal-title">
-              Import work items
-            </h2>
-            <p className="modal-subtitle">
-              Review parsed fields, assign milestones, and confirm before importing.
-            </p>
-          </div>
-          <IconCloseButton disabled={isImporting} onClick={onClose} />
+    <ModalShell open onDismiss={isImporting ? undefined : onClose} labelledBy="import-tickets-title" panelClassName="import-confirm-modal">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">{workspaceSlug}</div>
+          <h2 id="import-tickets-title" className="modal-title">
+            Import work items
+          </h2>
+          <p className="modal-subtitle">
+            Review parsed fields, assign milestones, and confirm before importing.
+          </p>
         </div>
-
-        <div className="modal-body">
-          <div className="modal-field">
-            <div className="modal-field-label">Summary</div>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
-              {hasTickets ? (
-                <>
-                  <strong style={{ color: "var(--tx)" }}>{fileTickets.length}</strong> work item
-                  {fileTickets.length === 1 ? "" : "s"} from {preview.formats.join(", ") || "unknown"}{" "}
-                  file{preview.formats.length === 1 ? "" : "s"}
-                  {quickContainers.length > 0 && (
-                    <>
-                      {" "}
-                      + {quickContainers.length} new container
-                      {quickContainers.length === 1 ? "" : "s"}
-                    </>
-                  )}
-                  {Object.keys(preview.by_type).length > 0 && <> — {formatCounts(preview.by_type)}</>}
-                </>
-              ) : (
-                "No valid tickets were found in the selected files."
-              )}
-            </div>
-          </div>
-
-          {hasTickets && (
-            <div className="modal-field">
-              <label htmlFor={bulkMilestoneFieldId} className="modal-field-label">Assign milestone to all</label>
-              <div className="import-bulk-milestone-row">
-                <Select
-                  id={bulkMilestoneFieldId}
-                  className="btn-secondary filter-select"
-                  style={{ flex: 1, fontSize: 12 }}
-                  value={bulkMilestoneId}
-                  disabled={isImporting}
-                  onChange={(event) => setBulkMilestoneId(event.target.value)}
-                >
-                  <option value="">Choose milestone…</option>
-                  {milestoneOptions.map((option) => (
-                    <option key={`bulk-${option.source}-${option.external_id}`} value={option.external_id}>
-                      {option.external_id} · {option.title}
-                      {option.source === "quick" ? " (new)" : option.source === "import" ? " (import)" : ""}
-                    </option>
-                  ))}
-                </Select>
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isImporting || !bulkMilestoneId}
-                  onClick={applyBulkMilestone}
-                >
-                  Apply to all
-                </button>
-                <ImportQuickCreate
-                  label="+ Milestone"
-                  placeholder="New milestone title"
-                  actionLabel="Add"
-                  disabled={isImporting}
-                  onSubmit={(title) => handleQuickCreateMilestone(title)}
-                />
-              </div>
-            </div>
-          )}
-
-          {parseErrors.length > 0 && (
-            <div className="modal-field">
-              <div className="modal-field-label">Parse errors</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--rdl)" }}>
-                {parseErrors.map((error) => (
-                  <li key={error}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {draftIssues.length > 0 && (
-            <div className="modal-field">
-              <div className="modal-field-label">Import blockers</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--amb)" }}>
-                {draftIssues.map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {preview.warnings.length > 0 && draftIssues.length === 0 && (
-            <div className="modal-field">
-              <div className="modal-field-label">Notes</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}>
-                {preview.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {importError && (
-            <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-              {importError}
-            </p>
-          )}
-
-          {quickContainers.length > 0 && (
-            <div className="modal-field">
-              <div className="modal-field-label">New containers</div>
-              <ul className="import-quick-container-list">
-                {quickContainers.map((ticket) => (
-                  <li key={ticket.external_id ?? ticket.title}>
-                    <span style={{ color: "var(--tx)" }}>{ticket.title}</span>
-                    {" · "}
-                    {workItemTypeLabel(ticket.work_item_type)}
-                    {ticket.external_id ? ` · ${ticket.external_id}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {hasTickets && (
-            <div className="modal-field">
-              <div className="modal-field-label">
-                {fileTickets.length === 1 ? "Ticket preview" : "Ticket previews"}
-              </div>
-              <div className="import-preview-stack">
-                {draftTickets.map((ticket, index) => {
-                  if (ticket.source_format === "quick") return null;
-                  return (
-                    <ImportTicketPreviewCard
-                      key={`${ticket.source_label}-${index}`}
-                      ticket={ticket}
-                      index={index}
-                      total={fileTickets.length}
-                      milestoneOptions={milestoneOptions}
-                      existingTickets={workspaceTickets.data ?? []}
-                      batchTickets={draftTickets}
-                      disabled={isImporting}
-                      onChange={(updated) => updateTicket(index, updated)}
-                      onQuickCreateMilestone={handleQuickCreateMilestone}
-                      onQuickCreateCapability={handleQuickCreateCapability}
-                      onQuickCreateFeature={handleQuickCreateFeature}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isImporting} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!canImport}
-            onClick={() => void onConfirm(draftTickets)}
-          >
-            {isImporting
-              ? "Importing…"
-              : `Import ${draftTickets.length} item${draftTickets.length === 1 ? "" : "s"}`}
-          </button>
-        </div>
+        <IconCloseButton disabled={isImporting} onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body">
+        <div className="modal-field">
+          <div className="modal-field-label">Summary</div>
+          <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+            {hasTickets ? (
+              <>
+                <strong style={{ color: "var(--tx)" }}>{fileTickets.length}</strong> work item
+                {fileTickets.length === 1 ? "" : "s"} from {preview.formats.join(", ") || "unknown"}{" "}
+                file{preview.formats.length === 1 ? "" : "s"}
+                {quickContainers.length > 0 && (
+                  <>
+                    {" "}
+                    + {quickContainers.length} new container
+                    {quickContainers.length === 1 ? "" : "s"}
+                  </>
+                )}
+                {Object.keys(preview.by_type).length > 0 && <> — {formatCounts(preview.by_type)}</>}
+              </>
+            ) : (
+              "No valid tickets were found in the selected files."
+            )}
+          </div>
+        </div>
+
+        {hasTickets && (
+          <div className="modal-field">
+            <label htmlFor={bulkMilestoneFieldId} className="modal-field-label">Assign milestone to all</label>
+            <div className="import-bulk-milestone-row">
+              <Select
+                id={bulkMilestoneFieldId}
+                className="btn-secondary filter-select"
+                style={{ flex: 1, fontSize: 12 }}
+                value={bulkMilestoneId}
+                disabled={isImporting}
+                onChange={(event) => setBulkMilestoneId(event.target.value)}
+              >
+                <option value="">Choose milestone…</option>
+                {milestoneOptions.map((option) => (
+                  <option key={`bulk-${option.source}-${option.external_id}`} value={option.external_id}>
+                    {option.external_id} · {option.title}
+                    {option.source === "quick" ? " (new)" : option.source === "import" ? " (import)" : ""}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isImporting || !bulkMilestoneId}
+                onClick={applyBulkMilestone}
+              >
+                Apply to all
+              </Button>
+              <ImportQuickCreate
+                label="+ Milestone"
+                placeholder="New milestone title"
+                actionLabel="Add"
+                disabled={isImporting}
+                onSubmit={(title) => handleQuickCreateMilestone(title)}
+              />
+            </div>
+          </div>
+        )}
+
+        {parseErrors.length > 0 && (
+          <div className="modal-field">
+            <div className="modal-field-label">Parse errors</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--rdl)" }}>
+              {parseErrors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {draftIssues.length > 0 && (
+          <div className="modal-field">
+            <div className="modal-field-label">Import blockers</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--amb)" }}>
+              {draftIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {preview.warnings.length > 0 && draftIssues.length === 0 && (
+          <div className="modal-field">
+            <div className="modal-field-label">Notes</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}>
+              {preview.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {importError && (
+          <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+            {importError}
+          </p>
+        )}
+
+        {quickContainers.length > 0 && (
+          <div className="modal-field">
+            <div className="modal-field-label">New containers</div>
+            <ul className="import-quick-container-list">
+              {quickContainers.map((ticket) => (
+                <li key={ticket.external_id ?? ticket.title}>
+                  <span style={{ color: "var(--tx)" }}>{ticket.title}</span>
+                  {" · "}
+                  {workItemTypeLabel(ticket.work_item_type)}
+                  {ticket.external_id ? ` · ${ticket.external_id}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {hasTickets && (
+          <div className="modal-field">
+            <div className="modal-field-label">
+              {fileTickets.length === 1 ? "Ticket preview" : "Ticket previews"}
+            </div>
+            <div className="import-preview-stack">
+              {draftTickets.map((ticket, index) => {
+                if (ticket.source_format === "quick") return null;
+                return (
+                  <ImportTicketPreviewCard
+                    key={`${ticket.source_label}-${index}`}
+                    ticket={ticket}
+                    index={index}
+                    total={fileTickets.length}
+                    milestoneOptions={milestoneOptions}
+                    existingTickets={workspaceTickets.data ?? []}
+                    batchTickets={draftTickets}
+                    disabled={isImporting}
+                    onChange={(updated) => updateTicket(index, updated)}
+                    onQuickCreateMilestone={handleQuickCreateMilestone}
+                    onQuickCreateCapability={handleQuickCreateCapability}
+                    onQuickCreateFeature={handleQuickCreateFeature}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isImporting} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={!canImport}
+          onClick={() => void onConfirm(draftTickets)}
+        >
+          {isImporting
+            ? "Importing…"
+            : `Import ${draftTickets.length} item${draftTickets.length === 1 ? "" : "s"}`}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

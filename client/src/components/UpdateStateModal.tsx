@@ -5,8 +5,9 @@ import { Select } from "./ui/Select";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../lib/ticketStates";
 
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
+import { ModalShell } from "./ui/ModalShell";
 
 export const TICKET_STATES: TicketState[] = [
   "backlog",
@@ -113,14 +114,10 @@ export function UpdateStateModal({
   onClose,
   onSave,
 }: UpdateStateModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const original = useMemo(() => (ticket ? draftFromTicket(ticket) : null), [ticket]);
   const [draft, setDraft] = useState<StateUpdateDraft | null>(original);
   const [bulkStatus, setBulkStatus] = useState<StageStatus>("pending");
   const [selectedStageKeys, setSelectedStageKeys] = useState<Set<string>>(new Set());
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open || !ticket || !draft || !original ? null : onClose);
 
   useEffect(() => {
     if (open && ticket) {
@@ -130,7 +127,10 @@ export function UpdateStateModal({
     }
   }, [open, ticket]);
 
-  if (!open || !ticket || !draft || !original) return null;
+  if (!open || !ticket || !draft || !original) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="update-state-title">{null}</ModalShell>;
+  }
 
   const stageOptions = workflowStages.length
     ? workflowStages
@@ -165,284 +165,268 @@ export function UpdateStateModal({
   const selectedCount = selectedStageKeys.size;
 
   return (
-    <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-state-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Manual update</div>
-            <h2 id="update-state-title" className="modal-title">
-              Update state
-            </h2>
-            <p className="modal-subtitle">{ticket.title}</p>
-          </div>
-          <IconCloseButton onClick={onClose} />
+    <ModalShell open onDismiss={onClose} labelledBy="update-state-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Manual update</div>
+          <h2 id="update-state-title" className="modal-title">
+            Update state
+          </h2>
+          <p className="modal-subtitle">{ticket.title}</p>
         </div>
+        <IconCloseButton onClick={onClose} />
+      </div>
 
-        <div className="modal-body">
-          <section >
-            <h3 className="modal-section-title">Ticket state · WHAT</h3>
-            <span className="modal-field-label">Pick a status</span>
-            <div className="modal-state-grid" role="radiogroup" aria-label="Ticket state">
-              {TICKET_STATES.map((state) => {
-                const active = draft.state === state;
-                return (
-                  <label
-                    key={state}
-                    className={`modal-state-option${active ? " modal-state-option-active" : ""}${
-                      state === "wont_do" ? " modal-state-option-wont-do" : ""
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="ticket-state"
-                      value={state}
-                      checked={active}
-                      disabled={isSaving}
-                      onChange={() =>
-                        setDraft((d) =>
-                          d
-                            ? {
-                                ...d,
-                                state,
-                                stateLocked: state === "wont_do" ? true : d.stateLocked,
-                              }
-                            : d,
-                        )
-                      }
-                    />
-                    <span style={{ color: active ? STATE_COLORS[state] : undefined }}>
-                      {STATE_LABELS[state]}
-                    </span>
-                  </label>
-                );
-              })}
+      <div className="modal-body">
+        <section >
+          <h3 className="modal-section-title">Ticket state · WHAT</h3>
+          <span className="modal-field-label">Pick a status</span>
+          <div className="modal-state-grid" role="radiogroup" aria-label="Ticket state">
+            {TICKET_STATES.map((state) => {
+              const active = draft.state === state;
+              return (
+                <label
+                  key={state}
+                  className={`modal-state-option${active ? " modal-state-option-active" : ""}${
+                    state === "wont_do" ? " modal-state-option-wont-do" : ""
+                  }`}
+                >
+                  <Input
+                    type="radio"
+                    name="ticket-state"
+                    value={state}
+                    checked={active}
+                    disabled={isSaving}
+                    onChange={() =>
+                      setDraft((d) =>
+                        d
+                          ? {
+                              ...d,
+                              state,
+                              stateLocked: state === "wont_do" ? true : d.stateLocked,
+                            }
+                          : d,
+                      )
+                    }
+                  />
+                  <span style={{ color: active ? STATE_COLORS[state] : undefined }}>
+                    {STATE_LABELS[state]}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <label className="state-lock-toggle">
+            <Input
+              type="checkbox"
+              checked={draft.stateLocked}
+              disabled={isSaving || draft.state === "wont_do"}
+              onChange={(e) =>
+                setDraft((d) => d && { ...d, stateLocked: e.target.checked })
+              }
+            />
+            Lock state (skip auto-sync from workflow)
+            {draft.state === "wont_do" && (
+              <span className="modal-hint"> — always locked for won't do</span>
+            )}
+          </label>
+        </section>
+
+        <section >
+          <h3 className="modal-section-title">Workflow cursor · HOW</h3>
+          <label className="modal-field">
+            <span className="modal-field-label">Current stage</span>
+            <Select
+              className="filter-select"
+              value={draft.workflowStageKey}
+              disabled={isSaving || !stageOptions.length}
+              onChange={(e) =>
+                setDraft((d) => d && { ...d, workflowStageKey: e.target.value })
+              }
+            >
+              {stageOptions.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="modal-field">
+            <span className="modal-field-label">Stage status</span>
+            <Select
+              className="filter-select"
+              value={draft.workflowStageStatus}
+              disabled={isSaving}
+              onChange={(e) =>
+                setDraft(
+                  (d) => d && { ...d, workflowStageStatus: e.target.value as StageStatus },
+                )
+              }
+            >
+              {STAGE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace("_", " ")}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </section>
+
+        <section >
+          <div className="modal-section-header">
+            <h3 className="modal-section-title">Lifecycle steps</h3>
+          </div>
+          <div className="modal-bulk-actions">
+            <div className="modal-bulk-header">
+              <span className="modal-field-label">Bulk update stages</span>
+              <span className="modal-selection-count">
+                {selectedCount > 0 ? `${selectedCount} selected` : "Check steps below"}
+              </span>
             </div>
-            <label className="state-lock-toggle">
-              <input
-                type="checkbox"
-                checked={draft.stateLocked}
-                disabled={isSaving || draft.state === "wont_do"}
-                onChange={(e) =>
-                  setDraft((d) => d && { ...d, stateLocked: e.target.checked })
-                }
-              />
-              Lock state (skip auto-sync from workflow)
-              {draft.state === "wont_do" && (
-                <span className="modal-hint"> — always locked for won't do</span>
-              )}
-            </label>
-          </section>
-
-          <section >
-            <h3 className="modal-section-title">Workflow cursor · HOW</h3>
-            <label className="modal-field">
-              <span className="modal-field-label">Current stage</span>
-              <select
-                className="filter-select"
-                value={draft.workflowStageKey}
-                disabled={isSaving || !stageOptions.length}
-                onChange={(e) =>
-                  setDraft((d) => d && { ...d, workflowStageKey: e.target.value })
-                }
-              >
-                {stageOptions.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="modal-field">
-              <span className="modal-field-label">Stage status</span>
-              <select
-                className="filter-select"
-                value={draft.workflowStageStatus}
+            <div className="modal-bulk-row">
+              <Button
+                variant="secondary" className="btn-compact"
                 disabled={isSaving}
-                onChange={(e) =>
-                  setDraft(
-                    (d) => d && { ...d, workflowStageStatus: e.target.value as StageStatus },
-                  )
-                }
+                onClick={selectAllStages}
+              >
+                Select all
+              </Button>
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isSaving || selectedCount === 0}
+                onClick={clearStageSelection}
+              >
+                Clear
+              </Button>
+            </div>
+            <div className="modal-bulk-row">
+              <Select
+                aria-label="Status to apply to selected stages"
+                className="filter-select"
+                value={bulkStatus}
+                disabled={isSaving}
+                onChange={(e) => setBulkStatus(e.target.value as StageStatus)}
               >
                 {STAGE_STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {s.replace("_", " ")}
                   </option>
                 ))}
-              </select>
-            </label>
-          </section>
-
-          <section >
-            <div className="modal-section-header">
-              <h3 className="modal-section-title">Lifecycle steps</h3>
+              </Select>
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isSaving || selectedCount === 0}
+                onClick={() => applyToSelected(bulkStatus)}
+              >
+                Apply to selected
+              </Button>
             </div>
-            <div className="modal-bulk-actions">
-              <div className="modal-bulk-header">
-                <span className="modal-field-label">Bulk update stages</span>
-                <span className="modal-selection-count">
-                  {selectedCount > 0 ? `${selectedCount} selected` : "Check steps below"}
-                </span>
-              </div>
-              <div className="modal-bulk-row">
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving}
-                  onClick={selectAllStages}
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving || selectedCount === 0}
-                  onClick={clearStageSelection}
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="modal-bulk-row">
-                <Select
-                  aria-label="Status to apply to selected stages"
-                  className="filter-select"
-                  value={bulkStatus}
-                  disabled={isSaving}
-                  onChange={(e) => setBulkStatus(e.target.value as StageStatus)}
-                >
-                  {STAGE_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.replace("_", " ")}
-                    </option>
-                  ))}
-                </Select>
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving || selectedCount === 0}
-                  onClick={() => applyToSelected(bulkStatus)}
-                >
-                  Apply to selected
-                </button>
-              </div>
-              <div className="modal-bulk-row modal-bulk-presets">
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving}
-                  onClick={() =>
-                    applyStageStatuses(
-                      setAllStageStatuses(orderedStageKeys, "pending", draft.stageStatuses),
-                    )
-                  }
-                >
-                  All pending
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving}
-                  onClick={() =>
-                    applyStageStatuses(
-                      setAllStageStatuses(orderedStageKeys, "done", draft.stageStatuses),
-                    )
-                  }
-                >
-                  All done
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  disabled={isSaving || !draft.workflowStageKey}
-                  onClick={() =>
-                    applyStageStatuses(
-                      markThroughStage(
-                        orderedStageKeys,
-                        draft.workflowStageKey,
-                        "done",
-                        "pending",
-                        draft.stageStatuses,
-                      ),
-                    )
-                  }
-                >
-                  Done through cursor
-                </button>
-              </div>
+            <div className="modal-bulk-row modal-bulk-presets">
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isSaving}
+                onClick={() =>
+                  applyStageStatuses(
+                    setAllStageStatuses(orderedStageKeys, "pending", draft.stageStatuses),
+                  )
+                }
+              >
+                All pending
+              </Button>
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isSaving}
+                onClick={() =>
+                  applyStageStatuses(
+                    setAllStageStatuses(orderedStageKeys, "done", draft.stageStatuses),
+                  )
+                }
+              >
+                All done
+              </Button>
+              <Button
+                variant="secondary" className="btn-compact"
+                disabled={isSaving || !draft.workflowStageKey}
+                onClick={() =>
+                  applyStageStatuses(
+                    markThroughStage(
+                      orderedStageKeys,
+                      draft.workflowStageKey,
+                      "done",
+                      "pending",
+                      draft.stageStatuses,
+                    ),
+                  )
+                }
+              >
+                Done through cursor
+              </Button>
             </div>
-            <div className="modal-stage-list">
-              {ticket.stages.map((stage) => {
-                const isSelected = selectedStageKeys.has(stage.key);
-                return (
-                  <div
-                    key={stage.key}
-                    className={`modal-stage-row${isSelected ? " modal-stage-row-selected" : ""}`}
-                  >
-                    <label className="modal-stage-check">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={isSaving}
-                        onChange={() => toggleStageSelected(stage.key)}
-                      />
-                    </label>
-                    <span className="modal-stage-name">
-                      {stage.name}
-                      {stage.optional && <span className="count-pill">optional</span>}
-                    </span>
-                    <Select
-                      aria-label={`${stage.name} status`}
-                      className="filter-select stage-status-select"
-                      value={draft.stageStatuses[stage.key] ?? stage.status}
+          </div>
+          <div className="modal-stage-list">
+            {ticket.stages.map((stage) => {
+              const isSelected = selectedStageKeys.has(stage.key);
+              return (
+                <div
+                  key={stage.key}
+                  className={`modal-stage-row${isSelected ? " modal-stage-row-selected" : ""}`}
+                >
+                  <label className="modal-stage-check">
+                    <Input
+                      type="checkbox"
+                      checked={isSelected}
                       disabled={isSaving}
-                      onChange={(e) =>
-                        setDraft((d) =>
-                          d
-                            ? {
-                                ...d,
-                                stageStatuses: {
-                                  ...d.stageStatuses,
-                                  [stage.key]: e.target.value as StageStatus,
-                                },
-                              }
-                            : d,
-                        )
-                      }
-                    >
-                      {STAGE_STATUSES.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={isSaving || !dirty}
-            onClick={() => onSave(draft, original)}
-          >
-            {isSaving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
+                      onChange={() => toggleStageSelected(stage.key)}
+                    />
+                  </label>
+                  <span className="modal-stage-name">
+                    {stage.name}
+                    {stage.optional && <span className="count-pill">optional</span>}
+                  </span>
+                  <Select
+                    aria-label={`${stage.name} status`}
+                    className="filter-select stage-status-select"
+                    value={draft.stageStatuses[stage.key] ?? stage.status}
+                    disabled={isSaving}
+                    onChange={(e) =>
+                      setDraft((d) =>
+                        d
+                          ? {
+                              ...d,
+                              stageStatuses: {
+                                ...d.stageStatuses,
+                                [stage.key]: e.target.value as StageStatus,
+                              },
+                            }
+                          : d,
+                      )
+                    }
+                  >
+                    {STAGE_STATUSES.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
-    </>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isSaving} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={isSaving || !dirty}
+          onClick={() => onSave(draft, original)}
+        >
+          {isSaving ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

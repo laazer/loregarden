@@ -11,11 +11,11 @@ import {
   isWorkspaceless,
   workItemTypeLabel,
 } from "../lib/workItemHierarchy";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
 import { Textarea } from "./ui/Textarea";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "initiative", label: "Initiative" },
@@ -135,11 +135,7 @@ export function CreateWorkItemModal({
   onClose,
   onCreate,
 }: CreateWorkItemModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const fieldId = useId();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const lockedParent =
     lockParent && parentTicketId && parentTicketType
       ? { id: parentTicketId, type: parentTicketType }
@@ -197,7 +193,10 @@ export function CreateWorkItemModal({
     }
   }, [draft.work_item_type, lockedParent]);
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="create-work-item-title">{null}</ModalShell>;
+  }
 
   const needsParent = !isRootType(draft.work_item_type);
   const workspaceless = isWorkspaceless(draft.work_item_type);
@@ -217,189 +216,180 @@ export function CreateWorkItemModal({
     : "Add an initiative, milestone, container, task, or bug to the tree";
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-work-item-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">{workspaceless ? "All workspaces" : workspaceSlug}</div>
-            <h2 id="create-work-item-title" className="modal-title">
-              {modalTitle}
-            </h2>
-            <p className="modal-subtitle">{modalSubtitle}</p>
-          </div>
-          <IconCloseButton disabled={isSaving} onClick={onClose} />
+    <ModalShell open onDismiss={isSaving ? undefined : onClose} labelledBy="create-work-item-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">{workspaceless ? "All workspaces" : workspaceSlug}</div>
+          <h2 id="create-work-item-title" className="modal-title">
+            {modalTitle}
+          </h2>
+          <p className="modal-subtitle">{modalSubtitle}</p>
         </div>
+        <IconCloseButton disabled={isSaving} onClick={onClose} />
+      </div>
 
-        <div className="modal-body">
-          {workspacePicker && !workspaceless && (
-            <div className="modal-field">
-              <label htmlFor={`${fieldId}-workspace`} className="modal-field-label">
-                Workspace
-              </label>
-              <Select
-                id={`${fieldId}-workspace`}
-                className="btn-secondary filter-select"
-                style={{ width: "100%", fontSize: 12 }}
-                value={workspaceSlug}
-                disabled={isSaving || workspaces.length === 0}
-                onChange={(e) => onWorkspaceSlugChange(e.target.value)}
-              >
-                {workspaces.length === 0 ? (
-                  <option value="">No workspaces available</option>
-                ) : (
-                  workspaces.map((w) => (
-                    <option key={w.slug} value={w.slug}>
-                      {w.name}
-                    </option>
-                  ))
-                )}
-              </Select>
-            </div>
-          )}
-
-          {workspaceless ? (
-            <p className="modal-hint">
-              An initiative spans workspaces. Attach milestones from any workspace once it exists.
-            </p>
-          ) : (
-            !workspaceSlug && (
-              <p className="modal-hint">Select a workspace before creating work items.</p>
-            )
-          )}
-
-          {errorMessage && (
-            <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-              {errorMessage}
-            </p>
-          )}
-
+      <div className="modal-body">
+        {workspacePicker && !workspaceless && (
           <div className="modal-field">
-            <label htmlFor={`${fieldId}-type`} className="modal-field-label">Type</label>
+            <label htmlFor={`${fieldId}-workspace`} className="modal-field-label">
+              Workspace
+            </label>
             <Select
-              id={`${fieldId}-type`}
+              id={`${fieldId}-workspace`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12 }}
-              value={draft.work_item_type}
-              disabled={isSaving || typeOptions.length === 0}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, work_item_type: e.target.value as WorkItemType }))
-              }
+              value={workspaceSlug}
+              disabled={isSaving || workspaces.length === 0}
+              onChange={(e) => onWorkspaceSlugChange(e.target.value)}
             >
-              {typeOptions.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
+              {workspaces.length === 0 ? (
+                <option value="">No workspaces available</option>
+              ) : (
+                workspaces.map((w) => (
+                  <option key={w.slug} value={w.slug}>
+                    {w.name}
+                  </option>
+                ))
+              )}
             </Select>
           </div>
+        )}
 
-          {needsParent && !lockParent && (
-            <ParentTicketSelector
-              workspaceSlug={workspaceSlug}
-              value={draft.parent_ticket_id || null}
-              onChange={(parentId) => setDraft((d) => ({ ...d, parent_ticket_id: parentId ?? "" }))}
-              childWorkItemType={draft.work_item_type}
-              allowNone={false}
-              disabled={isSaving || !workspaceSlug}
-              label="Parent"
-              placeholder={`Choose a ${REQUIRED_PARENT[draft.work_item_type] ?? "parent"}…`}
-              hint={
-                parentOptions.length === 0
-                  ? `Create a ${workItemTypeLabel(REQUIRED_PARENT[draft.work_item_type]!)} first.`
-                  : undefined
-              }
-            />
-          )}
+        {workspaceless ? (
+          <p className="modal-hint">
+            An initiative spans workspaces. Attach milestones from any workspace once it exists.
+          </p>
+        ) : (
+          !workspaceSlug && (
+            <p className="modal-hint">Select a workspace before creating work items.</p>
+          )
+        )}
 
-          {needsParent && lockParent && (
-            <div className="modal-field">
-              <div className="modal-field-label">Parent</div>
-              <div
-                className="btn-secondary filter-select"
-                style={{ width: "100%", fontSize: 12, boxSizing: "border-box", opacity: 0.85 }}
-              >
-                {parentTicketTitle || parentTicketId}
-              </div>
-            </div>
-          )}
+        {errorMessage && (
+          <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+            {errorMessage}
+          </p>
+        )}
 
+        <div className="modal-field">
+          <label htmlFor={`${fieldId}-type`} className="modal-field-label">Type</label>
+          <Select
+            id={`${fieldId}-type`}
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={draft.work_item_type}
+            disabled={isSaving || typeOptions.length === 0}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, work_item_type: e.target.value as WorkItemType }))
+            }
+          >
+            {typeOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        {needsParent && !lockParent && (
+          <ParentTicketSelector
+            workspaceSlug={workspaceSlug}
+            value={draft.parent_ticket_id || null}
+            onChange={(parentId) => setDraft((d) => ({ ...d, parent_ticket_id: parentId ?? "" }))}
+            childWorkItemType={draft.work_item_type}
+            allowNone={false}
+            disabled={isSaving || !workspaceSlug}
+            label="Parent"
+            placeholder={`Choose a ${REQUIRED_PARENT[draft.work_item_type] ?? "parent"}…`}
+            hint={
+              parentOptions.length === 0
+                ? `Create a ${workItemTypeLabel(REQUIRED_PARENT[draft.work_item_type]!)} first.`
+                : undefined
+            }
+          />
+        )}
+
+        {needsParent && lockParent && (
           <div className="modal-field">
-            <label htmlFor={`${fieldId}-title`} className="modal-field-label">Title</label>
-            <Input
-              id={`${fieldId}-title`}
+            <div className="modal-field-label">Parent</div>
+            <div
               className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
-              value={draft.title}
-              disabled={isSaving}
-              placeholder="What needs to be done?"
-              onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            />
+              style={{ width: "100%", fontSize: 12, boxSizing: "border-box", opacity: 0.85 }}
+            >
+              {parentTicketTitle || parentTicketId}
+            </div>
           </div>
+        )}
 
+        <div className="modal-field">
+          <label htmlFor={`${fieldId}-title`} className="modal-field-label">Title</label>
+          <Input
+            id={`${fieldId}-title`}
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={draft.title}
+            disabled={isSaving}
+            placeholder="What needs to be done?"
+            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+          />
+        </div>
+
+        <div className="modal-field">
+          <label htmlFor={`${fieldId}-description`} className="modal-field-label">
+            Description
+          </label>
+          <Textarea
+            id={`${fieldId}-description`}
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
+            value={draft.description}
+            disabled={isSaving}
+            onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+          />
+        </div>
+
+        {(
           <div className="modal-field">
-            <label htmlFor={`${fieldId}-description`} className="modal-field-label">
-              Description
+            <label htmlFor={`${fieldId}-acceptance-criteria`} className="modal-field-label">
+              Acceptance criteria (one per line)
             </label>
             <Textarea
-              id={`${fieldId}-description`}
+              id={`${fieldId}-acceptance-criteria`}
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
-              value={draft.description}
+              value={draft.acceptance_criteria}
               disabled={isSaving}
-              onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+              placeholder="- Criterion one&#10;- Criterion two"
+              onChange={(e) => setDraft((d) => ({ ...d, acceptance_criteria: e.target.value }))}
             />
           </div>
+        )}
 
-          {(
-            <div className="modal-field">
-              <label htmlFor={`${fieldId}-acceptance-criteria`} className="modal-field-label">
-                Acceptance criteria (one per line)
-              </label>
-              <Textarea
-                id={`${fieldId}-acceptance-criteria`}
-                className="btn-secondary filter-select"
-                style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
-                value={draft.acceptance_criteria}
-                disabled={isSaving}
-                placeholder="- Criterion one&#10;- Criterion two"
-                onChange={(e) => setDraft((d) => ({ ...d, acceptance_criteria: e.target.value }))}
-              />
-            </div>
-          )}
-
-          <div className="modal-field">
-            <label htmlFor={`${fieldId}-priority`} className="modal-field-label">Priority</label>
-            <Select
-              id={`${fieldId}-priority`}
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
-              value={draft.priority}
-              disabled={isSaving}
-              onChange={(e) => setDraft((d) => ({ ...d, priority: Number(e.target.value) }))}
-            >
-              <option value={1}>P1 — High</option>
-              <option value={2}>P2 — Medium</option>
-              <option value={3}>P3 — Low</option>
-            </Select>
-          </div>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="btn-primary" disabled={isSaving || !canSubmit} onClick={handleCreate}>
-            {isSaving ? "Creating…" : lockParent ? "Add sub-item" : "Create work item"}
-          </button>
+        <div className="modal-field">
+          <label htmlFor={`${fieldId}-priority`} className="modal-field-label">Priority</label>
+          <Select
+            id={`${fieldId}-priority`}
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={draft.priority}
+            disabled={isSaving}
+            onChange={(e) => setDraft((d) => ({ ...d, priority: Number(e.target.value) }))}
+          >
+            <option value={1}>P1 — High</option>
+            <option value={2}>P2 — Medium</option>
+            <option value={3}>P3 — Low</option>
+          </Select>
         </div>
       </div>
-    </>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isSaving} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" disabled={isSaving || !canSubmit} onClick={handleCreate}>
+          {isSaving ? "Creating…" : lockParent ? "Add sub-item" : "Create work item"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }
