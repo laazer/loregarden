@@ -117,8 +117,22 @@ def test_a_conflict_arms_the_resolver_instead_of_blocking(session, conflicted):
     assert "dispatched_landing_resolver" in kinds
 
 
-def test_the_flag_off_still_blocks_for_a_person(session, conflicted):
+def test_a_ticket_with_no_override_gets_the_resolver_by_default(session, conflicted):
+    """Sibling tickets on one integration branch conflict as a matter of course;
+    blocking each for a person stalled whole trees (lg-durable-remote-336)."""
     conflicted.git_automation_json = ""
+    session.add(conflicted)
+    session.commit()
+
+    _land(session, conflicted)
+
+    session.refresh(conflicted)
+    assert conflicted.state != TicketState.BLOCKED
+    assert conflicted.next_agent == REPAIR_AGENT_ID
+
+
+def test_the_flag_off_still_blocks_for_a_person(session, conflicted):
+    conflicted.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
     session.add(conflicted)
     session.commit()
 
