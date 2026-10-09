@@ -33,6 +33,9 @@ class OrchestratorDecision(StrEnum):
     #: The sign-off gate on a design/plan stage was approved by the run itself,
     #: as the run modal allowed (746). A person can still see it in the history.
     APPROVED_DESIGN_PLAN = "approved_design_plan"
+    #: A legacy stage sign-off on a ticket the initiative autopilot started was
+    #: approved by the autopilot while it was on (`autopilot_sign_off`).
+    APPROVED_LEGACY_SIGN_OFF = "approved_legacy_sign_off"
     #: A block was given a kind — who can unblock it (749). The history line
     #: says which, and whether the agent said so or the message decided.
     CLASSIFIED_BLOCK = "classified_block"

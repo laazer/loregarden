@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     ForecastBasis,
     NodeStatus,
     ScheduleTarget,
+    StageStatus,
     Ticket,
     TicketActivity,
     TicketDependency,
@@ -134,7 +135,9 @@ def _status(ticket: Ticket, activity: TicketActivity) -> tuple[NodeStatus, bool]
     """(status before dependencies are considered, whether it holds its lane)."""
     if ticket.state in RESOLVED_STATES:
         return NodeStatus.DONE, False
-    if activity == TicketActivity.AWAITING:
+    # A stage parked on its gate has no live run, so activity reads idle; it is
+    # mid-workflow and waiting on an answer, not ready to start again.
+    if activity == TicketActivity.AWAITING or ticket.workflow_stage_status == StageStatus.AWAITING:
         return NodeStatus.NEEDS_PERSON, True
     if activity in (TicketActivity.RUNNING, TicketActivity.QUEUED):
         return NodeStatus.RUNNING, True
@@ -147,6 +150,24 @@ def _status(ticket: Ticket, activity: TicketActivity) -> tuple[NodeStatus, bool]
     if ticket.state == TicketState.BLOCKED:
         return NodeStatus.BLOCKED, False
     return NodeStatus.READY, False
+
+
+def _mark_ancestors_underway(nodes: dict[str, PlanNode]) -> None:
+    """A parent whose child is running or parked reads as its child does, not READY.
+
+    A parent's orchestration runs its children, so starting it while a child
+    runs on its own (or waits at a gate) runs that child twice. The lane stays
+    the child's: the parent takes no second share of the parallel budget.
+    """
+    for node in [n for n in nodes.values() if n.holds_lane]:
+        seen = {node.id}
+        parent_id = node.ticket.parent_ticket_id
+        while parent_id in nodes and parent_id not in seen:
+            seen.add(parent_id)
+            parent = nodes[parent_id]
+            if parent.status == NodeStatus.READY:
+                parent.status = node.status
+            parent_id = parent.ticket.parent_ticket_id
 
 
 def _blend(
@@ -278,6 +299,7 @@ class PlanGraphBuilder:
             node.status, node.holds_lane = _status(
                 node.ticket, activity.get(node.id, TicketActivity.IDLE)
             )
+        _mark_ancestors_underway(nodes)
         for node in nodes.values():
             node.waiting_on = [d for d in node.deps if nodes[d].status != NodeStatus.DONE]
             if node.status == NodeStatus.READY and node.waiting_on:
