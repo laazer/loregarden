@@ -8,8 +8,9 @@ needs a person; this executes it.
 Each tick, per initiative with autopilot on:
 
 1. Build the plan graph (`initiative_graph`).
-2. Pick `READY` tickets in schedule order, at most one per plan lane in flight
-   and at most `max_parallel` across the initiative. `NEEDS_PERSON` and
+2. Pick `READY` tickets in schedule order, at most `max_parallel` in flight
+   across the initiative. Lanes do not limit it: each ticket gets its own
+   worktree, and the machine's capacity queue meters the load. `NEEDS_PERSON` and
    `BLOCKED` tickets are never picked; neither is a prerequisite outside the
    initiative, which belongs to someone else's plan.
 3. Re-check each pick against git (`unmet_prerequisites_for_start`): a
@@ -75,7 +76,6 @@ def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
     graph = ctx.graph
     own = [n for n in graph.nodes.values() if not n.external]
     in_flight = [n for n in own if n.holds_lane]
-    busy_lanes = {n.lane for n in in_flight}
     budget = max_parallel - len(in_flight)
     candidates = sorted(
         (n for n in own if n.status == NodeStatus.READY),
@@ -89,15 +89,34 @@ def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
             n.ticket.external_id,
         ),
     )
+    # A parent's run works through its children, so a ticket whose parent or
+    # child is running, or picked this tick, would run twice.
+    taken = {n.id for n in in_flight}
     picked: list[PlanNode] = []
     for node in candidates:
         if len(picked) >= budget:
             break
-        if node.lane in busy_lanes:
+        if _related(graph.nodes, node) & taken:
             continue
         picked.append(node)
-        busy_lanes.add(node.lane)
+        taken.add(node.id)
     return picked
+
+
+def _related(nodes: dict[str, PlanNode], node: PlanNode) -> set[str]:
+    """Plan nodes above or below this one in the ticket tree, itself excluded."""
+    below = {other.id for other in nodes.values() if node.id in _ancestor_ids(nodes, other)}
+    return _ancestor_ids(nodes, node) | below
+
+
+def _ancestor_ids(nodes: dict[str, PlanNode], node: PlanNode) -> set[str]:
+    """The ids of its ancestors that are plan nodes; a cycle stops the walk."""
+    seen: set[str] = set()
+    parent_id = node.ticket.parent_ticket_id
+    while parent_id in nodes and parent_id not in seen:
+        seen.add(parent_id)
+        parent_id = nodes[parent_id].ticket.parent_ticket_id
+    return seen
 
 
 def _record(

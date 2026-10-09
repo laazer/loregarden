@@ -187,7 +187,8 @@ def test_a_ticket_starts_when_its_prerequisites_finish(db_session, workspaces):
     assert view.critical_path == [first.id, second.id]
 
 
-def test_one_lane_runs_one_ticket_at_a_time(db_session, workspaces):
+def test_a_lane_does_not_limit_how_much_runs_at_once(db_session, workspaces):
+    """Two tickets in one lane run side by side; the plan's max_parallel is the cap."""
     here, _ = workspaces
     initiative = _initiative(db_session)
     m = _milestone(db_session, here, "M", initiative)
@@ -195,15 +196,19 @@ def test_one_lane_runs_one_ticket_at_a_time(db_session, workspaces):
     a2 = _item(db_session, here, m, "a2", lane="a")
     b1 = _item(db_session, here, m, "b1", lane="b")
 
+    view = plan_view(db_session, initiative.id, now=NOW)  # max_parallel 3
+
+    assert {_node(view, t).finish for t in (a1, a2, b1)} == {NOW + timedelta(days=1)}
+
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(max_parallel=2), actor="t")
     view = plan_view(db_session, initiative.id, now=NOW)
 
-    finishes = sorted(_node(view, t).finish for t in (a1, a2))
-    assert finishes == [NOW + timedelta(days=1), NOW + timedelta(days=2)]
-    assert _node(view, b1).finish == NOW + timedelta(days=1)
+    finishes = sorted(_node(view, t).finish for t in (a1, a2, b1))
+    assert finishes == [NOW + timedelta(days=1)] * 2 + [NOW + timedelta(days=2)]
 
 
-def test_the_earlier_phase_gets_a_shared_lane_first(db_session, workspaces):
-    """A later phase must not book a lane ahead of an earlier phase's work."""
+def test_the_earlier_phase_gets_a_free_slot_first(db_session, workspaces):
+    """A later phase must not book a slot ahead of an earlier phase's work."""
     here, _ = workspaces
     initiative = _initiative(db_session)
     slice_ = _milestone(db_session, here, "Slice", initiative)
@@ -217,6 +222,8 @@ def test_the_earlier_phase_gets_a_shared_lane_first(db_session, workspaces):
         InitiativePlanUpdate(targets=[ScheduleTargetInput(ticket_id=slice_.id, plan_order=0)]),
         actor="t",
     )
+    # One slot, so the two compete for it.
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(max_parallel=1), actor="t")
 
     view = plan_view(db_session, initiative.id, now=NOW)
 
@@ -320,6 +327,47 @@ def test_pace_sets_duration_when_it_is_slower_than_agent_time(db_session, worksp
     assert node.duration_days == pytest.approx(3.0)
 
 
+def test_the_critical_path_runs_through_the_ticket_whose_slot_it_took(db_session, workspaces):
+    """With one slot, the second ticket waited for the first to finish, so both are critical."""
+    here, there = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    first = _item(db_session, here, m, "first", lane="a")
+    second = _item(db_session, there, m, "second", lane="b")  # another lane: still contends
+    _Estimator.per_ticket = {first.id: 2 * DAY, second.id: DAY}
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(max_parallel=1), actor="t")
+
+    view = plan_view(db_session, initiative.id, now=NOW)
+
+    assert _node(view, second).start == NOW + timedelta(days=2)
+    assert view.critical_path == [first.id, second.id]
+
+
+def test_pace_is_one_agents_rate_so_running_more_at_once_helps(db_session, workspaces):
+    """7 done in 21 days, one lane at a time, is one every 3 days per agent. Two
+    open tickets with room for both run side by side at that rate — the pace is
+    not split again across them, which made allowing more push the date out."""
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    opened = [_item(db_session, here, m, f"open-{i}") for i in range(2)]
+    for i in range(7):
+        _item(db_session, here, m, f"done-{i}", state=TicketState.DONE)
+    for ticket in db_session.exec(select(Ticket).where(Ticket.parent_ticket_id == m.id)).all():
+        ticket.created_at = NOW - timedelta(days=30)
+        db_session.add(ticket)
+    db_session.commit()
+    _Estimator.default = 3600.0
+
+    view = plan_view(db_session, initiative.id, now=NOW)
+
+    for item in opened:
+        node = _node(view, item)
+        assert node.basis == ForecastBasis.INITIATIVE_THROUGHPUT
+        assert node.duration_days == pytest.approx(3.0)
+        assert node.start == NOW  # side by side, in one workspace
+
+
 def test_a_cycle_is_reported_not_looped_on(db_session, workspaces):
     here, _ = workspaces
     initiative = _initiative(db_session)
@@ -407,7 +455,7 @@ def test_autopilot_does_nothing_until_turned_on(db_session, workspaces, queue):
     assert queue[0].add_to_lane.call_count == 0
 
 
-def test_autopilot_fills_lanes_critical_path_first(db_session, workspaces, queue):
+def test_autopilot_fills_its_slots_critical_path_first(db_session, workspaces, queue):
     lanes, _ = queue
     here, _ = workspaces
     initiative = _initiative(db_session)
@@ -427,14 +475,37 @@ def test_autopilot_fills_lanes_critical_path_first(db_session, workspaces, queue
     assert queued == 2
     order = _queued(lanes)
     assert order[0] == head.id  # on the critical path
-    assert side_a.id not in order  # its lane is taken by head
+    assert order[1] == side_a.id  # the same lane as head: lanes do not hold work back
+    assert side_c.id not in order  # max_parallel is spent
     assert person.id not in order and tail.id not in order
-    assert order[1] == side_c.id
     events = db_session.exec(
         select(AutopilotEvent).where(AutopilotEvent.action == AutopilotAction.DISPATCHED)
     ).all()
     assert {e.ticket_id for e in events} == set(order)
     assert all(c.kwargs["auto_approve"] is False for c in lanes.add_to_lane.call_args_list)
+
+
+def test_a_ticket_and_its_parent_are_never_started_together(db_session, workspaces, queue):
+    """The parent's run works through the child, so starting both runs the child twice."""
+    lanes, _ = queue
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    parent = _item(db_session, here, m, "parent", lane="a")
+    child = _item(db_session, here, m, "child", lane="b")
+    child.parent_ticket_id = parent.id
+    db_session.add(child)
+    db_session.commit()
+    other = _item(db_session, here, m, "other", lane="c")
+    set_autopilot(
+        db_session, initiative.id, AutopilotUpdate(enabled=True, max_parallel=5), actor="t"
+    )
+
+    run_autopilot(db_session, initiative.id, now=NOW)
+
+    order = _queued(lanes)
+    assert other.id in order
+    assert len({parent.id, child.id} & set(order)) == 1
 
 
 def test_unlanded_prerequisite_work_holds_a_ticket_and_says_so_once(db_session, workspaces, queue):
