@@ -5027,9 +5027,18 @@ label:is(
   white-space: nowrap;
 }
 
+/* The toggle sits under the brief at its own width, not stretched across it. */
+.approval-brief {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
 /* A clamped brief fades out above its toggle instead of ending mid-line. */
 .approval-brief-body {
   position: relative;
+  align-self: stretch;
 }
 
 .approval-brief-body--clamped {
@@ -5061,6 +5070,11 @@ label:is(
   flex-direction: column;
   align-items: flex-start;
   min-width: 0;
+}
+
+/* Checklist items carry paths and spec ids with no spaces to break at. */
+.approval-checklist-text {
+  overflow-wrap: anywhere;
 }
 
 .approval-checklist-text--clamped {
