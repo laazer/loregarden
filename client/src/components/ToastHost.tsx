@@ -1,4 +1,7 @@
+import { AnimatePresence, m } from "motion/react";
 import { useEffect, useState } from "react";
+
+import { DURATION, EASE_OUT } from "../lib/motionTokens";
 
 import { type Toast, useToastStore } from "../state/toastStore";
 import { IconCloseButton } from "./IconCloseButton";
@@ -21,9 +24,12 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   }, [id, duration, onDismiss]);
 
   return (
-    <div
+    <m.div
       className={`toast toast--${toast.tone}`}
       role={toast.tone === "error" || toast.tone === "warning" ? "alert" : "status"}
+      initial={{ opacity: 0, x: 16 }}
+      animate={{ opacity: 1, x: 0, transition: { duration: DURATION.med, ease: EASE_OUT } }}
+      exit={{ opacity: 0, x: 16, transition: { duration: DURATION.fast, ease: EASE_OUT } }}
     >
       <span className="toast__glyph" aria-hidden>
         {TONE_GLYPH[toast.tone]}
@@ -33,7 +39,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
         {toast.message ? <div className="toast__message">{toast.message}</div> : null}
       </div>
       <IconCloseButton onClick={() => onDismiss(id)} aria-label={`Dismiss: ${toast.title}`} />
-    </div>
+    </m.div>
   );
 }
 
@@ -82,19 +88,24 @@ function useScreenAreaCorner() {
  * Mounted once in AppLayout. Anything can push to it — including code outside
  * React, via `pushToast` — so a failed action reports itself even when the
  * component that started it has gone away.
+ *
+ * The host stays mounted while empty: a dismissed toast needs somewhere to
+ * play its exit, and a live region that already exists is announced more
+ * reliably than one inserted together with its first message.
  */
 export function ToastHost() {
   const toasts = useToastStore((s) => s.toasts);
   const dismiss = useToastStore((s) => s.dismiss);
   const corner = useScreenAreaCorner();
 
-  if (toasts.length === 0) return null;
-
   return (
     <div className="toast-host" aria-live="polite" style={corner}>
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
-      ))}
+      <AnimatePresence initial={false}>
+        {/* ux-ok: no toasts is the resting state and should draw nothing; the stack is a local store, not a load that can fail */}
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
