@@ -65,8 +65,10 @@ A reader who turned on "reduce motion" gets a short fade or a held frame, and lo
   `m.*`.
 - **A leaving element must not take input.** Set `pointerEvents: "none"` in its `exit`, so a
   second click cannot land on something that is already going.
-- Dialogs: until the shared modal shell exists (lg-ux-enforcement-912), dialogs get the CSS
-  entrance from `.modal-panel` and no exit. Do not hand-roll an exit inside one dialog.
+- Dialogs: render through `ModalShell` (`client/src/components/ui/ModalShell.tsx`), which owns the
+  overlay, focus trap, Escape, and the enter and exit; pass `open` instead of mounting the dialog
+  conditionally. A dialog not yet on it gets only the CSS entrance from `.modal-panel`. Move it to
+  the shell when you touch it; do not hand-roll an exit inside one dialog.
 
 The `ts-motion` gate rejects layout-property animation, `transition: all` and hardcoded UI
 durations on changed lines; waive with `motion-ok:` plus a reason a reviewer can check.
