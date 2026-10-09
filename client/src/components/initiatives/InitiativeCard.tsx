@@ -169,7 +169,7 @@ export function InitiativeCard({
         </div>
         <div className="initiative-card-head-actions">
           <StatePill state={initiative.state} />
-          <Button variant="primary" compact onClick={() => navigateToInitiative(initiative.id)}>
+          <Button variant="primary" compact onClick={() => navigateToInitiative(initiative.external_id || initiative.id)}>
             Plan &amp; board
           </Button>
         </div>
