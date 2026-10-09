@@ -49,6 +49,7 @@ export class OfficeFloor {
   private stations = new Map<string, StationView>();
   private characters = new Map<string, CharacterView>();
   private flyers = new ArtifactFlyerLayer();
+  private reducedMotion = false;
   private waitingProp = new Container();
   private textures: HiveSkinTextures | null = null;
   private skin: HiveSkinId | null = null;
@@ -124,16 +125,32 @@ export class OfficeFloor {
     }
 
     this.flyers.spawn(model.flights, textures);
+    if (this.reducedMotion) this.settle();
     this.syncWaiting(model, textures);
     this.syncGod(model);
   }
 
   update(dt: number): void {
     if (this.destroyed) return;
+    if (this.reducedMotion) {
+      this.settle();
+      return;
+    }
     for (const view of this.characters.values()) {
       view.update(dt, true);
     }
     this.flyers.update(dt);
+  }
+
+  /** The reader's OS preference. While on, characters stand where they are going and nothing flies. */
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (reduced && !this.destroyed) this.settle();
+  }
+
+  private settle(): void {
+    for (const view of this.characters.values()) view.settle();
+    this.flyers.finishAll();
   }
 
   fitToView(width: number, height: number): void {
