@@ -85,7 +85,7 @@ from loregarden.services.usage_limits import (
     format_usage_limit_hint,
     usage_limit_blocking_issue,
 )
-from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
+from loregarden.services.workflow_routing import apply_stage_route, reject_fallback_key
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 
@@ -110,19 +110,19 @@ def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: st
     )
 
 
-def _rework_target(stages, from_key: str, reroute_to_stage: str) -> str:
+def _rework_target(stages, from_key: str, reroute_to_stage: str, reroute_to_agent: str) -> str:
     """The stage this rework will re-run, for keying the rework-feedback ledger.
 
     Mirrors ``apply_stage_route``'s reject resolution for the common cases: an
-    explicit, valid ``reroute_to_stage`` wins; otherwise it falls back to the
-    immediately preceding stage. A template ``reject`` route to a non-adjacent
+    explicit, valid ``reroute_to_stage`` wins; otherwise ``reject_fallback_key``
+    — the same stage for a hand-off to a sibling agent, else the one before. A template ``reject`` route to a non-adjacent
     stage isn't modelled here, so the ledger key can differ by one in that rare
     case — the feedback is still recorded, just under the fallback key.
     """
     keys = {stage.key for stage in stages}
     if reroute_to_stage and reroute_to_stage in keys:
         return reroute_to_stage
-    return previous_stage_key(stages, from_key) or ""
+    return reject_fallback_key(stages, from_key, reroute_to_agent) or ""
 
 
 def _rework_context(report: StageReport, stderr: str) -> str:
@@ -159,7 +159,9 @@ def _reroute_or_block_for_rework(
     loop cap — block for a human instead of bouncing the work yet again.
     """
     full_context = _rework_context(report, stderr)
-    target_stage = _rework_target(stages, run.stage_key, report.reroute_to_stage or "")
+    target_stage = _rework_target(
+        stages, run.stage_key, report.reroute_to_stage or "", report.reroute_to_agent or ""
+    )
     exhausted = record_reroute_exhausts_budget(
         orch.session,
         ticket,

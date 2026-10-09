@@ -1,3 +1,6 @@
+import json
+
+import pytest
 from loregarden.db.migrations import MIGRATIONS, apply_migrations
 from loregarden.models.domain import BoundaryVerdict
 from sqlalchemy import text
@@ -2075,3 +2078,40 @@ def test_tickets_gain_the_landing_columns_with_empty_defaults(tmp_path):
             text("SELECT landed_sha, landed_branch FROM tickets WHERE id = 't1'")
         ).one()
     assert tuple(row) == ("", "")
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [("routed_as_light_work", "no_ui_work"), ("has_description", "has_description")],
+)
+def test_ui_design_skips_without_ui_work_unless_a_person_chose_otherwise(tmp_path, before, after):
+    engine = create_engine(f"sqlite:///{tmp_path / 'ui-skip.db'}")
+    SQLModel.metadata.create_all(engine)
+    _seed_template(
+        engine,
+        slug="studio-loregarden-tdd-v3",
+        stages=[
+            {
+                "key": "ui-design",
+                "name": "UI Design",
+                "agent_id": "ui-design-decision",
+                "order": 1,
+                "skip_when": before,
+            },
+            {"key": "done", "name": "Done", "agent_id": "", "order": 2, "terminal": True},
+        ],
+        transitions=[{"from": "ui-design", "to": "done", "when": "pass"}],
+    )
+
+    apply_migrations(engine)
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages = json.loads(
+            conn.execute(
+                text(
+                    "SELECT stages_json FROM workflow_templates WHERE slug='studio-loregarden-tdd-v3'"
+                )
+            ).scalar()
+        )
+    assert next(s for s in stages if s["key"] == "ui-design")["skip_when"] == after
