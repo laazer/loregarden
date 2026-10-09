@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     #: to notice; 0 or less turns the timer off and leaves repair to startup,
     #: which is the cadence this replaced.
     reconcile_interval_seconds: float = 30.0
+    #: Host the network-wait probe connects to (port 443) to decide whether a
+    #: ticket parked on an unreachable provider can resume. Empty disables
+    #: network waits: an unreachable provider then spends its transient retries.
+    network_probe_host: str = "api.anthropic.com"
     # How often the GitHub issue scheduler looks for a workspace whose
     # background sync is due. Each workspace sets its own interval; this is
     # only the resolution. 0 disables the scheduler entirely.

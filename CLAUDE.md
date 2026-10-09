@@ -1,28 +1,28 @@
 # CLAUDE.md
 
 Repository-level operating manual for Claude Code and other coding agents working in
-**loregarden**. For *where things are* — structure, code map, commands — read `AGENTS.md`.
+**loregarden**. For *where things are* (structure, code map, commands), read `AGENTS.md`.
 
 ## General Guidelines
 
 1. **Ask, don't assume.** If something is unclear, ask before writing a line. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption with `loregarden_append_checkpoint` rather than blocking.
 2. **Simplest solution for simple problems**, better solutions for hard ones. Do not add flexibility nothing needs yet.
-3. **Don't touch unrelated code** — but do surface smells you find, as a separate issue.
+3. **Don't touch unrelated code**, but do surface smells you find as a separate issue.
 4. **Flag uncertainty explicitly.** Confidence without certainty causes more damage than admitting a gap. A small, low-risk experiment beats a confident guess.
 5. **Verify before reporting.** This repo will happily let you conclude something false from a plausible-looking query. See *Verify, don't infer* below.
 
 ## Output economy
 
-Tokens are the budget here — this control plane pays for every agent turn. Keep output lean
-without dropping rigor:
+Tokens are the budget here, because this control plane pays for every agent turn. Keep output
+lean without dropping rigor:
 
 1. **Be terse.** No preamble, no filler, no restating the request. Answer, show the evidence,
-   stop. Match reply length to the task — a one-line change gets a one-line report.
+   stop. Match reply length to the task; a one-line change gets a one-line report.
 2. **Prefer structure over prose.** Return findings, status, and data as tables, lists, or
    JSON the caller can parse, not paragraphs. Route long reports to
    `loregarden_attach_artifact`, never the response body (see *The database is the source of
    truth*).
-3. **Read narrowly.** Fetch the lines and files you need, not whole trees — over-reading
+3. **Read narrowly.** Fetch the lines and files you need, not whole trees. Over-reading
    inflates input cost more than any verbose reply does. Prefer targeted search and
    `loregarden_get_ticket` over broad greps.
 
@@ -30,16 +30,16 @@ Never trade correctness, tests, or required evidence for brevity. Cut filler, no
 
 ## Project Overview
 
-An Agent SDLC IDE — a local control plane orchestrating multi-agent development. Tickets in
-SQLite, run through configurable TDD pipelines by CLI agents, gated by an approval inbox,
-exposed over MCP.
+Loregarden is an Agent SDLC IDE, a local control plane that orchestrates multi-agent
+development. Tickets live in SQLite, are run through configurable TDD pipelines by CLI agents,
+are gated by an approval inbox, and are exposed over MCP.
 
 - **Backend:** FastAPI 0.115 + SQLModel 0.0.22 + Pydantic **v2** on SQLite, Python 3.11
 - **Frontend:** React 19 + TypeScript 6 + Vite 8, Zustand 5, **Jest 30**, **oxlint**
 - **Desktop:** Tauri 2
 - **Agents:** Claude Code / Cursor CLI subprocesses, driven over MCP
 
-There is no game engine in this repo — no `.gd`, `.tscn`, `.blend`, or shader sources. Hive
+There is no game engine in this repo, and no `.gd`, `.tscn`, `.blend`, or shader sources. Hive
 (`client/src/lib/hive/`, `client/src/components/dashboard/hive/`) is a React/canvas office
 simulation that visualizes agent activity. Despite the tile coordinates, NPCs, and sprites, it
 is ordinary frontend code, and its tickets belong here.
@@ -47,7 +47,7 @@ is ordinary frontend code, and its tickets belong here.
 ## The database is the source of truth
 
 Tickets, workflow templates, learnings, checkpoints, and artifacts all live in the database or
-the workspace vault — **never in repo files**. Reach them through the `loregarden_*` MCP tools.
+the workspace vault, **never in repo files**. Reach them through the `loregarden_*` MCP tools.
 
 Concretely, and these are the mistakes agents actually make here:
 
@@ -61,31 +61,31 @@ Concretely, and these are the mistakes agents actually make here:
 - **No MCP tools attached, or the server is down?** Every tool is also a CLI command that runs
   against the database in-process: `./scripts/loregarden-cli.sh mcp call <tool> key=value…`
   (`mcp list` / `mcp describe <tool>` to find the arguments). Use it instead of curling `/mcp`
-  or abandoning the write — see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
+  or abandoning the write; see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
 
 Writing real source code and real test files is, of course, still the job. The rule is about
 *reports about* the work.
 
 ### Setting up another workspace
 
-Two installers, both idempotent, both marker-delimited, both `--check` for a read-only report:
+There are two installers, `scripts/install-workspace-hooks.sh` and
+`scripts/install-workspace-docs.sh`, wrapped by these tasks. Both are idempotent and
+marker-delimited, and both take `--check` for a read-only report:
 
     task workspace:hooks -- [--check] (--all | <workspace-root>)
     task workspace:docs  -- [--check] (--all | [--slug <slug>] <workspace-root>)
     task workspace:check -- (--all | <workspace-root>)   # both blocks, writes nothing
 
-wrapping `scripts/install-workspace-hooks.sh` and `scripts/install-workspace-docs.sh`.
-
 The first carries loregarden's rules into that repo's pre-commit. The second carries the
-*tools* into that repo's `AGENTS.md` — the half that was missing. Everything above is true in
-blobert and lore-eden too, and an agent working there reads their AGENTS.md, not this file: it
-has no way to learn that the ticket it was handed lives in a database rather than a file it can
-grep for. `--all` reads the workspace list from the database (read-only), skipping loregarden
-itself and archived workspaces.
+*tools*, the half that was missing, into that repo's `AGENTS.md`. Everything above is true in
+blobert and lore-eden too, but an agent working there reads their AGENTS.md and not this file,
+so it has no way to learn that the ticket it was handed lives in a database rather than a file
+it can grep for. `--all` reads the workspace list from the database (read-only), skipping
+loregarden itself and archived workspaces.
 
 Both bake absolute paths back into this checkout, so both render against the **primary**
 checkout even when run from a worktree, and say so. The hooks installer also refuses to write
-a block naming a dispatcher the primary checkout does not have yet — merge first.
+a block naming a dispatcher the primary checkout does not have yet, so merge first.
 
 **Changing a gate needs no reinstall.** The hook block and every orchestration profile call
 one dispatcher, `.lefthook/scripts/workspace-gates.sh`, which holds the only list of
@@ -96,36 +96,35 @@ changes or this checkout moves.
 **When it does, land it as PRs, not in place.** `task workspace:hooks:pr [-- --gh-user
 <account>]` refreshes every workspace's block on its own branch and opens one PR per repo,
 in a throwaway worktree cut from the remote's default branch. The workspace's checkout is
-never touched — they usually sit on `main` with unrelated uncommitted work. The general form
-is `loregarden git change-pr (--repo <path>… | --all-workspaces) --branch B --title T --
-<command> {worktree}`; a failure keeps the worktree and names it.
+never touched, since workspaces usually sit on `main` with unrelated uncommitted work. The
+general form is `loregarden git change-pr (--repo <path>… | --all-workspaces) --branch B
+--title T -- <command> {worktree}`; a failure keeps the worktree and names it.
 
 ## No silent failures
 
-A failure nobody sees is worse than a crash. This control plane runs agents
-unattended, so its characteristic bug is not an exception — it is a run that dies
-quietly and keeps *looking* alive. A conflict check that returned
-`has_conflicts: False` because the check itself threw is not a hypothetical; it
-reported "Ready to merge" to the UI.
+A failure nobody sees is worse than a crash. This control plane runs agents unattended, so
+its characteristic bug is not an exception, it is a run that dies unnoticed and keeps
+*looking* alive. A conflict check once returned `has_conflicts: False` because the check
+itself threw, and it reported "Ready to merge" to the UI.
 
-**The rule.** An error may only be suppressed when it is transient,
-auto-repairable, or retryable — or when it is expected *and* there is a real
-alternate way of performing the function. In that last case the failure must
-still be surfaced. Everything else must be observable:
+**The rule.** An error may only be suppressed when it is transient, auto-repairable, or
+retryable. It may also be suppressed when it is expected *and* there is a real alternate way
+of performing the function, but in that case the failure must still be surfaced. Everything
+else must be observable:
 
-- **Backend:** re-raise, log at `warning`/`exception` (never `debug`/`info` — both
-  are below the default handler level, so a failure reported there is reported
-  nowhere), or return a failure-carrying result. The codebase already has that
-  last pattern: `GateRunResult(ok=False, …)`, `HealthResult(ok=False, error=…)`,
-  `CheckerResult`, and `services/doctor.py` turning a raising check into a
-  user-visible `DoctorFinding`. Anything on a run's path should also reach
-  `event_hub` / `websocket_events`, so a dead run cannot look like a live one.
+- **Backend:** re-raise, log at `warning`/`exception` (never `debug`/`info`, which are below
+  the default handler level, so a failure reported there is reported nowhere), or return a
+  failure-carrying result. The codebase already has that last pattern:
+  `GateRunResult(ok=False, …)`, `HealthResult(ok=False, error=…)`, `CheckerResult`, and
+  `services/doctor.py` turning a raising check into a user-visible `DoctorFinding`. Anything
+  on a run's path should also reach `event_hub` / `websocket_events`, so a dead run cannot
+  look like a live one.
 - **Frontend:** surface it through `describeError` → `pushToast` (`ToastHost` is
-  mounted in `AppLayout`), or record it in state you actually render. Never a
+  mounted in `AppLayout`), or record it in state you actually render. Never use a
   bare `console.error`.
-- **Never** return `False`/`[]`/`{}`/`""` from a handler when the same function
-  returns that on success — "it failed" and "there is nothing" must not collapse
-  into one answer. Never discard a `run_git(..., check=False)` result.
+- **Never** return `False`/`[]`/`{}`/`""` from a handler when the same function returns that
+  on success; "it failed" and "there is nothing" must not collapse into one answer. Never
+  discard a `run_git(..., check=False)` result.
 
 **Waivers.** A legitimate suppression says so on the line, with a reason:
 
@@ -134,26 +133,26 @@ still be surfaced. Everything else must be observable:
 
     } catch { /* silent-ok: probe only; the poll re-checks in 2s */ }
 
-The marker alone does not waive anything — the gate rejects an empty or
-throwaway reason. `.lefthook/scripts/py_silent_except_check.py` and
-`ts_no_silent_failures_check.cjs` enforce this, diff-scoped, in all three places
-the organization gates run (pre-commit, orchestration, `loregarden_check_organization`).
+The marker alone does not waive anything, and the gate rejects an empty or throwaway reason.
+`.lefthook/scripts/py_silent_except_check.py` and `ts_no_silent_failures_check.cjs` enforce
+this, diff-scoped, in all three places the organization gates run (pre-commit, orchestration,
+`loregarden_check_organization`).
 
 Ruff carries the part it can see: `BLE` (blind-except), `TRY400`
-(`logger.exception`, not `logger.error`, inside a handler), `S110`/`S112`. These
-were switched on during this audit — 23 `# noqa: BLE001` comments were already in
+(`logger.exception`, not `logger.error`, inside a handler), `S110`/`S112`. These were
+switched on during this audit. At the time, 23 `# noqa: BLE001` comments were already in
 the tree suppressing a rule that had never been enabled.
 
 ## The person using it
 
-A failure nobody sees is the section above. This one is its sibling: an *experience* nobody
-decided. It has the same shape — the code does what it was told, the tests are green, and what
-reaches the operator is a blank pane, a control no keyboard can reach, or a spinner that never
-resolves into an explanation.
+A failure nobody sees is the section above, and this section is about its sibling, an
+*experience* nobody decided. It has the same shape: the code does what it was told, the tests
+are green, and what reaches the operator is a blank pane, a control no keyboard can reach, or a
+spinner that never resolves into an explanation.
 
-It is not a matter of anyone caring less. It is that nothing asked. Measured across every row
-of `agent_runs`: `ui-design-decision` and `visual_qa` — the two agents built for exactly this —
-had **never run**, and appeared in no workflow template. The `ui-design` stage dispatched the
+It is not a matter of anyone caring less. It is that nothing asked. Every row of `agent_runs` showed
+that `ui-design-decision` and `visual_qa` (the two agents built for exactly this) had **never
+run**, and they appeared in no workflow template. The `ui-design` stage dispatched the
 *planner*, and was `optional`. A ticket could cross plan → spec → test → implement → verify →
 three reviewers → gate without one agent looking at what a person would see. Migration
 `0123_ux_lanes_in_v3` closes that: the stage now runs the design agent and is required, and
@@ -163,37 +162,37 @@ three reviewers → gate without one agent looking at what a person would see. M
 
 The five states below are shape, and shape is not enough. The old Monitor tab handled all five
 and printed 138 findings as a wall of "Stage 'review' ran 4 times…" with no ticket named and no
-link — 85 of the 94 on tickets finished weeks earlier. The Memory map drew a force graph over 33
+link (85 of the 94 on tickets finished weeks earlier). The Memory map drew a force graph over 33
 records and 0 links. Initiatives was one centred sentence while 74 milestones waited for one.
 Every gate passed; nobody could use any of them.
 
 So a change to a user-facing surface first states three things, as acceptance criteria:
 
-1. **The question it answers** for the operator, in one sentence from their side of the screen
-   — "which tickets need me now, and why?", not "shows monitor findings".
-2. **The action it leads to** — the link, button or filter the operator uses next. A surface
-   that ends in text ends there.
-3. **What it looks like on real data** — the typical and the largest realistic volume, measured
-   from the live database (read-only), not a fixture: what is stale, what is grouped, what is
-   hidden by default.
+1. **The question it answers** for the operator, in one sentence from their side of the
+   screen: "which tickets need me now, and why?", not "shows monitor findings".
+2. **The action it leads to**, meaning the link, button or filter the operator uses next. A
+   surface that ends in text ends there.
+3. **What it looks like on real data**, at the typical and the largest realistic volume,
+   measured from the live database (read-only) and not a fixture: what is stale, what is
+   grouped, what is hidden by default.
 
 `ui-design` decides them before the work; `visual_qa` checks them after, on a sandbox snapshot
 of production (`loregarden_launch_instance`, template `loregarden/server`, database `snapshot`).
-Never point a second server at the live database — the sandbox exists so nothing has to.
+Never point a second server at the live database; the sandbox exists so nothing has to.
 
 **The same three answers go in the PR.** A PR touching `client/src/pages` or
-`client/src/components` needs a `## User-facing surfaces` section in its description —
-**Question:**, **Action:**, **Real data:** (with a measured number) — or **No user-visible
-change:** with a reason; see `.github/pull_request_template.md`. The "PR UX section" CI check
-fails without it, and `gh pr create --body`/`--body-file` never shows you that template. A
-`PreToolUse` hook (`.claude/hooks/pr_ux_section_precheck.py`) runs the same check on
-`gh pr create` and `gh pr edit`, and refuses the command until the section is there.
+`client/src/components` needs a `## User-facing surfaces` section in its description, holding
+either **Question:**, **Action:**, **Real data:** (with a measured number), or **No
+user-visible change:** with a reason; see `.github/pull_request_template.md`. The "PR UX
+section" CI check fails without it, and `gh pr create --body`/`--body-file` never shows you
+that template. A `PreToolUse` hook (`.claude/hooks/pr_ux_section_precheck.py`) runs the same
+check on `gh pr create` and `gh pr edit`, and refuses the command until the section is there.
 
 ### Real data, or its shape
 
 - **Where the live database exists, look at it:** `task sandbox` runs this checkout on a copy
   of the database and memory graphs (sandboxed, source read-only).
-- **Where it does not — CI, cloud sessions, other workspaces — use its shape:** `task sandbox
+- **Where it does not (CI, cloud sessions, other workspaces), use its shape:** `task sandbox
   -- --seeded` (automatic when no live database is found). That is
   `loregarden.testing.prod_shape`: built from the same factories as the integration tests
   (`loregarden.testing.factories`, re-exported as `tests.factories`), deterministic, and
@@ -201,14 +200,14 @@ fails without it, and `gh pr create --body`/`--body-file` never shows you that t
 - **Frontend tests render at that volume.** `server/tests/test_prod_shape_fixtures.py` records the
   API's responses over the scenario to `client/src/test/fixtures/prod-shape/` and fails when they
   go stale (re-record with `LOREGARDEN_RECORD_FIXTURES=1`). Jest renders data-heavy surfaces over
-  them and runs `findUsabilityProblems` (`client/src/lib/usabilityCheck.ts`) — walls of repeated
-  text, lists with nothing to click, graphs with no edges, long lists with no filter. `npm run
-  visual-qa` runs the same check inside every page of a running sandbox.
+  them and runs `findUsabilityProblems` (`client/src/lib/usabilityCheck.ts`), which flags walls
+  of repeated text, lists with nothing to click, graphs with no edges, and long lists with no
+  filter. `npm run visual-qa` runs the same check inside every page of a running sandbox.
 
-So: a new data-heavy surface gets a prod-shape test; a new kind of data gets a place in the
-scenario; and when the live shape drifts, re-measure `CALIBRATION` rather than let the scenario
-become a fixture again. A scenario that disagrees with production is worse than none — it once
-claimed 20 near-duplicate learnings that production did not have.
+So a new data-heavy surface gets a prod-shape test, a new kind of data gets a place in the
+scenario, and when the live shape drifts, you re-measure `CALIBRATION` rather than let the
+scenario become a fixture again. A scenario that disagrees with production is worse than none.
+The scenario once claimed 20 near-duplicate learnings that production did not have.
 
 ### Lists, tables, or something else
 
@@ -216,7 +215,7 @@ Choose the layout by the operator's question, not by what the last page used:
 
 | The operator is asking | Use | Not when |
 |---|---|---|
-| "How do these compare?" — reading values across rows and sorting | **Table**: one row per record, a header per field | Items do not share fields, or there is one record |
+| "How do these compare?" (reading values across rows and sorting) | **Table**: one row per record, a header per field | Items do not share fields, or there is one record |
 | "Which one do I open?" | **List**: a name plus up to three short tags, and the item is a link or button | Each item has a name and four or more attributes (that is a table) |
 | "What are this one record's details?" | **`<dl>`** of label/value pairs | Never a two-column "Field / Value" table |
 | "What stage is each item in?" (and moving items between stages) | **Board**: one column per state | Items never change state |
@@ -236,28 +235,28 @@ Whatever the layout:
 ### The five states
 
 A change to a user-facing surface is not specified until all five are decided. A ticket that
-names none of them is not vague — it is going to ship the default, and the default is a blank
+names none of them is not vague; it is going to ship the default, and the default is a blank
 pane.
 
-1. **Loading** — what is on screen between the action and the data. A skeleton where the shape
-   is known; nothing at all where the wait is under ~200ms. A spinner is a last resort, not a
-   reflex.
-2. **Empty** — zero rows, legitimately. It must not look like the error state. Say what would
+1. **Loading**: what is on screen between the action and the data. Show a skeleton where the
+   shape is known, and nothing at all where the wait is under ~200ms. A spinner is a last
+   resort, not a reflex.
+2. **Empty**: zero rows, legitimately. It must not look like the error state. Say what would
    be here and how to get one.
-3. **Error** — `describeError(error, fallback)` → `pushToast`, in words naming what failed and
+3. **Error**: `describeError(error, fallback)` → `pushToast`, in words naming what failed and
    what to do next. The path already exists; see *No silent failures*.
-4. **Slow or in flight** — what is disabled, what is shown, and what stops a second click from
+4. **Slow or in flight**: what is disabled, what is shown, and what stops a second click from
    firing the action twice.
-5. **Keyboard and focus** — how the surface is reached, operated and left without a mouse.
+5. **Keyboard and focus**: how the surface is reached, operated and left without a mouse.
    `useDialogFocusTrap` holds focus; `useDialogDismiss` closes on Escape. Every control needs a
    name a screen reader can read.
 
 ### What is enforced
 
-`ts_ux_states_check.cjs` runs everywhere the other frontend gates run — pre-commit, every stage
-transition, and `loregarden_check_organization`. Diff-scoped, so inherited debt is not your
-commit's problem, and waived with `ux-ok:` plus a substantive reason on the line or in the
-comment block above it. It reports:
+`ts_ux_states_check.cjs` runs everywhere the other frontend gates run (pre-commit, every stage
+transition, and `loregarden_check_organization`). It is diff-scoped, so inherited debt is not
+your commit's problem, and you waive it with `ux-ok:` plus a substantive reason on the line or
+in the comment block above it. It reports:
 
 - a `<button>`/`<a>` with no text, no `aria-label` and no `title`;
 - `onClick` on a non-interactive element with no `role`, `tabIndex` or key handler;
@@ -267,39 +266,40 @@ comment block above it. It reports:
 Most of these are shapes a screenshot review passes without noticing, because the reviewer
 already knows what the icon does and already has a mouse.
 
-The rest make a surface **drivable by an agent** — one granted permission to operate the UI
+The rest make a surface **drivable by an agent**. An agent granted permission to operate the UI
 reads the accessibility tree, finds a control by role and name, reads its state back, and
 clicks or types. It cannot reliably hover or drag, and a canvas is one opaque node to it:
 
 - a field (`input`/`select`/`textarea`, their `components/ui` primitives, `contentEditable`, or
-  a field role) with no label — a placeholder, or a sibling `<div>` styled as a label, is not
-  one — and a `contentEditable` with no `role`;
+  a field role) with no label (a placeholder, or a sibling `<div>` styled as a label, is not
+  one), and a `contentEditable` with no `role`;
 - a widget role without its state (`tab`/`option` → `aria-selected`, `switch`/`checkbox`/
   `radio` → `aria-checked`, `combobox`/`aria-haspopup` → `aria-expanded`), or a button whose
   `onClick` flips a boolean and exposes none of `aria-expanded`/`aria-pressed`;
 - `onMouseEnter` with no `onFocus`, a drag source with no key handler, a drop zone with no
   `<input type="file">` in the file;
-- a `<canvas>` that takes input — waive it naming the DOM controls that do the same thing.
+- a `<canvas>` that takes input; waive it by naming the DOM controls that do the same thing.
 
 Those make a surface *readable* by an agent. To let one *act* on it directly, register the
 action where the control lives: `useAgentAction("ticket.set_state", handler)`
 (`client/src/lib/agentActions/`). Agents reach it through `loregarden_list_ui_actions` /
-`loregarden_invoke_ui_action`. The server owns the catalog (`services/ui_action_catalog.py`):
-each action's effect decides its approval — `view` auto-approves, `write` is gated like any
-write tool, `human_only` (resolving an approval) is refused to every agent. A new action is a
-catalog entry on both sides; `test_ui_actions.py` fails when they drift.
+`loregarden_invoke_ui_action`. The server owns the catalog (`services/ui_action_catalog.py`),
+and each action's effect decides its approval: `view` auto-approves, `write` is gated like any
+write tool, and `human_only` (resolving an approval) is refused to every agent. A new action is
+a catalog entry on both sides; `test_ui_actions.py` fails when they drift.
 
 A gate can only see shape. It cannot tell you the empty state you wrote says the right thing,
-that the loading state matches the wait, or that the surface answers a question anyone has. That judgment is the `ui-design` stage's before the
-work and `visual_qa`'s after it — and yours in between.
+that the loading state matches the wait, or that the surface answers a question anyone has.
+That judgment belongs to the `ui-design` stage before the work, to `visual_qa` after it, and
+to you in between.
 
 ## Verify, don't infer
 
 This control plane observes itself, and several of its tables record only part of the story.
-Three traps that have produced confidently wrong conclusions:
+Three traps here have produced confidently wrong conclusions:
 
 - **Auto-approved tool calls write no `approvals` row.** Querying `approvals` for a tool and
-  finding zero does **not** mean it was never called — only that it was never called on an
+  finding zero does **not** mean it was never called, only that it was never called on an
   `auto_approve=0` run.
 - **`alwaysApply: true`** in prompt frontmatter does nothing. It is a Cursor convention. A common
   asset reaches an agent only if its `role_file` says to read it, or `executors/cli.py` embeds it.
@@ -312,7 +312,7 @@ real data before you rely on it. Prefer a runnable check over a plausible readin
 
 A test that fails under the hook and passes on its own is a *diagnosis task*, not a dice roll.
 Retrying a push, or rerunning a suite hoping for green, is the two most expensive minutes an
-agent can spend — and giving up after the retries fail is worse, because the cause was
+agent can spend. Giving up after the retries fail is worse, because the cause was
 discoverable the whole time.
 
 Work it in this order:
@@ -324,8 +324,8 @@ Work it in this order:
 2. **Read the failure's own words.** `Exceeded timeout of 5000 ms` names its cause. Do not
    theorise past a message that is already specific.
 3. **Look for a quantity that separates pass from fail.** Wall-clock, worker count, ordering,
-   `--changedSince` base. Here `client-tests` passed at 310s and failed at 323s / 369s / 442s —
-   that correlation *is* the evidence, and it arrived faster than any of the retries.
+   `--changedSince` base. Here `client-tests` passed at 310s and failed at 323s / 369s / 442s.
+   That correlation *is* the evidence, and it arrived faster than any of the retries.
 4. **Rule out your own change with an import path, not a feeling.** "Unrelated" means the failing
    file cannot reach what you edited. Check it: `grep -rl <module> client/src`.
 5. **Distinguish slow from hung.** A file that completes in 45s under load and 9s idle has a
@@ -336,15 +336,15 @@ one hides a defect that will resurface on someone else's branch.
 
 ## Agent Checkpoints (Autopilot / Autonomous Agents)
 
-When running unattended and you hit a decision a human would normally make — an ambiguous
-requirement, a missing asset, an assumption you had to pick — record it with
+When you are running unattended and hit a decision a human would normally make (an ambiguous
+requirement, a missing asset, an assumption you had to pick), record it with
 `loregarden_append_checkpoint` and continue. Never write a checkpoint file. If the work is
 genuinely blocked (broken dependency, unresolvable conflict), call `loregarden_block_ticket`
 and stop rather than inventing a way around it.
 
 Before editing tests, run the relevant test command **once** to capture the pre-existing failure
 baseline, and record it with `loregarden_append_checkpoint`. Do not attribute inherited failures
-to your change — or claim a green suite you did not verify.
+to your change, and do not claim a green suite you did not verify.
 
 ## Code review agents
 
@@ -357,30 +357,30 @@ asserting prose or logging text that no spec requires.
 to read past.** The gate can only check that a reason exists and is substantive;
 only a reviewer can check that it is *true*. Confirm the failure really is
 transient/retryable, or that the alternate path really exists and the user really
-is told. A waiver whose reason is false or unverifiable is a **Critical** finding —
-the same severity as the raw swallow it is hiding, because it is that swallow plus
-a comment asserting someone thought about it.
+is told. A waiver whose reason is false or unverifiable is a **Critical** finding. That is
+the same severity as the raw swallow it is hiding, because it is that swallow plus a comment
+asserting someone thought about it.
 
-Return the review in your response, or via `loregarden_attach_artifact` if long. Never as a
-markdown file.
+Return the review in your response, or via `loregarden_attach_artifact` if long. Never return
+it as a markdown file.
 
 ### Python (Python Reviewer Agent)
 
 Applies to `server/**/*.py`. Enforce, beyond the automated gates:
 
-- Module-level imports; no function-local imports to dodge cycles — fix the cycle.
+- Module-level imports; no function-local imports to dodge cycles. Fix the cycle.
 - Pydantic **v2** idioms (`model_validate`, `model_dump`); v1 patterns are a bug.
 - No defensive normalization (`str(x).strip().lower()` on a value already normalized at its
-  source) — the `detect-defensive-normalization` gate enforces this.
+  source). The `detect-defensive-normalization` gate enforces this.
 - No stringly-typed vocabularies. A closed set of values is an enum
   (`models/domain/enums.py`, `mcp/tool_ids.py`), not a string: no `run.status == "failed"`
   next to `RunStatus`, no `status: str` / `kind: str` parameters, no inline `x in {"a", …}`
   sets, no literal compared all over a module with no type behind it. The `py-organization`
   gate enforces all four on staged lines; `# py-org: allow-string` waives a line, and is for
   vocabularies we do not own (a GitHub conclusion of `"skipped"` is not `CIStatus.SKIPPED`).
-- No `isinstance`. `isinstance(payload, dict)` is a schema check written by hand — model the
+- No `isinstance`. `isinstance(payload, dict)` is a schema check written by hand. Model the
   payload with Pydantic at the boundary and pass the model. `isinstance(x, SomeClass)` is a
-  type switch — dispatch polymorphically or through a `typing.Protocol`. Same gate, same
+  type switch; dispatch polymorphically or through a `typing.Protocol`. Same gate, same
   scoping; `# py-org: allow-isinstance` waives a line for genuinely foreign objects
   (`__eq__`, a `TypeDecorator`, a third-party payload not yet modelled).
 - Migrations append-only, each guarding its own changes; never rewrite an applied id.
@@ -390,18 +390,18 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
   in a new module.
 
 - No silently caught exceptions. A broad `except Exception` (or bare `except:`, or
-  `contextlib.suppress(Exception)`) whose body is inert — `pass`, `return None`, `return False`,
-  `value = None` — reports success the code never had. Log it, re-raise it, record it on the
+  `contextlib.suppress(Exception)`) whose body is inert (`pass`, `return None`, `return False`,
+  `value = None`) reports success the code never had. Log it, re-raise it, record it on the
   result, or narrow the catch to the failure you actually expect. Handlers that surface the
-  error are fine. The `py-silent-except` gate enforces this — on staged lines pre-commit, and
-  on the worktree at every stage transition — and, like the organization gates, it is
-  diff-scoped: only handlers your change added or edited can fail it. `# py-silent: allow` on
-  the `except` line waives one, for a swallow that is genuinely right (best-effort cleanup on
-  an already-failing path).
+  error are fine. The `py-silent-except` gate enforces this on staged lines pre-commit and on
+  the worktree at every stage transition. Like the organization gates, it is diff-scoped, so
+  only handlers your change added or edited can fail it. `# py-silent: allow` on the `except`
+  line waives one, for a swallow that is genuinely right (best-effort cleanup on an
+  already-failing path).
 
 - Shell out to git through `loregarden.services.git_subprocess.run_git`, never
-  `subprocess.run(["git", ...])` — `GIT_DIR` overrides `cwd`, so an unscrubbed call can operate
-  on the wrong repository. Same for `gh`, which resolves its repo through git. The
+  `subprocess.run(["git", ...])`, because `GIT_DIR` overrides `cwd` and an unscrubbed call can
+  operate on the wrong repository. Same for `gh`, which resolves its repo through git. The
   `py-git-subprocess` gate enforces this.
 
 The automated gates (Ruff, Pylint diff-scoped, organization, defensive-normalization,
@@ -411,17 +411,18 @@ silent-exception, git-subprocess routing) run on staged files via lefthook.
 lives in `.lefthook/scripts/`; both surfaces invoke it from there rather than copying it
 around:
 
-- **Pre-commit**, on staged files — for loregarden via `lefthook.yml`, for other workspaces via
-  `scripts/install-workspace-hooks.sh <workspace-root>`, which writes a marker-delimited block
-  into that repo's `lefthook.yml` running `.lefthook/scripts/workspace-gates.sh` from this
-  checkout (`--check` reports drift without writing).
-- **Orchestration gates**, on every stage transition in every workspace — the same dispatcher,
-  from `gates.commands` in `agent_context/orchestration/*.yaml`, including `default.yaml`, so a
-  workspace with no profile of its own still gets them. They run `--scope worktree`, because an agent's edits are
-  uncommitted when the gate fires, and that scope includes untracked files — a module the agent
-  just wrote is the least-reviewed code in the run and `git diff` never lists it.
+- **Pre-commit**, on staged files: for loregarden via `lefthook.yml`, and for other workspaces
+  via `scripts/install-workspace-hooks.sh <workspace-root>`, which writes a marker-delimited
+  block into that repo's `lefthook.yml` running `.lefthook/scripts/workspace-gates.sh` from
+  this checkout (`--check` reports drift without writing).
+- **Orchestration gates**, on every stage transition in every workspace. These use the same
+  dispatcher, from `gates.commands` in `agent_context/orchestration/*.yaml`, including
+  `default.yaml`, so a workspace with no profile of its own still gets them. They run
+  `--scope worktree` because an agent's edits are uncommitted when the gate fires, and that
+  scope includes untracked files. A module the agent just wrote is the least-reviewed code in
+  the run, and `git diff` never lists it.
 
-- **On demand**, via `loregarden_check_organization` — ask what the gate will say before
+- **On demand**, via `loregarden_check_organization`, to ask what the gate will say before
   spending a stage finding out:
 
       loregarden_check_organization workspace_slug=blobert action=check scope=worktree
@@ -431,25 +432,27 @@ around:
   goes to the inbox because it rewrites another repo's git hooks.
 
 Layout is detected per repo (Python root, TypeScript root, enum home, error helper), so the
-messages name the target workspace's own modules. Nothing here assumes loregarden's tree. A reviewer adds judgment the gates cannot: is this the right shape,
-in the right place, with the right seams.
+messages name the target workspace's own modules. Nothing here assumes loregarden's tree. A
+reviewer adds judgment the gates cannot: is this the right shape, in the right place, with the
+right seams.
 
 ### GDScript (`gdscript-reviewer`)
 
-**Not applicable in this repo** — loregarden contains no `.gd` files. The `gdscript_reviewer`
-agent exists in the registry to serve workspaces that supply their own role file and their own
-GDScript rules. If a loregarden ticket routes here, that is a routing bug, not a review task.
+**Not applicable in this repo**, since loregarden contains no `.gd` files. The
+`gdscript_reviewer` agent exists in the registry to serve workspaces that supply their own role
+file and their own GDScript rules. If a loregarden ticket routes here, that is a routing bug,
+not a review task.
 
 ### Frontend
 
 Applies to `client/**/*.{ts,tsx}`. oxlint runs on staged files. Beyond it: no `as any` or
 `@ts-ignore` suppression, no empty catch blocks, and no assertions on copy that no spec pins.
-No inline `err instanceof Error ? err.message : "…"` ternary either — that narrowing is
+No inline `err instanceof Error ? err.message : "…"` ternary either. That narrowing is
 `describeError(error, fallback)` in `state/toastStore`, which also recovers the `ApiError`
 status line the ternary discards. The `ts-organization` gate enforces it on staged lines;
 `// ts-org: allow-instanceof` waives one. Type guards inside a helper stay legal.
 
-The `ts-ux-states` gate covers what the user meets — see *The person using it* above for the
+The `ts-ux-states` gate covers what the user meets; see *The person using it* above for the
 four checks and the `ux-ok:` waiver. As with `silent-ok:`, **a `ux-ok:` waiver on a changed
 line is a claim to verify**: the gate can only check that a reason exists, not that it is true.
 A waiver asserting a control is decorative, or that a parent renders the empty state, is a
@@ -475,7 +478,7 @@ for the reviewer to check.
 
 ## Knowing when a ticket is done
 
-A ticket is done when its **acceptance criteria** are met — not when reviewers stop finding
+A ticket is done when its **acceptance criteria** are met, not when reviewers stop finding
 things. Those are different conditions, and conflating them is how a ticket runs six implement
 rounds.
 
@@ -487,7 +490,7 @@ rounds.
   ticket that has bounced to the same stage three times. It is a durable, deliberate safeguard.
   `loregarden_requeue_ticket` can clear it, and the reason string should name the unmet
   criterion that justifies another round. "The reviewers found more real defects" is not that
-  reason — it is the thing the cap exists to stop.
+  reason. It is the thing the cap exists to stop.
 - **Budget rounds when the ticket starts, not mid-flight.** Decide up front how many implement
   rounds a ticket gets. Sunk cost is loudest at round four, which is exactly when the decision
   is worst.
@@ -498,19 +501,19 @@ rounds.
   enumeration, and stop. Three consecutive framings of a fix being falsified by the next review
   is evidence about the method, not a reason for a fourth framing.
 
-Recorded because it happened: ticket 546 met all four of its acceptance criteria at its third
-round, then ran three further implement rounds on real findings that no criterion covered. The
-work was good and the defects were real; the rounds should have been tickets.
+This is recorded because it happened. Ticket 546 met all four of its acceptance criteria at its
+third round, then ran three further implement rounds on real findings that no criterion
+covered. The work was good and the defects were real; the rounds should have been tickets.
 
 ## A finding is a claim until it is runnable
 
-Reviews here file findings as tickets, and the tickets are good — but a ticket
-records a claim *as of a commit*, and nothing re-tests the claim before someone
-acts on it. Measured over seven gate tickets: the description was directionally
-right every time, the defect was often already fixed or smaller than stated, and
-the real finding only appeared when the gate was actually exercised.
+Reviews here file findings as tickets, and the tickets are good, but a ticket records a claim
+*as of a commit* and nothing re-tests the claim before someone acts on it. When this was
+measured over seven gate tickets, the description was directionally right every time, the
+defect was often already fixed or smaller than stated, and the real finding only appeared when
+the gate was actually exercised.
 
-The clearest case: 591 and 592 were filed at 04:29 on 2026-08-30 by a review of
+In the clearest case, 591 and 592 were filed at 04:29 on 2026-08-30 by a review of
 577, and fixed by 577's *own* later rounds two days later in `60d74df`. Nothing
 closed them, so they sat in `backlog` until someone re-derived the answer by hand
 five days on.
@@ -520,14 +523,14 @@ So when you file a defect that can be reproduced, put the reproduction in
 
 - The test asserts the behaviour the code **should** have, marked
   `@pytest.mark.xfail(strict=True, reason="<ticket-id> — open: …")`.
-- While the defect is open the test fails, `xfail` absorbs it, the suite is green.
-- When anyone fixes it — including the branch you are reviewing, on its next
-  round — pytest reports XPASS, `strict` turns that into a failure, and whoever
+- While the defect is open the test fails, `xfail` absorbs it, and the suite is green.
+- When anyone fixes it (including the branch you are reviewing, on its next
+  round), pytest reports XPASS, `strict` turns that into a failure, and whoever
   fixed it closes the ticket and moves the test into the suite that covers that
   surface permanently.
 
-No sweep and no cron: a fix that lands anywhere cannot quietly leave its ticket
-open, because the existing suite goes red.
+There is no sweep and no cron. A fix that lands anywhere cannot leave its ticket open
+unnoticed, because the existing suite goes red.
 
 **Build the fixture in a pytest fixture, not in the test body.** `xfail` absorbs
 failures in the call phase, so a repro whose *setup* is broken looks exactly like
@@ -538,19 +541,19 @@ A fixture error is an ERROR, which `xfail` does not swallow. Check a new repro
 with `pytest --runxfail` once: it should fail on *your* assertion, naming the
 real output, not on its own scaffolding.
 
-Two findings that cannot be reproduced — a race needing a scheduler, a defect
-only visible on another host — are still worth filing. Say so in the body, as
+Two findings that cannot be reproduced (a race needing a scheduler, a defect
+only visible on another host) are still worth filing. Say so in the body, as
 592 did ("not raced in a live exercise"), so the next reader knows the claim was
 reasoned rather than observed.
 
 ## Workflow discipline
 
 - **The orchestrator commits the entire working tree.** Anything uncommitted when a stage
-  finishes gets swept into that ticket's commit — including work unrelated to the ticket. Do not
+  finishes gets swept into that ticket's commit, including work unrelated to the ticket. Do not
   hand-edit files while an orchestration runs; if you must, expect the sweep and check
   `git log -p` afterwards.
 - **A worktree build never migrates the live database.** Every entry point migrates what it
-  opens, and the CLI in a worktree opens the primary checkout's database — which is how
+  opens, and the CLI in a worktree opens the primary checkout's database. That is how
   `0138` reached live two weeks before it merged and locked every main build out of writing.
   `db/shared_database_guard.py` now refuses a migration `origin/main` does not ship. If it
   refuses you, use the MCP tools or a checkout of main; never `--allow-stale` around it.
@@ -561,12 +564,12 @@ reasoned rather than observed.
   `tmp_path` inherited it (`GIT_DIR` beats `cwd`) and died with `git add .` exit-128.
   `.lefthook/scripts/hook-noninteractive.sh` now unsets `GIT_DIR`/`GIT_WORK_TREE`, so the
   `env -u GIT_DIR -u GIT_WORK_TREE` workaround is no longer needed. Still scrub the env if you
-  invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook) —
-  the server's own git helpers pass the ambient environment through.
+  invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook),
+  because the server's own git helpers pass the ambient environment through.
 - **Pre-push runs only the tests your commits reach.** `select_pytest_targets.py` walks the
   import graph (string constants included, so `import_module("loregarden.x")` counts) and pytest
-  runs that subset; jest runs `--changedSince`. Anything unmappable — `conftest.py`,
-  `pyproject.toml`, a non-Python file, anything outside `server/`/`client/` — falls back to the
+  runs that subset; jest runs `--changedSince`. Anything unmappable (`conftest.py`,
+  `pyproject.toml`, a non-Python file, anything outside `server/`/`client/`) falls back to the
   full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
   CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
   `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
@@ -576,14 +579,14 @@ reasoned rather than observed.
 ## A gate you tripped is yours to fix
 
 The gates encode the standards this repo has decided on. Tripping one is not an obstacle between
-you and your change — it *is* part of your change. Fix the cause and move on; do not ask which
+you and your change; it *is* part of your change. Fix the cause and move on; do not ask which
 gate to skip, and never reach for `--no-verify`, `LEFTHOOK=0`, or `LEFTHOOK_EXCLUDE` (a
 `PreToolUse` hook denies the first of these outright).
 
 This includes the case that feels unfair: **a file already over a limit before you touched it.**
 The size, complexity and organization gates run on the whole staged file, not on your diff, so
 editing one line of a 1673-line component makes its 1200-line cap yours to satisfy. That is
-deliberate — it is how a file that has been growing unchecked finally gets split, and the person
+deliberate. It is how a file that has been growing unchecked finally gets split, and the person
 who touched it next is the one holding the context to do it. Extract the cohesive piece, keep
 state where it is, let `tsc`/`pytest` prove the seam, and say in the PR why an unrelated-looking
 refactor is in the diff.
@@ -604,6 +607,6 @@ markdown, no ticket-file hunting, no editing v1 YAML expecting an effect, no tic
 filenames, no defensive normalization, no hand-edits during an orchestration.
 
 Three more, from the sections above: **no retrying a failing push in place of diagnosing it**,
-**no asking which gate to skip** — a gate your change trips is part of your change — and **no
-user-facing change that names none of the five states**. The last one is the quietest: it looks
-finished, it passes review, and it ships a blank pane.
+**no asking which gate to skip** (a gate your change trips is part of your change), and **no
+user-facing change that names none of the five states**. The last one is the hardest to
+notice, because it looks finished, passes review, and ships a blank pane.

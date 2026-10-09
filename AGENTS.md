@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-Navigational reference for agents working in **loregarden**. For operating rules — how to
-behave, what to ask, what not to do — read `CLAUDE.md`.
+Navigational reference for agents working in **loregarden**. For operating rules (how to
+behave, what to ask, what not to do), read `CLAUDE.md`.
 
 ## OVERVIEW
 
@@ -10,14 +10,14 @@ software development. Work is tracked as tickets in SQLite, run through configur
 pipelines by CLI agents (Claude Code / Cursor), gated by an approval inbox, and exposed over
 MCP so external agents participate in the same workflow.
 
-It is a **FastAPI + SQLModel/SQLite** backend and a **React 19 + TypeScript + Vite** frontend,
-packaged with **Tauri 2**. There is no game engine here — no `.gd`, `.tscn`, `.blend`, or shader
+It is a FastAPI + SQLModel/SQLite backend and a React 19 + TypeScript + Vite frontend,
+packaged with Tauri 2. There is no game engine here: no `.gd`, `.tscn`, `.blend`, or shader
 sources. Hive (`client/src/lib/hive/`, `client/src/components/dashboard/hive/`) is a React/canvas
 office simulation that visualizes agent activity; it is ordinary frontend code, not an engine
 project, and its tickets belong here.
 
-The control plane runs *itself*: loregarden's own tickets are executed by loregarden's agents.
-Expect to find the machinery you are editing running while you edit it.
+The control plane runs itself. Loregarden's own tickets are executed by loregarden's agents, so
+expect to find the machinery you are editing running while you edit it.
 
 ## STRUCTURE
 
@@ -48,30 +48,30 @@ loregarden/
 |------|----------|-------|
 | Stage routing / classify | `services/studio_routing.py` | `resolve_stage_execution`, `resolve_classify_route`, `_route_match_score` |
 | Ticket/stage/state sync | `services/workflow_state.py` | `reconcile_workflow_state` is called from many places; mind its side effects |
-| Stage transitions | `services/workflow_routing.py` | `apply_stage_route` — reconcile-then-resolve ordering is deliberate |
+| Stage transitions | `services/workflow_routing.py` | `apply_stage_route`: reconcile-then-resolve ordering is deliberate |
 | Running a pipeline | `services/orchestration.py`, `services/builtin_orchestrator.py` | Sweeps and commits the working tree |
-| Lanes / repair holds | `services/queue_lanes.py`, `services/queue_repair.py` | A block with a live repair route keeps its lane instead of releasing it — `resolve_repair_route` decides, `_drive_repairing_entries` spends it |
+| Lanes / repair holds | `services/queue_lanes.py`, `services/queue_repair.py` | A block with a live repair route keeps its lane instead of releasing it. `resolve_repair_route` decides, `_drive_repairing_entries` spends it |
 | Prompt assembly | `agents/executors/cli.py` | Builds the full agent prompt; embeds MCP + memory modules |
 | Injected run context | `agents/stage_context.py`, `agents/mcp_context.py` | Text every agent sees, before its role file |
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
 | MCP tools | `mcp/tools.py` | Tool names and schemas |
-| Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
-| Migrations | `db/versions/` | One module per migration: `@migration("YYYYMMDD_name", after="<newest id on main>")`. No shared list — `FROZEN_MIGRATIONS` and `SHIPPED_MIGRATION_IDS` are closed at 0151. If another branch merged with the same `after`, the suite reports a fork: repoint yours, never rename an id |
+| Agent → role file map | `agents/registry.py` | `role_file` is resolved against the workspace's `agent_context/` |
+| Migrations | `db/versions/` | One module per migration: `@migration("YYYYMMDD_name", after="<newest id on main>")`. There is no shared list. `FROZEN_MIGRATIONS` and `SHIPPED_MIGRATION_IDS` are closed at 0151. If another branch merged with the same `after`, the suite reports a fork: repoint yours, never rename an id |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
 | Docker + host capacity | `services/docker_leases.py`, `services/docker_ledger.py`, `services/host_capacity.py`, `services/capacity_run.py`, `services/capacity_children.py`, `services/run_capacity.py`, `services/gate_capacity.py` | `reserve` → bind → `release_lease`, shaped after queue admission. `drain_waiters` is the only granter: book capacity, then compare-and-set the row. Two nested pools: a docker claim is charged to the docker and host pools in one transaction, a host claim to the host pool only (`CHARGED_POOLS`). `capacity run` holds a host lease around a command; pre-push wraps its suites in it via `.lefthook/scripts/capacity-run.sh`. A child lease (`reserve_child`) draws on its parent's grant and never waits: excess is booked now or refused, so nesting cannot deadlock. Every agent run holds a slotless host lease sized by runtime (`RUNTIME_WEIGHTS`), nested under its stage's docker lease when it has one. A transition's gate commands hold a top-level host lease sized by `gates.capacity_footprint` |
-| Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify — docker ps prints nothing both when nothing matched and when it could not ask |
+| Docker reaping / probes | `services/docker_reaper.py`, `services/docker_probe.py` | `reap_docker_leases` never frees what `probe_lease_liveness` could not verify, because docker ps prints nothing both when nothing matched and when it could not ask |
 | Docker waits / throttling | `services/docker_wait_estimate.py`, `services/docker_poll_guard.py` | `estimate_waits` separates a forecast from a TTL bound; `note_poll` refuses a fast poll without stamping the clock |
-| Is the ledger being used? | `services/docker_unaccounted.py` | `unaccounted_containers` is the only signal distinguishing an adopted ledger from an ignored one — both otherwise read as capacity-free with nothing reaped |
-| Local instances (branch servers/clients) | `services/local_instances.py`, `api/local_instances.py` | Templates only; launching, the registry (`~/.lore-eden/instances`) and the router are `lore_eden.instances`. A branch server boots with `LOREGARDEN_SANDBOX=1` on a DB snapshot — see `Settings.sandbox`. `python -m lore_eden.instances --project loregarden url main` finds main |
+| Is the ledger being used? | `services/docker_unaccounted.py` | `unaccounted_containers` is the only signal distinguishing an adopted ledger from an ignored one. Both otherwise read as capacity-free with nothing reaped |
+| Local instances (branch servers/clients) | `services/local_instances.py`, `api/local_instances.py` | Templates only; launching, the registry (`~/.lore-eden/instances`) and the router are `lore_eden.instances`. A branch server boots with `LOREGARDEN_SANDBOX=1` on a DB snapshot (see `Settings.sandbox`). `python -m lore_eden.instances --project loregarden url main` finds main |
 
 ## THE DATABASE IS THE SOURCE OF TRUTH
 
 This is the single most important fact about this repo, and the one that most often misleads
 agents:
 
-- **Tickets** live in `tickets` (SQLite). There is **no ticket markdown**. Do not grep for one.
+- **Tickets** live in `tickets` (SQLite). There is no ticket markdown. Do not grep for one.
 - **Workflow templates** live in `workflow_templates.stages_json`. The YAML under
-  `agent_context/workflows/` is v1-era and is **not** what the current workflows use. Editing it
+  `agent_context/workflows/` is v1-era and is not what the current workflows use. Editing it
   changes nothing.
 - **Learnings, memory, checkpoints, blog posts** live in the workspace's Obsidian vault + memory
   SQLite, written only via MCP.
@@ -130,13 +130,13 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 
 > **External callers** (another service, a cron job, an MCP client that only launches
 > commands) get one console script: `loregarden`, with `mcp` and `db` subcommands. Do not
-> depend on `python -m loregarden.cli.*` — the module layout is internal. The CLI finds the
+> depend on `python -m loregarden.cli.*`, because the module layout is internal. The CLI finds the
 > database through the installed package's location, so it works from any cwd; set
 > `LOREGARDEN_REPO_ROOT` (or `LOREGARDEN_DATABASE_URL`) to point it at a different checkout.
 > Exit codes: `0` ok, `1` the operation failed, `2` bad invocation.
 
 > **Pushing from a git worktree** used to explode the pre-push suite with `git add .` exit-128
-> errors — git exports an absolute `GIT_DIR` into hooks, and it overrides the `cwd` of the
+> errors. Git exports an absolute `GIT_DIR` into hooks, and it overrides the `cwd` of the
 > throwaway repos the tests build. `.lefthook/scripts/hook-noninteractive.sh` now unsets
 > `GIT_DIR`/`GIT_WORK_TREE`; the `env -u GIT_DIR -u GIT_WORK_TREE …` workaround is obsolete.
 
@@ -144,12 +144,12 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 
 - **Python**: module-level imports; Pydantic v2 / SQLModel for payloads. Ruff + Pylint enforced on staged files.
 - **Test isolation**: prefer `unittest.mock` (`patch`, `MagicMock`) over pytest's `monkeypatch`, unless mocking handles the case poorly (e.g. `os.environ` swaps).
-- **Naming**: stable filenames describing behavior. **No ticket IDs in filenames** — `test_classify_routing.py`, not `test_82_findings.py`.
+- **Naming**: stable filenames describing behavior. No ticket IDs in filenames. Use `test_classify_routing.py`, not `test_82_findings.py`.
 - **Git**: Conventional Commits. `git mv` for renames.
 - **Migrations**: add a module to `db/versions/` (see its `__init__`); order is the `after` chain; each migration guards its own changes; never rename a merged id.
   - **Fixing a fork.** Another branch merged a migration with the same `after` as yours. Git merges cleanly, but after you bring in main, `test_the_real_chain_does_not_fork` fails (and on main, the boot log and the `migration_chain` doctor check name it). To fix:
     1. Merge `origin/main` into your branch.
-    2. In **your** module, set `after=` to the id that merged first (the other side of the fork).
+    2. In your module, set `after=` to the id that merged first (the other side of the fork).
     3. Run `uv run pytest tests/test_migration_registry.py`; it should pass with no fork.
   - Change only `after`, never either id. The live database records ids, so a renamed id runs again, and `test_no_merged_id_has_been_renamed_or_removed` rejects it. If the fork reached main, repoint whichever of the two merged later.
 
@@ -160,7 +160,7 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | Writing a report/summary/findings `.md` | Loregarden reads none of them; the orchestrator sweeps them into unrelated commits. Use `loregarden_attach_artifact` | 40 stray files deleted; see `loregarden_mcp_v1.md` → *No markdown deliverables* |
 | Searching for a ticket markdown file | Tickets are DB rows. The prompts that implied otherwise are fixed | `agents/stage_context.py` |
 | Editing `agent_context/workflows/*.yaml` to change a workflow | v1-era; live templates are in `workflow_templates.stages_json` | `services/studio_service.py` |
-| Hand-editing files while an orchestration runs | It commits the **whole** working tree into whatever ticket is open | commit `49096a5` re-added 13 deleted files |
+| Hand-editing files while an orchestration runs | It commits the whole working tree into whatever ticket is open | commit `49096a5` re-added 13 deleted files |
 | Renaming a migration id (renumbering, or to fix a fork) | The live database records the id; a new name runs the body again. Fix a fork by changing `after`, not the id | `migration_ledger.py` (`prune_renumbered`); `0138` left out of order in `FROZEN_MIGRATIONS` |
 | Ticket IDs in test/doc filenames | Produces the `TICKET_39_*` sprawl that was just deleted | `docs/AUDIT.md` L-3 |
 | `str(...).strip().lower()` defensively | Redundant normalization; normalize at the source | `.lefthook/scripts/detect-defensive-normalization.sh` |
@@ -168,35 +168,35 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | `isinstance(payload, dict)` | A schema check by hand. Model it with Pydantic at the boundary; `isinstance` on a class wants polymorphism | 220 of 238 target builtins; `py_organization_check.py` → `isinstance_errors` |
 | `err instanceof Error ? err.message : "…"` | Copy-pasted 46× and drops the `ApiError` status; use `describeError(error, fallback)` | `.lefthook/scripts/ts_organization_check.cjs` |
 | Swallowing an exception (`except: pass`, `catch {}`, `.catch(() => {})`, a handler that only logs at `debug`) | A failure nobody sees. Log at warning+, return a failure-carrying result, rethrow, or waive with `# silent-ok: <reason>` / `// silent-ok: <reason>` | `.lefthook/scripts/py_silent_except_check.py` |
-| Returning `False`/`[]`/`{}`/`""` from a handler when the same function returns that on success | "It failed" and "there is nothing" become the same answer — this is how a crashed conflict check reported a clean merge | `services/conflict_detector.py` → `checked` |
-| A discarded `run_git(..., check=False)` / `subprocess.run` result | A non-zero exit passes unnoticed; a failed `fetch origin` silently makes every later merge-base stale | `.lefthook/scripts/py_silent_except_check.py` |
+| Returning `False`/`[]`/`{}`/`""` from a handler when the same function returns that on success | "It failed" and "there is nothing" become the same answer. This is how a crashed conflict check reported a clean merge | `services/conflict_detector.py` → `checked` |
+| A discarded `run_git(..., check=False)` / `subprocess.run` result | A non-zero exit passes unnoticed; a failed `fetch origin` makes every later merge-base stale with no error | `.lefthook/scripts/py_silent_except_check.py` |
 | Assuming `alwaysApply: true` in prompt frontmatter does anything | It is a Cursor convention loregarden does not honor. A common asset reaches an agent only if its `role_file` says to read it, or the executor embeds it | `agents/executors/cli.py` |
-| Backgrounding a synthetic CPU-load generator (`for i in 1..N; do (while :; do :; done) & done`) without `trap ... EXIT` + `timeout` guarding the whole thing | If the guarded command hangs or the session/terminal is torn down before the manual `kill $LOADPIDS` line runs, the loops reparent to `launchd` and pin every core indefinitely — nothing else is watching them | orphaned load-test in worktree `chat-triage-prompts-accessibility-0d5aea` ran 3 days, ~90 processes, load avg ~200, until found and killed manually (2026-09-01) |
+| Backgrounding a synthetic CPU-load generator (`for i in 1..N; do (while :; do :; done) & done`) without `trap ... EXIT` + `timeout` guarding the whole thing | If the guarded command hangs or the session/terminal is torn down before the manual `kill $LOADPIDS` line runs, the loops reparent to `launchd` and pin every core indefinitely, since nothing else is watching them | orphaned load-test in worktree `chat-triage-prompts-accessibility-0d5aea` ran 3 days, ~90 processes, load avg ~200, until found and killed manually (2026-09-01) |
 
 ## NOTES
 
 - **A synthetic CPU-load harness must clean up on its own, not at the end of the script.** Wrap it
   as `timeout 300 bash -c 'trap "kill $(jobs -p) 2>/dev/null" EXIT; for i in $(seq 1 12); do
-  (while :; do :; done) & done; <the actual command under load>'` — `trap ... EXIT` fires on a hang,
-  a signal, or the shell being torn down, not just the happy path; `timeout` is the backstop if
-  even that doesn't fire. See the anti-pattern above for what skipping this costs.
+  (while :; do :; done) & done; <the actual command under load>'`. `trap ... EXIT` fires on a hang,
+  a signal, or the shell being torn down, not just the happy path, and `timeout` is the backstop
+  if even that doesn't fire. See the anti-pattern above for what skipping this costs.
 - **`agent_context/` is per-workspace.** `resolve_agent_context_dir` reads it from the ticket's
   workspace `repo_path`, so a run against another workspace loads that workspace's prompts, not
   these. Do not "fix" a loregarden prompt to satisfy another workspace's ticket.
 - **The prompt embed is truncated**: the MCP module is cut at 12000 chars and the memory module
-  at 8000 (`agents/executors/cli.py`). Content added near the end of those files can silently
-  vanish from the prompt. Check the size after editing them.
+  at 8000 (`agents/executors/cli.py`). Content added near the end of those files can drop out
+  of the prompt with no warning. Check the size after editing them.
 - **Complexity hotspots** (>900 lines): `studio_service.py` (1452), `orchestration.py` (1277),
   `usage_service.py` (1167), `permission_bridge.py` (1088), `artifact_service.py` (1049),
   `mcp/tools.py` (1039), `ticket_studio_service.py` (980), `api/tickets.py` (928),
-  `builtin_orchestrator.py` (921) — refactoring candidates.
+  `builtin_orchestrator.py` (921). These are refactoring candidates.
 - **Known weaknesses** are catalogued in `docs/AUDIT.md`. Read it before proposing a rewrite.
 - **Claude usage meters need a `user:profile` credential, and `claude setup-token` is not one.**
   That token is inference-scoped; `api.anthropic.com/api/oauth/usage` answers
   `403 does not meet scope requirement user:profile`. The Keychain item can also be readable
-  yet hold *empty* `accessToken`/`refreshToken` strings — a logged-out session, fixed only by
-  `claude /login`, not by regenerating a token. When neither works, the fallback is the
+  yet hold empty `accessToken`/`refreshToken` strings. That is a logged-out session, fixed only by
+  `claude /login` and not by regenerating a token. When neither works, the fallback is the
   claude.ai session cookie: copy the `sessionKey` cookie value from a logged-in browser into
-  `data/.claude-session-key` (bare value, no `sessionKey=` prefix — the file is gitignored), or
+  `data/.claude-session-key` (bare value, no `sessionKey=` prefix; the file is gitignored), or
   export `CLAUDE_SESSION_KEY`. Set `CLAUDE_ORG_UUID` to pin the organization when the account
   has more than one. See `services/claude_session_usage.py`.

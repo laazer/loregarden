@@ -1,3 +1,6 @@
+import json
+
+import pytest
 from loregarden.db.migrations import MIGRATIONS, apply_migrations
 from loregarden.models.domain import BoundaryVerdict
 from sqlalchemy import text
@@ -1060,7 +1063,9 @@ def test_ux_design_stage_is_pointed_at_the_agent_it_was_named_for(tmp_path):
     # Required, or the stage the user's experience depends on is the one a run
     # prunes when it is in a hurry.
     assert design["optional"] is False
-    assert design["skip_when"] == "routed_as_light_work"
+    # 0123 set `routed_as_light_work`; 20261009_ui_design_skip_without_ui widens
+    # it to `no_ui_work`, which still includes the light route.
+    assert design["skip_when"] == "no_ui_work"
     # The brief is what tells the agent where a decision goes in this repo.
     assert "acceptance criteria" in design["stage_brief"]
 
@@ -2075,3 +2080,40 @@ def test_tickets_gain_the_landing_columns_with_empty_defaults(tmp_path):
             text("SELECT landed_sha, landed_branch FROM tickets WHERE id = 't1'")
         ).one()
     assert tuple(row) == ("", "")
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [("routed_as_light_work", "no_ui_work"), ("has_description", "has_description")],
+)
+def test_ui_design_skips_without_ui_work_unless_a_person_chose_otherwise(tmp_path, before, after):
+    engine = create_engine(f"sqlite:///{tmp_path / 'ui-skip.db'}")
+    SQLModel.metadata.create_all(engine)
+    _seed_template(
+        engine,
+        slug="studio-loregarden-tdd-v3",
+        stages=[
+            {
+                "key": "ui-design",
+                "name": "UI Design",
+                "agent_id": "ui-design-decision",
+                "order": 1,
+                "skip_when": before,
+            },
+            {"key": "done", "name": "Done", "agent_id": "", "order": 2, "terminal": True},
+        ],
+        transitions=[{"from": "ui-design", "to": "done", "when": "pass"}],
+    )
+
+    apply_migrations(engine)
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages = json.loads(
+            conn.execute(
+                text(
+                    "SELECT stages_json FROM workflow_templates WHERE slug='studio-loregarden-tdd-v3'"
+                )
+            ).scalar()
+        )
+    assert next(s for s in stages if s["key"] == "ui-design")["skip_when"] == after

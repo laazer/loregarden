@@ -32,7 +32,7 @@ const STDERR_PREVIEW_LINES = 8;
 /**
  * "What happened to this ticket, and where is it now?"
  *
- * One list of stage visits, oldest first, each holding its attempts and the
+ * One list of stage visits, most recent first, each holding its attempts and the
  * outputs that landed while it ran. It replaces four views that each held a
  * slice of the same story — Logs, Context, Ledger and Errors — so an error is
  * read next to the stage it happened in, and a revisit shows up as a second
@@ -89,7 +89,8 @@ export function TicketTimeline({
 
   const stageNames = new Map(ticket.stages.map((stage) => [stage.key, stage.name]));
   const nothingYet = timeline.visits.length === 0 && timeline.beforeFirstRun.length === 0;
-  const current = [...timeline.visits].reverse().find((visit) => visit.active);
+  const newestFirst = [...timeline.visits].reverse();
+  const current = newestFirst.find((visit) => visit.active);
   const data = ledger.data;
 
   return (
@@ -121,6 +122,16 @@ export function TicketTimeline({
           </div>
 
           <ol className="tl-list">
+            {newestFirst.map((visit, index) => (
+              <VisitItem
+                key={visit.key}
+                visit={visit}
+                stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
+                isLatest={index === 0}
+                runs={runs}
+                onOpenRunLog={onOpenRunLog}
+              />
+            ))}
             {timeline.beforeFirstRun.length > 0 ? (
               <li className="tl-visit tl-visit--quiet">
                 <div className="tl-visit-static">
@@ -133,16 +144,6 @@ export function TicketTimeline({
                 <OutputList outputs={timeline.beforeFirstRun} />
               </li>
             ) : null}
-            {timeline.visits.map((visit, index) => (
-              <VisitItem
-                key={visit.key}
-                visit={visit}
-                stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
-                isLatest={index === timeline.visits.length - 1}
-                runs={runs}
-                onOpenRunLog={onOpenRunLog}
-              />
-            ))}
           </ol>
         </>
       )}
