@@ -84,6 +84,7 @@ is the contract and is embedded into every run's prompt.
 
 ```bash
 # Dev (never run servers ad-hoc; use these)
+task setup                     # install server + client deps (after a lockfile change)
 task dev                       # server + client
 task server                    # backend only
 task client                    # frontend only
