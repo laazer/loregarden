@@ -165,7 +165,7 @@ def test_startup_resume_ignores_genuine_terminal_and_external_blocks(isolated_db
 def test_startup_resume_skips_an_unidentifiable_stage_and_already_active_tickets(isolated_db):
     """A ticket wearing the interruption message with no run behind it names no
     stage to re-run, so there is nothing to recover — distinct from a manual
-    interruption that does name one, which `_resume_plan` now re-runs."""
+    interruption that does name one, which `resume_plan` now re-runs."""
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = _ticket(session)

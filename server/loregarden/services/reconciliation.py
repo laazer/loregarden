@@ -44,6 +44,7 @@ from dataclasses import dataclass
 
 from loregarden.services.block_settlement import sweep_unclassified_blocks
 from loregarden.services.docker_reaper import reap_docker_leases
+from loregarden.services.network_wait_resume import resume_network_waits
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     settle_expired_agent_runs,
@@ -113,6 +114,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # blocks this classifies: a lease expiry settled two steps up gets its
     # kind here, in the same pass, without the settler having to know (749).
     SweepStep("classify_unclassified_blocks", sweep_unclassified_blocks),
+    # Periodic by the same rule: it acts only on tickets still blocked on the
+    # stage a network wait parked, with no orchestration behind them, and only
+    # once the provider answers. It probes nothing when nothing is waiting.
+    SweepStep("resume_network_waits", resume_network_waits),
 )
 
 

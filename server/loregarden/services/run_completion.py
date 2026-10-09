@@ -17,6 +17,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from loregarden.agents.registry import REPAIR_AGENT_ID
+from loregarden.config import settings
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.core.workflow_terminal import is_terminal_stage
@@ -60,6 +61,13 @@ from loregarden.services.exit_action_ledger import (
 )
 from loregarden.services.exit_actions import attest_assigned_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval
+from loregarden.services.network_wait import (
+    is_network_unreachable,
+    network_wait_message,
+    network_waits_enabled,
+    provider_reachable,
+    record_network_wait,
+)
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
@@ -674,6 +682,8 @@ def _rearmed_for_transient_retry(
         # about a budget nobody was spending.
         return False
     detail = stderr[:2000] or stdout[-500:] or "Agent run failed"
+    if _parked_for_network(orch, ticket, run, instance, stages, stdout=stdout, detail=detail):
+        return True
     spent = count_transient_retries(orch.session, ticket.id, run.stage_key)
 
     if spent >= config.max_transient_retries:
@@ -713,6 +723,49 @@ def _rearmed_for_transient_retry(
         spent + 1,
         config.max_transient_retries,
         reason,
+    )
+    return True
+
+
+def _parked_for_network(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance,
+    stages,
+    *,
+    stdout: str,
+    detail: str,
+) -> bool:
+    """Park the stage when the provider is unreachable from this machine too.
+
+    No retry is spent and no repair turn is offered — neither can reach the
+    provider either. The reconcile pass resumes it (`network_wait_resume`).
+    """
+    if not network_waits_enabled() or not is_network_unreachable(stdout, detail):
+        return False
+    if provider_reachable():
+        return False
+    message = network_wait_message(run.stage_key, detail)
+    ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+    choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+    record_network_wait(orch.session, ticket.id, run.stage_key, run_id=run.id)
+    logger.warning(
+        "Stage %r on ticket %s parked until %s is reachable",
+        run.stage_key,
+        ticket.external_id,
+        settings.network_probe_host,
+    )
+    _settle_block(
+        orch,
+        ticket,
+        run,
+        instance,
+        stages,
+        message=message,
+        declared=BlockKind.HARNESS,
+        repairable=False,
     )
     return True
 
