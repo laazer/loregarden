@@ -381,11 +381,10 @@ def test_rolling_mode_plans_on_the_forecast(db_session, workspaces):
 def queue_fixture():
     """The queue and the git readiness check, replaced: no real runs, no real repos."""
     lanes = MagicMock()
-    lanes.lane_numbers.return_value = [1, 2, 3]
-    lanes.waiting_in_lane.return_value = []
     lanes.add_to_lane.return_value = {"status": "started"}
     with (
         patch("loregarden.services.initiative_autopilot.QueueLaneService", return_value=lanes),
+        patch("loregarden.services.initiative_autopilot.least_busy_lane", return_value=1),
         patch(
             "loregarden.services.initiative_autopilot.unmet_prerequisites_for_start",
             return_value=[],
@@ -434,7 +433,7 @@ def test_autopilot_fills_lanes_critical_path_first(db_session, workspaces, queue
         select(AutopilotEvent).where(AutopilotEvent.action == AutopilotAction.DISPATCHED)
     ).all()
     assert {e.ticket_id for e in events} == set(order)
-    assert all(c.kwargs["auto_approve"] is False for c in lanes.add_to_lane.call_args_list)
+    assert all(c.kwargs["auto_approve"] is True for c in lanes.add_to_lane.call_args_list)
 
 
 def test_unlanded_prerequisite_work_holds_a_ticket_and_says_so_once(db_session, workspaces, queue):

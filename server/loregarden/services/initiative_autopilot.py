@@ -16,8 +16,10 @@ Each tick, per initiative with autopilot on:
    prerequisite can be `done` with its work never landed, and the queue does
    not check prerequisites at all — a queued ticket starts when its slot frees.
 4. Queue it the way the Queue page's "Add ticket" does
-   (`QueueLaneService.add_to_lane`), into the least loaded agent slot, gates to
-   the inbox (`auto_approve=False`).
+   (`QueueLaneService.add_to_lane`), into the least loaded agent slot, with
+   `auto_approve` on: tool prompts do not stop it. Legacy stage sign-offs on
+   what it started are answered by `autopilot_sign_off`; any other
+   human-required exit action still goes to the inbox (AC-6).
 
 **Circuit breaker.** When `BREAKER_LIMIT` tickets it started since it was last
 turned on are blocked, it turns itself off and says why: something is wrong
@@ -36,6 +38,9 @@ from datetime import datetime
 from loregarden.config import settings
 from loregarden.db.session import engine
 from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
     AutopilotAction,
     AutopilotEvent,
     AutopilotEventView,
@@ -49,6 +54,10 @@ from loregarden.models.domain import (
     comparable_utc,
     utcnow,
 )
+from loregarden.services.autopilot_sign_off import (
+    autopilot_may_sign_off,
+    record_autopilot_sign_off,
+)
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.initiative_graph import (
     NEEDS_PERSON_TAG,
@@ -57,7 +66,8 @@ from loregarden.services.initiative_graph import (
     build_plan,
 )
 from loregarden.services.initiative_service import load_initiative
-from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.orchestration import ApprovalService
+from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from sqlmodel import Session, col, select
 
@@ -121,13 +131,6 @@ def _last_event_for(session: Session, initiative_id: str, ticket_id: str) -> Aut
         .where(AutopilotEvent.initiative_id == initiative_id, AutopilotEvent.ticket_id == ticket_id)
         .order_by(col(AutopilotEvent.created_at).desc())
     ).first()
-
-
-def _least_loaded_slot(lanes: QueueLaneService) -> int:
-    numbers = lanes.lane_numbers()
-    if not numbers:
-        raise ValueError("The queue has no agent slots")
-    return min(numbers, key=lambda n: (len(lanes.waiting_in_lane(n)), n))
 
 
 def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticket]:
@@ -202,9 +205,9 @@ def _dispatch(
                 detail=detail,
             )
         return False
-    slot = _least_loaded_slot(lanes)
     try:
-        result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=slot, auto_approve=False)
+        slot = least_busy_lane(lanes)
+        result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=slot, auto_approve=True)
     except ValueError as exc:
         logger.warning("Autopilot could not queue %s: %s", ticket.external_id, exc)
         _record(
@@ -225,6 +228,51 @@ def _dispatch(
     return True
 
 
+def _sign_off_parked_gates(session: Session, plan: InitiativePlan) -> set[str]:
+    """Answer the legacy gates left waiting on work it started; the ticket ids it answered.
+
+    Run completion signs these as they are raised. This catches one raised while
+    the autopilot was off, or before it could sign: nothing else re-enters the
+    workflow for a parked ticket. Approving resumes the workflow on its own.
+    """
+    dispatched = select(AutopilotEvent.ticket_id).where(
+        AutopilotEvent.initiative_id == plan.initiative_id,
+        AutopilotEvent.action == AutopilotAction.DISPATCHED,
+    )
+    rows = session.exec(
+        select(Approval, Ticket)
+        .join(Ticket, col(Ticket.id) == col(Approval.ticket_id))
+        .where(
+            col(Approval.ticket_id).in_(dispatched),
+            Approval.status == ApprovalStatus.PENDING,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+        )
+    ).all()
+    answered: set[str] = set()
+    for approval, ticket in rows:
+        driver = autopilot_may_sign_off(session, ticket, approval)
+        if driver is None:
+            continue
+        try:
+            ApprovalService(session).resolve(approval.id, approved=True)
+        except ValueError as exc:
+            # The gate stays in the inbox for a person, and the log says why.
+            logger.warning("Autopilot could not sign off gate %s: %s", approval.id, exc)
+            _record(
+                session,
+                plan.initiative_id,
+                AutopilotAction.REFUSED,
+                ticket_id=ticket.id,
+                detail=f"could not approve the '{approval.stage_key}' gate: {exc}",
+            )
+            session.commit()
+            continue
+        session.refresh(approval)
+        record_autopilot_sign_off(session, ticket, driver, approval)
+        answered.add(ticket.id)
+    return answered
+
+
 def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None = None) -> int:
     """One tick for one initiative. Returns how many tickets it queued."""
     plan = session.get(InitiativePlan, initiative_id)
@@ -239,10 +287,15 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
             f"({', '.join(t.external_id for t in blocked[:5])}); look at them, then turn it back on",
         )
         return 0
+    # The resume a sign-off schedules starts on another thread, so this tick
+    # would read those tickets idle and queue them a second time.
+    resuming = _sign_off_parked_gates(session, plan)
     ctx = build_plan(session, load_initiative(session, initiative_id), now=now or utcnow())
     lanes = QueueLaneService(session)
     dispatched = 0
     for node in select_next(ctx, plan.max_parallel):
+        if node.ticket.id in resuming:
+            continue
         dispatched += int(_dispatch(session, plan, node, lanes))
         session.commit()
     return dispatched

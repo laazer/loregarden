@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     ForecastBasis,
     NodeStatus,
     ScheduleTarget,
+    StageStatus,
     Ticket,
     TicketActivity,
     TicketDependency,
@@ -134,7 +135,9 @@ def _status(ticket: Ticket, activity: TicketActivity) -> tuple[NodeStatus, bool]
     """(status before dependencies are considered, whether it holds its lane)."""
     if ticket.state in RESOLVED_STATES:
         return NodeStatus.DONE, False
-    if activity == TicketActivity.AWAITING:
+    # A stage parked on its gate has no live run, so activity reads idle; it is
+    # mid-workflow and waiting on an answer, not ready to start again.
+    if activity == TicketActivity.AWAITING or ticket.workflow_stage_status == StageStatus.AWAITING:
         return NodeStatus.NEEDS_PERSON, True
     if activity in (TicketActivity.RUNNING, TicketActivity.QUEUED):
         return NodeStatus.RUNNING, True
