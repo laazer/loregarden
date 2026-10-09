@@ -22,6 +22,7 @@ from loregarden.agents.cli_adapters import CliAdapter, CliInvocation
 from loregarden.agents.executors.read_paths import record_read_paths
 from loregarden.agents.run_usage import parse_run_usage, usage_status_for
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.services.artifact_records import RUN_CONTEXT_ARTIFACT_TITLE
 from loregarden.services.git_commit_push_service import paths_committed_since
 from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session
@@ -65,7 +66,7 @@ def run_context_artifacts(ticket: Ticket, run: AgentRun, status: RunStatus) -> l
     return [
         {
             "kind": "context",
-            "title": "Run context",
+            "title": RUN_CONTEXT_ARTIFACT_TITLE,
             "content": {
                 "sections": [
                     {

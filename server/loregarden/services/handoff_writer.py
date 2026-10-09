@@ -274,7 +274,7 @@ def _record_unvalidated_handoff(
 ) -> None:
     """Put an unchecked handoff where a person will see it.
 
-    Filed as an error artifact rather than a blocking issue on purpose. Nothing
+    Filed as its own artifact kind rather than a blocking issue on purpose. Nothing
     was violated — there was no catalog to violate — so blocking the ticket would
     punish a workspace for not having a gate. But a handoff nobody checked is not
     the same as one that passed, and the counters make that concrete: the live
@@ -286,7 +286,7 @@ def _record_unvalidated_handoff(
     """
     OrchestrationCallbackService(session).attach_artifact(
         ticket,
-        kind=ArtifactKind.ERROR,
+        kind=ArtifactKind.HANDOFF_NOT_VALIDATED,
         title=f"Handoff not validated — {from_agent} → {to_agent}",
         content={
             "message": (

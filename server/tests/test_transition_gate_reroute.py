@@ -113,7 +113,7 @@ def test_gate_failure_keeps_blocking_issues_short_and_files_full_output_as_error
 ):
     """The workflow pane renders ticket.blocking_issues directly and verbatim —
     a raw lefthook/pylint/etc. dump there is unreadable. The full gate output
-    belongs in the Errors tab (an Artifact with kind="error"), not inline."""
+    belongs on the Timeline tab (an Artifact with kind="error"), not inline."""
     from loregarden.agents.executors.cli import CliAgentExecutor
 
     ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path)
@@ -136,7 +136,7 @@ def test_gate_failure_keeps_blocking_issues_short_and_files_full_output_as_error
 
     db_session.refresh(ticket)
     assert len(ticket.blocking_issues) < 200
-    assert "Errors tab" in ticket.blocking_issues
+    assert "Timeline tab" in ticket.blocking_issues
     assert "(command:" not in ticket.blocking_issues
 
     error_artifacts = db_session.exec(
@@ -257,7 +257,7 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
     assert ticket.state != TicketState.BLOCKED
     assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
-    assert "Errors tab" in ticket.blocking_issues
+    assert "Timeline tab" in ticket.blocking_issues
     assert len(ticket.blocking_issues) < 200
 
 
@@ -316,7 +316,7 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     assert len(runs_after_second_call) == len(runs_after_first_call) + 1
     assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
-    assert "Errors tab" in ticket.blocking_issues
+    assert "Timeline tab" in ticket.blocking_issues
 
 
 def test_autofix_commits_a_file_the_fixer_creates_in_a_real_repo(

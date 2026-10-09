@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
@@ -7,6 +7,7 @@ import { MarkdownContent } from "./chat/MarkdownContent";
 import { exitActionCategoryLabel } from "./exitActionCategories";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
+import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
 import { Textarea } from "./ui/Textarea";
@@ -50,6 +51,68 @@ function answersComplete(
  */
 const COLLAPSED_BODY_MAX_HEIGHT = 320;
 
+/** How tall a clamped brief stands before "Show full brief" — about eight lines. */
+const CLAMPED_BRIEF_MAX_HEIGHT = 150;
+
+/**
+ * Past this, a checklist item is a paragraph, not a step: the ticket-intent item
+ * carries the whole ticket description. Clamped to three lines until opened.
+ */
+const LONG_CHECKLIST_ITEM_CHARS = 200;
+
+/**
+ * True once `node` is taller than `maxHeight`. Observed rather than measured
+ * once: markdown settles after the first paint.
+ */
+function useOverflows(enabled: boolean, maxHeight: number, resetKey: string) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    if (!enabled) {
+      setOverflows(false);
+      return;
+    }
+    const node = ref.current;
+    if (!node) return;
+    const measure = () => setOverflows(node.scrollHeight > maxHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, maxHeight, resetKey]);
+  return { ref, overflows };
+}
+
+/**
+ * The gate brief restates the ticket — title, description, often a frozen spec
+ * — and on real tickets runs 6–40 KB. Shown in full it buries the decision under
+ * it; clamped, the first lines say what is being signed off and the rest is one
+ * click away, in place.
+ */
+function ClampedBrief({ resetKey, children }: { resetKey: string; children: ReactNode }) {
+  const { ref, overflows } = useOverflows(true, CLAMPED_BRIEF_MAX_HEIGHT, resetKey);
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [resetKey]);
+  const clamped = overflows && !open;
+  return (
+    <div className="approval-brief">
+      <div
+        ref={ref}
+        className={clamped ? "approval-brief-body approval-brief-body--clamped" : "approval-brief-body"}
+        style={clamped ? { maxHeight: CLAMPED_BRIEF_MAX_HEIGHT } : undefined}
+      >
+        {children}
+      </div>
+      {overflows ? (
+        <Button variant="plain" className="approval-inline-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show full brief"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ApprovalCard({
   approval,
   onApprove,
@@ -59,6 +122,7 @@ export function ApprovalCard({
   isSubmitting,
   compact = false,
   collapsible = false,
+  clampBrief = false,
   inspectLabel = "Inspect",
   onExpand,
   impactText,
@@ -73,6 +137,8 @@ export function ApprovalCard({
   compact?: boolean;
   /** Clamp an over-tall body and offer `onExpand` instead of scrolling the rail. */
   collapsible?: boolean;
+  /** Clamp a long brief in place, with its own toggle — for full-width surfaces. */
+  clampBrief?: boolean;
   inspectLabel?: string;
   onExpand?: () => void;
   /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
@@ -101,6 +167,7 @@ export function ApprovalCard({
   const [allowForTicket, setAllowForTicket] = useState(false);
   const [allowForStage, setAllowForStage] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
+  const [openItems, setOpenItems] = useState<Record<number, boolean>>({});
   const [reworkEnabled, setReworkEnabled] = useState(false);
   const [reworkStageKey, setReworkStageKey] = useState("");
   const [reworkNote, setReworkNote] = useState("");
@@ -112,26 +179,11 @@ export function ApprovalCard({
   // too would label them a testing checklist, which they are not.
   const checklist = isHumanAction || isPark ? [] : approval.checklist ?? [];
 
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const [bodyOverflows, setBodyOverflows] = useState(false);
-
-  // Markdown and checklists settle after the first paint, so the height is
-  // observed rather than measured once — otherwise a long impact renders
-  // unclamped until the next unrelated re-render.
-  useEffect(() => {
-    if (!collapsible) {
-      setBodyOverflows(false);
-      return;
-    }
-    const node = bodyRef.current;
-    if (!node) return;
-    const measure = () => setBodyOverflows(node.scrollHeight > COLLAPSED_BODY_MAX_HEIGHT);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [collapsible, approval.id]);
+  const { ref: bodyRef, overflows: bodyOverflows } = useOverflows(
+    collapsible,
+    COLLAPSED_BODY_MAX_HEIGHT,
+    approval.id,
+  );
 
   const clamped = collapsible && bodyOverflows;
 
@@ -143,6 +195,7 @@ export function ApprovalCard({
     setAllowForTicket(false);
     setAllowForStage(false);
     setCheckedItems({});
+    setOpenItems({});
     setReworkEnabled(false);
     setReworkStageKey("");
     setReworkNote("");
@@ -197,6 +250,15 @@ export function ApprovalCard({
     return labels;
   })();
 
+  const impactMarkdown = (
+    <MarkdownContent
+      content={impactText ?? approval.impact}
+      className="approval-impact"
+      readerTitle={approval.title}
+      readerSubtitle={approval.workspace_slug ?? undefined}
+    />
+  );
+
   const submitApproval = () => {
     onApprove(resolvePayload());
   };
@@ -227,6 +289,9 @@ export function ApprovalCard({
       <div ref={bodyRef} style={{ padding: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
+          {/* Gate titles name the stage, not the ticket, so a batch of tickets
+              parked at one gate read as the same card repeated. */}
+          {approval.ticket_external_id && <span>{approval.ticket_external_id} · </span>}
           {approval.stage_name}
           {approval.kind === "workflow_gate" &&
             categoryLabels.map((label) => (
@@ -256,22 +321,10 @@ export function ApprovalCard({
               </div>
             ))}
           </div>
-        ) : (
-          <MarkdownContent
-            content={impactText ?? approval.impact}
-            className="approval-impact"
-            readerTitle={approval.title}
-            readerSubtitle={approval.workspace_slug ?? undefined}
-          />
-        )}
+        ) : null}
         {/* Narrative impact remains available under structured actions when both exist. */}
-        {isExitActionGate && (impactText ?? approval.impact) ? (
-          <MarkdownContent
-            content={impactText ?? approval.impact}
-            className="approval-impact"
-            readerTitle={approval.title}
-            readerSubtitle={approval.workspace_slug ?? undefined}
-          />
+        {!isExitActionGate || (impactText ?? approval.impact) ? (
+          clampBrief ? <ClampedBrief resetKey={approval.id}>{impactMarkdown}</ClampedBrief> : impactMarkdown
         ) : null}
 
         {isHumanAction && approval.prepared_action && (
@@ -308,7 +361,32 @@ export function ApprovalCard({
                   }
                   style={{ marginTop: 2 }}
                 />
-                <span style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}>{item}</span>
+                <span className="approval-checklist-item">
+                  <span
+                    className={
+                      item.length > LONG_CHECKLIST_ITEM_CHARS && !openItems[idx]
+                        ? "approval-checklist-text approval-checklist-text--clamped"
+                        : "approval-checklist-text"
+                    }
+                    style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}
+                  >
+                    {item}
+                  </span>
+                  {item.length > LONG_CHECKLIST_ITEM_CHARS ? (
+                    <Button
+                      variant="plain"
+                      className="approval-inline-toggle"
+                      aria-expanded={!!openItems[idx]}
+                      onClick={(event) => {
+                        // Inside the item's <label>: without this the click also ticks the box.
+                        event.preventDefault();
+                        setOpenItems((prev) => ({ ...prev, [idx]: !prev[idx] }));
+                      }}
+                    >
+                      {openItems[idx] ? "Show less" : "Show all"}
+                    </Button>
+                  ) : null}
+                </span>
               </label>
             ))}
           </div>

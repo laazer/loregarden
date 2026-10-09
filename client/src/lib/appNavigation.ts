@@ -16,15 +16,13 @@ export type AppPage =
 
 export type ArtifactTab =
   | "diff"
-  | "logs"
-  | "tests"
-  | "hive"
-  | "context"
-  | "ledger"
-  | "errors"
+  /** What happened, stage by stage, and what needs a person. */
+  | "timeline"
+  /** What the agents produced: every attachment, machinery hidden. */
+  | "outputs"
   | "pr"
   | "approvals"
-  | "artifacts"
+  | "hive"
   /**
    * The only pane that is not about the selected ticket: every workflow-monitor
    * finding across every ticket. It lives here rather than in its own page
@@ -34,46 +32,28 @@ export type ArtifactTab =
    */
   | "monitor";
 
-/** Nested under the Artifacts top tab (URL segment still matches ArtifactTab). */
-export type ArtifactsSubTab = "artifacts" | "errors" | "context" | "ledger";
+/** Every routable ticket pane. */
+export const ARTIFACT_TABS: ArtifactTab[] = ["diff", "timeline", "outputs", "pr", "approvals", "hive", "monitor"];
+
+/** The tab strip; the rest sit behind "More". */
+export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = ["diff", "timeline", "outputs", "pr", "approvals"];
+export const MORE_ARTIFACT_TABS: ArtifactTab[] = ["hive", "monitor"];
+
+/**
+ * Tabs that were folded into Timeline and Outputs, by where they live now.
+ * Kept so a link written before the merge — in a chat transcript, a ticket
+ * comment, a bookmark — still opens the view that holds what it pointed at.
+ */
+const RETIRED_ARTIFACT_TABS: Record<string, ArtifactTab> = {
+  logs: "timeline",
+  errors: "timeline",
+  context: "timeline",
+  ledger: "timeline",
+  artifacts: "outputs",
+  tests: "outputs",
+};
 
 export type StudioSection = "agents" | "workflows" | "tickets" | "gates";
-
-/** Every routable ticket pane — includes Artifacts sub-tabs for deep links. */
-export const ARTIFACT_TABS: ArtifactTab[] = [
-  "diff",
-  "errors",
-  "logs",
-  "artifacts",
-  "tests",
-  "hive",
-  "context",
-  "ledger",
-  "pr",
-  "approvals",
-  "monitor",
-];
-
-/** Top tab bar only — errors/context/ledger live under Artifacts. */
-export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = [
-  "diff",
-  "logs",
-  "artifacts",
-  "tests",
-  "hive",
-  "pr",
-  "approvals",
-  "monitor",
-];
-
-export const ARTIFACTS_SUB_TABS: ArtifactsSubTab[] = ["artifacts", "errors", "context", "ledger"];
-
-export const ARTIFACTS_SUB_TAB_LABELS: Record<ArtifactsSubTab, string> = {
-  artifacts: "Feed",
-  errors: "Errors",
-  context: "Context",
-  ledger: "Ledger",
-};
 
 export const STUDIO_SECTIONS: StudioSection[] = ["agents", "workflows", "tickets", "gates"];
 
@@ -193,9 +173,13 @@ export function isArtifactTab(value: string | undefined | null): value is Artifa
   return Boolean(value && ARTIFACT_TABS.includes(value as ArtifactTab));
 }
 
-export function isArtifactsSubTab(value: string | undefined | null): value is ArtifactsSubTab {
-  return Boolean(value && ARTIFACTS_SUB_TABS.includes(value as ArtifactsSubTab));
+/** The tab a URL segment opens: itself, the tab a retired one was folded into, or null. */
+export function canonicalArtifactTab(value: string | undefined | null): ArtifactTab | null {
+  if (!value) return null;
+  if (isArtifactTab(value)) return value;
+  return RETIRED_ARTIFACT_TABS[value] ?? null;
 }
+
 
 export function isStudioSection(value: string | undefined | null): value is StudioSection {
   return Boolean(value && STUDIO_SECTIONS.includes(value as StudioSection));
@@ -243,8 +227,7 @@ export function ticketUuidForRef(
 export function artifactTabFromPath(pathname: string): ArtifactTab | null {
   const match = pathname.match(TICKET_PATH_RE);
   if (!match?.[2]) return null;
-  const tab = decodeSegment(match[2]);
-  return isArtifactTab(tab) ? tab : null;
+  return canonicalArtifactTab(decodeSegment(match[2]));
 }
 
 export function studioPath(section: StudioSection = "agents"): string {
@@ -269,12 +252,13 @@ const INITIATIVE_PATH_RE = /^\/initiatives\/([^/]+)/;
 /** Suggested initiatives drawn from open work. A static segment, so it wins over `:initiativeId`. */
 export const INITIATIVE_SUGGESTIONS_PATH = "/initiatives/suggest";
 
-/** An initiative's planning page. */
+/** An initiative's planning page, under its shareable id when it is known (see `ticketPath`). */
 export function initiativePath(initiativeId: string): string {
-  return `/initiatives/${encodeURIComponent(initiativeId)}`;
+  const ref = useTicketRefStore.getState().refByUuid[initiativeId] ?? initiativeId;
+  return `/initiatives/${encodeURIComponent(ref)}`;
 }
 
-/** The initiative a `/initiatives/:id` URL names, or null on the list, the suggestions and elsewhere. */
+/** The id a `/initiatives/:id` URL names — usually the shareable id, not the UUID — or null on the list, the suggestions and elsewhere. */
 export function initiativeIdFromPath(pathname: string): string | null {
   if (pathname === INITIATIVE_SUGGESTIONS_PATH) return null;
   const match = pathname.match(INITIATIVE_PATH_RE);

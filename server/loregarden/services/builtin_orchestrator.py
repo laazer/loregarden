@@ -33,6 +33,7 @@ from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.oversized_ticket_split import split_oversized_ticket
 from loregarden.services.parallel_stage import (
     ParallelMemberResult,
     latest_member_run,
@@ -187,6 +188,10 @@ class BuiltinOrchestrator:
             if orch_run.timeout_override_seconds is not None
             else timeout_seconds
         )
+
+        # Before any stage: an oversized ticket becomes an aggregator over its
+        # parts, which the loop below then runs as children.
+        split_oversized_ticket(self.session, ticket, self.callbacks)
 
         stages_run = 0
         try:
@@ -424,7 +429,7 @@ class BuiltinOrchestrator:
         stage = ticket.workflow_stage_key or "unknown stage"
         return (
             f"Run ended blocked at '{stage}' with no reason recorded on the ticket. "
-            "See the ticket's Errors tab for the stage's own output."
+            "See the ticket's Timeline tab for the stage's own output."
         )
 
     def _advance_after_stage(
@@ -641,6 +646,14 @@ class BuiltinOrchestrator:
         )
         if ok:
             return False
+        if orch_run.status is OrchestrationRunStatus.BLOCKED:
+            # The stage's own routing already blocked the ticket and ended this
+            # run — a rework pause at the loop cap, or a transient failure with
+            # no repair turn left — and filed its own inbox item. Blocking again
+            # re-reads the reviewers' joined text as an agent's handover, and a
+            # reviewer writing "for a human" files a second, empty HUMAN_ACTION
+            # card beside the pause (lg-durable-remote-336).
+            return True
         self.callbacks.block_ticket(
             orch_run,
             ticket,

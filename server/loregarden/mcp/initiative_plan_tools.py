@@ -111,7 +111,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "Turn an initiative's autopilot on or off, or set how many of its tickets may run "
             "at once (1-12). On, it queues ready tickets every minute — critical path first, "
-            "one per lane — and never tickets that need a person. It stops itself when three "
+            "up to max_parallel — and never tickets that need a person. It stops itself when three "
             "tickets it started end blocked. Turning it on queues the first batch immediately."
         ),
         "inputSchema": {

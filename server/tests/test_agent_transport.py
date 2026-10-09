@@ -351,7 +351,14 @@ def test_the_wrapper_redirects_stdin_only_when_there_is_a_prompt(transport, run_
 # --- AC20: the migration -----------------------------------------------------
 
 MIGRATION_ID = "20261008_agent_run_transport"
-PREDECESSOR = "20261007_layout_by_question"
+#: Re-parented at the integration merge. AC20 wrote this as
+#: `20261007_layout_by_question`, which was the registry tip when the spec was
+#: authored; main then landed `20261008_handoff_notice_kind` on that same
+#: parent. Two branches off one tip make the apply order between them id order
+#: rather than the order the live database actually saw, and the registry warns
+#: about exactly that. This column has not shipped, so it moves to the end of
+#: the shipped chain; the migrations ahead of it already applied live.
+PREDECESSOR = "20261009_sonnet_for_mechanical_lanes"
 
 
 def test_the_transport_column_ships_as_a_named_module():

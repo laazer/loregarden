@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { ApiError } from "../../api/http";
@@ -15,7 +15,8 @@ import type {
 import type { TicketState, TicketSummary } from "../../api/types";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
-import { InitiativePlanPage } from "../InitiativePlanPage";
+import { useTicketRefStore } from "../../state/ticketRefStore";
+import { InitiativePlanPage, InitiativePlanRoute } from "../InitiativePlanPage";
 
 jest.mock("../../api/client");
 
@@ -192,15 +193,38 @@ function renderPage() {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/initiatives/init1"]}>
         <Routes>
-          <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage />} />
+          <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage initiativeId="init1" />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
+function CurrentPath() {
+  const location = useLocation();
+  return <span data-testid="path">{location.pathname}</span>;
+}
+
+function renderRoute(path: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/initiatives/:initiativeId" element={<InitiativePlanRoute />} />
+        </Routes>
+        <CurrentPath />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+const INIT_UUID = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+const INIT_REF = "init-tinkercg-build-1";
+
 beforeEach(() => {
   jest.clearAllMocks();
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
   setNarrow(false);
   mockApi.initiativePlan.mockResolvedValue(plan());
   mockApi.initiative.mockResolvedValue({
@@ -364,6 +388,23 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
 });
 
+test("the parallel cap changes only on Update", async () => {
+  mockApi.setAutopilot.mockResolvedValue(plan({ autopilot: { ...plan().autopilot, max_parallel: 8 } }));
+  const user = userEvent.setup();
+  renderPage();
+
+  const panel = await screen.findByRole("region", { name: "Autopilot" });
+  const update = within(panel).getByRole("button", { name: "Update" });
+  expect(update).toBeDisabled();
+
+  await user.selectOptions(within(panel).getByRole("combobox", { name: /Most tickets/ }), "8");
+  expect(mockApi.setAutopilot).not.toHaveBeenCalled();
+
+  await user.click(update);
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 8 }));
+  await waitFor(() => expect(within(panel).getByRole("button", { name: "Update" })).toBeDisabled());
+});
+
 test("a paused autopilot says why", async () => {
   mockApi.initiativePlan.mockResolvedValue(
     plan({
@@ -385,7 +426,10 @@ test("the board acts on a selection from one toolbar, and caps long columns", as
 
   await user.click(await screen.findByRole("tab", { name: "Board" }));
   expect(await screen.findByText("84 work items")).toBeInTheDocument();
-  expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  // The toolbar is there before anything is ticked, so the checkboxes explain themselves.
+  const idle = screen.getByRole("toolbar", { name: "Selected tickets" });
+  expect(within(idle).getByText(/Tick tickets to move, start, or mark them/)).toBeInTheDocument();
+  expect(within(idle).getByRole("button", { name: "Start now" })).toBeDisabled();
   expect(screen.getAllByRole("button", { name: /Show all/ }).length).toBeGreaterThan(0);
   expect(findUsabilityProblems(container)).toEqual([]);
 
@@ -475,4 +519,26 @@ test("a deleted initiative is said to be gone, with a way back", async () => {
 
   expect(await screen.findByRole("alert")).toHaveTextContent("no longer exists");
   expect(screen.getByRole("button", { name: "Back to initiatives" })).toBeInTheDocument();
+});
+
+test("a shareable initiative id stays in the address bar, and the plan is fetched by UUID", async () => {
+  mockApi.ticket.mockResolvedValue({ id: INIT_UUID, external_id: INIT_REF } as Awaited<ReturnType<typeof api.ticket>>);
+
+  renderRoute(`/initiatives/${INIT_REF}`);
+
+  expect(await screen.findByRole("table", { name: "Milestones in phase order" })).toBeInTheDocument();
+  expect(mockApi.ticket).toHaveBeenCalledWith(INIT_REF);
+  expect(mockApi.initiativePlan).toHaveBeenCalledWith(INIT_UUID);
+  expect(mockApi.initiativePlan).not.toHaveBeenCalledWith(INIT_REF);
+  expect(screen.getByTestId("path")).toHaveTextContent(`/initiatives/${INIT_REF}`);
+});
+
+test("a UUID initiative address is swapped for the shareable id", async () => {
+  mockApi.ticket.mockResolvedValue({ id: INIT_UUID, external_id: INIT_REF } as Awaited<ReturnType<typeof api.ticket>>);
+
+  renderRoute(`/initiatives/${INIT_UUID}`);
+
+  await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent(`/initiatives/${INIT_REF}`));
+  expect(await screen.findByRole("table", { name: "Milestones in phase order" })).toBeInTheDocument();
+  expect(mockApi.initiativePlan).toHaveBeenCalledWith(INIT_UUID);
 });

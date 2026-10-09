@@ -49,9 +49,14 @@ class GatesConfig(BaseModel):
     autofix_max_agent_attempts: int = 3
     # The host capacity a transition's gate commands hold while they run, so
     # gates across agents and workspaces queue instead of piling onto the
-    # machine (services/gate_capacity.py). `heavy` because pytest/jest dominate;
+    # machine (services/gate_capacity.py). `service`, sized to what the gates
+    # are: static analysis, no tests in any shipped profile. Measured
+    # 2026-10-09, loregarden's set took 7s wall and 6.3 CPU-seconds, 85 MB peak.
+    # At `heavy` they held no more than that but queued behind test suites for
+    # it — 6.5, 7.5 and 9.8 minutes on lg-durable-remote-336 for 10 seconds of
+    # work. A profile that adds a test suite to its gates sets `heavy` itself;
     # `none` runs them unreserved.
-    capacity_footprint: DockerFootprint = DockerFootprint.HEAVY
+    capacity_footprint: DockerFootprint = DockerFootprint.SERVICE
 
 
 class GitAutomationConfig(BaseModel):

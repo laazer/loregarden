@@ -8,16 +8,19 @@ needs a person; this executes it.
 Each tick, per initiative with autopilot on:
 
 1. Build the plan graph (`initiative_graph`).
-2. Pick `READY` tickets in schedule order, at most one per plan lane in flight
-   and at most `max_parallel` across the initiative. `NEEDS_PERSON` and
+2. Pick `READY` tickets in schedule order, at most `max_parallel` in flight
+   across the initiative. Lanes do not limit it: each ticket gets its own
+   worktree, and the machine's capacity queue meters the load. `NEEDS_PERSON` and
    `BLOCKED` tickets are never picked; neither is a prerequisite outside the
    initiative, which belongs to someone else's plan.
 3. Re-check each pick against git (`unmet_prerequisites_for_start`): a
    prerequisite can be `done` with its work never landed, and the queue does
    not check prerequisites at all — a queued ticket starts when its slot frees.
 4. Queue it the way the Queue page's "Add ticket" does
-   (`QueueLaneService.add_to_lane`), into the least loaded agent slot, gates to
-   the inbox (`auto_approve=False`).
+   (`QueueLaneService.add_to_lane`), into the least loaded agent slot, with
+   `auto_approve` on: tool prompts do not stop it. Legacy stage sign-offs on
+   what it started are answered by `autopilot_sign_off`; any other
+   human-required exit action still goes to the inbox (AC-6).
 
 **Circuit breaker.** When `BREAKER_LIMIT` tickets it started since it was last
 turned on are blocked, it turns itself off and says why: something is wrong
@@ -36,6 +39,9 @@ from datetime import datetime
 from loregarden.config import settings
 from loregarden.db.session import engine
 from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
     AutopilotAction,
     AutopilotEvent,
     AutopilotEventView,
@@ -49,6 +55,11 @@ from loregarden.models.domain import (
     comparable_utc,
     utcnow,
 )
+from loregarden.services.autopilot_sign_off import (
+    autopilot_may_sign_off,
+    record_autopilot_sign_off,
+    self_and_ancestors,
+)
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.initiative_graph import (
     NEEDS_PERSON_TAG,
@@ -57,7 +68,9 @@ from loregarden.services.initiative_graph import (
     build_plan,
 )
 from loregarden.services.initiative_service import load_initiative
-from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.orchestration import ApprovalService
+from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from sqlmodel import Session, col, select
 
@@ -75,7 +88,6 @@ def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
     graph = ctx.graph
     own = [n for n in graph.nodes.values() if not n.external]
     in_flight = [n for n in own if n.holds_lane]
-    busy_lanes = {n.lane for n in in_flight}
     budget = max_parallel - len(in_flight)
     candidates = sorted(
         (n for n in own if n.status == NodeStatus.READY),
@@ -89,15 +101,34 @@ def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
             n.ticket.external_id,
         ),
     )
+    # A parent's run works through its children, so a ticket whose parent or
+    # child is running, or picked this tick, would run twice.
+    taken = {n.id for n in in_flight}
     picked: list[PlanNode] = []
     for node in candidates:
         if len(picked) >= budget:
             break
-        if node.lane in busy_lanes:
+        if _related(graph.nodes, node) & taken:
             continue
         picked.append(node)
-        busy_lanes.add(node.lane)
+        taken.add(node.id)
     return picked
+
+
+def _related(nodes: dict[str, PlanNode], node: PlanNode) -> set[str]:
+    """Plan nodes above or below this one in the ticket tree, itself excluded."""
+    below = {other.id for other in nodes.values() if node.id in _ancestor_ids(nodes, other)}
+    return _ancestor_ids(nodes, node) | below
+
+
+def _ancestor_ids(nodes: dict[str, PlanNode], node: PlanNode) -> set[str]:
+    """The ids of its ancestors that are plan nodes; a cycle stops the walk."""
+    seen: set[str] = set()
+    parent_id = node.ticket.parent_ticket_id
+    while parent_id in nodes and parent_id not in seen:
+        seen.add(parent_id)
+        parent_id = nodes[parent_id].ticket.parent_ticket_id
+    return seen
 
 
 def _record(
@@ -121,13 +152,6 @@ def _last_event_for(session: Session, initiative_id: str, ticket_id: str) -> Aut
         .where(AutopilotEvent.initiative_id == initiative_id, AutopilotEvent.ticket_id == ticket_id)
         .order_by(col(AutopilotEvent.created_at).desc())
     ).first()
-
-
-def _least_loaded_slot(lanes: QueueLaneService) -> int:
-    numbers = lanes.lane_numbers()
-    if not numbers:
-        raise ValueError("The queue has no agent slots")
-    return min(numbers, key=lambda n: (len(lanes.waiting_in_lane(n)), n))
 
 
 def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticket]:
@@ -202,9 +226,9 @@ def _dispatch(
                 detail=detail,
             )
         return False
-    slot = _least_loaded_slot(lanes)
     try:
-        result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=slot, auto_approve=False)
+        slot = least_busy_lane(lanes)
+        result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=slot, auto_approve=True)
     except ValueError as exc:
         logger.warning("Autopilot could not queue %s: %s", ticket.external_id, exc)
         _record(
@@ -225,6 +249,60 @@ def _dispatch(
     return True
 
 
+def _sign_off_parked_gates(session: Session, plan: InitiativePlan) -> set[str]:
+    """Answer the legacy gates left waiting on work it started.
+
+    Returns the ids not to queue this tick: each answered ticket and its ancestors.
+
+    Run completion signs these as they are raised. This catches one raised while
+    the autopilot was off, or before it could sign: nothing else re-enters the
+    workflow for a parked ticket. Approving resumes the workflow on its own.
+    """
+    # Every pending gate, not only those on tickets it queued: it queues a
+    # parent and the gate opens on a child. The inbox is small, and
+    # `autopilot_may_sign_off` decides which of these are this plan's.
+    rows = session.exec(
+        select(Approval, Ticket)
+        .join(Ticket, col(Ticket.id) == col(Approval.ticket_id))
+        .where(
+            Approval.status == ApprovalStatus.PENDING,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+        )
+    ).all()
+    answered: set[str] = set()
+    for approval, ticket in rows:
+        # A live orchestration answers its own gate in its loop; resolving it
+        # here too races that resolve into "already resolved".
+        if find_active_orchestration_run(session, ticket.id) is not None:
+            continue
+        driver = autopilot_may_sign_off(session, ticket, approval)
+        if driver is None or driver.initiative_id != plan.initiative_id:
+            continue
+        try:
+            ApprovalService(session).resolve(approval.id, approved=True)
+        except ValueError as exc:
+            # The gate stays in the inbox for a person, and the log says why —
+            # once, not every tick it stays true.
+            detail = f"could not approve the '{approval.stage_key}' gate: {exc}"
+            last = _last_event_for(session, plan.initiative_id, ticket.id)
+            if last is None or last.detail != detail:
+                logger.warning("Autopilot could not sign off gate %s: %s", approval.id, exc)
+                _record(
+                    session,
+                    plan.initiative_id,
+                    AutopilotAction.REFUSED,
+                    ticket_id=ticket.id,
+                    detail=detail,
+                )
+                session.commit()
+            continue
+        session.refresh(approval)
+        record_autopilot_sign_off(session, ticket, driver, approval)
+        # Its parents too: their orchestration would run it a second time.
+        answered.update(self_and_ancestors(session, ticket))
+    return answered
+
+
 def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None = None) -> int:
     """One tick for one initiative. Returns how many tickets it queued."""
     plan = session.get(InitiativePlan, initiative_id)
@@ -239,10 +317,15 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
             f"({', '.join(t.external_id for t in blocked[:5])}); look at them, then turn it back on",
         )
         return 0
+    # The resume a sign-off schedules starts on another thread, so this tick
+    # would read those tickets idle and queue them a second time.
+    resuming = _sign_off_parked_gates(session, plan)
     ctx = build_plan(session, load_initiative(session, initiative_id), now=now or utcnow())
     lanes = QueueLaneService(session)
     dispatched = 0
     for node in select_next(ctx, plan.max_parallel):
+        if node.ticket.id in resuming:
+            continue
         dispatched += int(_dispatch(session, plan, node, lanes))
         session.commit()
     return dispatched

@@ -398,6 +398,9 @@ class ArtifactKind(StrEnum):
     PLAN = "plan"
     #: A handoff between stages, validated against its item keys.
     HANDOFF = "handoff"
+    #: A handoff no gate checked. A notice, not a failure: it was filed as
+    #: `error` until 2026-10, where it read as a block on tickets that were fine.
+    HANDOFF_NOT_VALIDATED = "handoff_not_validated"
     #: A pull request this run opened.
     PR = "pr"
     #: A gate evaluation recorded against a workflow transition.
@@ -429,6 +432,9 @@ class StageBudgetArtifactKind(StrEnum):
     #: because a transient retry is not an attempt at the work and must not
     #: spend the runaway backstop. See `services.stage_transient_retry`.
     TRANSIENT_RETRY = "stage_transient_retry"
+    #: The ticket is parked until the provider is reachable again, and the
+    #: reconcile pass resumes it then. See `services.network_wait`.
+    NETWORK_WAIT = "stage_network_wait"
 
 
 class GateFaultAttribution(StrEnum):

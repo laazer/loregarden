@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
 import { AUTOPILOT_ACTION_LABEL, formatWhen } from "../../../lib/scheduleFormat";
@@ -23,7 +25,8 @@ function TicketLink({ node }: { node: PlanNode }) {
  * Who is driving the plan, and what is waiting on a person.
  *
  * Answers "what is running, what starts next, and what needs me?". The actions
- * are the autopilot switch, the parallel cap, and — per ticket waiting on a
+ * are the autopilot switch, the parallel cap (applied with Update, so a
+ * mis-pick on the dropdown changes nothing), and — per ticket waiting on a
  * person — opening it, or clearing the mark when an agent can do it after all.
  */
 export function AutopilotPanel({
@@ -44,6 +47,9 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
+  const [draftParallel, setDraftParallel] = useState<number | null>(null);
+  const parallel = draftParallel ?? autopilot.max_parallel;
+  const parallelChanged = parallel !== autopilot.max_parallel;
 
   return (
     <section className="plan-autopilot" aria-labelledby="plan-autopilot-title">
@@ -54,17 +60,17 @@ export function AutopilotPanel({
           </h2>
           <p className="plan-muted">
             {autopilot.enabled
-              ? `On — ${autopilot.in_flight} of ${autopilot.max_parallel} running. It queues ready work every minute, critical path first, one ticket per lane.`
-              : "Off. Turn it on to queue ready work as prerequisites land — critical path first, one ticket per lane, never work marked for a person."}
+              ? `On — ${autopilot.in_flight} of ${autopilot.max_parallel} running. It queues ready work every minute, critical path first.`
+              : "Off. Turn it on to queue ready work as prerequisites land — critical path first, never work marked for a person."}
           </p>
         </div>
         <div className="plan-autopilot-controls">
           <Select
             aria-label="Most tickets the autopilot runs at once"
             className="plan-parallel-select"
-            value={String(autopilot.max_parallel)}
+            value={String(parallel)}
             disabled={busy}
-            onChange={(e) => onAutopilot({ max_parallel: Number(e.target.value) })}
+            onChange={(e) => setDraftParallel(Number(e.target.value))}
           >
             {PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -72,6 +78,15 @@ export function AutopilotPanel({
               </option>
             ))}
           </Select>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || !parallelChanged}
+            title={parallelChanged ? `Run at most ${parallel} at once` : "Pick a different number first"}
+            onClick={() => onAutopilot({ max_parallel: parallel })}
+          >
+            Update
+          </Button>
           <Button
             variant={autopilot.enabled ? "secondary" : "primary"}
             compact

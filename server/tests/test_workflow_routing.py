@@ -19,7 +19,11 @@ from loregarden.services.workflow_routing import (
     routes_forward,
     valid_route_targets,
 )
-from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
+from loregarden.services.workflow_state import (
+    initial_stages_json,
+    parse_stage_map,
+    set_stage_status,
+)
 from sqlmodel import Session, select
 
 
@@ -1068,3 +1072,112 @@ def test_light_route_is_read_from_the_template_not_a_second_keyword_list():
     # Retune the route's keywords: the same ticket is no longer light.
     stages[0].classify_routes[0].specialties = ["changelog"]
     assert took_light_route(ticket, stages) is False
+
+
+def _implement_handoff_fixture() -> tuple[list, Ticket, WorkflowInstance]:
+    """test-break → implement (classify: frontend or backend) → review, no reject routes."""
+    from loregarden.models.domain import ClassifyRoute, WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="test-break", name="Break Tests", order=1, agent_id="test_breaker"),
+        WorkflowStageDef(
+            key="implement",
+            name="Implement",
+            order=2,
+            stage_type="classify",
+            agent_id="backend_implementer",
+            classify_routes=[
+                ClassifyRoute(specialties=["frontend"], agent_id="frontend_implementer"),
+                ClassifyRoute(
+                    specialties=["backend"], agent_id="backend_implementer", default=True
+                ),
+            ],
+        ),
+        WorkflowStageDef(key="review", name="Review", order=3, agent_id="architecture_reviewer"),
+    ]
+    ticket = Ticket(
+        external_id="handoff-route-test",
+        workspace_id="ws",
+        title="Handoff route test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.FEATURE,
+        workflow_stage_key="implement",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="implement",
+        stages_json=initial_stages_json(stages),
+    )
+    set_stage_status(ticket, instance, stages, "test-break", StageStatus.DONE)
+    return stages, ticket, instance
+
+
+def test_reject_handing_off_to_a_sibling_specialist_reruns_the_same_stage():
+    stages, ticket, instance = _implement_handoff_fixture()
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        [{"from": "implement", "to": "review", "when": "pass"}],
+        from_key="implement",
+        outcome="reject",
+        next_agent="backend_implementer",
+        blocking_issues="client half done; server half is yours",
+    )
+
+    assert plan.to_key == "implement", "a hand-off must not detour through test-break"
+    assert ticket.scope_reroute_agent == "backend_implementer"
+    assert parse_stage_map(instance, stages)["test-break"] == StageStatus.DONE
+
+
+def test_reject_naming_an_agent_the_stage_does_not_run_still_goes_back_a_stage():
+    stages, ticket, instance = _implement_handoff_fixture()
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        [{"from": "implement", "to": "review", "when": "pass"}],
+        from_key="implement",
+        outcome="reject",
+        next_agent="test_breaker",
+    )
+
+    assert plan.to_key == "test-break"
+
+
+@pytest.mark.parametrize(
+    ("plans", "skips"),
+    [
+        ([{"steps": [{"modules": ["server/loregarden/services/x.py"]}]}], True),
+        ([{"steps": [{"modules": ["client/src/pages/X.tsx"]}]}], False),
+        ([{"body": "server/ change"}, {"body": "touch RunLogModal.tsx"}], False),
+        ([], False),
+    ],
+    ids=["server-only plan", "client plan", "any plan naming ui", "no plan yet"],
+)
+def test_no_ui_work_skips_only_when_a_plan_names_no_ui_path(
+    db_session: Session, plans: list[dict], skips: bool
+):
+    from loregarden.models.domain import Artifact, ArtifactKind, WorkflowStageDef
+    from loregarden.services.studio_routing import should_skip_stage
+    from loregarden.testing.factories import make_ticket, make_workspace
+
+    ws = make_workspace(db_session, slug="no-ui-ws")
+    ticket = make_ticket(db_session, workspace_id=ws.id, external_id="no-ui-1")
+    for plan in plans:
+        db_session.add(
+            Artifact(
+                ticket_id=ticket.id,
+                kind=ArtifactKind.PLAN,
+                title="Plan",
+                content_json=json.dumps(plan),
+            )
+        )
+    db_session.commit()
+    stage = WorkflowStageDef(key="ui-design", name="UI", order=1, skip_when="no_ui_work")
+
+    assert should_skip_stage(ticket, stage, [stage]) is skips

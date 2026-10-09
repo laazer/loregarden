@@ -139,3 +139,81 @@ def test_an_ambiguous_run_code_is_refused_rather_than_guessed(db_session, runs):
 
     with pytest.raises(ValueError, match="ambiguous"):
         _attach(db_session, runs["agent_code"])
+
+
+# The run an attachment came from is stored on the row. Before, `run_id` was
+# resolved to find the ticket and then dropped, so half the rows in `artifacts`
+# could not be tied to the stage that produced them.
+
+
+@pytest.mark.parametrize(
+    ("form", "expected"), [("agent_id", "agent_id"), ("agent_code", "agent_id")]
+)
+def test_attach_artifact_records_the_agent_run_it_names(db_session, runs, form, expected):
+    result = _attach(db_session, runs[form])
+
+    assert db_session.get(Artifact, result["artifact_id"]).run_id == runs[expected]
+
+
+def test_an_orchestration_id_names_no_single_run_so_none_is_recorded(db_session, runs):
+    result = _attach(db_session, runs["orch_id"])
+
+    assert db_session.get(Artifact, result["artifact_id"]).run_id is None
+
+
+def test_the_supervised_run_is_preferred_to_the_orchestration_id(db_session, runs):
+    result = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_attach_artifact",
+            {"run_id": runs["orch_id"], "kind": "plan", "title": "plan"},
+            orchestrated=True,
+            run_id=runs["agent_id"],
+        )
+    )
+
+    assert db_session.get(Artifact, result["artifact_id"]).run_id == runs["agent_id"]
+
+
+def test_a_supervised_run_of_another_ticket_is_not_this_attachments_source(db_session, runs):
+    other = make_workspace_ticket(db_session, "other-ticket")
+    foreign = make_agent_run(
+        db_session,
+        workspace_id=other.workspace_id,
+        ticket_id=other.id,
+        run_code="run_99aa99",
+        stage_key="plan",
+        skill_name="",
+        status="running",
+        command="",
+        stdout="",
+        stderr="",
+    )
+
+    result = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_attach_artifact",
+            {"run_id": runs["agent_code"], "kind": "plan", "title": "plan"},
+            orchestrated=True,
+            run_id=foreign.id,
+        )
+    )
+
+    assert db_session.get(Artifact, result["artifact_id"]).run_id == runs["agent_id"]
+
+
+def test_attach_evidence_records_the_agent_run(db_session, runs):
+    result = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_attach_evidence",
+            {
+                "run_id": runs["agent_code"],
+                "evidence_kind": "test_red_green",
+                "title": "red then green",
+            },
+        )
+    )
+
+    assert db_session.get(Artifact, result["artifact_id"]).run_id == runs["agent_id"]

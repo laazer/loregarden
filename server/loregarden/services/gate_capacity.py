@@ -1,8 +1,8 @@
 """The host capacity a transition's gate commands hold while they run.
 
-Gates run pytest, jest and the organization checks at every stage transition,
-in every workspace, for every agent at once — the same load the pre-push hook
-queues for. They run in the orchestrator after the stage's agent run has
+Gates run lint and the organization checks at every stage transition, in every
+workspace, for every agent at once; a profile may add a test suite. The lease
+size is the profile's `gates.capacity_footprint`. They run in the orchestrator after the stage's agent run has
 finished and its own lease is released (`_advance_after_stage`), so at that
 point this thread holds nothing on the ledger. A gate lease is therefore an
 ordinary top-level claim that waits in line; with nothing held, waiting cannot

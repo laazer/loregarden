@@ -14,11 +14,13 @@ import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
 import { TrackedTickets } from "../components/initiatives/plan/TrackedTickets";
 import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
+import { TicketRouteResolver } from "../components/TicketRouteResolver";
 import { Button } from "../components/ui/Button";
 import { planQueryKey } from "../hooks/useInitiativePlanner";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { navigateToPage } from "../lib/useAppNavigation";
+import { navigateToPage, ticketUuidForRef } from "../lib/useAppNavigation";
 import { scheduleToReplace } from "../lib/scheduleFormat";
+import { useTicketRefStore } from "../state/ticketRefStore";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/plan/InitiativePlan.css";
 
@@ -37,6 +39,23 @@ const TAB_LABEL: Record<PlanTab, string> = {
 };
 
 /**
+ * `/initiatives/:initiativeId`, addressed by the initiative's shareable id
+ * (`init-always-on-2`) the way a ticket is. An initiative is a ticket, so
+ * `TicketRouteResolver` learns the id pair and swaps a UUID address for the
+ * readable one; the page below is keyed by the UUID only, because its child
+ * panels invalidate the plan under `data.id`.
+ */
+export function InitiativePlanRoute() {
+  const { initiativeId = "" } = useParams<{ initiativeId: string }>();
+  const uuid = useTicketRefStore((s) => ticketUuidForRef(initiativeId, s.uuidByRef));
+  return (
+    <TicketRouteResolver param="initiativeId" basePath="/initiatives">
+      {uuid ? <InitiativePlanPage initiativeId={uuid} /> : null}
+    </TicketRouteResolver>
+  );
+}
+
+/**
  * One initiative, planned and driven: when each phase should land, when it
  * will, the work behind it, what is waiting on a person, and an agent — or the
  * autopilot — to start the work.
@@ -46,8 +65,7 @@ const TAB_LABEL: Record<PlanTab, string> = {
  * what the page does: set targets and order, accept proposals, mark work for a
  * person, start ready work, run the autopilot.
  */
-export function InitiativePlanPage() {
-  const { initiativeId = "" } = useParams<{ initiativeId: string }>();
+export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
   const qc = useQueryClient();
   const narrow = useMediaQuery(NARROW);
   const [tab, setTab] = useState<PlanTab>("schedule");

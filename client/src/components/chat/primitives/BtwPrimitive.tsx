@@ -4,6 +4,7 @@ import { api } from "../../../api/client";
 import { navigateToTicketTab } from "../../../lib/useAppNavigation";
 import { describeError } from "../../../state/toastStore";
 import { MarkdownContent } from "../MarkdownContent";
+import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
 import type { BtwPart } from "./types";
 
@@ -93,13 +94,13 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
           {interactive && observedRun && ticketId ? (
             <>
               {" "}
-              <button
-                type="button"
+              <Button
+                variant="plain"
                 className="lg-btw-log-link"
-                onClick={() => navigateToTicketTab(ticketId, "logs")}
+                onClick={() => navigateToTicketTab(ticketId, "timeline")}
               >
-                Open the run log
-              </button>
+                Open the run timeline
+              </Button>
             </>
           ) : null}
         </span>

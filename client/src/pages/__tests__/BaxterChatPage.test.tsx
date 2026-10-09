@@ -176,6 +176,13 @@ async function renderChatReady() {
   return result;
 }
 
+/** The page's own way back to a hidden workbench; the topbar toggle is AppLayoutChrome's. */
+async function showWorkbenchFromComposer() {
+  const composer = document.querySelector<HTMLElement>(".lg-chat-composer")!;
+  fireEvent.click(within(composer).getByRole("button", { name: "Chat actions" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Show workbench" }));
+}
+
 describe("BaxterChatPage", () => {
   beforeEach(() => {
     sessionStorage.clear();
@@ -225,6 +232,7 @@ describe("BaxterChatPage", () => {
     // would leak across tests.
     useUiStore.setState({
       baxterHistoryOpen: false,
+      baxterWorkbenchOpen: null,
       chatWorkspaceSlug: "",
       workspace: "all",
       baxterChatSessionId: "",
@@ -499,7 +507,7 @@ describe("BaxterChatPage", () => {
     expect(picks.slice(0, 2)).toEqual(["Yes, go ahead", "No, leave it as is"]);
     expect(picks.length).toBeLessThanOrEqual(4);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+    await showWorkbenchFromComposer();
     expect(dock!.querySelector("[aria-label='Suggested prompts']")).toBeNull();
     expect(
       within(screen.getByRole("complementary", { name: "Workbench" })).getByRole("button", {
@@ -898,7 +906,7 @@ describe("BaxterChatPage", () => {
       screen.queryByRole("complementary", { name: "Workbench" }),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+    await showWorkbenchFromComposer();
     expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
   });
 
@@ -915,17 +923,17 @@ describe("BaxterChatPage", () => {
       await renderChatReady();
       expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      await showWorkbenchFromComposer();
       expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
       fireEvent.keyDown(document, { key: "Escape" });
       expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      await showWorkbenchFromComposer();
       fireEvent.click(screen.getByRole("button", { name: "Close the workbench" }));
       expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
 
       // A prompt picked there sends, and gets out of the way of its reply.
-      fireEvent.click(screen.getByRole("button", { name: "Show the workbench" }));
+      await showWorkbenchFromComposer();
       const workbench = screen.getByRole("complementary", { name: "Workbench" });
       fireEvent.click(within(workbench).getByRole("button", { name: "Find the most valuable ticket" }));
       expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();

@@ -311,6 +311,10 @@ export interface TicketArtifactItem {
   kind: string;
   title: string;
   run_id: string | null;
+  /** From the row's run, else a `stage_key` its content names; null when neither says. */
+  stage_key: string | null;
+  /** Platform bookkeeping (dispatch markers, run context, run-log pointers), not work output. */
+  system: boolean;
   evidence_kind: string;
   commit_sha: string;
   created_at: string | null;

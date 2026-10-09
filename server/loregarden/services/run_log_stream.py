@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     RunStatus,
     Ticket,
 )
+from loregarden.services.artifact_records import run_log_artifact_title
 from loregarden.services.log_storage import (
     LOG_STORAGE_ROWS,
     read_log_lines,
@@ -783,7 +784,7 @@ class RunLogStreamer:
                     ).first()
                 if artifact:
                     artifact.content_json = payload
-                    artifact.title = f"Run {self.run_code}"
+                    artifact.title = run_log_artifact_title(self.run_code)
                     session.add(artifact)
                     self.artifact_id = artifact.id
                 else:
@@ -791,7 +792,7 @@ class RunLogStreamer:
                         ticket_id=self.ticket_id,
                         run_id=self.run_id,
                         kind=ArtifactKind.LOG,
-                        title=f"Run {self.run_code}",
+                        title=run_log_artifact_title(self.run_code),
                         content_json=payload,
                     )
                     session.add(artifact)

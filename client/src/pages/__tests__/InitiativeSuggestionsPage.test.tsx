@@ -127,7 +127,7 @@ test("creating goes through a confirm step that says what moves, then lands on t
       },
     ]),
   );
-  await waitFor(() => expect(navigateToInitiative).toHaveBeenCalledWith("i2"));
+  await waitFor(() => expect(navigateToInitiative).toHaveBeenCalledWith("init-sprint-2"));
 });
 
 test("Escape on the confirm step goes back to editing without writing", async () => {

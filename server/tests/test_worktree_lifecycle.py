@@ -7,6 +7,7 @@ uncommitted changes is kept, and a tree whose ticket is still unfinished is
 left for the resume path.
 """
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -21,7 +22,11 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services.ticket_worktree import resolve_execution_root
-from loregarden.services.worktree_lifecycle import reconcile_worktrees, release_ticket_worktree
+from loregarden.services.worktree_lifecycle import (
+    KeepReason,
+    reconcile_worktrees,
+    release_ticket_worktree,
+)
 from sqlmodel import Session
 from tests.worktree_helpers import git, make_repo
 
@@ -206,6 +211,29 @@ def test_startup_keeps_a_finished_tickets_tree_when_nothing_was_committed(sessio
     assert reconcile_worktrees(session) == 0
     assert path.is_dir()
     assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+
+
+def test_startup_reports_every_kept_tree_in_one_grouped_record(session, workspace, caplog):
+    """A restart keeping many trees says so once, grouped by why, not once per tree."""
+    dirty_ticket = _ticket(session, workspace, external_id="LG-1")
+    dirty = _tree_for(session, workspace, dirty_ticket)
+    (dirty / "unsaved.txt").write_text("not committed\n")
+    empty_ticket = _ticket(session, workspace, external_id="LG-2")
+    empty = _tree_for(session, workspace, empty_ticket)
+    for ticket in (dirty_ticket, empty_ticket):
+        ticket.state = TicketState.DONE
+        session.add(ticket)
+    session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        assert reconcile_worktrees(session) == 0
+
+    assert len(caplog.records) == 1
+    summary = caplog.records[0].getMessage().splitlines()
+    uncommitted = summary.index(f"  {KeepReason.UNCOMMITTED.value} (1):")
+    nothing = summary.index(f"  {KeepReason.NOTHING_COMMITTED.value} (1):")
+    assert str(dirty) in summary[uncommitted + 1]
+    assert str(empty) in summary[nothing + 1]
 
 
 def test_startup_leaves_a_live_ticket_alone_so_the_resume_finds_its_work(session, workspace):

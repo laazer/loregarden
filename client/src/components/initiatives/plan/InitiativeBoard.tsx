@@ -155,13 +155,18 @@ export function InitiativeBoard({
         </span>
       </div>
 
-      {ids.length > 0 ? (
+      {board.isSuccess && workItems.length > 0 ? (
+        // Always on screen, so the checkboxes say what they are for before anyone ticks one.
         <div className="plan-board-toolbar" role="toolbar" aria-label="Selected tickets">
-          <span>{ids.length} selected</span>
+          <span className={ids.length > 0 ? undefined : "plan-muted"} aria-live="polite">
+            {ids.length > 0
+              ? `${ids.length} selected`
+              : "Tick tickets to move, start, or mark them for a person together."}
+          </span>
           <Select
             aria-label="Move the selected tickets to"
             value=""
-            disabled={busy}
+            disabled={busy || ids.length === 0}
             onChange={(e) => {
               const state = e.target.value as TicketState;
               if (state) move.mutate({ ids, state });
@@ -174,18 +179,30 @@ export function InitiativeBoard({
               </option>
             ))}
           </Select>
-          <Button variant="secondary" compact disabled={busy} onClick={() => act.mutate(() => onNeedsPerson(ids, true))}>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || ids.length === 0}
+            onClick={() => act.mutate(() => onNeedsPerson(ids, true))}
+          >
             Mark for a person
           </Button>
-          <Button variant="secondary" compact disabled={busy} onClick={() => act.mutate(() => onNeedsPerson(ids, false))}>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || ids.length === 0}
+            onClick={() => act.mutate(() => onNeedsPerson(ids, false))}
+          >
             Agent can do it
           </Button>
-          <Button variant="primary" compact disabled={busy} onClick={start}>
+          <Button variant="primary" compact disabled={busy || ids.length === 0} onClick={start}>
             Start now
           </Button>
-          <Button variant="plain" className="plan-inline-btn" disabled={busy} onClick={() => setSelected(new Set())}>
-            Clear selection
-          </Button>
+          {ids.length > 0 ? (
+            <Button variant="plain" className="plan-inline-btn" disabled={busy} onClick={() => setSelected(new Set())}>
+              Clear selection
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -222,17 +239,23 @@ export function InitiativeBoard({
         <KanbanColumns
           columns={buildColumns(workItems, expanded)}
           onShowAll={(status) => setExpanded((current) => new Set(current).add(status))}
-          tileAction={(ticket) => (
-            <label className="plan-tile-select">
-              <Input
-                type="checkbox"
-                checked={selected.has(ticket.id)}
-                onChange={() => toggle(ticket.id)}
-                aria-label={`Select ${ticket.title}`}
-              />
-              <span className="plan-muted">{tileHint(nodeById.get(ticket.id))}</span>
-            </label>
-          )}
+          tileAction={(ticket) => {
+            const hint = tileHint(nodeById.get(ticket.id));
+            return (
+              <div className="plan-tile-foot">
+                <label className="plan-tile-select">
+                  <Input
+                    type="checkbox"
+                    checked={selected.has(ticket.id)}
+                    onChange={() => toggle(ticket.id)}
+                    aria-label={`Select ${ticket.title}`}
+                  />
+                  Select
+                </label>
+                {hint ? <span className="plan-tile-hint">{hint}</span> : null}
+              </div>
+            );
+          }}
         />
       )}
     </section>

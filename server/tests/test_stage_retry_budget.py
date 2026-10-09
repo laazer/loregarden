@@ -148,7 +148,7 @@ def test_block_message_present_once_budget_is_exhausted():
 
 def test_block_message_names_the_stage_and_the_numeric_budget():
     """AC2.2: an operator reading it must see the stage key and the budget
-    without digging into the Errors tab."""
+    without digging into the Timeline tab."""
     msg = stage_retry_block_message("static_qa", attempts=5, max_attempts=5)
     assert "static_qa" in msg
     assert "5" in msg

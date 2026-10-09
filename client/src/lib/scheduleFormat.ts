@@ -90,7 +90,7 @@ export function forecastExplanation(m: MilestoneSchedule): string {
     m.assumed > 0
       ? ` ${m.assumed} of them had no measurement and were priced at the plan's median.`
       : "";
-  return `When the last of its ${m.remaining} open item${m.remaining === 1 ? "" : "s"} lands, following their prerequisites, one ticket per lane, at ${BASIS_LABEL[m.basis]}.${assumed}`;
+  return `When the last of its ${m.remaining} open item${m.remaining === 1 ? "" : "s"} lands, following their prerequisites, as many at once as the autopilot runs, at ${BASIS_LABEL[m.basis]}.${assumed}`;
 }
 
 export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
@@ -99,6 +99,7 @@ export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   dispatched: "Queued",
   refused: "Held back",
   paused: "Stopped itself",
+  signed_off: "Approved a stage",
 };
 
 /** "Oct 2, 14:05" — when an autopilot event happened. */

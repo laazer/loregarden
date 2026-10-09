@@ -98,6 +98,7 @@ from loregarden.services.workflow_service import (
     stage_resolution_memo,
     workspace_for,
 )
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -288,6 +289,47 @@ def _retry_payload(art: Artifact) -> dict:
         return {}
 
 
+class _ErrorArtifactContent(BaseModel):
+    """An error artifact's payload: a message, plus whatever its writer recorded."""
+
+    model_config = ConfigDict(extra="allow")
+
+    message: str = ""
+
+
+def _current_error(
+    session: Session, ticket_id: str, error_artifacts: list[Artifact]
+) -> dict | None:
+    """The latest error artifact, while it still describes where the ticket is.
+
+    Error artifacts are never cleared, so "the latest one" alone kept a block
+    from hours ago on screen, labelled Blocked, after later stages ran green
+    (lg-durable-remote-336: a 23:27 implement block, test-break succeeded at
+    23:38, implement running again). Once any run has started since the error
+    was written, the work moved on and the error is history — it stays on the
+    Timeline as an output, and a live block is in `blocking_issues`.
+    """
+    if not error_artifacts:
+        return None
+    latest = max(error_artifacts, key=lambda a: comparable_utc(a.created_at))
+    newer_run = session.exec(
+        select(AgentRun.id)
+        .where(AgentRun.ticket_id == ticket_id)
+        .where(col(AgentRun.created_at) > latest.created_at)
+        .limit(1)
+    ).first()
+    if newer_run is not None:
+        return None
+    try:
+        content = _ErrorArtifactContent.model_validate_json(latest.content_json or "{}")
+    except ValidationError:
+        # Still shown: an operator reading a raw payload beats a block with no reason.
+        logger.warning("Error artifact %s has an unreadable payload", latest.id, exc_info=True)
+        return {"message": latest.content_json or ""}
+    content.message = normalize_timeout_stderr(content.message)
+    return content.model_dump()
+
+
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     from loregarden.models.domain import Workspace
     from loregarden.services.artifact_service import (
@@ -354,15 +396,7 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         ),
         key=lambda row: row["at"],
     )
-    if error_artifacts:
-        latest_error = sorted(
-            error_artifacts, key=lambda a: comparable_utc(a.created_at), reverse=True
-        )[0]
-        error_content = json.loads(latest_error.content_json or "{}")
-        message = error_content.get("message")
-        if isinstance(message, str):
-            error_content["message"] = normalize_timeout_stderr(message)
-        grouped["error"] = error_content
+    grouped["error"] = _current_error(session, ticket_id, error_artifacts)
     if log_artifacts and _apply_log_artifacts(session, ticket_id, log_artifacts, grouped):
         return grouped
 

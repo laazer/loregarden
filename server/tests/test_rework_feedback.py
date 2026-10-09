@@ -7,6 +7,7 @@ reads), so a verifier's precise fix direction reached the implementer as only
 "see the Errors tab for details" and the implementer re-guessed every round.
 """
 
+import pytest
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
 from loregarden.models.domain import (
@@ -20,6 +21,10 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkItemType,
     Workspace,
+)
+from loregarden.services.block_classification import (
+    BLOCKING_POINTER_PHRASE,
+    LEGACY_BLOCKING_POINTER_PHRASE,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.rework_feedback import (
@@ -128,13 +133,16 @@ def test_ledger_is_scoped_per_target_stage(db_session: Session):
 # --------------------------------------------------------------------------- #
 
 
-def test_stage_context_uses_full_ledger_over_truncated_blocking_issues(db_session: Session):
+@pytest.mark.parametrize("phrase", [BLOCKING_POINTER_PHRASE, LEGACY_BLOCKING_POINTER_PHRASE])
+def test_stage_context_uses_full_ledger_over_truncated_blocking_issues(
+    db_session: Session, phrase: str
+):
     ticket = _ticket(db_session)
     record_rework_feedback(
         db_session, ticket, target_stage="implement", from_stage="verify", context=LONG_FINDING
     )
     # Simulate the UI field having only the short pointer it keeps for long input.
-    ticket.blocking_issues = "Stage 'verify' hit a blocking issue — see the Errors tab for details."
+    ticket.blocking_issues = f"Stage 'verify' {phrase} for details."
 
     run = AgentRun(
         run_code="r",
@@ -147,7 +155,7 @@ def test_stage_context_uses_full_ledger_over_truncated_blocking_issues(db_sessio
 
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage, session=db_session)
     assert "track_workflow_stage" in text  # the full fix direction is present
-    assert "see the Errors tab" not in text  # not the content-free pointer
+    assert phrase not in text  # not the content-free pointer
 
 
 def test_stage_context_falls_back_to_blocking_issues_without_ledger(db_session: Session):

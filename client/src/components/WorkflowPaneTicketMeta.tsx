@@ -1,18 +1,21 @@
 import type { TicketDetail } from "../api/client";
 import { TicketHistory } from "./TicketHistory";
-import { WorkflowMonitorFindings } from "./WorkflowMonitorFindings";
+import { TicketAttention } from "./TicketAttention";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 
 interface WorkflowPaneTicketMetaProps {
   ticket: TicketDetail;
+  /** A failed run with stderr, or an error artifact — the Dashboard already derives it. */
+  hasRunErrors: boolean;
   onOpenParent: (parentId: string) => void;
   onAddChild: (ticket: TicketDetail) => void;
 }
 
 /** The pill row under the workflow pane's title: where the ticket sits
- * (workspace, type, parent) and how it is labelled (tags). */
+ * (workspace, type, parent), what needs attention, and how it is labelled (tags). */
 export function WorkflowPaneTicketMeta({
   ticket,
+  hasRunErrors,
   onOpenParent,
   onAddChild,
 }: WorkflowPaneTicketMetaProps) {
@@ -53,7 +56,7 @@ export function WorkflowPaneTicketMeta({
           </button>
         )}
       </div>
-      <WorkflowMonitorFindings ticketId={ticket.id} />
+      <TicketAttention ticket={ticket} hasRunErrors={hasRunErrors} />
       <TicketHistory ticketId={ticket.id} />
       {tags.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
