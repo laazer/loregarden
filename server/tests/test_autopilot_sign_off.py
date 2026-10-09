@@ -243,3 +243,26 @@ def test_the_orchestrator_loop_signs_off_a_parked_gate(db_session, world):
     assert gate.status is ApprovalStatus.APPROVED
     assert decision_kinds(db_session, ticket.id) == ["approved_legacy_sign_off"]
     assert len(_signed_off_events(db_session, ticket)) == 1
+
+
+def test_a_gate_on_a_child_of_work_it_started_is_signed(db_session, world):
+    """It queues the parent; the parent's orchestration runs the child, whose gate opens."""
+    ticket, plan, orch = world
+    parent = Ticket(
+        external_id=f"aso-parent-{uuid4()}",
+        workspace_id=ticket.workspace_id,
+        title="The capability it queued",
+        work_item_type=WorkItemType.CAPABILITY,
+        state=TicketState.IN_PROGRESS,
+    )
+    db_session.add(parent)
+    db_session.commit()
+    ticket.parent_ticket_id = parent.id
+    db_session.add(ticket)
+    db_session.commit()
+    _dispatched_by_autopilot(db_session, parent, plan)
+
+    gate = _finish_stage(db_session, ticket, orch, BREAK_TESTS)
+
+    assert gate.status is ApprovalStatus.APPROVED
+    assert decision_kinds(db_session, ticket.id) == ["approved_legacy_sign_off"]

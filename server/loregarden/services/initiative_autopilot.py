@@ -57,6 +57,7 @@ from loregarden.models.domain import (
 from loregarden.services.autopilot_sign_off import (
     autopilot_may_sign_off,
     record_autopilot_sign_off,
+    self_and_ancestors,
 )
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.initiative_graph import (
@@ -68,6 +69,7 @@ from loregarden.services.initiative_graph import (
 from loregarden.services.initiative_service import load_initiative
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from sqlmodel import Session, col, select
 
@@ -229,47 +231,56 @@ def _dispatch(
 
 
 def _sign_off_parked_gates(session: Session, plan: InitiativePlan) -> set[str]:
-    """Answer the legacy gates left waiting on work it started; the ticket ids it answered.
+    """Answer the legacy gates left waiting on work it started.
+
+    Returns the ids not to queue this tick: each answered ticket and its ancestors.
 
     Run completion signs these as they are raised. This catches one raised while
     the autopilot was off, or before it could sign: nothing else re-enters the
     workflow for a parked ticket. Approving resumes the workflow on its own.
     """
-    dispatched = select(AutopilotEvent.ticket_id).where(
-        AutopilotEvent.initiative_id == plan.initiative_id,
-        AutopilotEvent.action == AutopilotAction.DISPATCHED,
-    )
+    # Every pending gate, not only those on tickets it queued: it queues a
+    # parent and the gate opens on a child. The inbox is small, and
+    # `autopilot_may_sign_off` decides which of these are this plan's.
     rows = session.exec(
         select(Approval, Ticket)
         .join(Ticket, col(Ticket.id) == col(Approval.ticket_id))
         .where(
-            col(Approval.ticket_id).in_(dispatched),
             Approval.status == ApprovalStatus.PENDING,
             Approval.kind == ApprovalKind.WORKFLOW_GATE,
         )
     ).all()
     answered: set[str] = set()
     for approval, ticket in rows:
+        # A live orchestration answers its own gate in its loop; resolving it
+        # here too races that resolve into "already resolved".
+        if find_active_orchestration_run(session, ticket.id) is not None:
+            continue
         driver = autopilot_may_sign_off(session, ticket, approval)
-        if driver is None:
+        if driver is None or driver.initiative_id != plan.initiative_id:
             continue
         try:
             ApprovalService(session).resolve(approval.id, approved=True)
         except ValueError as exc:
-            # The gate stays in the inbox for a person, and the log says why.
-            logger.warning("Autopilot could not sign off gate %s: %s", approval.id, exc)
-            _record(
-                session,
-                plan.initiative_id,
-                AutopilotAction.REFUSED,
-                ticket_id=ticket.id,
-                detail=f"could not approve the '{approval.stage_key}' gate: {exc}",
-            )
-            session.commit()
+            # The gate stays in the inbox for a person, and the log says why —
+            # once, not every tick it stays true.
+            detail = f"could not approve the '{approval.stage_key}' gate: {exc}"
+            last = _last_event_for(session, plan.initiative_id, ticket.id)
+            if last is None or last.detail != detail:
+                logger.warning("Autopilot could not sign off gate %s: %s", approval.id, exc)
+                _record(
+                    session,
+                    plan.initiative_id,
+                    AutopilotAction.REFUSED,
+                    ticket_id=ticket.id,
+                    detail=detail,
+                )
+                session.commit()
             continue
         session.refresh(approval)
         record_autopilot_sign_off(session, ticket, driver, approval)
-        answered.add(ticket.id)
+        # Its parents too: their orchestration would run it a second time.
+        answered.update(self_and_ancestors(session, ticket))
     return answered
 
 

@@ -19,6 +19,8 @@ from loregarden.models.domain import (
     AutopilotEvent,
     AutopilotUpdate,
     NodeStatus,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     StageStatus,
     Ticket,
 )
@@ -155,3 +157,103 @@ def test_the_tick_leaves_gates_on_work_it_did_not_start(db_session, workspaces, 
     db_session.refresh(gate)
     assert gate.status is ApprovalStatus.PENDING
     service.resolve.assert_not_called()
+
+
+def test_a_refused_sign_off_is_logged_once_not_every_tick(db_session, workspaces, queue):
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    parked = _item(db_session, here, m, "parked", lane="a")
+    _started_by_autopilot(db_session, initiative, parked)
+    gate = _gate(db_session, parked, "legacy-stage-sign-off")
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(enabled=True), actor="t")
+    service = MagicMock()
+    service.resolve.side_effect = ValueError("this gate would skip work nobody did")
+
+    with patch("loregarden.services.initiative_autopilot.ApprovalService", return_value=service):
+        run_autopilot(db_session, initiative.id, now=NOW)
+        run_autopilot(db_session, initiative.id, now=NOW)
+
+    db_session.refresh(gate)
+    assert gate.status is ApprovalStatus.PENDING
+    assert service.resolve.call_count == 2  # it tries each tick
+    refused = db_session.exec(
+        select(AutopilotEvent).where(
+            AutopilotEvent.ticket_id == parked.id,
+            AutopilotEvent.action == AutopilotAction.REFUSED,
+        )
+    ).all()
+    assert len(refused) == 1  # and says so once
+
+
+def test_a_gate_under_a_live_orchestration_is_left_to_it(db_session, workspaces, queue):
+    """The orchestration's own loop resolves its gate; a second resolve races it."""
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    parked = _item(db_session, here, m, "parked", lane="a")
+    _started_by_autopilot(db_session, initiative, parked)
+    gate = _gate(db_session, parked, "legacy-stage-sign-off")
+    db_session.add(
+        OrchestrationRun(
+            run_code="orch_live",
+            ticket_id=parked.id,
+            workspace_id=parked.workspace_id,
+            status=OrchestrationRunStatus.RUNNING,
+        )
+    )
+    db_session.commit()
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(enabled=True), actor="t")
+    service = _approving_service(db_session)
+
+    with patch("loregarden.services.initiative_autopilot.ApprovalService", return_value=service):
+        run_autopilot(db_session, initiative.id, now=NOW)
+
+    service.resolve.assert_not_called()
+    db_session.refresh(gate)
+    assert gate.status is ApprovalStatus.PENDING
+
+
+def test_a_parent_whose_child_is_parked_is_not_queued(db_session, workspaces, queue):
+    """Its orchestration would run the parked child a second time."""
+    lanes, _ = queue
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    parent = _item(db_session, here, m, "parent", lane="a")
+    child = _item(db_session, here, m, "child", lane="b")
+    child.parent_ticket_id = parent.id
+    db_session.add(child)
+    db_session.commit()
+    _gate(db_session, child, "ship-to-users")
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(enabled=True), actor="t")
+
+    run_autopilot(db_session, initiative.id, now=NOW)
+
+    assert parent.id not in _queued(lanes)
+    nodes = {n.id: n for n in plan_view(db_session, initiative.id, now=NOW).nodes}
+    assert nodes[parent.id].status == NodeStatus.NEEDS_PERSON
+
+
+def test_the_tick_answers_a_child_gate_and_holds_back_its_parent(db_session, workspaces, queue):
+    lanes, _ = queue
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    parent = _item(db_session, here, m, "parent", lane="a")
+    child = _item(db_session, here, m, "child", lane="b")
+    child.parent_ticket_id = parent.id
+    db_session.add(child)
+    db_session.commit()
+    _started_by_autopilot(db_session, initiative, parent)
+    gate = _gate(db_session, child, "legacy-stage-sign-off")
+    set_autopilot(db_session, initiative.id, AutopilotUpdate(enabled=True), actor="t")
+    service = _approving_service(db_session)
+
+    with patch("loregarden.services.initiative_autopilot.ApprovalService", return_value=service):
+        run_autopilot(db_session, initiative.id, now=NOW)
+
+    db_session.refresh(gate)
+    assert gate.status is ApprovalStatus.APPROVED
+    # The child resumes on its own; neither it nor its parent is queued as well.
+    assert {parent.id, child.id}.isdisjoint(_queued(lanes))

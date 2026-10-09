@@ -44,15 +44,31 @@ def _gate_is_legacy_sign_off_only(approval: Approval) -> bool:
     return all(action.action_key == LEGACY_SIGN_OFF_KEY for action in actions)
 
 
+def self_and_ancestors(session: Session, ticket: Ticket) -> list[str]:
+    """This ticket's id and its ancestors', nearest first; a cycle stops the walk."""
+    ids = [ticket.id]
+    parent_id = ticket.parent_ticket_id
+    while parent_id and parent_id not in ids:
+        ids.append(parent_id)
+        parent = session.get(Ticket, parent_id)
+        parent_id = parent.parent_ticket_id if parent else None
+    return ids
+
+
 def autopilot_driving(session: Session, ticket: Ticket) -> InitiativePlan | None:
-    """The plan whose autopilot dispatched this ticket and is still on, if any."""
+    """The plan whose autopilot is on and dispatched this ticket or an ancestor of it.
+
+    An ancestor counts because the autopilot dispatches a parent and its
+    orchestration runs the children: lg-run-durability-679 ran test-design
+    under its parent 469, which was the ticket the autopilot queued.
+    """
     return session.exec(
         select(InitiativePlan)
         .join(
             AutopilotEvent, col(AutopilotEvent.initiative_id) == col(InitiativePlan.initiative_id)
         )
         .where(
-            AutopilotEvent.ticket_id == ticket.id,
+            col(AutopilotEvent.ticket_id).in_(self_and_ancestors(session, ticket)),
             AutopilotEvent.action == AutopilotAction.DISPATCHED,
             col(InitiativePlan.autopilot).is_(True),
         )
