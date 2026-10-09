@@ -207,7 +207,7 @@ export function InitiativeSuggestionsPage() {
       // Land on the work just made: the sprint's plan if there is one, else the first initiative's.
       const sprintIndex = planned.findIndex((p) => p.kind === "sprint");
       const landing = created[sprintIndex >= 0 ? sprintIndex : 0];
-      if (landing) navigateToInitiative(landing.id);
+      if (landing) navigateToInitiative(landing.external_id || landing.id);
       else navigateToPage("initiatives");
     },
     onError: (error) => {

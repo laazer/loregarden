@@ -200,6 +200,34 @@ it("leads with the block and opens the failing run's log, resolving its run code
   expect(onOpenRunLog).toHaveBeenCalledWith("g1");
 });
 
+it("never calls a ticket blocked on the strength of an error artifact alone", async () => {
+  renderTimeline({
+    detail: ticket({
+      state: "in_progress",
+      artifacts: { error: { message: "Run exited 1", run_code: "run_zz", agent_id: "implementer", stage_key: "implement", command: "" } },
+    } as Partial<TicketDetail>),
+    runs: [{ id: "g1", run_code: "run_zz", status: "failed" }],
+  });
+
+  const failed = await screen.findByRole("region", { name: "Last run failed" });
+  expect(failed).toHaveTextContent("Run exited 1");
+  expect(screen.queryByRole("region", { name: "Blocking issue" })).toBeNull();
+});
+
+it("shows a blocked ticket as blocked even when no reason was recorded", async () => {
+  renderTimeline({ detail: ticket({ state: "blocked" } as Partial<TicketDetail>) });
+
+  const block = await screen.findByRole("region", { name: "Blocking issue" });
+  expect(block).toHaveTextContent(/No reason was recorded/);
+});
+
+it("explains a parent blocked by its children rather than pointing at a run", async () => {
+  renderTimeline({ detail: ticket({ state: "blocked", child_count: 4 } as Partial<TicketDetail>) });
+
+  const block = await screen.findByRole("region", { name: "Blocking issue" });
+  expect(block).toHaveTextContent(/work under it is blocked/);
+});
+
 it("groups automatic retries by stage and shows the latest cause", async () => {
   renderTimeline({
     detail: ticket({

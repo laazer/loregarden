@@ -252,12 +252,13 @@ const INITIATIVE_PATH_RE = /^\/initiatives\/([^/]+)/;
 /** Suggested initiatives drawn from open work. A static segment, so it wins over `:initiativeId`. */
 export const INITIATIVE_SUGGESTIONS_PATH = "/initiatives/suggest";
 
-/** An initiative's planning page. */
+/** An initiative's planning page, under its shareable id when it is known (see `ticketPath`). */
 export function initiativePath(initiativeId: string): string {
-  return `/initiatives/${encodeURIComponent(initiativeId)}`;
+  const ref = useTicketRefStore.getState().refByUuid[initiativeId] ?? initiativeId;
+  return `/initiatives/${encodeURIComponent(ref)}`;
 }
 
-/** The initiative a `/initiatives/:id` URL names, or null on the list, the suggestions and elsewhere. */
+/** The id a `/initiatives/:id` URL names — usually the shareable id, not the UUID — or null on the list, the suggestions and elsewhere. */
 export function initiativeIdFromPath(pathname: string): string | null {
   if (pathname === INITIATIVE_SUGGESTIONS_PATH) return null;
   const match = pathname.match(INITIATIVE_PATH_RE);

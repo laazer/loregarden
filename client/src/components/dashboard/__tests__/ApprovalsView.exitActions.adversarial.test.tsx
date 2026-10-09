@@ -65,6 +65,8 @@ const TICKET = {
   external_id: "lg-bug-hole-574",
   title: "Exit actions",
   acceptance_criteria: [],
+  state: "in_progress",
+  stages: [],
 } as unknown as TicketDetail;
 
 describe("ApprovalsView exit-action recheck wiring", () => {
@@ -72,6 +74,7 @@ describe("ApprovalsView exit-action recheck wiring", () => {
     jest.clearAllMocks();
     mockApi.approvals.mockResolvedValue([recheckGate() as Approval]);
     mockApi.resolveApproval.mockResolvedValue({});
+    mockApi.approvalHistory.mockResolvedValue([]);
   });
 
   it("posts action=recheck when the operator clicks Re-check on a recheck-only gate", async () => {

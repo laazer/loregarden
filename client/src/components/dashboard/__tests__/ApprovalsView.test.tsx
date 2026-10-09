@@ -37,6 +37,8 @@ const TICKET = {
   external_id: "01-blobert-dash",
   title: "Dash movement",
   acceptance_criteria: ["Dash has a cooldown", "Dash cancels on wall contact"],
+  state: "in_progress",
+  stages: [],
 } as unknown as TicketDetail;
 
 function renderView(ticket: TicketDetail | undefined = TICKET) {
@@ -48,6 +50,7 @@ describe("ApprovalsView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockApi.approvals.mockResolvedValue([]);
+    mockApi.approvalHistory.mockResolvedValue([]);
   });
 
   it("lists the ticket's acceptance criteria", async () => {
@@ -139,6 +142,91 @@ describe("ApprovalsView", () => {
     await waitFor(() =>
       expect(mockApi.resolveApproval).toHaveBeenCalledWith("appr_1", { action: "approve" }),
     );
+  });
+
+  it("folds the criteria behind their count", async () => {
+    mockApi.approvals.mockResolvedValue([approval({ checklist: [] })]);
+    const { container } = renderView();
+
+    await screen.findByRole("button", { name: "Approve" });
+    const criteria = container.querySelector("details.approvals-view-criteria-block");
+    expect(criteria).not.toBeNull();
+    expect((criteria as HTMLDetailsElement).open).toBe(false);
+  });
+
+  it("says nothing needs you, and where the ticket is, when nothing is pending", async () => {
+    renderView({
+      ...TICKET,
+      state: "in_progress",
+      stages: [
+        { key: "plan", name: "Plan", status: "done" },
+        { key: "implement", name: "Implement", status: "running" },
+      ],
+    } as unknown as TicketDetail);
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("Nothing needs you right now");
+    expect(status).toHaveTextContent("Implement is running.");
+    expect(screen.queryByText(/Awaiting your sign-off/)).toBeNull();
+  });
+
+  it("lists past decisions, grouping repeats and linking each to the Timeline", async () => {
+    const decided = (id: string, title: string, overrides = {}) => ({
+      id,
+      title,
+      kind: "cli_permission" as const,
+      stage_key: "implement",
+      stage_name: "Implement",
+      status: "approved" as const,
+      resolved_by: "",
+      resolved_at: "2026-10-01T10:00:00Z",
+      ticket_id: "ticket_1",
+      ticket_external_id: "01-blobert-dash",
+      ...overrides,
+    });
+    mockApi.approvalHistory.mockResolvedValue([
+      decided("h1", "Allow Bash"),
+      decided("h2", "Approve Plan completion", { kind: "workflow_gate", resolved_by: "automation" }),
+      decided("h3", "Allow Bash"),
+      decided("h4", "Allow Bash"),
+    ]);
+    renderView();
+
+    const rows = await screen.findAllByRole("button", { name: /Allow Bash|Approve Plan completion/ });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Allow Bash");
+    expect(rows[0]).toHaveTextContent("×3");
+    expect(rows[1]).toHaveTextContent("Auto-approved");
+    expect(mockApi.approvalHistory).toHaveBeenCalledWith("ticket_1");
+  });
+
+  it("says when past decisions fail to load instead of showing none", async () => {
+    mockApi.approvalHistory.mockRejectedValue(new Error("history down"));
+    renderView();
+
+    expect(await screen.findByText(/Could not load past decisions: history down/)).toBeInTheDocument();
+    expect(screen.queryByText(/No approvals have been decided/)).toBeNull();
+  });
+
+  it("says the approvals failed to load instead of claiming nothing is waiting", async () => {
+    mockApi.approvals.mockRejectedValue(new Error("boom"));
+    renderView();
+
+    expect(await screen.findByText(/Could not load this ticket.s approvals: boom/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing needs you/)).toBeNull();
+  });
+
+  it("opens a long checklist item in place without ticking it", async () => {
+    const long = `Play it and judge whether it delivers — ${"x".repeat(300)}`;
+    mockApi.approvals.mockResolvedValue([approval({ checklist: [long] })]);
+    renderView();
+
+    const toggle = await screen.findByRole("button", { name: "Show all" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("checkbox", { name: /Play it and judge/ })).not.toBeChecked();
   });
 
   it("scopes the fetch to the open ticket", async () => {

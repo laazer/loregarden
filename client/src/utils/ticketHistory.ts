@@ -86,6 +86,7 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     }
   return decision === "overruled_stale_gate" ||
     decision === "approved_design_plan" ||
+    decision === "approved_legacy_sign_off" ||
     decision === "requeued_after_decision" ||
     decision === "dispatched_repair" ||
     decision === "dispatched_landing_resolver" ||

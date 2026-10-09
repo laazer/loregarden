@@ -211,8 +211,14 @@
   color: var(--aml);
 }
 
-/* One rail down the left; each visit hangs a dot on it. */
+/* One rail down the left; each visit hangs a dot on it. The rail's x is
+   derived from the dot's, so the two cannot drift apart: head padding + dot
+   margin + half the dot, minus half the rail. */
 .tl-list {
+  --tl-head-pad: 6px;
+  --tl-dot-margin: 4px;
+  --tl-dot-size: 11px;
+  --tl-rail-width: 1px;
   position: relative;
   margin: 0;
   padding: 0;
@@ -224,8 +230,8 @@
   position: absolute;
   top: 14px;
   bottom: 14px;
-  left: 11px;
-  width: 1px;
+  left: calc(var(--tl-head-pad) + var(--tl-dot-margin) + (var(--tl-dot-size) - var(--tl-rail-width)) / 2);
+  width: var(--tl-rail-width);
   background: var(--bd2);
 }
 
@@ -256,7 +262,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 8px 7px 6px;
+  padding: 7px 8px 7px var(--tl-head-pad);
   border-radius: 6px;
   text-align: left;
   min-width: 0;
@@ -275,9 +281,9 @@
   position: relative;
   z-index: 1;
   flex: none;
-  width: 11px;
-  height: 11px;
-  margin: 0 4px;
+  width: var(--tl-dot-size);
+  height: var(--tl-dot-size);
+  margin: 0 var(--tl-dot-margin);
   border-radius: 50%;
   background: var(--bg0);
   border: 2px solid var(--tl-tone);

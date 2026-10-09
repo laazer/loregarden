@@ -351,21 +351,29 @@ function Attention({
   pendingApprovals: number;
   onOpenRunLog: (runId: string) => void;
 }) {
+  // The server sends only an error nothing has run since; older ones are
+  // outputs on the visits below, not a state the ticket is in.
   const errorArt = ticket.artifacts?.error ?? null;
   const retries = ticket.artifacts?.transient_retries ?? [];
-  const blockMessage = errorArt?.message || ticket.blocking_issues;
+  // "Blocked" is the ticket's word for itself, never inferred from an artifact:
+  // a failed run the orchestrator is about to retry is not a block.
+  const blocked = ticket.state === "blocked" || Boolean(ticket.blocking_issues?.trim());
+  const blockMessage = blocked ? ticket.blocking_issues?.trim() || errorArt?.message || "" : errorArt?.message || "";
   // The error artifact records a run_code; the log fetch needs the run's id.
   const errorRunId = errorArt ? runs.find((run) => run.run_code === errorArt.run_code)?.id : undefined;
 
-  if (!blockMessage && retries.length === 0 && pendingApprovals === 0) return null;
+  if (!blockMessage && !blocked && retries.length === 0 && pendingApprovals === 0) return null;
 
   return (
     <div className="tl-attention">
-      {blockMessage ? (
-        <section className="tl-callout tl-callout--bad" aria-label="Blocking issue">
+      {blocked || blockMessage ? (
+        <section
+          className={`tl-callout ${blocked ? "tl-callout--bad" : "tl-callout--warn"}`}
+          aria-label={blocked ? "Blocking issue" : "Last run failed"}
+        >
           <div className="tl-callout-head">
             <span className="tl-callout-title">
-              Blocked{ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}
+              {blocked ? `Blocked${ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}` : "Last run failed"}
             </span>
             {errorArt ? (
               <span className="tl-callout-meta">
@@ -378,8 +386,16 @@ function Attention({
               </Button>
             ) : null}
           </div>
-          {ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
-          <pre className="tl-callout-body">{blockMessage}</pre>
+          {blocked && ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
+          {blockMessage ? (
+            <pre className="tl-callout-body">{blockMessage}</pre>
+          ) : (
+            <div className="tl-callout-sub">
+              {ticket.child_count > 0
+                ? "Blocked because work under it is blocked. Open its child tickets to see which."
+                : "No reason was recorded on this ticket. The run log of the stage that stopped is the place to look."}
+            </div>
+          )}
         </section>
       ) : null}
       {retries.length > 0 ? <RetryCallout notices={retries} /> : null}
