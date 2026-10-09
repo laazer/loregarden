@@ -9,7 +9,7 @@ Loregarden is an Agent SDLC IDE: a local control plane for orchestrating multi-a
 | Layer | Stack | Role |
 |-------|-------|------|
 | **Control plane** | FastAPI + SQLModel + SQLite | Tickets, workflows, runs, approvals, memory, and MCP |
-| **IDE shell** | React 19 + TypeScript 6 + Vite 8 + Zustand | Home, ticket studio, queue, agent studio, approvals, terminal, and composed views |
+| **IDE shell** | React 19 + TypeScript 6 + Vite 8 + Zustand | Home board, ticket console, initiatives, queue, Baxter chat, Studio, memory, instances, and composed views |
 | **Desktop shell** | Tauri 2 | Native packaging for the React frontend and FastAPI sidecar |
 | **Agent runtime** | Local, Claude Code, Cursor, Codex, LM Studio, and OpenCode adapters | Executes agent turns and bridges permission requests to the approval inbox |
 | **Workflow system** | Versioned SQLite records plus YAML orchestration profiles | Stores live agent/workflow definitions and controls gates, Git automation, and run policy |
@@ -20,13 +20,18 @@ The database is the source of truth for tickets, workflow templates, agent defin
 
 - Ticket planning and execution through configurable, versioned multi-agent workflows
 
-  ![Ticket console showing a diff and workspace tree](docs/screenshots/console.png)
+  ![Ticket console showing a run's stage timeline beside the workspace tree](docs/screenshots/console.png)
 
 - Concurrent runs isolated in Git worktrees, with optional commit, push, pull-request, merge, and conflict-resolution automation
 
   ![Parallel execution queue with three worktree lanes](docs/screenshots/queue.png)
 
+- Initiatives: a cross-workspace layer above milestones, with a dependency-graph planning page, suggested sprints, and an autopilot that paces tickets into the queue
+
+  ![Initiative plan with a milestone schedule and the planning agent](docs/screenshots/initiatives.png)
+
 - Human approval gates and permission bridging for supervised CLI agents
+- Transition gates (lint, organization, silent-failure, UX-state, theme) that run on every stage handoff, with Gate Studio to see and edit them
 - Baxter workspace, ticket, and branch chat backed by the live control plane
 - Agent and workflow editing in Studio with version history and restore
 
@@ -35,13 +40,17 @@ The database is the source of truth for tickets, workflow templates, agent defin
 - Flex-grid and canvas views composed from reusable IDE panels
 - MCP access over HTTP, stdio, or the in-process `loregarden` CLI
 - Local run accounting plus Claude, Cursor, and Codex usage visibility
-- Optional Obsidian and SQLite-backed workspace memory
+- A host and Docker capacity ledger that queues agent runs and gates so concurrent work does not overload the machine
+- A run monitor that turns thrashing, stalled, and drifted runs into tickets
+- Two-way sync between tickets and GitHub issues
+- Instances: launch, inspect, and stop branch servers and clients per workspace, from the UI or over MCP
+- A memory graph of learnings and knowledge, with a Memory page to browse it and an optional Obsidian export
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
-- Node.js 20.19+ or 22.12+ and npm
-- Python 3.10+
+- Node.js 20.19+, 22.13+, or 24+ and npm
+- Python 3.11+
 - [Task](https://taskfile.dev/installation/) for the convenience commands below (the underlying scripts can also be run directly)
 - [Rust](https://www.rust-lang.org/tools/install) only for desktop development and packaging
 
@@ -61,6 +70,10 @@ task server   # FastAPI at http://127.0.0.1:8000
 task client   # Vite at http://localhost:5173
 ```
 
+`task dev` checks your Claude Code login first, so the prompt is not buried under Vite's output.
+
+To try a change against a copy of your real data without touching the live database, run `task sandbox` (server on :8123, client on :5174). Without a live database it seeds a production-shaped one instead (`task sandbox -- --seeded`).
+
 The equivalent scripts are `./scripts/dev-server.sh` and `./scripts/dev-client.sh`. The backend script creates its virtual environment and synchronizes Python dependencies; the frontend script expects `client/node_modules/` to be installed already.
 
 Health check: `curl http://127.0.0.1:8000/health`
@@ -74,7 +87,7 @@ Health check: `curl http://127.0.0.1:8000/health`
 
 ```bash
 # Backend
-server/.venv/bin/python -m pytest server/tests/ -q
+server/.venv/bin/python -m pytest server/tests/ -q -n auto   # serial takes ~an hour
 
 # Frontend
 cd client && npm test
@@ -106,6 +119,17 @@ task cli -- mcp call loregarden_get_ticket ticket_id=<ticket-uuid>
 ```
 
 An installed package exposes the same interface as `loregarden mcp ...` and `loregarden db ...`.
+
+### Other workspaces
+
+Loregarden can drive other repositories. Two idempotent installers carry its gates and tool docs into a workspace (`--check` reports drift without writing, `--all` covers every registered workspace):
+
+```bash
+task workspace:hooks -- <workspace-root>   # pre-commit gates
+task workspace:docs  -- <workspace-root>   # control-plane section in AGENTS.md
+```
+
+`task workspace:hooks:pr` lands a refreshed hook block as one PR per repo instead of editing checkouts in place. See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Desktop app
 
@@ -148,8 +172,8 @@ Settings use the `LOREGARDEN_` environment-variable prefix and can be placed in 
 | `LOREGARDEN_ALLOW_PERMISSION_BYPASS` | `false` | Development-only bypass for Claude permission prompts |
 | `LOREGARDEN_MAX_PARALLEL_AGENTS` | `3` | Maximum concurrent agent runs |
 | `LOREGARDEN_LMSTUDIO_BASE_URL` | `http://127.0.0.1:1234/v1` | OpenAI-compatible LM Studio endpoint |
-| `LOREGARDEN_OBSIDIAN_VAULT_DIR` | empty | Optional Obsidian vault used for workspace memory |
-| `LOREGARDEN_MEMORY_SQLITE_URL` | empty | Optional structured-memory SQLite database |
+| `LOREGARDEN_OBSIDIAN_VAULT_DIR` | empty | Optional Obsidian vault the memory graph exports to |
+| `LOREGARDEN_MEMORY_SQLITE_URL` | empty | Memory-graph SQLite database (defaults under the vault when one is set) |
 
 See [server/loregarden/config.py](server/loregarden/config.py) and [scripts/dev-server.sh](scripts/dev-server.sh) for the complete settings and local authentication options.
 
