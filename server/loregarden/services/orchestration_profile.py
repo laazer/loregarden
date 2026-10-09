@@ -83,7 +83,13 @@ class GitAutomationConfig(BaseModel):
     #: On a merge conflict, hand the conflicted files to an implementer agent
     #: rather than blocking. Independent of auto_merge: a conflict can surface
     #: from the pre-merge check even when nothing is auto-merging.
-    auto_resolve_conflicts: bool = False
+    #:
+    #: On by default: a landing conflict is usually two sibling tickets editing
+    #: one file on their shared integration branch, and blocking a ticket whose
+    #: every stage passed for a person to do the merge stalled whole trees
+    #: (lg-durable-remote-336). The attempt cap below still hands a conflict the
+    #: resolver cannot settle to a person.
+    auto_resolve_conflicts: bool = True
     #: How many times the resolver agent may try before the ticket blocks.
     max_conflict_resolve_attempts: int = 2
     #: Branch PRs target, and the branch a worktree is cut from.

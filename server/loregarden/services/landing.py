@@ -124,8 +124,8 @@ def _offer_conflict_resolution(
 
     Three things make this safe rather than a loop:
 
-    - `auto_resolve_conflicts` must be on. Off is today's behaviour, and the
-      block says the conflict is a person's.
+    - `auto_resolve_conflicts` must be on (the default). A profile or ticket
+      that turns it off gets the block, which says the conflict is a person's.
     - `max_conflict_resolve_attempts` bounds the turns. The operator already
       sets it in the git automation panel, where it governed nothing until
       now; spending it blocks for a person, who requeues to grant more.
