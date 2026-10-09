@@ -18,6 +18,8 @@ Two behaviours here are the ones that break quietly:
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,10 +28,14 @@ import pytest
 from loregarden.agents.executors import print_mode
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
-from loregarden.models.domain import RunStatus
+from loregarden.models.domain import AgentTransport, RunStatus
 from loregarden.services import subprocess_lines
 from loregarden.services.run_log_stream import format_stream_payload
-from loregarden.services.run_output_files import paths_for
+from loregarden.services.run_output_files import (
+    paths_for,
+    run_file_stem,
+    tmux_session_name,
+)
 from sqlmodel import Session
 
 RUN_ID = "test-print-mode-detached"
@@ -57,6 +63,28 @@ def run_log_dir_fixture(tmp_path, monkeypatch) -> Path:
     target = tmp_path / "run-logs"
     monkeypatch.setattr(settings, "run_log_dir", target)
     return target
+
+
+@pytest.fixture(name="pinned_transport")
+def pinned_transport_fixture(monkeypatch):
+    """Pin `settings.agent_detach_transport`, and clean up what tmux leaves.
+
+    `run_print_mode` resolves the transport from this setting, so a test that
+    does not pin it asserts only whatever the host it runs on happens to have
+    installed — which is how the tmux transport shipped with no stdin at all.
+    """
+    created: list[str] = []
+
+    def pin(transport: AgentTransport) -> None:
+        if transport is AgentTransport.TMUX and shutil.which("tmux") is None:
+            pytest.skip("tmux is not installed on this host")
+        monkeypatch.setattr(settings, "agent_detach_transport", transport)
+        if transport is AgentTransport.TMUX:
+            created.append(tmux_session_name(run_file_stem(RUN_CODE, RUN_ID)))
+
+    yield pin
+    for session in created:
+        subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, check=False)
 
 
 def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamespace:
@@ -221,8 +249,22 @@ def test_a_run_whose_agent_writes_nothing_still_returns(db_session: Session, run
 # --- AC1: the spawn's shape --------------------------------------------------
 
 
-def test_the_prompt_still_reaches_the_agent_on_stdin(db_session: Session, run_log_dir):
-    """AC1/AC3. `sh -c` never reads stdin, so the fd is inherited at exec."""
+@pytest.mark.parametrize("transport", list(AgentTransport))
+def test_the_prompt_still_reaches_the_agent_on_stdin(
+    db_session: Session, run_log_dir, pinned_transport, transport
+):
+    """AC1/AC3/AC18, on EVERY transport rather than the one this host resolves.
+
+    The prompt travels as `<stem>.prompt` and the wrapper redirects stdin from
+    it, which is what makes delivery transport-blind. The pipe it replaced could
+    not be: a tmux pane's stdin is the pane tty, so the agent read nothing, never
+    saw EOF, and the run sat until the hard cap and was reported a timeout — on
+    the auto-detect default of every host with tmux installed. That defect was
+    invisible to this test when it exercised whatever `resolve_transport` chose,
+    because the host it was written on had no tmux. Pinning each member in turn
+    is what turns it into a caught regression.
+    """
+    pinned_transport(transport)
     script = "import sys\nsys.stdout.write(sys.stdin.read())"
 
     stdout, _stderr, status = _run(db_session, script, stdin_prompt="the whole prompt\n")
@@ -231,8 +273,17 @@ def test_the_prompt_still_reaches_the_agent_on_stdin(db_session: Session, run_lo
     assert stdout.strip() == "the whole prompt"
 
 
-def test_a_prompt_larger_than_the_pipe_buffer_still_arrives(db_session: Session, run_log_dir):
-    """AC3. A real stage prompt is tens of kilobytes; the ordering is the risk."""
+@pytest.mark.parametrize("transport", list(AgentTransport))
+def test_a_prompt_larger_than_the_pipe_buffer_still_arrives(
+    db_session: Session, run_log_dir, pinned_transport, transport
+):
+    """AC3, on every transport. A real stage prompt is tens of kilobytes.
+
+    Over a pipe the size was the hazard (the write only completes once the agent
+    is reading); over a file there is no mechanism left to fail on, which is the
+    point — so this asserts the byte count on both transports.
+    """
+    pinned_transport(transport)
     prompt = "line of prompt text\n" * 20_000  # ~400KB
     script = "import sys\nsys.stdout.write(str(len(sys.stdin.read())))"
 

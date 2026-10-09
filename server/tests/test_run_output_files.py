@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import threading
 import time
 from pathlib import Path
 
@@ -40,6 +39,7 @@ from loregarden.services.run_output_files import (
     run_file_stem,
     tmux_session_name,
     wrap_for_files,
+    write_prompt_file,
 )
 
 RUN_ID = "0f8c1a2b-3d4e-5f60-7182-93a4b5c6d7e8"
@@ -82,7 +82,7 @@ def test_two_runs_sharing_a_run_code_do_not_share_a_stem():
     assert run_file_stem(RUN_CODE, RUN_ID) != run_file_stem(RUN_CODE, other)
 
 
-def test_the_three_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
+def test_the_four_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
     paths = paths_for(RUN_CODE, RUN_ID)
     stem = run_file_stem(RUN_CODE, RUN_ID)
 
@@ -90,6 +90,7 @@ def test_the_three_paths_share_one_stem_and_differ_only_by_suffix(run_log_dir):
         out=run_log_dir / f"{stem}.out",
         err=run_log_dir / f"{stem}.err",
         rc=run_log_dir / f"{stem}.rc",
+        prompt=run_log_dir / f"{stem}.prompt",
     )
 
 
@@ -271,29 +272,46 @@ def test_stdout_and_stderr_are_never_merged(run_log_dir):
 def test_a_prompt_larger_than_the_pipe_buffer_reaches_the_agent(run_log_dir):
     """AC3's last clause.
 
-    `print_mode` writes `stdin_prompt` and closes the pipe immediately, before
-    `sh` has exec'd the agent. `sh -c` never reads stdin, so the fd is inherited
-    at exec — but a prompt bigger than the OS pipe buffer blocks that write
-    until the agent is reading, which is the ordering this asserts survives.
+    The prompt travels as a file, not through a pipe, so "larger than the OS
+    pipe buffer" has no mechanism left to fail on — and the test says so by
+    asserting the byte count rather than that a feeder thread finished. The
+    pipe version of this had an ordering hazard (the write only completes once
+    the agent is reading) and, on a tmux pane, no pipe to write into at all.
     """
     ensure_dir()
     paths = paths_for(RUN_CODE, RUN_ID)
     prompt = ("x" * 999 + "\n") * 2000  # ~2MB, far past any pipe buffer
-    wrapped = wrap_for_files(["/bin/sh", "-c", "wc -c"], paths)
+    write_prompt_file(paths, prompt)
+    wrapped = wrap_for_files(["/bin/sh", "-c", "wc -c"], paths, stdin_from_prompt=True)
 
-    proc = subprocess.Popen(wrapped, stdin=subprocess.PIPE, bufsize=0)
-
-    def feed() -> None:
-        assert proc.stdin is not None
-        proc.stdin.write(prompt.encode("utf-8"))
-        proc.stdin.close()
-
-    writer = threading.Thread(target=feed, daemon=True)
-    writer.start()
-    assert proc.wait(timeout=30) == 0
-    writer.join(timeout=5)
-    assert not writer.is_alive(), "the prompt write never completed"
+    assert subprocess.run(wrapped, check=False, timeout=30).returncode == 0
     assert int(paths.out.read_text().strip()) == len(prompt.encode("utf-8"))
+
+
+def test_an_agent_with_no_prompt_gets_no_stdin_redirect(run_log_dir):
+    """The redirect is per-run, not unconditional: a run with no `stdin_prompt`
+    writes no prompt file, so redirecting from it would fail the whole spawn."""
+    paths = paths_for(RUN_CODE, RUN_ID)
+
+    assert "<" not in wrap_for_files(["/bin/sh", "-c", "true"], paths)[2]
+    assert (
+        str(paths.prompt)
+        in wrap_for_files(["/bin/sh", "-c", "true"], paths, stdin_from_prompt=True)[2]
+    )
+
+
+def test_the_prompt_redirect_survives_a_run_log_dir_with_a_space(tmp_path, monkeypatch):
+    """AC3. The prompt path is interpolated into a shell string like the rest."""
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run logs here")
+    ensure_dir()
+    paths = paths_for(RUN_CODE, RUN_ID)
+    write_prompt_file(paths, "hello\n")
+    wrapped = wrap_for_files(["/bin/sh", "-c", "cat"], paths, stdin_from_prompt=True)
+
+    _sh(wrapped)
+
+    assert " " in str(paths.prompt.parent)
+    assert paths.out.read_text() == "hello\n"
 
 
 # --- S3: RunOutputTail ------------------------------------------------------

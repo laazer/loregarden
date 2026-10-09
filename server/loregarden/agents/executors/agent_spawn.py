@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +33,7 @@ from loregarden.services.run_output_files import (
     run_file_stem,
     tmux_session_name,
     wrap_for_files,
+    write_prompt_file,
 )
 from sqlmodel import Session
 
@@ -108,19 +108,24 @@ def spawn_agent(
     """Start `invocation` detached, writing into this run's own three files."""
     ensure_dir()
     paths = paths_for(run_code, run_id)
-    wrapped = wrap_for_files(invocation.argv, paths)
+    # Written before the spawn, on both transports: the wrapper redirects its
+    # stdin from this file, so it has to exist by the time `sh` runs. A tmux
+    # pane has no stdin but it does have a filesystem, which is the whole
+    # reason the prompt travels as a file rather than through a pipe.
+    prompt = invocation.stdin_prompt
+    if prompt:
+        write_prompt_file(paths, prompt)
+    wrapped = wrap_for_files(invocation.argv, paths, stdin_from_prompt=bool(prompt))
     cwd = invocation.cwd or str(repo_root)
     env = invocation_env(invocation)
     if transport is AgentTransport.TMUX:
         pid = _spawn_in_tmux(wrapped, cwd=cwd, env=env, stem=run_file_stem(run_code, run_id))
         return SpawnedAgent(pid=pid, transport_used=transport, paths=paths, handle=None)
-    proc = _spawn_detached(wrapped, invocation, cwd=cwd, env=env)
+    proc = _spawn_detached(wrapped, cwd=cwd, env=env)
     return SpawnedAgent(pid=proc.pid, transport_used=transport, paths=paths, handle=proc)
 
 
-def _spawn_detached(
-    wrapped: list[str], invocation, *, cwd: str, env: dict[str, str]
-) -> subprocess.Popen:
+def _spawn_detached(wrapped: list[str], *, cwd: str, env: dict[str, str]) -> subprocess.Popen:
     """The dependency-free transport: the wrapper as a session leader of its own.
 
     `start_new_session` is what detaches it. Without it the agent is in this
@@ -128,45 +133,22 @@ def _spawn_detached(
     group takes a turn that may be minutes in — and backend edits *require* a
     reload to be picked up, so that happens by design rather than by accident.
 
-    stdout and stderr are DEVNULL rather than PIPE. A pipe makes the server the
-    reader, so when the server goes the pipe has no reader and everything the
-    agent says from that moment is lost; that is the defect this ticket removes.
-    `sh -c` never reads stdin, so the prompt written into the pipe below is
-    inherited by the agent at exec.
+    All three standard streams are DEVNULL here. A pipe makes the server the
+    reader or the writer, so when the server goes the pipe has no counterpart
+    and everything the agent says — or everything it was still waiting to be
+    told — is lost; that is the defect this ticket removes. The wrapper's own
+    redirects supply stdout, stderr and the prompt.
     """
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         wrapped,
         cwd=cwd,
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        stdin=subprocess.PIPE if invocation.stdin_prompt else None,
+        stdin=subprocess.DEVNULL,
         bufsize=0,
         start_new_session=True,
     )
-    if invocation.stdin_prompt and proc.stdin:
-        _feed_prompt(proc, invocation.stdin_prompt)
-    return proc
-
-
-def _feed_prompt(proc: subprocess.Popen, prompt: str) -> None:
-    """Write the prompt and close the pipe, without blocking this thread.
-
-    A real stage prompt is tens of kilobytes and `sh -c` does not read stdin, so
-    the write only completes once the agent has exec'd and started reading. Done
-    inline that stalls the dispatch for a prompt larger than the OS pipe buffer,
-    which is every prompt this control plane sends.
-    """
-
-    def feed() -> None:
-        try:
-            assert proc.stdin is not None
-            proc.stdin.write(prompt.encode("utf-8"))
-            proc.stdin.close()
-        except OSError:
-            logger.warning("Could not write the prompt to pid %s's stdin", proc.pid, exc_info=True)
-
-    threading.Thread(target=feed, name=f"prompt-{proc.pid}", daemon=True).start()
 
 
 def _spawn_in_tmux(wrapped: list[str], *, cwd: str, env: dict[str, str], stem: str) -> int:

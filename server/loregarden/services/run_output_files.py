@@ -60,11 +60,22 @@ def run_file_stem(run_code: str, run_id: str) -> str:
 
 @dataclass(frozen=True)
 class RunOutputPaths:
-    """The three files one detached run writes. Never merged — see `wrap_for_files`."""
+    """The files one detached run owns. `out`/`err` are never merged — see
+    `wrap_for_files`. `prompt` is the run's stdin, written by this process
+    *before* the spawn and read by the child through a `<` redirect.
+
+    The prompt is a file rather than a pipe because a pipe needs a writer that
+    outlives the spawn, and on the tmux transport there is no pipe to write to
+    at all: a pane's stdin is the pane tty, so an agent reading stdin would wait
+    for a human who is not there. One file is what makes both transports deliver
+    the same prompt, and it removes the pipe-buffer ordering race on the FILE
+    transport as a side effect.
+    """
 
     out: Path
     err: Path
     rc: Path
+    prompt: Path
 
 
 def paths_for(run_code: str, run_id: str) -> RunOutputPaths:
@@ -74,6 +85,7 @@ def paths_for(run_code: str, run_id: str) -> RunOutputPaths:
         out=root / f"{stem}.out",
         err=root / f"{stem}.err",
         rc=root / f"{stem}.rc",
+        prompt=root / f"{stem}.prompt",
     )
 
 
@@ -103,19 +115,37 @@ def attach_command(run: AgentRun) -> str:
     return f"tmux attach -t {session}"
 
 
-def wrap_for_files(argv: list[str], paths: RunOutputPaths) -> list[str]:
+def write_prompt_file(paths: RunOutputPaths, prompt: str) -> None:
+    """Put this run's stdin on disk, before the spawn that reads it.
+
+    Raises rather than degrading: an agent that is handed no prompt does not
+    fail, it *waits* — on the tmux transport until the hard cap, reported as a
+    timeout. A prompt that cannot be written must stop the spawn instead.
+    """
+    paths.prompt.write_text(prompt, encoding="utf-8")
+
+
+def wrap_for_files(
+    argv: list[str], paths: RunOutputPaths, *, stdin_from_prompt: bool = False
+) -> list[str]:
     """`argv`, redirected into `paths` by the child itself.
 
     Every argv element and every path is `shlex.quote`d: the stage prompt can be
     an argv element carrying newlines, and `run_log_dir` is an operator-settable
     path interpolated into a shell string, so both are injection surfaces.
 
+    `stdin_from_prompt` redirects the child's stdin from `paths.prompt`, which
+    `write_prompt_file` must already have written. That is what makes the prompt
+    transport-blind: a tmux pane has no stdin but it does have a filesystem. It
+    also gives the agent a real EOF, which a pane tty never produces.
+
     The trailing `exit "$rc"` is the whole reason this is three commands rather
     than two — see this module's docstring.
     """
     joined = " ".join(shlex.quote(element) for element in argv)
     out, err, rc = (shlex.quote(str(path)) for path in (paths.out, paths.err, paths.rc))
-    script = f'{joined} > {out} 2> {err}; rc=$?; printf %s "$rc" > {rc}; exit "$rc"'
+    stdin = f" < {shlex.quote(str(paths.prompt))}" if stdin_from_prompt else ""
+    script = f'{joined}{stdin} > {out} 2> {err}; rc=$?; printf %s "$rc" > {rc}; exit "$rc"'
     return ["sh", "-c", script]
 
 

@@ -452,14 +452,17 @@ def _reconstructed_invocation(run: AgentRun) -> CliInvocation:
 
 
 def _delete_output_files(paths: RunOutputPaths) -> None:
-    """The three files, now that the transcript is durable in `run_log_lines`.
+    """This run's files, now that the transcript is durable in `run_log_lines`.
+
+    The prompt goes with them: it is the run's stdin, it is as large as a stage
+    prompt, and nothing reads it once the agent has exited.
 
     Safe only in that order: deleting them while the rows were still unwritten
     would destroy the only copy. Orphans — a run whose row was never settled —
     are swept at boot by the existing `worktree_lifecycle.reconcile_worktrees`;
     there is no second deletion policy here.
     """
-    for path in (paths.out, paths.err, paths.rc):
+    for path in (paths.out, paths.err, paths.rc, paths.prompt):
         try:
             path.unlink(missing_ok=True)
         except OSError:

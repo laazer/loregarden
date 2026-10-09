@@ -69,20 +69,22 @@ def tmux_cleanup_fixture():
     )
 
 
-def _invocation(script: str) -> SimpleNamespace:
+def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         argv=[sys.executable, "-u", "-c", script],
         cwd=None,
-        stdin_prompt=None,
+        stdin_prompt=stdin_prompt,
         interactive=False,
         adapter="local",
         env={},
     )
 
 
-def _spawn(transport: AgentTransport, script: str) -> SpawnedAgent:
+def _spawn(
+    transport: AgentTransport, script: str, *, stdin_prompt: str | None = None
+) -> SpawnedAgent:
     return spawn_agent(
-        _invocation(script),
+        _invocation(script, stdin_prompt=stdin_prompt),
         Path.cwd(),
         run_id=RUN_ID,
         run_code=RUN_CODE,
@@ -273,6 +275,48 @@ def test_a_tmux_spawn_that_cannot_start_a_session_is_not_silently_a_file_run(run
         pytest.raises(subprocess.SubprocessError),
     ):
         _spawn(AgentTransport.TMUX, "print('never runs')")
+
+
+# --- AC1/AC3/AC18: the prompt arrives on EVERY transport ---------------------
+
+
+@pytest.mark.parametrize("transport", list(AgentTransport))
+def test_every_transport_delivers_the_whole_prompt(transport, run_log_dir, tmux_cleanup):
+    """AC1/AC3/AC18, parity rather than whatever this host happens to resolve.
+
+    The tmux transport once ignored `stdin_prompt` entirely: a pane's stdin is
+    the pane tty, so the agent read nothing, never saw EOF, and the run sat
+    until the hard cap and was reported a timeout — on the auto-detect default
+    of every host with tmux installed. Pinning each member in turn is what
+    makes that a caught regression instead of a host-dependent one.
+
+    The prompt is deliberately larger than any OS pipe buffer: that is the size
+    a real stage prompt is, and it is the size the pipe-based delivery could
+    not get right.
+    """
+    if transport is AgentTransport.TMUX and shutil.which("tmux") is None:
+        pytest.skip("tmux is not installed on this host")
+    prompt = "line of prompt text\n" * 20_000  # ~400KB
+    script = "import sys\nsys.stdout.write(str(len(sys.stdin.read())))"
+
+    spawned = _spawn(transport, script, stdin_prompt=prompt)
+
+    assert spawned.transport_used is transport
+    assert _wait_for_rc(timeout=60) == "0"
+    paths = paths_for(RUN_CODE, RUN_ID)
+    assert int(paths.out.read_text().strip()) == len(prompt)
+    assert paths.prompt.read_text() == prompt
+
+
+@pytest.mark.parametrize("transport", list(AgentTransport))
+def test_the_wrapper_redirects_stdin_only_when_there_is_a_prompt(transport, run_log_dir):
+    """The redirect is per-run. A run with no prompt writes no prompt file, so
+    an unconditional `< <prompt>` would fail the spawn with nothing to read."""
+    paths = paths_for(RUN_CODE, RUN_ID)
+    argv = _invocation("print(1)").argv
+
+    assert str(paths.prompt) not in wrap_for_files(argv, paths)[2]
+    assert str(paths.prompt) in wrap_for_files(argv, paths, stdin_from_prompt=True)[2]
 
 
 # --- AC20: the migration -----------------------------------------------------
