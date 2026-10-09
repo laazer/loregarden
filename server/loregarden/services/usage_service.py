@@ -17,6 +17,14 @@ from loregarden.config import settings
 from loregarden.services import claude_session_usage, codex_usage
 from loregarden.services.cli_settings import resolve_effective_adapter, resolve_model_for_adapter
 from loregarden.services.transcript_token_index import TranscriptRow, scan_tokens_by_model
+from loregarden.services.usage_rate_limit import (
+    credential_fingerprint,
+    provider_label,
+    rate_limit_backoff_error,
+    rate_limit_state,
+    rate_limit_until,
+    retry_after_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +97,10 @@ class ProviderUsage:
     cached_at: str | None = None
     rate_limited_until: str | None = None
     rate_limit_streak: int | None = None
+    # Which credential earned the backoff. A backoff belongs to the credential
+    # the endpoint refused, so a fresh `claude /login` is tried at once instead
+    # of waiting out a previous credential's (up to four-hour) penalty.
+    rate_limited_credential: str | None = None
     # Which model this provider's adapter would run with right now, and whether
     # it is the adapter a run started now would actually use. Resolved locally
     # from the settings chain, so it is never served from the usage cache.
@@ -586,43 +598,10 @@ def _parse_iso_timestamp(value: Any) -> datetime | None:
         return None
 
 
-def _retry_after_seconds(response: httpx.Response) -> int | None:
-    raw = response.headers.get("retry-after", "").strip()
-    if not raw:
-        return None
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return None
-
-
-RATE_LIMIT_MAX_BACKOFF_SECONDS = 4 * 60 * 60  # cap consecutive-rate-limit backoff at 4 hours
-
-
-def _rate_limit_backoff_seconds(
-    response: httpx.Response, streak: int, *, default_seconds: int = 300
-) -> int:
-    base = _retry_after_seconds(response) or default_seconds
-    escalated = base * (2 ** max(streak, 0))
-    return min(escalated, RATE_LIMIT_MAX_BACKOFF_SECONDS)
-
-
-def _rate_limit_until(response: httpx.Response, streak: int, *, default_seconds: int = 300) -> str:
-    seconds = _rate_limit_backoff_seconds(response, streak, default_seconds=default_seconds)
-    return (datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)).isoformat()
-
-
-PROVIDER_LABELS = {"claude": "Claude", "cursor": "Cursor", "codex": "Codex"}
-
-
-def _provider_label(provider: str) -> str:
-    return PROVIDER_LABELS.get(provider, provider.title())
-
-
 def _format_usage_http_error(
     provider: str, response: httpx.Response, *, has_refresh_token: bool = True
 ) -> str:
-    label = _provider_label(provider)
+    label = provider_label(provider)
     if response.status_code == 401:
         if provider == "claude" and not has_refresh_token:
             # A bare access token (CLAUDE_CODE_OAUTH_TOKEN / cached token file)
@@ -653,7 +632,7 @@ def _format_usage_http_error(
             # silent-ok: the body only decorates the message; the rate-limit error and
             # its Retry-After hint are returned to the user either way
             detail = ""
-        retry = _retry_after_seconds(response)
+        retry = retry_after_seconds(response)
         parts = [f"{label} usage API rate limited"]
         if detail:
             parts.append(f"({detail})")
@@ -675,35 +654,6 @@ def _claude_usage_request(client: httpx.Client, access_token: str) -> httpx.Resp
         },
         timeout=10,
     )
-
-
-def _rate_limit_backoff_error(provider: str, until_iso: str) -> str:
-    until = _parse_iso_timestamp(until_iso)
-    if until is None:
-        return f"{_provider_label(provider)} usage API rate limited — backing off."
-    remaining = max(0, int((until - datetime.now(tz=timezone.utc)).total_seconds()))
-    minutes = max(1, (remaining + 59) // 60)
-    return (
-        f"{_provider_label(provider)} usage API rate limited — "
-        f"backing off (~{minutes} min remaining)."
-    )
-
-
-def _active_rate_limit_until(cache_entry: dict[str, Any] | None) -> str | None:
-    if not cache_entry:
-        return None
-    until_iso = cache_entry.get("rate_limited_until")
-    if not isinstance(until_iso, str):
-        return None
-    until = _parse_iso_timestamp(until_iso)
-    if until is None or until <= datetime.now(tz=timezone.utc):
-        return None
-    return until_iso
-
-
-def _rate_limit_streak_from_cache(cache_entry: dict[str, Any] | None) -> int:
-    streak = (cache_entry or {}).get("rate_limit_streak", 0)
-    return streak if isinstance(streak, int) and streak >= 0 else 0
 
 
 def _fetch_claude_usage_oauth(
@@ -732,6 +682,8 @@ def _fetch_claude_usage_oauth(
             breakdown=_scan_claude_logs(),
         )
 
+    credential = credential_fingerprint(oauth)
+    backoff = rate_limit_state(cache_entry, credential)
     access_token = str(oauth.get("accessToken") or "").strip()
     expires_at = _as_number(oauth.get("expiresAt"))
     if (
@@ -741,15 +693,16 @@ def _fetch_claude_usage_oauth(
         oauth = _refresh_claude_token(oauth, client)
         access_token = str(oauth.get("accessToken") or "").strip()
 
-    backoff_until = _active_rate_limit_until(cache_entry)
+    backoff_until = backoff.active_until()
     if backoff_until:
         return ProviderUsage(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
-            error=_with_login_hint(_rate_limit_backoff_error("claude", backoff_until), oauth),
+            error=_with_login_hint(rate_limit_backoff_error("claude", backoff_until), oauth),
             breakdown=_scan_claude_logs(),
-            rate_limited_until=backoff_until,
+            rate_limited_until=backoff_until.isoformat(),
+            rate_limited_credential=credential,
         )
 
     response = _claude_usage_request(client, access_token)
@@ -765,9 +718,9 @@ def _fetch_claude_usage_oauth(
         rate_limited_until = None
         rate_limit_streak = None
         if response.status_code == 429:
-            prior_streak = _rate_limit_streak_from_cache(cache_entry)
+            prior_streak = backoff.rate_limit_streak
             rate_limit_streak = prior_streak + 1
-            rate_limited_until = _rate_limit_until(response, prior_streak)
+            rate_limited_until = rate_limit_until(response, prior_streak)
         return ProviderUsage(
             provider="claude",
             plan=_claude_plan_label(oauth),
@@ -783,6 +736,7 @@ def _fetch_claude_usage_oauth(
             breakdown=_scan_claude_logs(),
             rate_limited_until=rate_limited_until,
             rate_limit_streak=rate_limit_streak,
+            rate_limited_credential=credential if rate_limited_until else None,
         )
 
     return ProviderUsage(
@@ -836,6 +790,7 @@ def _claude_usage_from_session_key(
             breakdown=oauth_result.breakdown or _scan_claude_logs(),
             rate_limited_until=oauth_result.rate_limited_until,
             rate_limit_streak=oauth_result.rate_limit_streak,
+            rate_limited_credential=oauth_result.rate_limited_credential,
         )
     except httpx.HTTPError as exc:
         logger.warning(
@@ -861,6 +816,7 @@ def _claude_usage_from_session_key(
         breakdown=oauth_result.breakdown or _scan_claude_logs(),
         rate_limited_until=oauth_result.rate_limited_until,
         rate_limit_streak=oauth_result.rate_limit_streak,
+        rate_limited_credential=oauth_result.rate_limited_credential,
     )
 
 
@@ -1013,9 +969,9 @@ def _cursor_usage_http_error(
     rate_limited_until = None
     rate_limit_streak = None
     if usage_response.status_code == 429:
-        prior_streak = _rate_limit_streak_from_cache(cache_entry)
+        prior_streak = rate_limit_state(cache_entry).rate_limit_streak
         rate_limit_streak = prior_streak + 1
-        rate_limited_until = _rate_limit_until(usage_response, prior_streak)
+        rate_limited_until = rate_limit_until(usage_response, prior_streak)
     return ProviderUsage(
         provider="cursor",
         logged_in=True,
@@ -1038,16 +994,16 @@ def _fetch_cursor_usage(
             error="Not logged in to Cursor.",
         )
 
-    backoff_until = _active_rate_limit_until(cache_entry)
+    backoff_until = rate_limit_state(cache_entry).active_until()
     if backoff_until:
         plan_name = cache_entry.get("plan") if cache_entry else None
         return ProviderUsage(
             provider="cursor",
             plan=plan_name if isinstance(plan_name, str) else None,
             logged_in=True,
-            error=_rate_limit_backoff_error("cursor", backoff_until),
+            error=rate_limit_backoff_error("cursor", backoff_until),
             breakdown=_scan_cursor_activity(),
-            rate_limited_until=backoff_until,
+            rate_limited_until=backoff_until.isoformat(),
         )
 
     usage_response = _cursor_connect_post(client, CURSOR_USAGE_URL, token)
@@ -1315,9 +1271,12 @@ def _merge_cache_entry(
         merged["rate_limited_until"] = provider.rate_limited_until
         if provider.rate_limit_streak is not None:
             merged["rate_limit_streak"] = provider.rate_limit_streak
+        if provider.rate_limited_credential is not None:
+            merged["rate_limited_credential"] = provider.rate_limited_credential
     elif provider.error is None:
         merged.pop("rate_limited_until", None)
         merged.pop("rate_limit_streak", None)
+        merged.pop("rate_limited_credential", None)
     return merged
 
 
