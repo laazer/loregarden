@@ -1,8 +1,8 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { UsageBreakdownItem, UsageMeter, UsageProviderSnapshot, UsageSnapshot } from "../api/client";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 interface UsageModalProps {
   open: boolean;
@@ -136,60 +136,50 @@ function ProviderSection({
 }
 
 export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefresh }: UsageModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : isLoading ? undefined : onClose);
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="usage-modal-title">{null}</ModalShell>;
+  }
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isLoading ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel usage-modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="usage-modal-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Providers</div>
-            <h2 id="usage-modal-title" className="modal-title">
-              Claude, Cursor &amp; Codex usage
-            </h2>
-            <p className="modal-subtitle">
-              Subscription limits, configured models, and per-model activity
-              {snapshot?.fetched_at ? ` · updated ${new Date(snapshot.fetched_at).toLocaleTimeString()}` : ""}
-            </p>
-          </div>
-          <IconCloseButton disabled={isLoading} onClick={onClose} />
+    <ModalShell open onDismiss={isLoading ? undefined : onClose} labelledBy="usage-modal-title" panelClassName="usage-modal-panel">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Providers</div>
+          <h2 id="usage-modal-title" className="modal-title">
+            Claude, Cursor &amp; Codex usage
+          </h2>
+          <p className="modal-subtitle">
+            Subscription limits, configured models, and per-model activity
+            {snapshot?.fetched_at ? ` · updated ${new Date(snapshot.fetched_at).toLocaleTimeString()}` : ""}
+          </p>
         </div>
-
-        <div className="modal-body usage-modal-body">
-          {isLoading && !snapshot && <p className="modal-hint">Loading usage…</p>}
-          {error && <p className="usage-provider-error">{error.message}</p>}
-          {snapshot?.warnings.length ? (
-            <div className="usage-warning-banner">
-              {snapshot.warnings.map((warning) => (
-                <div key={warning}>! {warning}</div>
-              ))}
-            </div>
-          ) : null}
-          {snapshot?.providers.map((provider) => (
-            <ProviderSection key={provider.provider} provider={provider} />
-          ))}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isLoading} onClick={onClose}>
-            Close
-          </button>
-          <button type="button" className="btn-primary" disabled={isLoading} onClick={onRefresh}>
-            {isLoading ? "Refreshing…" : "Refresh"}
-          </button>
-        </div>
+        <IconCloseButton disabled={isLoading} onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body usage-modal-body">
+        {isLoading && !snapshot && <p className="modal-hint">Loading usage…</p>}
+        {error && <p className="usage-provider-error">{error.message}</p>}
+        {snapshot?.warnings.length ? (
+          <div className="usage-warning-banner">
+            {snapshot.warnings.map((warning) => (
+              <div key={warning}>! {warning}</div>
+            ))}
+          </div>
+        ) : null}
+        {snapshot?.providers.map((provider) => (
+          <ProviderSection key={provider.provider} provider={provider} />
+        ))}
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isLoading} onClick={onClose}>
+          Close
+        </Button>
+        <Button variant="primary" disabled={isLoading} onClick={onRefresh}>
+          {isLoading ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }
