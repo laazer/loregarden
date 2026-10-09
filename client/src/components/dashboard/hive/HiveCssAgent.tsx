@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { usePrefersReducedMotion } from "../../../hooks/usePrefersReducedMotion";
+
 import { tilePercent } from "../../../lib/hive/coords";
 import type { HiveOfficeErrand } from "../../../lib/hive/layouts/officeplaceLayout";
 import { findPathTiles, type TilePoint, type WalkGrid } from "../../../lib/hive/pathfinding";
@@ -72,6 +74,7 @@ export function HiveCssAgent({
   const pauseMsRef = useRef(0);
   const errandLabelRef = useRef<string | null>(null);
   const walkingRef = useRef(false);
+  const reducedMotion = usePrefersReducedMotion();
 
   const beginPath = (target: TilePoint) => {
     pathRef.current = findPathTiles(tilePos.current, target, grid);
@@ -122,6 +125,17 @@ export function HiveCssAgent({
   }, [agent.statusLabel, agent.stage]);
 
   useEffect(() => {
+    if (reducedMotion) {
+      // No walk and no errands: the agent stands where its state puts it.
+      tilePos.current = { ...missionTargetRef.current };
+      pathRef.current = [];
+      walkingRef.current = false;
+      errandPhaseRef.current = "none";
+      errandLabelRef.current = null;
+      applyPosition();
+      applyStatus();
+      return undefined;
+    }
     let raf = 0;
     let last = performance.now();
 
@@ -201,14 +215,26 @@ export function HiveCssAgent({
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [agent.motion, agent.desk.x, agent.desk.y, agent.id, errands, grid, map, speedMultiplier]);
+  }, [
+    agent.motion,
+    agent.desk.x,
+    agent.desk.y,
+    agent.target.x,
+    agent.target.y,
+    agent.id,
+    errands,
+    grid,
+    map,
+    speedMultiplier,
+    reducedMotion,
+  ]);
 
   const initialPos = tilePercent(agent.desk, map);
 
   return (
     <div
       ref={rootRef}
-      className={`hive-css__agent hive-css__agent--pathing hive-css__agent--${agent.motion}${
+      className={`hive-css__agent hive-css__agent--${agent.motion}${
         agent.pulsing ? " hive-css__agent--pulse" : ""
       }`}
       style={{ left: initialPos.left, top: initialPos.top, color: agent.color }}

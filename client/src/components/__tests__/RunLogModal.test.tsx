@@ -48,7 +48,7 @@ beforeEach(() => {
 
 it("renders nothing and fetches nothing when no run is selected", () => {
   renderModal(null);
-  expect(screen.queryByTestId("modal-content")).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(api.runLog).not.toHaveBeenCalled();
 });
 
@@ -75,7 +75,9 @@ it("closes on Escape and on overlay click", async () => {
   fireEvent.keyDown(document, { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  fireEvent.click(screen.getByTestId("modal-backdrop"));
+  const backdrop = document.querySelector(".modal-overlay--shell");
+  if (!backdrop) throw new Error("no backdrop");
+  fireEvent.click(backdrop);
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 
@@ -231,13 +233,13 @@ it("shows the restart marker as one ordinary SYS line in the feed", async () => 
 });
 
 it("reaches the copy control from the modal title by keyboard alone", async () => {
-  // AC35. It sits inside `useDialogFocusTrap`'s order; nothing focusable is
-  // added outside the trap, and `useDialogDismiss` still owns Escape.
+  // AC35. It sits inside `ModalShell`'s focus trap; nothing focusable is
+  // added outside it, and the shell still owns Escape.
   api.runLog.mockResolvedValue(detachedLog());
   renderModal("run-1");
 
   const copy = await screen.findByRole("button", { name: "Copy tmux attach command" });
-  const panel = screen.getByTestId("modal-content");
+  const panel = screen.getByRole("dialog");
   expect(panel.contains(copy)).toBe(true);
   expect(copy.tabIndex).toBeGreaterThanOrEqual(0);
 });

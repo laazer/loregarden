@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { useParams } from "react-router-dom";
+import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -43,6 +44,7 @@ import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFr
 import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
+import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
 import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
 import { buildStageTerminalHandoffCommand } from "../lib/terminalCommands";
 
@@ -101,7 +103,6 @@ function notifyIfQueued(detail: { admission?: { admitted: boolean; message: stri
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const routeTicketId = useTicketIdFromRoute();
   const { artifactTab: rawArtifactTab } = useParams<{ artifactTab?: string }>();
   const artifactTab = useArtifactTabFromRoute();
@@ -121,7 +122,6 @@ export function Dashboard() {
     paneVisibility,
     setPaneVisible,
     openEditorFile,
-    setBranchTriageWorkspaceSlug,
   } = useUiStore();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
@@ -265,25 +265,13 @@ export function Dashboard() {
     mutationFn: (ticketId: string) => api.openPr(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ticketPullRequestKey(ticketId) });
       navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
     },
   });
 
-  const commitPush = useMutation({
-    meta: { errorTitle: "Commit and push" },
-    mutationFn: (ticketId: string) => api.commitPush(ticketId),
-    onSuccess: (_data, ticketId) => {
-      qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
-        setBranchTriageWorkspaceSlug(sel?.workspace_slug ?? activeWorkspaceSlug);
-        navigate("/branch-triage");
-      }
-    },
-  });
+  const commitPush = useTicketCommitPush();
 
   const startRun = useMutation({
     meta: { errorTitle: "Start run" },

@@ -240,7 +240,7 @@ describe('the running half of a lane', () => {
     const { container } = render(<ParallelQueueVisualization />);
 
     const fill = container.querySelector('.queue-slot-bar-fill') as HTMLElement;
-    expect(fill.style.width).toBe('50%'); // 120s of an estimated 240s
+    expect(fill.style.transform).toBe('scaleX(0.5)'); // 120s of an estimated 240s
   });
 
   test('draws an indeterminate bar when the duration is unknown', () => {
@@ -254,8 +254,8 @@ describe('the running half of a lane', () => {
 
     expect(screen.getByTestId('slot-1-progress-unknown')).toBeInTheDocument();
     const fill = container.querySelector('.queue-slot-bar-fill') as HTMLElement;
-    // No claimed percentage — the sweep animation carries the width.
-    expect(fill.style.width).toBe('');
+    // No claimed percentage — the sweep animation carries the motion.
+    expect(fill.style.transform).toBe('');
   });
 
   test('an idle lane says so', () => {
@@ -302,7 +302,7 @@ describe('the running half of a lane', () => {
 
     expect(screen.getByTestId('slot-1-progress-unknown')).toBeInTheDocument();
     const fill = container.querySelector('.queue-slot-bar-fill') as HTMLElement;
-    expect(fill.style.width).toBe('');
+    expect(fill.style.transform).toBe('');
   });
 
   test('a lane held through a repairable block says so, and why', () => {

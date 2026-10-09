@@ -65,9 +65,9 @@ max_stages_per_run: 0
 git:
   # Commit and push, and stop there. `enabled_steps` runs these as a chain and
   # halts at the first switch that is off, so leaving `open_pr` off disables
-  # `auto_merge` too — which is the intent, not an oversight. This repository has
-  # no branch protection, so `gh pr merge --auto` lands a PR immediately rather
-  # than on green; opening one stays a person's decision.
+  # `auto_merge` too — which is the intent, not an oversight. Auto-merge is off
+  # for this repository on GitHub, and a ruleset on `main` requires the CI checks
+  # and signed commits, so opening and merging a PR stay a person's decisions.
   #
   # `push` runs lefthook's pre-push suite, measured at 37 minutes for a change
   # reaching a widely-imported backend module. That is why publishing happens
@@ -80,9 +80,10 @@ git:
   # than the loose edits on `main` it replaced, but still a branch whose contents
   # only exist in a working tree. A commit is what makes it survivable.
   #
-  # Reaches two callers, and only two — `chat_publish.publish_chat_turn` and
-  # `parallel_run_service._publish_run_work`. The builtin orchestrator never
-  # calls `git_automation` at all, so ordinary ticket stages are unaffected.
+  # Reaches two callers, and only two: `chat_publish.publish_chat_turn` after an
+  # acting chat turn, and `publish_tree` when a root ticket finishes its
+  # workflow (a tree's root pushes its integration branch, a ticket with no tree
+  # its own branch). Individual ticket stages never publish.
   commit: true
   push: true
   # A branch per acting turn, pushed, is a branch per conversation accumulating

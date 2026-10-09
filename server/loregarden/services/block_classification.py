@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
@@ -44,17 +45,28 @@ from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-#: Phrases a stage report uses when it is asking for a person rather than
-#: reporting a fault. Deliberately a small, literal list: a false negative
-#: reads as `work`, which is where an unexplained block belongs anyway.
-HUMAN_WORK_MARKERS = (
-    "a human",
-    "an operator",
-    "human/operator",
-    "manually",
-    "by hand",
-    "needs a person",
-    "requires a person",
+#: How a block message asks for a person rather than mentioning one. It was a
+#: list of bare substrings ("a human", "an operator", "manually"), and every
+#: HUMAN_ACTION card that list ever filed was a mention: "Paused for a human",
+#: "block the ticket for a human", "for a human who is not there"
+#: (lg-workflow-integrity-914). Each pattern below needs a verb of need or
+#: obligation next to the person, or "by hand"/"manually" attached to doing
+#: something. Deliberately narrow: a false negative reads as `work`, which is
+#: where an unexplained block belongs anyway. `tests/test_human_work_corpus.py`
+#: pins the real phrasings on both sides.
+_PERSON = r"(?:a |an |the )?(?:human|operator|person)"
+HUMAN_WORK_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        # "needs a person to", "requires a human", "need a human decision"
+        rf"\b(?:needs?|requires?|waiting (?:on|for)|ask(?:ing)?)\s+{_PERSON}\b",
+        # "a human must", "an operator has to", "a human/operator must"
+        r"\b(?:a |an |the )?(?:human|operator|person)(?:/operator)?\s+"
+        r"(?:must|has to|needs to|should|will have to)\b",
+        # "has to be done by hand", "do this manually", "run it manually"
+        r"\b(?:done|do (?:this|it)|run (?:this|it)|be (?:done|run|checked|tested))\s+"
+        r"(?:in the [\w -]+ )?(?:by hand|manually)\b",
+    )
 )
 
 #: Openings of the messages the control plane writes for its own failures.
@@ -83,8 +95,9 @@ DECISION_QUESTION_HEADER = "Decision"
 
 
 def looks_like_human_work(message: str) -> bool:
-    lowered = (message or "").lower()
-    return any(marker in lowered for marker in HUMAN_WORK_MARKERS)
+    """Whether a block message asks a person to do something."""
+    text = message or ""
+    return any(pattern.search(text) for pattern in HUMAN_WORK_PATTERNS)
 
 
 def classify_block_message(message: str) -> BlockKind:

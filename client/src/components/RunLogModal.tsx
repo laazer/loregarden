@@ -6,8 +6,7 @@ import { IconCloseButton } from "./IconCloseButton";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { ModalShell } from "./ui/ModalShell";
 import {
   LOG_FEED_EMPTY,
   LOG_FEED_ERROR,
@@ -20,7 +19,6 @@ import {
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
 export function RunLogModal({ runId, onClose }: { runId: string | null; onClose: () => void }) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const isOpen = Boolean(runId);
 
   const log = useQuery({
@@ -32,12 +30,10 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
       ACTIVE_STATUSES.has(query.state.data?.status?.toLowerCase() ?? "") ? 2000 : false,
   });
 
-  // Through the shared stack rather than a listener of its own: two of these
-  // mounted at once both closed on a single press, because nothing decided
-  // whose press it was.
-  useDialogDismiss(isOpen ? onClose : null);
-
-  if (!isOpen) return null;
+  if (!isOpen) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="run-log-modal-title">{null}</ModalShell>;
+  }
 
   const data = log.data;
   const lines = data?.lines ?? [];
@@ -57,97 +53,86 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
   });
 
   return (
-    <>
-      <div className="modal-overlay" data-testid="modal-backdrop" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel modal-panel-wide"
-        role="dialog"
-        aria-labelledby="run-log-modal-title"
-        aria-modal="true"
-        tabIndex={-1}
-        data-testid="modal-content"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="modal-header">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="state-label">Run log</div>
-            <h2 id="run-log-modal-title" className="modal-title" style={{ fontFamily: "var(--mono)" }}>
-              {data?.run_code ?? "—"}
-            </h2>
-            {data && (
-              <p className="modal-subtitle">
-                {data.agent_id || "—"} · {data.stage_key || "—"} · {data.status} ·{" "}
-                {transport || "—"}
-              </p>
-            )}
-          </div>
-          {attachCommand ? (
-            <CopyValueButton value={attachCommand} what="tmux attach command" />
-          ) : null}
-          <IconCloseButton onClick={onClose} />
+    <ModalShell open onDismiss={onClose} labelledBy="run-log-modal-title" panelClassName="modal-panel-wide">
+      <div className="modal-header">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="state-label">Run log</div>
+          <h2 id="run-log-modal-title" className="modal-title" style={{ fontFamily: "var(--mono)" }}>
+            {data?.run_code ?? "—"}
+          </h2>
+          {data && (
+            <p className="modal-subtitle">
+              {data.agent_id || "—"} · {data.stage_key || "—"} · {data.status} ·{" "}
+              {transport || "—"}
+            </p>
+          )}
         </div>
+        {attachCommand ? (
+          <CopyValueButton value={attachCommand} what="tmux attach command" />
+        ) : null}
+        <IconCloseButton onClick={onClose} />
+      </div>
 
-        <div className="modal-body" style={{ overflow: "auto", minHeight: 0 }}>
-          {data?.command && (
-            <div
+      <div className="modal-body" style={{ overflow: "auto", minHeight: 0 }}>
+        {data?.command && (
+          <div
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 10,
+              color: "var(--txl)",
+              wordBreak: "break-all",
+              marginBottom: 10,
+            }}
+          >
+            {data.command}
+          </div>
+        )}
+
+        {feed === "loading" ? (
+          <div className="log-feed-empty">{LOG_FEED_LOADING}</div>
+        ) : feed === "error" ? (
+          <div className="log-feed-empty">{LOG_FEED_ERROR}</div>
+        ) : feed === "empty" ? (
+          <div className="log-feed-empty">{LOG_FEED_EMPTY}</div>
+        ) : feed === "empty-detached" ? (
+          <div className="log-feed-empty">{detachedEmptyText(transport)}</div>
+        ) : (
+          <div className="log-feed">
+            {feed === "reconnecting" && (
+              <div className="log-feed-empty">{LOG_FEED_RECONNECTING}</div>
+            )}
+            {/* ux-ok: zero rows never reach this branch; logFeedState returns "empty"/"empty-detached" for them, rendered above. */}
+            {lines.map((line, index) => (
+              <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
+            ))}
+            {live ? <LiveLogLine text={live} /> : null}
+          </div>
+        )}
+
+        {runId && (
+          <RunSteerComposer runId={runId} isActive={isRunning} />
+        )}
+
+        {data?.stderr && (
+          <>
+            <div className="state-label" style={{ marginTop: 14 }}>
+              stderr
+            </div>
+            <pre
               style={{
+                margin: "6px 0 0",
                 fontFamily: "var(--mono)",
-                fontSize: 10,
-                color: "var(--txl)",
-                wordBreak: "break-all",
-                marginBottom: 10,
+                fontSize: 11,
+                lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                color: "var(--rdl)",
               }}
             >
-              {data.command}
-            </div>
-          )}
-
-          {feed === "loading" ? (
-            <div className="log-feed-empty">{LOG_FEED_LOADING}</div>
-          ) : feed === "error" ? (
-            <div className="log-feed-empty">{LOG_FEED_ERROR}</div>
-          ) : feed === "empty" ? (
-            <div className="log-feed-empty">{LOG_FEED_EMPTY}</div>
-          ) : feed === "empty-detached" ? (
-            <div className="log-feed-empty">{detachedEmptyText(transport)}</div>
-          ) : (
-            <div className="log-feed">
-              {feed === "reconnecting" && (
-                <div className="log-feed-empty">{LOG_FEED_RECONNECTING}</div>
-              )}
-              {lines.map((line, index) => (
-                <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
-              ))}
-              {live ? <LiveLogLine text={live} /> : null}
-            </div>
-          )}
-
-          {runId && (
-            <RunSteerComposer runId={runId} isActive={isRunning} />
-          )}
-
-          {data?.stderr && (
-            <>
-              <div className="state-label" style={{ marginTop: 14 }}>
-                stderr
-              </div>
-              <pre
-                style={{
-                  margin: "6px 0 0",
-                  fontFamily: "var(--mono)",
-                  fontSize: 11,
-                  lineHeight: 1.55,
-                  whiteSpace: "pre-wrap",
-                  color: "var(--rdl)",
-                }}
-              >
-                {data.stderr}
-              </pre>
-            </>
-          )}
-        </div>
+              {data.stderr}
+            </pre>
+          </>
+        )}
       </div>
-    </>
+    </ModalShell>
   );
 }

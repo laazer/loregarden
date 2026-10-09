@@ -304,7 +304,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  animation: screen-fade 0.28s ease;
+  animation: screen-fade var(--t-slow) ease;
 }
 
 @keyframes screen-fade {
@@ -3146,7 +3146,7 @@ label:is(
   font-size: 14px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: opacity var(--t-fast) ease, border-color var(--t-fast) ease, color var(--t-fast) ease;
 }
 
 .tree-row:hover .tree-add-child-btn,
@@ -4255,6 +4255,25 @@ label:is(
   background: rgba(5, 6, 8, 0.6);
   backdrop-filter: blur(2px);
   z-index: 40;
+  animation: modal-overlay-in var(--t-slow) var(--ease-out);
+}
+
+/* Enter only: the 42 dialogs unmount themselves on close, so an exit needs a
+   shared shell that stays mounted for it. The panel moves with the individual
+   `translate`/`scale` properties, which compose with the centring `transform`
+   below instead of replacing it. */
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+    scale: 0.98;
+  }
 }
 
 .modal-panel {
@@ -4262,6 +4281,7 @@ label:is(
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  animation: modal-panel-in var(--t-slow) var(--ease-out);
   width: min(640px, 94vw);
   max-height: 88vh;
   z-index: 41;
@@ -4271,6 +4291,13 @@ label:is(
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
+}
+
+/* A dialog rendered through ModalShell animates in JS, enter and exit both;
+   the CSS entrance above would play a second time underneath it. */
+.modal-overlay--shell,
+.modal-panel--shell {
+  animation: none;
 }
 
 .modal-panel-wide {
@@ -5834,7 +5861,11 @@ label:is(
   cursor: pointer;
   font-family: var(--ui);
   line-height: 1.2;
-  transition: all 150ms ease;
+  transition:
+      background var(--t-fast) var(--ease-out),
+      border-color var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      opacity var(--t-fast) var(--ease-out);
 }
 
 .import-mode-option:not(:disabled):hover {
@@ -5910,7 +5941,7 @@ label:is(
 }
 
 .app-action-bar-chevron {
-  transition: transform 0.16s ease;
+  transition: transform var(--t-fast) ease;
 }
 
 .app-action-bar-chevron.is-open {
@@ -5949,7 +5980,7 @@ label:is(
   border: 1px solid var(--bd);
   border-radius: 10px;
   background: var(--bg2);
-  transition: all 0.2s ease;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .view-kind-option:hover {

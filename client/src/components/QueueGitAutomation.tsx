@@ -71,8 +71,9 @@ const TOGGLES: ToggleDef[] = [
     key: "auto_resolve_conflicts",
     short: "Resolve",
     label: "Auto-resolve conflicts",
-    hint: "On a conflict, hand the conflicted files to an agent instead of blocking.",
-    requires: "auto_merge",
+    // No `requires`: landing a finished ticket arms the resolver whatever the
+    // publish chain is set to, so gating it on auto-merge hid a live setting.
+    hint: "When a finished ticket conflicts on landing, hand the conflicted files to an agent instead of blocking.",
   },
 ];
 

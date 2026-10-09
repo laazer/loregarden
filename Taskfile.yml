@@ -1,6 +1,37 @@
 version: "3"
 
 tasks:
+  setup:
+    desc: >-
+      Install server and client dependencies. Run it after a pull that touched
+      server/uv.lock or client/package-lock.json
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - task: setup:server
+      - task: setup:client
+
+  setup:server:
+    desc: Sync the server virtualenv from server/uv.lock
+    dir: "{{.ROOT_DIR}}/server"
+    cmds:
+      - uv sync
+
+  setup:client:
+    desc: Install client/node_modules from client/package-lock.json
+    dir: "{{.ROOT_DIR}}/client"
+    cmds:
+      # The Node check first: under a Node older than engines.node, npm ci
+      # installs a tree Vite cannot run, and the failure only shows up later as
+      # a client that exits 0 without ever serving.
+      - node scripts/check-node-version.cjs
+      - npm ci
+
+  setup:desktop:
+    desc: Install the root Tauri CLI dependency (only `task tauri:dev` / `tauri:build` need it)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - npm ci
+
   server:
     desc: Start FastAPI control plane (http://127.0.0.1:8000)
     dir: "{{.ROOT_DIR}}"

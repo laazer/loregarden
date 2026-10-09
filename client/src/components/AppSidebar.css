@@ -32,7 +32,7 @@
   z-index: 7;
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   box-shadow: inset -1px 0 0 var(--bd);
-  transition: filter 0.16s ease;
+  transition: filter var(--t-fast) ease;
 }
 
 .app-sidebar[data-expanded="true"] {
@@ -59,7 +59,8 @@
   min-height: 0;
   border-right: 1px solid var(--bd);
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
-  transition: width 0.16s ease;
+  /* motion-ok: the rail's width is the layout change itself; the page beside it must reflow to the new width either way, and a transform would leave it at the old one */
+  transition: width var(--t-fast) var(--ease-out);
   /*
    * **The bars beside the rail stay whole.** Expanded, the panel is cut out of
    * the topbar's band and the bottom utility bar's band (measured by

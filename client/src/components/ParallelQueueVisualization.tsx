@@ -54,6 +54,7 @@ import {
   ticketStateLabel,
 } from '../lib/ticketStates';
 import './ParallelQueueVisualization.css';
+import { progressFillStyle } from '../lib/progressFill';
 
 /**
  * Statuses where the run behind a slot is still alive. Anything else — it
@@ -472,7 +473,7 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
           </div>
         ) : (
           <div className="queue-slot-bar">
-            <div className="queue-slot-bar-fill" style={{ width: `${progress}%` }} />
+            <div className="queue-slot-bar-fill" style={progressFillStyle(progress)} />
           </div>
         )}
       </>
@@ -497,7 +498,7 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
             {stats?.active_count || 0}/{stats?.max_concurrent || 3}
           </div>
           <div className="queue-stat-bar">
-            <div className="queue-stat-bar-fill" style={{ width: `${slotUsagePercent}%` }} />
+            <div className="queue-stat-bar-fill" style={progressFillStyle(slotUsagePercent)} />
           </div>
         </div>
 
