@@ -90,8 +90,9 @@ describe("what the menu offers", () => {
   });
 
   it("offers nothing for a primitive this build does not have", () => {
-    const { container } = renderMenu({ primitiveId: "not_a_primitive" });
-    expect(container).toBeEmptyDOMElement();
+    // The harness also mounts the (empty) toast host, so ask for the trigger, not an empty container.
+    renderMenu({ primitiveId: "not_a_primitive" });
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
 

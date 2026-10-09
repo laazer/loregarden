@@ -4255,6 +4255,25 @@ label:is(
   background: rgba(5, 6, 8, 0.6);
   backdrop-filter: blur(2px);
   z-index: 40;
+  animation: modal-overlay-in var(--t-slow) var(--ease-out);
+}
+
+/* Enter only: the 42 dialogs unmount themselves on close, so an exit needs a
+   shared shell that stays mounted for it. The panel moves with the individual
+   `translate`/`scale` properties, which compose with the centring `transform`
+   below instead of replacing it. */
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+    scale: 0.98;
+  }
 }
 
 .modal-panel {
@@ -4262,6 +4281,7 @@ label:is(
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  animation: modal-panel-in var(--t-slow) var(--ease-out);
   width: min(640px, 94vw);
   max-height: 88vh;
   z-index: 41;
