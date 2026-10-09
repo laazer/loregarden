@@ -60,7 +60,7 @@ it("closes on the backdrop", async () => {
   const { container } = render(<Harness />);
 
   await user.click(screen.getByRole("button", { name: "Open settings" }));
-  const backdrop = container.querySelector(".modal-overlay--shell");
+  const backdrop = container.querySelector(".modal-overlay");
   if (!backdrop) throw new Error("no backdrop");
   await user.click(backdrop);
 
@@ -79,9 +79,10 @@ it("during its exit takes no input and holds no focus", async () => {
 
   // Still on screen while it leaves: inert (no focus, no clicks in a browser),
   // pointer events off, and focus already back on the trigger.
-  const leaving = document.querySelector<HTMLElement>(".modal-panel--shell");
+  const leaving = document.querySelector<HTMLElement>(".modal-panel");
   expect(leaving).not.toBeNull();
   expect(leaving).toHaveAttribute("inert");
+  expect(leaving).toHaveAttribute("aria-hidden", "true");
   expect(leaving?.style.pointerEvents).toBe("none");
   expect(trigger).toHaveFocus();
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

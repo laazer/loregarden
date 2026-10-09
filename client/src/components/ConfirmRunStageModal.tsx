@@ -15,9 +15,9 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { Input } from "./ui/Input";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 interface ConfirmRunStageModalProps {
   open: boolean;
@@ -54,12 +54,8 @@ export function ConfirmRunStageModal({
   onConfirm,
   onOpenPr,
 }: ConfirmRunStageModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const timeoutLabelId = useId();
   const busy = isRunning || isSavingRuntime || isOpeningPr;
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open || !ticket || !stage ? null : busy ? undefined : onClose);
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [autoApprove, setAutoApprove] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
@@ -73,7 +69,10 @@ export function ConfirmRunStageModal({
     setSlotNumber(null);
   }, [open, workspaceRuntime, stage?.key]);
 
-  if (!open || !ticket || !stage) return null;
+  if (!open || !ticket || !stage) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="confirm-run-stage-title">{null}</ModalShell>;
+  }
 
   const isRerun = stage.status === "done";
   const humanGate = isHumanGateStage(stage);
@@ -89,203 +88,194 @@ export function ConfirmRunStageModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={busy ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-run-stage-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Stage execution</div>
-            <h2 id="confirm-run-stage-title" className="modal-title">
-              {doneStage
-                ? "Complete ticket?"
-                : humanGate
-                  ? isRerun
-                    ? "Re-request approval?"
-                    : "Request approval?"
-                  : isRerun
-                    ? "Re-run stage?"
-                    : "Run stage?"}
-            </h2>
-            <p className="modal-subtitle">{ticket.title}</p>
-          </div>
-          <IconCloseButton disabled={busy} onClick={onClose} />
+    <ModalShell open onDismiss={busy ? undefined : onClose} labelledBy="confirm-run-stage-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Stage execution</div>
+          <h2 id="confirm-run-stage-title" className="modal-title">
+            {doneStage
+              ? "Complete ticket?"
+              : humanGate
+                ? isRerun
+                  ? "Re-request approval?"
+                  : "Request approval?"
+                : isRerun
+                  ? "Re-run stage?"
+                  : "Run stage?"}
+          </h2>
+          <p className="modal-subtitle">{ticket.title}</p>
         </div>
+        <IconCloseButton disabled={busy} onClick={onClose} />
+      </div>
 
-        <div className="modal-body">
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
-            {doneStage ? (
+      <div className="modal-body">
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+          {doneStage ? (
+            <>
+              Mark <strong style={{ color: "var(--tx)" }}>{ticket.title}</strong> complete? This
+              closes the workflow — no agent is invoked.
+            </>
+          ) : humanGate ? (
+            isRerun ? (
               <>
-                Mark <strong style={{ color: "var(--tx)" }}>{ticket.title}</strong> complete? This
-                closes the workflow — no agent is invoked.
-              </>
-            ) : humanGate ? (
-              isRerun ? (
-                <>
-                  Re-open human approval for{" "}
-                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? A new inbox item will
-                  be created for sign-off.
-                </>
-              ) : (
-                <>
-                  Request human sign-off for{" "}
-                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. This creates an inbox
-                  approval — no agent CLI is invoked.
-                </>
-              )
-            ) : parallelStage ? (
-              isRerun ? (
-                <>
-                  Re-run parallel review for{" "}
-                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
-                  reviewers will run concurrently.
-                </>
-              ) : (
-                <>
-                  Run parallel review for{" "}
-                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
-                  reviewers will run concurrently.
-                </>
-              )
-            ) : classifyStage ? (
-              <>
-                Run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. Its routes are
-                scored against the ticket&apos;s title and acceptance criteria; only when that is
-                ambiguous does the ticket&apos;s <code>next_agent</code> break the tie.
-              </>
-            ) : isRerun ? (
-              <>
-                Are you sure you want to re-run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
-                This stage is already marked done and will invoke its sub-agent again.
+                Re-open human approval for{" "}
+                <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? A new inbox item will
+                be created for sign-off.
               </>
             ) : (
               <>
-                Are you sure you want to run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
-                This will invoke the stage sub-agent and may update ticket workflow state.
+                Request human sign-off for{" "}
+                <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. This creates an inbox
+                approval — no agent CLI is invoked.
               </>
+            )
+          ) : parallelStage ? (
+            isRerun ? (
+              <>
+                Re-run parallel review for{" "}
+                <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
+                reviewers will run concurrently.
+              </>
+            ) : (
+              <>
+                Run parallel review for{" "}
+                <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
+                reviewers will run concurrently.
+              </>
+            )
+          ) : classifyStage ? (
+            <>
+              Run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. Its routes are
+              scored against the ticket&apos;s title and acceptance criteria; only when that is
+              ambiguous does the ticket&apos;s <code>next_agent</code> break the tie.
+            </>
+          ) : isRerun ? (
+            <>
+              Are you sure you want to re-run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
+              This stage is already marked done and will invoke its sub-agent again.
+            </>
+          ) : (
+            <>
+              Are you sure you want to run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
+              This will invoke the stage sub-agent and may update ticket workflow state.
+            </>
+          )}
+        </p>
+        {(stageAgentSubtitle(stage) || stage.agent_id || stage.skill_name) && (
+          <div className="state-card" style={{ marginTop: 4 }}>
+            <div className="state-label">{parallelStage ? "Reviewers" : classifyStage ? "Routes" : "Agent"}</div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+              {stageAgentSubtitle(stage) || `${stage.agent_id}${stage.skill_name ? ` · ${stage.skill_name}` : ""}`}
+            </div>
+          </div>
+        )}
+
+        {runtimeOptions && !humanGate && !doneStage && (
+          <div style={{ marginTop: 8 }}>
+            <div className="modal-section-title">Model for this run</div>
+            <WorkspaceRuntimeFields
+              runtime={draftRuntime}
+              options={runtimeOptions}
+              disabled={busy}
+              compact
+              onChange={setDraftRuntime}
+            />
+            {runtimeDirty && (
+              <p className="modal-hint" style={{ marginTop: 8 }}>
+                Runtime changes will be saved when you confirm this run.
+              </p>
             )}
-          </p>
-          {(stageAgentSubtitle(stage) || stage.agent_id || stage.skill_name) && (
-            <div className="state-card" style={{ marginTop: 4 }}>
-              <div className="state-label">{parallelStage ? "Reviewers" : classifyStage ? "Routes" : "Agent"}</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                {stageAgentSubtitle(stage) || `${stage.agent_id}${stage.skill_name ? ` · ${stage.skill_name}` : ""}`}
-              </div>
+          </div>
+        )}
+
+        {showAutoApprove && (
+          <div style={{ marginTop: 12 }}>
+            <div id={timeoutLabelId} className="modal-section-title">
+              Timeout (seconds, optional)
             </div>
-          )}
+            <Input
+              aria-labelledby={timeoutLabelId}
+              type="number"
+              min={30}
+              className="btn-secondary"
+              style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+              value={timeoutSeconds}
+              disabled={busy}
+              onChange={(e) => setTimeoutSeconds(e.target.value)}
+              placeholder="Agent default"
+            />
+          </div>
+        )}
 
-          {runtimeOptions && !humanGate && !doneStage && (
-            <div style={{ marginTop: 8 }}>
-              <div className="modal-section-title">Model for this run</div>
-              <WorkspaceRuntimeFields
-                runtime={draftRuntime}
-                options={runtimeOptions}
-                disabled={busy}
-                compact
-                onChange={setDraftRuntime}
-              />
-              {runtimeDirty && (
-                <p className="modal-hint" style={{ marginTop: 8 }}>
-                  Runtime changes will be saved when you confirm this run.
-                </p>
-              )}
-            </div>
-          )}
+        {/* A gate or a done stage runs no agent, so there is no capacity to
+            spend and nothing to pick a lane for. */}
+        {!humanGate && !doneStage && (
+          <div style={{ marginTop: 16 }}>
+            <LanePicker
+              value={slotNumber}
+              onChange={setSlotNumber}
+              enabled={open}
+              disabled={busy}
+            />
+          </div>
+        )}
 
-          {showAutoApprove && (
-            <div style={{ marginTop: 12 }}>
-              <div id={timeoutLabelId} className="modal-section-title">
-                Timeout (seconds, optional)
-              </div>
-              <Input
-                aria-labelledby={timeoutLabelId}
-                type="number"
-                min={30}
-                className="btn-secondary"
-                style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
-                value={timeoutSeconds}
-                disabled={busy}
-                onChange={(e) => setTimeoutSeconds(e.target.value)}
-                placeholder="Agent default"
-              />
-            </div>
-          )}
-
-          {/* A gate or a done stage runs no agent, so there is no capacity to
-              spend and nothing to pick a lane for. */}
-          {!humanGate && !doneStage && (
-            <div style={{ marginTop: 16 }}>
-              <LanePicker
-                value={slotNumber}
-                onChange={setSlotNumber}
-                enabled={open}
-                disabled={busy}
-              />
-            </div>
-          )}
-
-          {showAutoApprove && (
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontSize: 13,
-                color: "var(--txm)",
-                cursor: "pointer",
-                marginTop: 12,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={autoApprove}
-                disabled={busy}
-                onChange={(e) => setAutoApprove(e.target.checked)}
-              />
-              Auto-approve CLI tool permissions during this run
-            </label>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          {humanGate && onOpenPr && (
-            <button type="button" className="btn-secondary" disabled={busy} onClick={onOpenPr}>
-              {isOpeningPr ? "Opening PR…" : "Open PR"}
-            </button>
-          )}
-          <button type="button" className="btn-primary" disabled={busy} onClick={handleConfirm}>
-            {isSavingRuntime
-              ? "Saving…"
-              : isRunning
-                ? doneStage
-                  ? "Completing…"
-                  : humanGate
-                    ? "Requesting…"
-                    : "Running…"
-                : doneStage
-                  ? "Complete ticket"
-                  : humanGate
-                    ? isRerun
-                      ? "Re-request approval"
-                      : "Approve"
-                    : parallelStage
-                  ? isRerun
-                    ? "Re-run reviews"
-                    : "Run reviews"
-                  : isRerun
-                    ? "Re-run stage"
-                    : "Run stage"}
-          </button>
-        </div>
+        {showAutoApprove && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--txm)",
+              cursor: "pointer",
+              marginTop: 12,
+            }}
+          >
+            <Input
+              type="checkbox"
+              checked={autoApprove}
+              disabled={busy}
+              onChange={(e) => setAutoApprove(e.target.checked)}
+            />
+            Auto-approve CLI tool permissions during this run
+          </label>
+        )}
       </div>
-    </>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={busy} onClick={onClose}>
+          Cancel
+        </Button>
+        {humanGate && onOpenPr && (
+          <Button variant="secondary" disabled={busy} onClick={onOpenPr}>
+            {isOpeningPr ? "Opening PR…" : "Open PR"}
+          </Button>
+        )}
+        <Button variant="primary" disabled={busy} onClick={handleConfirm}>
+          {isSavingRuntime
+            ? "Saving…"
+            : isRunning
+              ? doneStage
+                ? "Completing…"
+                : humanGate
+                  ? "Requesting…"
+                  : "Running…"
+              : doneStage
+                ? "Complete ticket"
+                : humanGate
+                  ? isRerun
+                    ? "Re-request approval"
+                    : "Approve"
+                  : parallelStage
+                ? isRerun
+                  ? "Re-run reviews"
+                  : "Run reviews"
+                : isRerun
+                  ? "Re-run stage"
+                  : "Run stage"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }
