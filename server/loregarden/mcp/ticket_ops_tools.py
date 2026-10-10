@@ -15,13 +15,16 @@ reason and are worth an approval.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from sqlmodel import Session, select
 
 from loregarden.mcp.ticket_edit_tools import ticket_state_payload
+from loregarden.mcp.tool_args import coerce_optional_int
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import enum_string_prop, string_prop, tool_schema
+from loregarden.mcp.tool_schemas import enum_string_prop, integer_prop, string_prop, tool_schema
 from loregarden.models.domain import (
     StageStatus,
     Ticket,
@@ -33,10 +36,12 @@ from loregarden.models.domain import (
 from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.publish_tree import publish_tree
+from loregarden.services.pull_request_merge import MergeFailed, merge_and_clean_up
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.stage_agent_pin import pin_stage_agent
 from loregarden.services.ticket_ids import reissue_in_workspace
+from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_state import parse_stage_map
@@ -240,6 +245,30 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             "detail": outcome.detail,
         }
     return json.dumps(payload, indent=2)
+
+
+def _merge_pull_request(session: Session, svc, arguments: dict[str, Any]) -> str:
+    """The PR tab's "Merge and clean up", for an agent.
+
+    Refused unless GitHub says the PR can merge now, and pinned to ``head_sha``
+    when given (the commit the agent checked); without it, to the head as it
+    stands at the call. A failed cleanup step is in the result, not an error.
+    """
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        raise ValueError(f"Ticket {ticket.external_id} has no workspace")
+    head_sha = arguments.get("head_sha") or ""
+    if not head_sha:
+        current = ticket_pull_request(session, ticket, workspace).pull_request
+        head_sha = current.head_sha if current else ""
+    try:
+        result = merge_and_clean_up(
+            session, ticket, workspace, number=arguments["number"], head_sha=head_sha
+        )
+    except MergeFailed as exc:
+        raise ValueError(f"Merge of #{arguments['number']} failed: {exc}") from exc
+    return result.model_dump_json(indent=2)
 
 
 def _requeue_outcome(session: Session, svc, ticket: Ticket, stage_key: str) -> dict[str, Any]:
@@ -481,6 +510,27 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": McpTool.MERGE_PULL_REQUEST,
+        "description": (
+            "Squash-merge a ticket's pull request and clean up after it: removes the "
+            "branch's clean worktrees, the local branch and the GitHub branch, reporting "
+            "each step. Refused unless GitHub says the PR can merge now (required checks "
+            "green, signed commits, no conflicts, reviews satisfied); refused too if the "
+            "PR's head is no longer head_sha. Irreversible."
+        ),
+        "inputSchema": tool_schema(
+            properties={
+                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
+                "number": integer_prop("The pull request number to merge."),
+                "head_sha": string_prop(
+                    "The head commit you checked. The merge is refused if the PR has moved "
+                    "past it. Omit to merge the head as it stands."
+                ),
+            },
+            required=["ticket_id", "number"],
+        ),
+    },
+    {
         "name": McpTool.SUPERSEDE_TICKET,
         "description": (
             "Replace a ticket with a corrected one: creates a new ticket beside it, "
@@ -507,6 +557,96 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
+@dataclass(frozen=True)
+class _Coercers:
+    """The coercers `mcp.tools` injects (see `normalize_ticket_ops_args`)."""
+
+    string: Callable[..., str]
+    optional_string: Callable[..., str | None]
+    string_list: Callable[..., list[str]]
+
+
+def _move_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    return {
+        "ticket_id": c.string(args.get("ticket_id"), field="ticket_id"),
+        "workspace_slug": c.string(args.get("workspace_slug"), field="workspace_slug"),
+        "new_parent_ticket_id": c.optional_string(args.get("new_parent_ticket_id")),
+        "detach_parent": bool(args.get("detach_parent")),
+    }
+
+
+def _set_workflow_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    payload = {"ticket_id": c.string(args.get("ticket_id"), field="ticket_id")}
+    # Presence, not truthiness: "" is the documented way to take a ticket off
+    # its workflow, so it must survive normalization.
+    if args.get("workflow_template_slug") is not None:
+        payload["workflow_template_slug"] = c.string(
+            args.get("workflow_template_slug"), field="workflow_template_slug"
+        )
+    for field in ("stage_key", "stage_status"):
+        if args.get(field) is not None:
+            payload[field] = c.string(args.get(field), field=field)
+    return payload
+
+
+def _requeue_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    return {
+        "ticket_id": c.string(args.get("ticket_id"), field="ticket_id"),
+        "reason": c.string(args.get("reason"), field="reason"),
+        "stage_key": c.optional_string(args.get("stage_key")),
+        "state": c.optional_string(args.get("state")),
+    }
+
+
+def _pin_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    return {
+        "ticket_id": c.string(args.get("ticket_id"), field="ticket_id"),
+        "agent_id": c.string(args.get("agent_id"), field="agent_id"),
+        "reason": c.string(args.get("reason"), field="reason"),
+        "stage_key": c.optional_string(args.get("stage_key")),
+    }
+
+
+def _ticket_only_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    return {"ticket_id": c.string(args.get("ticket_id"), field="ticket_id")}
+
+
+def _merge_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    number = coerce_optional_int(args.get("number"), field="number")
+    if number is None:
+        raise ValueError("number is required")
+    return {
+        "ticket_id": c.string(args.get("ticket_id"), field="ticket_id"),
+        "number": number,
+        "head_sha": c.optional_string(args.get("head_sha")),
+    }
+
+
+def _supersede_args(args: dict[str, Any], c: _Coercers) -> dict[str, Any]:
+    return {
+        "ticket_id": c.string(args.get("ticket_id"), field="ticket_id"),
+        "title": c.string(args.get("title"), field="title"),
+        "reason": c.string(args.get("reason"), field="reason"),
+        "description": c.optional_string(args.get("description")),
+        "acceptance_criteria": c.string_list(
+            args.get("acceptance_criteria") or [], field="acceptance_criteria"
+        ),
+    }
+
+
+#: One argument whitelist per tool. A table rather than an `if` chain: the
+#: chain was at McCabe 11 and each new tool added one.
+_ARG_NORMALIZERS: dict[McpTool, Callable[[dict[str, Any], _Coercers], dict[str, Any]]] = {
+    McpTool.MOVE_TICKET_WORKSPACE: _move_args,
+    McpTool.SET_TICKET_WORKFLOW: _set_workflow_args,
+    McpTool.REQUEUE_TICKET: _requeue_args,
+    McpTool.PIN_STAGE_AGENT: _pin_args,
+    McpTool.LAND_TICKET: _ticket_only_args,
+    McpTool.MERGE_PULL_REQUEST: _merge_args,
+    McpTool.SUPERSEDE_TICKET: _supersede_args,
+}
+
+
 def normalize_ticket_ops_args(
     name: str,
     args: dict[str, Any],
@@ -521,59 +661,11 @@ def normalize_ticket_ops_args(
     `normalize_update_ticket_args` injects them: this module sits below
     ``mcp.tools`` in the import graph and must stay there.
     """
-    if name == McpTool.MOVE_TICKET_WORKSPACE:
-        payload = {
-            "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
-            "workspace_slug": coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-            "new_parent_ticket_id": coerce_optional_string(args.get("new_parent_ticket_id")),
-            "detach_parent": bool(args.get("detach_parent")),
-        }
-        return payload
-
-    if name == McpTool.SET_TICKET_WORKFLOW:
-        payload = {"ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id")}
-        # Presence, not truthiness: "" is the documented way to take a ticket off
-        # its workflow, so it must survive normalization.
-        if args.get("workflow_template_slug") is not None:
-            payload["workflow_template_slug"] = coerce_string(
-                args.get("workflow_template_slug"), field="workflow_template_slug"
-            )
-        for field in ("stage_key", "stage_status"):
-            if args.get(field) is not None:
-                payload[field] = coerce_string(args.get(field), field=field)
-        return payload
-
-    if name == McpTool.REQUEUE_TICKET:
-        return {
-            "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
-            "reason": coerce_string(args.get("reason"), field="reason"),
-            "stage_key": coerce_optional_string(args.get("stage_key")),
-            "state": coerce_optional_string(args.get("state")),
-        }
-
-    if name == McpTool.PIN_STAGE_AGENT:
-        return {
-            "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
-            "agent_id": coerce_string(args.get("agent_id"), field="agent_id"),
-            "reason": coerce_string(args.get("reason"), field="reason"),
-            "stage_key": coerce_optional_string(args.get("stage_key")),
-        }
-
-    if name == McpTool.LAND_TICKET:
-        return {"ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id")}
-
-    if name == McpTool.SUPERSEDE_TICKET:
-        return {
-            "ticket_id": coerce_string(args.get("ticket_id"), field="ticket_id"),
-            "title": coerce_string(args.get("title"), field="title"),
-            "reason": coerce_string(args.get("reason"), field="reason"),
-            "description": coerce_optional_string(args.get("description")),
-            "acceptance_criteria": coerce_string_list(
-                args.get("acceptance_criteria") or [], field="acceptance_criteria"
-            ),
-        }
-
-    return None
+    tool = McpTool.try_parse(name)
+    normalizer = _ARG_NORMALIZERS.get(tool) if tool else None
+    if normalizer is None:
+        return None
+    return normalizer(args, _Coercers(coerce_string, coerce_optional_string, coerce_string_list))
 
 
 #: Handlers this module owns, keyed by tool name.
@@ -583,6 +675,7 @@ _OPS_HANDLERS = {
     "loregarden_requeue_ticket": _requeue_ticket,
     "loregarden_pin_stage_agent": _pin_stage_agent,
     "loregarden_land_ticket": _land_ticket,
+    "loregarden_merge_pull_request": _merge_pull_request,
     "loregarden_supersede_ticket": _supersede_ticket,
 }
 

@@ -42,6 +42,7 @@ class McpTool(StrEnum):
     REQUEUE_TICKET = "loregarden_requeue_ticket"
     PIN_STAGE_AGENT = "loregarden_pin_stage_agent"
     LAND_TICKET = "loregarden_land_ticket"
+    MERGE_PULL_REQUEST = "loregarden_merge_pull_request"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
@@ -338,6 +339,10 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.REQUEUE_TICKET,
     McpTool.PIN_STAGE_AGENT,
     McpTool.LAND_TICKET,
+    # Squash-merges the ticket's PR once GitHub says it can merge, then removes
+    # its branch. Gated like any write (not auto-approved), and never a pipeline
+    # stage's to call on the ticket it runs.
+    McpTool.MERGE_PULL_REQUEST,
     McpTool.SUPERSEDE_TICKET,
     # Publishes to, and pulls from, a GitHub repository: an operator move on a
     # ticket, never something a stage does to the ticket it was dispatched for.

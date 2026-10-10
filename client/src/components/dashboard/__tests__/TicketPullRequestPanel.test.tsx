@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { api } from "../../../api/client";
 import type { PullRequestStatus, TicketPullRequest } from "../../../api/ticketPullRequestApi";
+import { uiActionRegistry } from "../../../lib/agentActions/registry";
 import { TicketPullRequestPanel } from "../TicketPullRequestPanel";
 
 jest.mock("../../../api/client");
@@ -126,6 +127,28 @@ describe("TicketPullRequestPanel", () => {
     );
     expect(await screen.findByText(/1 cleanup step need you/)).toBeInTheDocument();
     expect(screen.getByText("kept: it has uncommitted changes")).toBeInTheDocument();
+  });
+
+  it("offers agents the same merge, only while the button is offered", async () => {
+    mockApi.mergeTicketPullRequest.mockResolvedValue({ number: 555, merge_commit: "", steps: [] });
+    renderPanel(lookup({ pull_request: READY }));
+    await screen.findByRole("button", { name: "Merge and clean up" });
+    expect(uiActionRegistry.available()).toContain("ticket.merge_pull_request");
+
+    await expect(
+      uiActionRegistry.run("ticket.merge_pull_request", { ticket_id: "other", number: 555, head_sha: "c".repeat(40) }),
+    ).rejects.toThrow("open the ticket first");
+    expect(mockApi.mergeTicketPullRequest).not.toHaveBeenCalled();
+
+    await uiActionRegistry.run("ticket.merge_pull_request", { ticket_id: "t1", number: 555, head_sha: "c".repeat(40) });
+    expect(mockApi.mergeTicketPullRequest).toHaveBeenCalledWith("t1", { number: 555, head_sha: "c".repeat(40) });
+    await waitFor(() => expect(uiActionRegistry.available()).not.toContain("ticket.merge_pull_request"));
+  });
+
+  it("does not offer the merge to agents while GitHub blocks it", async () => {
+    renderPanel(lookup({ pull_request: { ...READY, mergeable_now: false } }));
+    await screen.findByText(/still block the merge/);
+    expect(uiActionRegistry.available()).not.toContain("ticket.merge_pull_request");
   });
 
   it("cancels the merge with Escape", async () => {

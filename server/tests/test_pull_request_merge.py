@@ -11,6 +11,8 @@ import subprocess
 from unittest import mock
 
 import pytest
+from loregarden.mcp.tool_ids import AUTO_APPROVED_MCP_TOOLS, ORCHESTRATED_DENIED_MCP_TOOLS, McpTool
+from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
     AgentRun,
     RunStatus,
@@ -238,3 +240,50 @@ def test_a_blocked_pr_names_its_unsigned_commits_and_a_clean_one_is_not_asked(
     clean = ticket_pull_request.ticket_pull_request(session, ticket, workspace).pull_request
     assert clean is not None and clean.unsigned_commits == []
     assert not any(call[0] == "api" for call in fake.calls)
+
+
+# --- agents: the same merge over MCP --------------------------------------------------
+
+
+def _mcp(session, arguments, **kwargs):
+    name = McpTool.MERGE_PULL_REQUEST.value
+    return execute_tool(session, name, normalize_tool_arguments(name, arguments), **kwargs)
+
+
+def test_an_agent_merges_through_mcp_with_the_same_checks(session, workspace, ticket, github):
+    fake = github(FakeGitHub(_pr()))
+
+    result = json.loads(_mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA}))
+
+    assert ["pr", "merge", "7", "--squash", "--match-head-commit", SHA] in fake.calls
+    assert result["merge_commit"] == "m" * 40
+    assert {step["step"] for step in result["steps"]} >= {"local branch", "remote branch"}
+
+
+def test_an_agent_without_a_head_sha_merges_the_head_github_reports(
+    session, workspace, ticket, github
+):
+    fake = github(FakeGitHub(_pr()))
+    _mcp(session, {"ticket_id": "lg-1", "number": "7"})
+    assert ["pr", "merge", "7", "--squash", "--match-head-commit", SHA] in fake.calls
+
+
+def test_an_agent_is_refused_what_a_person_would_be(session, workspace, ticket, github):
+    fake = github(FakeGitHub(_pr(mergeStateStatus="BLOCKED")))
+    with pytest.raises(ValueError, match="cannot merge yet"):
+        _mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA})
+    assert not fake.did("pr", "merge")
+
+
+def test_merging_is_gated_and_never_a_pipeline_stages_to_do():
+    """Not auto-approved: a gated run asks first. And a stage agent may not merge
+    the ticket it was dispatched for."""
+    assert McpTool.MERGE_PULL_REQUEST not in AUTO_APPROVED_MCP_TOOLS
+    assert McpTool.MERGE_PULL_REQUEST in ORCHESTRATED_DENIED_MCP_TOOLS
+
+
+def test_a_pipeline_agent_calling_it_is_refused(session, workspace, ticket, github):
+    fake = github(FakeGitHub(_pr()))
+    with pytest.raises(ValueError):
+        _mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA}, orchestrated=True)
+    assert not fake.did("pr", "merge")

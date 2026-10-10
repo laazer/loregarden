@@ -26,6 +26,7 @@ class UiAction(StrEnum):
     TICKET_UPDATE = "ticket.update"
     TICKET_SET_STATE = "ticket.set_state"
     TICKET_TRIGGER_AUTO_FIX = "ticket.trigger_auto_fix"
+    TICKET_MERGE_PULL_REQUEST = "ticket.merge_pull_request"
     WORKSPACE_ARCHIVE = "workspace.archive"
     WORKSPACE_RESTORE = "workspace.restore"
     WORKSPACE_SET_WORKFLOW = "workspace.set_workflow"
@@ -109,6 +110,14 @@ class TicketSetStateArgs(_Args):
 
 class TicketTriggerAutoFixArgs(_Args):
     ticket_id: str = Field(min_length=1, description="The ticket open in the tab.")
+
+
+class TicketMergePullRequestArgs(_Args):
+    ticket_id: str = Field(min_length=1, description="The ticket open in the tab.")
+    number: int = Field(gt=0, description="The pull request number the tab shows.")
+    head_sha: str = Field(
+        min_length=7, description="The head commit you checked; refused if the PR moved."
+    )
 
 
 class WorkspaceArgs(_Args):
@@ -241,6 +250,16 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "Launch the CI auto-fix agent for the open ticket.",
             TicketTriggerAutoFixArgs,
             offered="while that ticket is open (ticket.open)",
+        ),
+        UiActionSpec(
+            UiAction.TICKET_MERGE_PULL_REQUEST,
+            UiActionEffect.WRITE,
+            "Merge and clean up: squash-merge the open ticket's PR at head_sha, then remove "
+            "its branch's clean worktrees, local branch and GitHub branch. Refused unless "
+            "GitHub says it can merge now. Irreversible. Without a tab, use "
+            "loregarden_merge_pull_request.",
+            TicketMergePullRequestArgs,
+            offered="while that ticket's PR tab shows Merge and clean up (ticket.open, PR tab)",
         ),
         UiActionSpec(
             UiAction.WORKSPACE_ARCHIVE,
