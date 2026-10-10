@@ -6,6 +6,7 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { ChatPromptRow } from "../components/chat/ChatPromptRow";
+import { ChatScopeNote } from "../components/chat/ChatScopeNote";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
 import {
   ComposerAttachButton,
@@ -28,7 +29,8 @@ import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatWorkbench } from "../hooks/useChatWorkbench";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
-import { useChatWorkspace } from "../hooks/useChatWorkspace";
+import { useChatScope } from "../hooks/useChatScope";
+import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
 import { withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -259,8 +261,14 @@ export function BaxterChatPage() {
   const historyOpen = useUiStore((s) => s.baxterHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setBaxterHistoryOpen);
 
-  const { slug: workspaceSlug } = useChatWorkspace();
-  const chat = useBaxterChatSession(workspaceSlug);
+  const { scope, initiatives } = useChatScope();
+  const chat = useBaxterChatSession(scope);
+  // A global chat spans workspaces, so it has none of its own: "" there.
+  const isGlobal = isGlobalChatScope(scope);
+  const workspaceSlug = chatScopeWorkspaceSlug(scope);
+  // Where file mentions and notes resolve: the checkout the turns run in. For a
+  // global chat that is its host, known once the first message creates the thread.
+  const composerWorkspace = workspaceSlug || chat.snapshot?.host_workspace_slug || "";
   const resolveApproval = useApprovalResolution(undefined);
 
   /**
@@ -277,34 +285,37 @@ export function BaxterChatPage() {
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
-  // Workspace inbox for the welcome summary / chips — not the interactive
-  // Home-chat cards (those ride on the session snapshot).
+  // The scope's inbox for the welcome summary / chips — not the interactive
+  // Home-chat cards (those ride on the session snapshot). A global chat's is
+  // every workspace's.
   const approvalsQ = useQuery({
     queryKey: ["baxter-chat-approvals"],
     queryFn: () => api.approvals(),
     refetchInterval: 15_000,
   });
   const ticketsQ = useQuery({
-    queryKey: ["baxter-chat-tickets", workspaceSlug],
+    queryKey: ["baxter-chat-tickets", scope],
     queryFn: () =>
       api.tickets({
-        workspace: workspaceSlug,
+        workspace: workspaceSlug || undefined,
         state: ["in_progress", "blocked"],
       }),
-    enabled: Boolean(workspaceSlug),
+    enabled: Boolean(scope),
     refetchInterval: 15_000,
   });
   const historyTicketsQ = useQuery({
-    queryKey: ["baxter-chat-history-tickets", workspaceSlug],
-    queryFn: () => api.tickets({ workspace: workspaceSlug }),
-    enabled: historyOpen && Boolean(workspaceSlug),
+    queryKey: ["baxter-chat-history-tickets", scope],
+    queryFn: () => api.tickets({ workspace: workspaceSlug || undefined }),
+    enabled: historyOpen && Boolean(scope),
     staleTime: 15_000,
   });
 
   const approvals = useMemo(
     () =>
-      pendingApprovals(approvalsQ.data).filter((a) => a.workspace_slug === workspaceSlug),
-    [approvalsQ.data, workspaceSlug],
+      pendingApprovals(approvalsQ.data).filter(
+        (a) => isGlobal || a.workspace_slug === workspaceSlug,
+      ),
+    [approvalsQ.data, isGlobal, workspaceSlug],
   );
   const tickets = useMemo(() => ticketsQ.data ?? [], [ticketsQ.data]);
 
@@ -332,7 +343,7 @@ export function BaxterChatPage() {
 
   const respond = (prompt: string, skill = "", files: File[] = []) => {
     const content = prompt.trim();
-    if ((!content && !files.length) || busy || !workspaceSlug) return;
+    if ((!content && !files.length) || busy || !scope) return;
     // Sending from the gallery leaves it: the canned thread is a reference, not
     // a conversation to continue.
     setGalleryTurns(null);
@@ -343,9 +354,9 @@ export function BaxterChatPage() {
   };
 
   const archive = useMemo<ChatArchive | null>(() => {
-    if (!workspaceSlug) return null;
+    if (!scope) return null;
     return {
-      workspaceSlug,
+      scope,
       sessionId: chat.sessionId,
       openSession: chat.openSession,
       startNewChat: chat.startNewChat,
@@ -357,7 +368,7 @@ export function BaxterChatPage() {
       isSavingRuntime: chat.isSavingRuntime,
     };
   }, [
-    workspaceSlug,
+    scope,
     chat.sessionId,
     chat.openSession,
     chat.startNewChat,
@@ -392,8 +403,8 @@ export function BaxterChatPage() {
   });
 
   const commandOptions: ComposerHostOptions = {
-    workspaceSlug,
-    queueKey: workspaceSlug ? composerQueueKey("baxter-home", chat.sessionId, workspaceSlug) : null,
+    workspaceSlug: composerWorkspace,
+    queueKey: scope ? composerQueueKey("baxter-home", chat.sessionId, scope) : null,
     isBusy: busy,
     onSend: (content, skill) => respond(content, skill),
     onSendInNewChat: (content) => {
@@ -452,13 +463,13 @@ export function BaxterChatPage() {
     if (!handedOff && !handedOffFiles.length) return;
     // A turn's approval card is snapshotted from the inbox, so bootstrapping
     // before it lands would strip the first reply of its context.
-    if (!workspaceSlug || approvalsQ.isLoading) return;
+    if (!scope || approvalsQ.isLoading) return;
     initialPromptRef.current = "";
     initialFilesRef.current = [];
     respond(handedOff, "", handedOffFiles);
-    // Bootstrap once the workspace and its inbox are known.
+    // Bootstrap once the scope and its inbox are known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceSlug, approvalsQ.isLoading]);
+  }, [scope, approvalsQ.isLoading]);
 
   const threadMessages = useMemo(
     () =>
@@ -491,7 +502,7 @@ export function BaxterChatPage() {
     );
   }, [galleryTurns, hasThread, approvals, tickets, chat.messages]);
 
-  const promptsDisabled = busy || !workspaceSlug;
+  const promptsDisabled = busy || !scope;
   // One place at a time: the workbench while it is open, under the composer
   // while it is closed — so closing the workbench never takes the prompts away.
   const promptRow = (
@@ -579,6 +590,11 @@ export function BaxterChatPage() {
               <p className="baxter-chat-kicker">{formatDateLine(now)}</p>
               <h1 className="baxter-chat-greeting">{greetingFor(now)}</h1>
               <p className="baxter-chat-summary">{summaryLine}</p>
+              <ChatScopeNote
+                scope={scope}
+                initiatives={initiatives}
+                hostSlug={chat.snapshot?.host_workspace_slug ?? null}
+              />
             </header>
 
             <BaxterHeroAsk
@@ -586,7 +602,7 @@ export function BaxterChatPage() {
               onStop={stopTurn}
               busy={busy}
               stopping={chat.isStopping}
-              blocked={!workspaceSlug}
+              blocked={!scope}
               commandOptions={commandOptions}
               menu={composerMenu}
               prompts={workbenchOpen ? null : promptRow}
@@ -612,7 +628,7 @@ export function BaxterChatPage() {
                   return sent ? (
                     <MessageAttachments
                       attachments={sent}
-                      workspaceSlug={workspaceSlug}
+                      scope={scope}
                       sessionId={chat.sessionId}
                     />
                   ) : null;
@@ -668,7 +684,7 @@ export function BaxterChatPage() {
               onStop={stopTurn}
               busy={busy}
               stopping={chat.isStopping}
-              blocked={!workspaceSlug}
+              blocked={!scope}
               commandOptions={commandOptions}
               menu={composerMenu}
               prompts={workbenchOpen ? null : promptRow}
@@ -692,7 +708,7 @@ export function BaxterChatPage() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onOpenPrimitiveGallery={openPrimitiveGallery}
-        workspaceSlug={workspaceSlug}
+        scope={scope}
         activeSessionId={galleryTurns ? "" : chat.sessionId}
         onSelectSession={(id) => {
           setGalleryTurns(null);

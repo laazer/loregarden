@@ -4,12 +4,13 @@ import { useLocation } from "react-router-dom";
 import { api, type Approval } from "../api/client";
 import type { WorkspaceRuntimeSettings } from "../api/client";
 import { initiativeIdFromPath } from "../lib/appNavigation";
+import { chatScopeInitiativeId, chatScopeWorkspaceSlug } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
-import { useChatWorkspaceSlug } from "./useChatWorkspace";
+import { chatScopeLabel, useChatScopeKey } from "./useChatScope";
 import { useInitiativePlanner } from "./useInitiativePlanner";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
@@ -24,7 +25,8 @@ import { useTriageSession } from "./useTriageSession";
  * or "History" shows the controls only when they would do something.
  */
 export interface ChatArchive {
-  workspaceSlug: string;
+  /** The archive this thread is in: a chat scope key (`lib/chatScope`). */
+  scope: string;
   /** The open thread's id, or "" for a fresh one not yet saved. */
   sessionId: string;
   openSession: (id: string) => void;
@@ -153,15 +155,22 @@ export function useActiveChatSession(): ActiveChatSession {
   // else.
   const initiativeId = initiativeIdFromPath(pathname);
   const plannerOnScreen = initiativeId !== null;
-  const chatWorkspaceSlug = useChatWorkspaceSlug();
+  const chatScope = useChatScopeKey();
+  // Only a focused chat's label needs the list; the key is the picker's, so it is cached.
+  const focusedInitiative = chatScopeInitiativeId(chatScope);
+  const { data: initiatives } = useQuery({
+    queryKey: ["initiatives"],
+    queryFn: api.initiatives,
+    enabled: focusedInitiative !== null,
+  });
   // Bound on the chat page too, though the composer half stays hidden there: the
   // model picker lives in the bar on every screen, and it is the same thread.
   const baxterSession = useBaxterChatSession(
-    !onBranchTriage && !ticketId && !plannerOnScreen ? chatWorkspaceSlug : "",
+    !onBranchTriage && !ticketId && !plannerOnScreen ? chatScope : "",
   );
-  const baxterArchive: ChatArchive | null = chatWorkspaceSlug
+  const baxterArchive: ChatArchive | null = chatScope
     ? {
-        workspaceSlug: chatWorkspaceSlug,
+        scope: chatScope,
         sessionId: baxterSession.sessionId,
         openSession: baxterSession.openSession,
         startNewChat: baxterSession.startNewChat,
@@ -170,11 +179,13 @@ export function useActiveChatSession(): ActiveChatSession {
         forkFromMessage: baxterSession.forkFromMessage,
       }
     : null;
-  const baxterModel: ChatModelBinding | null = chatWorkspaceSlug
+  const baxterModel: ChatModelBinding | null = chatScope
     ? {
         assistant: "Baxter",
         scopeLabel: "Baxter",
-        workspaceSlug: chatWorkspaceSlug,
+        // A global thread runs on its host's runtime, known once the thread exists.
+        workspaceSlug:
+          chatScopeWorkspaceSlug(chatScope) || baxterSession.snapshot?.host_workspace_slug || "",
         runtime: baxterSession.runtime,
         setRuntime: baxterSession.setRuntime,
         isSavingRuntime: baxterSession.isSavingRuntime,
@@ -232,7 +243,7 @@ export function useActiveChatSession(): ActiveChatSession {
       composedOnScreen: true,
       archive: baxterArchive,
       model: baxterModel,
-      screenSession: chatWorkspaceSlug ? baxterSession : null,
+      screenSession: chatScope ? baxterSession : null,
     };
   }
   // No archive — the planner keeps one conversation per initiative — but the
@@ -266,10 +277,10 @@ export function useActiveChatSession(): ActiveChatSession {
       screenSession: null,
     };
   }
-  if (!chatWorkspaceSlug) return none;
+  if (!chatScope) return none;
   return {
     session: baxterSession,
-    label: `Baxter · ${chatWorkspaceSlug}`,
+    label: `Baxter · ${chatScopeLabel(chatScope, initiatives)}`,
     ticketId: null,
     pendingApprovals: baxterSession.pendingApprovals,
     branch: null,

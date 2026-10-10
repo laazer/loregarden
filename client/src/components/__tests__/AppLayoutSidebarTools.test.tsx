@@ -118,7 +118,7 @@ beforeEach(() => {
     // where "All workspaces" is a legitimate place to stay.
     workspace: "all",
     baxterHistoryOpen: false,
-    chatWorkspaceSlug: "",
+    chatScope: "",
   });
   mockedApi.workspaces.mockResolvedValue([
     { slug: "loregarden", name: "Loregarden" },

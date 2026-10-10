@@ -1,10 +1,12 @@
 import { AppTopbarActions } from "./AppTopbarActions";
 import { useChatWorkbench } from "../hooks/useChatWorkbench";
-import { useChatWorkspace } from "../hooks/useChatWorkspace";
+import { useChatScope } from "../hooks/useChatScope";
+import { GLOBAL_CHAT_SCOPE, initiativeChatScope } from "../lib/chatScope";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { TopbarPageSlot } from "./TopbarPageSlot";
 import { Button } from "./ui/Button";
+import { Select } from "./ui/Select";
 
 const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   dashboard: "Agent SDLC · Console",
@@ -33,27 +35,54 @@ function ChatWorkbenchToggle() {
   );
 }
 
-/** Chat answers from one workspace, so the topbar names which one. */
-function ChatWorkspacePicker() {
-  const { slug, setSlug, workspaces } = useChatWorkspace();
+/**
+ * What chat answers about: one workspace, or every workspace at once.
+ *
+ * The global options exist for initiatives, whose milestones span workspaces.
+ * "All workspaces" is an unfocused global chat; picking an initiative focuses
+ * one on that initiative's plan. Each option is its own archive of threads.
+ */
+function ChatScopePicker() {
+  const { scope, setScope, workspaces, initiatives, initiativesLoaded, initiativesError } =
+    useChatScope();
 
   return (
     <label className="topbar-workspace-picker topbar-workspace-picker--fixed">
-      <span className="topbar-workspace-picker-label">Workspace</span>
-      <select
+      <span className="topbar-workspace-picker-label">Scope</span>
+      <Select
         className="btn-secondary topbar-workspace-picker-select"
-        value={slug}
+        value={scope}
         disabled={!workspaces.length}
-        aria-label="Chat workspace"
-        onChange={(event) => setSlug(event.target.value)}
+        aria-label="Chat scope"
+        onChange={(event) => setScope(event.target.value)}
       >
         {workspaces.length ? null : <option value="">No workspaces</option>}
-        {workspaces.map((ws) => (
-          <option key={ws.slug} value={ws.slug}>
-            {ws.name}
-          </option>
-        ))}
-      </select>
+        <optgroup label="Workspace">
+          {workspaces.map((ws) => (
+            <option key={ws.slug} value={ws.slug}>
+              {ws.name}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Global">
+          <option value={GLOBAL_CHAT_SCOPE}>All workspaces</option>
+          {initiatives.map((initiative) => (
+            <option key={initiative.id} value={initiativeChatScope(initiative.id)}>
+              {`Initiative: ${initiative.external_id} · ${initiative.title}`}
+            </option>
+          ))}
+          {!initiativesLoaded ? (
+            <option value="" disabled>
+              Loading initiatives…
+            </option>
+          ) : null}
+          {initiativesError ? (
+            <option value="" disabled>
+              Couldn't load initiatives
+            </option>
+          ) : null}
+        </optgroup>
+      </Select>
     </label>
   );
 }
@@ -94,7 +123,7 @@ export function AppTopbar() {
       <div className="topbar-spacer" />
       {isChat ? (
         <>
-          <ChatWorkspacePicker />
+          <ChatScopePicker />
           <button
             type="button"
             className="btn-secondary topbar-action-btn topbar-action-btn--collapsible"

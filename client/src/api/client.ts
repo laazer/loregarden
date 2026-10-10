@@ -1,3 +1,4 @@
+import { baxterChatArchiveQuery, baxterChatSessionsPath } from "../lib/chatScope";
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
@@ -558,64 +559,59 @@ export const api = {
    */
   stopTriageTurn: (ticketId: string) =>
     request<TriageSnapshot>(`/api/tickets/${ticketId}/triage/stop`, { method: "POST" }),
-  baxterChatSessions: (slug: string) =>
+  // Every Baxter chat endpoint takes a chat *scope* key (see `lib/chatScope`):
+  // a workspace slug, or one of the global archives.
+  baxterChatSessions: (scope: string) =>
     request<BaxterChatSessionSummary[]>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions`,
+      `${baxterChatSessionsPath(scope)}${baxterChatArchiveQuery(scope)}`,
     ),
-  baxterChatSession: (slug: string, sessionId: string) =>
+  baxterChatSession: (scope: string, sessionId: string) =>
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}`),
+  createBaxterChatSession: (scope: string, title = "") =>
     request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
-    ),
-  createBaxterChatSession: (slug: string, title = "") =>
-    request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions`,
+      `${baxterChatSessionsPath(scope)}${baxterChatArchiveQuery(scope)}`,
       { method: "POST", body: JSON.stringify({ title }) },
     ),
-  renameBaxterChatSession: (slug: string, sessionId: string, title: string) =>
-    request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
-      { method: "PATCH", body: JSON.stringify({ title }) },
-    ),
-  deleteBaxterChatSession: (slug: string, sessionId: string) =>
-    request<{ deleted: string }>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
-      { method: "DELETE" },
-    ),
-  setBaxterChatRuntime: (slug: string, sessionId: string, body: WorkspaceRuntimeSettings) =>
-    request<WorkspaceRuntimeSettings>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/runtime`,
-      { method: "PATCH", body: JSON.stringify(body) },
-    ),
+  renameBaxterChatSession: (scope: string, sessionId: string, title: string) =>
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  deleteBaxterChatSession: (scope: string, sessionId: string) =>
+    request<{ deleted: string }>(`${baxterChatSessionsPath(scope)}/${sessionId}`, {
+      method: "DELETE",
+    }),
+  setBaxterChatRuntime: (scope: string, sessionId: string, body: WorkspaceRuntimeSettings) =>
+    request<WorkspaceRuntimeSettings>(`${baxterChatSessionsPath(scope)}/${sessionId}/runtime`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
   sendBaxterChatMessage: (
-    slug: string,
+    scope: string,
     sessionId: string,
     content: string,
     skill = "",
     attachmentIds: string[] = [],
   ) =>
-    request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({ content, skill, attachment_ids: attachmentIds }),
-      },
-    ),
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content, skill, attachment_ids: attachmentIds }),
+    }),
   /** Store one file for the next turn in this conversation. */
-  uploadBaxterChatAttachment: (slug: string, sessionId: string, file: File) => {
+  uploadBaxterChatAttachment: (scope: string, sessionId: string, file: File) => {
     const body = new FormData();
     body.append("file", file, file.name);
-    return request<ChatAttachment>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/attachments`,
-      { method: "POST", body },
-    );
+    return request<ChatAttachment>(`${baxterChatSessionsPath(scope)}/${sessionId}/attachments`, {
+      method: "POST",
+      body,
+    });
   },
   /** Settles the pending turn immediately so the composer unlocks. */
-  stopBaxterChatTurn: (slug: string, sessionId: string) =>
-    request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/stop`,
-      { method: "POST" },
-    ),
+  stopBaxterChatTurn: (scope: string, sessionId: string) =>
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}/stop`, {
+      method: "POST",
+    }),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),

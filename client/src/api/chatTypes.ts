@@ -145,6 +145,12 @@ export interface BaxterChatSessionSummary {
 export interface BaxterChatSnapshot {
   id: string;
   workspace_id: string;
+  /** `global` threads answer across every workspace (see `lib/chatScope`). */
+  scope: "workspace" | "global";
+  /** The initiative a global thread is focused on. */
+  initiative_id: string | null;
+  /** Whose checkout and runtime the turns use; a global thread borrows one. */
+  host_workspace_slug: string | null;
   title: string;
   messages: TriageMessage[];
   /** Home-chat permission/question cards for the in-flight turn (also on the board). */

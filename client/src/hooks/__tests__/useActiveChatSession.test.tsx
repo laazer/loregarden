@@ -78,7 +78,7 @@ beforeEach(() => {
   useUiStore.setState({
     branchTriageWorkspaceSlug: "",
     branchTriageBranch: "",
-    chatWorkspaceSlug: "loregarden",
+    chatScope: "loregarden",
   });
 });
 
@@ -159,7 +159,7 @@ it("binds to nothing on the Baxter chat screen, which composes for itself", () =
   expect(result.current.session).toBeNull();
   expect(result.current.composedOnScreen).toBe(true);
   // The archive still rides along: the bar draws the model picker there.
-  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
+  expect(result.current.archive?.scope).toBe("loregarden");
 });
 
 it("binds to nothing on Home, whose hero is the way into the same thread", () => {
@@ -230,7 +230,7 @@ it("offers the archive on a screen bound to the Baxter thread", () => {
     wrapper: wrapperFor("/queue"),
   });
 
-  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
+  expect(result.current.archive?.scope).toBe("loregarden");
 });
 
 it("keeps the archive off a ticket conversation, which has no other thread", () => {

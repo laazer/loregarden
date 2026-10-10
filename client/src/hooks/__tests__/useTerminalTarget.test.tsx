@@ -33,7 +33,7 @@ beforeEach(() => {
     workspace: "all",
     branchTriageWorkspaceSlug: "",
     branchTriageBranch: "",
-    chatWorkspaceSlug: "",
+    chatScope: "",
   });
 });
 
@@ -96,7 +96,7 @@ it("opens the shell in the workspace the chat screen names", () => {
   // The chat page pins its own workspace, separate from the Console filter.
   // Reading only the filter left the shell dead on chat whenever the Console
   // was showing all workspaces — which is its default.
-  useUiStore.setState({ workspace: "all", chatWorkspaceSlug: "blobert" });
+  useUiStore.setState({ workspace: "all", chatScope: "blobert" });
 
   const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/chat") });
 
@@ -106,7 +106,7 @@ it("opens the shell in the workspace the chat screen names", () => {
 it("leaves the chat workspace on the chat screen", () => {
   // Elsewhere the screen's own workspace wins; chat's pin must not follow the
   // operator onto the Console and open a shell in a repo it is not showing.
-  useUiStore.setState({ workspace: "all", chatWorkspaceSlug: "blobert" });
+  useUiStore.setState({ workspace: "all", chatScope: "blobert" });
 
   const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/queue") });
 

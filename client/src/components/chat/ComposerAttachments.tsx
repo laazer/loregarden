@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { API_BASE, type ChatAttachment } from "../../api/client";
 import { ATTACHMENT_ACCEPT, type PendingAttachment } from "../../hooks/useComposerAttachments";
+import { baxterChatSessionsPath } from "../../lib/chatScope";
 import { Input } from "../ui/Input";
 import "./ComposerAttachments.css";
 
@@ -106,29 +107,26 @@ export function ComposerAttachmentTray({
   );
 }
 
-function chatAttachmentUrl(
-  workspaceSlug: string,
-  sessionId: string,
-  attachmentId: string,
-): string {
-  return `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceSlug)}/baxter-chat/sessions/${sessionId}/attachments/${attachmentId}`;
+function chatAttachmentUrl(scope: string, sessionId: string, attachmentId: string): string {
+  return `${API_BASE}${baxterChatSessionsPath(scope)}/${sessionId}/attachments/${attachmentId}`;
 }
 
 /** What a sent user turn carried, under its bubble. */
 export function MessageAttachments({
   attachments,
-  workspaceSlug,
+  scope,
   sessionId,
 }: {
   attachments: ChatAttachment[];
-  workspaceSlug: string;
+  /** The thread's chat scope key (`lib/chatScope`). */
+  scope: string;
   sessionId: string;
 }) {
   if (attachments.length === 0) return null;
   return (
     <ul className="lg-attachment-tray lg-attachment-tray--sent" aria-label="Files sent with this message">
       {attachments.map((attachment) => {
-        const url = chatAttachmentUrl(workspaceSlug, sessionId, attachment.id);
+        const url = chatAttachmentUrl(scope, sessionId, attachment.id);
         return (
           <li key={attachment.id} className="lg-attachment-chip">
             <a

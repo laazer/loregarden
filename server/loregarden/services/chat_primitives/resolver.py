@@ -6,7 +6,9 @@ display title so a broken link can degrade gracefully.
 
 Resolution is confined to the chat's workspace. `external_id` numbers from 1
 within each workspace (see `services.ticket_ids`), so an unscoped lookup would
-resolve a colliding ref to an arbitrary workspace.
+resolve a colliding ref to an arbitrary workspace. A global chat passes
+``workspace_id=None``: a ticket UUID then resolves in any workspace, and an
+external id resolves nowhere rather than to whichever workspace matched first.
 """
 
 from __future__ import annotations
@@ -30,20 +32,22 @@ from sqlmodel import Session
 
 
 def _resolve_ticket_id(
-    session: Session, ticket_id: str, workspace_id: str
+    session: Session, ticket_id: str, workspace_id: str | None
 ) -> tuple[str, str | None]:
     """Return (canonical_id, title). Refs outside the workspace keep the original id."""
     ticket = session.get(Ticket, ticket_id)
-    if ticket is not None and ticket.workspace_id != workspace_id:
+    if ticket is not None and workspace_id is not None and ticket.workspace_id != workspace_id:
         ticket = None
-    if ticket is None:
+    if ticket is None and workspace_id is not None:
         ticket = resolve_external_id(session, ticket_id, workspace_id=workspace_id)
     if ticket is None:
         return ticket_id, None
     return ticket.id, ticket.title or ticket.external_id or ticket.id
 
 
-def resolve_parts(session: Session, parts: list[ChatPart], *, workspace_id: str) -> list[ChatPart]:
+def resolve_parts(
+    session: Session, parts: list[ChatPart], *, workspace_id: str | None
+) -> list[ChatPart]:
     """Return a new list with refs canonicalized and titles filled where possible."""
     resolved: list[ChatPart] = []
     for part in parts:
