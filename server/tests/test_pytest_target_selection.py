@@ -285,7 +285,12 @@ def test_server_hook_gives_pytest_a_private_temp_root():
     for call in pytest_calls:
         assert '--basetemp="$BASETEMP"' in call, f"pytest call without its own temp root: {call}"
     # Cleanup that cannot itself fail the push.
-    assert "trap 'rm -rf \"$BASETEMP\" 2>/dev/null || true' EXIT" in script
+    # The EXIT trap also prints the step summary, so it is matched by what it
+    # must do — remove the root, and never fail the push doing it — not by its
+    # whole spelling.
+    (trap,) = [line for line in script.splitlines() if line.startswith("trap ")]
+    assert trap.endswith("' EXIT")
+    assert 'rm -rf "$BASETEMP" 2>/dev/null || true' in trap
 
 
 def test_client_hook_narrows_jest_and_keeps_the_wide_checks():

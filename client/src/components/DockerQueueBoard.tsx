@@ -223,6 +223,43 @@ function LeaseActions({
   );
 }
 
+/**
+ * How far a holder has got, as its command last reported: a pre-push suite's
+ * step, and inside a test runner a bar of how many of how many. A command that
+ * never reports shows nothing here — its card still says how long it has run.
+ */
+function HolderProgress({ row }: { row: DockerLeaseRow }) {
+  const { progress } = row;
+  if (!progress) return null;
+  const { done, total } = progress;
+  const fraction = done !== null && total ? Math.min(1, done / total) : null;
+  return (
+    <div className="docker-slot-progress" data-testid={`docker-progress-${row.lease_id}`}>
+      <div className="docker-slot-progress-step" title={progress.summary}>
+        {progress.summary}
+      </div>
+      {fraction !== null ? (
+        <div
+          className="docker-slot-progress-track"
+          role="progressbar"
+          aria-label={`${row.holder.what || "lease"}: ${progress.step}`}
+          aria-valuemin={0}
+          aria-valuemax={total ?? 0}
+          aria-valuenow={done ?? 0}
+        >
+          <div className="docker-slot-progress-fill" style={{ transform: `scaleX(${fraction})` }} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function holderTiming(row: DockerLeaseRow): string {
+  const expiry =
+    row.expires_in_seconds === null ? "no expiry" : `expires in ${formatDuration(row.expires_in_seconds)}`;
+  return row.held_seconds === null ? expiry : `running ${formatDuration(row.held_seconds)} · ${expiry}`;
+}
+
 function HolderSlot({
   row,
   pending,
@@ -253,12 +290,9 @@ function HolderSlot({
             {row.last_probe_error}
           </div>
         ) : null}
+        <HolderProgress row={row} />
         <div className="docker-slot-foot">
-          <span className="docker-slot-expiry">
-            {row.expires_in_seconds === null
-              ? "no expiry"
-              : `expires in ${formatDuration(row.expires_in_seconds)}`}
-          </span>
+          <span className="docker-slot-expiry">{holderTiming(row)}</span>
           <LeaseActions row={row} pending={pending} onEnd={onEnd} />
         </div>
       </div>
