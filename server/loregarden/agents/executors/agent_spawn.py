@@ -49,12 +49,19 @@ class SpawnedAgent:
     `pid` is the wrapper's, which is the session leader and the ancestor a
     `killpg` reaches the agent through. `handle` is None on tmux: tmux owns the
     process, so there is no `Popen` to hold and no child to reap.
+
+    `pid` is None only on tmux, and only for an agent that exited before tmux
+    could name its pane — see `_spawn_in_tmux`. The run then has no process to
+    signal or to record an identity for, and `session` is what answers whether
+    it is still running: tmux destroys a session with its last pane, so the
+    session outliving the pid question means the agent is still working.
     """
 
-    pid: int
+    pid: int | None
     transport_used: AgentTransport
     paths: RunOutputPaths
     handle: subprocess.Popen | None
+    session: str | None = None
 
 
 def resolve_transport(pinned: AgentTransport | None) -> AgentTransport:
@@ -125,10 +132,15 @@ def spawn_agent(
         # hands it to the child directly, and a FILE-transport run should not
         # leave its credentials in a file nothing reads.
         write_env_file(paths, env)
-        pid = _spawn_in_tmux(
-            wrapped, cwd=cwd, env=env, paths=paths, stem=run_file_stem(run_code, run_id)
+        stem = run_file_stem(run_code, run_id)
+        pid = _spawn_in_tmux(wrapped, cwd=cwd, env=env, paths=paths, stem=stem)
+        return SpawnedAgent(
+            pid=pid,
+            transport_used=transport,
+            paths=paths,
+            handle=None,
+            session=tmux_session_name(stem),
         )
-        return SpawnedAgent(pid=pid, transport_used=transport, paths=paths, handle=None)
     proc = _spawn_detached(wrapped, cwd=cwd, env=env)
     return SpawnedAgent(pid=proc.pid, transport_used=transport, paths=paths, handle=proc)
 
@@ -213,7 +225,7 @@ def _spawn_in_tmux(
     env: dict[str, str],
     paths: RunOutputPaths,
     stem: str,
-) -> int:
+) -> int | None:
     """Run the wrapper as a detached tmux pane, and report the pane's pid.
 
     The pane process IS the wrapper, so the recorded pid is the same kind of pid
@@ -222,25 +234,76 @@ def _spawn_in_tmux(
     falling back — reporting FILE for a run nobody can attach to would be the
     column asserting something untrue.
 
+    The pid comes back from `new-session` itself (`-P -F`) rather than from a
+    second `display-message` call. A pane that has already exited takes its
+    session with it, so the second call raced the agent: it exited 1 — or
+    printed nothing, which `int()` turned into a `ValueError` — and an agent
+    that had already done its work and recorded its exit code died as an
+    exception with no status instead. The short-lived agents are the ones that
+    fail fast (a bad argv, an expired token), which is exactly when the status
+    matters.
+
+    None therefore means "the pane is already gone", not "the spawn failed":
+    the wrapper wrote `.rc` before it exited, and that is what settles the run.
+
     The pane command sources its own environment (`_under_env`) because `env=`
     below reaches only the tmux client. `cwd` does NOT need the same treatment:
     the client resolves it and hands the server the result as the session's
     start directory.
     """
     session = tmux_session_name(stem)
-    subprocess.run(
-        ["tmux", "new-session", "-d", "-s", session, *_under_env(paths, wrapped)],
-        cwd=cwd,
-        env=env,
-        check=True,
-        capture_output=True,
-    )
-    pane = subprocess.run(
-        ["tmux", "display-message", "-p", "-t", session, "#{pane_pid}"],
+    created = subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_pid}",
+            "-s",
+            session,
+            *_under_env(paths, wrapped),
+        ],
         cwd=cwd,
         env=env,
         check=True,
         capture_output=True,
         text=True,
     )
-    return int(pane.stdout.strip())
+    reported = created.stdout.strip()
+    if reported.isdigit():
+        return int(reported)
+    logger.warning(
+        "tmux started session %s but reported no pane pid (%r); the agent exited before "
+        "tmux could name it, so this run is supervised and settled from its .rc file "
+        "rather than from a pid",
+        session,
+        reported,
+    )
+    return None
+
+
+def tmux_session_gone(session: str) -> bool:
+    """Whether `session` no longer exists — tmux's answer to "is it finished?".
+
+    tmux destroys a session with its last pane, so the session's existence is
+    the liveness of the pane process. This is the only liveness test available
+    for a pane tmux never named a pid for, and it is the *safe* direction of
+    that gap: settling a run whose agent is still appending to `.out` would have
+    the orchestrator commit the working tree out from under it.
+
+    A tmux that cannot be asked at all — its server died, which it may do
+    independently of both the agent and loregarden — reads as gone, which is
+    the same answer a dead pane gives and settles the run from whatever `.rc`
+    holds. There is no third outcome to report: with no pid and no tmux there is
+    nothing left to watch the run with.
+    """
+    asked = subprocess.run(
+        ["tmux", "has-session", "-t", session],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if asked.returncode != 0:
+        logger.info("tmux reports session %s gone: %s", session, asked.stderr.strip())
+    return asked.returncode != 0

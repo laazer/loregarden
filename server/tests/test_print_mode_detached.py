@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
+from unittest import mock
 from uuid import uuid4
 
 import pytest
@@ -357,6 +358,39 @@ def test_a_prompt_larger_than_the_pipe_buffer_still_arrives(
 
     assert status is RunStatus.SUCCEEDED
     assert int(stdout.strip()) == len(prompt)
+
+
+def test_an_agent_gone_before_tmux_named_its_pane_is_still_reported_from_rc(
+    db_session: Session, run_log_dir, run_key, pinned_transport
+):
+    """AC2/AC18. A pane tmux could not name is a finished run, not a failure.
+
+    RED in CI at a0041e88 for every fast-exiting agent on a host with tmux: the
+    pane pid was read by a second tmux call, the session was already gone, and
+    the exception replaced the status. It did not stop at this module — a
+    pipeline stage whose agent binary is missing exits in milliseconds, so
+    `BuiltinOrchestrator.execute` raised instead of gating, and
+    `test_exit_action_continuation` failed with no approval row at all.
+
+    With no pid there is nothing to watch or signal, so the loop settles the run
+    from `.rc` exactly as it would for a wrapper it had watched exit.
+    """
+    pinned_transport(AgentTransport.TMUX)
+    real = subprocess.run
+
+    def without_a_pid(argv, *args, **kwargs):
+        completed = real(argv, *args, **kwargs)
+        if list(argv)[:2] == ["tmux", "new-session"]:
+            completed.stdout = "\n"
+        return completed
+
+    with mock.patch(
+        "loregarden.agents.executors.agent_spawn.subprocess.run", side_effect=without_a_pid
+    ):
+        _stdout, _stderr, status = _run(db_session, run_key, "raise SystemExit(4)")
+
+    assert status is RunStatus.FAILED
+    assert run_key.paths.rc.read_text() == "4"
 
 
 # --- AC5: which budget fired, on both transports -----------------------------

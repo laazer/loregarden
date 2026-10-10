@@ -306,6 +306,62 @@ def test_a_tmux_spawn_that_cannot_start_a_session_is_not_silently_a_file_run(run
         _spawn(run_key, AgentTransport.TMUX, "print('never runs')")
 
 
+@has_tmux
+def test_the_pane_pid_comes_from_the_spawn_itself(run_log_dir, run_key, tmux_cleanup):
+    """One tmux call, not two: the second one raced the agent.
+
+    RED in CI at a0041e88. The pid was read with a follow-up
+    `tmux display-message -p -t <session> '#{pane_pid}'`, and a pane that has
+    already exited takes its session with it — so for a fast agent that call
+    exited 1 (`CalledProcessError`) or printed nothing (`int("")`), and an
+    agent that had already run and recorded its exit code died as an exception
+    with no status at all. The agents that exit in milliseconds are the ones
+    that fail fast — a missing binary, an expired token — which is exactly when
+    the status matters.
+    """
+    calls: list[list[str]] = []
+    real = subprocess.run
+
+    def recording(argv, *args, **kwargs):
+        calls.append(list(argv))
+        return real(argv, *args, **kwargs)
+
+    with mock.patch(
+        "loregarden.agents.executors.agent_spawn.subprocess.run", side_effect=recording
+    ):
+        spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
+
+    tmux_calls = [argv[:2] for argv in calls if argv[0] == "tmux"]
+    assert tmux_calls == [["tmux", "new-session"]]
+    assert spawned.pid == os.getpgid(spawned.pid)
+
+
+@has_tmux
+def test_an_agent_gone_before_tmux_names_its_pane_still_settles(run_log_dir, run_key):
+    """No pane pid means "already finished", not "the spawn failed".
+
+    The run is then supervised and settled from `.rc`, which the wrapper wrote
+    before it exited. Raising here instead is what turned a FAILED run into an
+    exception with no status.
+    """
+    real = subprocess.run
+
+    def without_a_pid(argv, *args, **kwargs):
+        completed = real(argv, *args, **kwargs)
+        if list(argv)[:2] == ["tmux", "new-session"]:
+            completed.stdout = "\n"
+        return completed
+
+    with mock.patch(
+        "loregarden.agents.executors.agent_spawn.subprocess.run", side_effect=without_a_pid
+    ):
+        spawned = _spawn(run_key, AgentTransport.TMUX, "raise SystemExit(7)")
+
+    assert spawned.pid is None
+    assert spawned.transport_used is AgentTransport.TMUX
+    assert _wait_for_rc(run_key) == "7"
+
+
 # --- AC1/AC3/AC18: the prompt arrives on EVERY transport ---------------------
 
 
@@ -351,25 +407,30 @@ def test_the_wrapper_redirects_stdin_only_when_there_is_a_prompt(transport, run_
 # --- AC20: the migration -----------------------------------------------------
 
 MIGRATION_ID = "20261008_agent_run_transport"
-#: Re-parented at the integration merge. AC20 wrote this as
-#: `20261007_layout_by_question`, which was the registry tip when the spec was
-#: authored; main then landed `20261008_handoff_notice_kind` on that same
-#: parent. Two branches off one tip make the apply order between them id order
-#: rather than the order the live database actually saw, and the registry warns
-#: about exactly that. This column has not shipped, so it moves to the end of
-#: the shipped chain; the migrations ahead of it already applied live.
-PREDECESSOR = "20261009_sonnet_for_mechanical_lanes"
 
 
 def test_the_transport_column_ships_as_a_named_module():
     """AC20. The numbered list is CLOSED; new migrations are named modules
     registered with `@migration(id, after=...)`. This corrects the plan's
-    step-5 guidance, which predates the registry."""
+    step-5 guidance, which predates the registry.
+
+    The predecessor is asserted as a *property* rather than as a literal id.
+    AC20 wrote it as `20261007_layout_by_question`, the registry tip when the
+    spec was authored, and every merge from main since has moved that tip — so
+    a named parent makes this test fail on main's landings rather than on
+    anything about this column. What has to hold is that the column is the
+    chain's tail, parented on a migration that exists: two migrations off one
+    parent make the apply order between them id order rather than the order the
+    live database saw, which is what `test_the_real_chain_does_not_fork`
+    reports.
+    """
     import_submodules(versions)
     registered = {m.id: m for m in versions.REGISTRY.registered()}
 
     assert MIGRATION_ID in registered, sorted(registered)
-    assert registered[MIGRATION_ID].after == PREDECESSOR
+    predecessor = registered[MIGRATION_ID].after
+    assert predecessor in registered, predecessor
+    assert [m.id for m in registered.values() if m.after == MIGRATION_ID] == []
 
 
 def test_no_numbered_migration_id_is_claimed():

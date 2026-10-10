@@ -43,6 +43,7 @@ from loregarden.agents.executors.agent_spawn import (
     record_agent_transport,
     resolve_transport,
     spawn_agent,
+    tmux_session_gone,
     transport_line,
 )
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
@@ -171,9 +172,17 @@ def _wrapper_exited(spawned: SpawnedAgent) -> bool:
     the test and the reap — `os.kill(pid, 0)` would succeed on a zombie and read
     a finished run as a live one. A tmux pane is not our child, so the pane's
     pid is asked directly and tmux does the reaping.
+
+    No pid at all is only reachable on tmux (`_spawn_in_tmux`), and tmux is
+    then the only thing that can still answer: it destroys a session with its
+    last pane, so a session that is still there is an agent still working.
+    Reading "no pid" as "finished" outright would settle a live run and have
+    the orchestrator commit the tree while the agent was still writing to it.
     """
     if spawned.handle is not None:
         return spawned.handle.poll() is not None
+    if spawned.pid is None:
+        return spawned.session is None or tmux_session_gone(spawned.session)
     try:
         os.kill(spawned.pid, 0)
     except ProcessLookupError:
@@ -199,7 +208,12 @@ def _kill_agent_group(spawned: SpawnedAgent) -> None:
     not kill what it is waiting on. The agent is a child of the wrapper, in the
     wrapper's group, so this is what reaches it — the same identity the detached
     stop path rests on.
+
+    A run with no pid has no group left to signal; `_wrapper_exited` already
+    reads it as finished, so there is nothing here to do.
     """
+    if spawned.pid is None:
+        return
     try:
         os.killpg(os.getpgid(spawned.pid), signal.SIGKILL)
     except ProcessLookupError:
@@ -251,7 +265,13 @@ def run_print_mode(
     # Recorded together, and immediately: the identity is the process start
     # time, so it has to be read while this pid is still certainly ours. A
     # pid stored without one is a number a later process can wear.
-    record_process_identity(run_id, spawned.pid)
+    #
+    # An absent pid is recorded as nothing rather than as a zero: the agent
+    # exited before tmux could name its pane, so there is no process to
+    # identify, and `run_reattach` declining to adopt a run with no identity
+    # is the right answer for one that has already finished.
+    if spawned.pid is not None:
+        record_process_identity(run_id, spawned.pid)
     record_agent_transport(run_id, spawned.transport_used)
     # Announced from `transport_used` rather than from a second reading of the
     # host, and AFTER the spawn rather than before it: a tmux spawn that raises

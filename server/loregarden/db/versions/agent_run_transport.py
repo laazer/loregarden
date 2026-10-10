@@ -13,7 +13,7 @@ from loregarden.db.versions import migration
 from sqlalchemy import Connection
 
 
-@migration("20261008_agent_run_transport", after="20261009_sonnet_for_mechanical_lanes")
+@migration("20261008_agent_run_transport", after="20261009_motion_guide")
 def m_agent_run_transport(conn: Connection) -> None:
     add_columns_if_missing(
         conn,
