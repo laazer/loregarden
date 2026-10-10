@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
@@ -26,6 +27,7 @@ from loregarden.services.doctor import (
     CHECKS,
     DISPATCH_PREFLIGHT_CHECKS,
     check_backend_reload_sentinel,
+    check_gh_account,
     check_git_core_bare,
     check_git_env_leak,
     check_repo_has_commit,
@@ -34,6 +36,8 @@ from loregarden.services.doctor import (
     preflight_summary,
     run_checks,
 )
+from loregarden.services.git_subprocess import GH_USER_ENV, GhAccountUnavailable, GhLogin
+from loregarden.services.preflight_ledger import PreflightLedger
 from sqlmodel import Session
 from tests.worktree_helpers import git, make_repo
 
@@ -328,7 +332,7 @@ def test_a_healthy_preflight_records_no_failures(session, workspace, repo, monke
     session.refresh(ticket)
     run = _run(session, workspace, ticket)
 
-    findings = preflight_run(session, run, workspace, repo)
+    findings = preflight_run(session, run, workspace, repo, ledger=PreflightLedger())
 
     assert all(f.status is not DoctorStatus.FAIL for f in findings)
     session.refresh(run)
@@ -343,7 +347,7 @@ def test_the_preflight_records_which_checks_failed(session, workspace, repo):
     session.refresh(ticket)
     run = _run(session, workspace, ticket)
 
-    preflight_run(session, run, workspace, repo)
+    preflight_run(session, run, workspace, repo, ledger=PreflightLedger())
 
     session.refresh(run)
     assert json.loads(run.start_preflight_failures_json) == [DoctorCheck.GIT_CORE_BARE.value]
@@ -366,7 +370,9 @@ def test_the_preflight_runs_only_the_fast_subset(session, workspace, repo, monke
     session.commit()
     session.refresh(ticket)
 
-    preflight_run(session, _run(session, workspace, ticket), workspace, repo)
+    preflight_run(
+        session, _run(session, workspace, ticket), workspace, repo, ledger=PreflightLedger()
+    )
 
     assert ran == list(DISPATCH_PREFLIGHT_CHECKS)
     assert DoctorCheck.GIT_PORTABILITY not in ran
@@ -382,3 +388,58 @@ def test_the_summary_carries_the_remediation_not_just_the_diagnosis(session, wor
     assert "core.bare false" in summary
     # Approving is not a fix, and must not read as one.
     assert "does not fix" in summary
+
+
+# -- gh account ---------------------------------------------------------------
+
+_TWO_ACCOUNTS = [
+    GhLogin(login="whjake", active=True, state="success"),
+    GhLogin(login="laazer", active=False, state="success"),
+]
+
+
+def _gh_account_finding(session, workspace, repo, logins):
+    with mock.patch("loregarden.services.doctor.gh_logins", return_value=logins):
+        return check_gh_account(session, workspace, repo)
+
+
+def test_several_accounts_and_none_configured_warns_naming_the_active_one(session, workspace, repo):
+    finding = _gh_account_finding(session, workspace, repo, _TWO_ACCOUNTS)
+
+    assert finding.status is DoctorStatus.WARN
+    assert "whjake" in finding.finding
+    assert GH_USER_ENV in finding.remediation
+
+
+def test_one_account_and_none_configured_passes(session, workspace, repo):
+    finding = _gh_account_finding(session, workspace, repo, _TWO_ACCOUNTS[:1])
+
+    assert finding.status is DoctorStatus.PASS
+
+
+def test_a_configured_account_that_is_signed_in_passes(session, workspace, repo, monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+
+    finding = _gh_account_finding(session, workspace, repo, _TWO_ACCOUNTS)
+
+    assert finding.status is DoctorStatus.PASS
+    assert "laazer" in finding.finding
+
+
+def test_a_configured_account_that_is_not_signed_in_fails(session, workspace, repo, monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    signed_out = [GhLogin(login="laazer", active=False, state="error"), _TWO_ACCOUNTS[0]]
+
+    finding = _gh_account_finding(session, workspace, repo, signed_out)
+
+    assert finding.status is DoctorStatus.FAIL
+
+
+def test_a_configured_account_with_no_gh_fails(session, workspace, repo, monkeypatch):
+    monkeypatch.setenv(GH_USER_ENV, "laazer")
+    with mock.patch(
+        "loregarden.services.doctor.gh_logins", side_effect=GhAccountUnavailable("no gh")
+    ):
+        finding = check_gh_account(session, workspace, repo)
+
+    assert finding.status is DoctorStatus.FAIL

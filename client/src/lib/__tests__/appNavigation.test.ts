@@ -1,6 +1,6 @@
 import {
   artifactTabFromPath,
-  isArtifactsSubTab,
+  canonicalArtifactTab,
   pageFromPath,
   pathForPage,
   PRIMARY_ARTIFACT_TABS,
@@ -15,7 +15,16 @@ import {
   ticketPath,
   viewIdFromPath,
   viewPath,
+  workspacesPath,
+  workspacesTabFromPath,
 } from "../appNavigation";
+import { useTicketRefStore } from "../../state/ticketRefStore";
+
+const UUID = "41aac2d7-26a6-4f0b-988a-fc220d8dfa6c";
+
+beforeEach(() => {
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+});
 
 describe("appNavigation", () => {
   it("maps known paths to app pages", () => {
@@ -29,6 +38,19 @@ describe("appNavigation", () => {
     expect(pageFromPath("/queue")).toBe("queue");
     expect(pageFromPath("/branch-triage")).toBe("branch-triage");
     expect(pageFromPath("/tickets/abc-123/diff")).toBe("dashboard");
+  });
+
+  it("keeps the Workspaces page, and its old /instances address, on one sidebar item", () => {
+    expect(pageFromPath("/workspaces")).toBe("workspaces");
+    expect(pageFromPath("/workspaces/instances")).toBe("workspaces");
+    expect(pageFromPath("/instances")).toBe("workspaces");
+    expect(pathForPage("workspaces")).toBe("/workspaces");
+  });
+
+  it("round-trips each Workspaces tab through its path", () => {
+    expect(workspacesTabFromPath(workspacesPath("workspaces"))).toBe("workspaces");
+    expect(workspacesTabFromPath(workspacesPath("instances"))).toBe("instances");
+    expect(workspacesTabFromPath("/workspaces/instancesx")).toBe("workspaces");
   });
 
   it("falls back to home for unknown paths", () => {
@@ -47,22 +69,22 @@ describe("appNavigation", () => {
 
   it("builds and parses ticket routes", () => {
     expect(ticketPath("abc-123")).toBe("/tickets/abc-123/diff");
-    expect(ticketPath("abc-123", "logs")).toBe("/tickets/abc-123/logs");
-    expect(artifactTabFromPath("/tickets/abc-123/logs")).toBe("logs");
+    expect(ticketPath("abc-123", "timeline")).toBe("/tickets/abc-123/timeline");
+    expect(artifactTabFromPath("/tickets/abc-123/timeline")).toBe("timeline");
     expect(artifactTabFromPath("/tickets/abc-123")).toBeNull();
   });
 
-  it("keeps artifacts sub-tabs routable but off the primary bar", () => {
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("errors");
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("context");
-    expect(PRIMARY_ARTIFACT_TABS).not.toContain("ledger");
-    expect(PRIMARY_ARTIFACT_TABS).toContain("artifacts");
-    expect(isArtifactsSubTab("artifacts")).toBe(true);
-    expect(isArtifactsSubTab("errors")).toBe(true);
-    expect(isArtifactsSubTab("context")).toBe(true);
-    expect(isArtifactsSubTab("ledger")).toBe(true);
-    expect(isArtifactsSubTab("diff")).toBe(false);
-    expect(artifactTabFromPath("/tickets/abc-123/errors")).toBe("errors");
+  it("opens a retired tab's link on the view that holds it now", () => {
+    // Links written before Timeline/Outputs merged them must not land on Diff.
+    for (const retired of ["logs", "errors", "context", "ledger"]) {
+      expect(canonicalArtifactTab(retired)).toBe("timeline");
+      expect(artifactTabFromPath(`/tickets/abc-123/${retired}`)).toBe("timeline");
+    }
+    for (const retired of ["artifacts", "tests"]) {
+      expect(canonicalArtifactTab(retired)).toBe("outputs");
+    }
+    expect(canonicalArtifactTab("nonsense")).toBeNull();
+    expect(PRIMARY_ARTIFACT_TABS).not.toContain("monitor");
   });
 
   it("builds and parses studio routes", () => {
@@ -100,20 +122,34 @@ describe("appNavigation", () => {
     // Same guarantee for a ticket segment: it does not throw. It answers null
     // rather than `%` because a malformed segment is not a ticket id either —
     // see the shareable-id case below.
-    expect(ticketIdFromPath("/tickets/%/diff")).toBeNull();
+    expect(ticketIdFromPath("/tickets/%/diff", {})).toBeNull();
   });
 
-  it("reads the ticket id from a canonical ticket path", () => {
-    const uuid = "41aac2d7-26a6-4f0b-988a-fc220d8dfa6c";
-    expect(ticketIdFromPath(`/tickets/${uuid}/diff`)).toBe(uuid);
-    expect(ticketIdFromPath(`/tickets/${uuid}`)).toBe(uuid);
-    expect(ticketIdFromPath("/console")).toBeNull();
+  it("reads the ticket id from a UUID ticket path", () => {
+    expect(ticketIdFromPath(`/tickets/${UUID}/diff`, {})).toBe(UUID);
+    expect(ticketIdFromPath(`/tickets/${UUID}`, {})).toBe(UUID);
+    expect(ticketIdFromPath("/console", {})).toBeNull();
+  });
+
+  it("reads the UUID behind a shareable id once it is known", () => {
+    const known = { "lor-mcp-gateway-142": UUID };
+    expect(ticketIdFromPath("/tickets/lor-mcp-gateway-142/diff", known)).toBe(UUID);
   });
 
   it("reports no ticket while a shareable id is still being resolved", () => {
     // App chrome reads the path directly, so answering with the ref would make
     // it fetch ticket-scoped endpoints under an id none of them accept.
-    expect(ticketIdFromPath("/tickets/lor-mcp-gateway-142/diff")).toBeNull();
-    expect(ticketIdFromPath("/tickets/456-one-dispatch-decision/diff")).toBeNull();
+    expect(ticketIdFromPath("/tickets/lor-mcp-gateway-142/diff", {})).toBeNull();
+    expect(ticketIdFromPath("/tickets/456-one-dispatch-decision/diff", {})).toBeNull();
+  });
+
+  it("links a ticket by its shareable id once it is known", () => {
+    useTicketRefStore.getState().remember({ id: UUID, external_id: "lor-mcp-gateway-142" });
+    expect(ticketPath(UUID, "timeline")).toBe("/tickets/lor-mcp-gateway-142/timeline");
+  });
+
+  it("keeps the UUID for a ticket with no shareable id", () => {
+    useTicketRefStore.getState().remember({ id: UUID, external_id: "" });
+    expect(ticketPath(UUID)).toBe(`/tickets/${UUID}/diff`);
   });
 });

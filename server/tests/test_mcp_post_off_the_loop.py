@@ -18,7 +18,7 @@ from loregarden.main import app
 
 
 async def test_a_slow_tool_does_not_park_the_rest_of_the_server():
-    def slow_tool(session, body, *, orchestrated):
+    def slow_tool(session, body, *, orchestrated, run_id):
         time.sleep(1.0)  # a synchronous tool, the way every tool is
         return {"jsonrpc": "2.0", "id": body.get("id"), "result": {"slow": True}}
 

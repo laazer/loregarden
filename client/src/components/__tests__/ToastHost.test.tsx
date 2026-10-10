@@ -1,5 +1,6 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 
 import { pushToast, useToastStore } from "../../state/toastStore";
 import { ToastHost } from "../ToastHost";
@@ -8,9 +9,28 @@ beforeEach(() => {
   useToastStore.getState().clear();
 });
 
-it("renders nothing until something fails", () => {
-  const { container } = render(<ToastHost />);
-  expect(container).toBeEmptyDOMElement();
+it("shows no toast until something fails", () => {
+  render(<ToastHost />);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("removes a dismissed toast once its exit has played, under the app's motion providers", async () => {
+  const user = userEvent.setup();
+  render(
+    <LazyMotion features={domAnimation} strict>
+      <MotionConfig reducedMotion="user">
+        <ToastHost />
+      </MotionConfig>
+    </LazyMotion>,
+  );
+
+  act(() => {
+    pushToast({ tone: "error", title: "Save file failed" });
+  });
+  await user.click(screen.getByRole("button", { name: "Dismiss: Save file failed" }));
+
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
 });
 
 it("announces a failure as an alert", () => {

@@ -271,6 +271,26 @@ export function readCanvasItems(layout: ViewLayout): CanvasItemModel[] {
   return items.map((entry) => entry.item);
 }
 
+/**
+ * `items` in the order they were last drawn, with any new ones after them.
+ *
+ * The order elements sit in the DOM, which is deliberately *not* the stacking
+ * order: stacking is `z-index`, and drawing in z-order means a raise moves the
+ * raised element to the end of its parent. Moving an element detaches it, which
+ * drops the pointer capture a drag holds (the drag stops following the cursor and
+ * its `pointerup` lands elsewhere), blurs it if focused, and reloads any iframe
+ * inside it.
+ */
+export function inDrawnOrder(
+  previous: readonly string[],
+  items: readonly CanvasItemModel[],
+): CanvasItemModel[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const kept = previous.flatMap((id) => byId.get(id) ?? []);
+  const known = new Set(previous);
+  return [...kept, ...items.filter((item) => !known.has(item.id))];
+}
+
 function itemToJson(item: CanvasItemModel): Json {
   return {
     id: item.id,

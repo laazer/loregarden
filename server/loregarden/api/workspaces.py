@@ -10,8 +10,10 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
     WorkspaceTemplateUpdate,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
+    get_ticket_orchestration_runtime,
     runtime_options_payload,
     validated_effort_pins,
     workspace_cli_settings,
@@ -20,6 +22,13 @@ from loregarden.services.workflow_service import WorkflowService, resolve_worksp
 from loregarden.services.workspace_paths import (
     resolve_workspace_root,
     workspace_repo_exists,
+)
+from loregarden.services.workspace_repository import (
+    RepositoryInitError,
+    RepositoryInspection,
+    initialize_repository,
+    inspect_repo_path,
+    inspect_workspace,
 )
 from sqlmodel import Session, select
 
@@ -33,34 +42,87 @@ def _template_slug(session: Session, workspace: Workspace) -> str:
     return tpl.slug if tpl else ""
 
 
+def _summary(session: Session, ws: Workspace) -> dict:
+    tickets = session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
+    blocked = sum(1 for t in tickets if t.state == TicketState.BLOCKED)
+    return {
+        "id": ws.id,
+        "slug": ws.slug,
+        "name": ws.name,
+        "repo_path": ws.repo_path,
+        "repo_root": str(resolve_workspace_root(ws)),
+        "repo_exists": workspace_repo_exists(ws),
+        "repo_state": inspect_workspace(ws).state,
+        "ticket_count": len(tickets),
+        "blocked_count": blocked,
+        "workflow_template_slug": _template_slug(session, ws),
+        "archived_at": ws.archived_at.isoformat() if ws.archived_at else None,
+        **workspace_cli_settings(ws).__dict__,
+    }
+
+
+def _workspace_or_404(session: Session, slug: str) -> Workspace:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    return ws
+
+
 @router.get("")
 def list_workspaces(session: Session = Depends(get_session)) -> list[dict]:
-    workspaces = session.exec(select(Workspace)).all()
-    result = []
-    for ws in workspaces:
-        tickets = session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
-        blocked = sum(1 for t in tickets if t.state == TicketState.BLOCKED)
-        result.append(
-            {
-                "id": ws.id,
-                "slug": ws.slug,
-                "name": ws.name,
-                "repo_path": ws.repo_path,
-                "repo_root": str(resolve_workspace_root(ws)),
-                "repo_exists": workspace_repo_exists(ws),
-                "ticket_count": len(tickets),
-                "blocked_count": blocked,
-                "workflow_template_slug": _template_slug(session, ws),
-                **workspace_cli_settings(ws).__dict__,
-            }
-        )
-    return result
+    return [_summary(session, ws) for ws in session.exec(select(Workspace)).all()]
+
+
+def _inspection(found: RepositoryInspection) -> dict:
+    return {"repo_root": str(found.root), "state": found.state, "detail": found.detail}
+
+
+@router.get("/repository-probe")
+def probe_repository(path: str) -> dict:
+    """What is at a would-be workspace path, and whether a repository can be created there."""
+    return _inspection(inspect_repo_path(path))
+
+
+@router.post("/{slug}/repository")
+def create_workspace_repository(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Create, populate and commit the workspace's repository at its missing or empty path."""
+    ws = _workspace_or_404(session, slug)
+    try:
+        created = initialize_repository(ws)
+    except RepositoryInitError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {**_summary(session, ws), "follow_up": created.follow_up}
+
+
+@router.post("/{slug}/archive")
+def archive_workspace(slug: str, session: Session = Depends(get_session)) -> dict:
+    """List the workspace apart from the active ones. Idempotent; keeps the first date."""
+    ws = _workspace_or_404(session, slug)
+    if ws.archived_at is None:
+        ws.archived_at = utcnow()
+        session.add(ws)
+        session.commit()
+        session.refresh(ws)
+    return _summary(session, ws)
+
+
+@router.post("/{slug}/restore")
+def restore_workspace(slug: str, session: Session = Depends(get_session)) -> dict:
+    """Return an archived workspace to the active list. Idempotent."""
+    ws = _workspace_or_404(session, slug)
+    if ws.archived_at is not None:
+        ws.archived_at = None
+        session.add(ws)
+        session.commit()
+        session.refresh(ws)
+    return _summary(session, ws)
 
 
 @router.get("/runtime-options")
 def get_runtime_options(
     lmstudio_base_url: str = "",
     workspace: str = "",
+    ticket: str = "",
     session: Session = Depends(get_session),
 ) -> dict:
     """Static Claude/Cursor catalogs + live LM Studio chat models when reachable.
@@ -68,11 +130,20 @@ def get_runtime_options(
     Optional ``lmstudio_base_url`` or ``workspace`` (slug) selects which LM Studio
     server to probe — otherwise the global default URL is used. ``workspace`` also
     resolves the ``effective`` block: the adapter/model/effort a run started now
-    would actually use, which the pin selects alone cannot show.
+    would actually use, which the pin selects alone cannot show. ``ticket`` (id)
+    resolves it for that ticket's runs instead: its own runtime pin over its own
+    workspace, whatever ``workspace`` says.
     """
     base_url = lmstudio_base_url.strip()
     ws: Workspace | None = None
-    if workspace.strip():
+    ticket_runtime: WorkspaceRuntimeSettings | None = None
+    if ticket:
+        ticket_row = session.get(Ticket, ticket)
+        if not ticket_row:
+            raise HTTPException(404, "Ticket not found")
+        ws = session.get(Workspace, ticket_row.workspace_id)
+        ticket_runtime = get_ticket_orchestration_runtime(ticket_row)
+    elif workspace.strip():
         ws = session.exec(select(Workspace).where(Workspace.slug == workspace.strip())).first()
     if not base_url and ws and ws.lmstudio_base_url:
         base_url = ws.lmstudio_base_url
@@ -91,7 +162,9 @@ def get_runtime_options(
     # none of them can emit a lazy query.
     session.close()
 
-    return runtime_options_payload(lmstudio_base_url=base_url, workspace=ws)
+    return runtime_options_payload(
+        lmstudio_base_url=base_url, workspace=ws, ticket_runtime=ticket_runtime
+    )
 
 
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)

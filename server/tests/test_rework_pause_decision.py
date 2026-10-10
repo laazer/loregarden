@@ -259,6 +259,54 @@ def test_cap_files_a_decision_not_an_empty_handover(
     assert "round four" in pause.impact
 
 
+def test_the_driver_files_one_card_for_a_pause_not_two(
+    db_session: Session, review_ticket, monkeypatch
+):
+    """lg-durable-remote-336 got a REWORK_PAUSE and, 36ms later, a HUMAN_ACTION.
+
+    The stage's routing filed the pause and blocked the ticket; the driver then
+    blocked it again with the reviewers' joined text, and a reviewer writing
+    "for a human" read as a handover. The test above calls
+    `_execute_parallel_stage` and so never reached the driver's second block."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    ticket, orch_run, review_def = review_ticket
+    _fill_ledger_to_cap(db_session, ticket)
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        run.status = RunStatus.SUCCEEDED
+        run.stdout = (
+            _report(
+                "needs_rework",
+                0.9,
+                reroute_to_stage="implement",
+                reroute_context="a false STUCK could block the ticket for a human",
+            )
+            if run.agent_id == "static_qa"
+            else _report("pass", 0.95)
+        )
+        run.stderr = ""
+        self.session.add(run)
+        self.session.commit()
+        return run
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    stop = BuiltinOrchestrator(db_session)._run_parallel_stage_or_stop(
+        ticket, orch_run, review_def, "script_review", auto_approve=False, resuming=False
+    )
+    db_session.refresh(ticket)
+
+    assert stop is True
+    assert ticket.state == TicketState.BLOCKED
+    pending = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id, Approval.status == ApprovalStatus.PENDING
+        )
+    ).all()
+    assert [approval.kind for approval in pending] == [ApprovalKind.REWORK_PAUSE]
+
+
 def test_the_pause_card_offers_somewhere_to_route(db_session: Session, review_ticket):
     """A reject with nowhere to send the work is the dead end this replaces."""
     from loregarden.services.approval_views import approval_to_view
@@ -385,23 +433,26 @@ def test_the_reset_keeps_the_feedback_the_next_round_needs(db_session: Session, 
 
 
 def test_an_unattended_run_cannot_sign_off_its_own_pause(db_session: Session, review_ticket):
-    """The reason this is not a WORKFLOW_GATE. `auto_resolve_awaiting_gate` looks
-    for a pending gate on the stage; had the pause been one, an auto_approve run
-    would approve it and walk through the cap raised to stop it looping."""
+    """A rework pause is not a WORKFLOW_GATE. auto_approve and resolve_gate_if_permitted
+    must leave it pending; the deleted auto_resolve path must stay gone.
+    """
+    from loregarden.models.domain import WorkflowStageDef
     from loregarden.services.rework_pause import file_rework_pause
-    from loregarden.services.subtree_auto_run import auto_resolve_awaiting_gate
+    from loregarden.services.subtree_auto_run import resolve_gate_if_permitted
 
     ticket, orch_run, _ = review_ticket
     pause = file_rework_pause(
         db_session, ticket, stage_key="script_review", target_stage="implement", message="Paused."
     )
+    stage = WorkflowStageDef(key="script_review", name="Review", agent_id="")
 
-    assert auto_resolve_awaiting_gate(db_session, ticket, orch_run, "script_review") is False
+    assert (
+        resolve_gate_if_permitted(db_session, ticket, orch_run, stage, auto_approve=True) is False
+    )
     db_session.refresh(pause)
     assert pause.status is ApprovalStatus.PENDING
 
-    with pytest.raises(ValueError, match="workflow-gate"):
-        ApprovalService(db_session).auto_resolve(pause.id, orchestration_run_id=orch_run.id)
+    assert not hasattr(ApprovalService(db_session), "auto_resolve")
 
 
 # --------------------------------------------------------------------------- #

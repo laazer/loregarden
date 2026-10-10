@@ -23,7 +23,11 @@ import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
 import { useStickToBottom } from "../chat/useStickToBottom";
+import { Textarea } from "../ui/Textarea";
 import "../chat/ChatLook.css";
+
+/** Copy alone — the row every turn gets when the host adds nothing to it. */
+const NO_MESSAGE_HANDLERS: ChatMessageActionHandlers = {};
 
 export type StudioAssistantActivity = "thinking" | "typing";
 
@@ -205,35 +209,40 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           const oneShotTask = runSummary ? null : agentPlanRequestTask(body);
           return (
             <div key={message.id} className="lg-chat-turn lg-chat-turn--user">
-              {runSummary ? (
-                <div className="lg-chat-action-chip" title={body}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  <span>
-                    Ran {runSummary.title}
-                    {runSummary.steps
-                      ? ` · ${runSummary.steps} step${runSummary.steps === 1 ? "" : "s"}`
-                      : ""}
-                  </span>
-                </div>
-              ) : oneShotTask ? (
-                <div className="lg-chat-user-stack">
+              <div className="lg-chat-user-col">
+                {runSummary ? (
                   <div className="lg-chat-action-chip" title={body}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                      <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                      <path d="M8 5v14l11-7z" />
                     </svg>
-                    <span>Asked for a plan</span>
+                    <span>
+                      Ran {runSummary.title}
+                      {runSummary.steps
+                        ? ` · ${runSummary.steps} step${runSummary.steps === 1 ? "" : "s"}`
+                        : ""}
+                    </span>
                   </div>
+                ) : oneShotTask ? (
+                  <div className="lg-chat-user-stack">
+                    <div className="lg-chat-action-chip" title={body}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                      </svg>
+                      <span>Asked for a plan</span>
+                    </div>
+                    <div className="lg-chat-user-bubble">
+                      <MarkdownContent content={oneShotTask} />
+                    </div>
+                  </div>
+                ) : (
                   <div className="lg-chat-user-bubble">
-                    <MarkdownContent content={oneShotTask} />
+                    <MarkdownContent content={body} />
                   </div>
-                </div>
-              ) : (
-                <div className="lg-chat-user-bubble">
-                  <MarkdownContent content={body} />
-                </div>
-              )}
+                )}
+                {/* Copy only: forking or filing what the operator typed is not
+                    something any surface offers. */}
+                <ChatMessageActions message={message} body={body} handlers={NO_MESSAGE_HANDLERS} />
+              </div>
               {renderAfterMessage?.(message)}
             </div>
           );
@@ -245,13 +254,15 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         // row, so a sibling here would sit to the right of the reply rather
         // than under it — and the column's avatar gutter is what lines the row
         // up with the prose it acts on.
-        const actionsRow = messageActions ? (
+        // Copy needs nothing from the host, so every thread gets the row; a
+        // host's handlers only add Fork and Start as ticket to it.
+        const actionsRow = (
           <ChatMessageActions
             message={message}
             body={textBody || body}
-            handlers={messageActions}
+            handlers={messageActions ?? NO_MESSAGE_HANDLERS}
           />
-        ) : null;
+        );
         const reply = (
           <>
             {leadingReasoning}
@@ -268,6 +279,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         return (
           <div
             key={message.id}
+            data-message-id={message.id}
             className={[
               "lg-chat-turn",
               "lg-chat-turn--assistant",
@@ -380,6 +392,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   );
 });
 
+
+/** How tall a dense composer's box grows before it scrolls — about eight lines. */
+const DENSE_MAX_INPUT_PX = 168;
 export function StudioChatComposer({
   value,
   onChange,
@@ -399,6 +414,9 @@ export function StudioChatComposer({
   iconOnlySend,
   commands,
   dense = false,
+  accessory,
+  onFiles,
+  canSendEmpty = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -437,9 +455,26 @@ export function StudioChatComposer({
    * `.lg-chat-composer` from its own stylesheet, which is how this started.
    */
   dense?: boolean;
+  /** Rendered inside the box above the input — the attachment tray, today. */
+  accessory?: ReactNode;
+  /** Files pasted or dropped onto the box. Absent, both behave as before. */
+  onFiles?: (files: File[]) => void;
+  /** Allow sending with no text — when files are attached, say. */
+  canSendEmpty?: boolean;
 }) {
+  const [dropActive, setDropActive] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Dense opens on one line beside the send chip, so it grows with what is
+  // typed (up to DENSE_MAX_INPUT_PX) instead of scrolling a single line — and
+  // shrinks back when a send clears it.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!dense || !input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, DENSE_MAX_INPUT_PX)}px`;
+  }, [dense, value]);
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
-  const canSend = value.trim().length > 0 && !isSending && !disabled;
+  const canSend = (value.trim().length > 0 || canSendEmpty) && !isSending && !disabled;
   const showStop = Boolean(isSending && onStop);
   // Round icon-only is fine for Send; Stop must read as Stop — a square swap
   // on the same accent chip is too easy to miss mid-stream.
@@ -470,7 +505,33 @@ export function StudioChatComposer({
         .join(" ")}
     >
       {commands ? <ComposerNotes commands={commands} /> : null}
-      <div className="lg-chat-composer">
+      <div
+        className={["lg-chat-composer", dropActive ? "lg-chat-composer--drop" : ""]
+          .filter(Boolean)
+          .join(" ")}
+        onDragOver={
+          onFiles
+            ? (e) => {
+                if (!e.dataTransfer.types.includes("Files")) return;
+                e.preventDefault();
+                setDropActive(true);
+              }
+            : undefined
+        }
+        onDragLeave={onFiles ? () => setDropActive(false) : undefined}
+        onDrop={
+          onFiles
+            ? (e) => {
+                setDropActive(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (!files.length) return;
+                e.preventDefault();
+                onFiles(files);
+              }
+            : undefined
+        }
+      >
+        {accessory}
         <div className="lg-composer-commands">
           {commands ? (
             <ComposerCommandMenu
@@ -482,17 +543,32 @@ export function StudioChatComposer({
               onPick={commands.accept}
             />
           ) : null}
-          <textarea
-            ref={commands?.inputRef as React.Ref<HTMLTextAreaElement>}
+          <Textarea
+            aria-label="Message"
+            ref={(element) => {
+              inputRef.current = element;
+              if (commands) commands.inputRef.current = element;
+            }}
             className="lg-chat-composer-input"
             value={value}
             onChange={(e) =>
               commands ? commands.handleChange(e.target.value, e.target) : onChange(e.target.value)
             }
             onBlur={() => commands?.close()}
+            onPaste={
+              onFiles
+                ? (e) => {
+                    // Only files; pasted text keeps the textarea's own handling.
+                    const files = Array.from(e.clipboardData.files);
+                    if (!files.length) return;
+                    e.preventDefault();
+                    onFiles(files);
+                  }
+                : undefined
+            }
             placeholder={placeholder}
             disabled={disabled}
-            rows={variant === "dock" ? 1 : 2}
+            rows={variant === "dock" || dense ? 1 : 2}
             onKeyDown={(e) => {
               // The menu owns Enter, Tab and the arrows while it is open, so a
               // completion is accepted rather than sent as a half-typed draft.

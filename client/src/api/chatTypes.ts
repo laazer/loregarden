@@ -36,6 +36,29 @@ export interface PreparedAction {
   captures: string[];
 }
 
+/** Server ExitActionResolutionMode — never `approve_or_reject`. */
+export type ExitActionResolutionMode = "approve" | "recheck";
+
+/** Server ApprovalResolutionAction — what the operator may click on a gate. */
+export type ApprovalResolutionAction = "approve" | "recheck" | "reject";
+
+export type ExitActionRequirement =
+  | { kind: "runtime_capability"; capability_id: string }
+  | { kind: "credential"; credential_key: string }
+  | { kind: "authority"; authority_scope: string }
+  | { kind: "operator_judgment"; decision_prompt: string };
+
+/** One unresolved exit action on a workflow-gate ApprovalView. */
+export interface HumanRequiredExitAction {
+  action_key: string;
+  action_label: string;
+  action_description?: string;
+  requirement: ExitActionRequirement;
+  reason_code: string;
+  reason: string;
+  resolution_mode: ExitActionResolutionMode;
+}
+
 export interface Approval {
   id: string;
   title: string;
@@ -68,6 +91,34 @@ export interface Approval {
   resolved_answers?: Record<string, string | string[]> | null;
   created_at?: string;
   resolved_at?: string;
+  /** Unresolved exit actions only — agent-executable actions never appear here. */
+  human_required_actions?: HumanRequiredExitAction[];
+  /** Server-enforced resolution affordances for this gate. */
+  allowed_actions?: ApprovalResolutionAction[];
+}
+
+/** One decided approval, from `/api/inbox/approvals/history` — newest first. */
+export interface ApprovalHistoryItem {
+  id: string;
+  title: string;
+  kind: Approval["kind"];
+  stage_key: string;
+  stage_name: string;
+  status: "approved" | "rejected";
+  /** "automation" for an auto_approve run's own sign-off; "" for a person. */
+  resolved_by: string;
+  resolved_at: string;
+  ticket_id: string;
+  ticket_external_id: string;
+}
+
+/** A file uploaded with a Home chat turn. Text is inlined for the agent; images go by path. */
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: "text" | "image";
 }
 
 export interface TriageMessage {
@@ -76,6 +127,8 @@ export interface TriageMessage {
   content: string;
   /** Resolved at write time and stored, so cards survive a reload. */
   parts?: ChatPart[];
+  /** Home chat user turns only; absent on every other surface. */
+  attachments?: ChatAttachment[];
   created_at: string;
 }
 

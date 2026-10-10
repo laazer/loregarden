@@ -151,6 +151,42 @@ def test_editing_a_catalogued_file_is_never_served_from_cache(ts_repo: Path, tmp
     assert "duplicates existing code" in restored.stderr
 
 
+@pytest.mark.parametrize("ignore_file", [".gitignore", ".git/info/exclude"])
+def test_the_catalog_skips_what_git_ignores(ts_repo: Path, tmp_path: Path, ignore_file: str):
+    """A git-ignored copy is not "existing code". In a workspace whose source
+    root is the repository itself, `.claude/worktrees/` holds a full checkout per
+    session, and every staged function was reported as duplicating its own
+    copies there. lore-eden ignores that directory through `.git/info/exclude`,
+    which is why both ignore files are exercised."""
+    env = _cache_dir(tmp_path)
+    src = ts_repo / "client" / "src"
+    (src / "graded.ts").write_text(DUPLICATED_FUNCTION)
+    copy = src / "worktrees" / "session" / "graded.ts"
+    copy.parent.mkdir(parents=True)
+    copy.write_text(DUPLICATED_FUNCTION)
+    with (ts_repo / ignore_file).open("a") as handle:
+        handle.write("\nclient/src/worktrees/\n")
+    _git(ts_repo, "add", "client/src/graded.ts")
+
+    result = _run_gate(ts_repo, str(src / "graded.ts"), env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "duplicates existing code" not in result.stderr
+
+
+def test_the_catalog_still_reads_untracked_files(ts_repo: Path, tmp_path: Path):
+    """Skipping ignored files must not skip untracked ones: a module an agent
+    just wrote is uncommitted when a transition gate fires, and is the likeliest
+    thing for the next function to duplicate."""
+    env = _cache_dir(tmp_path)
+    graded = _stage_duplicate(ts_repo)  # catalogued.ts is left untracked
+
+    result = _run_gate(ts_repo, graded, env=env)
+
+    assert result.returncode == 1, result.stdout
+    assert "catalogued.ts" in result.stderr
+
+
 def test_a_corrupt_cache_rebuilds_rather_than_reporting_a_weakened_result(
     ts_repo: Path, tmp_path: Path
 ):

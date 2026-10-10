@@ -10,12 +10,14 @@ of which workspace uses them.
 
 from __future__ import annotations
 
+import functools
 import io
 from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import (
     AUTO_FIXABLE_CONDITIONS,
+    DockerFootprint,
     MonitorCondition,
     MonitorMode,
     OrchestrationDriver,
@@ -45,6 +47,16 @@ class GatesConfig(BaseModel):
     autofix_commands: list[str] = Field(default_factory=list)
     autofix_agent_fallback: bool = True
     autofix_max_agent_attempts: int = 3
+    # The host capacity a transition's gate commands hold while they run, so
+    # gates across agents and workspaces queue instead of piling onto the
+    # machine (services/gate_capacity.py). `service`, sized to what the gates
+    # are: static analysis, no tests in any shipped profile. Measured
+    # 2026-10-09, loregarden's set took 7s wall and 6.3 CPU-seconds, 85 MB peak.
+    # At `heavy` they held no more than that but queued behind test suites for
+    # it — 6.5, 7.5 and 9.8 minutes on lg-durable-remote-336 for 10 seconds of
+    # work. A profile that adds a test suite to its gates sets `heavy` itself;
+    # `none` runs them unreserved.
+    capacity_footprint: DockerFootprint = DockerFootprint.SERVICE
 
 
 class GitAutomationConfig(BaseModel):
@@ -71,7 +83,13 @@ class GitAutomationConfig(BaseModel):
     #: On a merge conflict, hand the conflicted files to an implementer agent
     #: rather than blocking. Independent of auto_merge: a conflict can surface
     #: from the pre-merge check even when nothing is auto-merging.
-    auto_resolve_conflicts: bool = False
+    #:
+    #: On by default: a landing conflict is usually two sibling tickets editing
+    #: one file on their shared integration branch, and blocking a ticket whose
+    #: every stage passed for a person to do the merge stalled whole trees
+    #: (lg-durable-remote-336). The attempt cap below still hands a conflict the
+    #: resolver cannot settle to a person.
+    auto_resolve_conflicts: bool = True
     #: How many times the resolver agent may try before the ticket blocks.
     max_conflict_resolve_attempts: int = 2
     #: Branch PRs target, and the branch a worktree is cut from.
@@ -210,6 +228,10 @@ class OrchestrationProfile(BaseModel):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     approvals: ApprovalPolicyConfig = Field(default_factory=ApprovalPolicyConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
+    #: Where this profile was read from, repo-relative POSIX — stamped by
+    #: `load_profile_from_path`, never taken from the YAML; None for the
+    #: built-in fallback that no file stores (lg-gate-studio-863).
+    source_path: str | None = None
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0
     # Subtree-wide cap on stages completed across a top-level auto_approve run
@@ -243,10 +265,36 @@ def _load_yaml(path: Path) -> dict:
 
 
 def load_profile_from_path(path: Path) -> OrchestrationProfile:
+    """The profile in ``path``, parsed once per version of the file.
+
+    Every stage transition resolves its workspace's profile, and the
+    comment-preserving loader that writes need costs tens of milliseconds a
+    parse. Keyed on the file's inode, mtime and size: a write here is an atomic
+    replace, which gives the file a new inode, and an edit in place moves the
+    mtime. Each caller gets its own copy, so one mutating it cannot reach another.
+    """
+    stat = path.stat()
+    profile = _parse_profile(path, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    return profile.model_copy(deep=True)
+
+
+@functools.lru_cache(maxsize=64)
+def _parse_profile(path: Path, _inode: int, _mtime_ns: int, _size: int) -> OrchestrationProfile:
     raw = _load_yaml(path)
     if "slug" not in raw:
         raw["slug"] = path.stem
-    return OrchestrationProfile.model_validate(raw)
+    # Stamped from where it was actually read: a file cannot claim another.
+    raw.pop("source_path", None)
+    profile = OrchestrationProfile.model_validate(raw)
+    profile.source_path = _repo_relative(path)
+    return profile
+
+
+def _repo_relative(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(settings.repo_root.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
 
 
 def resolve_orchestration_profile(workspace: Workspace) -> OrchestrationProfile:
@@ -262,6 +310,15 @@ def resolve_orchestration_profile(workspace: Workspace) -> OrchestrationProfile:
             return load_profile_from_path(path)
 
     return OrchestrationProfile(slug="default", name="Default Builtin Autopilot")
+
+
+def default_gate_commands() -> list[str]:
+    """The workspace-agnostic checks the fallback profile ships with — what the
+    Gates editor offers as one-click additions. Empty when there is no default."""
+    path = orchestration_dir() / "default.yaml"
+    if not path.is_file():
+        return []
+    return list(load_profile_from_path(path).gates.commands)
 
 
 def list_profiles(workspace: Workspace) -> list[OrchestrationProfile]:
@@ -321,19 +378,35 @@ def _merge_block(raw: dict, key: str, values: dict) -> None:
         block[name] = value
 
 
-def update_gates_config(workspace: Workspace, gates: GatesConfig) -> OrchestrationProfile:
+AUTOFIX_GATE_KEYS = frozenset(
+    {"autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"}
+)
+#: Keys a gates editor that does not send them must not overwrite: the autofix
+#: policy, and the gate lease size — both usually hand-set in the YAML, and
+#: neither shown by the editor that saves enabled/commands/transition_script.
+PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {"capacity_footprint"}
+
+
+def update_gates_config(
+    workspace: Workspace,
+    gates: GatesConfig,
+    *,
+    preserve: frozenset[str] = PRESERVED_GATE_KEYS,
+) -> OrchestrationProfile:
     """Persist `gates` into the workspace's orchestration profile YAML, leaving
     every other field in that file untouched (or creating a minimal file with
-    just slug + gates if none existed yet)."""
+    just slug + gates if none existed yet).
+
+    Keys in `preserve` keep whatever the file already holds — by default the
+    autofix_* settings, so a caller that edits only enabled/commands/
+    transition_script doesn't silently wipe a hand-configured self-fix policy.
+    """
     path = _profile_path_for_write(workspace)
     raw = _load_yaml(path) if path.is_file() else {}
     raw.setdefault("slug", workspace.orchestration_profile_slug or workspace.slug)
     existing_gates = raw.get("gates") or {}
     new_gates = gates.model_dump(mode="json")
-    # The Gates editor only manages enabled/commands/transition_script; preserve
-    # any autofix_* settings already in the file so saving from the UI doesn't
-    # silently wipe a hand-configured self-fix policy.
-    for key in ("autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"):
+    for key in preserve:
         if key in existing_gates:
             new_gates[key] = existing_gates[key]
     _merge_block(raw, "gates", new_gates)

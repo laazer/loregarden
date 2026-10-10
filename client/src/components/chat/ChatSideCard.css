@@ -1,0 +1,147 @@
+.chat-side-card {
+  flex: none;
+  width: 320px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 16px 18px;
+  border-left: 1px solid var(--bd);
+  background: var(--bg1);
+  overflow: auto;
+}
+
+.chat-side-card-head,
+.chat-side-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-side-card-head h2 {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--tx);
+}
+
+.chat-side-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-side-card-section h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.chat-side-card-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.chat-side-card-icon-btn:hover {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.chat-side-card-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ac2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-side-card-link:hover {
+  text-decoration: underline;
+}
+
+.chat-side-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-side-history-entry {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-side-history-entry:hover,
+.chat-side-history-entry:focus-visible {
+  border-color: color-mix(in srgb, var(--ac) 50%, var(--bd2));
+  background: var(--bg2);
+}
+
+.chat-side-history-kind {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.chat-side-history-label {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-side-card-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+/* A narrow window gives the thread the width; the card overlays when opened, over a scrim
+   that closes it. Keep the breakpoint in step with WORKBENCH_OVERLAY_QUERY. */
+.chat-side-card-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--bg0) 55%, transparent);
+  cursor: default;
+}
+
+@media (max-width: 1100px) {
+  .chat-side-card {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    width: min(340px, calc(100% - 24px));
+    box-shadow: -24px 0 60px rgba(0, 0, 0, 0.4);
+  }
+}

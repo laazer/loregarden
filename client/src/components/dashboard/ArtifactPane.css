@@ -1,0 +1,737 @@
+/* The artifact pane: tab strip, Timeline and Outputs.
+ *
+ * Flat by design. The old pane boxed every row in its own bordered card, so a
+ * 127-row feed was 127 cards and the eye had nowhere to rest. Here a row is a
+ * line, structure comes from alignment and a single rail, and colour is kept
+ * for the few things that need a person.
+ */
+
+/* ── Tab strip ─────────────────────────────────────────────── */
+
+.ap-tabs .tab-btn {
+  border-color: transparent;
+  padding: 6px 11px;
+}
+
+.ap-tabs .tab-btn.active {
+  border-color: var(--bd2);
+}
+
+.ap-tab-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--txl);
+}
+
+.ap-tab-badge--alert {
+  color: var(--rdl);
+}
+
+.ap-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  flex: none;
+}
+
+.ap-more {
+  position: relative;
+  flex: none;
+}
+
+.ap-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 45%, transparent);
+}
+
+.ap-more-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.ap-more-item:hover,
+.ap-more-item:focus-visible,
+.ap-more-item[aria-checked="true"] {
+  background: var(--bg3);
+}
+
+.ap-more-item-hint {
+  font-size: 11px;
+  color: var(--txl);
+}
+
+/* ── Shared states ─────────────────────────────────────────── */
+
+.ap-state {
+  min-height: 280px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.ap-state--inline {
+  min-height: 0;
+  padding: 28px 16px;
+}
+
+.ap-state-title {
+  font-family: var(--dp);
+  font-size: 14px;
+  color: var(--txm);
+}
+
+.ap-state-body {
+  max-width: 360px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--txl);
+}
+
+/* ── Timeline ──────────────────────────────────────────────── */
+
+/* Both views re-flow by the pane's width, not the window's: the console puts
+ * this pane beside two others, so it is narrow on a wide screen too. */
+.tl,
+.out {
+  container-type: inline-size;
+}
+
+.tl {
+  padding: 14px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tl-attention {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tl-callout {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  border-left-width: 3px;
+  background: var(--bg1);
+}
+
+.tl-callout--bad {
+  border-left-color: var(--red);
+  background: color-mix(in srgb, var(--red) 6%, var(--bg1));
+}
+
+.tl-callout--warn {
+  border-left-color: var(--amb);
+}
+
+.tl-callout-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.tl-callout-head > :last-child:is(button) {
+  margin-left: auto;
+}
+
+.tl-callout-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.tl-callout-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.tl-callout-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.tl-callout-body {
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: var(--tx);
+}
+
+.tl-retry + .tl-retry {
+  margin-top: 6px;
+}
+
+.tl-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--txl);
+}
+
+.tl-summary-now {
+  color: var(--bll);
+  font-weight: 600;
+}
+
+.tl-summary-warn {
+  color: var(--aml);
+}
+
+/* One rail down the left; each visit hangs a dot on it. The rail's x is
+   derived from the dot's, so the two cannot drift apart: head padding + dot
+   margin + half the dot, minus half the rail. */
+.tl-list {
+  --tl-head-pad: 6px;
+  --tl-dot-margin: 4px;
+  --tl-dot-size: 11px;
+  --tl-rail-width: 1px;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tl-list::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: calc(var(--tl-head-pad) + var(--tl-dot-margin) + (var(--tl-dot-size) - var(--tl-rail-width)) / 2);
+  width: var(--tl-rail-width);
+  background: var(--bd2);
+}
+
+.tl-visit {
+  position: relative;
+  --tl-tone: var(--grn);
+}
+
+.tl-visit--active {
+  --tl-tone: var(--blue);
+}
+
+.tl-visit--bad {
+  --tl-tone: var(--red);
+}
+
+.tl-visit--warn {
+  --tl-tone: var(--amb);
+}
+
+.tl-visit--quiet {
+  --tl-tone: var(--txl);
+}
+
+.tl-visit-head,
+.tl-visit-static {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px var(--tl-head-pad);
+  border-radius: 6px;
+  text-align: left;
+  min-width: 0;
+}
+
+.tl-visit-head:hover {
+  background: var(--bg1);
+}
+
+.tl-visit-head:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.tl-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: var(--tl-dot-size);
+  height: var(--tl-dot-size);
+  margin: 0 var(--tl-dot-margin);
+  border-radius: 50%;
+  background: var(--bg0);
+  border: 2px solid var(--tl-tone);
+}
+
+.tl-visit--active .tl-dot {
+  background: var(--tl-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent);
+}
+
+.tl-stage {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--tx);
+  white-space: nowrap;
+}
+
+.tl-meta {
+  font-size: 11.5px;
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+.tl-tag {
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tl-tag--warn {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 14%, transparent);
+}
+
+.tl-tag--bad {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+
+.tl-when {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tl-live {
+  color: var(--bll);
+}
+
+.tl-chevron {
+  flex: none;
+  width: 12px;
+  font-size: 10px;
+  color: var(--txl);
+}
+
+.tl-visit-body {
+  margin: 0 0 8px 27px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tl-attempts,
+.tl-outputs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tl-attempt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 64px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.tl-agent {
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-skill {
+  color: var(--txl);
+}
+
+.tl-status {
+  color: var(--txl);
+}
+
+.tl-status--active {
+  color: var(--bll);
+}
+
+.tl-status--bad {
+  color: var(--rdl);
+}
+
+.tl-attempt-time {
+  text-align: right;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-link {
+  font-size: 11px;
+  color: var(--ac2);
+  padding: 0 2px;
+}
+
+.tl-link:hover,
+.tl-link:focus-visible {
+  text-decoration: underline;
+}
+
+.tl-stderr {
+  margin: 4px 0 6px;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 6%, var(--bg1));
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--rdl);
+}
+
+.tl-live-log {
+  height: 220px;
+  margin: 4px 0 6px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tl-outputs {
+  border-top: 1px dashed var(--bd);
+  padding-top: 4px;
+}
+
+.tl-output {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border-radius: 5px;
+  text-align: left;
+  min-width: 0;
+}
+
+.tl-output:hover,
+.tl-output:focus-visible {
+  background: var(--bg1);
+}
+
+.tl-output-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-output--error .tl-output-title {
+  color: var(--rdl);
+}
+
+.tl-none {
+  font-size: 11.5px;
+  color: var(--txl);
+  padding: 2px 0;
+}
+
+.tl-fanout {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--txl);
+}
+
+.tl-fanout > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+/* ── Output pieces (shared) ────────────────────────────────── */
+
+.out-kind {
+  flex: none;
+  display: inline-block;
+  max-width: 13ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm);
+}
+
+.tl-output .out-kind {
+  width: 11ch;
+}
+
+.out-kind--error {
+  color: var(--rdl);
+}
+
+.out-verdict {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.out-verdict--good {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 12%, transparent);
+}
+
+.out-verdict--bad {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.out-verdict--warn {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 12%, transparent);
+}
+
+/* ── Outputs ───────────────────────────────────────────────── */
+
+.out {
+  padding: 12px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.out-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.out-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 340px;
+}
+
+.out-system {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.out-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.out-note {
+  font-size: 12px;
+  color: var(--aml);
+}
+
+.out-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.out-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bd2);
+  text-align: left;
+  font-weight: 500;
+  padding: 0;
+}
+
+.out-sort {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.out-sort:hover,
+.out-sort:focus-visible {
+  color: var(--tx);
+}
+
+.out-col-size .out-sort {
+  justify-content: flex-end;
+}
+
+.out-sort-mark {
+  width: 1ch;
+}
+
+.out-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--bd) 70%, transparent);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.out-table tbody tr:hover td {
+  background: var(--bg1);
+}
+
+.out-col-time {
+  width: 104px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.out-col-kind {
+  width: 14ch;
+}
+
+.out-col-stage {
+  width: 13ch;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.out-col-size {
+  width: 68px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.out-title {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+}
+
+.out-title-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx);
+}
+
+.out-title:hover .out-title-text,
+.out-title:focus-visible .out-title-text {
+  text-decoration: underline;
+}
+
+.out-row--system td {
+  opacity: 0.6;
+}
+
+/* A list again in a narrow pane: one record per block, label-free. */
+@container (max-width: 520px) {
+  .out-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .out-table,
+  .out-table tbody,
+  .out-table tr,
+  .out-table td {
+    display: block;
+    width: auto;
+  }
+
+  .out-table tr {
+    display: grid;
+    /* title on its own line; then time, kind, stage, size */
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .out-table td {
+    border: 0;
+    padding: 0;
+  }
+
+  .out-table .out-col-title {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .out-table .out-col-size {
+    text-align: right;
+  }
+
+  .tl-attempt-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .tl-attempt-time {
+    display: none;
+  }
+}

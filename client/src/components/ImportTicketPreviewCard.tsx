@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { TicketImportItem, TicketSummary } from "../api/client";
 import {
@@ -16,6 +16,9 @@ import {
 } from "../lib/importTicketPreview";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { ImportQuickCreate } from "./ImportQuickCreate";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { Textarea } from "./ui/Textarea";
 
 interface ImportTicketPreviewCardProps {
   ticket: TicketImportItem;
@@ -102,6 +105,7 @@ export function ImportTicketPreviewCard({
   onQuickCreateFeature,
   disabled = false,
 }: ImportTicketPreviewCardProps) {
+  const fieldId = useId();
   const parentOptions = buildImportParentOptions(ticket, existingTickets, batchTickets);
   const featureOptions = buildImportFeatureOptions(existingTickets, batchTickets);
   const needsParent = importTicketNeedsParent(ticket.work_item_type);
@@ -157,8 +161,9 @@ export function ImportTicketPreviewCard({
 
       <div className="import-preview-grid">
         <div className="import-preview-field-span">
-          <div className="import-preview-field-label">Title</div>
-          <input
+          <label htmlFor={`${fieldId}-title`} className="import-preview-field-label">Title</label>
+          <Input
+            id={`${fieldId}-title`}
             className="btn-secondary filter-select"
             style={{ width: "100%", fontSize: 12 }}
             value={ticket.title}
@@ -185,9 +190,10 @@ export function ImportTicketPreviewCard({
         <PreviewField label="Format" value={ticket.source_format || ""} mono />
 
         <div className="import-preview-field-span">
-          <div className="import-preview-field-label">Milestone</div>
+          <label htmlFor={`${fieldId}-milestone`} className="import-preview-field-label">Milestone</label>
           <div className="import-preview-control-row">
-            <select
+            <Select
+              id={`${fieldId}-milestone`}
               className="btn-secondary filter-select"
               style={{ flex: 1, fontSize: 12 }}
               value={milestoneValue}
@@ -201,7 +207,7 @@ export function ImportTicketPreviewCard({
                   {optionSourceLabel(option.source)}
                 </option>
               ))}
-            </select>
+            </Select>
             <ImportQuickCreate
               label="+ Milestone"
               placeholder="New milestone title"
@@ -218,9 +224,10 @@ export function ImportTicketPreviewCard({
 
         {needsParent && (
           <div className="import-preview-field-span">
-            <div className="import-preview-field-label">Parent work item</div>
+            <label htmlFor={`${fieldId}-parent`} className="import-preview-field-label">Parent work item</label>
             <div className="import-preview-control-row">
-              <select
+              <Select
+                id={`${fieldId}-parent`}
                 className="btn-secondary filter-select"
                 style={{ flex: 1, fontSize: 12 }}
                 value={parentValue}
@@ -240,7 +247,7 @@ export function ImportTicketPreviewCard({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
               {canQuickCreateCapability && (
                 <CapabilityQuickCreate
                   disabled={disabled}
@@ -277,8 +284,9 @@ export function ImportTicketPreviewCard({
 
         {(
           <div className="import-preview-field-span">
-            <div className="import-preview-field-label">Acceptance criteria</div>
-            <textarea
+            <label htmlFor={`${fieldId}-criteria`} className="import-preview-field-label">Acceptance criteria</label>
+            <Textarea
+              id={`${fieldId}-criteria`}
               className="btn-secondary filter-select import-preview-textarea"
               value={acceptanceCriteriaText}
               disabled={disabled}
@@ -312,6 +320,7 @@ function CapabilityQuickCreate({
   onSubmit: (title: string, featureKey: string) => void;
 }) {
   const [featureKey, setFeatureKey] = useState("");
+  const featureFieldId = useId();
 
   return (
     <ImportQuickCreate
@@ -323,8 +332,9 @@ function CapabilityQuickCreate({
       onSubmit={(title) => onSubmit(title, featureKey)}
       extra={
         <div style={{ marginTop: 6 }}>
-          <div className="import-preview-field-label">Under feature</div>
-          <select
+          <label htmlFor={featureFieldId} className="import-preview-field-label">Under feature</label>
+          <Select
+            id={featureFieldId}
             className="btn-secondary filter-select"
             style={{ width: "100%", fontSize: 12 }}
             value={featureKey}
@@ -344,7 +354,7 @@ function CapabilityQuickCreate({
                 {option.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       }
     />
@@ -361,6 +371,7 @@ function FeatureQuickCreate({
   onSubmit: (title: string, milestoneKey: string) => void;
 }) {
   const [milestoneKey, setMilestoneKey] = useState("");
+  const milestoneFieldId = useId();
 
   return (
     <ImportQuickCreate
@@ -372,8 +383,9 @@ function FeatureQuickCreate({
       onSubmit={(title) => onSubmit(title, milestoneKey)}
       extra={
         <div style={{ marginTop: 6 }}>
-          <div className="import-preview-field-label">Under milestone</div>
-          <select
+          <label htmlFor={milestoneFieldId} className="import-preview-field-label">Under milestone</label>
+          <Select
+            id={milestoneFieldId}
             className="btn-secondary filter-select"
             style={{ width: "100%", fontSize: 12 }}
             value={milestoneKey}
@@ -394,7 +406,7 @@ function FeatureQuickCreate({
                 {optionSourceLabel(option.source)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       }
     />

@@ -1,8 +1,10 @@
 import { AppTopbarActions } from "./AppTopbarActions";
+import { useChatWorkbench } from "../hooks/useChatWorkbench";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { TopbarPageSlot } from "./TopbarPageSlot";
+import { Button } from "./ui/Button";
 
 const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   dashboard: "Agent SDLC · Console",
@@ -10,12 +12,33 @@ const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   home: "Agent SDLC · Home",
 };
 
+/** Beside History: the chat's other panel, toggled from the same place. */
+function ChatWorkbenchToggle() {
+  const { open, setOpen } = useChatWorkbench();
+  return (
+    <Button
+      variant="secondary"
+      className="topbar-action-btn topbar-action-btn--collapsible"
+      aria-pressed={open}
+      aria-label="Workbench"
+      title={open ? "Hide the workbench" : "Show the workbench"}
+      onClick={() => setOpen(!open)}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16" />
+      </svg>
+      <span className="topbar-action-label">Workbench</span>
+    </Button>
+  );
+}
+
 /** Chat answers from one workspace, so the topbar names which one. */
 function ChatWorkspacePicker() {
   const { slug, setSlug, workspaces } = useChatWorkspace();
 
   return (
-    <label className="topbar-workspace-picker">
+    <label className="topbar-workspace-picker topbar-workspace-picker--fixed">
       <span className="topbar-workspace-picker-label">Workspace</span>
       <select
         className="btn-secondary topbar-workspace-picker-select"
@@ -74,25 +97,30 @@ export function AppTopbar() {
           <ChatWorkspacePicker />
           <button
             type="button"
-            className="btn-secondary topbar-action-btn"
+            className="btn-secondary topbar-action-btn topbar-action-btn--collapsible"
             aria-pressed={historyOpen}
+            aria-label="History"
+            title="History"
             onClick={() => toggleBaxterHistory()}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
               <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
               <path d="M3 3v5h5M12 7v5l3 2" />
             </svg>
-            History
+            <span className="topbar-action-label">History</span>
           </button>
+          <ChatWorkbenchToggle />
           <button
             type="button"
-            className="btn-secondary topbar-action-btn"
+            className="btn-secondary topbar-action-btn topbar-action-btn--collapsible"
+            aria-label="New chat"
+            title="New chat"
             onClick={() => requestBaxterChatReset()}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path d="M12 5v14M5 12h14" />
             </svg>
-            New chat
+            <span className="topbar-action-label">New chat</span>
           </button>
         </>
       ) : null}

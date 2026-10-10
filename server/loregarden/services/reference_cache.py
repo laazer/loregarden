@@ -46,6 +46,7 @@ import logging
 import socket
 from collections.abc import Iterable
 from datetime import datetime
+from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -182,6 +183,16 @@ def _ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | No
         return None
 
 
+def _getaddrinfo(host: str, port: int) -> list[Any]:
+    """The resolver the SSRF guard asks.
+
+    A seam of this module's own, so a test can stub DNS for the cache without
+    stubbing it for the process: `socket` here is the stdlib module itself, and
+    patching `getaddrinfo` on it rewrites every lookup everywhere.
+    """
+    return socket.getaddrinfo(host, port)
+
+
 def _resolved_addresses(host: str, port: int) -> list[str] | None:
     """Every address `host` resolves to, or None when resolution failed.
 
@@ -189,7 +200,7 @@ def _resolved_addresses(host: str, port: int) -> list[str] | None:
     check" is not "it is safe".
     """
     try:
-        infos = socket.getaddrinfo(host, port)
+        infos = _getaddrinfo(host, port)
     except OSError as exc:
         # silent-ok: unresolvable means blocked, and the refusal is what the
         # caller reports — "I could not check" is not "it is safe"

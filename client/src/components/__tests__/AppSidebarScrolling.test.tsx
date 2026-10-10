@@ -182,18 +182,19 @@ beforeEach(() => {
 
 // AC1 — each section scrolls on its own.
 
-test("each of the three sections is its own scroll container", async () => {
+test("each of the four sections is its own scroll container", async () => {
   await renderLoadedSidebar();
 
   const lists = [
     sectionList("Tools"),
     sectionList("Pinned Tabs"),
     sectionList("Tabs"),
+    sectionList("Running"),
   ];
   // Three distinct elements, each the list of one section. One shared container
   // around all three would let a long Tabs list carry the others out of view,
   // which is the failure the ticket names.
-  expect(new Set(lists).size).toBe(3);
+  expect(new Set(lists).size).toBe(4);
   for (const list of lists) {
     expect(list.tagName).toBe("UL");
     expect(list.className).toContain("app-sidebar-list");
@@ -354,7 +355,7 @@ test("a scrolling list adds no tab stop and traps no focus", async () => {
 
   // A scroll container with focusable children is not itself focusable, and
   // nothing here makes one focusable by hand.
-  for (const heading of ["Tools", "Pinned Tabs", "Tabs"]) {
+  for (const heading of ["Tools", "Pinned Tabs", "Tabs", "Running"]) {
     expect(sectionList(heading)).not.toHaveAttribute("tabindex");
   }
 

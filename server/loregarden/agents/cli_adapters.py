@@ -1,3 +1,4 @@
+import logging
 import os
 import shlex
 import shutil
@@ -11,9 +12,11 @@ from loregarden.agents.mcp_context import (
     mcp_cli_env,
     resolve_api_base_url,
     resolve_mcp_url,
+    supervised_run_env,
 )
 from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
+from loregarden.mcp.caller import ORCHESTRATED_ENV, RUN_ID_ENV
 from loregarden.models.domain import ChatSurface, CliAdapter
 from loregarden.models.domain.schemas import StudioAgentToolGrants
 from loregarden.services.cli_settings import (
@@ -27,6 +30,13 @@ from loregarden.services.cli_settings import (
     ticket_effort_for_adapter,
     ticket_model_for_adapter,
 )
+from loregarden.services.git_subprocess import (
+    GH_USER_ENV,
+    GhAccountUnavailable,
+    configured_gh_token,
+)
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CLAUDE_USER_PROMPT = (
     "Execute the Loregarden stage task described in the appended system prompt. "
@@ -87,15 +97,36 @@ STATE_BINDING_ENV_VARS = (
     "LOREGARDEN_MEMORY_SQLITE_URL",
 )
 
+#: A supervised run's identity (see ``mcp.caller``). Stripped from what a
+#: subprocess inherits and set only by ``resolve_cli_invocation``, so a chat or
+#: terminal session spawned by a process that itself carries one never claims a
+#: run it is not.
+RUN_IDENTITY_ENV_VARS = (ORCHESTRATED_ENV, RUN_ID_ENV)
+
 
 def invocation_env(invocation: CliInvocation) -> dict[str, str]:
     """Full environment for spawning ``invocation``.
 
-    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS``, plus
-    the invocation's own overlay. Taken at call time rather than import so a
-    variable the supervising process sets after import still reaches the agent.
+    The supervising process's environment, minus ``STATE_BINDING_ENV_VARS`` and
+    ``RUN_IDENTITY_ENV_VARS``, plus the invocation's own overlay. Taken at call
+    time rather than import so a variable the supervising process sets after
+    import still reaches the agent.
+
+    ``GH_TOKEN`` is set to the ``LOREGARDEN_GH_USER`` account's token when that
+    is configured, so an agent's own ``gh`` calls act as the same account the
+    server's do. An unresolvable account is logged and the agent spawned
+    anyway: most stages never call ``gh``, the doctor's ``gh_account`` check
+    reports the cause, and an agent ``gh`` call that needed it fails visibly.
     """
-    env = {k: v for k, v in os.environ.items() if k not in STATE_BINDING_ENV_VARS}
+    stripped = {*STATE_BINDING_ENV_VARS, *RUN_IDENTITY_ENV_VARS}
+    env = {k: v for k, v in os.environ.items() if k not in stripped}
+    try:
+        gh_token = configured_gh_token()
+    except GhAccountUnavailable as exc:
+        logger.warning("agent spawned without the %s account's gh token: %s", GH_USER_ENV, exc)
+        gh_token = None
+    if gh_token:
+        env["GH_TOKEN"] = gh_token
     env.update(invocation.env)
     return env
 
@@ -163,6 +194,7 @@ def _codex_invocation(
     workspace_root: Path,
     codex_model: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> CliInvocation:
     # ``--json`` is the Codex equivalent of Claude/Cursor stream-json: events
     # land on stdout as the turn progresses. Without it, exec is silent until
@@ -176,7 +208,7 @@ def _codex_invocation(
         str(workspace_root),
     ]
     _append_model_flag(argv, codex_model)
-    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated)
+    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated, run_id=run_id)
     argv.append("-")
     return CliInvocation(
         argv=argv,
@@ -197,11 +229,13 @@ def build_interactive_invocation(
     partial_messages: bool = False,
     db_session=None,
     orchestrated: bool = True,
+    run_id: str = "",
     tool_grants: StudioAgentToolGrants | None = None,
     mcp_tools: Sequence[str] = (),
     mcp_enabled: bool = True,
     surface: ChatSurface = ChatSurface.HOME,
     agent_slug: str = "",
+    extra_dirs: Sequence[Path | str] = (),
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -221,6 +255,9 @@ def build_interactive_invocation(
     ``orchestrated`` defaults True for stage runs. Chat surfaces (triage / Home /
     branch) must pass False so create_ticket and other interactive MCP tools are
     not denied at the MCP dispatch layer.
+
+    ``extra_dirs`` are granted read access beside the workspace root — the
+    files a chat turn attached, for instance.
     """
     cwd = str(workspace_root)
 
@@ -245,6 +282,8 @@ def build_interactive_invocation(
             argv.append("--include-partial-messages")
         _append_model_flag(argv, claude_model)
         _append_claude_effort_flag(argv, claude_effort)
+        for extra in extra_dirs:
+            argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
         argv.extend(
@@ -261,6 +300,7 @@ def build_interactive_invocation(
             adapter="claude",
             session=db_session,
             orchestrated=orchestrated,
+            run_id=run_id,
             granted_servers=(list(tool_grants.mcp_servers) or None) if tool_grants else None,
         )
         return CliInvocation(
@@ -454,6 +494,7 @@ def _claude_print_invocation(
     workspace_root: Path,
     claude_model: str = "",
     claude_effort: str = "",
+    run_id: str = "",
 ) -> CliInvocation:
     output_format = os.environ.get("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", settings.claude_output_format)
     argv = [
@@ -475,7 +516,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
-    append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
+    append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
 
@@ -536,6 +577,7 @@ def _opencode_invocation(
     opencode_model: str = "",
     opencode_effort: str = "",
     orchestrated: bool = False,
+    run_id: str = "",
     read_only: bool = False,
     prompt_file: Path | None = None,
 ) -> CliInvocation:
@@ -582,7 +624,7 @@ def _opencode_invocation(
     extra = os.environ.get("LOREGARDEN_OPENCODE_ARGS")
     if extra:
         argv[2:2] = shlex.split(extra)
-    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated)
+    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated, run_id=run_id)
     if prompt_file is not None:
         argv.extend(
             [
@@ -715,7 +757,7 @@ def resolve_cli_invocation(
         workspace_root=workspace_root,
     )
     if override is not None:
-        return override
+        return _as_supervised(override, run_id)
 
     selected = resolve_effective_adapter(
         agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
@@ -762,6 +804,7 @@ def resolve_cli_invocation(
             resume_session_id=resume_session_id,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CLAUDE:
         invocation = _claude_print_invocation(
@@ -769,6 +812,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             claude_model=model,
             claude_effort=effort,
+            run_id=run_id,
         )
     elif selected == CliAdapter.CURSOR:
         invocation = _cursor_print_invocation(
@@ -783,6 +827,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             codex_model=model,
             orchestrated=True,
+            run_id=run_id,
         )
     elif selected == CliAdapter.LMSTUDIO:
         invocation = _lmstudio_invocation(
@@ -803,6 +848,7 @@ def resolve_cli_invocation(
             opencode_model=model,
             opencode_effort=effort,
             orchestrated=True,
+            run_id=run_id,
         )
     else:
         raise ValueError(f"Unknown CLI adapter: {selected}")
@@ -811,7 +857,18 @@ def resolve_cli_invocation(
     # question for every adapter, and the builders differ only in how they spell
     # it on the command line. `model` is the bare id — cursor's argv folds effort
     # into it, but the record keeps the two apart so both are queryable.
-    return replace(invocation, model=model, effort=effort)
+    return _as_supervised(replace(invocation, model=model, effort=effort), run_id)
+
+
+def _as_supervised(invocation: CliInvocation, run_id: str) -> CliInvocation:
+    """Mark ``invocation``'s process as supervised run ``run_id``.
+
+    Every adapter, not only the ones whose MCP config carries the flag: an agent
+    that falls back to ``loregarden mcp call`` from its own shell is still this
+    run, and the CLI reads the same variables. Without them 2,842 of 2,843 CLI
+    calls from stage runs (30 days to 2026-09-30) ran under the chat policy.
+    """
+    return replace(invocation, env={**invocation.env, **supervised_run_env(run_id)})
 
 
 def _claude_triage_invocation(

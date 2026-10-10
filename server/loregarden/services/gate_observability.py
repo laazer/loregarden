@@ -23,7 +23,9 @@ from loregarden.models.domain import (
     Ticket,
     WorkflowStageDef,
     Workspace,
+    utcnow,
 )
+from loregarden.services.gate_producer import gate_producer_payload
 from loregarden.services.gate_runner import GateRunResult, run_transition_gates, strip_ansi
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from sqlmodel import Session
@@ -127,6 +129,12 @@ def record_gate_evaluation(
             # (lg-workflow-integrity-683).
             "fix_tier": fix_tier.value,
             "orchestration_run_id": orch_run.id if orch_run else None,
+            # Which agent run's output this judged, on which tree — so an
+            # outcome can be scored against the adapter and model that ran,
+            # and a failure replayed from the exact state the gate saw.
+            **gate_producer_payload(
+                session, ticket, orch_run, from_stage=from_stage, evaluated_at=utcnow()
+            ),
         },
     )
     title = gate_evaluation_title(outcome, from_stage, to_stage)

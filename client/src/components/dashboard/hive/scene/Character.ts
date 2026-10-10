@@ -121,6 +121,16 @@ export class CharacterView extends Container {
     this.body.y = bobY;
   }
 
+  /** Jump to the end of the current path: reduced motion shows where, not the walk. */
+  settle(): void {
+    const end = this.path[this.path.length - 1];
+    if (end) this.tilePos = { ...end };
+    this.pathIndex = this.path.length;
+    this.bob = 0;
+    this.body.y = 0;
+    this.applyWorldPos();
+  }
+
   private applyWorldPos(): void {
     const world = tileToWorld(this.tilePos);
     this.x = Math.round(world.x);

@@ -20,8 +20,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from loregarden.models.domain import AgentRun, BaxterChatSession, Workspace
+from loregarden.models.domain import AgentRun, BaxterChatSession, PrimaryCheckoutUse, Workspace
 from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.primary_checkout import require_clean_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
@@ -63,10 +64,16 @@ def resolve_chat_execution_root(
     see `chat_publish.describe_chat_worktree`, which is what keeps the fallback
     from being a silent downgrade back to the behaviour this module exists to
     remove.
+
+    Only onto a clean checkout: a dirty one raises `DirtyPrimaryCheckoutError`
+    (864). Stricter than the ticket rule, which ignores the ticket's own
+    recorded paths — a run does not record which chat thread it belongs to, so
+    a thread's earlier turns cannot be told apart from an operator's work.
     """
     workspace_root = resolve_workspace_root(workspace)
     config = resolve_git_automation(workspace)
     if not config.worktree:
+        require_clean_checkout(workspace_root, use=PrimaryCheckoutUse.CHAT_FALLBACK)
         return workspace_root
 
     service = WorktreeService(session, repo_path=str(workspace_root))
@@ -79,6 +86,7 @@ def resolve_chat_execution_root(
             chat_session.id,
             workspace_root,
         )
+        require_clean_checkout(workspace_root, use=PrimaryCheckoutUse.CHAT_FALLBACK)
         return workspace_root
 
     if run.worktree_id != worktree.id:

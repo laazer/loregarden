@@ -11,6 +11,7 @@ from loregarden.models.domain.enums import (
     DoctorStatus,
     EventType,
     ExternalHarness,
+    GateOutcome,
     OrchestrationDriver,
     OrchestrationRunStatus,
     RunStatus,
@@ -21,8 +22,12 @@ from loregarden.models.domain.enums import (
     ToolGrantWarningCode,
     ToolPosture,
 )
+from loregarden.models.domain.enums_exit_actions import (
+    ApprovalResolutionAction,
+    ExitActionResolutionMode,
+)
 from loregarden.models.domain.work_item_types import WorkItemType
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from sqlmodel import Field, SQLModel
 
 # --- API DTOs ---
@@ -45,7 +50,13 @@ class ParallelAgentSpec(SQLModel):
     skill_name: str = ""
 
 
-class WorkflowStageDef(SQLModel):
+from loregarden.models.domain.schemas_exit_actions import (  # noqa: E402
+    ExitActionsStage,
+    HumanRequiredExitAction,
+)
+
+
+class WorkflowStageDef(ExitActionsStage):
     key: str
     name: str
     agent_id: str = ""
@@ -56,16 +67,6 @@ class WorkflowStageDef(SQLModel):
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
-    gate_required: bool = False
-    #: The same question `gate_required` asks, in the spelling migration
-    #: `0138_runtime_exit_actions` left behind: it pops `gate_required` out of
-    #: every `stages_json` and writes `exit_actions_enabled` plus a typed
-    #: `exit_actions` list in its place. SQLModel ignores unknown fields, so a
-    #: build that models only the old name reads a migrated stage as
-    #: `gate_required=False` and advances it — silently, for the four
-    #: operator-judgment stages in the live v3 template. Both names are read so
-    #: a stage's gate survives the migration whichever side of it the data is on.
-    exit_actions_enabled: bool = False
     # Evidence kinds this stage must produce for the current commit before it can
     # pass. Empty means unproven work advances, which is the old behaviour.
     required_evidence: list[str] = Field(default_factory=list)
@@ -125,19 +126,6 @@ class WorkflowStageDef(SQLModel):
     # no advance to refresh it, so it can still hold the PREVIOUS stage's agent —
     # which is how a stale hint once ran `learning` under `ac_gatekeeper`.
     agent_is_default: bool = False
-
-    @property
-    def requires_human_sign_off(self) -> bool:
-        """Whether passing this stage opens a gate for a person.
-
-        Asked through one predicate rather than a field, because the field it
-        is stored in depends on whether `0138_runtime_exit_actions` has run
-        against the data in front of you — and on a shared database, a build
-        can meet both spellings. Reading either one wrongly is silent: the
-        stage advances as DONE and the gate that should have held it never
-        opens, which is indistinguishable from a gate a person approved.
-        """
-        return self.gate_required or self.exit_actions_enabled
 
 
 class WorkflowStageView(SQLModel):
@@ -265,6 +253,11 @@ class TicketTreeNode(SQLModel):
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
     children: list["TicketTreeNode"] = []
+    #: A copy of a ticket listed under an initiative that tracks it as a member
+    #: (`initiative_members`). The ticket also sits under its real parent; the
+    #: copy is a leaf, and `home_parent_external_id` names that parent.
+    member_link: bool = False
+    home_parent_external_id: str = ""
 
 
 class TicketDependencyRef(SQLModel):
@@ -299,6 +292,8 @@ class TicketDetail(TicketSummary):
     admission: dict | None = None
     description: str
     acceptance_criteria: list[str]
+    #: The subset of `acceptance_criteria` an operator has checked off.
+    checked_acceptance_criteria: list[str]
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
     dependencies: list[TicketDependencyRef] = Field(default_factory=list)
     dependents: list[TicketDependencyRef] = Field(default_factory=list)
@@ -364,6 +359,17 @@ class ApprovalView(SQLModel):
     tool_name: str = ""
     tool_input_json: str = "{}"
     cli_adapter: str = ""
+    human_required_actions: list[HumanRequiredExitAction] = Field(default_factory=list)
+    allowed_actions: list[ApprovalResolutionAction] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_allowed_actions(self):
+        if ApprovalResolutionAction.APPROVE in self.allowed_actions and any(
+            action.resolution_mode == ExitActionResolutionMode.RECHECK
+            for action in self.human_required_actions
+        ):
+            raise ValueError("approve is not allowed while an action requires recheck")
+        return self
 
 
 class EventView(SQLModel):
@@ -588,16 +594,66 @@ class OrchestrationProfileView(SQLModel):
     driver: OrchestrationDriver
     workflow_template: str
     orchestrator_skill: str = ""
+    #: Whether gates *can actually run* — on, and something runnable resolves.
     gates_enabled: bool = False
+    #: The raw `gates.enabled` switch, which is what the editor's toggle edits.
+    #: It differs from `gates_enabled` when gates are on but nothing would run.
+    gates_configured: bool = False
     gates_commands: list[str] = Field(default_factory=list)
     gates_transition_script: str = ""
+    #: The transition script that will actually run, relative to the workspace
+    #: root — the configured one, else the default path — or "" when neither exists.
+    gates_transition_script_resolved: str = ""
+    gates_autofix_commands: list[str] = Field(default_factory=list)
+    gates_autofix_agent_fallback: bool = True
+    gates_autofix_max_agent_attempts: int = 3
+    #: Every placeholder a gate command may use, mapped to a sample value, so
+    #: the editor can offer, validate and preview them from one source.
+    gates_placeholders: dict[str, str] = Field(default_factory=dict)
+    #: The fallback profile's workspace-agnostic checks, offered as one-click adds.
+    gates_suggested_commands: list[str] = Field(default_factory=list)
     max_stages_per_run: int = 0
+    #: The profile file these settings live in, repo-relative; None when no file
+    #: stores them yet (the built-in fallback). Gate Studio's "Stored in".
+    source_path: str | None = None
 
 
 class GatesConfigUpdate(SQLModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
     transition_script: str = ""
+    # None leaves the saved value alone, so a client that edits only the three
+    # fields above cannot wipe a hand-configured self-repair policy.
+    autofix_commands: list[str] | None = None
+    autofix_agent_fallback: bool | None = None
+    autofix_max_agent_attempts: int | None = Field(default=None, ge=0, le=10)
+    # The host capacity gate commands hold (services/gate_capacity.py); None
+    # keeps the saved value.
+    capacity_footprint: DockerFootprint | None = None
+
+
+class GateTestRequest(SQLModel):
+    """Draft gate commands to try against the workspace before saving them."""
+
+    commands: list[str] = Field(default_factory=list)
+    from_stage: str = "implement"
+    to_stage: str = "verify"
+
+
+class GateTestCommandResult(SQLModel):
+    template: str
+    command: str
+    outcome: GateOutcome
+    message: str = ""
+    stdout: str = ""
+    stderr: str = ""
+    duration_ms: int = 0
+
+
+class GateTestReport(SQLModel):
+    repo_root: str
+    transition: str
+    results: list[GateTestCommandResult] = Field(default_factory=list)
 
 
 class GitAutomationView(SQLModel):
@@ -608,7 +664,7 @@ class GitAutomationView(SQLModel):
     push: bool = False
     open_pr: bool = False
     auto_merge: bool = False
-    auto_resolve_conflicts: bool = False
+    auto_resolve_conflicts: bool = True
     max_conflict_resolve_attempts: int = 2
     base_branch: str = "main"
 
@@ -689,6 +745,9 @@ class UpdateTicketRequest(SQLModel):
     description: str | None = None
     #: Replaces the stored list; omit to leave it alone, [] to clear it.
     acceptance_criteria: list[str] | None = None
+    #: Replaces which criteria are checked off; omit to leave them alone. Any
+    #: text the ticket's criteria do not contain is dropped.
+    checked_acceptance_criteria: list[str] | None = None
     #: Replaces the stored tags; omit to leave them alone, [] to clear them.
     tags: list[str] | None = None
     state: TicketState | None = None
@@ -715,7 +774,8 @@ class UpdateTicketRequest(SQLModel):
 
 
 class TicketCreate(SQLModel):
-    workspace_slug: str
+    #: Omitted for an initiative, which spans workspaces and binds to none.
+    workspace_slug: str = ""
     title: str
     work_item_type: WorkItemType = WorkItemType.TASK
     parent_ticket_id: str | None = None
@@ -787,7 +847,7 @@ class TicketImportResult(SQLModel):
 
 
 class ApprovalAction(SQLModel):
-    action: str  # approve | reject
+    action: ApprovalResolutionAction
     answers: dict[str, str | list[str]] | None = None
     response: str = ""
     always_allow: bool = False
@@ -1010,7 +1070,7 @@ class StudioAgentPreviewRequest(SQLModel):
     handoff_checks: list[StudioHandoffCheck] = Field(default_factory=list)
 
 
-class StudioWorkflowStage(SQLModel):
+class StudioWorkflowStage(ExitActionsStage):
     key: str
     name: str
     stage_type: str = "agent"
@@ -1018,12 +1078,6 @@ class StudioWorkflowStage(SQLModel):
     skill_name: str = ""
     optional: bool = False
     order: int = 0
-    gate_required: bool = False
-    #: See `WorkflowStageDef.exit_actions_enabled`. Here for the reason the
-    #: comment below says: a field this model lacks is dropped the first time a
-    #: template is published from Studio, and dropping this one would silently
-    #: un-gate a stage `0138_runtime_exit_actions` had already migrated.
-    exit_actions_enabled: bool = False
     terminal: bool = False
     skip_when: str = ""
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)

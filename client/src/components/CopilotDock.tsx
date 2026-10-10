@@ -101,6 +101,9 @@ export function CopilotDock() {
                 isThinking={session.isBusy && pendingApprovals.length === 0}
                 activeTurnId={session.activeTurnId}
                 assistantLabel="Baxter"
+                // The action bar already shows Baxter beside the composer; a
+                // head on every reply only spent the thread's width.
+                showAssistantAvatar={false}
                 className="copilot-dock-messages"
                 onPrimitiveSubmit={(content) => sendQuick(content)}
                 // Agent questions arrive as approvals, not messages — show them
@@ -124,6 +127,13 @@ export function CopilotDock() {
                         resolveApproval.mutate({
                           id: approval.id,
                           action: "approve",
+                          ...payload,
+                        })
+                      }
+                      onRecheck={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "recheck",
                           ...payload,
                         })
                       }

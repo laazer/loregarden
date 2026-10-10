@@ -47,6 +47,8 @@ export interface QueueHistoryPage {
   total: number;
   limit: number;
   offset: number;
+  /** When history was last cleared; cards that finished before it are hidden. */
+  cleared_at: string | null;
 }
 
 export async function listQueueHistory(options?: {
@@ -68,4 +70,18 @@ export async function listQueueHistory(options?: {
     throw new Error((await res.text()) || res.statusText);
   }
   return res.json() as Promise<QueueHistoryPage>;
+}
+
+/**
+ * Hide everything that has finished so far from the history rail.
+ *
+ * Not a delete: the runs stay on their tickets and in analytics. Lane
+ * "stopped" cards are separate and clear per lane.
+ */
+export async function clearQueueHistory(): Promise<{ cleared_at: string }> {
+  const res = await fetch(`${API_BASE}/api/parallel/lanes/history/clear`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error((await res.text()) || res.statusText);
+  }
+  return res.json() as Promise<{ cleared_at: string }>;
 }

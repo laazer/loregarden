@@ -441,6 +441,20 @@ def _with(transport):
     return call
 
 
+def test_the_dns_stub_does_not_leak_past_the_reference_cache():
+    """Stubbing the cache's DNS must not stub everyone's.
+
+    The stub used to be set on `reference_cache.socket.getaddrinfo` — the
+    stdlib `socket` module itself — so during every test in the suite even
+    `127.0.0.1` resolved to a public address, and any test that dialled a
+    local server by name dialled the internet instead.
+    """
+    import socket
+
+    addresses = {info[4][0] for info in socket.getaddrinfo("127.0.0.1", 80)}
+    assert addresses == {"127.0.0.1"}
+
+
 def test_the_suite_never_resolves_a_real_hostname():
     """The hermeticity guard covers DNS, not just HTTP.
 
@@ -451,9 +465,7 @@ def test_the_suite_never_resolves_a_real_hostname():
     without — a pre-push run, on a change that touched none of this.
 
     Tested by resolving a name that cannot exist: real DNS returns nothing for
-    it, so an answer proves the stub is in force. Identity comparison does not
-    work here — `reference_cache.socket` IS the stdlib module, so patching its
-    attribute changes every reference to it at once.
+    it, so an answer proves the stub is in force.
     """
     from loregarden.services.reference_cache import _resolved_addresses
 

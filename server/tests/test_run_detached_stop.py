@@ -20,8 +20,8 @@ import sys
 import time
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
-from loregarden.models.domain.enums import DetachedStopOutcome
+from loregarden.models.domain import AgentRun, ProcessState, RunStatus, Ticket, Workspace
+from loregarden.models.domain.process_enums import DetachedStopOutcome
 from loregarden.services.process_identity import identify
 from loregarden.services.run_detached_stop import stop_detached_process
 from sqlmodel import Session
@@ -78,7 +78,7 @@ def test_a_detached_process_is_actually_killed(session):
     """AC1. The child dies, from a process that did not spawn it as a pipe child."""
     proc = _detached()
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run)
 
@@ -121,15 +121,15 @@ def test_the_whole_process_group_goes_not_just_the_leader(session):
                 child_pid = None
         assert child_pid, "could not observe the grandchild; test cannot judge"
 
-        run = _run(session, pid=parent.pid, identity=identify(parent.pid) or "")
+        run = _run(session, pid=parent.pid, identity=identify(parent.pid).stamp)
         stop_detached_process(run)
 
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
-            if identify(child_pid) is None:
+            if identify(child_pid).state is ProcessState.GONE:
                 break
             time.sleep(0.05)
-        assert identify(child_pid) is None, "the grandchild outlived the stop"
+        assert identify(child_pid).state is ProcessState.GONE, "the grandchild outlived the stop"
     finally:
         for pid in (child_pid, parent.pid):
             if pid:
@@ -183,7 +183,7 @@ def test_a_live_pid_that_is_not_a_session_leader_is_not_signalled(session):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])  # not detached
     try:
         assert os.getpgid(proc.pid) != proc.pid, "precondition: this process leads no group"
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run)
 
@@ -200,7 +200,7 @@ def test_a_process_that_ignores_sigterm_is_killed(session):
         "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
     )
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid) or "")
+        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
 
         outcome = stop_detached_process(run, grace_seconds=0.5)
 
@@ -210,3 +210,59 @@ def test_a_process_that_ignores_sigterm_is_killed(session):
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
+
+
+# --- lg-durable-remote-336 regression: the recorded pid is now `sh`'s (AC17) ---
+#
+# Re-verified rather than assumed, twice over: after the wrapper lands the
+# recorded pid is the `sh -c` wrapper's, and after tmux lands it is the pane's.
+# Both must satisfy `os.getpgid(recorded_pid) == recorded_pid`, which is this
+# module's second identity guard and what the whole stop path rests on.
+#
+# If the tmux case ever fails, the only sanctioned remedy is per-transport
+# dispatch HERE — never a tmux branch in `print_mode` or `agent_spawn`.
+
+
+def _wrapper_process(tmp_path, monkeypatch) -> subprocess.Popen:
+    """The real spawn shape: the S2 wrapper around a sleeping agent."""
+    from loregarden.config import settings
+    from loregarden.services.run_output_files import paths_for, wrap_for_files
+
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run-logs")
+    (tmp_path / "run-logs").mkdir(parents=True, exist_ok=True)
+    paths = paths_for("run_stop01", "deadbeef-0000-0000-0000-000000000000")
+    argv = [sys.executable, "-c", "import time; time.sleep(60)"]
+    return subprocess.Popen(wrap_for_files(argv, paths), start_new_session=True)
+
+
+def test_the_wrapper_pid_leads_its_own_group(session, tmp_path, monkeypatch):
+    """AC17. The wrapper lives exactly as long as the run, is the session
+    leader, and is the ancestor `killpg` reaches the agent through."""
+    proc = _wrapper_process(tmp_path, monkeypatch)
+    try:
+        assert os.getpgid(proc.pid) == proc.pid
+    finally:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait(timeout=5)
+
+
+def test_stopping_a_wrapped_run_kills_the_agent_too(session, tmp_path, monkeypatch):
+    """AC17. No orphan agent processes remain: the signal goes to the GROUP, so
+    the python child inside the wrapper dies with it."""
+    proc = _wrapper_process(tmp_path, monkeypatch)
+    group = os.getpgid(proc.pid)
+    run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+
+    outcome = stop_detached_process(run, grace_seconds=1.0)
+
+    assert outcome is DetachedStopOutcome.SIGNALLED
+    assert _gone(proc), "the wrapper survived its own stop"
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            os.killpg(group, 0)
+        except (ProcessLookupError, PermissionError):
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("an agent process was left orphaned in the group")

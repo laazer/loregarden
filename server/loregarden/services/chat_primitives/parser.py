@@ -84,5 +84,28 @@ def parse_primitive_parts(text: str) -> list[ChatPart]:
     return parts
 
 
+#: Parts that are prose rather than a card, so they cannot name a card-only reply.
+_PROSE_PRIMITIVES = frozenset({"text", "thinking"})
+
+
+def reply_preview(text: str) -> str:
+    """*text* as one line of prose, for a glance at a reply in a list.
+
+    Card fences are dropped whether or not they parsed: the raw JSON reads as
+    noise in a preview, and the card itself is one click away. A reply that is
+    only cards is named by its first card instead of left blank.
+    """
+    prose = " ".join(_FENCE_RE.sub(" ", text or "").split())
+    if prose:
+        return prose
+    for part in parse_primitive_parts(text):
+        dumped = part.model_dump()
+        if dumped["primitive"] in _PROSE_PRIMITIVES:
+            continue
+        kind = str(dumped["primitive"]).replace("_", " ")
+        return dumped.get("title") or f"{kind.capitalize()} card"
+    return ""
+
+
 def parts_to_jsonable(parts: list[ChatPart]) -> list[dict[str, Any]]:
     return [part.model_dump(mode="json") for part in parts]

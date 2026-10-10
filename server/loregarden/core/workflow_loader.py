@@ -13,6 +13,11 @@ from loregarden.models.domain import (
 )
 from sqlmodel import Session, select
 
+try:
+    from yaml import CSafeLoader as _SafeLoader
+except ImportError:  # silent-ok: a PyYAML built without libyaml parses identically, only slower
+    from yaml import SafeLoader as _SafeLoader
+
 logger = logging.getLogger(__name__)
 
 # Fields captured verbatim in each WorkflowTemplateVersion snapshot. Must match the
@@ -134,9 +139,19 @@ def expand_gate_checklist(
     return expanded
 
 
-def load_workflow_yaml(path: Path) -> dict:
+def safe_load_yaml_file(path: Path):
+    """`yaml.safe_load` of ``path``, through libyaml's parser when PyYAML has it.
+
+    The same safe constructor and the same values, about five times faster.
+    Every app start reads every template, and every stage resolution reads the
+    workspace override.
+    """
     with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.load(f, Loader=_SafeLoader)  # noqa: S506 — a safe loader
+
+
+def load_workflow_yaml(path: Path) -> dict:
+    return safe_load_yaml_file(path)
 
 
 def sync_workflow_templates(session: Session) -> list[WorkflowTemplate]:

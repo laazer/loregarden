@@ -23,7 +23,9 @@ from loregarden.models.domain import (
     HumanActionTier,
     OrchestrationRun,
     OrchestrationRunStatus,
+    ProcessState,
     RunStatus,
+    StageReportStatus,
     StageStatus,
     StageVerdictChannel,
     Ticket,
@@ -33,13 +35,16 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, settle_block
-from loregarden.services.gate_approvals import gate_would_skip_work
+from loregarden.services.gate_approvals import (
+    gate_on_orchestrator_pass,
+    request_exit_action_gate,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
 )
-from loregarden.services.process_identity import still_running
+from loregarden.services.process_identity import liveness
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
@@ -52,7 +57,6 @@ from loregarden.services.stage_retry_budget import (
 from loregarden.services.studio_routing import (
     is_prunable_stage,
     prunable_stage_keys,
-    ticket_stage_definition,
 )
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
@@ -222,18 +226,21 @@ class OrchestrationCallbackService:
             .where(col(AgentRun.status).in_(list(SUPERVISED)))
         ).all()
         for child in children:
-            if still_running(child.agent_pid, child.agent_pid_identity):
+            state = liveness(child.agent_pid, child.agent_pid_identity)
+            if state is not ProcessState.GONE:
                 # A leftover is a row nobody is working under. A verified-live
                 # process is somebody working (757): its row stays, and its own
                 # completion — under a parent it will find terminal — says what
                 # came of it. The startup reaper skips its parent for the same
                 # reason; this is the same rule at the other end of the edge.
+                # A pid `ps` could not answer about is spared the same way (862);
+                # the lease reaper settles it once it is knowably gone.
                 logger.warning(
-                    "Not failing agent run %s under terminal orchestration %s: pid %s "
-                    "is still its process",
+                    "Not failing agent run %s under terminal orchestration %s: pid %s is %s",
                     child.run_code,
                     orch_run.run_code,
                     child.agent_pid,
+                    "still its process" if state is ProcessState.ALIVE else "of unknown state",
                 )
                 continue
             self.orch.complete_run(
@@ -480,7 +487,19 @@ class OrchestrationCallbackService:
             message=blocking_issues,
         )
 
-        if advance:
+        gate = (
+            gate_on_orchestrator_pass(
+                self.session, ticket, next(s for s in stages if s.key == stage_key)
+            )
+            if advance and outcome == StageReportStatus.PASS
+            else None
+        )
+        if gate is not None:
+            # The stage is not the orchestrator's to finish: a person resolves
+            # the gate, and approving it advances the stage (AC-6).
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.AWAITING)
+            ticket.blocking_issues = short_blocking_issues
+        elif advance:
             transitions = self.orch._resolve_transitions(ticket)
             apply_stage_route(
                 ticket,
@@ -771,7 +790,7 @@ class OrchestrationCallbackService:
         into `impact`, so the decision is made against the feedback rather than
         against a pointer to it.
 
-        REWORK_PAUSE and not WORKFLOW_GATE because `auto_resolve_awaiting_gate`
+        REWORK_PAUSE and not WORKFLOW_GATE because `resolve_gate_if_permitted`
         would find a pending gate on this stage and auto-approve it: an
         unattended run would sign off its own pause and walk straight through the
         cap that exists to stop it looping.
@@ -835,10 +854,11 @@ class OrchestrationCallbackService:
         kind: ApprovalKind = ApprovalKind.WORKFLOW_GATE,
     ) -> Approval:
         if kind is ApprovalKind.WORKFLOW_GATE:
-            stage = ticket_stage_definition(self.session, ticket, stage_key)
-            reason = gate_would_skip_work(self.session, ticket, stage) if stage else ""
-            if reason:
-                raise ValueError(reason)
+            # A workflow gate is the resolver's to shape, whoever asks for it.
+            # It publishes APPROVAL_REQUESTED itself when it opens a new gate.
+            return request_exit_action_gate(
+                self.session, ticket, stage_key, title=title, impact=impact
+            )
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,

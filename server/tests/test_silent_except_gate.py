@@ -571,6 +571,18 @@ def test_lefthook_runs_the_gate_pre_commit():
     assert "py_silent_except_check.py {staged_files}" in lefthook
 
 
+def test_the_workspace_dispatcher_runs_the_gate():
+    """Other workspaces' pre-commit and every orchestration profile reach this
+    gate through `workspace-gates.sh`; its list is the only one."""
+    listed = subprocess.run(
+        ["bash", str(_REPO_ROOT / ".lefthook" / "scripts" / "workspace-gates.sh"), "--list"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert "py_silent_except_check.py" in listed
+
+
 def test_every_orchestration_profile_runs_the_gate():
     """It rides with the organization gates, `default.yaml` included — a
     workspace with no profile of its own still gets the rule."""
@@ -578,10 +590,9 @@ def test_every_orchestration_profile_runs_the_gate():
     assert profiles, "no orchestration profiles found"
     for profile in profiles:
         text = profile.read_text(encoding="utf-8")
-        if "py_organization_check.py" not in text:
-            continue
-        assert "py_silent_except_check.py --repo" in text, profile.name
-        assert "--scope worktree" in text, profile.name
+        if "{loregarden_root}/.lefthook/scripts/" not in text:
+            continue  # lore-eden runs its own copies
+        assert "workspace-gates.sh --repo {workspace_root} --scope worktree" in text, profile.name
 
 
 def test_workspace_hook_installer_ships_the_gate():
@@ -593,8 +604,7 @@ def test_workspace_hook_installer_ships_the_gate():
     spec.loader.exec_module(installer)
 
     block = "\n".join(installer.render_block(_REPO_ROOT, ""))
-    assert "py_silent_except_check.py {staged_files}" in block
-    assert "loregarden-py-silent-except" in installer.MANAGED_COMMAND_NAMES
+    assert "workspace-gates.sh {staged_files}" in block
 
 
 def test_real_services_are_clean():

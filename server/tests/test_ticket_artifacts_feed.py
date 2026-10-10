@@ -4,9 +4,21 @@ from __future__ import annotations
 
 import json
 
-from loregarden.models.domain import Artifact, Ticket, TicketState, Workspace
+from loregarden.models.domain import (
+    Artifact,
+    ArtifactKind,
+    StageBudgetArtifactKind,
+    Ticket,
+    TicketState,
+    Workspace,
+)
+from loregarden.services.artifact_records import (
+    RUN_CONTEXT_ARTIFACT_TITLE,
+    run_log_artifact_title,
+)
 from loregarden.services.artifact_service import list_ticket_artifacts
 from sqlmodel import Session, select
+from tests.factories import make_agent_run
 
 
 def _workspace(session: Session) -> Workspace:
@@ -84,3 +96,105 @@ def test_get_ticket_artifacts_endpoint(client, db_session: Session):
 
 def test_get_ticket_artifacts_404(client):
     assert client.get("/api/tickets/nope/artifacts").status_code == 404
+
+
+def _by_title(body: dict) -> dict[str, dict]:
+    return {item["title"]: item for item in body["items"]}
+
+
+def test_feed_names_the_stage_from_the_run_then_from_the_content(db_session: Session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws.id)
+    run = make_agent_run(
+        db_session,
+        workspace_id=ws.id,
+        ticket_id=ticket.id,
+        run_code="run_feed01",
+        stage_key="implement",
+    )
+    db_session.add_all(
+        [
+            # The run wins over whatever the content claims.
+            Artifact(
+                ticket_id=ticket.id,
+                run_id=run.id,
+                kind="handoff",
+                title="from the run",
+                content_json=json.dumps({"stage_key": "plan"}),
+            ),
+            Artifact(
+                ticket_id=ticket.id,
+                kind="error",
+                title="from the content",
+                content_json=json.dumps({"stage_key": "gate"}),
+            ),
+            Artifact(ticket_id=ticket.id, kind="plan", title="no stage", content_json="{}"),
+            Artifact(ticket_id=ticket.id, kind="data", title="a list", content_json="[1, 2]"),
+            Artifact(
+                ticket_id=ticket.id,
+                kind="data",
+                title="a non-string stage",
+                content_json=json.dumps({"stage_key": 3}),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    items = _by_title(list_ticket_artifacts(db_session, ticket.id))
+    assert items["from the run"]["stage_key"] == "implement"
+    assert items["from the content"]["stage_key"] == "gate"
+    assert items["no stage"]["stage_key"] is None
+    assert items["a list"]["stage_key"] is None
+    assert items["a non-string stage"]["stage_key"] is None
+
+
+def test_feed_marks_the_platforms_bookkeeping_as_system(db_session: Session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws.id)
+    run = make_agent_run(
+        db_session,
+        workspace_id=ws.id,
+        ticket_id=ticket.id,
+        run_code="run_feed02",
+        stage_key="gate",
+    )
+    db_session.add_all(
+        [
+            Artifact(
+                ticket_id=ticket.id,
+                kind=StageBudgetArtifactKind.DISPATCH,
+                title="stage-dispatch:gate",
+            ),
+            Artifact(
+                ticket_id=ticket.id,
+                run_id=run.id,
+                kind=ArtifactKind.CONTEXT,
+                title=RUN_CONTEXT_ARTIFACT_TITLE,
+            ),
+            Artifact(
+                ticket_id=ticket.id,
+                run_id=run.id,
+                kind=ArtifactKind.LOG,
+                title=run_log_artifact_title(run.run_code),
+            ),
+            # Work output, even where the shape is close to a system record.
+            Artifact(ticket_id=ticket.id, run_id=run.id, kind=ArtifactKind.LOG, title="Run notes"),
+            # Names a run, but no run of its own: an agent's title, not a pointer.
+            Artifact(ticket_id=ticket.id, kind=ArtifactKind.LOG, title="Run run_elsewhere"),
+            Artifact(ticket_id=ticket.id, kind=ArtifactKind.CONTEXT, title="Stage report — gate"),
+        ]
+    )
+    db_session.commit()
+
+    system = {
+        item["title"]: item["system"]
+        for item in list_ticket_artifacts(db_session, ticket.id)["items"]
+    }
+    assert system == {
+        "stage-dispatch:gate": True,
+        RUN_CONTEXT_ARTIFACT_TITLE: True,
+        "Run run_feed02": True,
+        "Run notes": False,
+        "Run run_elsewhere": False,
+        "Stage report — gate": False,
+    }

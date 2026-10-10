@@ -20,12 +20,15 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.artifact_records import is_system_record
+from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -48,8 +51,12 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+#: The first base `git_base_ref` tries, and the one nearly every repository has.
+_PREFERRED_BASE = "main"
+
+
 def git_base_ref(cwd: Path) -> str | None:
-    for ref in ("main", "master", "origin/main", "origin/master"):
+    for ref in (_PREFERRED_BASE, "master", "origin/main", "origin/master"):
         if _git(cwd, "rev-parse", "--verify", ref).returncode == 0:
             return ref
     if _git(cwd, "rev-parse", "--verify", "HEAD~1").returncode == 0:
@@ -581,6 +588,27 @@ def _artifact_from_git_diff(
     }
 
 
+def _stat_and_patch(cwd: Path, ref: str | None) -> tuple[str, str] | None:
+    """`git diff --stat` and `git diff` against `ref` (the index when None), in one call.
+
+    `--stat --patch` prints the stat block, a blank line, then the same patch
+    the separate call would — and every patch starts on a `diff --git` line,
+    which no stat line can (each begins with a space) (lg-build-verification-847).
+
+    None when git could not diff — `ref` names no revision, most often — which
+    the caller must tell apart from an empty diff: only the first sends it
+    looking for another base.
+    """
+    proc = _git(cwd, "diff", "--stat", "--patch", *([ref, "--"] if ref else []))
+    if proc.returncode != 0:
+        return None
+    text = proc.stdout or ""
+    marker = text.find("\ndiff --git ")
+    if marker < 0:
+        return text, ""
+    return text[: marker + 1], text[marker + 1 :]
+
+
 def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dict[str, Any] | None:
     """Return the diff artifact payload from `repo_root`, or the shared checkout.
 
@@ -592,16 +620,25 @@ def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dic
     if not (cwd / ".git").exists():
         return None
 
-    base = git_base_ref(cwd)
-    diff_ref = base if base else "HEAD"
-    stat = _git(cwd, "diff", "--stat", diff_ref)
-    if stat.returncode != 0 or not stat.stdout.strip():
-        stat = _git(cwd, "diff", "--stat")
+    # The usual base first, without resolving it separately: a diff against a
+    # `main` that exists is the answer, and only when it is not does the
+    # candidate search run, exactly as it always did.
+    diff_ref = _PREFERRED_BASE
+    diffed = _stat_and_patch(cwd, diff_ref)
+    if diffed is None:
+        base = git_base_ref(cwd)
+        diff_ref = base if base else "HEAD"
+        # A `main` that resolves but would not diff fails the same way twice.
+        if diff_ref != _PREFERRED_BASE:
+            diffed = _stat_and_patch(cwd, diff_ref)
+    stat_text, patch_text = diffed or ("", "")
+    if not stat_text.strip():
         diff_ref = "working tree"
-    if stat.returncode != 0 or not stat.stdout.strip():
+        stat_text, patch_text = _stat_and_patch(cwd, None) or ("", "")
+    if not stat_text.strip():
         return None
 
-    stat_lines = [line for line in stat.stdout.splitlines() if line.strip()]
+    stat_lines = [line for line in stat_text.splitlines() if line.strip()]
     summary = stat_lines[-1] if stat_lines else ""
     primary_file = stat_lines[0].split("|", 1)[0].strip() if stat_lines else "changes"
 
@@ -610,8 +647,7 @@ def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dic
     add = f"+{add_match.group(1)}" if add_match else "+0"
     delete = f"−{del_match.group(1)}" if del_match else "−0"
 
-    patch = _git(cwd, "diff", diff_ref) if diff_ref != "working tree" else _git(cwd, "diff")
-    sections = _parse_unified_diff(patch.stdout or "")
+    sections = _parse_unified_diff(patch_text)
 
     return {
         "file": primary_file,
@@ -1021,7 +1057,7 @@ def record_blocking_issue(
 ) -> str:
     """Cap what lands in ticket.blocking_issues, which the workflow pane
     renders verbatim — raw agent/gate output over the inline limit is filed
-    as an error artifact for the Errors tab instead, leaving a short pointer
+    as an error artifact for the Timeline tab instead, leaving a short pointer
     here so the pane stays readable.
 
     ``run_id`` is an ``agent_runs`` id or None. An orchestration run is not an
@@ -1046,7 +1082,7 @@ def record_blocking_issue(
         },
     )
     pointer = f"Stage '{stage_key}'" if stage_key else "This stage"
-    return f"{pointer} hit a blocking issue — see the Errors tab for details."
+    return f"{pointer} {BLOCKING_POINTER_PHRASE} for details."
 
 
 def refresh_execution_artifacts(
@@ -1169,27 +1205,36 @@ def list_ticket_artifacts(
     context/error/pr). Agents — especially local models — attach arbitrary kinds
     (`test_spec`, `source_analysis`, …) that never appear there. This list is the
     raw row feed so operators can watch attachments land during a run.
+
+    Each row says which stage it belongs to when that is known — from its run,
+    else from a `stage_key` its content names — and whether it is the platform's
+    own bookkeeping (`system`), so the reader can put outputs on the timeline and
+    hide machinery without guessing from titles.
     """
     rows = session.exec(
-        select(Artifact)
+        select(Artifact, AgentRun)
+        .join(AgentRun, Artifact.run_id == AgentRun.id, isouter=True)
         .where(Artifact.ticket_id == ticket_id)
         .order_by(Artifact.created_at.desc())
         .limit(limit)
     ).all()
     items: list[dict[str, Any]] = []
-    for art in rows:
+    for art, run in rows:
         raw = art.content_json or "{}"
         try:
             content = json.loads(raw)
         except json.JSONDecodeError:
             # silent-ok: unparseable content is handed to the caller verbatim under _raw
             content = {"_raw": raw}
+        run_code = run.run_code if run else None
         items.append(
             {
                 "id": art.id,
                 "kind": art.kind,
                 "title": art.title,
                 "run_id": art.run_id,
+                "stage_key": (run.stage_key if run else None) or _content_stage_key(content),
+                "system": is_system_record(kind=art.kind, title=art.title, run_code=run_code),
                 "evidence_kind": art.evidence_kind,
                 "commit_sha": art.commit_sha,
                 "created_at": art.created_at.isoformat() if art.created_at else None,
@@ -1198,3 +1243,19 @@ def list_ticket_artifacts(
             }
         )
     return {"items": items, "total": len(items)}
+
+
+class _StageTagged(BaseModel):
+    """The one field of an artifact's free-form content the feed reads."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    stage_key: str | None = None
+
+
+def _content_stage_key(content: Any) -> str | None:
+    try:
+        return _StageTagged.model_validate(content).stage_key or None
+    except ValidationError:
+        # silent-ok: content is agent-shaped JSON; a non-object, or a stage_key that is not a string, names no stage and the row is placed by time instead
+        return None

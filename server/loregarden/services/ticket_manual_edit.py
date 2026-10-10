@@ -27,11 +27,16 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services.acceptance_criteria import serialize_criteria
+from loregarden.services.acceptance_criteria import (
+    load_checked,
+    load_criteria,
+    serialize_checked,
+    serialize_criteria,
+)
 from loregarden.services.compatibility_posture import apply_compatibility_posture
 from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.hierarchy_service import reparent_ticket
-from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_rollup import reconcile_ancestors, reconcile_lineage
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.workflow_service import WorkflowService
@@ -84,6 +89,22 @@ def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
     return _content_fields(ticket) != before
 
 
+def _apply_criteria_checks(ticket: Ticket, body: UpdateTicketRequest) -> None:
+    """Record which criteria are checked off, pruned to the criteria the ticket has.
+
+    Runs after the content edit so a request that rewrites the criteria and the
+    checks together is judged against the new list. Ticking a box is progress,
+    not a change to what the ticket asks for, so it does not bump the revision.
+    """
+    criteria = load_criteria(ticket.acceptance_criteria_json)
+    checked = (
+        body.checked_acceptance_criteria
+        if body.checked_acceptance_criteria is not None
+        else load_checked(ticket.checked_criteria_json, criteria)
+    )
+    ticket.checked_criteria_json = serialize_checked(checked, criteria)
+
+
 def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
     """Apply the fields a human edits directly (title, description, criteria, posture).
 
@@ -91,6 +112,7 @@ def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
     already well past its statement budget.
     """
     content_updated = _apply_content_edits(ticket, body)
+    _apply_criteria_checks(ticket, body)
 
     if body.priority is not None:
         if body.priority < 1 or body.priority > 3:
@@ -170,6 +192,7 @@ def update_ticket_manual(
     instance, stages = orch._resolve_stages(ticket)
     _apply_state_edit(orch, ticket, body)
 
+    old_parent_id = ticket.parent_ticket_id
     if body.parent_ticket_id is not None:
         reparent_ticket(orch.session, ticket, body.parent_ticket_id.strip() or None)
 
@@ -188,6 +211,10 @@ def update_ticket_manual(
 
     if body.state is not None:
         _settle_manual_state_change(orch, ticket)
+    if ticket.parent_ticket_id != old_parent_id:
+        # Both parents' child sets changed; neither moves until told to.
+        reconcile_lineage(orch.session, old_parent_id)
+        reconcile_lineage(orch.session, ticket.parent_ticket_id)
     return ticket
 
 

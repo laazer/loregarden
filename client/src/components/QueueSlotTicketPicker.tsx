@@ -18,6 +18,7 @@ import { api } from "../api/client";
 import type { TicketState } from "../api/types";
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { Input } from "./ui/Input";
 
 /**
  * States worth offering. Blocked work is blocked for a reason, and done /
@@ -134,9 +135,10 @@ export function QueueSlotTicketPicker({
 
       {open ? (
         <div className="queue-dispatch-menu" role="dialog" aria-label={`Add a ticket to slot ${slotNumber}`}>
-          <input
+          <Input
             ref={searchRef}
             type="search"
+            aria-label="Search tickets"
             className="queue-dispatch-search"
             placeholder="Search tickets…"
             value={search}

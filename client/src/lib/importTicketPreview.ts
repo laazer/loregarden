@@ -1,5 +1,6 @@
 import type { TicketImportItem, TicketSummary, WorkItemType } from "../api/client";
 import { slugify } from "./slugify";
+import { isRootType } from "./workItemHierarchy";
 
 export const IMPORT_REQUIRED_PARENT: Partial<Record<WorkItemType, WorkItemType>> = {
   feature: "milestone",
@@ -150,7 +151,7 @@ export function buildImportFeatureOptions(
 }
 
 export function importTicketNeedsParent(type: WorkItemType): boolean {
-  return type !== "milestone";
+  return !isRootType(type);
 }
 
 export function importTicketHasParent(ticket: TicketImportItem): boolean {

@@ -10,7 +10,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from lore_eden.instances.ports import instance_url
 from loregarden.config import settings
+from loregarden.mcp.caller import (
+    ORCHESTRATED_ENV,
+    ORCHESTRATED_HEADER,
+    RUN_ID_ENV,
+    RUN_ID_HEADER,
+)
 from loregarden.models.domain import (
     AgentRun,
     CliAdapter,
@@ -20,6 +27,8 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.mcp_registry import cli_server_entries
+from loregarden.services.sandbox_endpoint import SandboxMcpUrlError, require_this_instance
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -36,6 +45,10 @@ CLAUDE_MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
 #: How a CLI-transport run invokes a control-plane tool from Bash. The wrapper
 #: runs the tool in-process against the database, so it needs no server.
 CLI_TOOL_COMMAND = "./scripts/loregarden-cli.sh mcp call"
+
+#: Where cursor-agent looks for MCP servers, relative to its project root and to
+#: the home directory. It has no flag for any other location.
+CURSOR_MCP_CONFIG_REL = Path(".cursor/mcp.json")
 
 #: The adapters this process actually wires its MCP server into — the union of
 #: what ``append_mcp_cli_args`` and ``mcp_cli_env`` configure. Both read it, so
@@ -66,10 +79,12 @@ def _adapter_or_none(adapter: str) -> CliAdapter | None:
         return None
 
 
-def resolve_control_plane_transport(*, run: AgentRun, adapter: str) -> ControlPlaneTransport:
+def resolve_control_plane_transport(
+    *, run: AgentRun, adapter: str, project_root: Path
+) -> ControlPlaneTransport:
     """The channel ``run`` will actually reach the control plane through.
 
-    Read off the wiring, never off a preference. Three things decide it, and
+    Read off the wiring, never off a preference. Four things decide it, and
     each is a fact about this run rather than a policy about a kind of run:
 
     - An externally driven run is executed by a harness this process never
@@ -80,14 +95,68 @@ def resolve_control_plane_transport(*, run: AgentRun, adapter: str) -> ControlPl
     - ``LOREGARDEN_DISABLE_MCP_CLI`` turns the injection off wholesale.
     - Only ``MCP_WIRED_ADAPTERS`` get an MCP server wired in at all; a run on any
       other runner reaches the database through the CLI wrapper.
+    - cursor is wired only by its own config files (see
+      ``cursor_config_names_loregarden``), so a cursor run started in
+      ``project_root`` has MCP tools only when one of them names the server.
     """
     if run.external_harness is not None:
         return ControlPlaneTransport.CLI
     if not mcp_cli_injection_enabled():
         return ControlPlaneTransport.CLI
-    if _adapter_or_none(adapter) not in MCP_WIRED_ADAPTERS:
+    resolved = _adapter_or_none(adapter)
+    if resolved not in MCP_WIRED_ADAPTERS:
+        return ControlPlaneTransport.CLI
+    if resolved is CliAdapter.CURSOR and not cursor_config_names_loregarden(project_root):
         return ControlPlaneTransport.CLI
     return ControlPlaneTransport.MCP
+
+
+class _CursorMcpConfig(BaseModel):
+    """The one part of cursor's ``mcp.json`` this process reads."""
+
+    mcpServers: dict[str, dict[str, Any]] = {}  # noqa: N815 - cursor's own key
+
+
+def cursor_config_names_loregarden(project_root: Path) -> bool:
+    """Whether cursor-agent started in ``project_root`` will load this server.
+
+    cursor-agent takes no MCP config flag: it reads ``.cursor/mcp.json`` in its
+    project root and in the home directory, and nothing else (``--add-dir`` and
+    ``--plugin-dir`` do not register servers for it). ``append_mcp_cli_args``
+    can only pre-approve what those files already name. Blobert has neither, so
+    every blobert cursor run was told its MCP tools were pre-configured, got
+    "MCP server does not exist: loregarden", and improvised raw JSON-RPC.
+    """
+    return any(
+        _names_loregarden(path)
+        for path in (project_root / CURSOR_MCP_CONFIG_REL, Path.home() / CURSOR_MCP_CONFIG_REL)
+    )
+
+
+def _names_loregarden(config_path: Path) -> bool:
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except FileNotFoundError:  # silent-ok: no file is cursor's own "no servers here" answer
+        return False
+    except OSError:
+        logger.warning(
+            "Could not read cursor MCP config %s; this run gets the CLI transport",
+            config_path,
+            exc_info=True,
+        )
+        return False
+    try:
+        config = _CursorMcpConfig.model_validate_json(text)
+    except ValidationError:
+        # cursor cannot load it either, so the CLI transport is the true answer;
+        # the warning is what tells the operator their config is broken.
+        logger.warning(
+            "Cursor MCP config %s is not valid; this run gets the CLI transport",
+            config_path,
+            exc_info=True,
+        )
+        return False
+    return MCP_SERVER_NAME in config.mcpServers
 
 
 def tool_reference(name: str, transport: ControlPlaneTransport) -> str:
@@ -103,14 +172,57 @@ def _tool_names() -> list[str]:
     return tool_names()
 
 
+#: Main's endpoint — what an unconfigured process would hand its agents.
+_DEFAULT_MCP_URL = type(settings).model_fields["mcp_url"].default.rstrip("/")
+
+
+def _configured_mcp_url() -> str:
+    """`settings.mcp_url` — except that a sandbox never falls back to main's.
+
+    The default is the live server on :8000. When nothing configured the URL, a
+    sandbox points its agents at itself (``dev_port``); with no port either, it
+    refuses rather than guess.
+    """
+    url = settings.mcp_url.rstrip("/")
+    if not settings.sandbox or url != _DEFAULT_MCP_URL:
+        return url
+    if settings.dev_port is not None:
+        # A wildcard bind (0.0.0.0) is not an address to connect to; lore-eden
+        # maps it to loopback, as it does for the instance registry.
+        return f"{instance_url(settings.dev_host, settings.dev_port)}/mcp"
+    raise SandboxMcpUrlError(
+        "This is a sandbox server with no MCP URL of its own: set LOREGARDEN_MCP_URL "
+        "or LOREGARDEN_DEV_PORT, or its agents would write to the live server."
+    )
+
+
+def unverified_api_base_url() -> str:
+    """The API base this process would hand out, before any sandbox check.
+
+    What the sandbox boot check probes; everything else calls the resolvers
+    below, which in a sandbox also require the probe to have said "this is me".
+    """
+    explicit = os.environ.get("LOREGARDEN_MCP_URL")
+    if explicit:
+        return explicit.rstrip("/").removesuffix("/mcp")
+    api_base = os.environ.get("LOREGARDEN_API_URL")
+    if api_base:
+        return api_base.rstrip("/")
+    return _configured_mcp_url().removesuffix("/mcp")
+
+
+def _checked(base: str) -> str:
+    if settings.sandbox:
+        require_this_instance(base)
+    return base
+
+
 def resolve_mcp_url() -> str:
     explicit = os.environ.get("LOREGARDEN_MCP_URL")
     if explicit:
+        _checked(explicit.rstrip("/").removesuffix("/mcp"))
         return explicit.rstrip("/")
-    api_base = os.environ.get("LOREGARDEN_API_URL")
-    if api_base:
-        return f"{api_base.rstrip('/')}/mcp"
-    return settings.mcp_url.rstrip("/")
+    return f"{_checked(unverified_api_base_url())}/mcp"
 
 
 def resolve_api_base_url() -> str:
@@ -121,8 +233,8 @@ def resolve_api_base_url() -> str:
     """
     api_base = os.environ.get("LOREGARDEN_API_URL")
     if api_base:
-        return api_base.rstrip("/")
-    return settings.mcp_url.rstrip("/").removesuffix("/mcp")
+        return _checked(api_base.rstrip("/"))
+    return _checked(_configured_mcp_url().removesuffix("/mcp"))
 
 
 def _default_mcp_transport() -> str:
@@ -133,20 +245,53 @@ def _default_mcp_transport() -> str:
     return "http"
 
 
-def loregarden_mcp_server_entry(*, orchestrated: bool = False) -> dict[str, Any]:
-    transport = _default_mcp_transport()
-    if transport == "http":
-        entry: dict[str, Any] = {"type": "http", "url": resolve_mcp_url()}
-        if orchestrated:
-            entry["headers"] = {"X-Loregarden-Orchestrated": "1"}
-        return entry
-    script = settings.repo_root / "scripts" / "mcp-server.sh"
+def _orchestration_headers(*, orchestrated: bool, run_id: str) -> dict[str, str]:
+    """What an HTTP MCP client sends to say which supervised run it belongs to.
+
+    The run id rides only beside the orchestrated flag: a chat or terminal
+    session has no run whose memory writes it could claim.
+    """
+    if not orchestrated:
+        return {}
+    headers = {ORCHESTRATED_HEADER: "1"}
+    if run_id:
+        headers[RUN_ID_HEADER] = run_id
+    return headers
+
+
+def supervised_run_env(run_id: str) -> dict[str, str]:
+    """The environment that marks a process as belonging to supervised run ``run_id``.
+
+    Read back by `mcp.caller.orchestrated_from_env` — in the stdio server, and in
+    `loregarden mcp call` when an agent falls back to the CLI from its own shell.
+    """
+    env = {ORCHESTRATED_ENV: "1"}
+    if run_id:
+        env[RUN_ID_ENV] = run_id
+    return env
+
+
+def _stdio_server_env(*, orchestrated: bool, run_id: str) -> dict[str, str]:
+    """The stdio counterpart of `_orchestration_headers`, plus the in-process wiring."""
     env = {
         "LOREGARDEN_MCP_INPROCESS": "1",
         "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
     }
     if orchestrated:
-        env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
+        env.update(supervised_run_env(run_id))
+    return env
+
+
+def loregarden_mcp_server_entry(*, orchestrated: bool = False, run_id: str = "") -> dict[str, Any]:
+    transport = _default_mcp_transport()
+    if transport == "http":
+        entry: dict[str, Any] = {"type": "http", "url": resolve_mcp_url()}
+        headers = _orchestration_headers(orchestrated=orchestrated, run_id=run_id)
+        if headers:
+            entry["headers"] = headers
+        return entry
+    script = settings.repo_root / "scripts" / "mcp-server.sh"
+    env = _stdio_server_env(orchestrated=orchestrated, run_id=run_id)
     return {
         "type": "stdio",
         "command": str(script),
@@ -159,6 +304,7 @@ def loregarden_mcp_cli_config_json(
     session: Session | None = None,
     *,
     orchestrated: bool = False,
+    run_id: str = "",
     granted_servers: Sequence[str] | None = None,
 ) -> str:
     """Claude Code `--mcp-config` payload (full settings shape with mcpServers).
@@ -174,7 +320,8 @@ def loregarden_mcp_cli_config_json(
     `orchestrated` marks this config as belonging to a run Loregarden itself
     supervises (see `execute_tool`'s docstring in `mcp/tools.py`) — set it only for
     invocations built by `agents.cli_adapters.resolve_cli_invocation`, never for a
-    human terminal handoff or Ticket Studio chat.
+    human terminal handoff or Ticket Studio chat. `run_id` names that run, so a
+    memory the agent writes records it as its `origin_ref`.
 
     ``granted_servers`` restricts the registered servers to an agent's own grant.
     ``None`` means every enabled server, which is what every caller did before
@@ -197,7 +344,7 @@ def loregarden_mcp_cli_config_json(
                 logger.info("MCP servers withheld by agent grant: %s", ", ".join(dropped))
             registered = {name: entry for name, entry in registered.items() if name in allowed}
         servers.update(registered)
-    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated)
+    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated, run_id=run_id)
     return json.dumps({"mcpServers": servers})
 
 
@@ -205,7 +352,7 @@ def mcp_cli_injection_enabled() -> bool:
     return os.environ.get("LOREGARDEN_DISABLE_MCP_CLI", "").lower() not in {"1", "true", "yes"}
 
 
-def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
+def _opencode_mcp_server_entry(*, orchestrated: bool, run_id: str) -> dict[str, Any]:
     """Loregarden's entry in OpenCode's own MCP config vocabulary.
 
     OpenCode names the two transports ``remote``/``local`` and puts a stdio
@@ -213,7 +360,7 @@ def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
     none of which matches the shape ``loregarden_mcp_server_entry`` renders for
     Claude Code. Translating here keeps that difference in one place.
     """
-    entry = loregarden_mcp_server_entry(orchestrated=orchestrated)
+    entry = loregarden_mcp_server_entry(orchestrated=orchestrated, run_id=run_id)
     if entry["type"] == "http":
         remote: dict[str, Any] = {"type": "remote", "url": entry["url"], "enabled": True}
         if entry.get("headers"):
@@ -227,7 +374,7 @@ def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
     }
 
 
-def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False) -> str:
+def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False, run_id: str = "") -> str:
     """``OPENCODE_CONFIG_CONTENT`` payload wiring Loregarden's MCP server in.
 
     OpenCode has no ``--mcp-config`` flag; an inline config is the only per-run
@@ -238,11 +385,17 @@ def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False) -> str:
     and duplicating them here would fight that file rather than extend it.
     """
     return json.dumps(
-        {"mcp": {MCP_SERVER_NAME: _opencode_mcp_server_entry(orchestrated=orchestrated)}}
+        {
+            "mcp": {
+                MCP_SERVER_NAME: _opencode_mcp_server_entry(
+                    orchestrated=orchestrated, run_id=run_id
+                )
+            }
+        }
     )
 
 
-def mcp_cli_env(*, adapter: str, orchestrated: bool = False) -> dict[str, str]:
+def mcp_cli_env(*, adapter: str, orchestrated: bool = False, run_id: str = "") -> dict[str, str]:
     """Environment an agent subprocess needs to see Loregarden's MCP server.
 
     The argv-based counterpart is ``append_mcp_cli_args``; opencode is the one
@@ -252,7 +405,9 @@ def mcp_cli_env(*, adapter: str, orchestrated: bool = False) -> dict[str, str]:
     if not mcp_cli_injection_enabled() or adapter != "opencode":
         return {}
     return {
-        "OPENCODE_CONFIG_CONTENT": loregarden_mcp_opencode_config_json(orchestrated=orchestrated)
+        "OPENCODE_CONFIG_CONTENT": loregarden_mcp_opencode_config_json(
+            orchestrated=orchestrated, run_id=run_id
+        )
     }
 
 
@@ -262,6 +417,7 @@ def append_mcp_cli_args(
     adapter: str,
     session: Session | None = None,
     orchestrated: bool = False,
+    run_id: str = "",
     granted_servers: Sequence[str] | None = None,
 ) -> None:
     """Inject Loregarden MCP into headless Claude/Cursor/Codex agent subprocesses.
@@ -269,6 +425,9 @@ def append_mcp_cli_args(
     ``orchestrated=True`` marks pipeline stage runs (denies create_ticket at the
     MCP dispatch layer). Chat surfaces — triage, Home, branch triage, Ticket
     Studio — must pass ``orchestrated=False`` so interactive MCP stays open.
+    ``run_id`` names the supervised run, so memory writes record where they came
+    from. cursor cannot carry it: it reads its MCP servers from its own config,
+    and receives only ``--approve-mcps`` here.
 
     ``granted_servers`` is an agent's per-agent server grant; only the claude
     adapter can express it, because only claude receives the server list as argv.
@@ -285,7 +444,10 @@ def append_mcp_cli_args(
             [
                 "--mcp-config",
                 loregarden_mcp_cli_config_json(
-                    session, orchestrated=orchestrated, granted_servers=granted_servers
+                    session,
+                    orchestrated=orchestrated,
+                    run_id=run_id,
+                    granted_servers=granted_servers,
                 ),
             ]
         )
@@ -297,12 +459,7 @@ def append_mcp_cli_args(
         # Chat and stage runs share that need — only the orchestrated env flag
         # differs (pipeline deny list).
         script = settings.repo_root / "scripts" / "mcp-server.sh"
-        env = {
-            "LOREGARDEN_MCP_INPROCESS": "1",
-            "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
-        }
-        if orchestrated:
-            env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
+        env = _stdio_server_env(orchestrated=orchestrated, run_id=run_id)
         argv.extend(
             [
                 "-c",
@@ -338,10 +495,17 @@ def select_transport_blocks(text: str, transport: ControlPlaneTransport) -> str:
     return _TRANSPORT_BLOCK_RE.sub(_keep, text).strip()
 
 
-def load_loregarden_mcp_doc(agent_context_dir: Path, *, transport: ControlPlaneTransport) -> str:
-    """The MCP module, rendered for the channel this run actually has."""
-    path = agent_context_dir / MCP_DOC_REL
+def load_loregarden_mcp_doc(*, transport: ControlPlaneTransport) -> str:
+    """The MCP module, rendered for the channel this run actually has.
+
+    Read from this control plane's own ``agent_context``, never the workspace's:
+    it documents this server's tools and transports, so a workspace copy can
+    only be a stale fork of it. Blobert's was — no transport blocks and no CLI
+    fallback — so its cursor runs were never told the CLI existed.
+    """
+    path = settings.agent_context_dir / MCP_DOC_REL
     if not path.is_file():
+        logger.warning("Loregarden MCP module missing at %s; prompts will omit it", path)
         return ""
     return select_transport_blocks(path.read_text(encoding="utf-8"), transport)
 

@@ -1,6 +1,10 @@
 """Chat UI-primitives: parse agent replies into typed content parts."""
 
-from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
+from loregarden.services.chat_primitives.parser import (
+    parse_primitive_parts,
+    parts_to_jsonable,
+    reply_preview,
+)
 from loregarden.services.chat_primitives.resolver import resolve_parts
 from loregarden.services.chat_primitives.storage import (
     EMPTY_PARTS_JSON,
@@ -14,5 +18,6 @@ __all__ = [
     "parse_primitive_parts",
     "parts_json_for_reply",
     "parts_to_jsonable",
+    "reply_preview",
     "resolve_parts",
 ]

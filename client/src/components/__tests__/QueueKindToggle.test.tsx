@@ -21,14 +21,14 @@ describe("QueueKindToggle", () => {
       "aria-selected",
       "true",
     );
-    expect(screen.getByRole("tab", { name: "Docker" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Machine" })).toHaveAttribute("aria-selected", "false");
   });
 
   it("reports the choice rather than holding it", async () => {
     const onChange = jest.fn();
     render(<QueueKindToggle value="agents" onChange={onChange} />);
 
-    await userEvent.click(screen.getByRole("tab", { name: "Docker" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
     expect(onChange).toHaveBeenCalledWith("docker");
   });
 });

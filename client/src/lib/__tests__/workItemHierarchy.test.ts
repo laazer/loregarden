@@ -29,8 +29,9 @@ describe("workItemHierarchy", () => {
   });
 
   it("resolves parent types for children", () => {
-    expect(allowedParentTypes("feature")).toEqual(["milestone"]);
+    // Initiatives hold features and bugs too, for sprint-style initiatives.
+    expect(allowedParentTypes("feature")).toEqual(["initiative", "milestone"]);
     expect(allowedParentTypes("task")).toEqual(["capability"]);
-    expect(allowedParentTypes("bug")).toEqual(["milestone", "feature", "capability"]);
+    expect(allowedParentTypes("bug")).toEqual(["initiative", "milestone", "feature", "capability"]);
   });
 });

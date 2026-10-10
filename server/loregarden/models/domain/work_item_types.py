@@ -21,7 +21,9 @@ class WorkItemType(str, Enum):
 
 
 VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
-    WorkItemType.INITIATIVE: [WorkItemType.MILESTONE],
+    # Features and bugs too, so a sprint-style initiative can time-box
+    # individual work items pulled out of their milestones.
+    WorkItemType.INITIATIVE: [WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.BUG],
     WorkItemType.MILESTONE: [WorkItemType.FEATURE, WorkItemType.BUG],
     WorkItemType.FEATURE: [WorkItemType.CAPABILITY, WorkItemType.BUG],
     WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],

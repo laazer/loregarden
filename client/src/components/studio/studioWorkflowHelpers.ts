@@ -56,11 +56,22 @@ export function emptyStage(order: number): StudioWorkflowStage {
     skill_name: "plan",
     optional: false,
     order,
-    gate_required: false,
+    exit_actions_enabled: false,
+    exit_actions: [],
     terminal: false,
     skip_when: "",
     classify_routes: [],
     parallel_agents: [],
     model: "",
   };
+}
+
+/** Stable kebab key from a human label (Studio authoring). */
+export function exitActionKeyFromLabel(label: string, index: number): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || `exit-action-${index + 1}`;
 }

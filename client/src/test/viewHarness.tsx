@@ -178,9 +178,13 @@ export function installViewHarness(): void {
 
 /** The layout of the most recent PATCH. */
 export function lastLayout(): Json {
-  const calls = mockUpdateView.mock.calls;
-  if (calls.length === 0) throw new Error("No layout was written");
-  return (calls[calls.length - 1][2] as { layout: Json }).layout;
+  // Viewport writes (pan/zoom) share updateView but carry no layout, and their
+  // debounce can land after a layout write — on a loaded machine it did.
+  const writes = mockUpdateView.mock.calls
+    .map((call) => (call[2] as { layout?: Json }).layout)
+    .filter((layout): layout is Json => layout !== undefined);
+  if (writes.length === 0) throw new Error("No layout was written");
+  return writes[writes.length - 1];
 }
 
 export function containersOf(layout: Json): Record<string, Json> {

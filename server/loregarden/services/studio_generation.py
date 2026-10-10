@@ -80,7 +80,8 @@ WORKFLOW_GENERATE_JSON_SCHEMA = """```json
       "skill_name": "plan",
       "optional": false,
       "order": 1,
-      "gate_required": false,
+      "exit_actions_enabled": false,
+      "exit_actions": [],
       "classify_routes": []
     }
   ]
@@ -298,7 +299,8 @@ def _normalize_generated_stage(
         skill_name=skill_name,
         optional=bool(raw.get("optional")),
         order=order,
-        gate_required=bool(raw.get("gate_required")),
+        exit_actions_enabled=bool(raw.get("exit_actions_enabled")),
+        exit_actions=raw.get("exit_actions") or [],
         classify_routes=routes,
         parallel_agents=parallel_agents,
     )
@@ -341,7 +343,8 @@ def parse_workflow_generate_payload(
                 skill_name="plan" if "plan" in skill_set else "",
                 optional=False,
                 order=1,
-                gate_required=False,
+                exit_actions_enabled=False,
+                exit_actions=[],
                 classify_routes=[],
             )
         ]

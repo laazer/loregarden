@@ -9,6 +9,12 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden mcp call loregarden_get_ticket ticket_id=42
     loregarden mcp serve
     loregarden db init
+    loregarden sandbox snapshot --into data/sandbox
+    loregarden eval gates --workspace blobert
+    loregarden git change-pr --all-workspaces --branch B --title T -- <command> {worktree}
+    loregarden capacity run --footprint heavy --label L -- <command>
+    loregarden local_main
+    loregarden instance run --name client --kind client --port 5173 -- <command>
 """
 
 from __future__ import annotations
@@ -16,7 +22,17 @@ from __future__ import annotations
 import argparse
 import sys
 
-from loregarden.cli import init_db, mcp_server, mcp_tools
+from loregarden.cli import (
+    capacity,
+    gate_eval,
+    git_tools,
+    init_db,
+    instance,
+    local_main,
+    mcp_server,
+    mcp_tools,
+    sandbox,
+)
 from loregarden.cli.errors import EXIT_ERROR, EXIT_OK, EXIT_USAGE, UsageError
 
 
@@ -35,6 +51,25 @@ def build_parser() -> argparse.ArgumentParser:
     db_group = groups.add_parser("db", help="Database setup and maintenance.")
     db_commands = db_group.add_subparsers(dest="command", required=True)
     init_db.register(db_commands)
+
+    sandbox_group = groups.add_parser("sandbox", help="Copies of production data for UI work.")
+    sandbox_commands = sandbox_group.add_subparsers(dest="command", required=True)
+    sandbox.register(sandbox_commands)
+
+    eval_group = groups.add_parser("eval", help="Read-only evaluations of agent performance.")
+    eval_commands = eval_group.add_subparsers(dest="command", required=True)
+    gate_eval.register(eval_commands)
+
+    git_group = groups.add_parser("git", help="Git chores across managed workspaces.")
+    git_commands = git_group.add_subparsers(dest="command", required=True)
+    git_tools.register(git_commands)
+
+    capacity_group = groups.add_parser("capacity", help="Hold machine capacity while running.")
+    capacity_commands = capacity_group.add_subparsers(dest="command", required=True)
+    capacity.register(capacity_commands)
+
+    local_main.register(groups)
+    instance.register(groups)
 
     return parser
 

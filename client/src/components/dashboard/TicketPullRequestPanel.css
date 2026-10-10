@@ -1,0 +1,364 @@
+/* The PR tab. The pane sits beside two others, so it is narrow even on a wide
+ * screen: everything wraps, and nothing relies on horizontal room. */
+
+.prp {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.prp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  min-width: 0;
+}
+
+.prp-number {
+  color: var(--txm);
+}
+
+.prp-branches {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.prp-badge {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.prp-badge--open {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+}
+
+.prp-badge--draft,
+.prp-badge--closed {
+  color: var(--txm);
+  background: var(--bg3);
+}
+
+.prp-badge--merged {
+  color: var(--vil);
+  background: color-mix(in srgb, var(--vio) 14%, transparent);
+}
+
+.prp-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.prp-title a {
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.prp-title a:hover,
+.prp-title a:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.prp-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.prp-add {
+  color: var(--grl);
+}
+
+.prp-del {
+  color: var(--rdl);
+}
+
+.prp-verdict {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border-left: 3px solid currentcolor;
+}
+
+.prp-verdict--good {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 10%, transparent);
+}
+
+.prp-verdict--bad {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.prp-verdict--warn {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 10%, transparent);
+}
+
+.prp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.prp-actions--start {
+  justify-content: flex-start;
+}
+
+.prp-link-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.prp-section {
+  border-top: 1px solid var(--bd);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prp-section-title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.prp-body summary {
+  cursor: pointer;
+}
+
+.prp-checks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.prp-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prp-tally-item--failing {
+  color: var(--rdl);
+}
+
+.prp-tally-item--pending {
+  color: var(--aml);
+}
+
+.prp-tally-item--passing {
+  color: var(--grl);
+}
+
+.prp-tally-item--skipped {
+  color: var(--txl);
+}
+
+/* One card, rows split by hairlines; the outcome colours the icon, and a
+ * failing row is also tinted so it reads first even at a glance. */
+.prp-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  overflow: hidden;
+}
+
+.prp-check {
+  --prp-tone: var(--txl);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.prp-check + .prp-check {
+  border-top: 1px solid var(--bd);
+}
+
+.prp-check--passing {
+  --prp-tone: var(--grl);
+}
+
+.prp-check--pending {
+  --prp-tone: var(--aml);
+}
+
+.prp-check--failing {
+  --prp-tone: var(--rdl);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+
+.prp-check-icon {
+  flex: 0 0 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--prp-tone);
+  background: color-mix(in srgb, var(--prp-tone) 16%, transparent);
+}
+
+.prp-check-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+a.prp-check-name {
+  text-decoration: none;
+}
+
+a.prp-check-name:hover,
+a.prp-check-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.prp-outcome {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--prp-tone);
+}
+
+.prp-check--failing .prp-outcome {
+  font-weight: 600;
+}
+
+.prp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.prp-fact {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+}
+
+.prp-fact dt {
+  color: var(--txl);
+}
+
+.prp-fact dd {
+  margin: 0;
+  color: var(--txm);
+}
+
+.prp-fact--bad {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd));
+}
+
+.prp-fact--bad dd {
+  color: var(--rdl);
+}
+
+.prp-muted {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--txl);
+}
+
+.prp-branch,
+.prp-error {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.prp-error {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--rdl);
+}
+
+.prp-merge-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+
+.prp-merge-question {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.prp-merge-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prp-unsigned {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prp-unsigned-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--rdl);
+  overflow-wrap: anywhere;
+}

@@ -18,6 +18,7 @@ import {
 import type { EditDiffComment } from "../lib/textDiff";
 import { describeError } from "../state/toastStore";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
+import { Textarea } from "./ui/Textarea";
 import "./InlineCodeDiffReview.css";
 
 type DiffViewMode = "unified" | "split";
@@ -211,7 +212,8 @@ function ReviewableDiffLine({
 
       {isActive && showCommentsOnPane ? (
         <div className="inline-code-diff-compose">
-          <textarea
+          <Textarea
+            aria-label="Inline code review comment"
             className="inline-code-diff-compose-input"
             rows={3}
             autoFocus
@@ -316,7 +318,8 @@ function UnifiedDiffFile({
 
             {isActive ? (
               <div className="inline-code-diff-compose">
-                <textarea
+                <Textarea
+                  aria-label="Inline code review comment"
                   className="inline-code-diff-compose-input"
                   rows={3}
                   autoFocus
@@ -844,7 +847,8 @@ export function InlineCodeDiffReview({
 
       {showSubmit ? (
         <div className="inline-code-diff-submit">
-          <textarea
+          <Textarea
+            aria-label={localMode ? "Note for Baxter" : "Instructions for the agent"}
             className="inline-code-diff-submit-input"
             rows={3}
             placeholder={

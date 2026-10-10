@@ -33,8 +33,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 from loregarden.db.session import engine
-from loregarden.models.domain import AgentRun, RunStatus
-from loregarden.services.process_identity import still_running
+from loregarden.models.domain import AgentRun, ProcessState, RunStatus
+from loregarden.services.process_identity import liveness
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -124,8 +124,9 @@ def agent_run_lease_expired(
     # A recorded agent process that is verifiably still the same process is
     # alive whatever the lease says: a missed beat is a delay, and reaping a
     # run whose CLI is mid-answer costs the whole turn. Identity, not a bare
-    # pid, so a reused pid cannot vouch for a run it never belonged to.
-    if still_running(run.agent_pid, run.agent_pid_identity):
+    # pid, so a reused pid cannot vouch for a run it never belonged to. A `ps`
+    # that could not answer vouches for nothing: the lease decides (862).
+    if liveness(run.agent_pid, run.agent_pid_identity) is ProcessState.ALIVE:
         return False
 
     if not run_has_renewer(run):

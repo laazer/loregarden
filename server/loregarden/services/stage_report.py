@@ -36,6 +36,12 @@ class StageReport:
     confidence: float
     reroute_to_stage: str | None
     reroute_context: str
+    #: The agent the rejecting agent says should redo the work. Before this
+    #: field the only place to say it was `reroute_context` prose, which
+    #: nothing parsed, so content routing re-dispatched the same wrong
+    #: specialist every round (lg-workflow-integrity-765). Validated and
+    #: turned into a one-dispatch pin by `apply_stage_route`.
+    reroute_to_agent: str | None = None
     #: The acceptance criteria this stage says are not met. The contract has
     #: told agents to supply these since the reject-only-for-an-unmet-criterion
     #: rule landed, and nothing read them — an agent that named its evidence had
@@ -130,6 +136,7 @@ class _ReportPayload(BaseModel):
     confidence: float | None = 0.0
     reroute_to_stage: str | None = None
     reroute_context: str | None = ""
+    reroute_to_agent: str | None = None
 
 
 class _CriteriaPayload(BaseModel):
@@ -204,6 +211,7 @@ def _build_report(payload: str) -> StageReport | None:
         confidence=max(0.0, min(1.0, parsed.confidence or 0.0)),
         reroute_to_stage=parsed.reroute_to_stage or None,
         reroute_context=parsed.reroute_context or "",
+        reroute_to_agent=(parsed.reroute_to_agent or "").strip() or None,
         unmet_criteria=_criteria_of(payload),
         blocked_kind=kind,
         options=options,
@@ -394,10 +402,12 @@ def stage_report_artifact_content(stage_key: str, report: StageReport) -> dict:
         "confidence": report.confidence,
         "reroute_to_stage": report.reroute_to_stage,
         "reroute_context": report.reroute_context,
+        "reroute_to_agent": report.reroute_to_agent,
         "rows": [
             {"k": "status", "v": report.status},
             {"k": "confidence", "v": f"{report.confidence:.2f}"},
             {"k": "reroute_to_stage", "v": report.reroute_to_stage or "—"},
             {"k": "reroute_context", "v": report.reroute_context or "—"},
+            {"k": "reroute_to_agent", "v": report.reroute_to_agent or "—"},
         ],
     }

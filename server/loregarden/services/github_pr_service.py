@@ -3,30 +3,14 @@
 from __future__ import annotations
 
 import json
-import subprocess
-from pathlib import Path
 
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
-from loregarden.services.git_subprocess import run_git, scrubbed_git_env
+from loregarden.services.git_subprocess import run_gh, run_git
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.target_branch import subtree_root, target_branch_name
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
-
-
-def run_gh(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Shell out to `gh` from `cwd`, with git's repo bindings scrubbed.
-
-    `gh` picks its target repository by shelling out to git, so an inherited
-    GIT_DIR would open the PR against whatever repo the parent was bound to —
-    and `cwd` decides which worktree's branch it reads.
-    """
-    return subprocess.run(
-        ["gh", *args],
-        cwd=cwd,
-        env=scrubbed_git_env(),
-        capture_output=True,
-        text=True,
-    )
 
 
 def _build_pr_body(ticket: Ticket) -> str:
@@ -53,6 +37,25 @@ def _build_pr_body(ticket: Ticket) -> str:
     return "\n".join(lines)
 
 
+def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) -> None:
+    """A ticket inside a tree ships in its tree's PR, never one of its own.
+
+    Its work lands on the tree's integration branch, which goes to the base as
+    one PR when the root completes. A PR for the ticket's own branch carries
+    the same commits a second time, so every conflict with the base has to be
+    resolved twice (lg-durable-remote-336 was on both `integration/…-335` and
+    its own PR #555).
+    """
+    target = target_branch_name(session, ticket, workspace)
+    if target == resolve_orchestration_profile(workspace).git.base_branch:
+        return
+    root = subtree_root(session, ticket)
+    raise ValueError(
+        f"{ticket.external_id} lands on {target}; its work ships in that tree's pull request "
+        f"when {root.external_id} completes. A PR for its own branch would duplicate it."
+    )
+
+
 def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
     workspace = session.get(Workspace, ticket.workspace_id)
     if not workspace:
@@ -60,6 +63,8 @@ def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
 
     if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")
+
+    _refuse_tree_member(session, ticket, workspace)
 
     branch = ticket.branch.strip()
     if not branch:

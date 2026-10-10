@@ -6,7 +6,9 @@ parity assertions here are the load-bearing ones.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from loregarden.agents.chat_role_prompt import (
     chat_posture_blocks,
@@ -15,6 +17,7 @@ from loregarden.agents.chat_role_prompt import (
 )
 from loregarden.agents.prompt_blocks import AGENT_ROLE_HEADING, ROLE_BODY_CAP
 from loregarden.models.domain.enums import ChatSurface
+from loregarden.services.chat_primitives import parse_primitive_parts
 
 
 class TestRoleBlocks:
@@ -92,6 +95,16 @@ class TestUiPrimitives:
 
     def test_contract_is_identical_wherever_it_is_rendered(self):
         assert chat_ui_primitives_blocks() == chat_ui_primitives_blocks()
+
+    def test_every_example_card_parses_as_the_card_it_shows(self):
+        # The model copies these shapes. One the parser rejects degrades to raw
+        # JSON in the thread, which is what an unspecified `qa` shape produced.
+        rendered = "\n".join(chat_ui_primitives_blocks())
+        examples = re.findall(r"```loregarden\\n(.*?)\\n```", rendered)
+        assert {json.loads(body)["primitive"] for body in examples} >= {"todo_list", "qa"}
+        for body in examples:
+            parts = parse_primitive_parts(f"```loregarden\n{body}\n```")
+            assert [part.primitive for part in parts] == [json.loads(body)["primitive"]]
 
     def test_plan_id_stability_rule_is_present(self):
         rendered = "\n".join(chat_ui_primitives_blocks())

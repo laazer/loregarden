@@ -9,7 +9,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def child_count(session: Session, ticket_id: str) -> int:
@@ -60,9 +60,16 @@ def build_tree(
     tickets: list[Ticket],
     *,
     stage_names: dict[str, str] | None = None,
+    members: dict[str, list[str]] | None = None,
 ) -> list[TicketTreeNode]:
-    """Assemble a forest from a flat ticket list (roots = no parent)."""
+    """Assemble a forest from a flat ticket list (roots = no parent).
+
+    ``members`` maps an initiative id to the ids it tracks without parenting
+    them. Each one present in ``tickets`` is listed again under the initiative,
+    after its children, as a leaf ``member_link`` copy.
+    """
     stage_names = stage_names or {}
+    members = members or {}
     by_id = {t.id: t for t in tickets}
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
@@ -89,8 +96,7 @@ def build_tree(
         }
         return (type_order.get(t.work_item_type, 9), t.priority, t.external_id)
 
-    def node_for(ticket: Ticket) -> TicketTreeNode:
-        kids = sorted(children_map.get(ticket.id, []), key=sort_key)
+    def leaf(ticket: Ticket) -> TicketTreeNode:
         return TicketTreeNode(
             id=ticket.id,
             external_id=ticket.external_id,
@@ -101,9 +107,31 @@ def build_tree(
             workspace_slug=workspace_slugs.get(ticket.workspace_id, ""),
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
-            child_count=len(kids),
-            children=[node_for(k) for k in kids],
         )
+
+    def member_node(ticket: Ticket) -> TicketTreeNode:
+        # The real parent may be filtered out of `tickets`; the identity map usually has it.
+        parent = session.get(Ticket, ticket.parent_ticket_id) if ticket.parent_ticket_id else None
+        return leaf(ticket).model_copy(
+            update={
+                "member_link": True,
+                "home_parent_external_id": parent.external_id if parent else "",
+            }
+        )
+
+    def node_for(ticket: Ticket) -> TicketTreeNode:
+        kids = sorted(children_map.get(ticket.id, []), key=sort_key)
+        # Parented wins, as in `initiative_coverage`: a child is not listed twice.
+        tracked = sorted(
+            (
+                by_id[mid]
+                for mid in members.get(ticket.id, [])
+                if mid in by_id and by_id[mid].parent_ticket_id != ticket.id
+            ),
+            key=sort_key,
+        )
+        children = [node_for(k) for k in kids] + [member_node(m) for m in tracked]
+        return leaf(ticket).model_copy(update={"child_count": len(children), "children": children})
 
     roots = sorted(children_map.get(None, []), key=sort_key)
     return [node_for(r) for r in roots]
@@ -163,9 +191,30 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
         if _is_descendant(session, candidate=parent, ancestor=ticket):
             raise ValueError("Cannot reparent a work item beneath one of its own descendants")
         validate_parent_assignment(ticket.work_item_type, parent.work_item_type)
+        if ticket.is_integration_review and parent.work_item_type == WorkItemType.INITIATIVE:
+            # It depends on its siblings so that it runs last; away from them it reviews nothing.
+            raise ValueError("An integration review stays with the work it reviews")
         ticket.parent_ticket_id = parent.id
 
     ticket.revision += 1
     ticket.last_updated_by = "human"
     session.add(ticket)
     return ticket
+
+
+def descendants_by_root(session: Session, root_ids: list[str]) -> dict[str, list[Ticket]]:
+    """Every descendant of each root, one query per tree level."""
+    owner: dict[str, str] = {root: root for root in root_ids}
+    found: dict[str, list[Ticket]] = {root: [] for root in root_ids}
+    frontier = list(root_ids)
+    while frontier:
+        rows = session.exec(select(Ticket).where(col(Ticket.parent_ticket_id).in_(frontier))).all()
+        frontier = []
+        for child in rows:
+            if child.id in owner:  # a parent cycle is a data bug; do not loop on it
+                continue
+            root = owner[child.parent_ticket_id or ""]
+            owner[child.id] = root
+            found[root].append(child)
+            frontier.append(child.id)
+    return found

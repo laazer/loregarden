@@ -14,6 +14,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import ApprovalService
 from sqlmodel import Session, select
+from tests.factories import operator_judgment_gate_payload
 
 
 @pytest.fixture
@@ -40,6 +41,7 @@ def gated_ticket(db_session: Session):
         stage_key=gate.key,
         status=ApprovalStatus.PENDING,
         title="sign off",
+        tool_input_json=operator_judgment_gate_payload(gate.name),
     )
     db_session.add(approval)
     db_session.commit()

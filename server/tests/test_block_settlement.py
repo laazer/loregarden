@@ -11,6 +11,7 @@ block writer which skips it fail the suite.
 from __future__ import annotations
 
 import ast
+import functools
 import pathlib
 
 import pytest
@@ -269,11 +270,12 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/orchestration_callbacks.py:pause_for_rework_decision": (
         "delegates: orchestration_callbacks.block_ticket"
     ),
-    "services/parallel_stage.py:prepare_tree_for_parallel_stage": "settles",
+    "services/parallel_stage.py:_block_on_checkout_failure": "settles",
     "services/parallel_stage.py:_route_parallel_stage_failures": "settles",
     "services/run_completion.py:_reroute_or_block_for_rework": "settles",
     "services/run_completion.py:settle_stage_after_failed_completion": "settles",
     "services/run_completion.py:_block_for_usage_limit": "settles",
+    "services/run_completion.py:_parked_for_network": "settles",
     "services/run_completion.py:_advance_clean_exit": "settles",
     "services/run_completion.py:_rearmed_for_transient_retry": "settles",
     "services/run_completion.py:advance_stage_after_run": "settles",
@@ -338,17 +340,45 @@ def _settling_names(tree: ast.Module) -> set[str]:
     return settling
 
 
+@functools.cache
+def _sources() -> dict[str, str]:
+    """Every module under `loregarden/`, by path relative to it."""
+    return {
+        path.relative_to(_SOURCE_ROOT).as_posix(): path.read_text()
+        for path in sorted(_SOURCE_ROOT.rglob("*.py"))
+    }
+
+
+@functools.cache
+def _tree(relative: str) -> ast.Module:
+    return ast.parse(_sources()[relative], filename=relative)
+
+
+def _trees_mentioning(*needles: str) -> list[tuple[str, ast.Module]]:
+    """The parsed modules whose source contains any of ``needles``.
+
+    Each scan below matches a name — a call, an attribute, an import — that has
+    to appear in the source text for the AST to hold it, so a module without
+    any of them cannot match and is never parsed. Most modules are not.
+    """
+    return [
+        (relative, _tree(relative))
+        for relative, text in _sources().items()
+        if any(needle in text for needle in needles)
+    ]
+
+
+@functools.cache
 def _discovered_block_writers() -> dict[str, bool]:
     """Every function that blocks, mapped to whether it settles the block itself."""
     found: dict[str, bool] = {}
-    for path in sorted(_SOURCE_ROOT.rglob("*.py")):
-        tree = ast.parse(path.read_text(), filename=str(path))
+    for relative, tree in _trees_mentioning("block_ticket", "BLOCKED"):
         settling = _settling_names(tree)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             if _writes_a_block(node):
-                key = f"{path.relative_to(_SOURCE_ROOT).as_posix()}:{node.name}"
+                key = f"{relative}:{node.name}"
                 found[key] = bool(_called_names(node) & settling)
     return found
 
@@ -402,11 +432,9 @@ def test_the_classify_and_repair_halves_are_not_separately_callable():
     `offer_repair` coming with it, which is exactly how 749/750 came to cover
     three sites out of twenty-five: the pair was opt-in per call site."""
     offenders: list[str] = []
-    for path in sorted(_SOURCE_ROOT.rglob("*.py")):
-        relative = path.relative_to(_SOURCE_ROOT).as_posix()
+    for relative, tree in _trees_mentioning(*_HALVES):
         if relative == "services/block_settlement.py":
             continue
-        tree = ast.parse(path.read_text(), filename=str(path))
         owns = {
             node.name
             for node in ast.walk(tree)

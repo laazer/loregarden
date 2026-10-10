@@ -323,7 +323,7 @@ def test_the_retries_are_bounded_and_the_block_names_the_environment(db_session:
 
     assert ticket.state == TicketState.BLOCKED
     assert ticket.workflow_stage_status is StageStatus.BLOCKED
-    # Over the inline limit, so the prose is filed for the Errors tab and
+    # Over the inline limit, so the prose is filed for the Timeline tab and
     # `blocking_issues` holds the pointer to it.
     error = db_session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket.id).where(Artifact.kind == "error")

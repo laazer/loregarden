@@ -15,10 +15,9 @@ exists to prevent.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from loregarden.models.domain import Ticket
-from loregarden.services.evidence import evidence_kinds_at_head
+from loregarden.services.evidence import evidence_kinds_for_tree
+from loregarden.services.worktree_snapshot import TreeSnapshot
 from sqlmodel import Session
 
 # What each evidence kind lets a downstream consumer stop redoing, most- to
@@ -41,7 +40,7 @@ _LEDGER_LINES: dict[str, str] = {
 def build_evidence_ledger(
     session: Session,
     ticket: Ticket,
-    repo_root: Path,
+    tree: TreeSnapshot,
     *,
     is_verify: bool,
 ) -> str:
@@ -52,7 +51,7 @@ def build_evidence_ledger(
     """
     if is_verify:
         return ""
-    kinds = evidence_kinds_at_head(session, ticket, repo_root)
+    kinds = evidence_kinds_for_tree(session, ticket, tree)
     rows = [f"- {_LEDGER_LINES[kind]}" for kind in _LEDGER_LINES if kind in kinds]
     if not rows:
         return ""

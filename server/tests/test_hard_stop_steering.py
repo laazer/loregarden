@@ -103,6 +103,18 @@ def test_a_second_stop_is_refused_rather_than_re_armed(session, workspace):
 # ---- operator-only, pinned rather than assumed -------------------------
 
 
+#: Tools whose name trips the check below but which cannot stop a run — each an
+#: explicit decision, with its reason, rather than a name chosen to slip past.
+_NOT_RUN_STOPPERS: dict[str, str] = {
+    # Stops a local instance: it signals only a process group the instance
+    # launcher created, and refuses main (`not_managed`), which registered
+    # itself. Main and every run main dispatched are out of its reach. The most
+    # it can end is a sandboxed branch server — and runs *that* server started,
+    # on its snapshot database. Decided with loregarden#420.
+    "loregarden_stop_instance": "stops a launched local instance, never a run",
+}
+
+
 def test_no_mcp_tool_can_stop_a_run():
     """Agents must not be able to stop each other.
 
@@ -110,17 +122,26 @@ def test_no_mcp_tool_can_stop_a_run():
     an orchestrated agent has no way to reach one. That is a real guarantee and
     a fragile one — it survives only until someone adds the obvious tool. This
     fails the moment that happens, so the operator-only decision has to be made
-    again deliberately rather than lost in a convenience.
+    again deliberately rather than lost in a convenience. A tool that matches
+    the name check without being able to stop a run goes in `_NOT_RUN_STOPPERS`,
+    with its reason.
     """
     from loregarden.mcp import tools as mcp_tools
 
     names = {tool["name"] for tool in mcp_tools.TOOL_DEFINITIONS}
-    offenders = sorted(name for name in names if "cancel" in name.lower() or "stop" in name.lower())
+    offenders = sorted(
+        name
+        for name in names
+        if ("cancel" in name.lower() or "stop" in name.lower()) and name not in _NOT_RUN_STOPPERS
+    )
 
     assert offenders == [], (
         "an MCP tool can now stop a run; e3 requires stopping to be operator-only, "
         "so this needs an explicit authorization decision rather than a new tool"
     )
+    # An exemption for a tool that no longer exists is a hole waiting for the
+    # next tool to reuse the name.
+    assert set(_NOT_RUN_STOPPERS) <= names
 
 
 def test_the_rest_endpoint_is_the_operator_path(session, workspace):

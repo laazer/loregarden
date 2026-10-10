@@ -49,7 +49,7 @@ from loregarden.models.domain import (
     comparable_utc,
 )
 from loregarden.services import btw_service
-from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
@@ -59,6 +59,7 @@ from loregarden.services.cli_settings import (
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.external_harness import build_external_harness_prompt
 from loregarden.services.hierarchy_service import build_tree, child_count
+from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -97,6 +98,7 @@ from loregarden.services.workflow_service import (
     stage_resolution_memo,
     workspace_for,
 )
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -287,6 +289,47 @@ def _retry_payload(art: Artifact) -> dict:
         return {}
 
 
+class _ErrorArtifactContent(BaseModel):
+    """An error artifact's payload: a message, plus whatever its writer recorded."""
+
+    model_config = ConfigDict(extra="allow")
+
+    message: str = ""
+
+
+def _current_error(
+    session: Session, ticket_id: str, error_artifacts: list[Artifact]
+) -> dict | None:
+    """The latest error artifact, while it still describes where the ticket is.
+
+    Error artifacts are never cleared, so "the latest one" alone kept a block
+    from hours ago on screen, labelled Blocked, after later stages ran green
+    (lg-durable-remote-336: a 23:27 implement block, test-break succeeded at
+    23:38, implement running again). Once any run has started since the error
+    was written, the work moved on and the error is history — it stays on the
+    Timeline as an output, and a live block is in `blocking_issues`.
+    """
+    if not error_artifacts:
+        return None
+    latest = max(error_artifacts, key=lambda a: comparable_utc(a.created_at))
+    newer_run = session.exec(
+        select(AgentRun.id)
+        .where(AgentRun.ticket_id == ticket_id)
+        .where(col(AgentRun.created_at) > latest.created_at)
+        .limit(1)
+    ).first()
+    if newer_run is not None:
+        return None
+    try:
+        content = _ErrorArtifactContent.model_validate_json(latest.content_json or "{}")
+    except ValidationError:
+        # Still shown: an operator reading a raw payload beats a block with no reason.
+        logger.warning("Error artifact %s has an unreadable payload", latest.id, exc_info=True)
+        return {"message": latest.content_json or ""}
+    content.message = normalize_timeout_stderr(content.message)
+    return content.model_dump()
+
+
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     from loregarden.models.domain import Workspace
     from loregarden.services.artifact_service import (
@@ -353,15 +396,7 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         ),
         key=lambda row: row["at"],
     )
-    if error_artifacts:
-        latest_error = sorted(
-            error_artifacts, key=lambda a: comparable_utc(a.created_at), reverse=True
-        )[0]
-        error_content = json.loads(latest_error.content_json or "{}")
-        message = error_content.get("message")
-        if isinstance(message, str):
-            error_content["message"] = normalize_timeout_stderr(message)
-        grouped["error"] = error_content
+    grouped["error"] = _current_error(session, ticket_id, error_artifacts)
     if log_artifacts and _apply_log_artifacts(session, ticket_id, log_artifacts, grouped):
         return grouped
 
@@ -445,8 +480,15 @@ def ticket_tree(
     work_item_type: list[WorkItemType] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
+    include_members: bool = False,
     session: Session = Depends(get_session),
 ) -> list[TicketTreeNode]:
+    """The forest of matching tickets, anchored under their ancestors.
+
+    ``include_members`` also lists each initiative's members under it (see
+    `build_tree`), and brings in any initiative tracking a listed ticket:
+    initiatives bind to no workspace, so a workspace filter never matches one.
+    """
     ws = _workspace_filter(session, workspace)
     if ws is False:
         return []
@@ -468,10 +510,17 @@ def ticket_tree(
 
     # Ancestors keep matching tickets anchored in the hierarchy even when the filter excludes them.
     all_tickets = tickets + _collect_ancestors(session, tickets)
+    members = members_among(session, [t.id for t in all_tickets]) if include_members else {}
+    listed = {t.id for t in all_tickets}
+    all_tickets += [
+        initiative
+        for initiative_id in members
+        if initiative_id not in listed and (initiative := session.get(Ticket, initiative_id))
+    ]
     with stage_resolution_memo():
         prime_workflow_instances(session, [t.id for t in all_tickets])
         stage_names = _build_stage_names(session, all_tickets)
-    return build_tree(session, all_tickets, stage_names=stage_names)
+    return build_tree(session, all_tickets, stage_names=stage_names, members=members)
 
 
 @router.get("", response_model=list[TicketSummary])
@@ -481,6 +530,7 @@ def list_tickets(
     state: list[TicketState] | None = Query(default=None),
     work_item_type: list[WorkItemType] | None = Query(default=None),
     parent_ticket_id: str | None = None,
+    ancestor_ticket_id: str | None = None,
     roots_only: bool = False,
     milestone: str | None = None,
     search: str | None = None,
@@ -517,6 +567,10 @@ def list_tickets(
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))
+    if ancestor_ticket_id:
+        # Every level below it, in whichever workspaces they live — an
+        # initiative's board spans repositories, and shows its members too.
+        query = query.where(col(Ticket.id).in_(covered_ticket_ids(session, ancestor_ticket_id)))
     query = query.order_by(Ticket.priority, Ticket.created_at)
     if limit is not None:
         # Paged in SQL, not after the fact: the cost this endpoint carries is
@@ -805,10 +859,12 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     transitions = normalize_transitions_for_api(template.transitions_json) if template else []
     posture = resolve_compatibility_posture(session, ticket)
     prereq_ids, dependent_ids = _dependency_edge_ids(session, ticket.id)
+    criteria = load_criteria(ticket.acceptance_criteria_json)
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
-        acceptance_criteria=load_criteria(ticket.acceptance_criteria_json),
+        acceptance_criteria=criteria,
+        checked_acceptance_criteria=load_checked(ticket.checked_criteria_json, criteria),
         dependencies=_dependency_refs(session, prereq_ids),
         dependents=_dependency_refs(session, dependent_ids),
         related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),

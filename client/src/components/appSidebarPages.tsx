@@ -73,6 +73,18 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "initiatives",
+    label: "Initiatives",
+    path: pathForPage("initiatives"),
+    ownsPage: ownsOnly("initiatives"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M5 21V4" />
+        <path d="M5 4h11l-2 4 2 4H5" />
+      </svg>
+    ),
+  },
+  {
     key: "editor",
     label: "Editor",
     path: pathForPage("editor"),
@@ -120,6 +132,31 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
         <path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21" />
         <circle cx="5" cy="5" r="1.6" />
         <circle cx="19" cy="19" r="1.6" />
+      </svg>
+    ),
+  },
+  {
+    key: "workspaces",
+    label: "Workspaces",
+    path: pathForPage("workspaces"),
+    ownsPage: ownsOnly("workspaces"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <rect x="3" y="4" width="18" height="7" rx="1.5" />
+        <rect x="3" y="13" width="18" height="7" rx="1.5" />
+        <path d="M7 7.5h.01M7 16.5h.01" />
+      </svg>
+    ),
+  },
+  {
+    key: "memory",
+    label: "Memory",
+    path: pathForPage("memory"),
+    ownsPage: ownsOnly("memory"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" />
+        <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />
       </svg>
     ),
   },

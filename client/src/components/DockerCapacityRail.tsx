@@ -1,5 +1,5 @@
 /**
- * The rail half of the Docker tab: how much room there is, and how much the
+ * The rail half of the Machine tab: how much room there is, and how much the
  * number is worth.
  *
  * The queue itself — who holds capacity, who is behind them, how long until
@@ -12,32 +12,58 @@
  * What survives here is the part a summary is actually good at: the ceiling,
  * where it came from, and anything that makes it less trustworthy than it looks
  * — a stale measurement, an unmeasured machine, a lease nobody could verify.
+ *
+ * Two pools, nested: the machine (host) is what every lease is charged to, and
+ * the Docker VM is a smaller pool inside it that container claims also need
+ * room in. The headline is the machine's, because that is what a test run or a
+ * build is waiting on; Docker's is a tile beside it.
  */
 
-import type { DockerCapacityStatus } from "../api/dockerTypes";
+import type { CapacityPool, DockerCapacityStatus, DockerCeiling } from "../api/dockerTypes";
 import "./DockerCapacityRail.css";
 
+interface Caveat {
+  tone: string;
+  text: string;
+}
+
+interface PoolWords {
+  stale: string;
+  unknown: string;
+  override: string;
+}
+
+/** How each pool's ceiling is described when it is not a fresh measurement. */
+const POOL_WORDS: Record<CapacityPool, PoolWords> = {
+  host: {
+    stale: "This machine's size could not be read",
+    unknown: "This machine's size has never been read, so every reservation is being refused",
+    override: "Machine ceiling set by configuration rather than measured.",
+  },
+  docker: {
+    stale: "Docker is not answering",
+    unknown:
+      "Docker capacity has never been measured, so docker reservations are being refused",
+    override: "Docker ceiling set by configuration rather than measured.",
+  },
+};
+
+/** Free cpus, or a dash for a ceiling nobody has measured — never a plausible zero. */
+function describeFree(ceiling: DockerCeiling, cpus: number): string {
+  return ceiling.source === "unknown" ? "—" : formatCpus(cpus);
+}
+
 /** The one line worth saying about a ceiling that is not a fresh measurement. */
-function ceilingCaveat(status: DockerCapacityStatus): { tone: string; text: string } | null {
-  const { ceiling } = status;
+function ceilingCaveat(ceiling: DockerCeiling, words: PoolWords): Caveat | null {
+  const reason = ceiling.error ? ` — ${ceiling.error}` : "";
   if (ceiling.source === "stale_probe") {
-    return {
-      tone: "warn",
-      text: `Docker is not answering. Showing the last good measurement${
-        ceiling.error ? ` — ${ceiling.error}` : ""
-      }`,
-    };
+    return { tone: "warn", text: `${words.stale}. Showing the last good measurement${reason}` };
   }
   if (ceiling.source === "unknown") {
-    return {
-      tone: "bad",
-      text: `Capacity has never been measured, so reservations are being refused${
-        ceiling.error ? ` — ${ceiling.error}` : ""
-      }`,
-    };
+    return { tone: "bad", text: `${words.unknown}${reason}` };
   }
   if (ceiling.source === "config_override") {
-    return { tone: "info", text: "Ceiling set by configuration rather than measured." };
+    return { tone: "info", text: words.override };
   }
   return null;
 }
@@ -59,7 +85,7 @@ export function DockerCapacityRail({
   if (loading && !status) {
     return (
       <>
-        <div className="queue-rail-heading">Docker capacity</div>
+        <div className="queue-rail-heading">Machine capacity</div>
         <p className="queue-rail-empty" role="status">
           Reading the ledger…
         </p>
@@ -72,7 +98,7 @@ export function DockerCapacityRail({
   if (error) {
     return (
       <>
-        <div className="queue-rail-heading">Docker capacity</div>
+        <div className="queue-rail-heading">Machine capacity</div>
         <p className="queue-rail-empty">{error}</p>
       </>
     );
@@ -81,7 +107,7 @@ export function DockerCapacityRail({
   if (!status || !status.enabled) {
     return (
       <>
-        <div className="queue-rail-heading">Docker capacity</div>
+        <div className="queue-rail-heading">Machine capacity</div>
         <p className="queue-rail-empty">
           The capacity ledger is switched off. Nothing is being tracked or limited.
         </p>
@@ -89,31 +115,46 @@ export function DockerCapacityRail({
     );
   }
 
-  const caveat = ceilingCaveat(status);
-  const { available, ceiling } = status;
+  const { host } = status;
+  const caveats = [
+    ceilingCaveat(host.ceiling, POOL_WORDS.host),
+    ceilingCaveat(status.ceiling, POOL_WORDS.docker),
+  ].filter((caveat): caveat is Caveat => caveat !== null);
 
   return (
     <>
-      <div className="queue-rail-heading">Docker capacity</div>
+      <div className="queue-rail-heading">Machine capacity</div>
 
-      {caveat ? (
-        <p className={`docker-caveat docker-caveat--${caveat.tone}`} role="status">
+      {caveats.map((caveat) => (
+        <p
+          key={caveat.text}
+          className={`docker-caveat docker-caveat--${caveat.tone}`}
+          role="status"
+        >
           {caveat.text}
         </p>
-      ) : null}
+      ))}
 
       {/* Headline is what is FREE: the reader is deciding whether to start
           something, not auditing utilisation. */}
       <div className="docker-headline">
-        <span className="docker-headline-value">{formatCpus(available.cpus)}</span>
-        <span className="docker-headline-label">free now</span>
+        <span className="docker-headline-value">
+          {describeFree(host.ceiling, host.available.cpus)}
+        </span>
+        <span className="docker-headline-label">free on this machine</span>
       </div>
 
       <div className="queue-rail-grid">
         <div className="queue-rail-tile">
-          <div className="queue-rail-tile-label">Holding</div>
+          <div className="queue-rail-tile-label">Slots held</div>
           <div className="queue-rail-tile-value">
-            {status.holders.length}/{ceiling.leases || "—"}
+            {host.in_use.leases}/{host.ceiling.leases || "—"}
+          </div>
+        </div>
+        <div className="queue-rail-tile">
+          <div className="queue-rail-tile-label">Docker free</div>
+          <div className="queue-rail-tile-value">
+            {describeFree(status.ceiling, status.available.cpus)}
           </div>
         </div>
         <div className="queue-rail-tile">

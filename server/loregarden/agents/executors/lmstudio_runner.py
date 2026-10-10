@@ -15,6 +15,7 @@ from pathlib import Path
 
 import httpx
 from loregarden.agents.condenser import Condenser, NoOpCondenser
+from loregarden.mcp.caller import ORCHESTRATED_HEADER, RUN_ID_HEADER
 from loregarden.services.lmstudio_discovery import is_chat_lmstudio_model
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,9 @@ class McpBridge:
         self._client = client
         self._url = url.rstrip("/")
         self._run_id = run_id
+        self._headers = {ORCHESTRATED_HEADER: "1"}
+        if run_id:
+            self._headers[RUN_ID_HEADER] = run_id
         self._workspace_slug = workspace_slug
         self._next_id = 0
 
@@ -150,7 +154,7 @@ class McpBridge:
         response = self._client.post(
             self._url,
             json={"jsonrpc": "2.0", "id": self._next_id, "method": method, "params": params},
-            headers={"X-Loregarden-Orchestrated": "1"},
+            headers=self._headers,
             timeout=DEFAULT_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

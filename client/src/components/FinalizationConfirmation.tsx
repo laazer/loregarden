@@ -25,6 +25,7 @@ export interface FinalizationConfirmationProps {
 }
 
 const BREAKDOWN_ORDER: Array<{ key: string; singular: string; plural: string }> = [
+  { key: "initiative", singular: "initiative", plural: "initiatives" },
   { key: "milestone", singular: "milestone", plural: "milestones" },
   { key: "feature", singular: "feature", plural: "features" },
   { key: "capability", singular: "capability", plural: "capabilities" },

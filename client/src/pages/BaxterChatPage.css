@@ -1,5 +1,16 @@
+/* The chat column and its workbench, side by side; overlays anchor here. */
+.baxter-chat-layout {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
 .baxter-chat {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -74,6 +85,9 @@
   min-height: 0;
   overflow: auto;
   padding: 28px 22px 4px;
+  /* The dock below has no scrollbar. Reserving the gutter on both edges keeps the thread's
+     centred column on the same axis as the dock's composer instead of half a scrollbar left. */
+  scrollbar-gutter: stable both-edges;
   /* Query container so primitives can size against the thread, not the viewport. */
   container-type: inline-size;
 }
@@ -110,7 +124,9 @@
   max-width: 100%;
 }
 
-.baxter-chat-thread .lg-chat-user-bubble {
+/* The cap belongs on the column, which is sized against the turn. On the bubble a percentage
+   resolves against a column already shrunk to the text, so every message wrapped. */
+.baxter-chat-thread .lg-chat-user-col {
   max-width: min(640px, 92%);
 }
 
@@ -123,7 +139,7 @@
 .baxter-chat-thread .lg-chat-messages-tail {
   min-height: 0;
   height: 0;
-  margin-top: -18px; /* cancel .lg-chat-messages gap */
+  margin-top: calc(-1 * var(--lg-chat-turn-gap)); /* cancel .lg-chat-messages gap */
   overflow: hidden;
   pointer-events: none;
 }
@@ -132,7 +148,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 36px 36px 48px;
+  /* Extra bottom padding sits the block a little above centre, where the eye lands. */
+  padding: 36px 36px 12vh;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -140,6 +157,16 @@
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+/* Centred vertically with auto margins rather than justify-content, which would clip the
+   top of the greeting out of reach of the scrollbar on a short window. */
+.baxter-chat-welcome > :first-child {
+  margin-top: auto;
+}
+
+.baxter-chat-welcome > :last-child {
+  margin-bottom: auto;
 }
 
 .baxter-chat-intro {
@@ -333,14 +360,14 @@
   );
 }
 
-.baxter-chat-suggestions {
-  max-width: var(--baxter-reading, 880px);
-  margin: 0 auto 10px;
-}
-
 .baxter-chat-dock .lg-chat-composer-wrap {
   max-width: var(--baxter-reading, 880px);
   margin: 0 auto;
+}
+
+.baxter-chat-dock .lg-chat-prompt-row {
+  max-width: var(--baxter-reading, 880px);
+  margin: 8px auto 0;
 }
 
 .baxter-chat-footnote {
@@ -368,7 +395,7 @@
   background: rgba(4, 7, 10, 0.48);
   backdrop-filter: blur(2px);
   cursor: default;
-  animation: baxter-history-fade 150ms ease-out;
+  animation: baxter-history-fade var(--t-fast) ease-out;
 }
 
 .baxter-history-panel {
@@ -383,7 +410,7 @@
     var(--bg1);
   border-left: 1px solid var(--bd2);
   box-shadow: -24px 0 70px rgba(0, 0, 0, 0.42);
-  animation: baxter-history-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: baxter-history-enter var(--t-med) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .baxter-history-head {
@@ -443,11 +470,10 @@
   gap: 9px;
 }
 
-/* A saved thread: no leading mark, and the delete control rides alongside. */
+/* A saved thread: no leading mark. Its delete control sits inside the card, bottom-right
+   beside the message count, and shows on hover or focus (always on touch). */
 .baxter-history-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
+  position: relative;
 }
 
 .baxter-history-row .baxter-history-entry {
@@ -467,23 +493,89 @@
 }
 
 .baxter-history-delete {
-  flex: none;
-  width: 34px;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--bd);
-  border-radius: 11px;
-  background: var(--bg1);
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--txl);
-  cursor: pointer;
+  opacity: 0;
   transition:
-    color 140ms ease,
-    border-color 140ms ease;
+    opacity var(--t-fast) ease,
+    color var(--t-fast) ease,
+    border-color var(--t-fast) ease;
 }
 
-.baxter-history-delete:hover {
-  color: var(--dg, #e2555f);
-  border-color: color-mix(in srgb, var(--dg, #e2555f) 45%, var(--bd));
+.baxter-history-row:hover .baxter-history-delete,
+.baxter-history-delete:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .baxter-history-delete {
+    opacity: 1;
+  }
+}
+
+.baxter-history-delete:hover,
+.baxter-history-delete:focus-visible {
+  color: var(--rdl);
+  border-color: color-mix(in srgb, var(--rdl) 45%, var(--bd));
+}
+
+/* Asking before a delete that cannot be undone, over the card's bottom edge. */
+.baxter-history-confirm {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--rdl) 45%, var(--bd2));
+  border-radius: 9px;
+  background: var(--bg1);
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.baxter-history-confirm > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.baxter-history-confirm-delete,
+.baxter-history-confirm-cancel {
+  padding: 4px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.baxter-history-confirm-delete {
+  border-color: color-mix(in srgb, var(--rdl) 55%, var(--bd2));
+  color: var(--rdl);
+}
+
+.baxter-history-search {
+  flex: none;
+  padding: 12px 14px 0;
+}
+
+.baxter-history-search input {
+  width: 100%;
+}
+
+.baxter-history-clear {
+  color: var(--ac2);
+  font-size: inherit;
+  text-decoration: underline;
 }
 
 .baxter-history-list .baxter-history-note {
@@ -506,9 +598,9 @@
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
   transition:
-    border-color 140ms ease,
-    transform 140ms ease,
-    background 140ms ease;
+    border-color var(--t-fast) ease,
+    transform var(--t-fast) ease,
+    background var(--t-fast) ease;
 }
 
 .baxter-history-entry:hover {
@@ -658,9 +750,111 @@
   line-height: 1.45;
 }
 
-/* The send-to-tab control sits with the composer, right-aligned above it. */
-.baxter-chat-send-to-tab {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 4px 4px;
+/*
+ * The reply composer on one line: attach, input, menu, send.
+ *
+ * The stacked box spent a 44px input plus a 36px toolbar row on a line of
+ * text — about 110px of the window. Flattening the toolbar into the row brings
+ * it to about 50px; the attachment tray takes a row of its own only when there
+ * is something in it. `display: contents` lets the toolbar's children order
+ * themselves around the input without the shared composer knowing.
+ */
+.baxter-chat-dock .lg-chat-composer {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 6px 6px 6px;
+  border-radius: 14px;
+}
+
+.baxter-chat-dock .lg-chat-composer-toolbar {
+  display: contents;
+}
+
+.baxter-chat-dock .lg-attachment-tray {
+  order: -1;
+  flex: 1 0 100%;
+  padding: 2px 2px 4px;
+}
+
+.baxter-chat-dock .lg-composer-icon-btn {
+  order: 0;
+  margin-bottom: 2px;
+}
+
+.baxter-chat-dock .lg-composer-commands {
+  order: 1;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.baxter-chat-dock .lg-chat-composer-input {
+  min-height: 36px;
+  max-height: 200px;
+  padding: 7px 4px;
+  font-size: 14px;
+}
+
+.baxter-chat-dock .overflow-menu {
+  order: 2;
+  margin-bottom: 2px;
+}
+
+.baxter-chat-dock .lg-chat-composer-spacer {
+  display: none;
+}
+
+.baxter-chat-dock .lg-chat-composer-send {
+  order: 3;
+}
+
+.baxter-chat-dock .lg-chat-composer-error {
+  order: 4;
+  flex: 1 0 100%;
+  padding: 0 6px 2px;
+}
+
+/* The `⋯` reads as one of the composer's own controls, not a bordered button. */
+.lg-chat-composer .overflow-menu-trigger {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--txm);
+}
+
+.lg-chat-composer .overflow-menu-trigger:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+/* A user turn that sent files stacks them under its bubble. */
+.baxter-chat-thread .lg-chat-turn--user:has(.lg-attachment-tray--sent) {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* "Show in thread" from the workbench: a brief ring on the turn it landed on. */
+.lg-chat-turn--flash {
+  animation: baxter-turn-flash 1.4s ease-out;
+  border-radius: 12px;
+}
+
+@keyframes baxter-turn-flash {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-chat-turn--flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
 }

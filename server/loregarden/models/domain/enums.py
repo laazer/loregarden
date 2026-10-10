@@ -88,6 +88,18 @@ class TicketActivity(StrEnum):
     IDLE = "idle"
 
 
+class ChatAttachmentKind(StrEnum):
+    """How a file attached to a chat turn reaches the agent.
+
+    ``TEXT`` is inlined into the prompt, so every adapter can read it. ``IMAGE``
+    is handed over by path and needs an adapter that can open files outside the
+    workspace — today that is only claude, via ``--add-dir``.
+    """
+
+    TEXT = "text"
+    IMAGE = "image"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 
@@ -230,6 +242,10 @@ class DoctorCheck(str, Enum):
     #: under its new id, which is survivable only while every migration happens
     #: to be idempotent, and nothing enforces that (lg-workflow-integrity-712).
     MIGRATION_LEDGER = "migration_ledger"
+    #: Two `db/versions/` migrations that follow the same id. Two branches
+    #: merged against one tip with no textual conflict, so the build orders them
+    #: by id — which need not be the order the live database applied them in.
+    MIGRATION_CHAIN = "migration_chain"
 
     #: Backend `.py` edits newer than the reload sentinel, so a running dev
     #: server is still serving the code the fix replaced.
@@ -266,6 +282,15 @@ class DoctorCheck(str, Enum):
     #: ledger is advisory, so nothing else can tell a ledger everybody uses from
     #: one everybody ignores — both report capacity free and reap nothing.
     DOCKER_UNACCOUNTED = "docker_unaccounted"
+    #: tmux absent, so detached agent runs fall back to the file transport.
+    #: Survival is unaffected — that is the wrapper's job — but there is then no
+    #: session for an operator to attach to, and reported here so the fallback
+    #: is visible BEFORE a run rather than inferred from a column after one.
+    AGENT_DETACH_TRANSPORT = "agent_detach_transport"
+    #: Which `gh` account loregarden's PR, merge and issue calls act as. With
+    #: several signed in and none configured, it is whichever is active — one
+    #: here was read-only on every workspace repo while `git push` still worked.
+    GH_ACCOUNT = "gh_account"
 
 
 class PortabilityState(str, Enum):
@@ -373,6 +398,9 @@ class ArtifactKind(StrEnum):
     PLAN = "plan"
     #: A handoff between stages, validated against its item keys.
     HANDOFF = "handoff"
+    #: A handoff no gate checked. A notice, not a failure: it was filed as
+    #: `error` until 2026-10, where it read as a block on tickets that were fine.
+    HANDOFF_NOT_VALIDATED = "handoff_not_validated"
     #: A pull request this run opened.
     PR = "pr"
     #: A gate evaluation recorded against a workflow transition.
@@ -404,6 +432,9 @@ class StageBudgetArtifactKind(StrEnum):
     #: because a transient retry is not an attempt at the work and must not
     #: spend the runaway backstop. See `services.stage_transient_retry`.
     TRANSIENT_RETRY = "stage_transient_retry"
+    #: The ticket is parked until the provider is reachable again, and the
+    #: reconcile pass resumes it then. See `services.network_wait`.
+    NETWORK_WAIT = "stage_network_wait"
 
 
 class GateFaultAttribution(StrEnum):
@@ -1011,24 +1042,6 @@ class ReferenceFetchError(StrEnum):
     INTERNAL_ERROR = "internal_error"
 
 
-class DetachedStopOutcome(StrEnum):
-    """What an operator stop did to a detached agent process.
-
-    Recorded rather than returned as a bool because the three failures are not
-    the same event and the operator's next move differs for each. "Nothing was
-    signalled" is only good news if the process was already gone.
-    """
-
-    #: SIGTERM (then SIGKILL if needed) reached the process group.
-    SIGNALLED = "signalled"
-    #: The process is already gone; the run settles as it does today.
-    ALREADY_GONE = "already_gone"
-    #: A live process holds the pid, but it is not this run's — a reused pid, or
-    #: not a session leader as every agent this control plane spawns is. Nothing
-    #: is signalled: killing a stranger is worse than failing to stop.
-    NOT_OURS = "not_ours"
-
-
 class CommittedWorkBasis(StrEnum):
     """What the uncommitted-work check was able to judge on.
 
@@ -1176,6 +1189,7 @@ class ChatSurface(StrEnum):
     TICKET_TRIAGE = "ticket_triage"
     BRANCH_TRIAGE = "branch_triage"
     TICKET_STUDIO = "ticket_studio"
+    INITIATIVE_PLANNER = "initiative_planner"
 
 
 class CliTool(StrEnum):
@@ -1294,6 +1308,21 @@ class DockerFootprint(StrEnum):
     CUSTOM = "custom"
 
 
+class CapacityPool(StrEnum):
+    """Which pool a lease claims from. The pools nest: docker runs on the host.
+
+    On macOS the Docker daemon lives in a VM with its own cpu and memory limit,
+    smaller than the machine's, so the two need separate ceilings. Containers
+    still burn the host's cores, so a docker claim is charged to *both* pools,
+    and a host claim (a test suite, a build) to the host alone. The lease
+    records the pool it asked for; `CHARGED_POOLS` in `docker_ledger` says what
+    that costs.
+    """
+
+    DOCKER = "docker"
+    HOST = "host"
+
+
 class DockerLeaseStatus(StrEnum):
     """Where a claim on docker capacity stands.
 
@@ -1351,6 +1380,11 @@ class DockerLeaseEndReason(StrEnum):
     ABANDONED = "abandoned"
     #: Taken back by an operator through the force-release tool.
     FORCE_RELEASED = "force_released"
+    #: Its parent lease ended, and a child cannot outlive the grant it draws on.
+    PARENT_RELEASED = "parent_released"
+    #: The shell could not find or execute the held command (exit 126/127), so
+    #: its hold time measures nothing and must not teach the wait estimator.
+    COMMAND_NOT_RUN = "command_not_run"
 
 
 class DockerProbeOutcome(StrEnum):

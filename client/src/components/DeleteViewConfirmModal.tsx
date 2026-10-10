@@ -8,8 +8,8 @@
 
 import type { ViewSummary } from "../lib/viewsApi";
 import { IconCloseButton } from "./IconCloseButton";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 export function DeleteViewConfirmModal({
   view,
@@ -23,58 +23,43 @@ export function DeleteViewConfirmModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!view ? null : isDeleting ? undefined : onClose);
-  if (!view) return null;
+  if (!view) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="delete-view-confirm-title">{null}</ModalShell>;
+  }
 
   return (
-    <>
-      <div
-        className="modal-overlay"
-        onClick={isDeleting ? undefined : onClose}
-        role="presentation"
-      />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby="delete-view-confirm-title"
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Tab</div>
-            <h2 id="delete-view-confirm-title" className="modal-title">
-              Delete view?
-            </h2>
-            <p className="modal-subtitle">{view.title}</p>
-          </div>
-          <IconCloseButton disabled={isDeleting} onClick={onClose} />
+    <ModalShell open onDismiss={isDeleting ? undefined : onClose} labelledBy="delete-view-confirm-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Tab</div>
+          <h2 id="delete-view-confirm-title" className="modal-title">
+            Delete view?
+          </h2>
+          <p className="modal-subtitle">{view.title}</p>
         </div>
-
-        <div className="modal-body">
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
-            This deletes the view, its layout and its tab. It cannot be undone.
-          </p>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isDeleting} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            style={{ background: "var(--rdl, #ff6a54)", borderColor: "transparent" }}
-            disabled={isDeleting}
-            onClick={onConfirm}
-          >
-            {isDeleting ? "Deleting…" : "Delete view"}
-          </button>
-        </div>
+        <IconCloseButton disabled={isDeleting} onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body">
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+          This deletes the view, its layout and its tab. It cannot be undone.
+        </p>
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isDeleting} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          style={{ background: "var(--rdl)", borderColor: "transparent" }}
+          disabled={isDeleting}
+          onClick={onConfirm}
+        >
+          {isDeleting ? "Deleting…" : "Delete view"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

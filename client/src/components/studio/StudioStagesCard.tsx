@@ -24,20 +24,26 @@
  * change smuggled into a split is the thing a split is least able to show.
  */
 
-import type { Dispatch, SetStateAction } from "react";
+import { useId, type Dispatch, type SetStateAction } from "react";
 
 import type {
   ClassifyRoute,
   ParallelAgentSpec,
   RuntimeOptions,
   StudioAgent,
+  StudioExitAction,
+  StudioExitActionRequirementCatalog,
+  StudioExitActionRequirement,
   StudioWorkflow,
   StudioWorkflowStage,
 } from "../../api/client";
 import { StageRouteHints } from "../StageRouteHints";
+import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
 import { SkillSelect } from "./SkillSelect";
 import {
   emptyStage,
+  exitActionKeyFromLabel,
   modelOptionsForAdapter,
   type StudioWorkflowDraft,
 } from "./studioWorkflowHelpers";
@@ -60,6 +66,7 @@ export interface StudioStagesCardProps {
   agents: StudioAgent[];
   /** Skill names, as `/api/agents/skills` returns them. */
   skills: string[];
+  exitActionRequirements: StudioExitActionRequirementCatalog | undefined;
   runtimeOptions: RuntimeOptions | undefined;
   skipConditions: string[];
   /**
@@ -79,10 +86,12 @@ export function StudioStagesCard({
   agentOptions,
   agents,
   skills,
+  exitActionRequirements,
   runtimeOptions,
   skipConditions,
   selectedWorkflow,
 }: StudioStagesCardProps) {
+  const fieldId = useId();
   const updateStage = (index: number, patch: Partial<StudioWorkflowStage>) => {
     setWorkflowDraft((draft) => ({
       ...draft,
@@ -233,8 +242,9 @@ export function StudioStagesCard({
                     </div>
                     <div className="studio-stage-fields">
                       <div>
-                        <div className="studio-stage-field-label">Stage key</div>
-                        <input
+                        <label htmlFor={`${fieldId}-${index}-key`} className="studio-stage-field-label">Stage key</label>
+                        <Input
+                          id={`${fieldId}-${index}-key`}
                           className="studio-stage-input mono"
                           value={stage.key}
                           readOnly={isWorkflowReadOnly}
@@ -242,8 +252,9 @@ export function StudioStagesCard({
                         />
                       </div>
                       <div>
-                        <div className="studio-stage-field-label">Label</div>
-                        <input
+                        <label htmlFor={`${fieldId}-${index}-name`} className="studio-stage-field-label">Label</label>
+                        <Input
+                          id={`${fieldId}-${index}-name`}
                           className="studio-stage-input"
                           value={stage.name}
                           readOnly={isWorkflowReadOnly}
@@ -251,8 +262,9 @@ export function StudioStagesCard({
                         />
                       </div>
                       <div>
-                        <div className="studio-stage-field-label">Step type</div>
-                        <select
+                        <label htmlFor={`${fieldId}-${index}-type`} className="studio-stage-field-label">Step type</label>
+                        <Select
+                          id={`${fieldId}-${index}-type`}
                           className="studio-stage-select"
                           value={stage.stage_type}
                           disabled={isWorkflowReadOnly}
@@ -286,7 +298,7 @@ export function StudioStagesCard({
                           <option value="classify">Classify & route</option>
                           <option value="gate">Gate / review</option>
                           <option value="parallel">Parallel review</option>
-                        </select>
+                        </Select>
                       </div>
                     </div>
 
@@ -334,8 +346,9 @@ export function StudioStagesCard({
                           >
                             <div className="studio-stage-fields two-col">
                               <div>
-                                <div className="studio-stage-field-label">Languages</div>
-                                <select
+                                <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-languages`} className="studio-stage-field-label">Languages</label>
+                                <Select
+                                  id={`${fieldId}-${index}-route-${routeIndex}-languages`}
                                   multiple
                                   className="studio-stage-select"
                                   style={{ minHeight: 72, height: "auto" }}
@@ -352,11 +365,12 @@ export function StudioStagesCard({
                                       {lang}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </div>
                               <div>
-                                <div className="studio-stage-field-label">Specialties</div>
-                                <select
+                                <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-specialties`} className="studio-stage-field-label">Specialties</label>
+                                <Select
+                                  id={`${fieldId}-${index}-route-${routeIndex}-specialties`}
                                   multiple
                                   className="studio-stage-select"
                                   style={{ minHeight: 72, height: "auto" }}
@@ -373,7 +387,7 @@ export function StudioStagesCard({
                                       {spec}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </div>
                             </div>
                             <div
@@ -384,7 +398,8 @@ export function StudioStagesCard({
                                 marginTop: 8,
                               }}
                             >
-                              <select
+                              <Select
+                                aria-label={`Route ${routeIndex + 1} agent`}
                                 className="studio-stage-select"
                                 value={route.agent_id}
                                 disabled={isWorkflowReadOnly}
@@ -395,7 +410,7 @@ export function StudioStagesCard({
                                     {opt.label}
                                   </option>
                                 ))}
-                              </select>
+                              </Select>
                               <SkillSelect
                                 className="studio-stage-select mono"
                                 value={route.skill_name}
@@ -414,8 +429,9 @@ export function StudioStagesCard({
                               </label>
                             </div>
                             <div style={{ marginTop: 8 }}>
-                              <div className="studio-stage-field-label">Branches to</div>
-                              <select
+                              <label htmlFor={`${fieldId}-${index}-route-${routeIndex}-to`} className="studio-stage-field-label">Branches to</label>
+                              <Select
+                                id={`${fieldId}-${index}-route-${routeIndex}-to`}
                                 className="studio-stage-select mono"
                                 value={route.to_stage ?? ""}
                                 disabled={isWorkflowReadOnly}
@@ -431,7 +447,7 @@ export function StudioStagesCard({
                                       {candidate.key}
                                     </option>
                                   ))}
-                              </select>
+                              </Select>
                             </div>
                           </div>
                         ))}
@@ -477,7 +493,8 @@ export function StudioStagesCard({
                               borderTop: memberIndex === 0 ? undefined : "1px solid var(--bd)",
                             }}
                           >
-                            <select
+                            <Select
+                              aria-label={`Parallel agent ${memberIndex + 1}`}
                               className="studio-stage-select"
                               value={member.agent_id}
                               disabled={isWorkflowReadOnly}
@@ -488,7 +505,7 @@ export function StudioStagesCard({
                                   {opt.label}
                                 </option>
                               ))}
-                            </select>
+                            </Select>
                             <SkillSelect
                               className="studio-stage-select mono"
                               value={member.skill_name}
@@ -535,25 +552,28 @@ export function StudioStagesCard({
                     ) : (
                       <div className="studio-stage-fields">
                         <div>
-                          <div className="studio-stage-field-label">Agent</div>
-                          <select
+                          <label htmlFor={`${fieldId}-${index}-agent`} className="studio-stage-field-label">Agent</label>
+                          <Select
+                            id={`${fieldId}-${index}-agent`}
                             className="studio-stage-select"
                             value={stage.agent_id}
                             disabled={isWorkflowReadOnly}
                             onChange={(e) => updateStage(index, { agent_id: e.target.value })}
                           >
                             {stage.stage_type === "agent" && (
-                              <option value="">— None (human approval) —</option>
+                              <option value="">— No agent runtime —</option>
                             )}
                             {agentOptions.map((opt) => (
                               <option key={opt.id} value={opt.id}>
                                 {opt.label}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                           {stage.stage_type === "agent" && !stage.agent_id && (
                             <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
-                              No agent runs — the ticket pauses here until a human approves in Triage/Inbox.
+                              No agent runtime — exit actions are still evaluated against the
+                              responsible active runtime when one is assigned; absence of a runtime
+                              is not itself a human decision.
                             </div>
                           )}
                         </div>
@@ -568,7 +588,7 @@ export function StudioStagesCard({
                           />
                         </div>
                         <div>
-                          <div className="studio-stage-field-label">Model override</div>
+                          <label htmlFor={`${fieldId}-${index}-model`} className="studio-stage-field-label">Model override</label>
                           {(() => {
                             const stageAgent = agents?.find((a) => a.slug === stage.agent_id);
                             const modelOptions = modelOptionsForAdapter(
@@ -577,7 +597,8 @@ export function StudioStagesCard({
                             );
                             if (modelOptions) {
                               return (
-                                <select
+                                <Select
+                                  id={`${fieldId}-${index}-model`}
                                   className="studio-stage-select mono"
                                   value={stage.model}
                                   disabled={isWorkflowReadOnly}
@@ -591,11 +612,12 @@ export function StudioStagesCard({
                                         {opt.label}
                                       </option>
                                     ))}
-                                </select>
+                                </Select>
                               );
                             }
                             return (
-                              <input
+                              <Input
+                                id={`${fieldId}-${index}-model`}
                                 className="studio-stage-select mono"
                                 placeholder="Model id"
                                 value={stage.model}
@@ -611,13 +633,67 @@ export function StudioStagesCard({
                     <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
                         type="checkbox"
-                        checked={stage.gate_required}
+                        checked={Boolean(stage.exit_actions_enabled)}
                         disabled={isWorkflowReadOnly}
-                        onChange={(e) => updateStage(index, { gate_required: e.target.checked })}
+                        onChange={(e) =>
+                          updateStage(index, {
+                            exit_actions_enabled: e.target.checked,
+                            exit_actions: e.target.checked ? stage.exit_actions ?? [] : [],
+                          })
+                        }
                         style={{ accentColor: "var(--ac)" }}
                       />
-                      Require gate approval before leaving this stage
+                      Resolve exit actions before leaving this stage
                     </label>
+                    {stage.exit_actions_enabled && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ fontSize: 11, color: "var(--txl)" }}>
+                          Available and permitted actions run with the responsible agent; only unmet
+                          requirements pause for an operator. Evaluated at run time.
+                        </div>
+                        {(stage.exit_actions ?? []).map((action, actionIndex) => (
+                          <ExitActionEditorRow
+                            key={actionIndex}
+                            action={action}
+                            index={actionIndex}
+                            readOnly={isWorkflowReadOnly}
+                            catalog={exitActionRequirements}
+                            onChange={(next) => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              actions[actionIndex] = next;
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                            onRemove={() => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              actions.splice(actionIndex, 1);
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                          />
+                        ))}
+                        {!isWorkflowReadOnly && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ width: "fit-content", fontSize: 12 }}
+                            onClick={() => {
+                              const actions = [...(stage.exit_actions ?? [])];
+                              const n = actions.length + 1;
+                              actions.push({
+                                key: `exit-action-${n}`,
+                                label: "",
+                                requirement: {
+                                  kind: "operator_judgment",
+                                  decision_prompt: "",
+                                },
+                              });
+                              updateStage(index, { exit_actions: actions });
+                            }}
+                          >
+                            Add exit action
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
@@ -631,8 +707,9 @@ export function StudioStagesCard({
                     </label>
 
                     <div style={{ marginTop: 10 }}>
-                      <div className="studio-stage-field-label">Skip this stage when</div>
-                      <select
+                      <label htmlFor={`${fieldId}-${index}-skip`} className="studio-stage-field-label">Skip this stage when</label>
+                      <Select
+                        id={`${fieldId}-${index}-skip`}
                         className="studio-stage-select mono"
                         value={stage.skip_when ?? ""}
                         disabled={isWorkflowReadOnly}
@@ -644,12 +721,240 @@ export function StudioStagesCard({
                             {condition}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+  );
+}
+
+function requirementLabel(kind: StudioExitActionRequirement["kind"]): string {
+  return kind
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function defaultRequirementFromCatalog(
+  kind: StudioExitActionRequirement["kind"],
+  catalog: StudioExitActionRequirementCatalog | undefined,
+): StudioExitActionRequirement {
+  if (kind === "runtime_capability") {
+    return { kind, capability_id: catalog?.capability_ids[0] ?? "" };
+  }
+  if (kind === "credential") {
+    return { kind, credential_key: catalog?.credential_keys[0] ?? "" };
+  }
+  if (kind === "authority") {
+    return { kind, authority_scope: catalog?.authority_scopes[0] ?? "" };
+  }
+  return { kind: "operator_judgment", decision_prompt: "" };
+}
+
+function ExitActionEditorRow({
+  action,
+  index,
+  readOnly,
+  catalog,
+  onChange,
+  onRemove,
+}: {
+  action: StudioExitAction;
+  index: number;
+  readOnly: boolean;
+  catalog: StudioExitActionRequirementCatalog | undefined;
+  onChange: (next: StudioExitAction) => void;
+  onRemove: () => void;
+}) {
+  const kind = action.requirement.kind;
+  const requirementKinds = catalog?.requirement_kinds ?? [kind];
+  const setLabel = (label: string) => {
+    onChange({
+      ...action,
+      label,
+      key: exitActionKeyFromLabel(label, index),
+    });
+  };
+  const setKind = (nextKind: StudioExitActionRequirement["kind"]) => {
+    onChange({ ...action, requirement: defaultRequirementFromCatalog(nextKind, catalog) });
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label={`Exit action ${index + 1}`}
+      style={{
+        border: "1px solid var(--bd)",
+        borderRadius: 8,
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        background: "var(--bg3)",
+      }}
+    >
+      <div className="studio-stage-fields">
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-label-${index}`}>
+            Action label
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.label}</div>
+          ) : (
+            <input
+              id={`exit-action-label-${index}`}
+              className="studio-stage-select"
+              value={action.label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          )}
+        </div>
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-kind-${index}`}>
+            Requirement
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12, color: "var(--txm)" }}>
+              {requirementLabel(kind)}
+            </div>
+          ) : (
+            <select
+              id={`exit-action-kind-${index}`}
+              className="studio-stage-select"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as StudioExitActionRequirement["kind"])}
+            >
+              {requirementKinds.map((requirementKind) => (
+                <option key={requirementKind} value={requirementKind}>
+                  {requirementLabel(requirementKind)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {kind === "runtime_capability" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-cap-${index}`}>
+            Capability
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.capability_id}</div>
+          ) : (
+            <select
+              id={`exit-action-cap-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.capability_id}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "runtime_capability", capability_id: e.target.value },
+                })
+              }
+            >
+              {(catalog?.capability_ids ?? []).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "credential" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-cred-${index}`}>
+            Credential
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.credential_key}</div>
+          ) : (
+            <select
+              id={`exit-action-cred-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.credential_key}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "credential", credential_key: e.target.value },
+                })
+              }
+            >
+              {(catalog?.credential_keys ?? []).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "authority" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-auth-${index}`}>
+            Authority
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.authority_scope}</div>
+          ) : (
+            <select
+              id={`exit-action-auth-${index}`}
+              className="studio-stage-select mono"
+              value={action.requirement.authority_scope}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "authority", authority_scope: e.target.value },
+                })
+              }
+            >
+              {(catalog?.authority_scopes ?? []).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {kind === "operator_judgment" && (
+        <div>
+          <label className="studio-stage-field-label" htmlFor={`exit-action-prompt-${index}`}>
+            Decision prompt
+          </label>
+          {readOnly ? (
+            <div style={{ fontSize: 12 }}>{action.requirement.decision_prompt}</div>
+          ) : (
+            <input
+              id={`exit-action-prompt-${index}`}
+              className="studio-stage-select"
+              value={action.requirement.decision_prompt}
+              onChange={(e) =>
+                onChange({
+                  ...action,
+                  requirement: { kind: "operator_judgment", decision_prompt: e.target.value },
+                })
+              }
+            />
+          )}
+        </div>
+      )}
+
+      {!readOnly && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ width: "fit-content", fontSize: 11 }}
+          aria-label={`Remove exit action ${index + 1}`}
+          onClick={onRemove}
+        >
+          Remove
+        </button>
+      )}
+    </div>
   );
 }

@@ -12,7 +12,7 @@ adopts, reports on, and eventually signals a process it does not own.
 
 So a pid is recorded together with a fingerprint the OS will not repeat: the
 process start time, which the kernel assigns and which no later process with the
-same pid can share. `identify` reads it, `still_running` re-reads it and compares.
+same pid can share. `identify` reads it, `liveness` re-reads it and compares.
 
 `ps` rather than `/proc`, because this control plane runs on macOS as well as
 Linux and `/proc` does not exist there. `psutil` would be the obvious answer and
@@ -24,9 +24,10 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from dataclasses import dataclass
 
 from loregarden.db.session import engine
-from loregarden.models.domain import AgentRun
+from loregarden.models.domain import AgentRun, ProcessState
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -36,12 +37,21 @@ logger = logging.getLogger(__name__)
 _PS_TIMEOUT_SECONDS = 5
 
 
-def identify(pid: int) -> str | None:
+@dataclass(frozen=True)
+class IdentityReading:
+    """One `ps` reading of a pid. `stamp` is set only when `state` is ALIVE."""
+
+    state: ProcessState
+    stamp: str = ""
+
+
+def identify(pid: int) -> IdentityReading:
     """A fingerprint for `pid` that a later process reusing it cannot match.
 
-    The process start time as the kernel reports it. Returns None when the
-    process is already gone or `ps` cannot answer — callers treat that as "no
-    identity", never as "matches".
+    The process start time as the kernel reports it. GONE when `ps` answered
+    that nothing holds the pid; UNKNOWN when it could not answer at all — a
+    timeout, a `ps` that would not run. The two used to be one `None`, so a slow
+    `ps` read as a dead process (lg-run-durability-862).
     """
     try:
         result = subprocess.run(
@@ -53,27 +63,40 @@ def identify(pid: int) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         logger.warning("Could not read process identity for pid %s", pid, exc_info=True)
-        return None
-    if result.returncode != 0:
-        return None
+        return IdentityReading(ProcessState.UNKNOWN)
     stamp = result.stdout.strip()
-    return stamp or None
+    if result.returncode != 0 and not stamp:
+        # `ps -p` exits non-zero with nothing printed when no process matches.
+        return IdentityReading(ProcessState.GONE)
+    if result.returncode != 0 or not stamp:
+        logger.warning(
+            "ps gave no usable identity for pid %s (exit %s): %s",
+            pid,
+            result.returncode,
+            (result.stderr or stamp).strip()[:200],
+        )
+        return IdentityReading(ProcessState.UNKNOWN)
+    return IdentityReading(ProcessState.ALIVE, stamp)
 
 
-def still_running(pid: int | None, identity: str | None) -> bool:
-    """Whether `pid` is alive *and* is still the process `identity` came from.
+def liveness(pid: int | None, identity: str | None) -> ProcessState:
+    """Whether `pid` is alive *and* still the process `identity` came from.
 
-    Fails closed in the direction that matters. Without a recorded identity this
-    answers False rather than falling back to a bare liveness check: a run from
-    before identity was recorded is one whose pid cannot be trusted, and
-    treating it as alive is the adoption mistake this module exists to prevent.
+    ALIVE only on a match. A pid nothing holds, or one a stranger holds, is GONE:
+    either way this run's process is not there. Without a recorded identity the
+    answer is GONE rather than a bare liveness check — a run from before
+    identity was recorded is one whose pid cannot be trusted, and treating it as
+    alive is the adoption mistake this module exists to prevent.
+
+    UNKNOWN when `ps` could not answer, and every caller decides for itself what
+    an unanswered question means — none may read it as GONE.
     """
     if pid is None or not identity:
-        return False
-    current = identify(pid)
-    if current is None:
-        return False
-    return current == identity
+        return ProcessState.GONE
+    reading = identify(pid)
+    if reading.state is not ProcessState.ALIVE:
+        return reading.state
+    return ProcessState.ALIVE if reading.stamp == identity else ProcessState.GONE
 
 
 def record_process_identity(run_id: str, pid: int) -> None:
@@ -87,14 +110,14 @@ def record_process_identity(run_id: str, pid: int) -> None:
     simply one that a later process will decline to adopt, which is the safe
     direction.
     """
-    identity = identify(pid)
+    identity = identify(pid).stamp
     try:
         with Session(engine) as session:
             run = session.get(AgentRun, run_id)
             if run is None:
                 return
             run.agent_pid = pid
-            run.agent_pid_identity = identity or ""
+            run.agent_pid_identity = identity
             session.add(run)
             session.commit()
     except Exception:  # noqa: BLE001 — never fail a run over its own bookkeeping

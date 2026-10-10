@@ -15,10 +15,8 @@
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { runStatusLabel, ticketStateColor } from "../lib/ticketStates";
 import { duration } from "../lib/duration";
+import { LIVE_RUN_STATUSES, runningTickets } from "../lib/runningTickets";
 import "./DashboardActiveTickets.css";
-
-/** Statuses where an agent is still on the work, matching the queue's cards. */
-const LIVE_RUN_STATUSES = new Set(["running", "awaiting_permission"]);
 
 interface Props {
   selectedTicketId?: string;
@@ -28,15 +26,7 @@ interface Props {
 export function DashboardActiveTickets({ selectedTicketId, onSelect }: Props) {
   const { activeRuns } = useQueueStatus();
 
-  // One entry per ticket: a lane holds its slot across every stage, so the
-  // same ticket can appear behind more than one run row.
-  const byTicket = new Map<string, (typeof activeRuns)[number]>();
-  for (const run of activeRuns) {
-    if (!run.ticket_id) continue;
-    const seen = byTicket.get(run.ticket_id);
-    if (!seen || run.elapsed_seconds > seen.elapsed_seconds) byTicket.set(run.ticket_id, run);
-  }
-  const running = [...byTicket.values()].sort((a, b) => a.slot_number - b.slot_number);
+  const running = runningTickets(activeRuns);
 
   if (running.length === 0) return null;
 

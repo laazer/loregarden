@@ -49,6 +49,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from loregarden.main import app
+from loregarden.models.domain import (
+    BlockKind,
+    Workspace,
+)
+from loregarden.services.block_classification import classify_block_message
+from loregarden.services.gate_runner import _run_command
+from sqlmodel import Session
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -168,3 +177,86 @@ def test_a_link_to_an_untracked_file_is_not_graded(repo_with_ignored_link: Path)
     # Not "did it fail" — it fails today, by reporting the contents. The claim is
     # that the untracked file's structure must not be read out at all.
     assert "isinstance" not in _out(result), _out(result)
+
+
+@pytest.fixture
+def gate_warning_on_stderr_finding_on_stdout(tmp_path: Path) -> Path:
+    """A gate command shaped like `uv run <check>` with a stray VIRTUAL_ENV:
+    uv warns on stderr, the check prints its finding on stdout and exits 1."""
+    script = tmp_path / "gate.py"
+    script.write_text(
+        "import sys\n"
+        "print('src/a.py:3: isinstance is forbidden')\n"
+        "print('warning: `VIRTUAL_ENV=/x/.venv` does not match', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+    return script
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="unfiled — open: a failed gate records `stderr or stdout`, so a stderr "
+    "warning (uv's VIRTUAL_ENV mismatch) replaces the finding on stdout",
+)
+def test_a_failed_gate_keeps_the_finding_printed_on_stdout(
+    gate_warning_on_stderr_finding_on_stdout: Path,
+) -> None:
+    result = _run_command(
+        f"{sys.executable} {gate_warning_on_stderr_finding_on_stdout}",
+        gate_warning_on_stderr_finding_on_stdout.parent,
+    )
+
+    assert not result.ok
+    assert "isinstance is forbidden" in result.message
+
+
+@pytest.fixture
+def queue_workspace_id(client: TestClient, isolated_db) -> str:
+    with Session(isolated_db) as session:
+        workspace = Workspace(name="queue-repro", slug="queue-repro")
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
+        return workspace.id
+
+
+@pytest.fixture
+def lenient_client(client: TestClient) -> TestClient:
+    """The same app (overrides and lifespan already set up by `client`), but a
+    server error comes back as a 500 response instead of raising in the test."""
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="lg-queue-execution-846 — open: create takes operation_type as str, commits an "
+    "unknown value, then 500s; the stored row breaks listing",
+)
+def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
+    lenient_client: TestClient, queue_workspace_id: str
+) -> None:
+    base = f"/api/parallel/workspace/{queue_workspace_id}/queue/operations"
+
+    created = lenient_client.post(f"{base}/create", json={"operation_type": "reorder"})
+    listing = lenient_client.get(base)
+
+    assert (created.status_code, listing.status_code) == (422, 200)
+
+
+#: The blocking message `settle_stage_after_failed_completion` wrote for
+#: lg-run-durability-679's passing test-design run on 2026-10-08, trimmed of the
+#: SQL parameters.
+_LOCKED_COMPLETION = (
+    "Run completion failed: (sqlite3.OperationalError) database is locked\n"
+    "[SQL: UPDATE artifacts SET run_id=?, content_json=?, created_at=? WHERE artifacts.id = ?]\n"
+    "(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="lg-run-durability-906 — open: a transient SQLite lock in the completion tail "
+    "is classified as a work block, and the settle offers no repair",
+)
+def test_a_locked_database_in_run_completion_is_not_a_work_block() -> None:
+    assert classify_block_message(_LOCKED_COMPLETION) is BlockKind.HARNESS

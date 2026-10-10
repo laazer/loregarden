@@ -18,6 +18,7 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.models.domain.enums import comparable_utc
 from loregarden.services.queue_history import MAX_ATTENTION_PER_LANE, QueueHistoryService
 from sqlmodel import Session
 
@@ -575,3 +576,175 @@ def test_lane_attention_caps_cards_but_not_the_count(session, workspace):
 
     assert len(cards) == MAX_ATTENTION_PER_LANE
     assert total == MAX_ATTENTION_PER_LANE + 3
+
+
+def _orchestration(
+    session: Session,
+    workspace: Workspace,
+    ticket_id: str,
+    *,
+    status: OrchestrationRunStatus,
+    started_at: datetime,
+) -> OrchestrationRun:
+    orchestration = OrchestrationRun(
+        run_code=f"orch_{ticket_id[:8]}_{started_at:%H%M%S}",
+        ticket_id=ticket_id,
+        workspace_id=workspace.id,
+        status=status,
+        started_at=started_at,
+        finished_at=started_at + timedelta(minutes=5),
+    )
+    session.add(orchestration)
+    session.commit()
+    return orchestration
+
+
+def test_lane_attention_drops_a_stop_a_later_run_succeeded_past(session, workspace):
+    """A milestone stays in_progress after its run succeeds; its old stop is over."""
+    stopped = _entry(
+        session,
+        workspace,
+        code="t-retried",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+    )
+    _orchestration(
+        session,
+        workspace,
+        stopped.ticket_id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+        started_at=START + timedelta(hours=1),
+    )
+
+    assert QueueHistoryService(session).lane_attention() == {}
+
+
+def test_lane_attention_keeps_a_stop_newer_than_the_last_success(session, workspace):
+    """An earlier success says nothing about a stop that came after it."""
+    stopped = _entry(
+        session,
+        workspace,
+        code="t-regressed",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.BLOCKED,
+        slot_number=1,
+    )
+    _orchestration(
+        session,
+        workspace,
+        stopped.ticket_id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+        started_at=START - timedelta(hours=1),
+    )
+
+    cards, total = QueueHistoryService(session).lane_attention()[1]
+
+    assert total == 1
+    assert cards[0].entry_id == stopped.id
+
+
+def test_dismiss_lane_clears_only_that_lane(session, workspace):
+    for index in range(3):
+        _entry(
+            session,
+            workspace,
+            code=f"t-lane-one-{index}",
+            status=QueuePosition.STARTED,
+            orchestration_status=OrchestrationRunStatus.FAILED,
+            slot_number=1,
+            minutes_ago=index,
+        )
+    _entry(
+        session,
+        workspace,
+        code="t-lane-two",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=2,
+    )
+    service = QueueHistoryService(session)
+
+    assert service.dismiss_lane(1) == 3
+    assert service.dismiss_lane(1) == 0
+
+    attention = service.lane_attention()
+    assert 1 not in attention
+    assert attention[2][1] == 1
+    _, total = service.list_history(workspace_id=workspace.id)
+    assert total == 4
+
+
+def test_dismiss_lane_leaves_live_entries_alone(session, workspace):
+    live = _entry(
+        session,
+        workspace,
+        code="t-running",
+        status=QueuePosition.ACTIVE,
+        orchestration_status=OrchestrationRunStatus.RUNNING,
+        slot_number=1,
+    )
+
+    assert QueueHistoryService(session).dismiss_lane(1) == 0
+    session.refresh(live)
+    assert live.dismissed_at is None
+
+
+def test_clear_history_hides_what_finished_before_it_and_keeps_what_comes_after(session, workspace):
+    _entry(
+        session,
+        workspace,
+        code="t-old",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.SUCCEEDED,
+    )
+    orphan_ticket = Ticket(external_id="t-direct", workspace_id=workspace.id, title="Direct")
+    session.add(orphan_ticket)
+    session.commit()
+    _orchestration(
+        session,
+        workspace,
+        orphan_ticket.id,
+        status=OrchestrationRunStatus.FAILED,
+        started_at=START,
+    )
+    service = QueueHistoryService(session)
+    assert service.list_history(workspace_id=workspace.id)[1] == 2
+    assert service.last_cleared_at() is None
+
+    cleared_at = service.clear_history()
+
+    assert service.list_history(workspace_id=workspace.id) == ([], 0)
+    assert comparable_utc(service.last_cleared_at()) == comparable_utc(cleared_at)
+
+    newer = _entry(
+        session,
+        workspace,
+        code="t-new",
+        status=QueuePosition.STARTED,
+        orchestration_status=None,
+    )
+    newer.started_at = cleared_at + timedelta(seconds=1)
+    session.add(newer)
+    session.commit()
+
+    entries, total = service.list_history(workspace_id=workspace.id)
+    assert total == 1
+    assert entries[0].entry_id == newer.id
+
+
+def test_clear_history_does_not_touch_lane_attention(session, workspace):
+    """A stop nobody has looked at must not vanish because another panel was tidied."""
+    stopped = _entry(
+        session,
+        workspace,
+        code="t-unseen",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.BLOCKED,
+        slot_number=1,
+    )
+
+    QueueHistoryService(session).clear_history()
+
+    cards, _ = QueueHistoryService(session).lane_attention()[1]
+    assert [card.entry_id for card in cards] == [stopped.id]

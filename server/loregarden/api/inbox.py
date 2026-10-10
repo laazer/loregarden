@@ -4,13 +4,19 @@ from loregarden.models.domain import (
     Approval,
     ApprovalAction,
     ApprovalKind,
+    ApprovalResolutionAction,
     ApprovalStatus,
     ArtifactKind,
     Ticket,
     TicketState,
     Workspace,
 )
-from loregarden.services.approval_views import approval_to_view
+from loregarden.services.approval_views import (
+    ApprovalHistoryItem,
+    approval_history,
+    approval_to_view,
+)
+from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import (
@@ -43,6 +49,17 @@ def list_approvals(
     return [approval_to_view(session, item) for item in approvals]
 
 
+@router.get("/approvals/history")
+def list_approval_history(
+    ticket_id: str,
+    session: Session = Depends(get_session),
+) -> list[ApprovalHistoryItem]:
+    """What has already been decided on a ticket and its subtree, newest first."""
+    if session.get(Ticket, ticket_id) is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+    return approval_history(session, collect_ticket_scope_ids(session, ticket_id))
+
+
 @router.post("/approvals/{approval_id}")
 def resolve_approval(
     approval_id: str,
@@ -50,8 +67,37 @@ def resolve_approval(
     session: Session = Depends(get_session),
 ) -> dict:
     svc = ApprovalService(session)
-    approved = body.action == "approve"
     try:
+        if body.action == ApprovalResolutionAction.RECHECK:
+            # Snapshot is probed server-side — never body.answers (clients send none,
+            # and a forged answers-shaped snapshot could mark credentials available).
+            result = svc.recheck(approval_id)
+            rechecked = session.get(Approval, approval_id)
+            return {
+                "id": approval_id,
+                # Approved once a recheck cleared something: the gate closed and
+                # the stage continues. Still pending when nothing cleared.
+                "status": (
+                    rechecked.status.value
+                    if rechecked is not None
+                    else ApprovalStatus.PENDING.value
+                ),
+                "newly_assigned_action_keys": result.newly_assigned_action_keys,
+            }
+        if body.action == ApprovalResolutionAction.APPROVE:
+            # Grantable authority must schedule a continuation, not mark the stage done.
+            continuation = svc.approve_exit_action_gate(approval_id)
+            if continuation is not None:
+                approval = session.get(Approval, approval_id)
+                status = (
+                    approval.status.value if approval is not None else ApprovalStatus.PENDING.value
+                )
+                return {
+                    "id": approval_id,
+                    "status": status,
+                    "newly_assigned_action_keys": continuation.newly_assigned_action_keys,
+                }
+        approved = body.action == ApprovalResolutionAction.APPROVE
         approval = svc.resolve(
             approval_id,
             approved=approved,

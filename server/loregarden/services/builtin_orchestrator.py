@@ -28,10 +28,12 @@ from loregarden.services.dependency_readiness import (
     UnmetReason,
     unmet_prerequisites_for_start,
 )
+from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.oversized_ticket_split import split_oversized_ticket
 from loregarden.services.parallel_stage import (
     ParallelMemberResult,
     latest_member_run,
@@ -40,11 +42,12 @@ from loregarden.services.parallel_stage import (
     prepare_tree_for_parallel_stage,
     reconcile_parallel_stage,
 )
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.review_relens import decide_lenses, record_relens_decisions
 from loregarden.services.run_cancellation import orchestration_cancel_requested
+from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import lease_renewal
-from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -185,6 +188,10 @@ class BuiltinOrchestrator:
             if orch_run.timeout_override_seconds is not None
             else timeout_seconds
         )
+
+        # Before any stage: an oversized ticket becomes an aggregator over its
+        # parts, which the loop below then runs as children.
+        split_oversized_ticket(self.session, ticket, self.callbacks)
 
         stages_run = 0
         try:
@@ -422,7 +429,7 @@ class BuiltinOrchestrator:
         stage = ticket.workflow_stage_key or "unknown stage"
         return (
             f"Run ended blocked at '{stage}' with no reason recorded on the ticket. "
-            "See the ticket's Errors tab for the stage's own output."
+            "See the ticket's Timeline tab for the stage's own output."
         )
 
     def _advance_after_stage(
@@ -556,6 +563,17 @@ class BuiltinOrchestrator:
             self.orch.finalize_workflow(ticket)
             self.session.refresh(ticket)
             return None
+        # Agentless stages with no human-required exit actions are not gates —
+        # they complete and advance (AC-5).
+        resolution = resolve_exit_actions(stage_def, None)
+        if not resolution.human_required_actions:
+            instance, stages = self.orch._resolve_stages(ticket)
+            if instance and stages:
+                set_stage_status(ticket, instance, stages, target_key, StageStatus.DONE)
+                self.session.add(ticket)
+                self.session.add(instance)
+                self.session.commit()
+            return None
         self.orch.enter_human_gate(ticket, stage_key=target_key)
         self.session.refresh(ticket)
         if resolve_gate_if_permitted(
@@ -628,6 +646,14 @@ class BuiltinOrchestrator:
         )
         if ok:
             return False
+        if orch_run.status is OrchestrationRunStatus.BLOCKED:
+            # The stage's own routing already blocked the ticket and ended this
+            # run — a rework pause at the loop cap, or a transient failure with
+            # no repair turn left — and filed its own inbox item. Blocking again
+            # re-reads the reviewers' joined text as an agent's handover, and a
+            # reviewer writing "for a human" files a second, empty HUMAN_ACTION
+            # card beside the pause (lg-durable-remote-336).
+            return True
         self.callbacks.block_ticket(
             orch_run,
             ticket,
@@ -660,7 +686,7 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
         )
-        with stage_docker_capacity(self.session, agent_run), lease_renewal(agent_run.id):
+        with run_capacity(self.session, agent_run), lease_renewal(agent_run.id):
             completed = self.executor.execute(agent_run, ticket)
         self.session.refresh(ticket)
 
@@ -758,7 +784,7 @@ class BuiltinOrchestrator:
         tree_error = prepare_tree_for_parallel_stage(self.session, ticket, stage_key, runs)
         if tree_error:
             return False, tree_error
-        results = _run_and_collect_parallel_results(runs)
+        results = _run_and_collect_parallel_results(runs, self.executor.preflight_ledger)
         return reconcile_parallel_stage(self.session, ticket, orch_run, stage_key, results)
 
     def _incomplete_parallel_specs(
@@ -989,7 +1015,9 @@ def _why(entry: UnmetPrerequisite) -> str:
     return entry.ticket.state.value
 
 
-def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemberResult]:
+def _run_and_collect_parallel_results(
+    runs: list[AgentRun], preflight_ledger: PreflightLedger
+) -> list[ParallelMemberResult]:
     """Run parallel stage members and judge each one.
 
     Module-level so ``BuiltinOrchestrator`` stays under its size cap. Executing
@@ -1000,7 +1028,7 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
 
     def _run_agent(run_id: str) -> ParallelMemberResult:
         with Session(engine) as session:
-            worker = CliAgentExecutor(session)
+            worker = CliAgentExecutor(session, preflight_ledger=preflight_ledger)
             run = session.get(AgentRun, run_id)
             if not run:
                 raise ValueError(f"Agent run not found: {run_id}")
@@ -1014,7 +1042,7 @@ def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemb
             # working the moment it outruns AGENT_RUN_LEASE. `run_has_renewer`
             # is True for these runs (no external harness), so the fail-closed
             # branch does not cover them.
-            with lease_renewal(run.id):
+            with host_capacity_for_run(session, run), lease_renewal(run.id):
                 completed = worker.execute(
                     run,
                     worker_ticket,

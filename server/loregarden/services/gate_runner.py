@@ -7,11 +7,13 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
+from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
@@ -80,11 +82,50 @@ def build_gate_context(
     # Defaults to the shared checkout for callers with no ticket tree in hand;
     # the orchestration paths pass the ticket's worktree, which is where the
     # edits a gate is meant to judge actually are.
-    repo_root = repo_root or resolve_workspace_root(workspace)
+    return _gate_context(
+        workspace=workspace,
+        ticket_id=ticket.id,
+        external_id=ticket.external_id,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        repo_root=repo_root or resolve_workspace_root(workspace),
+    )
+
+
+#: Stand-in ticket identity for a gate evaluated outside any run — the Studio
+#: preview and its "Test checks" button. A command keyed on the ticket sees
+#: an id that matches nothing, which is the honest answer for a dry run.
+SAMPLE_TICKET_ID = "sample-ticket-id"
+SAMPLE_EXTERNAL_ID = "SAMPLE-1"
+
+
+def sample_gate_context(
+    workspace: Workspace, *, from_stage: str = "implement", to_stage: str = "verify"
+) -> dict[str, str]:
+    """Every placeholder a gate command may reference, filled for no ticket."""
+    return _gate_context(
+        workspace=workspace,
+        ticket_id=SAMPLE_TICKET_ID,
+        external_id=SAMPLE_EXTERNAL_ID,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        repo_root=resolve_workspace_root(workspace),
+    )
+
+
+def _gate_context(
+    *,
+    workspace: Workspace,
+    ticket_id: str,
+    external_id: str,
+    from_stage: str,
+    to_stage: str,
+    repo_root: Path,
+) -> dict[str, str]:
     transition = transition_name(from_stage, to_stage)
     return {
-        "ticket_id": ticket.id,
-        "external_id": ticket.external_id,
+        "ticket_id": ticket_id,
+        "external_id": external_id,
         "transition": transition,
         "from_stage": from_stage,
         "to_stage": to_stage,
@@ -120,7 +161,17 @@ def _resolve_transition_script(gates: GatesConfig, repo_root: Path) -> Path | No
     return None
 
 
-def _run_command(command: str, cwd: Path) -> GateRunResult:
+def resolved_transition_script(profile: OrchestrationProfile, workspace: Workspace) -> str:
+    """The transition script a gate evaluation would run, relative to the
+    workspace root, or "" when neither the configured nor the default path exists."""
+    repo_root = resolve_workspace_root(workspace)
+    script = _resolve_transition_script(profile.gates, repo_root)
+    return str(script.relative_to(repo_root)) if script is not None else ""
+
+
+def _run_command(
+    command: str, cwd: Path, *, extra_env: dict[str, str] | None = None
+) -> GateRunResult:
     # A single malformed or unrunnable command entry (a typo'd Studio gate, a
     # checked-in script missing its execute bit) must degrade to a normal
     # "failed" result — never take down the whole evaluation with an unhandled
@@ -151,7 +202,7 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
             # resolves its own scope through git against the workspace it was
             # handed. An inherited binding aims them at another repository,
             # where they examine nothing and exit 0 — a pass over unread work.
-            env=scrubbed_git_env(),
+            env={**scrubbed_git_env(), **(extra_env or {})},
             capture_output=True,
             text=True,
             timeout=GATE_TIMEOUT_SECONDS,
@@ -298,6 +349,57 @@ def run_transition_gates(
         repo_root=repo_root,
     )
 
+    script = _resolve_transition_script(profile.gates, repo_root)
+    # A blank/whitespace-only entry (a Studio user or hand-edited YAML saving
+    # ["", "  "]) gates nothing — dropped here so it neither crashes the run nor
+    # inflates the "ran" count that lets an operator tell real gates apart.
+    templates = [
+        template
+        for template in collect_gate_commands(
+            profile,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            stage_def=stage_def,
+        )
+        if template.strip()
+    ]
+    if script is None and not templates:
+        return GateRunResult(
+            ok=True, outcome=GateOutcome.SKIPPED, message="no gate commands configured"
+        )
+
+    try:
+        lease = acquire_gate_capacity(
+            session,
+            profile.gates.capacity_footprint,
+            ticket=ticket,
+            workspace=workspace,
+            transition=context["transition"],
+            # Every command is bounded by GATE_TIMEOUT_SECONDS, so this covers
+            # the whole run without a heartbeat.
+            ttl_seconds=GATE_TIMEOUT_SECONDS * (len(templates) + 2),
+        )
+    except GateCapacityUnavailable as exc:
+        return GateRunResult(ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc))
+    try:
+        return _run_gate_commands(
+            session, ticket, repo_root, context, script, templates, env=lease.env
+        )
+    finally:
+        lease.release(session)
+
+
+def _run_gate_commands(
+    session: Session,
+    ticket: Ticket,
+    repo_root: Path,
+    context: dict[str, str],
+    script: Path | None,
+    templates: list[str],
+    *,
+    env: dict[str, str],
+) -> GateRunResult:
+    """Run the transition script, then each configured command, stopping at the first failure."""
     ran = 0
 
     # The workspace transition-gate script runs first, and tolerates transitions
@@ -305,7 +407,6 @@ def run_transition_gates(
     # workspace may gate only some of them. An unmodeled edge is "no gate here"
     # (skip), not a rejection — see _is_undefined_transition. A real gate failure
     # still blocks.
-    script = _resolve_transition_script(profile.gates, repo_root)
     if script is not None:
         # The handoff lives in the database, so point the workspace's gates at an
         # exported tree rather than the repo's tracked checkpoints. The export mirrors
@@ -319,7 +420,7 @@ def run_transition_gates(
             f"--checkpoints-dir {HANDOFF_SCRATCH_SUBDIR}",
             context,
         )
-        result = _run_command(script_command, repo_root)
+        result = _run_command(script_command, repo_root, extra_env=env)
         if result.ok:
             ran += 1
         elif _is_undefined_transition(result):
@@ -334,19 +435,9 @@ def run_transition_gates(
     # Profile- and stage-configured gate commands (lint, static analysis, etc.)
     # are objective checks with no such notion of an "unmodeled" transition, so
     # any failure blocks.
-    for template in collect_gate_commands(
-        profile,
-        from_stage=from_stage,
-        to_stage=to_stage,
-        stage_def=stage_def,
-    ):
-        # A blank/whitespace-only entry (a Studio user or hand-edited YAML saving
-        # ["", "  "]) gates nothing — skip it so it neither crashes the run nor
-        # inflates the "ran" count that lets an operator tell real gates apart.
-        if not template.strip():
-            continue
+    for template in templates:
         command = format_gate_command(template, context)
-        result = _run_command(command, repo_root)
+        result = _run_command(command, repo_root, extra_env=env)
         if not result.ok:
             return _blocking(result)
         ran += 1
@@ -408,3 +499,52 @@ def run_gate_autofix(
             chunks.append(f"$ {command}\n{strip_ansi(body)}")
 
     return GateAutofixResult(ran=bool(commands), commands=commands, output="\n\n".join(chunks))
+
+
+@dataclass(frozen=True)
+class GateDryRun:
+    template: str
+    command: str
+    result: GateRunResult
+    duration_ms: int
+
+
+def dry_run_gate_commands(
+    workspace: Workspace,
+    templates: list[str],
+    *,
+    from_stage: str,
+    to_stage: str,
+) -> list[GateDryRun]:
+    """Run draft gate commands in the workspace's shared checkout, every one of
+    them, so an operator sees each command's verdict before a ticket does.
+
+    Unlike `run_transition_gates` this does not stop at the first failure — the
+    point is to see them all — and it runs no transition script, which needs a
+    real ticket's exported handoff to judge anything. Blank entries are
+    dropped, as the real run drops them.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    repo_exists = repo_root.is_dir()
+    context = sample_gate_context(workspace, from_stage=from_stage, to_stage=to_stage)
+    runs: list[GateDryRun] = []
+    for template in templates:
+        if not template.strip():
+            continue
+        command = format_gate_command(template, context)
+        started = time.monotonic()
+        result = (
+            _run_command(command, repo_root)
+            if repo_exists
+            else GateRunResult(
+                ok=False,
+                outcome=GateOutcome.UNAVAILABLE,
+                message=f"Workspace repo path does not exist: {repo_root}",
+                command=command,
+            )
+        )
+        elapsed = int((time.monotonic() - started) * 1000)
+        runs.append(
+            GateDryRun(template=template, command=command, result=result, duration_ms=elapsed)
+        )
+    return runs

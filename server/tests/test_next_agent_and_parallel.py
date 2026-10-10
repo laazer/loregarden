@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 from fastapi.testclient import TestClient
 from loregarden.config import settings
@@ -267,6 +268,24 @@ def test_resolve_stage_execution_ignores_stale_next_agent_on_linear_stage():
     assert skill == "learning"
 
 
+def _commit_fixture_repo(repo) -> None:
+    """Commit what the test seeded, so the shared checkout starts clean.
+
+    The stage falls back to the shared checkout (the repo has no `main` to cut a
+    worktree from), and a checkout holding uncommitted files nobody's run
+    recorded is refused rather than shared (lg-workflow-integrity-864).
+    """
+    # The test's own SQLite database lives in this same tmp_path; it is not part
+    # of the repo, and committing it would dirty the tree on every write.
+    with (repo / ".git" / "info" / "exclude").open("a") as exclude:
+        exclude.write("pytest.db*\n")
+    for args in (
+        ["add", "-A"],
+        ["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-qm", "seed"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, capture_output=True, check=True)
+
+
 def test_parallel_stage_runs_all_agents(
     client: TestClient, db_session: Session, tmp_path, monkeypatch
 ):
@@ -348,6 +367,7 @@ def test_parallel_stage_runs_all_agents(
     )
     db_session.add(instance)
     db_session.commit()
+    _commit_fixture_repo(tmp_path)
 
     res = client.post(
         f"/api/tickets/{ticket.id}/orchestrate",
@@ -437,6 +457,7 @@ def test_orchestration_reroutes_when_gate_fails(
     )
     db_session.add(instance)
     db_session.commit()
+    _commit_fixture_repo(tmp_path)
 
     res = client.post(
         f"/api/tickets/{ticket.id}/orchestrate",

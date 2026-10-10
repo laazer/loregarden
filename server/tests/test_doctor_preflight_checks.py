@@ -13,6 +13,9 @@ that test on purpose.
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest import mock
+
 import pytest
 from loregarden.agents.mcp_context import (
     STAGE_REPORT_SECTION_TITLE,
@@ -147,13 +150,11 @@ def test_a_writable_git_directory_passes(session, workspace, repo):
 def test_an_unwritable_git_directory_fails(session, workspace, repo):
     """Asked by writing, not by reading a permission bit: the case this exists
     for is a sandbox that denies the write while the mode bits still allow it."""
-    git_dir = repo / ".git"
-    original = git_dir.stat().st_mode
-    git_dir.chmod(0o500)
-    try:
+    # The write is refused outright rather than by chmod: mode bits are exactly
+    # what that sandbox ignores, and root (a CI container) ignores them too.
+    denied = PermissionError(13, "Permission denied")
+    with mock.patch.object(Path, "write_text", autospec=True, side_effect=denied):
         finding = check_git_writable(session, workspace, repo)
-    finally:
-        git_dir.chmod(original)
 
     assert finding.status is DoctorStatus.FAIL
     assert "not writable" in finding.finding

@@ -12,17 +12,26 @@ import os
 import sys
 
 import httpx
+from loregarden.mcp.caller import (
+    ORCHESTRATED_ENV,
+    ORCHESTRATED_HEADER,
+    RUN_ID_ENV,
+    RUN_ID_HEADER,
+)
 from loregarden.mcp.protocol import handle_message
 
 API_BASE = os.environ.get("LOREGARDEN_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 USE_INPROCESS = os.environ.get("LOREGARDEN_MCP_INPROCESS", "").lower() in ("1", "true", "yes")
 # Set only in the stdio env of a Loregarden-supervised run's --mcp-config
-# (agents/mcp_context.py); mirrors the HTTP transport's X-Loregarden-Orchestrated header.
-ORCHESTRATED = os.environ.get("LOREGARDEN_MCP_ORCHESTRATED", "").lower() in ("1", "true", "yes")
+# (agents/mcp_context.py); mirrors the HTTP transport's headers (mcp/caller.py).
+ORCHESTRATED = os.environ.get(ORCHESTRATED_ENV, "").lower() in ("1", "true", "yes")
+RUN_ID = os.environ.get(RUN_ID_ENV, "") if ORCHESTRATED else ""
 
 
 def _post_http(body: dict | list) -> dict | list:
-    headers = {"X-Loregarden-Orchestrated": "1"} if ORCHESTRATED else {}
+    headers = {ORCHESTRATED_HEADER: "1"} if ORCHESTRATED else {}
+    if RUN_ID:
+        headers[RUN_ID_HEADER] = RUN_ID
     with httpx.Client(base_url=API_BASE, timeout=120.0) as client:
         res = client.post("/mcp", json=body, headers=headers)
         res.raise_for_status()
@@ -37,7 +46,7 @@ def _handle_stdio_line(line: str) -> dict | list | None:
 
         init_db()
         with Session(engine) as session:
-            return handle_message(session, req, orchestrated=ORCHESTRATED)
+            return handle_message(session, req, orchestrated=ORCHESTRATED, run_id=RUN_ID)
 
     if isinstance(req, dict):
         resp = _post_http(req)

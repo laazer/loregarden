@@ -47,6 +47,7 @@ def build_orchestration_context(
     stages: list[WorkflowStageDef] | None = None,
     posture: ResolvedPosture | None = None,
     session: Session | None = None,
+    assigned_exit_actions: list[dict] | list[object] | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -86,6 +87,8 @@ def build_orchestration_context(
             ", ".join(f"`{key}`" for key in upstream),
         ]
 
+    lines += _reroute_agent_lines(stages or [], stage_key)
+
     # An affordance nothing mentions is one no agent uses: skip_stage exists,
     # but without the key list a caller has to guess which stages it may prune,
     # and every guess at a required stage is refused.
@@ -116,6 +119,9 @@ def build_orchestration_context(
             "",
             brief,
         ]
+
+    if assigned_exit_actions:
+        lines += _assigned_exit_action_lines(assigned_exit_actions)
 
     gate = gate_prep_target(stages, stage_key)
     if gate is not None:
@@ -162,3 +168,55 @@ def build_orchestration_context(
         ]
 
     return "\n".join(lines)
+
+
+def _assigned_exit_action_lines(assigned_exit_actions: list[dict] | list[object]) -> list[str]:
+    """Prompt lines naming the exit actions this run must execute."""
+    labels: list[str] = []
+    for action in assigned_exit_actions:
+        if isinstance(action, dict):  # py-org: allow-isinstance
+            label = str(action.get("action_label") or action.get("label") or "")
+        else:
+            label = str(action.action_label or "")
+        if label:
+            labels.append(label)
+    if not labels:
+        return []
+    return [
+        "",
+        "### Exit actions assigned to this run",
+        "These requirements are satisfied for your runtime. Execute each one before you "
+        "finish. A passing stage report attests that the assigned actions completed; a "
+        "failed or reworked report completes none of them.",
+        "",
+        *(f"- {label}" for label in labels),
+    ]
+
+
+def _reroute_agent_lines(stages: list[WorkflowStageDef], stage_key: str) -> list[str]:
+    """The specialists a reject from ``stage_key`` may name in ``reroute_to_agent``.
+
+    Only stages that choose between specialists: elsewhere the agent is fixed
+    and naming one changes nothing, so listing it would only spend prompt.
+    """
+    reached = sorted(stages, key=lambda s: s.order)
+    keys_reached = [stage.key for stage in reached]
+    if stage_key in keys_reached:
+        reached = reached[: keys_reached.index(stage_key) + 1]
+    choosable = [
+        (stage.key, sorted({route.agent_id for route in stage.classify_routes if route.agent_id}))
+        for stage in reached
+    ]
+    choosable = [(key, agents) for key, agents in choosable if len(agents) > 1]
+    if not choosable:
+        return []
+    return [
+        "",
+        "### Valid `reroute_to_agent` values for this workflow",
+        "Name one only when rejecting and you know which specialist should redo the work:",
+        "",
+        *(
+            f"- `{key}`: " + ", ".join(f"`{agent}`" for agent in agents)
+            for key, agents in choosable
+        ),
+    ]

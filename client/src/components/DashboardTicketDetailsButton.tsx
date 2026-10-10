@@ -40,6 +40,10 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
       if (draft.acceptanceCriteria.join('\n') !== currentCriteria.join('\n')) {
         patch.acceptance_criteria = draft.acceptanceCriteria;
       }
+      const currentChecks = current.checked_acceptance_criteria ?? [];
+      if (draft.checkedAcceptanceCriteria.join('\n') !== currentChecks.join('\n')) {
+        patch.checked_acceptance_criteria = draft.checkedAcceptanceCriteria;
+      }
       const currentTags = current.tags ?? [];
       if (draft.tags.join(',') !== currentTags.join(',')) {
         patch.tags = draft.tags;
@@ -65,6 +69,20 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
     },
   });
 
+  // Ticking a criterion from read mode: one field, saved on the click.
+  const saveChecks = useMutation({
+    meta: { errorTitle: "Check off acceptance criterion" },
+    mutationFn: (checked: string[]) =>
+      apiClient.api.updateTicket(ticketId, { checked_acceptance_criteria: checked }),
+    onSuccess: (updated) => {
+      setSaveError(undefined);
+      qc.setQueryData(['ticket', ticketId], updated);
+    },
+    onError: (err) => {
+      setSaveError(describeError(err, 'Failed to save the checked criteria'));
+    },
+  });
+
   const handleOpenModal = () => {
     setSaveError(undefined);
     setIsModalOpen(true);
@@ -75,14 +93,17 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
     setSaveError(undefined);
   };
 
+  // Both reject on failure, after onError has put the message in `saveError`,
+  // which TicketDetailsModal renders; the rejection is how it knows to keep
+  // the draft (or revert the checkbox) rather than assume the write landed.
   const handleSave = async (draft: TicketDetailsSaveDraft) => {
     setSaveError(undefined);
-    try {
-      await saveDetails.mutateAsync(draft);
-    } catch {
-      // silent-ok: the mutation's onError puts the message in `saveError`,
-      // which is handed to TicketDetailsModal and rendered there.
-    }
+    await saveDetails.mutateAsync(draft);
+  };
+
+  const handleSaveChecks = async (checked: string[]) => {
+    setSaveError(undefined);
+    await saveChecks.mutateAsync(checked);
   };
 
   return (
@@ -118,6 +139,8 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
         isSaving={saveDetails.isPending}
         saveError={saveError}
         onSave={handleSave}
+        onSaveChecks={handleSaveChecks}
+        isSavingChecks={saveChecks.isPending}
       />
     </>
   );

@@ -42,6 +42,8 @@ def test_every_console_script_resolves_to_a_callable(target):
         ["mcp", "call", "loregarden_get_ticket"],
         ["mcp", "serve"],
         ["db", "init", "--empty"],
+        ["local_main"],
+        ["instance", "run", "--name", "client", "--kind", "client", "--port", "5173", "--", "true"],
     ],
 )
 def test_every_subcommand_parses_and_binds_a_runner(argv):
@@ -152,6 +154,12 @@ def test_flags_after_key_value_arguments_are_hoisted():
 def test_hoisting_leaves_other_subcommands_alone():
     assert mcp_tools.hoist_call_flags(["mcp", "list", "--json"]) == ["mcp", "list", "--json"]
     assert mcp_tools.hoist_call_flags(["db", "init", "--empty"]) == ["db", "init", "--empty"]
+
+
+def test_hoisting_leaves_a_passed_through_command_alone():
+    """`call` inside the command `capacity run` runs is not `mcp call`."""
+    argv = ["capacity", "run", "--label", "x", "--", "make", "call", "a=b", "--fast"]
+    assert mcp_tools.hoist_call_flags(argv) == argv
 
 
 def test_flags_after_key_value_arguments_survive_a_real_parse():

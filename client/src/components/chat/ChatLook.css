@@ -15,9 +15,12 @@
   --lg-primitive-regular: min(620px, 100%);
   --lg-primitive-wide: 100%;
   --lg-primitive-full: 100%;
+  /* Room between turns for the hover actions row, which hangs in it (see
+     .lg-chat-message-actions) instead of reserving height under every turn. */
+  --lg-chat-turn-gap: 32px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--lg-chat-turn-gap);
   flex: 1 0 auto;
 }
 
@@ -195,6 +198,8 @@
 .lg-chat-loading-track {
   --lg-chat-walker-size: 56px;
   position: relative;
+  /* The walker crosses the track with `translate` in cqw: the track's width, not its own. */
+  container-type: inline-size;
   width: 100%;
   height: calc(var(--lg-chat-walker-size) + 8px);
   overflow: hidden;
@@ -212,7 +217,7 @@
   width: var(--lg-chat-walker-size);
   height: var(--lg-chat-walker-size);
   animation: lg-chat-pace 3.6s linear infinite;
-  will-change: left, transform;
+  will-change: translate, transform;
 }
 
 .lg-chat-loading-walker .baxter-avatar {
@@ -235,23 +240,23 @@
 
 @keyframes lg-chat-pace {
   0% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(1);
   }
   46% {
-    left: calc(100% - var(--lg-chat-walker-size));
+    translate: calc(100cqw - var(--lg-chat-walker-size)) 0;
     transform: scaleX(1);
   }
   50% {
-    left: calc(100% - var(--lg-chat-walker-size));
+    translate: calc(100cqw - var(--lg-chat-walker-size)) 0;
     transform: scaleX(-1);
   }
   96% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(-1);
   }
   100% {
-    left: 0;
+    translate: 0 0;
     transform: scaleX(1);
   }
 }
@@ -342,9 +347,17 @@
   box-shadow: none;
 }
 
+/*
+ * One line, as tall as the send chip, text centred in it: the chip sits on the
+ * last line (`align-items: flex-end` below), so a two-row box left the
+ * placeholder at the top and the chip at the bottom, looking misaligned.
+ */
 .lg-chat-composer-wrap--dense .lg-chat-composer-input {
-  min-height: 32px;
+  min-height: 34px;
+  padding: 7px 0;
   font-size: 13.5px;
+  line-height: 20px;
+  overflow-y: auto;
 }
 
 /*
@@ -355,8 +368,8 @@
  * costs its own ~32px whatever the box does. Side by side, the same pane
  * measures about 48px.
  *
- * Only safe because `dense` has one caller and it passes no `toolbar` content —
- * a row with buttons in it would squash the input. `align-items: flex-end`
+ * Only safe while no `dense` caller (view panes, the initiative planner) passes
+ * `toolbar` content — a row with buttons in it would squash the input. `align-items: flex-end`
  * keeps the send chip on the last line as the textarea grows.
  */
 .lg-chat-composer-wrap--dense .lg-chat-composer {
@@ -464,6 +477,28 @@
 
 /* A `/oneshot` turn: the chip saying what was asked for, above the task itself.
    The turn is a flex row aligned right, so the two need their own column. */
+/* The operator's turn and its Copy row, both against the right edge. */
+.lg-chat-user-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(520px, 92%);
+}
+
+.lg-chat-user-col > .lg-chat-user-bubble,
+.lg-chat-user-col > .lg-chat-user-stack {
+  max-width: 100%;
+}
+
+.lg-chat-user-col > .lg-chat-message-actions {
+  right: 0;
+}
+
+.lg-chat-assistant-col > .lg-chat-message-actions {
+  left: 0;
+}
+
 .lg-chat-user-stack {
   display: flex;
   flex-direction: column;
@@ -479,15 +514,24 @@
 
 /* Per-reply actions: copy, fork, and the overflow. Present in the DOM at all
    times — a control that only exists on hover is a control no keyboard can
-   reach — and faded until the turn is hovered or something in the row has
-   focus. */
+   reach — and invisible until the turn is hovered or something in the row has
+   focus. Opacity, not display, and out of flow: the row hangs in the gap
+   below its column, so it neither shifts the thread when it appears nor adds
+   a blank band under every turn while it is hidden. */
+.lg-chat-user-col,
+.lg-chat-assistant-col {
+  position: relative;
+}
+
 .lg-chat-message-actions {
+  position: absolute;
+  top: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: -6px;
+  margin-top: 3px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--t-fast) ease;
 }
 
 .lg-chat-turn:hover .lg-chat-message-actions,
@@ -503,6 +547,9 @@
 }
 
 .lg-chat-message-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -542,4 +589,57 @@
   border-color: var(--bd2);
   background: var(--bg4);
   color: var(--tx);
+}
+
+/* One line of one-click prompts under a composer. Fixed height and no wrap, so what it
+   offers can change without moving anything above it. A row wider than the composer
+   scrolls sideways rather than shrinking every prompt to its first word; only a prompt
+   wider than the whole row truncates, keeping its full text in `title`. */
+.lg-chat-prompt-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lg-chat-prompt {
+  flex: none;
+  max-width: 100%;
+  padding: 5px 11px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lg-chat-prompt:hover:not(:disabled),
+.lg-chat-prompt:focus-visible {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.lg-chat-prompt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* In a side column: one prompt per line, wrapping instead of scrolling. */
+.lg-chat-prompt-row--stacked {
+  flex-direction: column;
+  overflow: visible;
+}
+
+.lg-chat-prompt-row--stacked .lg-chat-prompt {
+  border-radius: 10px;
+  padding: 8px 11px;
+  color: var(--tx);
+  text-align: left;
+  white-space: normal;
 }
