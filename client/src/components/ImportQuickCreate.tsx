@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 
+import { Input } from "./ui/Input";
+
 interface ImportQuickCreateProps {
   label: string;
   placeholder: string;
@@ -47,7 +49,8 @@ export function ImportQuickCreate({
   return (
     <div className="import-quick-create">
       <div className="import-quick-create-row">
-        <input
+        <Input
+          aria-label={placeholder}
           className="btn-secondary filter-select"
           style={{ flex: 1, fontSize: 12 }}
           value={title}

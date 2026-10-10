@@ -33,10 +33,14 @@ from __future__ import annotations
 import logging
 
 from loregarden.core.event_bus import event_bus
-from loregarden.models.domain import EventType, Ticket, TicketState
+from loregarden.models.domain import EventType, Ticket, TicketState, utcnow
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+#: States meaning the work is behind us — finished or abandoned. Entering one
+#: stamps `resolved_at`; leaving one clears it.
+RESOLVED_STATES = (TicketState.DONE, TicketState.WONT_DO)
 
 #: Moves an operator, agent or orchestrator may choose.
 #:
@@ -130,6 +134,11 @@ def _write(
     ticket.state = target
     ticket.revision += 1
     ticket.last_updated_by = actor
+    if target not in RESOLVED_STATES:
+        ticket.resolved_at = None
+    elif previous not in RESOLVED_STATES:
+        # done -> wont_do keeps the original stamp: the work left the plan then.
+        ticket.resolved_at = utcnow()
 
     logger.info(
         "Ticket %s: %s -> %s (%s)",

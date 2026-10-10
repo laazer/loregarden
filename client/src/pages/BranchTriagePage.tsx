@@ -225,17 +225,16 @@ export function BranchTriagePage() {
         )}
       </div>
 
-      {cleanupOpen ? (
-        <BranchCleanupModal
-          workspaceSlug={activeSlug}
-          baseBranch={triage.data?.base_branch ?? "main"}
-          branches={triage.data?.branches ?? []}
-          onClose={() => setCleanupOpen(false)}
-          onBranchesDeleted={(deleted) => {
-            if (selectedBranch && deleted.includes(selectedBranch)) setSelectedBranch("");
-          }}
-        />
-      ) : null}
+      <BranchCleanupModal
+        open={cleanupOpen}
+        workspaceSlug={activeSlug}
+        baseBranch={triage.data?.base_branch ?? "main"}
+        branches={triage.data?.branches ?? []}
+        onClose={() => setCleanupOpen(false)}
+        onBranchesDeleted={(deleted) => {
+          if (selectedBranch && deleted.includes(selectedBranch)) setSelectedBranch("");
+        }}
+      />
     </div>
   );
 }

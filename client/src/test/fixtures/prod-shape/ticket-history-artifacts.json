@@ -1,0 +1,2632 @@
+{
+ "items": [
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Split the approval inbox for parked stages",
+     "Fix docker capacity leases",
+     "Route gate outcomes on stage transitions"
+    ],
+    "from_stage": "gate"
+   },
+   "content_bytes": 157,
+   "created_at": "2026-09-11T05:46:30",
+   "evidence_kind": "",
+   "id": "f76d28b9-eea7-5795-b9cb-20ee851710ab",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff gate \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T05:46:00",
+   "evidence_kind": "",
+   "id": "d466dfe2-2c24-506b-a481-81b623523a55",
+   "kind": "log",
+   "run_id": "3d7ee78d-a35d-5a76-818c-8e8eca8bd8ae",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run run_w00032"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.85,
+    "stage_key": "gate",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T05:46:00",
+   "evidence_kind": "",
+   "id": "a109a875-8bfa-5a10-bd05-a30238b2e987",
+   "kind": "context",
+   "run_id": "3d7ee78d-a35d-5a76-818c-8e8eca8bd8ae",
+   "stage_key": "gate",
+   "system": false,
+   "title": "Stage report \u2014 gate (gatekeeper)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface the approval inbox for parked stages \u2014 `spec` stage, 23 runs\n- Fix worktree isolation for chat turns \u2014 `review` stage, 10 runs\n- Surface the approval inbox for parked stages \u2014 `review` stage, 17 runs\n- Cache branch cleanup after a squash merge \u2014 `plan` stage, 13 runs\n- Fix memory recall ranking \u2014 `test-design` stage, 39 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 13 | 0 |\n| implement | 55 | 4 |\n| spec | 27 | 6 |\n| plan | 21 | 8 |\n"
+   },
+   "content_bytes": 1204,
+   "created_at": "2026-09-11T05:34:00",
+   "evidence_kind": "",
+   "id": "af8d8d79-0aa6-5394-b9ef-229ea902e177",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Show gate outcomes on stage transitions"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T05:28:00",
+   "evidence_kind": "",
+   "id": "9d2d9b71-4c8c-542f-bd00-596e7dafedf9",
+   "kind": "context",
+   "run_id": "3d7ee78d-a35d-5a76-818c-8e8eca8bd8ae",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T05:27:00",
+   "evidence_kind": "",
+   "id": "1c13b527-4ff5-5cd0-afe3-4cb59d193d59",
+   "kind": "log",
+   "run_id": "d336d8b3-1e08-5f30-880d-421edbf15b73",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run run_w00031"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.71,
+    "stage_key": "gate",
+    "status": "fail"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T05:27:00",
+   "evidence_kind": "",
+   "id": "7872fbc4-f316-51df-ba1b-e556b6b47b2f",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "gate",
+   "system": false,
+   "title": "Stage report \u2014 gate (gatekeeper)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Risks 1\n\nThe the rework ledger's loop cap path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make worktree isolation for chat turns \u2014 `test-design` stage, 13 runs\n- Retry memory recall ranking \u2014 `implement` stage, 33 runs\n- Show the queue board's stalled lane \u2014 `review` stage, 39 runs\n- Surface the queue board's stalled lane \u2014 `plan` stage, 34 runs\n- Retry initiative progress rollup \u2014 `implement` stage, 31 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 38 | 3 |\n| implement | 60 | 1 |\n| spec | 15 | 8 |\n| plan | 60 | 0 |\n",
+    "stage_key": "gate"
+   },
+   "content_bytes": 1185,
+   "created_at": "2026-09-11T05:27:00",
+   "evidence_kind": "",
+   "id": "c8235912-65e1-51bf-9df5-f3503d85d341",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "gate",
+   "system": false,
+   "title": "gate failed \u2014 gatekeeper"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe GitHub issue two-way sync path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface the run log's live tail \u2014 `script_review` stage, 31 runs\n- Retry the approval inbox for parked stages \u2014 `review` stage, 16 runs\n- Split the run log's live tail \u2014 `test-design` stage, 5 runs\n- Make the queue board's stalled lane \u2014 `plan` stage, 40 runs\n- Make worktree isolation for chat turns \u2014 `review` stage, 6 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 57 | 8 |\n| implement | 9 | 1 |\n| spec | 7 | 6 |\n| plan | 56 | 1 |\n"
+   },
+   "content_bytes": 1165,
+   "created_at": "2026-09-11T05:11:40",
+   "evidence_kind": "",
+   "id": "ed43a093-6263-573f-88b8-31a4f73f6913",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Make docker capacity leases"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T05:04:00",
+   "evidence_kind": "",
+   "id": "569b251a-e193-5ad7-9de6-df6b4567b2ea",
+   "kind": "context",
+   "run_id": "d336d8b3-1e08-5f30-880d-421edbf15b73",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T05:03:00",
+   "evidence_kind": "",
+   "id": "356ff73e-f41a-53c4-8ea7-061688a56d44",
+   "kind": "log",
+   "run_id": "8af948bb-396c-580c-b0df-7d046e5609b9",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run run_w00030"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.81,
+    "stage_key": "gate",
+    "status": "fail"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T05:03:00",
+   "evidence_kind": "",
+   "id": "8f4307f3-ab88-599e-87e1-c86f0af542ff",
+   "kind": "context",
+   "run_id": "8af948bb-396c-580c-b0df-7d046e5609b9",
+   "stage_key": "gate",
+   "system": false,
+   "title": "Stage report \u2014 gate (gatekeeper)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Risks 1\n\nThe the run log's live tail path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route stage timeout budgets \u2014 `implement` stage, 19 runs\n- Surface the rework ledger's loop cap \u2014 `implement` stage, 36 runs\n- Make GitHub issue two-way sync \u2014 `spec` stage, 25 runs\n- Cache worktree isolation for chat turns \u2014 `test-design` stage, 34 runs\n- Show memory recall ranking \u2014 `review` stage, 18 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 20 | 4 |\n| implement | 57 | 4 |\n| spec | 38 | 2 |\n| plan | 30 | 3 |\n",
+    "stage_key": "gate"
+   },
+   "content_bytes": 1186,
+   "created_at": "2026-09-11T05:03:00",
+   "evidence_kind": "",
+   "id": "70aadc1d-20f7-502d-83b7-c82d4944c39e",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "gate",
+   "system": false,
+   "title": "gate failed \u2014 gatekeeper"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show GitHub issue two-way sync \u2014 `review` stage, 12 runs\n- Fix initiative progress rollup \u2014 `spec` stage, 12 runs\n- Split the rework ledger's loop cap \u2014 `test-design` stage, 4 runs\n- Retry worktree isolation for chat turns \u2014 `spec` stage, 35 runs\n- Stop gate outcomes on stage transitions \u2014 `script_review` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 7 | 7 |\n| implement | 56 | 3 |\n| spec | 50 | 1 |\n| plan | 14 | 1 |\n"
+   },
+   "content_bytes": 1179,
+   "created_at": "2026-09-11T04:53:40",
+   "evidence_kind": "",
+   "id": "b5644b92-b017-5b2b-9c6e-b7561418bf6a",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Surface GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:49:00",
+   "evidence_kind": "",
+   "id": "f9cf46d0-90db-5633-9b21-9fd0b3f5b262",
+   "kind": "context",
+   "run_id": "8af948bb-396c-580c-b0df-7d046e5609b9",
+   "stage_key": "gate",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:48:55",
+   "evidence_kind": "",
+   "id": "5259ceaa-1113-5abe-a441-0fa6c9291502",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:gate"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Make branch cleanup after a squash merge",
+     "Cache GitHub issue two-way sync",
+     "Make gate outcomes on stage transitions"
+    ],
+    "from_stage": "review"
+   },
+   "content_bytes": 161,
+   "created_at": "2026-09-11T04:48:30",
+   "evidence_kind": "",
+   "id": "07ac849f-d870-5bea-b731-69e178348cc2",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff review \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:48:00",
+   "evidence_kind": "",
+   "id": "b6f6feec-b3a0-5069-951c-5dde86ad03b0",
+   "kind": "log",
+   "run_id": "fd639ab5-acf1-5f17-8936-ae37bc1a4c31",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00027"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.81,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:48:00",
+   "evidence_kind": "",
+   "id": "7abe0dc1-ec94-5f0c-8fa3-ffc79e7458e4",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (architecture_reviewer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:46:00",
+   "evidence_kind": "",
+   "id": "fd5c033d-da96-596b-bc31-a4de77574089",
+   "kind": "log",
+   "run_id": "37a4b3f1-b817-5cb7-b403-3a499ed60d29",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00028"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.82,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:46:00",
+   "evidence_kind": "",
+   "id": "4cdf42d2-8b6c-5066-8ecc-0a4a288e860c",
+   "kind": "context",
+   "run_id": "37a4b3f1-b817-5cb7-b403-3a499ed60d29",
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (security_reviewer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:44:00",
+   "evidence_kind": "",
+   "id": "b1db741b-5b41-5303-81b0-823509799d81",
+   "kind": "log",
+   "run_id": "f05f35de-90c8-5dda-8331-c54bdb5b5b86",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00029"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.73,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:44:00",
+   "evidence_kind": "",
+   "id": "d03ea6b7-8de7-533d-9244-3946dbe1b1dd",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (visual_qa)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe GitHub issue two-way sync path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Add memory recall ranking \u2014 `implement` stage, 32 runs\n- Split docker capacity leases \u2014 `script_review` stage, 17 runs\n- Route gate outcomes on stage transitions \u2014 `script_review` stage, 4 runs\n- Make branch cleanup after a squash merge \u2014 `implement` stage, 34 runs\n- Retry memory recall ranking \u2014 `plan` stage, 19 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 11 | 2 |\n| implement | 44 | 6 |\n| spec | 51 | 8 |\n| plan | 53 | 5 |\n"
+   },
+   "content_bytes": 1172,
+   "created_at": "2026-09-11T04:36:00",
+   "evidence_kind": "",
+   "id": "c83d6066-762b-54ff-a8de-c62a3b856163",
+   "kind": "test_spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test spec \u2014 Stop gate outcomes on stage transitions"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe memory recall ranking path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Add GitHub issue two-way sync \u2014 `spec` stage, 26 runs\n- Stop gate outcomes on stage transitions \u2014 `test-design` stage, 40 runs\n- Make gate outcomes on stage transitions \u2014 `review` stage, 29 runs\n- Cache worktree isolation for chat turns \u2014 `script_review` stage, 13 runs\n- Surface the approval inbox for parked stages \u2014 `review` stage, 12 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 8 | 2 |\n| implement | 23 | 1 |\n| spec | 30 | 9 |\n| plan | 26 | 3 |\n"
+   },
+   "content_bytes": 1212,
+   "created_at": "2026-09-11T04:35:20",
+   "evidence_kind": "",
+   "id": "17fb1959-1737-54d4-98d4-cc31c1f2ee9e",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Make the approval inbox for parked stages"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:35:00",
+   "evidence_kind": "",
+   "id": "a1979728-3074-51bb-9c1d-3611a73274f1",
+   "kind": "log",
+   "run_id": "74bf3c05-d580-5284-be0f-2ab64cd77990",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00026"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.78,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:35:00",
+   "evidence_kind": "",
+   "id": "2290baa7-9dc6-5a62-bff9-e7783900fbcf",
+   "kind": "context",
+   "run_id": "74bf3c05-d580-5284-be0f-2ab64cd77990",
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (static_qa)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe branch cleanup after a squash merge path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache the approval inbox for parked stages \u2014 `spec` stage, 15 runs\n- Fix the approval inbox for parked stages \u2014 `script_review` stage, 40 runs\n- Route gate outcomes on stage transitions \u2014 `script_review` stage, 35 runs\n- Route docker capacity leases \u2014 `plan` stage, 27 runs\n- Make gate outcomes on stage transitions \u2014 `plan` stage, 9 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 21 | 3 |\n| implement | 49 | 0 |\n| spec | 1 | 8 |\n| plan | 54 | 7 |\n"
+   },
+   "content_bytes": 1210,
+   "created_at": "2026-09-11T04:34:40",
+   "evidence_kind": "",
+   "id": "2b3e55e6-cf13-5cdf-af6a-e2c0dfef6de1",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Split memory recall ranking"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe stage timeout budgets path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop GitHub issue two-way sync \u2014 `review` stage, 30 runs\n- Retry GitHub issue two-way sync \u2014 `review` stage, 10 runs\n- Route initiative progress rollup \u2014 `test-design` stage, 38 runs\n- Make GitHub issue two-way sync \u2014 `spec` stage, 34 runs\n- Route the queue board's stalled lane \u2014 `plan` stage, 22 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 45 | 5 |\n| implement | 38 | 1 |\n| spec | 28 | 8 |\n| plan | 40 | 9 |\n"
+   },
+   "content_bytes": 1153,
+   "created_at": "2026-09-11T04:31:40",
+   "evidence_kind": "",
+   "id": "e0d02add-ae11-50b8-a621-d5ddca033693",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Cache stage timeout budgets"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:30:00",
+   "evidence_kind": "",
+   "id": "2d3400b2-7965-55d9-81df-431372a4aba1",
+   "kind": "context",
+   "run_id": "74bf3c05-d580-5284-be0f-2ab64cd77990",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:30:00",
+   "evidence_kind": "",
+   "id": "cfa702be-b037-5a83-89b3-bc7e4d4e08d2",
+   "kind": "context",
+   "run_id": "fd639ab5-acf1-5f17-8936-ae37bc1a4c31",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:30:00",
+   "evidence_kind": "",
+   "id": "abfc5536-fea9-5aad-9cf9-950eda779972",
+   "kind": "context",
+   "run_id": "37a4b3f1-b817-5cb7-b403-3a499ed60d29",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:30:00",
+   "evidence_kind": "",
+   "id": "1a9d23e8-673b-5183-895a-c548443e6782",
+   "kind": "context",
+   "run_id": "f05f35de-90c8-5dda-8331-c54bdb5b5b86",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:29:55",
+   "evidence_kind": "",
+   "id": "24965532-8cc9-5fc1-b232-cfe963e0eecd",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:review"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Split gate outcomes on stage transitions",
+     "Retry GitHub issue two-way sync",
+     "Split the run log's live tail"
+    ],
+    "from_stage": "implement"
+   },
+   "content_bytes": 154,
+   "created_at": "2026-09-11T04:29:30",
+   "evidence_kind": "",
+   "id": "de149b9d-494d-5876-9f09-aa9cf13edff0",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff implement \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:29:00",
+   "evidence_kind": "",
+   "id": "ad0f0e5f-7e53-546a-a364-8e22fa26af48",
+   "kind": "log",
+   "run_id": "135f5156-d550-5453-a309-0f9587ded235",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run run_w00025"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.82,
+    "stage_key": "implement",
+    "status": "pass"
+   },
+   "content_bytes": 64,
+   "created_at": "2026-09-11T04:29:00",
+   "evidence_kind": "",
+   "id": "0e3f67b0-359b-5048-adb3-c3902c92a2c9",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe the approval inbox for parked stages path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Fix branch cleanup after a squash merge \u2014 `script_review` stage, 19 runs\n- Make docker capacity leases \u2014 `review` stage, 34 runs\n- Stop worktree isolation for chat turns \u2014 `plan` stage, 34 runs\n- Add the rework ledger's loop cap \u2014 `script_review` stage, 35 runs\n- Split GitHub issue two-way sync \u2014 `script_review` stage, 34 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 51 | 8 |\n| implement | 39 | 7 |\n| spec | 41 | 1 |\n| plan | 14 | 9 |\n"
+   },
+   "content_bytes": 1176,
+   "created_at": "2026-09-11T04:19:40",
+   "evidence_kind": "",
+   "id": "39b16e7d-9243-5195-ba27-5dad75cf7a04",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Route the queue board's stalled lane"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:15:00",
+   "evidence_kind": "",
+   "id": "a2f97628-f565-524f-9bc1-a83f3a5747a5",
+   "kind": "context",
+   "run_id": "135f5156-d550-5453-a309-0f9587ded235",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:14:55",
+   "evidence_kind": "",
+   "id": "b3c8e971-ab16-5243-8c9b-0ed253c1d611",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:implement"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Split initiative progress rollup",
+     "Fix stage timeout budgets",
+     "Retry the queue board's stalled lane"
+    ],
+    "from_stage": "review"
+   },
+   "content_bytes": 144,
+   "created_at": "2026-09-11T04:14:30",
+   "evidence_kind": "",
+   "id": "57d03ba8-bab8-52a0-96de-76c948f26c93",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff review \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:14:00",
+   "evidence_kind": "",
+   "id": "d437d467-7999-5eb9-a671-3db6fc4aee26",
+   "kind": "log",
+   "run_id": "4b515dd3-b308-56d9-adf7-efcb1339ab13",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00021"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.74,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:14:00",
+   "evidence_kind": "",
+   "id": "ee1fad87-8702-5968-83f9-f2a44fb30be7",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (static_qa)"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T04:13:00",
+   "evidence_kind": "",
+   "id": "9fa29bdb-2d0d-5bdb-afd0-f5ae555fa7ae",
+   "kind": "log",
+   "run_id": "05a6cca4-b871-5e1e-a356-508829c2fcdd",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00024"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.86,
+    "stage_key": "review",
+    "status": "fail"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:13:00",
+   "evidence_kind": "",
+   "id": "f4635f39-e75b-58e3-94b3-fbbbc042c768",
+   "kind": "context",
+   "run_id": "05a6cca4-b871-5e1e-a356-508829c2fcdd",
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (visual_qa)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Evidence 1\n\nThe gate outcomes on stage transitions path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache the queue board's stalled lane \u2014 `spec` stage, 13 runs\n- Cache the run log's live tail \u2014 `spec` stage, 27 runs\n- Surface the queue board's stalled lane \u2014 `implement` stage, 23 runs\n- Cache memory recall ranking \u2014 `spec` stage, 16 runs\n- Stop GitHub issue two-way sync \u2014 `script_review` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 39 | 9 |\n| implement | 49 | 3 |\n| spec | 45 | 2 |\n| plan | 3 | 4 |\n",
+    "stage_key": "review"
+   },
+   "content_bytes": 1175,
+   "created_at": "2026-09-11T04:13:00",
+   "evidence_kind": "",
+   "id": "c0cfd6cc-884a-5d31-b06b-d470cf5e086b",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "review",
+   "system": false,
+   "title": "review failed \u2014 visual_qa"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.91,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T04:10:00",
+   "evidence_kind": "",
+   "id": "0b5e8503-8967-5c2c-adec-ba8f8204ea5f",
+   "kind": "context",
+   "run_id": "9590483a-c998-5b70-a2af-686c2ff3bc64",
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (architecture_reviewer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Fix stage timeout budgets \u2014 `spec` stage, 32 runs\n- Cache stage timeout budgets \u2014 `spec` stage, 40 runs\n- Split branch cleanup after a squash merge \u2014 `script_review` stage, 10 runs\n- Retry the rework ledger's loop cap \u2014 `spec` stage, 4 runs\n- Stop stage timeout budgets \u2014 `implement` stage, 15 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 58 | 5 |\n| implement | 19 | 5 |\n| spec | 32 | 1 |\n| plan | 56 | 0 |\n"
+   },
+   "content_bytes": 1144,
+   "created_at": "2026-09-11T04:01:20",
+   "evidence_kind": "",
+   "id": "9a322b6d-756c-5969-9795-9e1216ba776d",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Cache the rework ledger's loop cap"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Retry the approval inbox for parked stages \u2014 `spec` stage, 17 runs\n- Add the queue board's stalled lane \u2014 `review` stage, 11 runs\n- Make the queue board's stalled lane \u2014 `review` stage, 3 runs\n- Make the approval inbox for parked stages \u2014 `script_review` stage, 39 runs\n- Retry the queue board's stalled lane \u2014 `review` stage, 40 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 1 |\n| implement | 15 | 7 |\n| spec | 11 | 8 |\n| plan | 29 | 3 |\n"
+   },
+   "content_bytes": 1198,
+   "created_at": "2026-09-11T04:01:00",
+   "evidence_kind": "",
+   "id": "4c5d1c08-4595-53de-a7da-9766462741fe",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Surface the rework ledger's loop cap"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split the rework ledger's loop cap \u2014 `script_review` stage, 28 runs\n- Add stage timeout budgets \u2014 `test-design` stage, 5 runs\n- Fix the queue board's stalled lane \u2014 `spec` stage, 23 runs\n- Split the rework ledger's loop cap \u2014 `spec` stage, 24 runs\n- Split the run log's live tail \u2014 `test-design` stage, 36 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 34 | 5 |\n| implement | 14 | 2 |\n| spec | 35 | 2 |\n| plan | 60 | 2 |\n"
+   },
+   "content_bytes": 1181,
+   "created_at": "2026-09-11T04:00:00",
+   "evidence_kind": "",
+   "id": "9acc3481-6de4-55cc-b711-4a1d2dbfa9fc",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Surface initiative progress rollup"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:59:00",
+   "evidence_kind": "",
+   "id": "294611a2-a04c-52bf-b4a5-bd516f6d1e40",
+   "kind": "log",
+   "run_id": "fbede813-e4f4-52c2-8183-9c9f05a2b702",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run run_w00023"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.85,
+    "stage_key": "review",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T03:59:00",
+   "evidence_kind": "",
+   "id": "91664790-fdb7-523b-8147-75201fb2ea92",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "review",
+   "system": false,
+   "title": "Stage report \u2014 review (security_reviewer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the rework ledger's loop cap \u2014 `spec` stage, 19 runs\n- Route GitHub issue two-way sync \u2014 `test-design` stage, 11 runs\n- Cache worktree isolation for chat turns \u2014 `review` stage, 6 runs\n- Surface docker capacity leases \u2014 `implement` stage, 40 runs\n- Show docker capacity leases \u2014 `test-design` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 2 |\n| implement | 52 | 0 |\n| spec | 21 | 8 |\n| plan | 19 | 2 |\n"
+   },
+   "content_bytes": 1160,
+   "created_at": "2026-09-11T03:56:20",
+   "evidence_kind": "",
+   "id": "5a8a649b-b5c8-53e3-9a1f-4b3b9fca3d83",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Make docker capacity leases"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:55:00",
+   "evidence_kind": "",
+   "id": "63ac5630-1342-5800-933b-610fd7dbdde4",
+   "kind": "context",
+   "run_id": "4b515dd3-b308-56d9-adf7-efcb1339ab13",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:55:00",
+   "evidence_kind": "",
+   "id": "5e37d321-338f-5290-b8df-99450c77ccd1",
+   "kind": "context",
+   "run_id": "9590483a-c998-5b70-a2af-686c2ff3bc64",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:55:00",
+   "evidence_kind": "",
+   "id": "1797046a-a042-5491-bcac-d0c266e2a6dd",
+   "kind": "context",
+   "run_id": "fbede813-e4f4-52c2-8183-9c9f05a2b702",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:55:00",
+   "evidence_kind": "",
+   "id": "5a3a0a54-ec8a-57fa-a4c6-c4a522f617f9",
+   "kind": "context",
+   "run_id": "05a6cca4-b871-5e1e-a356-508829c2fcdd",
+   "stage_key": "review",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:54:55",
+   "evidence_kind": "",
+   "id": "3fefd34f-98ef-50ae-9613-09089b87e923",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:review"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Retry the queue board's stalled lane",
+     "Route the rework ledger's loop cap",
+     "Route the rework ledger's loop cap"
+    ],
+    "from_stage": "verify"
+   },
+   "content_bytes": 155,
+   "created_at": "2026-09-11T03:54:30",
+   "evidence_kind": "",
+   "id": "3f65ee19-bf11-5efe-be1c-35e57aee55d0",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff verify \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.71,
+    "stage_key": "verify",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T03:54:00",
+   "evidence_kind": "",
+   "id": "8f824162-6c92-55a2-a1d1-52f744e95e84",
+   "kind": "context",
+   "run_id": "099b38e9-c52b-55ee-987b-6a77efdf32de",
+   "stage_key": "verify",
+   "system": false,
+   "title": "Stage report \u2014 verify (verifier)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe branch cleanup after a squash merge path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache worktree isolation for chat turns \u2014 `script_review` stage, 33 runs\n- Stop memory recall ranking \u2014 `implement` stage, 4 runs\n- Fix GitHub issue two-way sync \u2014 `spec` stage, 21 runs\n- Split the rework ledger's loop cap \u2014 `test-design` stage, 35 runs\n- Add worktree isolation for chat turns \u2014 `plan` stage, 26 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 5 | 0 |\n| implement | 16 | 7 |\n| spec | 37 | 3 |\n| plan | 44 | 3 |\n"
+   },
+   "content_bytes": 1199,
+   "created_at": "2026-09-11T03:43:20",
+   "evidence_kind": "",
+   "id": "228a771b-1999-5361-87c8-af5e994b2570",
+   "kind": "test_spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test spec \u2014 Stop the run log's live tail"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:38:00",
+   "evidence_kind": "",
+   "id": "62ec4a9a-d9f1-532e-80b9-4564ec39c724",
+   "kind": "context",
+   "run_id": "099b38e9-c52b-55ee-987b-6a77efdf32de",
+   "stage_key": "verify",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:37:00",
+   "evidence_kind": "",
+   "id": "915e54bf-852b-5ce7-bf11-786ac3ce972c",
+   "kind": "log",
+   "run_id": "31425002-30ec-5f85-869d-b0c19bebc5fe",
+   "stage_key": "verify",
+   "system": true,
+   "title": "Run run_w00019"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.93,
+    "stage_key": "verify",
+    "status": "fail"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T03:37:00",
+   "evidence_kind": "",
+   "id": "e65616cf-ae5c-5459-97ff-1866dfb396e2",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "verify",
+   "system": false,
+   "title": "Stage report \u2014 verify (verifier)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Why this shape 1\n\nThe branch cleanup after a squash merge path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface stage timeout budgets \u2014 `script_review` stage, 5 runs\n- Surface branch cleanup after a squash merge \u2014 `script_review` stage, 14 runs\n- Cache initiative progress rollup \u2014 `plan` stage, 27 runs\n- Retry gate outcomes on stage transitions \u2014 `spec` stage, 12 runs\n- Surface the rework ledger's loop cap \u2014 `implement` stage, 32 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 17 | 1 |\n| implement | 54 | 3 |\n| spec | 8 | 3 |\n| plan | 60 | 4 |\n",
+    "stage_key": "verify"
+   },
+   "content_bytes": 1217,
+   "created_at": "2026-09-11T03:37:00",
+   "evidence_kind": "",
+   "id": "1182b68c-682c-5ca1-be9e-915352516dfd",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "verify",
+   "system": false,
+   "title": "verify failed \u2014 verifier"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe the run log's live tail path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route docker capacity leases \u2014 `spec` stage, 25 runs\n- Fix memory recall ranking \u2014 `implement` stage, 12 runs\n- Make the rework ledger's loop cap \u2014 `spec` stage, 35 runs\n- Stop the run log's live tail \u2014 `script_review` stage, 23 runs\n- Route the rework ledger's loop cap \u2014 `test-design` stage, 12 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 5 |\n| implement | 48 | 5 |\n| spec | 35 | 8 |\n| plan | 43 | 3 |\n"
+   },
+   "content_bytes": 1138,
+   "created_at": "2026-09-11T03:29:00",
+   "evidence_kind": "",
+   "id": "aa204487-a90a-5e14-a85e-d1c746f91eab",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Retry the rework ledger's loop cap"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:25:00",
+   "evidence_kind": "",
+   "id": "ba7a735f-ffb6-5e85-aff2-c0886ee0d71b",
+   "kind": "context",
+   "run_id": "31425002-30ec-5f85-869d-b0c19bebc5fe",
+   "stage_key": "verify",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:24:55",
+   "evidence_kind": "",
+   "id": "07939a74-a7ad-56fd-a75a-916c107e25fd",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:verify"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Add memory recall ranking",
+     "Add the run log's live tail",
+     "Make worktree isolation for chat turns"
+    ],
+    "from_stage": "implement"
+   },
+   "content_bytes": 144,
+   "created_at": "2026-09-11T03:24:30",
+   "evidence_kind": "",
+   "id": "e946ab13-3ad3-55c1-af72-3fe2cb6f20c6",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff implement \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.74,
+    "stage_key": "implement",
+    "status": "pass"
+   },
+   "content_bytes": 64,
+   "created_at": "2026-09-11T03:24:00",
+   "evidence_kind": "",
+   "id": "ad19efc1-1ec6-5823-8330-c6bfa1c96d48",
+   "kind": "context",
+   "run_id": "71f17d17-4a35-5dfb-a3a1-b4f2665f71e7",
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe initiative progress rollup path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop memory recall ranking \u2014 `spec` stage, 7 runs\n- Make worktree isolation for chat turns \u2014 `spec` stage, 10 runs\n- Split the run log's live tail \u2014 `spec` stage, 26 runs\n- Fix stage timeout budgets \u2014 `script_review` stage, 27 runs\n- Stop the run log's live tail \u2014 `plan` stage, 7 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 1 | 9 |\n| implement | 30 | 2 |\n| spec | 52 | 5 |\n| plan | 38 | 1 |\n"
+   },
+   "content_bytes": 1124,
+   "created_at": "2026-09-11T03:15:20",
+   "evidence_kind": "",
+   "id": "dd0721c1-ea08-58b0-bfde-3efd18ac6c55",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Retry worktree isolation for chat turns"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:11:00",
+   "evidence_kind": "",
+   "id": "1304d086-7329-5ca4-b166-3e877dafea31",
+   "kind": "context",
+   "run_id": "71f17d17-4a35-5dfb-a3a1-b4f2665f71e7",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T03:10:00",
+   "evidence_kind": "",
+   "id": "6940bb47-803e-5d1d-8516-5e86166b4fb1",
+   "kind": "log",
+   "run_id": "d1c1505d-843a-5506-bf54-0fb4c5f4c6ec",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run run_w00017"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.93,
+    "stage_key": "implement",
+    "status": "fail"
+   },
+   "content_bytes": 64,
+   "created_at": "2026-09-11T03:10:00",
+   "evidence_kind": "",
+   "id": "97ff28f0-2cb7-56d8-9245-301368cac08a",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Evidence 1\n\nThe docker capacity leases path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface GitHub issue two-way sync \u2014 `test-design` stage, 3 runs\n- Surface the approval inbox for parked stages \u2014 `test-design` stage, 33 runs\n- Make the queue board's stalled lane \u2014 `spec` stage, 38 runs\n- Route worktree isolation for chat turns \u2014 `spec` stage, 35 runs\n- Fix stage timeout budgets \u2014 `review` stage, 3 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 4 | 6 |\n| implement | 52 | 9 |\n| spec | 14 | 9 |\n| plan | 38 | 9 |\n",
+    "stage_key": "implement"
+   },
+   "content_bytes": 1201,
+   "created_at": "2026-09-11T03:10:00",
+   "evidence_kind": "",
+   "id": "ead8de98-6c41-5b1c-ab00-051c290383f9",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "implement failed \u2014 backend_implementer"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe stage timeout budgets path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show branch cleanup after a squash merge \u2014 `test-design` stage, 30 runs\n- Route docker capacity leases \u2014 `plan` stage, 9 runs\n- Route docker capacity leases \u2014 `review` stage, 21 runs\n- Fix branch cleanup after a squash merge \u2014 `plan` stage, 11 runs\n- Surface GitHub issue two-way sync \u2014 `implement` stage, 20 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 11 | 9 |\n| implement | 57 | 6 |\n| spec | 16 | 7 |\n| plan | 6 | 9 |\n"
+   },
+   "content_bytes": 1157,
+   "created_at": "2026-09-11T02:57:20",
+   "evidence_kind": "",
+   "id": "de80fe49-6742-5861-b321-cbab31f2f8d9",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Stop GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:51:00",
+   "evidence_kind": "",
+   "id": "32eb8dd5-0dbd-5d1b-a324-3ff03c93aa73",
+   "kind": "context",
+   "run_id": "d1c1505d-843a-5506-bf54-0fb4c5f4c6ec",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:50:55",
+   "evidence_kind": "",
+   "id": "abb6232b-d0c2-561e-b9ca-2996d06f398d",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:implement"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Fix the approval inbox for parked stages",
+     "Retry memory recall ranking",
+     "Show memory recall ranking"
+    ],
+    "from_stage": "verify"
+   },
+   "content_bytes": 144,
+   "created_at": "2026-09-11T02:50:30",
+   "evidence_kind": "",
+   "id": "c48cd372-6bee-5891-91dd-2017a0c5dd56",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff verify \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.73,
+    "stage_key": "verify",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T02:50:00",
+   "evidence_kind": "",
+   "id": "08b96199-ff6c-5073-a77b-2d16efad65ca",
+   "kind": "context",
+   "run_id": "3900ab87-e827-5ba4-98a6-7ec7c0ea0ee8",
+   "stage_key": "verify",
+   "system": false,
+   "title": "Stage report \u2014 verify (verifier)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make the run log's live tail \u2014 `spec` stage, 27 runs\n- Split the approval inbox for parked stages \u2014 `plan` stage, 4 runs\n- Add worktree isolation for chat turns \u2014 `spec` stage, 15 runs\n- Make GitHub issue two-way sync \u2014 `plan` stage, 18 runs\n- Fix worktree isolation for chat turns \u2014 `plan` stage, 22 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 58 | 9 |\n| implement | 19 | 2 |\n| spec | 55 | 3 |\n| plan | 22 | 6 |\n"
+   },
+   "content_bytes": 1170,
+   "created_at": "2026-09-11T02:39:20",
+   "evidence_kind": "",
+   "id": "c63cb424-ed8e-5e31-ba13-6e298cd6798f",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Retry the run log's live tail"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:34:00",
+   "evidence_kind": "",
+   "id": "efbb55ae-69c2-5d00-911d-98b18b6268ab",
+   "kind": "context",
+   "run_id": "3900ab87-e827-5ba4-98a6-7ec7c0ea0ee8",
+   "stage_key": "verify",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:33:55",
+   "evidence_kind": "",
+   "id": "44f9ec4a-0bef-55b1-8d1e-9d1a9e40d7cb",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:verify"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Fix docker capacity leases",
+     "Surface branch cleanup after a squash merge",
+     "Show the approval inbox for parked stages"
+    ],
+    "from_stage": "implement"
+   },
+   "content_bytes": 164,
+   "created_at": "2026-09-11T02:33:30",
+   "evidence_kind": "",
+   "id": "21c41b31-986b-5657-a589-a4ae21a6b1c1",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff implement \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:33:00",
+   "evidence_kind": "",
+   "id": "e1d58835-9484-571f-93e7-5f046d193e2d",
+   "kind": "log",
+   "run_id": "0117e88b-9cef-5531-8b9d-fc64d684f4af",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run run_w00015"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.8,
+    "stage_key": "implement",
+    "status": "pass"
+   },
+   "content_bytes": 63,
+   "created_at": "2026-09-11T02:33:00",
+   "evidence_kind": "",
+   "id": "4913eee7-043b-5cdd-b50e-1ec8f904a02a",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split the approval inbox for parked stages \u2014 `implement` stage, 14 runs\n- Add memory recall ranking \u2014 `review` stage, 19 runs\n- Cache the queue board's stalled lane \u2014 `script_review` stage, 18 runs\n- Cache the queue board's stalled lane \u2014 `spec` stage, 19 runs\n- Route initiative progress rollup \u2014 `implement` stage, 31 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 35 | 9 |\n| implement | 25 | 5 |\n| spec | 60 | 7 |\n| plan | 42 | 9 |\n"
+   },
+   "content_bytes": 1154,
+   "created_at": "2026-09-11T02:30:20",
+   "evidence_kind": "",
+   "id": "87514124-d3c8-54ee-9269-21a8564999a9",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Retry initiative progress rollup"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:29:00",
+   "evidence_kind": "",
+   "id": "cc16b99b-3dc1-5fbc-aed5-91a50f6c5856",
+   "kind": "context",
+   "run_id": "0117e88b-9cef-5531-8b9d-fc64d684f4af",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.71,
+    "stage_key": "implement",
+    "status": "fail"
+   },
+   "content_bytes": 64,
+   "created_at": "2026-09-11T02:28:00",
+   "evidence_kind": "",
+   "id": "9a453ad1-3a23-50e2-983f-ddd7b6efccd0",
+   "kind": "context",
+   "run_id": "de5d4c39-096b-5f1d-89bf-1a7fd4a8bf94",
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Left out 1\n\nThe stage timeout budgets path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface the rework ledger's loop cap \u2014 `review` stage, 16 runs\n- Route the queue board's stalled lane \u2014 `plan` stage, 8 runs\n- Route the run log's live tail \u2014 `script_review` stage, 23 runs\n- Split stage timeout budgets \u2014 `spec` stage, 17 runs\n- Route initiative progress rollup \u2014 `spec` stage, 3 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 18 | 3 |\n| implement | 3 | 9 |\n| spec | 27 | 5 |\n| plan | 44 | 5 |\n",
+    "stage_key": "implement"
+   },
+   "content_bytes": 1178,
+   "created_at": "2026-09-11T02:28:00",
+   "evidence_kind": "",
+   "id": "e3784627-ad76-582b-a020-b9d409f38b22",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "implement failed \u2014 backend_implementer"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the run log's live tail \u2014 `test-design` stage, 27 runs\n- Surface stage timeout budgets \u2014 `plan` stage, 3 runs\n- Fix the queue board's stalled lane \u2014 `script_review` stage, 17 runs\n- Make gate outcomes on stage transitions \u2014 `spec` stage, 27 runs\n- Surface docker capacity leases \u2014 `script_review` stage, 32 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 3 |\n| implement | 11 | 0 |\n| spec | 37 | 1 |\n| plan | 20 | 7 |\n"
+   },
+   "content_bytes": 1179,
+   "created_at": "2026-09-11T02:25:20",
+   "evidence_kind": "",
+   "id": "2241064d-2ea1-5701-829c-e1ccc74995ec",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Retry stage timeout budgets"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:24:00",
+   "evidence_kind": "",
+   "id": "1a247ef7-a9fc-5428-8c1d-f6840e290357",
+   "kind": "context",
+   "run_id": "de5d4c39-096b-5f1d-89bf-1a7fd4a8bf94",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:23:00",
+   "evidence_kind": "",
+   "id": "9569f372-175e-57fa-b300-516e607e8747",
+   "kind": "log",
+   "run_id": "261dd5a0-a333-5a3d-80b1-777c46e2a020",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run run_w00013"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.72,
+    "stage_key": "implement",
+    "status": "fail"
+   },
+   "content_bytes": 64,
+   "created_at": "2026-09-11T02:23:00",
+   "evidence_kind": "",
+   "id": "70d5f30a-9e49-54d2-b641-dc608f280a6d",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "Stage report \u2014 implement (backend_implementer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Evidence 1\n\nThe the queue board's stalled lane path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache the rework ledger's loop cap \u2014 `review` stage, 16 runs\n- Fix memory recall ranking \u2014 `implement` stage, 32 runs\n- Cache the run log's live tail \u2014 `script_review` stage, 30 runs\n- Retry GitHub issue two-way sync \u2014 `script_review` stage, 31 runs\n- Stop the run log's live tail \u2014 `implement` stage, 32 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 22 | 2 |\n| implement | 52 | 6 |\n| spec | 11 | 2 |\n| plan | 22 | 2 |\n",
+    "stage_key": "implement"
+   },
+   "content_bytes": 1201,
+   "created_at": "2026-09-11T02:23:00",
+   "evidence_kind": "",
+   "id": "8b2bbee1-461a-5095-8f5d-c6655914195a",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "implement",
+   "system": false,
+   "title": "implement failed \u2014 backend_implementer"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe worktree isolation for chat turns path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Fix the rework ledger's loop cap \u2014 `plan` stage, 38 runs\n- Cache GitHub issue two-way sync \u2014 `plan` stage, 28 runs\n- Fix the queue board's stalled lane \u2014 `spec` stage, 24 runs\n- Show stage timeout budgets \u2014 `spec` stage, 34 runs\n- Add branch cleanup after a squash merge \u2014 `review` stage, 16 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 12 | 1 |\n| implement | 13 | 5 |\n| spec | 11 | 2 |\n| plan | 9 | 0 |\n"
+   },
+   "content_bytes": 1162,
+   "created_at": "2026-09-11T02:21:00",
+   "evidence_kind": "",
+   "id": "6437fe8b-7c52-5c81-a9d8-ec7e33779039",
+   "kind": "test_spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test spec \u2014 Stop the rework ledger's loop cap"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:20:00",
+   "evidence_kind": "",
+   "id": "2d29a8a5-4c9e-5801-8372-3c72d4fcb4fc",
+   "kind": "context",
+   "run_id": "261dd5a0-a333-5a3d-80b1-777c46e2a020",
+   "stage_key": "implement",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:19:55",
+   "evidence_kind": "",
+   "id": "5367768c-b2bc-58f0-8c5e-df7ed4c30c25",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:implement"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Split worktree isolation for chat turns",
+     "Surface worktree isolation for chat turns",
+     "Retry the queue board's stalled lane"
+    ],
+    "from_stage": "test-break"
+   },
+   "content_bytes": 171,
+   "created_at": "2026-09-11T02:19:30",
+   "evidence_kind": "",
+   "id": "acb72280-6c92-5236-ad86-75bf0c2c2650",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff test-break \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.87,
+    "stage_key": "test-break",
+    "status": "pass"
+   },
+   "content_bytes": 65,
+   "created_at": "2026-09-11T02:19:00",
+   "evidence_kind": "",
+   "id": "7dbca0bc-1d15-5603-8626-d96bccb0df4e",
+   "kind": "context",
+   "run_id": "f25e03d1-cd1d-5dd8-a7db-00b4dba76500",
+   "stage_key": "test-break",
+   "system": false,
+   "title": "Stage report \u2014 test-break (test_breaker)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe stage timeout budgets path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split gate outcomes on stage transitions \u2014 `review` stage, 11 runs\n- Cache memory recall ranking \u2014 `plan` stage, 12 runs\n- Retry the queue board's stalled lane \u2014 `review` stage, 11 runs\n- Surface the approval inbox for parked stages \u2014 `script_review` stage, 37 runs\n- Route GitHub issue two-way sync \u2014 `test-design` stage, 4 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 59 | 1 |\n| implement | 11 | 3 |\n| spec | 7 | 9 |\n| plan | 42 | 2 |\n"
+   },
+   "content_bytes": 1183,
+   "created_at": "2026-09-11T02:13:00",
+   "evidence_kind": "",
+   "id": "3cec8ae7-0cf3-5af2-ab64-e4cd3162489d",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Split initiative progress rollup"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:10:00",
+   "evidence_kind": "",
+   "id": "b711e701-ce2d-5e83-aae2-63a6c19958e4",
+   "kind": "context",
+   "run_id": "f25e03d1-cd1d-5dd8-a7db-00b4dba76500",
+   "stage_key": "test-break",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:09:00",
+   "evidence_kind": "",
+   "id": "a58224c5-6b8d-5442-b838-dd4a8842d49b",
+   "kind": "log",
+   "run_id": "cf4fd6aa-6d64-5f7b-b1bf-49cf46c44c89",
+   "stage_key": "test-break",
+   "system": true,
+   "title": "Run run_w00011"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.84,
+    "stage_key": "test-break",
+    "status": "fail"
+   },
+   "content_bytes": 65,
+   "created_at": "2026-09-11T02:09:00",
+   "evidence_kind": "",
+   "id": "565758da-7f75-5dfc-9ae6-b9ce90f4a7e5",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "test-break",
+   "system": false,
+   "title": "Stage report \u2014 test-break (test_breaker)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Why this shape 1\n\nThe the approval inbox for parked stages path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make initiative progress rollup \u2014 `review` stage, 11 runs\n- Stop stage timeout budgets \u2014 `spec` stage, 14 runs\n- Fix gate outcomes on stage transitions \u2014 `implement` stage, 5 runs\n- Retry gate outcomes on stage transitions \u2014 `implement` stage, 32 runs\n- Make gate outcomes on stage transitions \u2014 `review` stage, 32 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 36 | 3 |\n| implement | 41 | 2 |\n| spec | 7 | 7 |\n| plan | 46 | 4 |\n",
+    "stage_key": "test-break"
+   },
+   "content_bytes": 1200,
+   "created_at": "2026-09-11T02:09:00",
+   "evidence_kind": "",
+   "id": "f5ce29e3-c108-5666-928a-1f5cd3a62847",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "test-break",
+   "system": false,
+   "title": "test-break failed \u2014 test_breaker"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe memory recall ranking path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface memory recall ranking \u2014 `test-design` stage, 40 runs\n- Route stage timeout budgets \u2014 `spec` stage, 3 runs\n- Fix branch cleanup after a squash merge \u2014 `plan` stage, 28 runs\n- Split docker capacity leases \u2014 `plan` stage, 32 runs\n- Stop the rework ledger's loop cap \u2014 `implement` stage, 33 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 7 | 9 |\n| implement | 28 | 3 |\n| spec | 35 | 4 |\n| plan | 15 | 2 |\n"
+   },
+   "content_bytes": 1148,
+   "created_at": "2026-09-11T02:03:40",
+   "evidence_kind": "",
+   "id": "73875dc7-dbeb-520a-b653-7d08abadc92d",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Split worktree isolation for chat turns"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:01:00",
+   "evidence_kind": "",
+   "id": "62929dbc-3844-5060-8005-021ce4997c13",
+   "kind": "context",
+   "run_id": "cf4fd6aa-6d64-5f7b-b1bf-49cf46c44c89",
+   "stage_key": "test-break",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T02:00:55",
+   "evidence_kind": "",
+   "id": "f3f490c9-c7f1-5d54-98aa-ce0b69d0e325",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:test-break"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Surface the queue board's stalled lane",
+     "Fix the rework ledger's loop cap",
+     "Split memory recall ranking"
+    ],
+    "from_stage": "test-design"
+   },
+   "content_bytes": 153,
+   "created_at": "2026-09-11T02:00:30",
+   "evidence_kind": "",
+   "id": "fb45c95a-2a49-5d2a-a251-bf432d525682",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff test-design \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.78,
+    "stage_key": "test-design",
+    "status": "pass"
+   },
+   "content_bytes": 66,
+   "created_at": "2026-09-11T02:00:00",
+   "evidence_kind": "",
+   "id": "327e88f2-c1fd-5498-b956-9866db477f7e",
+   "kind": "context",
+   "run_id": "d158dfe4-bd56-581f-afb2-95d68313f62f",
+   "stage_key": "test-design",
+   "system": false,
+   "title": "Stage report \u2014 test-design (test_designer)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe worktree isolation for chat turns path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route worktree isolation for chat turns \u2014 `test-design` stage, 39 runs\n- Retry the queue board's stalled lane \u2014 `plan` stage, 21 runs\n- Route the queue board's stalled lane \u2014 `plan` stage, 13 runs\n- Make gate outcomes on stage transitions \u2014 `spec` stage, 18 runs\n- Retry worktree isolation for chat turns \u2014 `plan` stage, 5 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 56 | 0 |\n| implement | 4 | 7 |\n| spec | 53 | 1 |\n| plan | 33 | 9 |\n"
+   },
+   "content_bytes": 1199,
+   "created_at": "2026-09-11T01:56:00",
+   "evidence_kind": "",
+   "id": "285fe139-2fee-5bcb-8d21-770eba163cbb",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Add the queue board's stalled lane"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:54:00",
+   "evidence_kind": "",
+   "id": "8d707b63-d67c-569a-8653-f3bdef92caa8",
+   "kind": "context",
+   "run_id": "d158dfe4-bd56-581f-afb2-95d68313f62f",
+   "stage_key": "test-design",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:53:55",
+   "evidence_kind": "",
+   "id": "6b3b9ac0-20f1-5519-8abc-dcb856b8b72a",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:test-design"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Route the approval inbox for parked stages",
+     "Route branch cleanup after a squash merge",
+     "Stop the approval inbox for parked stages"
+    ],
+    "from_stage": "spec"
+   },
+   "content_bytes": 173,
+   "created_at": "2026-09-11T01:53:30",
+   "evidence_kind": "",
+   "id": "927389ea-2b82-5143-b82b-71e812ec6b3e",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff spec \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:53:00",
+   "evidence_kind": "",
+   "id": "590efc7f-98a1-5e2a-8241-51a8c3c22a7f",
+   "kind": "log",
+   "run_id": "280a534e-ee42-567d-b49f-1553eb5e5844",
+   "stage_key": "spec",
+   "system": true,
+   "title": "Run run_w00009"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.82,
+    "stage_key": "spec",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T01:53:00",
+   "evidence_kind": "",
+   "id": "6a1eebc6-b8e6-57d7-b69f-c1462f56dd35",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "spec",
+   "system": false,
+   "title": "Stage report \u2014 spec (spec)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split stage timeout budgets \u2014 `review` stage, 28 runs\n- Surface memory recall ranking \u2014 `spec` stage, 37 runs\n- Surface memory recall ranking \u2014 `script_review` stage, 7 runs\n- Route branch cleanup after a squash merge \u2014 `script_review` stage, 33 runs\n- Stop the approval inbox for parked stages \u2014 `test-design` stage, 30 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 6 |\n| implement | 59 | 8 |\n| spec | 47 | 8 |\n| plan | 11 | 4 |\n"
+   },
+   "content_bytes": 1200,
+   "created_at": "2026-09-11T01:45:40",
+   "evidence_kind": "",
+   "id": "46513998-506a-5c98-99d6-1eab172bcef2",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Stop the run log's live tail"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:42:00",
+   "evidence_kind": "",
+   "id": "12e19eeb-e8f4-5a00-96d5-5210f0e01724",
+   "kind": "context",
+   "run_id": "280a534e-ee42-567d-b49f-1553eb5e5844",
+   "stage_key": "spec",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.89,
+    "stage_key": "spec",
+    "status": "fail"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T01:41:00",
+   "evidence_kind": "",
+   "id": "9f531c00-d406-5996-a6a7-b80afc511eaf",
+   "kind": "context",
+   "run_id": "dcaa3047-1955-599f-aa87-dcdcb4546220",
+   "stage_key": "spec",
+   "system": false,
+   "title": "Stage report \u2014 spec (spec)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "message": "# Failure\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Add stage timeout budgets \u2014 `test-design` stage, 32 runs\n- Show the approval inbox for parked stages \u2014 `plan` stage, 18 runs\n- Make worktree isolation for chat turns \u2014 `implement` stage, 33 runs\n- Add stage timeout budgets \u2014 `plan` stage, 7 runs\n- Add the queue board's stalled lane \u2014 `review` stage, 17 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 35 | 5 |\n| implement | 5 | 8 |\n| spec | 53 | 6 |\n| plan | 5 | 5 |\n",
+    "stage_key": "spec"
+   },
+   "content_bytes": 1192,
+   "created_at": "2026-09-11T01:41:00",
+   "evidence_kind": "",
+   "id": "67e6a5cf-c352-51d6-86e8-093e9a70fa14",
+   "kind": "error",
+   "run_id": null,
+   "stage_key": "spec",
+   "system": false,
+   "title": "spec failed \u2014 spec"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe branch cleanup after a squash merge path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make memory recall ranking \u2014 `plan` stage, 2 runs\n- Make stage timeout budgets \u2014 `review` stage, 29 runs\n- Split worktree isolation for chat turns \u2014 `spec` stage, 10 runs\n- Retry memory recall ranking \u2014 `plan` stage, 24 runs\n- Split branch cleanup after a squash merge \u2014 `plan` stage, 20 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 53 | 5 |\n| implement | 32 | 7 |\n| spec | 1 | 3 |\n| plan | 16 | 7 |\n"
+   },
+   "content_bytes": 1163,
+   "created_at": "2026-09-11T01:29:40",
+   "evidence_kind": "",
+   "id": "2e63d6e4-86dd-51bb-8f1a-0a1bca5de66b",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Surface GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:24:00",
+   "evidence_kind": "",
+   "id": "8569ec80-27a1-52f8-ac56-9bbc1eb842ab",
+   "kind": "context",
+   "run_id": "dcaa3047-1955-599f-aa87-dcdcb4546220",
+   "stage_key": "spec",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:23:55",
+   "evidence_kind": "",
+   "id": "1aba26ae-b10e-550b-b341-3a1e8007bbf3",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:spec"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Surface the rework ledger's loop cap",
+     "Make initiative progress rollup",
+     "Show GitHub issue two-way sync"
+    ],
+    "from_stage": "plan-synthesis"
+   },
+   "content_bytes": 156,
+   "created_at": "2026-09-11T01:23:30",
+   "evidence_kind": "",
+   "id": "e0df97de-7417-56bf-baca-00c60f798f2e",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff plan-synthesis \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:23:00",
+   "evidence_kind": "",
+   "id": "a3807c21-09ff-5587-a5a1-d3ac032eee90",
+   "kind": "log",
+   "run_id": "22ead11f-362c-52f4-8c63-19ea73709854",
+   "stage_key": "plan-synthesis",
+   "system": true,
+   "title": "Run run_w00007"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.7,
+    "stage_key": "plan-synthesis",
+    "status": "pass"
+   },
+   "content_bytes": 68,
+   "created_at": "2026-09-11T01:23:00",
+   "evidence_kind": "",
+   "id": "109f682d-f266-5722-ad0e-8707c428a9c2",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "plan-synthesis",
+   "system": false,
+   "title": "Stage report \u2014 plan-synthesis (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe the run log's live tail path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Retry docker capacity leases \u2014 `script_review` stage, 12 runs\n- Stop branch cleanup after a squash merge \u2014 `review` stage, 11 runs\n- Surface worktree isolation for chat turns \u2014 `test-design` stage, 4 runs\n- Show stage timeout budgets \u2014 `implement` stage, 30 runs\n- Cache GitHub issue two-way sync \u2014 `review` stage, 23 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 57 | 0 |\n| implement | 14 | 8 |\n| spec | 25 | 1 |\n| plan | 21 | 1 |\n"
+   },
+   "content_bytes": 1159,
+   "created_at": "2026-09-11T01:09:00",
+   "evidence_kind": "",
+   "id": "a67ad4dd-1fe5-57b3-9617-d2a20273a8a6",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Show branch cleanup after a squash merge"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache worktree isolation for chat turns \u2014 `script_review` stage, 8 runs\n- Cache the approval inbox for parked stages \u2014 `test-design` stage, 6 runs\n- Route the rework ledger's loop cap \u2014 `test-design` stage, 22 runs\n- Retry the run log's live tail \u2014 `test-design` stage, 2 runs\n- Split stage timeout budgets \u2014 `implement` stage, 19 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 29 | 9 |\n| implement | 32 | 0 |\n| spec | 34 | 1 |\n| plan | 13 | 0 |\n"
+   },
+   "content_bytes": 1226,
+   "created_at": "2026-09-11T01:09:00",
+   "evidence_kind": "",
+   "id": "0c5dafc5-647d-57f6-823d-38ad685d4695",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Stop GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:02:00",
+   "evidence_kind": "",
+   "id": "3778c631-3a08-57de-b3e5-c049f8b992cc",
+   "kind": "context",
+   "run_id": "22ead11f-362c-52f4-8c63-19ea73709854",
+   "stage_key": "plan-synthesis",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T01:01:55",
+   "evidence_kind": "",
+   "id": "7e74c2e6-f68f-554c-8829-cf495a362ff6",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:plan-synthesis"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Cache GitHub issue two-way sync",
+     "Show the run log's live tail",
+     "Surface memory recall ranking"
+    ],
+    "from_stage": "ui-design"
+   },
+   "content_bytes": 142,
+   "created_at": "2026-09-11T01:01:30",
+   "evidence_kind": "",
+   "id": "60b1caae-51cc-5f65-afbd-a74b4304d822",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff ui-design \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.9,
+    "stage_key": "ui-design",
+    "status": "pass"
+   },
+   "content_bytes": 63,
+   "created_at": "2026-09-11T01:01:00",
+   "evidence_kind": "",
+   "id": "783ddccf-f105-52be-9e26-9bb1b29555bb",
+   "kind": "context",
+   "run_id": "181ec12c-6994-52ca-8b34-6933c0194e8c",
+   "stage_key": "ui-design",
+   "system": false,
+   "title": "Stage report \u2014 ui-design (ui_design_decision)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Risks 1\n\nThe the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache worktree isolation for chat turns \u2014 `implement` stage, 16 runs\n- Route initiative progress rollup \u2014 `implement` stage, 40 runs\n- Stop the approval inbox for parked stages \u2014 `script_review` stage, 8 runs\n- Add the queue board's stalled lane \u2014 `script_review` stage, 12 runs\n- Retry memory recall ranking \u2014 `script_review` stage, 8 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 9 |\n| implement | 40 | 4 |\n| spec | 28 | 2 |\n| plan | 53 | 2 |\n"
+   },
+   "content_bytes": 1186,
+   "created_at": "2026-09-11T00:46:20",
+   "evidence_kind": "",
+   "id": "92de4c53-d783-569a-93bd-0cb09d3530b9",
+   "kind": "test_spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test spec \u2014 Fix GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe memory recall ranking path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface worktree isolation for chat turns \u2014 `test-design` stage, 27 runs\n- Stop the run log's live tail \u2014 `script_review` stage, 17 runs\n- Stop initiative progress rollup \u2014 `implement` stage, 34 runs\n- Route the rework ledger's loop cap \u2014 `test-design` stage, 5 runs\n- Surface docker capacity leases \u2014 `plan` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 43 | 8 |\n| implement | 52 | 1 |\n| spec | 33 | 9 |\n| plan | 39 | 6 |\n"
+   },
+   "content_bytes": 1186,
+   "created_at": "2026-09-11T00:46:20",
+   "evidence_kind": "",
+   "id": "a82d8561-1be1-5aab-ba33-cfe35445247a",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Retry memory recall ranking"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:39:00",
+   "evidence_kind": "",
+   "id": "068bcff0-b410-56fb-a414-963475c5930e",
+   "kind": "context",
+   "run_id": "181ec12c-6994-52ca-8b34-6933c0194e8c",
+   "stage_key": "ui-design",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:38:55",
+   "evidence_kind": "",
+   "id": "05ef7087-8acf-5372-959c-19c39109bab8",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:ui-design"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Split branch cleanup after a squash merge",
+     "Stop memory recall ranking",
+     "Make the approval inbox for parked stages"
+    ],
+    "from_stage": "plan"
+   },
+   "content_bytes": 157,
+   "created_at": "2026-09-11T00:38:30",
+   "evidence_kind": "",
+   "id": "99ec1a8b-fab6-5f72-8fc8-a4c5c5630840",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff plan \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.73,
+    "stage_key": "plan",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T00:38:00",
+   "evidence_kind": "",
+   "id": "1d7cd6a3-f3ac-582b-818f-0ecc9122c0a3",
+   "kind": "context",
+   "run_id": "c9d05de0-b7b4-555b-bf32-b026cb0e0094",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Stage report \u2014 plan (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:36:00",
+   "evidence_kind": "",
+   "id": "2d01675a-2364-5ba7-b526-c6301fe2bf19",
+   "kind": "log",
+   "run_id": "a272de08-f68c-5a15-b8ea-66d9545584e3",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run run_w00001"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.79,
+    "stage_key": "plan",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T00:36:00",
+   "evidence_kind": "",
+   "id": "77a92c55-1a21-5f85-a77c-7b64ec1d6c58",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "plan",
+   "system": false,
+   "title": "Stage report \u2014 plan (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "steps": [
+     "Retry the rework ledger's loop cap",
+     "Make memory recall ranking",
+     "Show initiative progress rollup",
+     "Split docker capacity leases",
+     "Make the queue board's stalled lane"
+    ],
+    "verdict": "Fix memory recall ranking"
+   },
+   "content_bytes": 225,
+   "created_at": "2026-09-11T00:26:30",
+   "evidence_kind": "",
+   "id": "da3c0dd5-faf5-55d3-8497-98bff897b62d",
+   "kind": "plan",
+   "run_id": "c9d05de0-b7b4-555b-bf32-b026cb0e0094",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Plan (plan-risk) \u2014 lg-m5-220"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "steps": [
+     "Fix the approval inbox for parked stages",
+     "Cache the run log's live tail",
+     "Surface the rework ledger's loop cap",
+     "Retry docker capacity leases",
+     "Cache docker capacity leases"
+    ],
+    "verdict": "Add GitHub issue two-way sync"
+   },
+   "content_bytes": 236,
+   "created_at": "2026-09-11T00:25:30",
+   "evidence_kind": "",
+   "id": "a993678b-487a-5760-815e-a74b3f8f23e1",
+   "kind": "plan",
+   "run_id": "a272de08-f68c-5a15-b8ea-66d9545584e3",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Plan (plan-simplest) \u2014 lg-m5-220"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface docker capacity leases \u2014 `implement` stage, 26 runs\n- Cache memory recall ranking \u2014 `test-design` stage, 24 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 33 runs\n- Cache gate outcomes on stage transitions \u2014 `implement` stage, 3 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 25 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 1 |\n| implement | 19 | 3 |\n| spec | 29 | 2 |\n| plan | 52 | 3 |\n"
+   },
+   "content_bytes": 1173,
+   "created_at": "2026-09-11T00:22:40",
+   "evidence_kind": "",
+   "id": "7659f3a7-800c-5a2b-9662-eb52a723b618",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Retry docker capacity leases"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Fix stage timeout budgets \u2014 `test-design` stage, 28 runs\n- Cache the queue board's stalled lane \u2014 `plan` stage, 17 runs\n- Surface memory recall ranking \u2014 `review` stage, 40 runs\n- Show stage timeout budgets \u2014 `review` stage, 8 runs\n- Cache branch cleanup after a squash merge \u2014 `plan` stage, 18 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 43 | 7 |\n| implement | 40 | 0 |\n| spec | 35 | 3 |\n| plan | 32 | 1 |\n"
+   },
+   "content_bytes": 1127,
+   "created_at": "2026-09-11T00:22:40",
+   "evidence_kind": "",
+   "id": "afd5d1bc-2f23-53af-9d4c-b3d9c761216a",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Surface the approval inbox for parked stages"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe the queue board's stalled lane path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Add the approval inbox for parked stages \u2014 `spec` stage, 16 runs\n- Add the rework ledger's loop cap \u2014 `plan` stage, 20 runs\n- Stop branch cleanup after a squash merge \u2014 `review` stage, 13 runs\n- Make worktree isolation for chat turns \u2014 `review` stage, 11 runs\n- Show stage timeout budgets \u2014 `test-design` stage, 8 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 27 | 2 |\n| implement | 17 | 7 |\n| spec | 43 | 2 |\n| plan | 43 | 8 |\n"
+   },
+   "content_bytes": 1164,
+   "created_at": "2026-09-11T00:22:00",
+   "evidence_kind": "",
+   "id": "810f3389-485a-5a07-a7ed-5aebc41b6122",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Add the run log's live tail"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The stage timeout budgets path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop gate outcomes on stage transitions \u2014 `spec` stage, 25 runs\n- Fix gate outcomes on stage transitions \u2014 `spec` stage, 31 runs\n- Add branch cleanup after a squash merge \u2014 `implement` stage, 2 runs\n- Cache branch cleanup after a squash merge \u2014 `test-design` stage, 7 runs\n- Stop worktree isolation for chat turns \u2014 `plan` stage, 15 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 28 | 7 |\n| implement | 54 | 5 |\n| spec | 32 | 4 |\n| plan | 24 | 0 |\n"
+   },
+   "content_bytes": 1155,
+   "created_at": "2026-09-11T00:22:00",
+   "evidence_kind": "",
+   "id": "bed0fbfd-f069-516c-9d03-505edacf4655",
+   "kind": "test_spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test spec \u2014 Fix the run log's live tail"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:21:00",
+   "evidence_kind": "",
+   "id": "ec762b7d-41f0-564e-bec4-a9b1ff9f7b86",
+   "kind": "log",
+   "run_id": "67785b24-017f-55b2-9044-df0db00df634",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run run_w00003"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.83,
+    "stage_key": "plan",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T00:21:00",
+   "evidence_kind": "",
+   "id": "6361dbf7-1ae3-5dac-82b8-a682aeaf7624",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "plan",
+   "system": false,
+   "title": "Stage report \u2014 plan (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "steps": [
+     "Retry stage timeout budgets",
+     "Split stage timeout budgets",
+     "Show branch cleanup after a squash merge",
+     "Route docker capacity leases",
+     "Stop initiative progress rollup"
+    ],
+    "verdict": "Cache docker capacity leases"
+   },
+   "content_bytes": 227,
+   "created_at": "2026-09-11T00:18:00",
+   "evidence_kind": "",
+   "id": "9970a21d-8ab5-5bfa-b242-b1e5f923e074",
+   "kind": "plan",
+   "run_id": "67785b24-017f-55b2-9044-df0db00df634",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Plan (plan-seams) \u2014 lg-m5-220"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.84,
+    "stage_key": "plan",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T00:18:00",
+   "evidence_kind": "",
+   "id": "9d2980c7-0931-5d00-8daf-3c868869d4ca",
+   "kind": "context",
+   "run_id": "2208d372-e179-568b-88ab-192db56c87fc",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Stage report \u2014 plan (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:17:00",
+   "evidence_kind": "",
+   "id": "2aa11f4f-0fa7-5eac-a0ea-e4471bad11f6",
+   "kind": "log",
+   "run_id": "96b6d29e-8aef-55f6-90a8-81b4c7aa912e",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run run_w00005"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.94,
+    "stage_key": "plan",
+    "status": "pass"
+   },
+   "content_bytes": 59,
+   "created_at": "2026-09-11T00:17:00",
+   "evidence_kind": "",
+   "id": "51a89261-9c62-54be-9210-7f1767fcb992",
+   "kind": "context",
+   "run_id": null,
+   "stage_key": "plan",
+   "system": false,
+   "title": "Stage report \u2014 plan (planner)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe worktree isolation for chat turns path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Fix the queue board's stalled lane \u2014 `script_review` stage, 22 runs\n- Cache GitHub issue two-way sync \u2014 `test-design` stage, 30 runs\n- Stop branch cleanup after a squash merge \u2014 `test-design` stage, 28 runs\n- Surface the run log's live tail \u2014 `implement` stage, 25 runs\n- Cache branch cleanup after a squash merge \u2014 `spec` stage, 39 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 36 | 7 |\n| implement | 31 | 6 |\n| spec | 10 | 2 |\n| plan | 44 | 9 |\n"
+   },
+   "content_bytes": 1195,
+   "created_at": "2026-09-11T00:17:00",
+   "evidence_kind": "",
+   "id": "c18e6a7d-588a-57f0-a52d-956bd76f07dc",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Route docker capacity leases"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Why this shape 1\n\nThe stage timeout budgets path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Retry branch cleanup after a squash merge \u2014 `script_review` stage, 25 runs\n- Retry gate outcomes on stage transitions \u2014 `review` stage, 11 runs\n- Stop the approval inbox for parked stages \u2014 `implement` stage, 38 runs\n- Cache the rework ledger's loop cap \u2014 `script_review` stage, 40 runs\n- Split GitHub issue two-way sync \u2014 `implement` stage, 18 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 27 | 2 |\n| implement | 44 | 8 |\n| spec | 25 | 5 |\n| plan | 3 | 0 |\n"
+   },
+   "content_bytes": 1179,
+   "created_at": "2026-09-11T00:17:00",
+   "evidence_kind": "",
+   "id": "ba5223a3-0d45-5b8c-8eae-166eef2b07cd",
+   "kind": "test",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Test \u2014 Retry stage timeout budgets"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "steps": [
+     "Show GitHub issue two-way sync",
+     "Surface branch cleanup after a squash merge",
+     "Split the rework ledger's loop cap",
+     "Retry stage timeout budgets",
+     "Retry branch cleanup after a squash merge"
+    ],
+    "verdict": "Fix the rework ledger's loop cap"
+   },
+   "content_bytes": 253,
+   "created_at": "2026-09-11T00:16:30",
+   "evidence_kind": "",
+   "id": "270db149-2afb-5401-9f7d-3d40198bf60c",
+   "kind": "plan",
+   "run_id": "2208d372-e179-568b-88ab-192db56c87fc",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Plan (plan-user) \u2014 lg-m5-220"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "steps": [
+     "Surface memory recall ranking",
+     "Add gate outcomes on stage transitions",
+     "Surface docker capacity leases",
+     "Add the queue board's stalled lane",
+     "Make the approval inbox for parked stages"
+    ],
+    "verdict": "Make memory recall ranking"
+   },
+   "content_bytes": 244,
+   "created_at": "2026-09-11T00:16:00",
+   "evidence_kind": "",
+   "id": "521a06ac-5388-565b-85b8-4070dca55001",
+   "kind": "plan",
+   "run_id": "96b6d29e-8aef-55f6-90a8-81b4c7aa912e",
+   "stage_key": "plan",
+   "system": false,
+   "title": "Plan (plan-ops) \u2014 lg-m5-220"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe initiative progress rollup path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The worktree isolation for chat turns path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the run log's live tail \u2014 `review` stage, 26 runs\n- Add the approval inbox for parked stages \u2014 `spec` stage, 40 runs\n- Route worktree isolation for chat turns \u2014 `plan` stage, 18 runs\n- Route gate outcomes on stage transitions \u2014 `plan` stage, 17 runs\n- Add docker capacity leases \u2014 `spec` stage, 31 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 3 | 3 |\n| implement | 9 | 2 |\n| spec | 5 | 0 |\n| plan | 38 | 3 |\n"
+   },
+   "content_bytes": 1163,
+   "created_at": "2026-09-11T00:16:00",
+   "evidence_kind": "",
+   "id": "2787ea48-0f30-5b07-946f-5cc55c1fa4a5",
+   "kind": "spec",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Spec \u2014 Split the approval inbox for parked stages"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Left out 1\n\nThe docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route the rework ledger's loop cap \u2014 `plan` stage, 35 runs\n- Split memory recall ranking \u2014 `spec` stage, 35 runs\n- Stop worktree isolation for chat turns \u2014 `test-design` stage, 18 runs\n- Split branch cleanup after a squash merge \u2014 `test-design` stage, 3 runs\n- Fix initiative progress rollup \u2014 `implement` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 3 |\n| implement | 53 | 6 |\n| spec | 46 | 9 |\n| plan | 42 | 8 |\n"
+   },
+   "content_bytes": 1162,
+   "created_at": "2026-09-11T00:16:00",
+   "evidence_kind": "",
+   "id": "709e1ddf-e605-55c2-9d54-43ab852ce2db",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Handoff \u2014 Make stage timeout budgets"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe the queue board's stalled lane path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache the run log's live tail \u2014 `implement` stage, 15 runs\n- Fix the approval inbox for parked stages \u2014 `plan` stage, 4 runs\n- Add GitHub issue two-way sync \u2014 `plan` stage, 26 runs\n- Show the approval inbox for parked stages \u2014 `implement` stage, 22 runs\n- Stop memory recall ranking \u2014 `implement` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 31 | 2 |\n| implement | 54 | 7 |\n| spec | 32 | 7 |\n| plan | 23 | 4 |\n"
+   },
+   "content_bytes": 1178,
+   "created_at": "2026-09-11T00:15:40",
+   "evidence_kind": "",
+   "id": "c9c4625d-0b72-54db-9242-45162b062bb9",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Route the queue board's stalled lane"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Evidence 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop docker capacity leases \u2014 `spec` stage, 36 runs\n- Retry stage timeout budgets \u2014 `implement` stage, 11 runs\n- Surface branch cleanup after a squash merge \u2014 `test-design` stage, 19 runs\n- Surface GitHub issue two-way sync \u2014 `review` stage, 34 runs\n- Add stage timeout budgets \u2014 `script_review` stage, 15 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 22 | 7 |\n| implement | 15 | 7 |\n| spec | 40 | 7 |\n| plan | 42 | 3 |\n"
+   },
+   "content_bytes": 1177,
+   "created_at": "2026-09-11T00:15:40",
+   "evidence_kind": "",
+   "id": "d02fbe4a-7b86-5570-828c-f44cd79952ae",
+   "kind": "review",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Review \u2014 Fix GitHub issue two-way sync"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:15:00",
+   "evidence_kind": "",
+   "id": "da775b2c-221e-50b1-af81-96a5d5e9426f",
+   "kind": "context",
+   "run_id": "a272de08-f68c-5a15-b8ea-66d9545584e3",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:15:00",
+   "evidence_kind": "",
+   "id": "b0c04b5b-b0e7-5b35-b93a-3a8316d8581c",
+   "kind": "context",
+   "run_id": "c9d05de0-b7b4-555b-bf32-b026cb0e0094",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:15:00",
+   "evidence_kind": "",
+   "id": "f236d1e4-3c78-517e-9123-d452dd10539b",
+   "kind": "context",
+   "run_id": "67785b24-017f-55b2-9044-df0db00df634",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:15:00",
+   "evidence_kind": "",
+   "id": "8008c04a-2818-5fed-a035-bd34162019d0",
+   "kind": "context",
+   "run_id": "2208d372-e179-568b-88ab-192db56c87fc",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:15:00",
+   "evidence_kind": "",
+   "id": "eb9ba077-5c32-5dde-ac78-e06619261372",
+   "kind": "context",
+   "run_id": "96b6d29e-8aef-55f6-90a8-81b4c7aa912e",
+   "stage_key": "plan",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:14:55",
+   "evidence_kind": "",
+   "id": "6945c2e1-1f1c-5425-8e40-6719f3a099f8",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:plan"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "checklist": [
+     "Show initiative progress rollup",
+     "Retry memory recall ranking",
+     "Route branch cleanup after a squash merge"
+    ],
+    "from_stage": "triage"
+   },
+   "content_bytes": 150,
+   "created_at": "2026-09-11T00:14:30",
+   "evidence_kind": "",
+   "id": "c4d6665d-7546-5b5d-9355-48f856be2bda",
+   "kind": "handoff",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "handoff triage \u2192 next"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "confidence": 0.83,
+    "stage_key": "triage",
+    "status": "pass"
+   },
+   "content_bytes": 61,
+   "created_at": "2026-09-11T00:14:00",
+   "evidence_kind": "",
+   "id": "abe8682c-cac7-55e7-844b-2aca4b862f5a",
+   "kind": "context",
+   "run_id": "b52c0f17-8859-5f77-b3de-bc511915045b",
+   "stage_key": "triage",
+   "system": false,
+   "title": "Stage report \u2014 triage (ticket_scoper)"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe stage timeout budgets path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Cache stage timeout budgets \u2014 `spec` stage, 10 runs\n- Split the run log's live tail \u2014 `script_review` stage, 36 runs\n- Fix GitHub issue two-way sync \u2014 `review` stage, 31 runs\n- Stop the rework ledger's loop cap \u2014 `test-design` stage, 11 runs\n- Split GitHub issue two-way sync \u2014 `implement` stage, 21 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 13 | 8 |\n| implement | 8 | 4 |\n| spec | 1 | 7 |\n| plan | 52 | 1 |\n"
+   },
+   "content_bytes": 1135,
+   "created_at": "2026-09-11T00:04:40",
+   "evidence_kind": "",
+   "id": "5e130638-a358-5845-b9db-c250011892fc",
+   "kind": "evidence",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Evidence \u2014 Stop worktree isolation for chat turns"
+  },
+  {
+   "commit_sha": "",
+   "content": {
+    "summary": "# Summary\n\n## Approach 1\n\nThe memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The docker capacity leases path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show GitHub issue two-way sync \u2014 `plan` stage, 8 runs\n- Retry the rework ledger's loop cap \u2014 `spec` stage, 32 runs\n- Cache the approval inbox for parked stages \u2014 `review` stage, 23 runs\n- Surface the queue board's stalled lane \u2014 `script_review` stage, 36 runs\n- Split docker capacity leases \u2014 `implement` stage, 6 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 31 | 8 |\n| implement | 30 | 5 |\n| spec | 9 | 7 |\n| plan | 25 | 9 |\n"
+   },
+   "content_bytes": 1170,
+   "created_at": "2026-09-11T00:04:40",
+   "evidence_kind": "",
+   "id": "de90ccac-ddf6-5289-af16-fc589dde7e11",
+   "kind": "source_analysis",
+   "run_id": null,
+   "stage_key": null,
+   "system": false,
+   "title": "Source analysis \u2014 Add stage timeout budgets"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-11T00:00:00",
+   "evidence_kind": "",
+   "id": "10265e01-fdb2-507d-b5f7-4ff37fdf8102",
+   "kind": "context",
+   "run_id": "b52c0f17-8859-5f77-b3de-bc511915045b",
+   "stage_key": "triage",
+   "system": true,
+   "title": "Run context"
+  },
+  {
+   "commit_sha": "",
+   "content": {},
+   "content_bytes": 2,
+   "created_at": "2026-09-10T23:59:55",
+   "evidence_kind": "",
+   "id": "a858934f-8ad7-5484-aa7b-8f80665392c7",
+   "kind": "stage_dispatch",
+   "run_id": null,
+   "stage_key": null,
+   "system": true,
+   "title": "stage-dispatch:triage"
+  }
+ ],
+ "total": 172
+}

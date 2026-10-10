@@ -31,7 +31,13 @@ const STATE_LABEL: Record<InstallState, string> = {
   missing: "Not installed",
   outdated: "Out of date",
   unavailable: "Cannot install",
+  built_in: "Built in",
 };
+
+/** States that need nothing from the operator. */
+const SETTLED: ReadonlySet<InstallState> = new Set(["current", "built_in"]);
+/** States whose `detail` explains something the label alone does not. */
+const EXPLAINED: ReadonlySet<InstallState> = new Set(["unavailable", "built_in"]);
 
 type Action = WorkspaceInstaller | "templates";
 
@@ -191,13 +197,13 @@ function InstallerRow({ installer, found, loading, busy, disabled, onInstall }: 
       <td>
         <code>{file}</code>
       </td>
-      <td className={found && found.state !== "current" ? "instances-warning" : undefined}>
+      <td className={found && !SETTLED.has(found.state) ? "instances-warning" : undefined}>
         {loading ? (
           <div className="local-instances-skeleton" aria-label={`Checking ${label}`} />
         ) : found ? (
           <>
             {STATE_LABEL[found.state]}
-            {found.state === "unavailable" && <div className="instances-meta">{found.detail}</div>}
+            {EXPLAINED.has(found.state) && <div className="instances-meta">{found.detail}</div>}
           </>
         ) : (
           "Unknown"

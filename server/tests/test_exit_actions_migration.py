@@ -227,11 +227,11 @@ def _raw_rows(engine) -> dict[str, str]:
 def test_full_migration_list_leaves_no_stage_with_gate_required(fully_migrated_engine):
     engine, applied = fully_migrated_engine
 
-    # Registered after 0148, and followed only by 0149, which depends on it.
-    assert applied[-2:] == ["0138_runtime_exit_actions", "0149_agentless_stage_exit_actions"]
-    assert applied.index("0148_chat_message_attachments") < applied.index(
-        "0138_runtime_exit_actions"
-    )
+    # Registered after 0148, and followed directly by 0149, which depends on it.
+    # Pinned by order, not by being the last two: later migrations append after them.
+    runtime = applied.index("0138_runtime_exit_actions")
+    assert applied[runtime + 1] == "0149_agentless_stage_exit_actions"
+    assert applied.index("0148_chat_message_attachments") < runtime
 
     stage_lists = _every_stage_list(engine)
     # The version snapshots are the case the ordering is really about: 0147

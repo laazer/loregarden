@@ -87,7 +87,7 @@ def m_agent_run_process_identity(conn: Connection) -> None:
     process".
 
     Null / empty on existing rows and read as "no identity", which
-    `process_identity.still_running` treats as not-running rather than falling
+    `process_identity.liveness` reads as GONE rather than falling
     back to a bare liveness check.
     """
     add_columns_if_missing(

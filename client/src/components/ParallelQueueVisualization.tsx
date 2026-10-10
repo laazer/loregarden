@@ -25,6 +25,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { IconCloseButton } from './IconCloseButton';
+import { Button } from './ui/Button';
 import { AddToTabItems } from './AddToTabMenu';
 import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
@@ -53,6 +54,7 @@ import {
   ticketStateLabel,
 } from '../lib/ticketStates';
 import './ParallelQueueVisualization.css';
+import { progressFillStyle } from '../lib/progressFill';
 
 /**
  * Statuses where the run behind a slot is still alive. Anything else — it
@@ -471,7 +473,7 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
           </div>
         ) : (
           <div className="queue-slot-bar">
-            <div className="queue-slot-bar-fill" style={{ width: `${progress}%` }} />
+            <div className="queue-slot-bar-fill" style={progressFillStyle(progress)} />
           </div>
         )}
       </>
@@ -496,7 +498,7 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
             {stats?.active_count || 0}/{stats?.max_concurrent || 3}
           </div>
           <div className="queue-stat-bar">
-            <div className="queue-stat-bar-fill" style={{ width: `${slotUsagePercent}%` }} />
+            <div className="queue-stat-bar-fill" style={progressFillStyle(slotUsagePercent)} />
           </div>
         </div>
 
@@ -631,8 +633,24 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
                   className="queue-lane-attention"
                   data-testid={`slot-${lane.slot_number}-attention`}
                 >
-                  <div className="queue-lane-attention-label">
-                    Stopped in this lane ({lane.attention_total ?? lane.attention.length})
+                  <div className="queue-lane-attention-header">
+                    <div className="queue-lane-attention-label">
+                      Stopped in this lane ({lane.attention_total ?? lane.attention.length})
+                    </div>
+                    <Button
+                      variant="plain"
+                      compact
+                      disabled={busyEntryId === `lane:${lane.slot_number}`}
+                      aria-label={`Clear all stopped tickets from slot ${lane.slot_number}`}
+                      onClick={() =>
+                        void runLaneAction(
+                          () => queueLanesApi.dismissLane(lane.slot_number),
+                          `lane:${lane.slot_number}`
+                        )
+                      }
+                    >
+                      {busyEntryId === `lane:${lane.slot_number}` ? 'Clearing…' : 'Clear all'}
+                    </Button>
                   </div>
                   {/* The rows scroll; the count above them does not, so a lane
                       you have scrolled into still says what you are reading. */}

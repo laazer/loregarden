@@ -1,5 +1,5 @@
-import { memo } from "react";
-import type { Components } from "react-markdown";
+import { memo, type ReactNode } from "react";
+import type { Components, ExtraProps } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -8,7 +8,41 @@ import { openReader } from "../../state/readerStore";
 import { normalizeChatMarkdown } from "./chatUtils";
 import "../reader/Reader.css";
 
+type PreNode = ExtraProps["node"];
+
+/**
+ * The card kind of a `loregarden` fence the server could not parse, or null for
+ * any other code block.
+ *
+ * A fence only reaches markdown when its JSON failed validation — parsed cards
+ * become parts and never render as prose.
+ */
+function unparsedCardKind(node: PreNode): string | null {
+  const code = node?.children[0];
+  if (code?.type !== "element" || code.tagName !== "code") return null;
+  const classes = code.properties.className;
+  if (!Array.isArray(classes) || !classes.includes("language-loregarden")) return null;
+  const text = code.children.map((child) => (child.type === "text" ? child.value : "")).join("");
+  const kind = /"primitive"\s*:\s*"([\w-]+)"/.exec(text)?.[1];
+  return kind ? kind.replace(/_/g, " ") : "unknown";
+}
+
+/** Code blocks, except a card fence the server could not parse — that one folds. */
+export function MarkdownPre({ node, children }: { node?: PreNode; children?: ReactNode }) {
+  const kind = unparsedCardKind(node);
+  if (kind === null) return <pre>{children}</pre>;
+  // Collapsed rather than dropped: the operator can still read what was meant,
+  // but a page of JSON no longer stands in for the card.
+  return (
+    <details className="md-unparsed-card">
+      <summary>A {kind} card couldn&apos;t be shown — show its raw data</summary>
+      <pre>{children}</pre>
+    </details>
+  );
+}
+
 const markdownComponents: Components = {
+  pre: MarkdownPre,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer">
       {children}

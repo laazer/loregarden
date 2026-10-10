@@ -13,6 +13,7 @@ from loregarden.models.domain import Workspace
 from loregarden.services.orchestration_profile import (
     GatesConfig,
     GitAutomationConfig,
+    resolve_orchestration_profile,
     update_gates_config,
     update_git_config,
 )
@@ -116,3 +117,28 @@ def test_a_missing_profile_is_created_without_error(tmp_path, monkeypatch, works
 
     assert (root / "proj.yaml").is_file()
     assert profile.git.commit is True
+
+
+def test_a_save_is_what_the_next_read_returns(profile_dir, workspace):
+    """Reads are cached per version of the file; a save is a new version."""
+    assert resolve_orchestration_profile(workspace).git.base_branch != "develop"
+
+    update_git_config(workspace, GitAutomationConfig(base_branch="develop"))
+
+    assert resolve_orchestration_profile(workspace).git.base_branch == "develop"
+
+
+def test_an_edit_in_place_of_the_same_size_is_read_back(profile_dir, workspace):
+    """A hand edit keeps the inode and here keeps the size; the mtime still moves."""
+    path = profile_dir / "proj.yaml"
+    assert resolve_orchestration_profile(workspace).gates.commands[0] == "ruff check ."
+
+    path.write_text(PROFILE.replace("ruff check .", "ruff check /"), encoding="utf-8")
+
+    assert resolve_orchestration_profile(workspace).gates.commands[0] == "ruff check /"
+
+
+def test_a_caller_mutating_its_profile_does_not_reach_the_next(profile_dir, workspace):
+    resolve_orchestration_profile(workspace).gates.commands.append("rm -rf /")
+
+    assert "rm -rf /" not in resolve_orchestration_profile(workspace).gates.commands

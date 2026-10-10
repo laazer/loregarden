@@ -16,7 +16,8 @@
 # Safe by construction: the database and memory graphs are copied (SQLite backup
 # API, source opened read-only) into data/sandbox/, and the server boots with
 # LOREGARDEN_SANDBOX=1, so recovery, the reconcile timer and GitHub sync are off
-# and nothing it does reaches main's runs, worktrees or memory.
+# and nothing it does reaches main's runs, worktrees or memory. Its agents get
+# an MCP URL naming this server, verified against its /health instance id.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SNAP="$ROOT/data/sandbox"
@@ -67,14 +68,29 @@ fi
 source "$ENV_FILE"
 export LOREGARDEN_REPO_ROOT="$ROOT"
 export LOREGARDEN_DEV_PORT="$SERVER_PORT"
+# The agents this server starts must reach *this* server: main's default is the
+# live one on :8000, and a URL inherited from the shell may be anything. Set from
+# the port uvicorn is given below, so `--keep` with another port stays right; the
+# server then proves it on boot (services/sandbox_endpoint.py) before any agent runs.
+export LOREGARDEN_API_URL="http://127.0.0.1:$SERVER_PORT"
+export LOREGARDEN_MCP_URL="$LOREGARDEN_API_URL/mcp"
 
 server_pid=""
 cleanup() { [[ -n "$server_pid" ]] && kill "$server_pid" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-(cd "$ROOT/server" && exec uv run uvicorn loregarden.main:app --host 127.0.0.1 --port "$SERVER_PORT") &
+# Both halves register as branch instances (sandbox-server, sandbox-client): the
+# server's own registration stands down in a sandbox, so it never claims main.
+(cd "$ROOT/server" && exec uv run loregarden instance run \
+  --name sandbox-server --kind server --role branch --port "$SERVER_PORT" \
+  --label "worktree=$ROOT" --label sandbox=1 \
+  -- uvicorn loregarden.main:app --host 127.0.0.1 --port "$SERVER_PORT") &
 server_pid=$!
 
-echo "sandbox: server http://127.0.0.1:$SERVER_PORT  client http://localhost:$CLIENT_PORT"
+echo "sandbox: server http://127.0.0.1:$SERVER_PORT  client http://127.0.0.1:$CLIENT_PORT"
 cd "$ROOT/client"
-LOREGARDEN_API_TARGET="http://127.0.0.1:$SERVER_PORT" npm run dev -- --port "$CLIENT_PORT" --strictPort
+LOREGARDEN_API_TARGET="http://127.0.0.1:$SERVER_PORT" uv run --project "$ROOT/server" \
+  loregarden instance run \
+  --name sandbox-client --kind client --role branch --port "$CLIENT_PORT" --health-path / \
+  --label "worktree=$ROOT" --label "api=http://127.0.0.1:$SERVER_PORT" \
+  -- ./node_modules/.bin/vite --host 127.0.0.1 --port "$CLIENT_PORT" --strictPort

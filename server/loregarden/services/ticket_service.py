@@ -18,6 +18,7 @@ from loregarden.models.domain import (
     DomainEvent,
     EventType,
     GithubIssueLink,
+    InitiativeMember,
     OrchestrationRun,
     QueuedRun,
     RunMessage,
@@ -38,6 +39,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
+from loregarden.services.initiative_coverage import initiatives_tracking
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_lineage
@@ -53,6 +55,7 @@ from sqlmodel import Session, col, select
 # outlives the ticket as an orphan row.
 _TICKET_OWNED_TABLES = (
     GithubIssueLink,
+    InitiativeMember,
     QueuedRun,
     ConflictReport,
     TicketDiffComment,
@@ -77,6 +80,8 @@ _TICKET_OWNED_TABLES = (
 _TICKET_INBOUND_EDGES = (
     (TicketDependency, TicketDependency.depends_on_ticket_id),
     (TicketRelation, TicketRelation.related_ticket_id),
+    # An initiative's members; deleting it stops tracking them, nothing more.
+    (InitiativeMember, InitiativeMember.initiative_id),
 )
 
 
@@ -370,10 +375,13 @@ class TicketService:
             raise ValueError("Delete or reassign child work items before deleting this ticket")
 
         parent_id = ticket.parent_ticket_id
+        tracking = initiatives_tracking(self.session, [ticket_id])
         self._delete_grandchildren(ticket_id)
         self._delete_owned_rows(ticket_id)
         self.session.delete(ticket)
         self.session.commit()
         # Losing an open child can finish its parent (an initiative whose last
-        # unfinished milestone was deleted is done).
+        # unfinished milestone was deleted is done) — and so can losing a member.
         reconcile_lineage(self.session, parent_id)
+        for initiative_id in tracking:
+            reconcile_lineage(self.session, initiative_id)

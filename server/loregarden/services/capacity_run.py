@@ -1,0 +1,547 @@
+"""Run one command while holding machine capacity: reserve, wait, run, release.
+
+What `loregarden capacity run` does, and what a pre-push hook uses to stop
+three repositories' test suites landing on one machine at once. The ledger
+itself is `docker_leases`; this is a holder that blocks, which an MCP handler
+may not but a shell process may.
+
+**Waiting is polling.** The process keeps its own place in line alive (a
+served poll is what the abandonment sweep looks for), drains the queue itself,
+and runs a reap pass now and then — so a holder that died is reclaimed even
+when the control-plane server, whose timer normally does that, is not running.
+
+**Holding is a heartbeat.** A background thread renews the lease well inside
+its TTL. The lease also names this process's pid, so a SIGKILL that skips the
+`finally` still frees the capacity on the next sweep rather than at TTL.
+
+**Waiting has no deadline; a stalled line does.** Six heavy suites queued
+behind a seventh is an orderly line that takes hours to drain, and giving up the
+place in it because the clock ran out is a failure nobody caused. So the limit
+is on the line *not moving*: the clock restarts whenever a lease ahead of this
+one ends. Only a line where nothing ahead has finished for `stall_seconds` gives
+up — and it says so as `CapacityQueueStalled`, naming who is holding, so it is
+never mistaken for the ledger failing.
+
+**Failing to get capacity raises**, with the reason. Running the command
+anyway is the caller's decision to make — the pre-push wrapper asks the person
+at the keyboard — never this module's.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import tempfile
+import threading
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from loregarden.models.domain import (
+    CapacityPool,
+    DockerFootprint,
+    DockerGrantState,
+    DockerHolderKind,
+    DockerLease,
+    DockerLeaseEndReason,
+    DockerLeaseStatus,
+    DockerWaitBasis,
+)
+from loregarden.services.capacity_children import reserve_child
+from loregarden.services.capacity_progress import (
+    PROGRESS_ENV,
+    ProgressSync,
+    describe_progress,
+    format_seconds,
+)
+from loregarden.services.docker_capacity import resolve_weights
+from loregarden.services.docker_leases import (
+    DockerReservation,
+    drain_waiters,
+    refresh_ceiling,
+    release_lease,
+    renew_lease,
+    reserve,
+)
+from loregarden.services.docker_ledger import (
+    CHARGED_POOLS,
+    OCCUPYING,
+    as_utc,
+    load_pool,
+    pool_ceiling,
+)
+from loregarden.services.docker_poll_guard import note_poll
+from loregarden.services.docker_reaper import reap_docker_leases
+from loregarden.services.docker_wait_estimate import (
+    UNKNOWN_WAIT,
+    WaitEstimate,
+    estimate_waits,
+    poll_interval_for,
+)
+from loregarden.services.signal_relay import SignalRelay, Terminated
+from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Session, col, func, or_, select
+
+logger = logging.getLogger(__name__)
+
+#: What the command learns about its grant. Workers is the cpus rounded down,
+#: never below one — what a test runner's `-n` / `--maxWorkers` should be.
+LEASE_ENV = "LOREGARDEN_CAPACITY_LEASE_ID"
+CPUS_ENV = "LOREGARDEN_CAPACITY_CPUS"
+WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
+
+#: Where the caller stood before `scripts/loregarden-cli.sh` moved into
+#: `server/` to start uv. The held command runs there, so a relative path in it
+#: means what the caller meant. The command does not inherit it: a nested
+#: `loregarden` started some other way, from another directory, would otherwise
+#: run its own command where the outer caller stood.
+CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
+
+#: How often a waiting process runs a reap pass of its own. The server's timer
+#: does this every 30s when it is up; this is the floor when it is not.
+_REAP_INTERVAL_SECONDS = 60.0
+
+#: How often a waiter repeats its place in line when nothing about it changed.
+#: The line used to be printed once, on change, and then nothing for as long as
+#: an hour-long suite ahead kept running — which reads exactly like a hang.
+_REPRINT_SECONDS = 60.0
+
+#: How many holders a queue line names. The line is about this waiter; the
+#: board lists every holder.
+_HOLDERS_NAMED = 3
+
+Report = Callable[[str], None]
+SessionFactory = Callable[[], Session]
+
+
+#: How long the line may go without anything ahead finishing. Above the longest
+#: hold the ledger has seen for a pre-push suite (2765s for a full server run,
+#: measured 2026-10-03), so one legitimately slow suite does not strand the line
+#: behind it, while a holder that has hung is still noticed within the hour.
+DEFAULT_STALL_SECONDS = 3600.0
+
+
+class CapacityNotGranted(RuntimeError):
+    """The ledger refused or could not be read."""
+
+
+class CapacityQueueStalled(CapacityNotGranted):
+    """Still in line, but nothing ahead has finished for `stall_seconds`.
+
+    Not a ledger failure: the ledger answered every poll. A subclass so a caller
+    that only knows "capacity was not granted" still stops, and one that can say
+    more — the CLI's exit code, the pre-push wrapper's message — does.
+    """
+
+
+@dataclass(frozen=True)
+class CapacityRequest:
+    label: str
+    pool: CapacityPool = CapacityPool.HOST
+    footprint: DockerFootprint = DockerFootprint.CUSTOM
+    cpus: float = 0.0
+    memory_mb: int = 0
+    #: Give up the place in line when nothing ahead of it has ended for this
+    #: long. Time spent in a line that is moving never counts. Zero waits only
+    #: for an immediate grant.
+    stall_seconds: float = DEFAULT_STALL_SECONDS
+    ttl_seconds: int | None = None
+    workspace_id: str | None = None
+    #: Nest under this lease: draw on its grant first, never wait in line.
+    parent_lease_id: str | None = None
+
+
+def worker_count(cpus: float) -> int:
+    return max(1, int(cpus))
+
+
+def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
+    env = dict(base)
+    env.pop(CALLER_CWD_ENV, None)
+    env[LEASE_ENV] = reservation.lease_id
+    env[CPUS_ENV] = f"{reservation.cpus:g}"
+    env[WORKERS_ENV] = str(worker_count(reservation.cpus))
+    return env
+
+
+def fit_to_ceiling(session: Session, request: CapacityRequest, report: Report) -> tuple[float, int]:
+    """The price to claim: the footprint's, or the whole pool when the machine is smaller.
+
+    A per-repo footprint is chosen once and pushed from machines of every size.
+    On one smaller than the footprint the claim could never be granted, and
+    every push would stop at a prompt. Claiming the whole pool instead keeps the
+    property that matters — nothing else heavy runs alongside — and says so.
+    An unmeasurable pool is left alone: `reserve` refuses it with the reason.
+    """
+    cpus, memory_mb = resolve_weights(
+        request.footprint, cpus=request.cpus, memory_mb=request.memory_mb
+    )
+    for pool in CHARGED_POOLS[request.pool]:
+        ceiling = pool_ceiling(load_pool(session, pool))
+        if not ceiling.known:
+            ceiling = refresh_ceiling(session, pool_name=pool)
+        if not ceiling.known or (cpus <= ceiling.cpus and memory_mb <= ceiling.memory_mb):
+            continue
+        fitted = (min(cpus, ceiling.cpus), min(memory_mb, ceiling.memory_mb))
+        report(
+            f"capacity: {cpus:g} cpus / {memory_mb} MB is more than this machine's whole "
+            f"{pool.value} pool ({ceiling.cpus:g} cpus / {ceiling.memory_mb} MB); "
+            f"claiming {fitted[0]:g} cpus / {fitted[1]} MB instead."
+        )
+        cpus, memory_mb = fitted
+    return cpus, memory_mb
+
+
+def acquire(
+    session: Session,
+    request: CapacityRequest,
+    *,
+    report: Report,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> DockerReservation:
+    """Hold capacity for `request`, waiting in line if need be. Raises when it cannot."""
+    cpus, memory_mb = fit_to_ceiling(session, request, report)
+    if request.parent_lease_id:
+        child = reserve_child(
+            session,
+            parent_lease_id=request.parent_lease_id,
+            holder_label=f"{request.label} · pid {os.getpid()}",
+            footprint=request.footprint,
+            cpus=cpus,
+            memory_mb=memory_mb,
+            pool=request.pool,
+            ttl_seconds=request.ttl_seconds,
+            workspace_id=request.workspace_id,
+            holder_pid=os.getpid(),
+        )
+        if not child.granted:
+            raise CapacityNotGranted(f"{child.error_kind}: {child.message}")
+        return child
+    reservation = reserve(
+        session,
+        # The pid makes the label unique per process. Without it two pushes from
+        # the same branch are one request to `_pending_duplicate`, which hands
+        # both the same place in line — and then the same grant.
+        holder_label=f"{request.label} · pid {os.getpid()}",
+        footprint=request.footprint,
+        cpus=cpus,
+        memory_mb=memory_mb,
+        ttl_seconds=request.ttl_seconds,
+        holder_kind=DockerHolderKind.AD_HOC,
+        workspace_id=request.workspace_id,
+        holder_pid=os.getpid(),
+        pool=request.pool,
+    )
+    if reservation.state is DockerGrantState.REJECTED:
+        raise CapacityNotGranted(f"{reservation.error_kind}: {reservation.message}")
+    if reservation.granted:
+        return reservation
+    return _wait_in_line(session, reservation, request, report=report, sleep=sleep, clock=clock)
+
+
+def _wait_in_line(
+    session: Session,
+    reservation: DockerReservation,
+    request: CapacityRequest,
+    *,
+    report: Report,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> DockerReservation:
+    try:
+        return _poll_until_granted(
+            session, reservation, request, report=report, sleep=sleep, clock=clock
+        )
+    except (KeyboardInterrupt, Terminated):
+        # Stopped while queued: leave the line now rather than sitting at its
+        # head until the abandonment sweep notices nobody is polling.
+        release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
+        raise
+
+
+def _poll_until_granted(
+    session: Session,
+    reservation: DockerReservation,
+    request: CapacityRequest,
+    *,
+    report: Report,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> DockerReservation:
+    joined_at = moved_at = clock()
+    last_reap = clock()
+    last_line = ""
+    said_at: float | None = None
+    ahead_of_us: set[str] = set()
+    while True:
+        session.expire_all()
+        lease = session.get(DockerLease, reservation.lease_id)
+        if lease is None or lease.status not in (DockerLeaseStatus.WAITING, *OCCUPYING):
+            reason = "vanished" if lease is None else f"ended ({lease.end_reason})"
+            raise CapacityNotGranted(f"lease {reservation.lease_id} {reason} while waiting")
+        if lease.status in OCCUPYING:
+            reservation.state = DockerGrantState.GRANTED
+            reservation.position = None
+            reservation.expires_at = as_utc(lease.expires_at)
+            return reservation
+
+        front = _leases_ahead(session, lease)
+        if ahead_of_us - front.keys():
+            # Something that stood between this lease and capacity has ended:
+            # the line is moving, however long it still is.
+            moved_at = clock()
+        ahead_of_us = set(front)
+        if clock() - moved_at >= request.stall_seconds:
+            message = _stall_message(session, lease, front, stalled=clock() - moved_at)
+            release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED)
+            raise CapacityQueueStalled(message)
+
+        note_poll(session, lease, min_interval=0)
+        if clock() - last_reap >= _REAP_INTERVAL_SECONDS:
+            reap_docker_leases(session)
+            last_reap = clock()
+        drain_waiters(session)
+
+        estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
+        line = _queue_line(session, lease, estimate)
+        now = clock()
+        if line != last_line or said_at is None or now - said_at >= _REPRINT_SECONDS:
+            report(f"{line} · waited {format_seconds(now - joined_at)}")
+            for holder in _holder_lines(front.values()):
+                report(holder)
+            last_line = line
+            said_at = now
+        session.commit()  # end any read transaction before sleeping on it
+        stall_left = request.stall_seconds - (clock() - moved_at)
+        sleep(max(1.0, min(poll_interval_for(estimate), stall_left)))
+
+
+def _leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]:
+    """Every lease this one waits behind: those holding capacity, and waiters ahead.
+
+    A waiter ahead that is granted stays in the set — it moved, but nothing
+    freed up. Only a lease leaving the set means capacity came back.
+    """
+    rows = session.exec(
+        select(DockerLease).where(
+            or_(
+                col(DockerLease.status).in_(OCCUPYING),
+                (DockerLease.status == DockerLeaseStatus.WAITING)
+                & (col(DockerLease.position) < lease.position),
+            )
+        )
+    ).all()
+    return {row.id: row for row in rows}
+
+
+def _stall_message(
+    session: Session, lease: DockerLease, front: Mapping[str, DockerLease], *, stalled: float
+) -> str:
+    ahead = sum(1 for other in front.values() if other.status is DockerLeaseStatus.WAITING)
+    estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
+    now = datetime.now(timezone.utc)
+    holders = sorted(
+        (other for other in front.values() if other.status in OCCUPYING),
+        key=lambda other: as_utc(other.granted_at) or now,
+    )
+    if holders:
+        oldest = holders[0]
+        granted = as_utc(oldest.granted_at)
+        held = f" for {(now - granted).total_seconds():.0f}s" if granted else ""
+        holding = f"'{oldest.holder_label}' has held {oldest.cpus:g} cpus{held}"
+    else:
+        holding = "nothing is holding capacity"
+    return (
+        f"still queued for {lease.pool.value} capacity — {ahead} ahead, "
+        f"{_describe_wait(estimate)} — but nothing ahead has finished for {stalled:.0f}s "
+        f"({holding}); gave up the place in line. The ledger is answering: the line "
+        "stopped moving."
+    )
+
+
+def _describe_wait(estimate: WaitEstimate) -> str:
+    if estimate.seconds is None:
+        return "no estimate yet"
+    if estimate.basis is DockerWaitBasis.TTL_BOUND:
+        # A bound from the holders' TTLs, which they almost always beat.
+        return f"at most {estimate.seconds}s"
+    return f"about {estimate.seconds}s"
+
+
+def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) -> str:
+    ahead = session.exec(
+        select(func.count())
+        .select_from(DockerLease)
+        .where(
+            DockerLease.status == DockerLeaseStatus.WAITING,
+            col(DockerLease.position) < lease.position,
+        )
+    ).one()
+    return (
+        f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, "
+        f"{_describe_wait(estimate)}"
+    )
+
+
+def _holder_lines(front: Iterable[DockerLease]) -> list[str]:
+    """What the line is waiting on: the oldest holders, and how far each has got."""
+    now = datetime.now(timezone.utc)
+    holders = sorted(
+        (lease for lease in front if lease.status in OCCUPYING),
+        key=lambda lease: as_utc(lease.granted_at) or now,
+    )
+    lines = []
+    for holder in holders[:_HOLDERS_NAMED]:
+        granted = as_utc(holder.granted_at)
+        held = f"held {format_seconds((now - granted).total_seconds())}" if granted else "held"
+        progress = describe_progress(
+            holder.progress_step, holder.progress_done, holder.progress_total
+        )
+        lines.append(
+            f"capacity:   ahead: '{holder.holder_label or 'unlabelled'}' {held}"
+            + (f" — {progress}" if progress else "")
+        )
+    if len(holders) > _HOLDERS_NAMED:
+        lines.append(f"capacity:   … and {len(holders) - _HOLDERS_NAMED} more holding")
+    return lines
+
+
+class _Heartbeat:
+    """Renews the lease from a thread of its own while the command runs."""
+
+    def __init__(
+        self, session_factory: SessionFactory, lease_id: str, interval: float, report: Report
+    ) -> None:
+        self._session_factory = session_factory
+        self._lease_id = lease_id
+        self._interval = interval
+        self._report = report
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="capacity-heartbeat", daemon=True)
+
+    def __enter__(self) -> _Heartbeat:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=self._interval + 5)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                with self._session_factory() as session:
+                    renewed = renew_lease(session, self._lease_id)
+            except SQLAlchemyError as exc:
+                # Transient (a locked database) is the common case; the next beat
+                # retries, and the TTL is three beats long.
+                self._report(f"capacity: could not renew lease {self._lease_id}: {exc}")
+                continue
+            if renewed is None:
+                self._report(
+                    f"capacity: lease {self._lease_id} was reclaimed while the command runs; "
+                    "it is no longer holding capacity."
+                )
+                return
+
+
+def run_holding(
+    session_factory: SessionFactory,
+    request: CapacityRequest,
+    command: Sequence[str],
+    *,
+    report: Report,
+    started_file: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    heartbeat_seconds: float | None = None,
+    cwd: Path | None = None,
+) -> int:
+    """Run `command` under a lease and return its exit status (128+N for signal N).
+
+    A SIGTERM or SIGHUP before the command starts gives the place in line back
+    and returns 128+N without starting it; once it runs, they are forwarded to it.
+    """
+    joined = time.monotonic()
+    with SignalRelay() as relay:
+        try:
+            with session_factory() as session:
+                reservation = acquire(session, request, report=report)
+        except Terminated as stopped:
+            return 128 + stopped.signum
+        waited = time.monotonic() - joined
+        lease_id = reservation.lease_id
+        report(
+            f"capacity: holding {reservation.cpus:g} cpus / {reservation.memory_mb} MB ({lease_id})"
+            f" after waiting {format_seconds(waited)}"
+        )
+        ttl = (
+            reservation.expires_at - datetime.now(timezone.utc)
+            if reservation.expires_at is not None
+            else None
+        )
+        interval = heartbeat_seconds or max(1.0, ttl.total_seconds() / 3 if ttl else 60.0)
+        progress_dir = Path(tempfile.mkdtemp(prefix="lg-progress-"))
+        progress_file = progress_dir / "progress.json"
+        env = child_environment(reservation, environ or os.environ)
+        env[PROGRESS_ENV] = str(progress_file)
+        code: int | None = None
+        ran_from = time.monotonic()
+        try:
+            with (
+                _Heartbeat(session_factory, lease_id, interval, report),
+                ProgressSync(session_factory, lease_id, progress_file, report),
+            ):
+                if started_file is not None:
+                    started_file.touch()
+                code = relay.run(command, env, cwd)
+        except Terminated as stopped:
+            code = 128 + stopped.signum
+        finally:
+            _release(session_factory, lease_id, report, reason=_end_reason(code))
+            # A temp dir left behind costs disk; a cleanup that raises would cost the run's status.
+            shutil.rmtree(progress_dir, ignore_errors=True)
+        report(
+            f"capacity: '{request.label}' exited {code} after waiting {format_seconds(waited)}"
+            f" and running {format_seconds(time.monotonic() - ran_from)}"
+        )
+    return code
+
+
+#: Exit statuses with which a shell reports it could not run the command at all:
+#: 126 found but not executable, 127 not found.
+_NOT_RUN_STATUSES = (126, 127)
+
+
+def _end_reason(code: int | None) -> DockerLeaseEndReason:
+    """How the lease ended, as far as the wait estimator should learn from it.
+
+    A command that never ran — the shell could not find it, or `Popen` raised
+    before there was a status — releases within a second, and counting that as
+    a clean hold teaches every waiter behind the next real run to expect it in
+    seconds. A real run that happens to end 127 is lost as one sample, which is
+    the cheap direction to be wrong in.
+    """
+    if code is None or code in _NOT_RUN_STATUSES:
+        return DockerLeaseEndReason.COMMAND_NOT_RUN
+    return DockerLeaseEndReason.RELEASED
+
+
+def _release(
+    session_factory: SessionFactory,
+    lease_id: str,
+    report: Report,
+    *,
+    reason: DockerLeaseEndReason,
+) -> None:
+    try:
+        with session_factory() as session:
+            release_lease(session, lease_id, reason=reason)
+    except SQLAlchemyError as exc:
+        report(
+            f"capacity: could not release lease {lease_id} ({exc}); it names pid {os.getpid()}, "
+            "so the next reap sweep reclaims it once this process exits."
+        )

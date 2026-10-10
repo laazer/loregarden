@@ -16,7 +16,14 @@ export interface ReaderDocument {
   title: string;
   /** One line under the title: kind, agent, age — whatever places the document. */
   subtitle?: string;
+  /** What the document concluded, beside its title — a report's verdict, a checklist's score. */
+  badge?: ReaderBadge;
   content: unknown;
+}
+
+export interface ReaderBadge {
+  text: string;
+  tone: "good" | "bad" | "warn";
 }
 
 interface ReaderState {

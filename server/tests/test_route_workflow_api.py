@@ -60,15 +60,13 @@ def test_route_workflow_api_moves_cursor_upstream(client: TestClient, db_session
     assert res.status_code == 200
     body = res.json()
     assert body["workflow_stage_key"] == "implement"
-    # The pin written above is `core_simulation`, and the derived reader does
-    # NOT honour it here: `implement` is a CLASSIFY stage, where content beats a
-    # sticky `next_agent` whenever the ticket's text is unambiguous — the #164
-    # fix for a stale pin replaying itself forever. This fixture's own title,
-    # "Route workflow API", carries two `backend` synonyms (`route`, `api`),
-    # which is exactly `_OVERRIDE_DEFAULT_SCORE`. It resolved to the pin only
-    # while the stage had no backend lane for that text to match; 0129 added
-    # one. Pin-honouring on ambiguous text is covered by the test below.
-    assert body["current_stage_agent"] == "implementation_backend"
+    # This fixture's title, "Route workflow API", scores the backend lane on
+    # content (`route`, `api`). The reject named `core_simulation`, and a reject's
+    # named agent is a one-dispatch pin that outranks content — the reject knows
+    # who should redo the work, which the keyword score does not
+    # (lg-workflow-integrity-765). A *stale* `next_agent` still loses to content
+    # (#164); that is a different field and is covered elsewhere.
+    assert body["current_stage_agent"] == "core_simulation"
     assert "Needs more tests" in body["blocking_issues"]
 
     db_session.refresh(instance)

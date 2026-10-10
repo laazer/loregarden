@@ -29,11 +29,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createRequire } = require("module");
 
-const clientRoot = path.resolve(__dirname, "../../client");
-const requireFromClient = createRequire(path.join(clientRoot, "package.json"));
-const { parse } = requireFromClient("@typescript-eslint/typescript-estree");
+const { parse } = require("./gate_client_modules.cjs");
 
 const {
   untrackedPaths,
@@ -337,7 +334,7 @@ const untracked = new Set(
 );
 
 for (const filePath of args) {
-  if (!fs.existsSync(filePath) || isTestFile(filePath)) continue;
+  if (isTestFile(filePath)) continue;
   const content = fs.readFileSync(filePath, "utf8");
   const ast = parseFile(content);
   if (!ast) continue;

@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
-from loregarden.models.domain import BaxterChatSession, Ticket
+from loregarden.models.domain import BaxterChatSession, PrimaryCheckoutUse, Ticket
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.primary_checkout import require_clean_tree
+from loregarden.services.worktree_snapshot import read_tree
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +221,9 @@ def _refresh_onto(repo_root: Path, branch: str, start_point: str) -> None:
     raise ValueError(f"Branch {branch!r} could not take {start_point!r} before starting: {detail}")
 
 
-def ensure_ticket_branch(repo_root: Path, ticket: Ticket, *, start_point: str = "") -> str:
+def ensure_ticket_branch(
+    repo_root: Path, ticket: Ticket, *, start_point: str = "", ignoring: Iterable[str] = ()
+) -> str:
     """Checkout or create the branch a ticket should run on.
 
     ``start_point`` is where a *missing* branch is cut from; empty means HEAD,
@@ -228,12 +233,21 @@ def ensure_ticket_branch(repo_root: Path, ticket: Ticket, *, start_point: str = 
     If another (non-primary) worktree holds the branch — common with stale Claude
     scratchpads — remove that worktree once and retry. Gate autofix never sees
     this failure because it happens before any agent starts.
+
+    Refuses (`DirtyPrimaryCheckoutError`) to *switch* a checkout holding
+    uncommitted work other than `ignoring` — the ticket's own recorded paths: the
+    switch would carry someone's work-in-progress onto this ticket's branch
+    (864). Already on the branch, nothing is carried, and an edit there is kept
+    as it always was.
     """
     branch = resolve_ticket_branch(ticket)
     validate_branch_name(branch)
 
     if not (repo_root / ".git").exists():
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
+    tree = read_tree(repo_root)
+    if tree.branch != branch:
+        require_clean_tree(tree, use=PrimaryCheckoutUse.TICKET_BRANCH_CHECKOUT, ignoring=ignoring)
 
     try:
         _checkout_branch(repo_root, branch, start_point=start_point)

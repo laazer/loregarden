@@ -35,6 +35,7 @@ from loregarden.models.domain.enums import (
     str_enum_column,
     utcnow,
 )
+from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.models.domain.work_item_types import WorkItemType
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -77,6 +78,10 @@ class Workspace(SQLModel, table=True):
     # Workspace-wide default; a ticket or any of its ancestors may override it.
     compatibility_posture: str = DEFAULT_COMPATIBILITY_POSTURE.value
     created_at: datetime = Field(default_factory=utcnow)
+    # Set when the operator archives the workspace from the Workspaces page, which
+    # lists it apart from the active ones. Display only: its tickets, runs and
+    # instances are untouched, and restoring clears it.
+    archived_at: datetime | None = None
 
 
 class Cycle(SQLModel, table=True):
@@ -178,6 +183,8 @@ class Ticket(SQLModel, table=True):
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
     acceptance_criteria_json: str = "[]"
+    #: The criteria an operator has ticked off, by text (services.acceptance_criteria).
+    checked_criteria_json: str = "[]"
     #: Free-form labels, a JSON array of strings (see services.ticket_tags for the
     #: one place they are normalized). Not a table: tags carry no attributes of
     #: their own and are only ever read alongside the ticket that owns them.
@@ -232,6 +239,11 @@ class Ticket(SQLModel, table=True):
     compatibility_posture: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+    #: When the ticket last entered `done`/`wont_do`; null while open. Stamped by
+    #: `ticket_state_service._write`, the one place state is written, because
+    #: `TicketStateChanged` misses every stage-derived close — schedule
+    #: forecasts read their throughput from this.
+    resolved_at: datetime | None = Field(default=None, index=True)
 
 
 class WorkflowInstance(SQLModel, table=True):
@@ -444,6 +456,14 @@ class AgentRun(SQLModel, table=True):
     #: this one names a process this server spawned. See services/process_identity.
     agent_pid: int | None = None
     agent_pid_identity: str = ""
+    #: How that process was detached. NULL is the truthful value for every run
+    #: that predates the column — 1,449 of them have no process identity either
+    #: and never will — so the UI renders it as an em dash rather than guessing
+    #: `file`. See models.domain.process_enums.AgentTransport.
+    agent_transport: AgentTransport | None = Field(
+        default=None,
+        sa_column=str_enum_column(AgentTransport, nullable=True),
+    )
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None

@@ -147,3 +147,34 @@ class QueueSnapshot(SQLModel, table=True):
     tags: str = ""
     created_by: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class QueueHistoryClear(SQLModel, table=True):
+    """One press of Clear on the queue history rail.
+
+    History is a read model over `queued_runs` and `orchestration_runs`, and
+    neither row is ours to delete: analytics and the ticket's own record read
+    them. Clearing records a cutoff instead — the rail hides every card that
+    finished at or before the newest one. A row per press rather than one
+    setting, so when history was last cleared is itself on record.
+    """
+
+    __tablename__ = "queue_history_clears"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    cleared_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class QueueSettings(SQLModel, table=True):
+    """The queue's machine-wide settings. One row, keyed `default`.
+
+    Absent until someone changes a setting — `services.lane_count` reads a
+    missing row as the defaults, so a fresh database needs no seed.
+    """
+
+    __tablename__ = "queue_settings"
+
+    id: str = Field(default="default", primary_key=True)
+    #: How many lanes run at once. Bounded in `services.lane_count`.
+    lane_count: int = 3
+    updated_at: datetime = Field(default_factory=utcnow)

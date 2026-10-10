@@ -72,10 +72,20 @@ def _interrupted_stage(session: Session, ticket: Ticket) -> str | None:
     return interrupted_stage_key(session, ticket, parse_stage_map(instance, stages))
 
 
-def _resume_plan(
+def latest_orchestration_run(session: Session, ticket: Ticket) -> OrchestrationRun | None:
+    return session.exec(
+        select(OrchestrationRun)
+        .where(OrchestrationRun.ticket_id == ticket.id)
+        .order_by(OrchestrationRun.created_at.desc())
+    ).first()
+
+
+def resume_plan(
     session: Session,
     ticket: Ticket,
     previous: OrchestrationRun | None,
+    *,
+    stage_key: str | None = None,
 ) -> InterruptionResume | None:
     """How to recover this interrupted ticket, or None to leave it for a human.
 
@@ -97,6 +107,10 @@ def _resume_plan(
       worktree. Logged rather than silently skipped, so a ticket stranded this
       way is visible instead of merely absent.
     - **Cancelled.** A human stopped it. Restarting would fight the stop.
+
+    ``stage_key`` names the stage to re-run for the manual case when the caller
+    already knows it (a network wait records it); otherwise it is the stage the
+    restart interrupted.
     """
     if previous is not None and previous.cancel_requested_at is not None:
         return None
@@ -120,7 +134,7 @@ def _resume_plan(
         )
         return None
 
-    stage_key = _interrupted_stage(session, ticket)
+    stage_key = stage_key or _interrupted_stage(session, ticket)
     if not stage_key:
         logger.warning(
             "Ticket %s is blocked by an interruption but no interrupted stage could be "
@@ -142,16 +156,14 @@ def _resume_plan(
 
 def resume_interrupted_orchestrations(session: Session) -> list[str]:
     """Recover tickets that startup reconciliation found mid-run, each the way it
-    was being driven — see `_resume_plan` for which recovery each driver earns.
+    was being driven — see `resume_plan` for which recovery each driver earns.
 
     Goes through the slot pool: a restart already released whatever lane the
     failed run held, so resuming outside admission left agents running while
     the board showed three idle slots.
     """
     callbacks = OrchestrationCallbackService(session)
-    admission = QueueAdmissionService(session)
-    requests: list[InterruptionResume] = []
-    handled: list[str] = []
+    plans: list[tuple[Ticket, InterruptionResume]] = []
     candidates = session.exec(
         select(Ticket).where(Ticket.workflow_stage_status == StageStatus.BLOCKED)
     ).all()
@@ -161,15 +173,35 @@ def resume_interrupted_orchestrations(session: Session) -> list[str]:
             continue
         if callbacks.get_active_orchestration_run(ticket.id):
             continue
-        previous = session.exec(
-            select(OrchestrationRun)
-            .where(OrchestrationRun.ticket_id == ticket.id)
-            .order_by(OrchestrationRun.created_at.desc())
-        ).first()
-        plan = _resume_plan(session, ticket, previous)
-        if plan is None:
-            continue
+        plan = resume_plan(session, ticket, latest_orchestration_run(session, ticket))
+        if plan is not None:
+            plans.append((ticket, plan))
 
+    requests, handled = admit_resumes(session, plans)
+    schedule_interrupted_resumes(requests)
+    if handled:
+        logger.warning(
+            "Resuming %d orchestration(s) interrupted by restart (%d scheduled now): %s",
+            len(handled),
+            len(requests),
+            ", ".join(handled),
+        )
+    return handled
+
+
+def admit_resumes(
+    session: Session, plans: list[tuple[Ticket, InterruptionResume]]
+) -> tuple[list[InterruptionResume], list[str]]:
+    """Claim an orchestration for each plan through the slot pool.
+
+    Returns the plans to start now, and every ticket handled — including those
+    parked in a full lane, which the lane starts when capacity frees.
+    """
+    callbacks = OrchestrationCallbackService(session)
+    admission = QueueAdmissionService(session)
+    requests: list[InterruptionResume] = []
+    handled: list[str] = []
+    for ticket, plan in plans:
         reservation = admission.reserve_orchestration(
             ticket,
             auto_approve=plan.auto_approve,
@@ -201,13 +233,4 @@ def resume_interrupted_orchestrations(session: Session) -> list[str]:
         reservation.bind(orchestration_run_id=claim.id)
         requests.append(plan)
         handled.append(ticket.id)
-
-    schedule_interrupted_resumes(requests)
-    if handled:
-        logger.warning(
-            "Resuming %d orchestration(s) interrupted by restart (%d scheduled now): %s",
-            len(handled),
-            len(requests),
-            ", ".join(handled),
-        )
-    return handled
+    return requests, handled

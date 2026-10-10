@@ -7,22 +7,25 @@ all (e.g. adding `from e` to a `raise`) — same "don't make it worse"
 policy as py_organization_check.py.
 
 Invoked with cwd=server/ and server-relative file paths (see py-pylint.sh).
+A script outside server/ arrives as ``../<repo path>``.
 """
 
 import ast
 import json
+import os
+import posixpath
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple
+from typing import Optional
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
-from precommit_git_diff import (
+from precommit_git_diff import (  # noqa: E402 - path set above
     UnexaminableError,
     git_diff_cached,
     git_repo_root,
@@ -34,7 +37,7 @@ from precommit_git_diff import (
 _COUNT_RE = re.compile(r"\((\d+)/(\d+)\)")
 
 
-def _function_span(py_file: Path, lineno: int, repo: Optional[Path]) -> Tuple[int, int]:
+def _function_span(py_file: Path, lineno: int, repo: Optional[Path]) -> tuple[int, int]:
     """The line range of the function at `lineno`, or that line alone.
 
     Read through `read_source_text` like every other gate: it resolves the path,
@@ -87,11 +90,11 @@ def _run_pylint_json(paths: list) -> list:
         return []
 
 
-def _head_statement_counts(repo: Path, repo_rel_paths: Set[str]) -> Dict[str, Dict[str, int]]:
+def _head_statement_counts(repo: Path, repo_rel_paths: set[str]) -> dict[str, dict[str, int]]:
     """Map repo_rel path -> {obj_name: statement_count} at HEAD (pre-commit)."""
-    counts: Dict[str, Dict[str, int]] = {}
+    counts: dict[str, dict[str, int]] = {}
     with tempfile.TemporaryDirectory(dir=".") as tmp:
-        tmp_path_by_repo_rel: Dict[str, Path] = {}
+        tmp_path_by_repo_rel: dict[str, Path] = {}
         for repo_rel in repo_rel_paths:
             head_text = _head_text(repo, repo_rel)
             if head_text is None:
@@ -137,13 +140,24 @@ def _head_text(repo: Path, repo_rel: str) -> Optional[str]:
     return proc.stdout
 
 
+def _server_rel(reported: str) -> str:
+    """Pylint's path for a finding, relative to server/ (the cwd).
+
+    A file outside the cwd is reported by absolute path; relative, it is
+    `../<repo path>`, which `posixpath.normpath` turns into the path the staged
+    diff names. Unmapped, it matched no touched lines and every finding in a
+    script outside server/ was dropped as untouched.
+    """
+    return os.path.relpath(reported) if os.path.isabs(reported) else reported
+
+
 def main(argv: list) -> int:
     server_rel_args = argv[1:]
     if not server_rel_args:
         return 0
 
     repo = git_repo_root()
-    additions_map: Dict[str, Set[int]] = {}
+    additions_map: dict[str, set[int]] = {}
     if repo is not None:
         additions_map = {
             path: {ln for ln, _ in items}
@@ -153,12 +167,12 @@ def main(argv: list) -> int:
     messages = _run_pylint_json(server_rel_args)
 
     candidates = []
-    repo_rels_needed: Set[str] = set()
+    repo_rels_needed: set[str] = set()
     for msg in messages:
         if msg.get("symbol") != "too-many-statements":
             continue
-        server_rel = msg.get("path", "")
-        repo_rel = f"server/{server_rel}"
+        server_rel = _server_rel(msg.get("path", ""))
+        repo_rel = posixpath.normpath(f"server/{server_rel}")
         touched = additions_map.get(repo_rel, set())
         if not touched:
             continue
@@ -168,7 +182,9 @@ def main(argv: list) -> int:
         candidates.append((msg, repo_rel))
         repo_rels_needed.add(repo_rel)
 
-    head_counts = _head_statement_counts(repo, repo_rels_needed) if repo and repo_rels_needed else {}
+    head_counts = (
+        _head_statement_counts(repo, repo_rels_needed) if repo and repo_rels_needed else {}
+    )
 
     kept = []
     for msg, repo_rel in candidates:
@@ -177,7 +193,11 @@ def main(argv: list) -> int:
         # No baseline violation for this function (new function, or it was
         # under the cap before) -> any current violation is new debt.
         # Baseline violation exists -> only flag if this diff grew it further.
-        if baseline_count is not None and current_count is not None and current_count <= baseline_count:
+        if (
+            baseline_count is not None
+            and current_count is not None
+            and current_count <= baseline_count
+        ):
             continue
         kept.append(msg)
 

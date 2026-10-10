@@ -22,7 +22,6 @@ jest.mock("../ParallelQueueVisualization", () => ({
 jest.mock("../QueueHistoryRail", () => ({ QueueHistoryRail: () => <div>history rail</div> }));
 // The ticket board is its own panel with its own reads; this file is about the
 // dashboard's queue-kind switch, and it renders no QueryClient.
-jest.mock("../QueueTicketBoard", () => ({ QueueTicketBoard: () => <div>ticket board</div> }));
 jest.mock("../../api/dockerApi", () => ({
   dockerApi: {
     capacity: jest.fn().mockResolvedValue({
@@ -30,8 +29,21 @@ jest.mock("../../api/dockerApi", () => ({
       ceiling: { cpus: 5, memory_mb: 9942, leases: 4, source: "probe", probed_at: null, error: "" },
       in_use: { cpus: 0, memory_mb: 0, leases: 0 },
       available: { cpus: 5, memory_mb: 9942, leases: 4 },
+      host: {
+        ceiling: {
+          cpus: 12,
+          memory_mb: 32768,
+          leases: 4,
+          source: "probe",
+          probed_at: null,
+          error: "",
+        },
+        in_use: { cpus: 0, memory_mb: 0, leases: 0 },
+        available: { cpus: 12, memory_mb: 32768, leases: 4 },
+      },
       holders: [],
       waiting: [],
+      head_shortfall: null,
       orphaned: [],
       unverifiable: [],
     }),
@@ -62,7 +74,7 @@ describe("QueueDashboard queue kinds", () => {
     );
     expect(tabNames()).not.toContain("Capacity");
 
-    await userEvent.click(screen.getByRole("tab", { name: "Docker" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
 
     await waitFor(() => expect(tabNames()).toContain("Capacity"));
     expect(tabNames()).toContain("Attention");
@@ -78,7 +90,7 @@ describe("QueueDashboard queue kinds", () => {
     await userEvent.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.getByText("history rail")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Docker" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
 
     await waitFor(() =>
       expect(screen.getByRole("tab", { name: "Capacity" })).toHaveAttribute(
@@ -93,12 +105,24 @@ describe("QueueDashboard queue kinds", () => {
     render(<QueueDashboard />);
     expect(screen.getByTestId("lane-board")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Docker" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
 
     await waitFor(() => expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument());
-    // Assert on the grid, not the title: "Docker capacity" is also the rail's
+    // Assert on the grid, not the title: "Machine capacity" is also the rail's
     // heading, and matching both would pass even if only the rail had switched.
-    expect(await screen.findByTestId("docker-slot-grid")).toBeInTheDocument();
+    expect(await screen.findByTestId("docker-free-slots")).toBeInTheDocument();
     expect(screen.getByText(/Waiting for capacity/)).toBeInTheDocument();
+  });
+
+  it("drops the agent-lane footer on the Machine view", async () => {
+    // It spoke about agent lanes ("dispatch a run…") beside a capacity line it
+    // knew nothing about, and contradicted it whenever that line was not empty.
+    const { container } = render(<QueueDashboard />);
+    expect(container.querySelector(".queue-rail-baxter")).not.toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Machine" }));
+
+    await screen.findByTestId("docker-free-slots");
+    expect(container.querySelector(".queue-rail-baxter")).toBeNull();
   });
 });

@@ -14,11 +14,11 @@ frozen list plus a validator, versus the migration bodies themselves.
 
 from __future__ import annotations
 
-# Append-only. Every id that has shipped on main, in order.
-#
-# Ids *not* listed here are still free to renumber: an unmerged migration has
-# not reached anyone else's database yet, which is exactly when renumbering is
-# the right fix for a collision.
+# Closed. Every id `FROZEN_MIGRATIONS` shipped, in order; nothing is appended
+# here any more. Migrations after these live in `db/versions/`, whose ids are
+# names rather than numbers, so parallel branches do not collide and there is
+# nothing to renumber — see `migration_registry`. What `origin/main` ships of
+# those is read from its `db/versions/` source by `shared_database_guard`.
 SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0001_workspace_workflow_override",
     "0002_ticket_columns",
@@ -169,6 +169,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     # Out of numeric order: see the note beside it in MIGRATIONS.
     "0138_runtime_exit_actions",
     "0149_agentless_stage_exit_actions",
+    "0150_workspace_archived_at",
+    "0151_ticket_criteria_checked",
 )
 
 

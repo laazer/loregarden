@@ -69,7 +69,11 @@ from loregarden.services.chat_attachments import (
     session_attachments_dir,
 )
 from loregarden.services.chat_mode import resolve_chat_mode
-from loregarden.services.chat_primitives import load_parts_json, parse_primitive_parts
+from loregarden.services.chat_primitives import (
+    load_parts_json,
+    parse_primitive_parts,
+    reply_preview,
+)
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
@@ -544,7 +548,7 @@ def chat_session_summary(session: Session, chat_session: BaxterChatSession) -> d
         "id": chat_session.id,
         "title": chat_session.title or UNTITLED_SESSION_TITLE,
         "message_count": len(messages),
-        "preview": _clip(last.content, 160) if last else "",
+        "preview": _clip(reply_preview(last.content), 160) if last else "",
         "created_at": chat_session.created_at.isoformat(),
         "updated_at": chat_session.updated_at.isoformat(),
     }

@@ -291,6 +291,50 @@ def test_a_waiter_nobody_is_polling_for_is_dropped_from_the_line(session) -> Non
     assert stale.end_reason is DockerLeaseEndReason.ABANDONED
 
 
+def test_a_waiter_that_keeps_polling_keeps_its_place(session) -> None:
+    """Queued for two hours and still asking: a long wait, not an abandoned one.
+    The sweep used to judge by the request time alone and dropped it."""
+    _hold(session, cpus=8.0, memory_mb=8192, expired=False)
+    queued = docker_leases.reserve(
+        session,
+        holder_label="patient",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=1024,
+    )
+    waiter = session.get(DockerLease, queued.lease_id)
+    waiter.requested_at = NOW - timedelta(hours=2)
+    waiter.last_polled_at = NOW - timedelta(seconds=30)
+    session.add(waiter)
+    session.commit()
+
+    docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
+
+    session.refresh(waiter)
+    assert waiter.status is DockerLeaseStatus.WAITING
+
+
+def test_a_waiter_whose_process_is_gone_leaves_the_line_at_once(session) -> None:
+    """Killed while queued: nobody will poll again, so the cutoff is not waited out."""
+    _hold(session, cpus=8.0, memory_mb=8192, expired=False)
+    queued = docker_leases.reserve(
+        session,
+        holder_label="killed",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=1024,
+        holder_pid=4_000_000,
+    )
+
+    with mock.patch.object(docker_reaper, "pid_alive", return_value=False):
+        docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
+
+    waiter = session.get(DockerLease, queued.lease_id)
+    session.refresh(waiter)
+    assert waiter.status is DockerLeaseStatus.RELEASED
+    assert waiter.end_reason is DockerLeaseEndReason.PID_GONE
+
+
 def test_reclaimed_capacity_starts_what_was_waiting_for_it(session) -> None:
     holder = _hold(session, cpus=8.0, memory_mb=8192)
     waiting = docker_leases.reserve(

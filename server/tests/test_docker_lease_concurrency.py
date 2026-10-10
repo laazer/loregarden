@@ -5,7 +5,7 @@ against a `SELECT SUM(...)` followed by an `INSERT` — the select-then-mutate
 shape `claim_free_slot` was written to remove — because a single-threaded test
 never interleaves the read and the write. Two sessions do.
 
-**Which test does the work, measured rather than assumed.** `_claim_capacity`
+**Which test does the work, measured rather than assumed.** `claim_pool_capacity`
 was mutated into a check-then-act implementation and this module re-run:
 `test_concurrent_claimants_never_exceed_the_ceiling` failed, and
 `test_two_sessions_reading_room_do_not_both_get_it` passed. So the threaded
@@ -222,7 +222,7 @@ def test_a_claimant_that_keeps_losing_the_race_is_granted_while_room_remains(
     with Session(isolated_db) as setup:
         _set_ceiling(setup, cpus=3.0, memory_mb=3072, leases=3)
 
-    real_claim = docker_leases._claim_capacity
+    real_claim = docker_leases.claim_pool_capacity
     losses = {"left": 6}
 
     def losing_then_real(session, **kwargs):
@@ -231,7 +231,7 @@ def test_a_claimant_that_keeps_losing_the_race_is_granted_while_room_remains(
             return False  # a peer moved the revision under this read
         return real_claim(session, **kwargs)
 
-    monkeypatch.setattr(docker_leases, "_claim_capacity", losing_then_real)
+    monkeypatch.setattr(docker_leases, "claim_pool_capacity", losing_then_real)
 
     with Session(isolated_db) as session:
         reservation = _reserve(session, "unlucky", cpus=1.0, memory_mb=1024)

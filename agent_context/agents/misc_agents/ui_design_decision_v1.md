@@ -13,6 +13,8 @@ written down and is therefore almost never built.
 
 **Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 
+**Motion:** When a ticket adds or changes how anything appears, leaves or moves, read `agent_context/agents/common_assets/motion_v1.md` and decide its motion as one of the states below, including whether it should move at all.
+
 ## Most tickets are not yours
 
 A ticket that changes no surface a person sees needs no design pass. Say so in one line and
@@ -45,6 +47,21 @@ So three decisions come before the states, each written as an acceptance criteri
    default filter, the grouping, what is collapsed, what is hidden until asked. A design that
    only works with three rows, or with rows that relate when the data shows they do not, is not
    finished.
+
+## Choose the layout by the question
+
+The question from the step above picks the layout. Name the layout in the criteria, along with the reason the question calls for it:
+
+- **Table**: "how do these compare?" The operator reads values across rows and sorts them. One row per record, a header per field. Name the default sort column.
+- **List**: "which one do I open?" A name plus up to three short tags, and the whole item is a link or button. A name and four or more attributes is a table.
+- **`<dl>`**: one record's details. Never a two-column "Field / Value" table.
+- **Board**: "what stage is each item in?", where items move between states.
+- **Timeline**: "when, in what order, how long?"
+- **Tree**: "what belongs under what?", nested more than one level.
+- **Graph**: "what connects to what?", and only when the data has edges.
+- **Cards**: a few summaries of equal weight, about 12 at most.
+
+A table is a real `<table>`, never a CSS grid of `<div>`s styled as rows; a grid is one opaque blob to a screen reader and to an agent. At the volume you measured, say what groups the rows (over ~12 near-identical rows) and what filters them (over ~50).
 
 ## The five states
 

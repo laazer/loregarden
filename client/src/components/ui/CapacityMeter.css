@@ -62,7 +62,9 @@
   height: 100%;
   border-radius: 3px;
   background: var(--ac);
-  transition: width 240ms ease;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
 .capacity-meter-track--tight .capacity-meter-fill {

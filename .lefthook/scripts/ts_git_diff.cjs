@@ -12,6 +12,9 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
+/** What the TypeScript gates read unless a gate asks for more (CSS, say). */
+const TS_SOURCE = /\.(ts|tsx)$/;
+
 function git(args, cwd) {
   try {
     return execFileSync("git", args, {
@@ -38,11 +41,26 @@ function scopeArgs(diffScope, baseRef) {
   return ["--cached"];
 }
 
+/**
+ * Answered once per repository per process. A gate process is one run, and a
+ * gate reads the tree without writing it, so `changedPaths` and the gate's own
+ * untracked lookup asked git the same question twice. Nothing long-lived loads
+ * this module; if something ever does, this cache must move into a per-run object
+ * as `precommit_git_diff.py`'s `_RunQueries` did.
+ */
+const untrackedByRepo = new Map();
+
 function untrackedPaths(repoRoot) {
-  return git(["ls-files", "--others", "--exclude-standard"], repoRoot)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  if (!untrackedByRepo.has(repoRoot)) {
+    untrackedByRepo.set(
+      repoRoot,
+      git(["ls-files", "--others", "--exclude-standard"], repoRoot)
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    );
+  }
+  return [...untrackedByRepo.get(repoRoot)];
 }
 
 /**
@@ -51,7 +69,7 @@ function untrackedPaths(repoRoot) {
  * gate includes them: a new file an agent just wrote is the least reviewed code
  * in the change, and `git diff` never lists it.
  */
-function changedPaths(repoRoot, diffScope, baseRef) {
+function changedPaths(repoRoot, diffScope, baseRef, sourcePattern = TS_SOURCE) {
   const out = git(
     ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR"],
     repoRoot,
@@ -61,7 +79,7 @@ function changedPaths(repoRoot, diffScope, baseRef) {
     .map((l) => l.trim())
     .filter(Boolean);
   if (diffScope === "worktree") paths.push(...untrackedPaths(repoRoot));
-  return [...new Set(paths)].filter((p) => /\.(ts|tsx)$/.test(p));
+  return [...new Set(paths)].filter((p) => sourcePattern.test(p));
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
@@ -117,7 +135,7 @@ function isTestFile(filePath) {
 }
 
 /** Shared argv shape for both gates: `--repo`, `--scope`, `--base`, positionals. */
-function parseArgv(argv) {
+function parseArgv(argv, sourcePattern = TS_SOURCE) {
   const files = [];
   let repoArg = null;
   let diffScope = "staged";
@@ -128,40 +146,100 @@ function parseArgv(argv) {
     else if (argv[i] === "--scope" && argv[i + 1]) diffScope = argv[(i += 1)];
     else if (argv[i] === "--base" && argv[i + 1]) baseRef = argv[(i += 1)];
     else if (argv[i] === "--all") scanAll = true;
-    else if (/\.(ts|tsx)$/.test(argv[i])) files.push(argv[i]);
+    else if (sourcePattern.test(argv[i])) files.push(argv[i]);
   }
   if (!["staged", "worktree", "branch"].includes(diffScope)) diffScope = "staged";
   const repoRoot = repoArg ? path.resolve(repoArg) : process.cwd();
   const label = diffScope === "staged" && !repoArg ? "pre-commit" : "gate";
-  return { files, repoRoot, diffScope, baseRef, label, scanAll };
+  return { files, repoRoot, diffScope, baseRef, label, scanAll, sourcePattern };
 }
 
-/** Every .ts/.tsx under a root, for `--all` audit runs. */
-function allSourceFiles(dir) {
+/** Every source file under a root, for `--all` audit runs. */
+function allSourceFiles(dir, sourcePattern = TS_SOURCE) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...allSourceFiles(full));
-    else if (/\.(ts|tsx)$/.test(entry.name)) out.push(full);
+    if (entry.isDirectory()) out.push(...allSourceFiles(full, sourcePattern));
+    else if (sourcePattern.test(entry.name)) out.push(full);
   }
   return out;
+}
+
+/**
+ * The subset of `paths` that HEAD tracks — the only missing paths that can be a
+ * deletion. Mirrors `git_paths_at_head` in precommit_git_diff.py. Not through
+ * `git()`: its failure is "" plus a warning, and here a failure must mean
+ * "tracked by nothing", which then fails the run loudly as unknown paths.
+ */
+function pathsAtHead(repoRoot, paths) {
+  const byRel = new Map();
+  for (const p of paths) {
+    const rel = path.relative(repoRoot, path.resolve(p));
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+      byRel.set(rel.split(path.sep).join("/"), p);
+    }
+  }
+  if (byRel.size === 0) return new Set();
+  let out;
+  try {
+    out = execFileSync(
+      "git",
+      ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ...byRel.keys()],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+  } catch {
+    // silent-ok: no HEAD (unborn) or no git — nothing is tracked, so every missing path is reported as unknown and the run fails
+    return new Set();
+  }
+  const tracked = new Set(out.split("\0").filter(Boolean));
+  return new Set([...byRel].filter(([rel]) => tracked.has(rel)).map(([, p]) => p));
+}
+
+/**
+ * An explicit file list, minus files the change deletes.
+ *
+ * lefthook's `{staged_files}` lists deletions, and a deleted file has nothing to
+ * grade — dropped by name. A missing path HEAD never had is not a deletion: a
+ * typo, or a whole list that reached argv as one word (zsh does not split an
+ * unquoted `$files`). Skipping those graded nothing and printed "passed", so
+ * they end the run with exit 1.
+ */
+function existingExplicitFiles(files, repoRoot, label) {
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length === 0) return files;
+  const deleted = pathsAtHead(repoRoot, missing);
+  const unknown = missing.filter((f) => !deleted.has(f));
+  if (unknown.length > 0) {
+    console.error(
+      `${label}: cannot determine what to examine: ${unknown.length} path(s) do not exist ` +
+        `and are not deletions of a tracked file: ${unknown.join(", ")} — check the ` +
+        `argument list (a file list passed as one quoted word arrives as one path)`,
+    );
+    process.exit(1);
+  }
+  console.log(
+    `${label}: skipping ${deleted.size} deleted file(s): ` +
+      `${[...deleted].map((f) => path.basename(f)).sort().join(", ")}`,
+  );
+  return files.filter((f) => !deleted.has(f));
 }
 
 /**
  * The file list a gate should read: the explicit argv list, or the diff confined
  * to the repo's detected TypeScript root (mirroring the lefthook glob).
  */
-function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll }) {
-  if (files.length > 0) return files;
+function filesToCheck({ files, repoRoot, diffScope, baseRef, scanAll, sourcePattern, label }) {
+  if (files.length > 0) return existingExplicitFiles(files, repoRoot, label);
   const sourceRoot = tsSourceRoot(repoRoot);
-  if (scanAll) return allSourceFiles(sourceRoot);
-  return changedPaths(repoRoot, diffScope, baseRef)
+  if (scanAll) return allSourceFiles(sourceRoot, sourcePattern);
+  return changedPaths(repoRoot, diffScope, baseRef, sourcePattern)
     .map((rel) => path.resolve(repoRoot, rel))
     .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
 }
 
 module.exports = {
+  TS_SOURCE,
   git,
   scopeArgs,
   untrackedPaths,

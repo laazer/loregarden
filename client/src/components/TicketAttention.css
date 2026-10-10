@@ -1,0 +1,104 @@
+/* One line per thing that needs a person; a coloured edge, not a coloured card. */
+
+.attn {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.attn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--attn-tone);
+  font-size: 12px;
+  text-align: left;
+}
+
+.attn-row + .attn-row,
+.attn-row + .attn-findings,
+.attn-findings + .attn-row {
+  border-top: 1px solid var(--bd);
+}
+
+.attn-row--bad {
+  --attn-tone: var(--red);
+  background: color-mix(in srgb, var(--red) 5%, transparent);
+}
+
+.attn-row--warn {
+  --attn-tone: var(--amb);
+}
+
+.attn-label {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--tx);
+}
+
+.attn-row--bad .attn-label {
+  color: var(--rdl);
+}
+
+.attn-row--warn .attn-label {
+  color: var(--aml);
+}
+
+.attn-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--txm);
+}
+
+.attn-action {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--ac2);
+}
+
+.attn-action:hover,
+.attn-action:focus-visible {
+  text-decoration: underline;
+}
+
+.attn-toggle:hover {
+  background: var(--bg1);
+}
+
+.attn-toggle:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.attn-chevron {
+  flex: none;
+  font-size: 10px;
+  color: var(--txl);
+}
+
+.attn-findings {
+  margin: 0;
+  padding: 6px 12px 8px 30px;
+  border-left: 3px solid var(--amb);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx);
+}
+
+.attn-findings li + li {
+  margin-top: 3px;
+}
+
+.attn-age {
+  color: var(--txl);
+}

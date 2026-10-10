@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
+from loregarden.db import versions
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
+from loregarden.db.migration_registry import Migration, chain_order, import_submodules
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     index_exists,
@@ -139,6 +141,7 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_criteria_checks import m_ticket_criteria_checked
 from loregarden.db.migrations_ticket_ids import (
     m_structured_ticket_ids,
     m_unique_ticket_number,
@@ -159,12 +162,11 @@ from loregarden.db.migrations_views import (
     m_view_store,
     m_view_viewport,
 )
+from loregarden.db.migrations_workspace_archive import m_workspace_archived_at
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 logger = logging.getLogger(__name__)
-
-Migration = Callable[[Connection], None]
 
 
 def _m_workspace_workflow_override(conn: Connection) -> None:
@@ -1261,7 +1263,9 @@ def m_orchestration_idempotency_key(conn: Connection) -> None:
     )
 
 
-MIGRATIONS: list[tuple[str, Migration]] = [
+#: Closed: every id here has shipped, and `SHIPPED_MIGRATION_IDS` mirrors it. New
+#: migrations go in `db/versions/`, one per module — see `migration_registry`.
+FROZEN_MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
     ("0003_workspace_runtime_columns", _m_workspace_runtime_columns),
@@ -1425,15 +1429,50 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # and rewrites every `gate_required` the older migrations above wrote.
     ("0138_runtime_exit_actions", m_runtime_exit_actions),
     ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
+    ("0150_workspace_archived_at", m_workspace_archived_at),
+    ("0151_ticket_criteria_checked", m_ticket_criteria_checked),
+]
+
+import_submodules(versions)
+#: The versioned migrations, ordered by their `after` links below the frozen tail.
+VERSION_CHAIN = chain_order(FROZEN_MIGRATIONS[-1][0], versions.REGISTRY.registered())
+for _fork in VERSION_CHAIN.forks:
+    logger.error(
+        "Migrations %s all follow %s. Two branches merged against the same tip; the "
+        "order between them here is by id, which may not be the order they applied to "
+        "the live database. Point the later one's `after` at the earlier one.",
+        ", ".join(_fork.children),
+        _fork.parent,
+    )
+
+#: Everything this build applies, in order.
+MIGRATIONS: list[tuple[str, Migration]] = [
+    *FROZEN_MIGRATIONS,
+    *((item.id, item.migrate) for item in VERSION_CHAIN.ordered),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
-from loregarden.db.migrations_runner import apply_pending  # noqa: E402
+from loregarden.db.migrations_runner import (  # noqa: E402
+    apply_pending,
+    pending_migration_ids,
+)
+from loregarden.db.shared_database_guard import assert_may_migrate  # noqa: E402
+
+#: The checkout this registry was loaded from — `server/loregarden/db/` is three
+#: levels below it.
+_CODE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def apply_migrations(engine: Engine) -> list[str]:
-    """Apply every pending migration in this registry, in order."""
+    """Apply every pending migration in this registry, in order.
+
+    Refuses first when this is a worktree build about to migrate the shared
+    database ahead of main — see `shared_database_guard`.
+    """
+    database = Path(engine.url.database) if engine.url.database else None
+    pending = pending_migration_ids(engine, [mid for mid, _ in MIGRATIONS])
+    assert_may_migrate(database, pending, code_root=_CODE_ROOT)
     return apply_pending(engine, MIGRATIONS)
 
 

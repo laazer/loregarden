@@ -16,12 +16,19 @@ pointing at a directory that disappears when the branch merges.
 Each script reports one line per target, ``<state>: <path> …``; that first word
 is what is parsed here. A script that refuses (no `lefthook.yml`, not a git
 repository) says why on stderr, and that reason is what the page shows.
+
+Neither block belongs in loregarden itself: its own `lefthook.yml` runs the
+gates directly and its own AGENTS.md is what the docs block summarises. A
+workspace that is any checkout of loregarden's repository reports
+``BUILT_IN`` instead of asking to have them installed.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -34,6 +41,9 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 logger = logging.getLogger(__name__)
 
 INSTALLER_TIMEOUT_SECONDS = 60
+
+#: How the installer scripts are told which Python to run their halves with.
+INSTALLER_PYTHON_ENV = "LOREGARDEN_PYTHON"
 
 
 class Installer(StrEnum):
@@ -49,6 +59,8 @@ class InstallState(StrEnum):
     OUTDATED = "outdated"
     #: The installer cannot run here; ``detail`` says why.
     UNAVAILABLE = "unavailable"
+    #: The workspace is loregarden's own repository, which carries both natively.
+    BUILT_IN = "built_in"
 
 
 #: The first word of an installer's report line. Ours, but printed by a script.
@@ -78,15 +90,20 @@ class InstallerError(RuntimeError):
     """An install the script refused or could not run; the message says why."""
 
 
-def primary_checkout() -> Path | None:
-    """The checkout the installed blocks should point at, or None outside git."""
-    result = run_git(
+def _git_common_dir(path: Path) -> subprocess.CompletedProcess[str]:
+    """Ask git for the repository's shared ``.git`` directory, from any checkout of it."""
+    return run_git(
         ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=settings.repo_root,
+        cwd=path,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def primary_checkout() -> Path | None:
+    """The checkout the installed blocks should point at, or None outside git."""
+    result = _git_common_dir(settings.repo_root)
     if result.returncode != 0:
         logger.warning(
             "cannot find loregarden's primary checkout from %s: %s",
@@ -94,17 +111,67 @@ def primary_checkout() -> Path | None:
             result.stderr.strip(),
         )
         return None
-    return Path(result.stdout.strip()).parent
+    return Path(result.stdout.strip()).resolve().parent
 
 
-def _argv(checkout: Path, installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
-    argv = [str(checkout / "scripts" / _SCRIPTS[installer])]
+_BUILT_IN_DETAIL = (
+    "This is loregarden's own repository: its lefthook.yml runs these gates and its "
+    "AGENTS.md is the source of this section, so there is nothing to install."
+)
+
+
+def is_loregarden(workspace: Workspace, checkout: Path) -> bool:
+    """Whether the workspace is a checkout (primary or linked) of loregarden itself."""
+    root = resolve_workspace_root(workspace)
+    if not root.is_dir():
+        return False
+    # A workspace that is not a git repository is not loregarden; the installer
+    # that runs next reports it as unavailable, with git's reason.
+    result = _git_common_dir(root)
+    return result.returncode == 0 and Path(result.stdout.strip()).resolve().parent == checkout
+
+
+def _argv(installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
+    """The installer from the checkout this server runs from.
+
+    Not the primary checkout's copy: the scripts resolve the primary themselves
+    for the paths they render, and running main's scripts from a worktree meant
+    a branch's changes to them were never the ones its tests exercised.
+    """
+    argv = [str(settings.repo_root / "scripts" / _SCRIPTS[installer])]
     if check:
         argv.append("--check")
     if installer is Installer.DOCS:
         argv += ["--slug", workspace.slug]
     argv.append(str(resolve_workspace_root(workspace)))
     return argv
+
+
+def _installer_env() -> dict[str, str]:
+    """The ambient environment, plus the interpreter the scripts should use.
+
+    The server's own, already resolved. Left to the scripts, bare `python3`
+    goes through PATH on every call — on a machine where that is a pyenv shim,
+    ~6s of version resolution per call against a 60s timeout, and an older
+    Python than the one the server runs.
+    """
+    return {**os.environ, INSTALLER_PYTHON_ENV: sys.executable}
+
+
+#: How the installers prefix stderr that informs rather than explains a refusal —
+#: "rendering paths against the primary checkout", printed from any worktree.
+_NOTE_PREFIX = "note: "
+
+
+def _refusal_reason(stderr: str) -> str:
+    """The first stderr line that says why, passing over the scripts' notes.
+
+    Taking the first line outright reported the worktree note as the reason an
+    installer could not run whenever the server ran from a linked worktree.
+    """
+    return _first_line(
+        "\n".join(line for line in stderr.splitlines() if not line.startswith(_NOTE_PREFIX))
+    )
 
 
 def _first_line(text: str) -> str:
@@ -119,9 +186,12 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
             InstallState.UNAVAILABLE,
             "loregarden is not running from a git checkout, so there is no path to install",
         )
+    if is_loregarden(workspace, checkout):
+        return InstallerStatus(installer, InstallState.BUILT_IN, _BUILT_IN_DETAIL)
     try:
         completed = subprocess.run(
-            _argv(checkout, installer, workspace, check=check),
+            _argv(installer, workspace, check=check),
+            env=_installer_env(),
             capture_output=True,
             text=True,
             timeout=INSTALLER_TIMEOUT_SECONDS,
@@ -133,7 +203,7 @@ def _run(installer: Installer, workspace: Workspace, *, check: bool) -> Installe
     reported = _first_line(completed.stdout)
     state = _REPORTED.get(reported.split(":", 1)[0].split(" ", 1)[0])
     if state is None:
-        detail = _first_line(completed.stderr) or reported or f"exit {completed.returncode}"
+        detail = _refusal_reason(completed.stderr) or reported or f"exit {completed.returncode}"
         return InstallerStatus(installer, InstallState.UNAVAILABLE, detail.removeprefix("skip: "))
     return InstallerStatus(installer, state, reported)
 
@@ -146,6 +216,6 @@ def installer_status(workspace: Workspace, installer: Installer) -> InstallerSta
 def install(workspace: Workspace, installer: Installer) -> InstallerStatus:
     """Write or refresh the block, then report what ``--check`` says now."""
     result = _run(installer, workspace, check=False)
-    if result.state is InstallState.UNAVAILABLE:
+    if result.state in (InstallState.UNAVAILABLE, InstallState.BUILT_IN):
         raise InstallerError(result.detail)
     return installer_status(workspace, installer)

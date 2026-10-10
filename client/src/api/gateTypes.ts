@@ -22,6 +22,8 @@ export interface OrchestrationProfileView {
   /** The fallback profile's workspace-agnostic checks, offered as one-click adds. */
   gates_suggested_commands: string[];
   max_stages_per_run: number;
+  /** The profile file these settings live in, repo-relative; null when no file stores them yet. */
+  source_path: string | null;
 }
 
 export interface GatesConfigUpdate {

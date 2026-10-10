@@ -49,7 +49,12 @@ _tw_cores() {
 #: "do not starve the gateway": a niced run yields the CPU when something
 #: latency-sensitive wants it, and still uses the box when nothing does.
 #: Throttling throughput as well was belt, braces, and a rope round the ankles.
-TEST_WORKERS="${LOREGARDEN_TEST_WORKERS:-}"
+#:
+#: Under a capacity grant (capacity-run.sh), the grant decides instead: it is
+#: what the ledger booked for this run, so running more workers than it paid for
+#: puts back the contention the queue exists to remove. An explicit
+#: LOREGARDEN_TEST_WORKERS still wins.
+TEST_WORKERS="${LOREGARDEN_TEST_WORKERS:-${LOREGARDEN_CAPACITY_WORKERS:-}}"
 if [ -z "$TEST_WORKERS" ]; then
   _cores="$(_tw_cores)"
   TEST_WORKERS=$(( _cores / 2 ))

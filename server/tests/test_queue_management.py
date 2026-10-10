@@ -580,11 +580,13 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        # Lifespan reconcile seeds the shared global pool. Occupy every free
-        # slot so this test's promote claim is the only capacity left.
+        # Occupy every slot but lane 1, so this test's promote claim is the only
+        # capacity left. A spare slot past the lane count would not do: the
+        # pool retires an idle lane numbered beyond it before anything claims.
         # The runs first: `agent_slots.current_run_id` references agent_runs, and
         # each factory call commits — which would expire the slots mid-iteration.
-        slots = db_session.exec(select(AgentSlot)).all()
+        ParallelQueueService(db_session).initialize_slots()
+        slots = db_session.exec(select(AgentSlot).where(AgentSlot.slot_number != 1)).all()
         busy_runs = {
             existing.slot_number: make_agent_run(
                 db_session, workspace_id=ws.id, run_code=f"busy_{existing.slot_number}"
@@ -592,11 +594,12 @@ class TestQueuePromotion:
             for existing in slots
         }
         for existing in db_session.exec(select(AgentSlot)).all():
+            if existing.slot_number == 1:
+                continue
             existing.is_available = False
             existing.current_run_id = busy_runs[existing.slot_number]
             db_session.add(existing)
 
-        slot = AgentSlot(workspace_id="ws-promote-target", slot_number=99, is_available=True)
         head = queued_run(
             db_session,
             run_id="run-head",
@@ -613,7 +616,7 @@ class TestQueuePromotion:
             position=2,
             status=QueuePosition.QUEUED,
         )
-        db_session.add_all([slot, head, target])
+        db_session.add_all([head, target])
         db_session.commit()
 
         # Promotion dispatches for real once its ticket resolves — which it now

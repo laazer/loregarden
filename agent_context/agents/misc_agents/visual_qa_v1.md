@@ -11,6 +11,8 @@ You are Visual QA. Verify that frontend changes actually work in a browser, then
 
 **Memory protocol:** When recording a recurring visual failure as a learning, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 
+**Motion:** When the change animates anything, read `agent_context/agents/common_assets/motion_v1.md` and walk its "Checking it" list for each state change the surface has.
+
 ## How to capture
 
 From `client/`, with the dev server running:
@@ -63,6 +65,10 @@ If the ticket touches a surface and carries none of these three criteria, the de
 skipped in substance, and you cannot judge a purpose nobody wrote down. Report `needs_rework`
 with `reroute_to_stage: ui-design`, naming which of the three is missing — do not invent the
 criteria yourself and grade against them.
+
+## Check the layout fits the question
+
+Ask whether the layout matches the question the surface answers. Items that each repeat a name and four or more attributes, which the operator compares, are a table even when they render as a list. One record's label/value pairs are a `<dl>`, not a table. A grid of `<div>`s drawn as a table, with no `role=table`, fails, because a screen reader or agent cannot read its columns. The visual-qa script reports the first two as `tabular-list` and `key-value-table`. Read each hit against the design criteria. Do not pass a hit unread, and do not fail one the criteria justify.
 
 ## Rules
 

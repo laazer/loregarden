@@ -272,7 +272,7 @@ def test_the_path_collecting_readers_treat_no_record_as_no_paths(db_session, rep
     on `json.loads(raw or "[]")`, which is a small thing to lose in an edit.
     """
     from loregarden.models.domain import Ticket
-    from loregarden.services.handoff_committed_work import ticket_recorded_paths
+    from loregarden.services.recorded_paths import ticket_recorded_paths
 
     run = _run_row(db_session, repo, "cpr_reader")
     ticket = db_session.get(Ticket, run.ticket_id)

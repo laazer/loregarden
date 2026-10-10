@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
+from loregarden.agents.mcp_context import unverified_api_base_url
 from loregarden.api import (
     agents,
     analytics,
@@ -23,6 +25,7 @@ from loregarden.api import (
     docker_capacity,
     editor,
     events,
+    gate_presets,
     github_issues,
     inbox,
     initiatives,
@@ -43,8 +46,10 @@ from loregarden.api import (
     studio,
     system,
     terminal,
+    ticket_pull_request,
     ticket_studio,
     tickets,
+    ui_action_events,
     usage,
     views,
     workflow_monitor,
@@ -53,6 +58,7 @@ from loregarden.api import (
     workspaces,
 )
 from loregarden.config import settings
+from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
@@ -63,6 +69,8 @@ from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
+from loregarden.services.initiative_autopilot import start_autopilot_loop
+from loregarden.services.initiative_planner_service import fail_interrupted_planner_turns
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
@@ -72,6 +80,12 @@ from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
     settle_stranded_stages,
+)
+from loregarden.services.sandbox_endpoint import (
+    INSTANCE_ID,
+    SandboxMcpUrlError,
+    reset_verification,
+    verify_this_instance,
 )
 from loregarden.services.seed import seed_database
 from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
@@ -94,6 +108,7 @@ def _recover_previous_boot(session: Session) -> None:
     fail_interrupted_branch_triage_turns(session)
     fail_interrupted_baxter_chat_turns(session)
     fail_interrupted_studio_turns(session)
+    fail_interrupted_planner_turns(session)
     # An aside has no run row of its own, so nothing above would ever reach it.
     fail_interrupted_asides(session)
     # The turns those four just settled are exactly the ones whose live
@@ -124,8 +139,31 @@ def _recover_previous_boot(session: Session) -> None:
     resume_interrupted_orchestrations(session)
 
 
+def _start_sandbox_endpoint_check() -> asyncio.Task[None]:
+    """Prove the MCP URL this sandbox hands its agents reaches this process.
+
+    Runs once the server is serving (the task waits for it); until it passes,
+    sandbox agent turns refuse to start — see `services.sandbox_endpoint`.
+    """
+    reset_verification()
+
+    async def check() -> None:
+        try:
+            base = unverified_api_base_url()
+        except SandboxMcpUrlError:
+            # The resolver itself refused (no URL and no port): agent turns raise
+            # the same error, with the fix in it, when they ask.
+            logger.exception("sandbox: no MCP endpoint of its own; agent turns are refused")
+            return
+        async with httpx.AsyncClient() as client:
+            await verify_this_instance(base, client=client)
+
+    return asyncio.create_task(check(), name="sandbox-endpoint-check")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_console_logging()
     if not settings.api_token:
         logger.warning(
             "LOREGARDEN_API_TOKEN is not set — the API (which writes files and "
@@ -157,11 +195,16 @@ async def lifespan(app: FastAPI):
     # that snapshot's tickets to GitHub would overwrite real edits.
     github_sync_task = None if settings.sandbox else start_github_sync_loop()
     github_push_task = None if settings.sandbox else start_push_worker()
+    # Never in a sandbox: it would queue real agent runs for a snapshot's tickets.
+    autopilot_task = None if settings.sandbox else start_autopilot_loop()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
+    endpoint_check = _start_sandbox_endpoint_check() if settings.sandbox else None
     try:
         yield
     finally:
+        if endpoint_check is not None:
+            endpoint_check.cancel()
         if advertised is not None:
             advertised.release()
         # Draining before anything else is torn down: the point is to stop
@@ -180,6 +223,8 @@ async def lifespan(app: FastAPI):
             github_sync_task.cancel()
         if github_push_task is not None:
             github_push_task.cancel()
+        if autopilot_task is not None:
+            autopilot_task.cancel()
         # The drain is over, so stop advertising it. A real process exits here
         # and nobody reads the flag again; a test process keeps going, and a
         # flag left set refuses work in every test that follows — which is
@@ -234,6 +279,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 
 
 app.include_router(tickets.router, prefix="/api")
+app.include_router(ticket_pull_request.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
@@ -253,6 +299,7 @@ app.include_router(mcp_servers.router, prefix="/api")
 app.include_router(local_instances.router, prefix="/api/instances")
 app.include_router(instance_templates.router, prefix="/api")
 app.include_router(workspace_integration.router, prefix="/api")
+app.include_router(gate_presets.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(workflow_monitor.router, prefix="/api")
@@ -273,9 +320,11 @@ app.include_router(analytics.router)
 app.include_router(terminal.router)
 app.include_router(queue_events.router)
 app.include_router(chat_turn_events.router)
+app.include_router(ui_action_events.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "loregarden", "mcp": "/mcp"}
+    # `instance_id` lets a sandbox prove the URL it hands its agents is itself.
+    return {"status": "ok", "service": "loregarden", "mcp": "/mcp", "instance_id": INSTANCE_ID}

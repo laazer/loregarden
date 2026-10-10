@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     AgentRun,
+    ArtifactKind,
     BlockKind,
     BlockOrigin,
     OrchestrationRun,
@@ -36,6 +37,8 @@ from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
+from loregarden.services.recorded_paths import ticket_recorded_paths
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
@@ -202,31 +205,76 @@ def prepare_tree_for_parallel_stage(
             workspace_root,
             ticket,
             start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
+            ignoring=ticket_recorded_paths(session, ticket),
         )
+    except DirtyPrimaryCheckoutError as exc:
+        # Blocked like any checkout failure — the members never started — and
+        # filed with the paths, where the operator looks (864).
+        OrchestrationCallbackService(session).attach_artifact(
+            ticket,
+            kind=ArtifactKind.ERROR,
+            title=f"Shared checkout refused — {stage_key}",
+            content=exc.artifact_content(stage_key=stage_key),
+        )
+        return _block_on_checkout_failure(session, ticket, stage_key, exc)
     except (ValueError, subprocess.CalledProcessError) as exc:
-        message = f"Failed to checkout branch: {exc}"
-        orch = OrchestrationService(session)
-        orch.finalize_stage(
-            ticket,
-            stage_key,
-            status=StageStatus.BLOCKED,
-            blocking_message=message,
-        )
-        instance, stages = orch._resolve_stages(ticket)
-        # No orchestration run reaches here — this runs before the members are
-        # dispatched — so the turn cannot be spent. Settled anyway, so the block
-        # carries its kind and says why it got no repair (802).
-        settle_block(
-            session,
-            ticket,
-            instance=instance,
-            stages=stages,
-            stage_key=stage_key,
-            message=message,
-        )
-        session.refresh(ticket)
-        return message
+        return _block_on_checkout_failure(session, ticket, stage_key, exc)
     return ""
+
+
+def _block_on_checkout_failure(
+    session: Session, ticket: Ticket, stage_key: str, exc: Exception
+) -> str:
+    message = f"Failed to checkout branch: {exc}"
+    orch = OrchestrationService(session)
+    orch.finalize_stage(
+        ticket,
+        stage_key,
+        status=StageStatus.BLOCKED,
+        blocking_message=message,
+    )
+    instance, stages = orch._resolve_stages(ticket)
+    # No orchestration run reaches here — this runs before the members are
+    # dispatched — so the turn cannot be spent. Settled anyway, so the block
+    # carries its kind and says why it got no repair (802).
+    settle_block(
+        session,
+        ticket,
+        instance=instance,
+        stages=stages,
+        stage_key=stage_key,
+        message=message,
+    )
+    session.refresh(ticket)
+    return message
+
+
+def member_runs_and_results(
+    session: Session,
+    ticket: Ticket,
+    stage_def: WorkflowStageDef,
+    stage_key: str,
+) -> tuple[int, list[ParallelMemberResult]]:
+    """How many members are still outstanding, and how the settled ones judged.
+
+    A member is outstanding while it has no run of this stage at all, or its
+    latest one is still in flight. The stage cannot settle until none are.
+
+    Public, and here, because three drivers ask it now: the external-harness
+    protocol, and `run_resupervise` settling a member whose server died. A
+    reattach *will* land on a parallel stage — this ticket's own `plan` stage
+    has three members — and a second copy of this is a second answer to
+    "is the stage done".
+    """
+    outstanding = 0
+    results: list[ParallelMemberResult] = []
+    for spec in stage_def.parallel_agents:
+        latest = latest_member_run(session, ticket, stage_def, stage_key, spec)
+        if latest is None or latest.status == RunStatus.RUNNING:
+            outstanding += 1
+            continue
+        results.append(member_result_from_run(latest))
+    return outstanding, results
 
 
 def reconcile_parallel_stage(

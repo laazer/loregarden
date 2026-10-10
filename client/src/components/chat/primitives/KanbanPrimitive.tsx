@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { TicketState, TicketSummary } from "../../../api/types";
 import { ticketStateColor, ticketStateLabel } from "../../../lib/ticketStates";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
+import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
@@ -51,7 +52,7 @@ function useTicketBucket(ticketIds: string[] | undefined, workspaceSlug: string 
 }
 
 /** Board tile: the v6 list card compacted to a column's width. */
-export function TicketMini({ ticket }: { ticket: TicketSummary }) {
+export function TicketMini({ ticket, action }: { ticket: TicketSummary; action?: ReactNode }) {
   const progress = stageProgressSegments(ticket.stages);
 
   return (
@@ -70,6 +71,7 @@ export function TicketMini({ ticket }: { ticket: TicketSummary }) {
       <div className="lg-primitive-ticket-tile-action">
         <OpenTicketButton ticketId={ticket.id} compact label={`Open ${ticket.title}`} />
       </div>
+      {action ? <div className="lg-primitive-ticket-tile-foot">{action}</div> : null}
     </div>
   );
 }
@@ -85,8 +87,18 @@ export interface KanbanColumn {
   total?: number;
 }
 
-/** The columns themselves, shared by the chat primitive and the queue board. */
-export function KanbanColumns({ columns }: { columns: KanbanColumn[] }) {
+/** The columns themselves, shared by the chat primitive and the initiative board.
+ *  `tileAction` adds a control to each tile — the board's "move to" menu. */
+export function KanbanColumns({
+  columns,
+  tileAction,
+  onShowAll,
+}: {
+  columns: KanbanColumn[];
+  tileAction?: (ticket: TicketSummary) => ReactNode;
+  /** Offered on a truncated column; absent, the column just says how many are hidden. */
+  onShowAll?: (status: TicketState) => void;
+}) {
   return (
     <div className="lg-primitive-kanban">
       {columns.map((col) => {
@@ -106,9 +118,17 @@ export function KanbanColumns({ columns }: { columns: KanbanColumn[] }) {
             {col.tickets.length === 0 ? (
               <p className="lg-primitive-kanban-col-empty">Nothing here</p>
             ) : (
-              col.tickets.map((t) => <TicketMini key={t.id} ticket={t} />)
+              col.tickets.map((t) => <TicketMini key={t.id} ticket={t} action={tileAction?.(t)} />)
             )}
-            {hidden > 0 ? (
+            {hidden > 0 && onShowAll ? (
+              <Button
+                variant="plain"
+                className="lg-primitive-kanban-col-more"
+                onClick={() => onShowAll(col.status)}
+              >
+                Show all {total}
+              </Button>
+            ) : hidden > 0 ? (
               <p className="lg-primitive-kanban-col-more">+{hidden} more</p>
             ) : null}
           </div>

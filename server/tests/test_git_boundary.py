@@ -13,11 +13,13 @@ import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Workspace
 from loregarden.services.git_boundary import (
     boundary_of_run,
+    boundary_of_tree,
     current_branch,
     read_boundary,
     stamp_run_boundary,
 )
 from loregarden.services.ticket_worktree import resolve_execution_root
+from loregarden.services.worktree_snapshot import TreeSnapshot
 from sqlmodel import Session
 from tests.worktree_helpers import git, make_repo, make_ticket
 
@@ -77,14 +79,18 @@ def test_a_clean_tree_has_no_dirty_paths(repo):
     assert read_boundary(repo).dirty_paths == []
 
 
-def test_caller_supplied_dirty_paths_are_used_as_given(repo):
-    """The dispatch path already computed these to bracket the run; recomputing
-    them would be a second git call and a second answer."""
+def test_a_snapshot_is_used_as_given(repo):
+    """The dispatch path already read the tree to bracket the run; reading it
+    again would be a second git call and a second answer."""
+    tree = TreeSnapshot(
+        repo_root=repo, head_sha="abc", branch="feature", dirty_paths=frozenset({"b.txt", "a.txt"})
+    )
     (repo / "ignored-by-caller.txt").write_text("x\n")
 
-    boundary = read_boundary(repo, dirty_paths={"b.txt", "a.txt"})
+    boundary = boundary_of_tree(tree)
 
     assert boundary.dirty_paths == ["a.txt", "b.txt"]
+    assert (boundary.branch, boundary.head_sha) == ("feature", "abc")
 
 
 def test_detached_head_records_no_branch(repo):

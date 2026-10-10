@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { api } from '../api/client';
+import { useAgentAction } from '../lib/agentActions/useAgentAction';
 import { describeError } from '../state/toastStore';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './QueueAdvancedControls.css';
@@ -26,6 +27,19 @@ export function QueueAdvancedControls({
   const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The same call the row's Promote / Cancel buttons make — not through
+  // handleRunAction, which keeps a failure in local state and would tell the
+  // agent it worked.
+  const agentQueueAction = async (action: 'promote' | 'cancel', runId: string) => {
+    if (!queuedRuns.some((run) => run.run_id === runId)) {
+      throw new Error(`run ${runId} is not in the queue`);
+    }
+    await (onRunControl ? onRunControl(action, runId) : api.queueRunAction(runId, action));
+    return { run_id: runId, [action === 'promote' ? 'promoted' : 'cancelled']: true };
+  };
+  useAgentAction('queue.promote', async ({ run_id }) => agentQueueAction('promote', run_id));
+  useAgentAction('queue.cancel', async ({ run_id }) => agentQueueAction('cancel', run_id));
 
   const handleRunAction = async (action: string, runId: string) => {
     setIsProcessing(runId);

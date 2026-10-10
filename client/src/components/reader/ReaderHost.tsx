@@ -64,6 +64,9 @@ export function ReaderHost() {
           <div className="reader-heading">
             <h2 id="reader-title" className="reader-title">
               {document.title}
+              {document.badge ? (
+                <span className={`reader-badge reader-badge--${document.badge.tone}`}>{document.badge.text}</span>
+              ) : null}
             </h2>
             {document.subtitle && <p className="reader-subtitle">{document.subtitle}</p>}
           </div>

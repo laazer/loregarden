@@ -129,6 +129,8 @@ describe('TicketDetailsModal', () => {
   });
 
   describe('Ticket Details Display', () => {
+    const openEditor = () => fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+
     it('should display ticket title', () => {
       // SPEC: Modal should show ticket title prominently
       const ticket = createMockTicket({ title: 'Important Feature' });
@@ -136,7 +138,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByDisplayValue('Important Feature')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Important Feature' })).toBeInTheDocument();
     });
 
     it('should display ticket ID', () => {
@@ -156,7 +158,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByDisplayValue('This is the full description of the ticket.')).toBeInTheDocument();
+      expect(screen.getByText('This is the full description of the ticket.')).toBeInTheDocument();
     });
 
     it('should allow editing title and description and save changes', async () => {
@@ -165,6 +167,7 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
       );
+      openEditor();
 
       fireEvent.change(screen.getByDisplayValue('Original title'), { target: { value: 'Updated title' } });
       fireEvent.change(screen.getByDisplayValue('Original description'), {
@@ -177,7 +180,9 @@ describe('TicketDetailsModal', () => {
         expect(onSave).toHaveBeenCalledWith({
           title: 'Updated title',
           description: 'Updated description',
-          acceptanceCriteria: [], tags: [],
+          acceptanceCriteria: [],
+          checkedAcceptanceCriteria: [],
+          tags: [],
           state: 'in_progress',
           priority: 1,
         });
@@ -190,6 +195,7 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
       );
+      openEditor();
 
       fireEvent.change(screen.getByLabelText('State'), { target: { value: 'in_progress' } });
       fireEvent.change(screen.getByLabelText('Priority'), { target: { value: '1' } });
@@ -209,13 +215,14 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
       );
+      openEditor();
 
       fireEvent.change(screen.getByDisplayValue('Original title'), { target: { value: '   ' } });
 
       expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     });
 
-    it('should load acceptance criteria into the editor, one per line', () => {
+    it('should load acceptance criteria into the editor, one field per criterion', () => {
       // SPEC: Criteria are editable here — the API accepts them but nothing else does.
       const ticket = createMockTicket({
         acceptance_criteria: [
@@ -225,14 +232,13 @@ describe('TicketDetailsModal', () => {
         ],
       });
       renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={jest.fn()} />
       );
+      openEditor();
 
-      expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue(
-        'Criterion 1: User can click button\n' +
-          'Criterion 2: Modal appears with details\n' +
-          'Criterion 3: Modal can be closed'
-      );
+      expect(screen.getByLabelText('Criterion 1')).toHaveValue('Criterion 1: User can click button');
+      expect(screen.getByLabelText('Criterion 2')).toHaveValue('Criterion 2: Modal appears with details');
+      expect(screen.getByLabelText('Criterion 3')).toHaveValue('Criterion 3: Modal can be closed');
     });
 
     it('should save edited acceptance criteria as a trimmed list', async () => {
@@ -241,10 +247,12 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
       );
+      openEditor();
 
-      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
-        target: { value: '  First  \n\n  Second  \n   \n' },
-      });
+      fireEvent.change(screen.getByLabelText('Criterion 1'), { target: { value: '  First  ' } });
+      fireEvent.click(screen.getByRole('button', { name: /add criterion/i }));
+      fireEvent.change(screen.getByLabelText('Criterion 2'), { target: { value: '  Second  ' } });
+      fireEvent.click(screen.getByRole('button', { name: /add criterion/i }));
       fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
       await waitFor(() => {
@@ -261,8 +269,11 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={jest.fn()} />
       );
+      openEditor();
 
-      expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue('');
+      fireEvent.click(screen.getByRole('button', { name: /add criterion/i }));
+
+      expect(screen.getByLabelText('Criterion 1')).toHaveValue('');
     });
 
     it('should not enable save when only whitespace changes in the criteria editor', () => {
@@ -270,10 +281,10 @@ describe('TicketDetailsModal', () => {
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={jest.fn()} />
       );
+      openEditor();
 
-      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
-        target: { value: '  Only criterion  \n\n' },
-      });
+      fireEvent.change(screen.getByLabelText('Criterion 1'), { target: { value: '  Only criterion  ' } });
+      fireEvent.click(screen.getByRole('button', { name: /add criterion/i }));
 
       expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     });
@@ -308,7 +319,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByText('Priority')).toBeInTheDocument();
+      expect(screen.getByText('Priority: P2 — Medium')).toBeInTheDocument();
     });
 
     it('should display work item type', () => {
@@ -758,11 +769,9 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      // All criteria should be present (or accessible by scrolling the editor)
-      const editor = screen.getByLabelText(/acceptance criteria/i);
-      expect(editor).toHaveValue(
-        Array.from({ length: 50 }, (_, i) => `Criterion ${i + 1}: A detailed requirement`).join('\n')
-      );
+      // All criteria should be present (or accessible by scrolling the list)
+      expect(screen.getAllByRole('checkbox')).toHaveLength(50);
+      expect(screen.getByText('Criterion 50: A detailed requirement')).toBeInTheDocument();
     });
   });
 
@@ -808,7 +817,7 @@ describe('TicketDetailsModal', () => {
       );
 
       // First open
-      expect(screen.getByDisplayValue('Immutable Title')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Immutable Title' })).toBeInTheDocument();
 
       // Close and reopen
       rerender(
@@ -824,7 +833,7 @@ describe('TicketDetailsModal', () => {
       );
 
       // Data should still be correct
-      expect(screen.getByDisplayValue('Immutable Title')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Immutable Title' })).toBeInTheDocument();
       expect(screen.getByText('16-modal-with-ticket-details')).toBeInTheDocument();
     });
   });
@@ -838,7 +847,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket1} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByDisplayValue('First Ticket')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'First Ticket' })).toBeInTheDocument();
 
       // Switch to different ticket
       rerender(
@@ -847,8 +856,8 @@ describe('TicketDetailsModal', () => {
         </QueryClientProvider>
       );
 
-      expect(screen.getByDisplayValue('Second Ticket')).toBeInTheDocument();
-      expect(screen.queryByDisplayValue('First Ticket')).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Second Ticket' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'First Ticket' })).not.toBeInTheDocument();
     });
   });
 
@@ -881,6 +890,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     title: 'Test Ticket',
     description: 'Test description',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 1,
     workspace_slug: 'loregarden',

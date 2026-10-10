@@ -14,18 +14,19 @@ from __future__ import annotations
 
 import ast
 import json
+import os
+import posixpath
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
-from precommit_git_diff import (
+from precommit_git_diff import (  # noqa: E402 - path set above
     UnexaminableError,
     git_diff_cached,
     git_repo_root,
@@ -39,7 +40,7 @@ _COMPLEXITY_RE = re.compile(r"is too complex \((\d+)\s*>\s*(\d+)\)")
 _FN_NAME_RE = re.compile(r"`([^`]+)` is too complex")
 
 
-def _function_span(py_file: Path, lineno: int, repo: Optional[Path]) -> Tuple[int, int]:
+def _function_span(py_file: Path, lineno: int, repo: Path | None) -> tuple[int, int]:
     """The line range of the function at `lineno`, or that line alone.
 
     Read through `read_source_text` like every other gate: it resolves the path,
@@ -72,7 +73,7 @@ def _function_span(py_file: Path, lineno: int, repo: Optional[Path]) -> Tuple[in
     return (lineno, lineno)
 
 
-def _complexity(message: str) -> Optional[int]:
+def _complexity(message: str) -> int | None:
     m = _COMPLEXITY_RE.search(message)
     return int(m.group(1)) if m else None
 
@@ -83,12 +84,15 @@ def _fn_name(message: str) -> str:
 
 
 def _project_rel(raw_path: str, cwd: Path) -> str:
+    """`raw_path` relative to `cwd`, walking up with `..` when it lies outside.
+
+    A script outside server/ is reported as an absolute path outside `cwd`. This
+    used to fall back to the bare file name, which named no staged file, so
+    every finding in such a script was dropped as untouched.
+    """
     path_obj = Path(raw_path)
     if path_obj.is_absolute():
-        try:
-            return str(path_obj.relative_to(cwd))
-        except ValueError:
-            return path_obj.name
+        return os.path.relpath(path_obj, cwd)
     return raw_path
 
 
@@ -118,13 +122,13 @@ def _run_ruff_c901(paths: list[str], *, config: Path | None) -> list[dict]:
 
 
 def _head_complexities(
-    repo: Path, repo_rel_paths: Set[str], *, config: Path
-) -> Dict[str, Dict[str, int]]:
+    repo: Path, repo_rel_paths: set[str], *, config: Path
+) -> dict[str, dict[str, int]]:
     """Map repo_rel -> {function_name: complexity} for C901 hits at HEAD."""
-    counts: Dict[str, Dict[str, int]] = {}
+    counts: dict[str, dict[str, int]] = {}
     with tempfile.TemporaryDirectory(dir=".") as tmp:
         # Index by a unique token so we can map ruff's reported path back.
-        token_to_repo_rel: Dict[str, str] = {}
+        token_to_repo_rel: dict[str, str] = {}
         tmp_paths: list[str] = []
         for i, repo_rel in enumerate(sorted(repo_rel_paths)):
             head_text = _head_text(repo, repo_rel)
@@ -154,7 +158,7 @@ def _head_complexities(
     return counts
 
 
-def _head_text(repo: Path, repo_rel: str) -> Optional[str]:
+def _head_text(repo: Path, repo_rel: str) -> str | None:
     proc = subprocess.run(
         ["git", "show", f"HEAD:{repo_rel}"],
         cwd=repo,
@@ -195,7 +199,7 @@ def main(argv: list[str]) -> int:
     cwd = Path.cwd()
     config = cwd / "pyproject.toml"
     repo = git_repo_root()
-    additions_map: Dict[str, Set[int]] = {}
+    additions_map: dict[str, set[int]] = {}
     if repo is not None:
         additions_map = {
             path: {ln for ln, _ in items}
@@ -204,13 +208,15 @@ def main(argv: list[str]) -> int:
 
     messages = _run_ruff_c901(rel_args, config=config if config.is_file() else None)
 
-    candidates: List[tuple[dict, str, str]] = []
-    repo_rels_needed: Set[str] = set()
+    candidates: list[tuple[dict, str, str]] = []
+    repo_rels_needed: set[str] = set()
     for msg in messages:
         if msg.get("code") != "C901":
             continue
         project_rel = _project_rel(msg.get("filename") or "", cwd)
-        repo_rel = f"{repo_prefix}/{project_rel}" if repo_prefix else project_rel
+        repo_rel = posixpath.normpath(
+            f"{repo_prefix}/{project_rel}" if repo_prefix else project_rel
+        )
         touched = additions_map.get(repo_rel, set())
         if not touched:
             continue
@@ -228,7 +234,7 @@ def main(argv: list[str]) -> int:
         else {}
     )
 
-    kept: List[dict] = []
+    kept: list[dict] = []
     for msg, repo_rel, obj in candidates:
         current = _complexity(msg.get("message", ""))
         baseline = head_counts.get(repo_rel, {}).get(obj) if obj else None

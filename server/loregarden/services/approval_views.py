@@ -17,7 +17,7 @@ from loregarden.models.domain import (
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.prepared_action import PreparedAction
 from pydantic import BaseModel, ConfigDict, ValidationError
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +93,19 @@ def _parsed_prepared_action(approval: Approval) -> dict | None:
     return action.model_dump(mode="json")
 
 
+def _stage_name(session: Session, ws: Workspace | None, stage_key: str) -> str:
+    if ws and ws.workflow_template_id:
+        tpl = session.get(WorkflowTemplate, ws.workflow_template_id)
+        if tpl:
+            return stage_display_name(tpl, stage_key)
+    return stage_key
+
+
 def approval_to_view(session: Session, approval: Approval) -> dict:
     # Workspace-scoped approvals (Home Baxter chat) carry no ticket.
     ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
     ws = session.get(Workspace, approval.workspace_id)
-    stage_name = approval.stage_key
-    if ws and ws.workflow_template_id:
-        tpl = session.get(WorkflowTemplate, ws.workflow_template_id)
-        if tpl:
-            stage_name = stage_display_name(tpl, approval.stage_key)
+    stage_name = _stage_name(session, ws, approval.stage_key)
 
     questions = _parsed_questions(approval)
 
@@ -166,3 +170,64 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "created_at": approval.created_at.isoformat() if approval.created_at else "",
         "resolved_at": approval.resolved_at.isoformat() if approval.resolved_at else "",
     }
+
+
+#: More than any ticket has resolved (51 at most, measured 2026-10-08), so the
+#: cap only guards against a runaway, it never hides a real decision.
+APPROVAL_HISTORY_LIMIT = 200
+
+
+class ApprovalHistoryItem(BaseModel):
+    """One decided approval — what was asked, and how it was answered."""
+
+    id: str
+    title: str
+    kind: ApprovalKind
+    stage_key: str
+    stage_name: str
+    status: ApprovalStatus
+    #: "automation" for an auto_approve run's own sign-off; "" for a person.
+    resolved_by: str
+    resolved_at: str
+    ticket_id: str
+    ticket_external_id: str
+
+
+def approval_history(session: Session, scope_ids: list[str]) -> list[ApprovalHistoryItem]:
+    """Decided approvals on these tickets, newest first.
+
+    Lean on purpose: the full view expands checklists and resolves route options
+    per row, which a list of past answers never shows.
+    """
+    rows = session.exec(
+        select(Approval)
+        .where(col(Approval.ticket_id).in_(scope_ids))
+        .where(Approval.status != ApprovalStatus.PENDING)
+        .order_by(col(Approval.resolved_at).desc(), col(Approval.created_at).desc())
+        .limit(APPROVAL_HISTORY_LIMIT)
+    ).all()
+    workspaces: dict[str, Workspace | None] = {}
+    external_ids: dict[str, str] = {}
+    items: list[ApprovalHistoryItem] = []
+    for row in rows:
+        if row.workspace_id not in workspaces:
+            workspaces[row.workspace_id] = session.get(Workspace, row.workspace_id)
+        ticket_id = row.ticket_id or ""
+        if ticket_id not in external_ids:
+            ticket = session.get(Ticket, ticket_id)
+            external_ids[ticket_id] = ticket.external_id if ticket else ""
+        items.append(
+            ApprovalHistoryItem(
+                id=row.id,
+                title=row.title,
+                kind=row.kind,
+                stage_key=row.stage_key,
+                stage_name=_stage_name(session, workspaces[row.workspace_id], row.stage_key),
+                status=row.status,
+                resolved_by=row.resolved_by,
+                resolved_at=row.resolved_at.isoformat() if row.resolved_at else "",
+                ticket_id=ticket_id,
+                ticket_external_id=external_ids[ticket_id],
+            )
+        )
+    return items

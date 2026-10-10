@@ -48,7 +48,9 @@ from loregarden.services.docker_capacity import CLASS_WEIGHTS, ClaimTooVague
 from loregarden.services.docker_leases import (
     REJECT_LEASE_NOT_HELD,
     REJECT_UNKNOWN_LEASE,
+    UnknownLease,
     drain_waiters,
+    force_release_lease,
     release_lease,
     renew_lease,
     reserve,
@@ -430,14 +432,10 @@ def _waiting_estimate(board: dict, lease_id: str) -> WaitEstimate:
 
 def force_release_docker_lease_tool(session: Session, arguments: dict[str, Any]) -> str:
     lease_id = arguments["lease_id"]
-    lease = session.get(DockerLease, lease_id)
-    if lease is None:
+    try:
+        released = force_release_lease(session, lease_id, reason=arguments["reason"])
+    except UnknownLease:
         return _dump({"ok": False, "error_kind": REJECT_UNKNOWN_LEASE, "lease_id": lease_id})
-
-    lease.note = f"force-released: {arguments['reason']}"
-    session.add(lease)
-    session.commit()
-    released = release_lease(session, lease_id, reason=DockerLeaseEndReason.FORCE_RELEASED)
     return _dump(
         {
             "ok": True,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 
+import { usePrefersReducedMotion } from "../../../hooks/usePrefersReducedMotion";
 import type { HiveSkinId } from "../../../lib/hive/skins";
 import type { HiveWorldModel } from "../../../lib/hive/worldModel";
 import { describeError, pushToast } from "../../../state/toastStore";
@@ -46,8 +47,11 @@ function HiveFloorSceneCanvas({ model, skin }: HiveFloorSceneProps) {
   const lastSizeRef = useRef({ w: 0, h: 0 });
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
   modelRef.current = model;
   skinRef.current = skin;
+  reducedMotionRef.current = reducedMotion;
 
   const syncKey = useMemo(() => modelSyncKey(model), [model]);
 
@@ -116,6 +120,7 @@ function HiveFloorSceneCanvas({ model, skin }: HiveFloorSceneProps) {
 
         appRef.current = app;
         floorRef.current = floor;
+        floor.setReducedMotion(reducedMotionRef.current);
         app.ticker.stop();
         app.ticker.autoStart = false;
 
@@ -170,6 +175,13 @@ function HiveFloorSceneCanvas({ model, skin }: HiveFloorSceneProps) {
       cleanupApp();
     };
   }, []);
+
+  // The OS setting can change while the floor is open; it applies on the next frame.
+  useEffect(() => {
+    if (!ready) return;
+    floorRef.current?.setReducedMotion(reducedMotion);
+    appRef.current?.render();
+  }, [reducedMotion, ready]);
 
   useEffect(() => {
     const floor = floorRef.current;

@@ -13,10 +13,15 @@ import json
 from collections.abc import Iterable
 from typing import Literal
 
+from pydantic import TypeAdapter
+
 #: How incoming criteria combine with what the ticket already stores.
 CriteriaMode = Literal["replace", "append"]
 
 CRITERIA_MODES: tuple[str, ...] = ("replace", "append")
+
+#: Only this module writes ``checked_criteria_json``, so anything else is a bug worth raising.
+_CRITERIA_LIST = TypeAdapter(list[str])
 
 
 def normalize_criteria(criteria: Iterable[str] | None) -> list[str]:
@@ -38,6 +43,24 @@ def load_criteria(raw: str | None) -> list[str]:
 def serialize_criteria(criteria: Iterable[str] | None) -> str:
     """Normalize and encode criteria for ``Ticket.acceptance_criteria_json``."""
     return json.dumps(normalize_criteria(criteria))
+
+
+def load_checked(raw: str | None, criteria: Iterable[str]) -> list[str]:
+    """Read ``checked_criteria_json``, keeping only criteria the ticket still has.
+
+    Checks are stored by criterion text, not position, so reordering the list
+    keeps them and rewording a criterion clears its check — it is a new claim.
+    """
+    if not raw:
+        return []
+    stored = set(normalize_criteria(_CRITERIA_LIST.validate_json(raw)))
+    return [criterion for criterion in criteria if criterion in stored]
+
+
+def serialize_checked(checked: Iterable[str] | None, criteria: Iterable[str]) -> str:
+    """Encode the checked criteria, dropping any the ticket does not have."""
+    wanted = set(normalize_criteria(checked))
+    return json.dumps(list(dict.fromkeys(c for c in criteria if c in wanted)))
 
 
 def merge_criteria(

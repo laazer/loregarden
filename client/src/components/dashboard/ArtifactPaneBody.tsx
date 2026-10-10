@@ -1,10 +1,10 @@
 import type { TicketDetail } from "../../api/client";
-import { isArtifactsSubTab, type ArtifactTab } from "../../lib/appNavigation";
-import { LogsPanel } from "../LogsPanel";
+import type { ArtifactTab } from "../../lib/appNavigation";
 import { ApprovalsView } from "./ApprovalsView";
-import { ArtifactsHub } from "./ArtifactsHub";
 import { ArtifactView } from "./ArtifactView";
 import { HiveSimulationPanel } from "./HiveSimulationPanel";
+import { TicketOutputs } from "./TicketOutputs";
+import { TicketTimeline, type TimelineRun } from "./TicketTimeline";
 import { WorkflowMonitorView } from "./WorkflowMonitorView";
 
 /**
@@ -25,7 +25,7 @@ export function ArtifactPaneBody({
   ticket,
   runs,
   hasActiveRun,
-  hasRunErrors,
+  pendingApprovals,
   selectedId,
   activeWorkspaceSlug,
   isOpeningPr,
@@ -37,9 +37,9 @@ export function ArtifactPaneBody({
 }: {
   artifactTab: ArtifactTab;
   ticket?: TicketDetail;
-  runs: Parameters<typeof ArtifactView>[0]["runs"];
+  runs: readonly TimelineRun[];
   hasActiveRun: boolean;
-  hasRunErrors: boolean;
+  pendingApprovals: number;
   selectedId: string | null;
   activeWorkspaceSlug: string;
   isOpeningPr: boolean;
@@ -53,20 +53,21 @@ export function ArtifactPaneBody({
   // reason to have selected, which is exactly why this view exists.
   if (artifactTab === "monitor") return <WorkflowMonitorView ticketId={selectedId} />;
 
-  if (artifactTab === "logs" && ticket) return <LogsPanel ticket={ticket} />;
+  const isActive = hasActiveRun || ticket?.workflow_stage_status === "running";
 
-  if (isArtifactsSubTab(artifactTab) && ticket) {
+  if (artifactTab === "timeline" && ticket) {
     return (
-      <ArtifactsHub
+      <TicketTimeline
         ticket={ticket}
-        subTab={artifactTab}
         runs={runs}
-        isActive={hasActiveRun || ticket.workflow_stage_status === "running"}
-        hasRunErrors={hasRunErrors}
+        isActive={isActive}
+        pendingApprovals={pendingApprovals}
         onOpenRunLog={onOpenRunLog}
       />
     );
   }
+
+  if (artifactTab === "outputs" && ticket) return <TicketOutputs ticketId={ticket.id} isActive={isActive} />;
 
   if (artifactTab === "hive" && ticket) return <HiveSimulationPanel ticket={ticket} />;
 
@@ -76,7 +77,6 @@ export function ArtifactPaneBody({
     <ArtifactView
       tab={artifactTab}
       ticket={ticket}
-      runs={runs}
       onOpenEditorFile={(filePath) =>
         onOpenEditorFile(ticket?.workspace_slug ?? activeWorkspaceSlug, filePath)
       }
@@ -84,7 +84,6 @@ export function ArtifactPaneBody({
       isOpeningPr={isOpeningPr}
       onCommitPush={selectedId ? onCommitPush : undefined}
       isCommittingPush={isCommittingPush}
-      onOpenRunLog={onOpenRunLog}
     />
   );
 }

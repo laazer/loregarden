@@ -49,6 +49,14 @@ NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
 #   loregarden_begin_external_stage / _finish_external_stage -> only meaningful on an
 #   orchestration run opened with external_harness set, and they check a real stage out
 #   to a caller outside this process. test_external_harness.py drives both over MCP.
+#   loregarden_read_artifact -> needs the id of a row written earlier in the same run,
+#   which the argument table is built before; test_mcp_documents writes one and reads it.
+NEEDS_A_WRITTEN_ARTIFACT = "loregarden_read_artifact"
+#   loregarden_merge_pull_request -> merges only a PR GitHub says can merge now, so a
+#   well-formed call needs a git repository and a GitHub answering for it; the seed
+#   has neither, and its honest answer here is a refusal. test_pull_request_merge.py
+#   drives it over MCP against a fake GitHub.
+NEEDS_A_MERGEABLE_PULL_REQUEST = "loregarden_merge_pull_request"
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
@@ -160,6 +168,7 @@ def _args_for(
     prereq_id: str,
     optional_stage_key: str,
     gate_stage_key: str,
+    initiative_id: str,
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -229,6 +238,12 @@ def _args_for(
             "title": "smoke artifact",
             "content_json": json.dumps({"lines": []}),
         },
+        "loregarden_write_document": {
+            "ticket_id": ticket_id,
+            "title": "smoke document",
+            "body": "# Smoke\n\nwritten by the MCP smoke test",
+        },
+        "loregarden_list_artifacts": {"ticket_id": ticket_id},
         "loregarden_search_prior_work": {
             "query": "smoke prior work",
             "workspace_slug": "loregarden",
@@ -254,6 +269,10 @@ def _args_for(
         "loregarden_launch_instance": {"template": "smoke-no-such-template"},
         "loregarden_instance_status": {"instance_id": "smoke-no-such-instance"},
         "loregarden_stop_instance": {"instance_id": "smoke-no-such-instance"},
+        # UI actions: no tab is connected here, so invoke answers with a named
+        # `no_tab` failure payload rather than hanging or raising.
+        "loregarden_list_ui_actions": {},
+        "loregarden_invoke_ui_action": {"action": "navigate.page", "arguments": {"page": "queue"}},
         "loregarden_force_release_docker_lease": {
             "lease_id": "smoke-no-such-lease",
             "reason": "smoke",
@@ -267,6 +286,27 @@ def _args_for(
         # more than a smoke test needs to prove the tool is wired up.
         # status only reads the link table; every other action shells out to gh.
         "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
+        "loregarden_get_initiative_plan": {"initiative_id": initiative_id},
+        # No items, a mode only: files a pending proposal and writes no target.
+        "loregarden_propose_initiative_schedule": {
+            "initiative_id": initiative_id,
+            "rationale": "smoke",
+            "items": [],
+            "mode": "fixed",
+        },
+        # Off and empty: these drive real runs, and a smoke test must start none.
+        "loregarden_set_initiative_autopilot": {"initiative_id": initiative_id, "enabled": False},
+        "loregarden_start_initiative_work": {"initiative_id": initiative_id, "ticket_ids": []},
+        "loregarden_mark_needs_person": {"initiative_id": initiative_id, "ticket_ids": []},
+        # Added, then removed again by the next call: the ticket itself is never touched.
+        "loregarden_add_initiative_member": {
+            "initiative_id": initiative_id,
+            "ticket_id": ticket_id,
+        },
+        "loregarden_remove_initiative_member": {
+            "initiative_id": initiative_id,
+            "ticket_id": ticket_id,
+        },
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -373,6 +413,12 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     all_tickets = client.get("/api/tickets").json()
     prereq_id = next((t["id"] for t in all_tickets if t["id"] != ticket_id), ticket_id)
 
+    initiative = client.post(
+        "/api/tickets", json={"title": "Smoke initiative", "work_item_type": "initiative"}
+    )
+    assert initiative.status_code in (200, 201), initiative.text
+    initiative_id = initiative.json()["id"]
+
     ordered = [
         "loregarden_get_ticket",
         "loregarden_link_dependency",
@@ -389,10 +435,19 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_append_checkpoint",
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
+        "loregarden_write_document",
+        "loregarden_list_artifacts",
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",
+        "loregarden_get_initiative_plan",
+        "loregarden_propose_initiative_schedule",
+        "loregarden_set_initiative_autopilot",
+        "loregarden_start_initiative_work",
+        "loregarden_mark_needs_person",
+        "loregarden_add_initiative_member",
+        "loregarden_remove_initiative_member",
         "loregarden_sync_github_issues",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
@@ -418,12 +473,16 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_launch_instance",
         "loregarden_instance_status",
         "loregarden_stop_instance",
+        "loregarden_list_ui_actions",
+        "loregarden_invoke_ui_action",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)
     exempt = {
         SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
         NEEDS_A_SECOND_WORKSPACE,
+        NEEDS_A_WRITTEN_ARTIFACT,
+        NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
     }
     assert set(ordered) | exempt >= advertised, (
@@ -445,6 +504,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             prereq_id,
             optional_stage_key,
             gate_stage_key,
+            initiative_id,
         )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")

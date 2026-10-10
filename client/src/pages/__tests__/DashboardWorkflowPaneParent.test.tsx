@@ -9,8 +9,8 @@ import { Dashboard } from '../Dashboard';
 
 jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock'));
 
-const PARENT_ID = 'ticket-parent';
-const CHILD_ID = 'ticket-child';
+const PARENT_ID = '00000000-0000-4000-8000-0000000000aa';
+const CHILD_ID = '00000000-0000-4000-8000-0000000000bb';
 
 const mkWorkspace = (): apiClient.WorkspaceSummary => ({
   id: 'ws-1',
@@ -19,9 +19,11 @@ const mkWorkspace = (): apiClient.WorkspaceSummary => ({
   repo_path: '.',
   repo_root: '/repo',
   repo_exists: true,
+  repo_state: "repository",
   ticket_count: 0,
   blocked_count: 0,
   workflow_template_slug: '',
+  archived_at: null,
   cli_adapter: '',
   claude_model: '',
   cursor_model: '',
@@ -36,6 +38,7 @@ function mockTicket(over: Partial<apiClient.TicketDetail> = {}): apiClient.Ticke
     title: 'Child Ticket',
     description: '',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 2,
     workspace_slug: 'loregarden',

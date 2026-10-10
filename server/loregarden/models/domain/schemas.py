@@ -253,6 +253,11 @@ class TicketTreeNode(SQLModel):
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
     children: list["TicketTreeNode"] = []
+    #: A copy of a ticket listed under an initiative that tracks it as a member
+    #: (`initiative_members`). The ticket also sits under its real parent; the
+    #: copy is a leaf, and `home_parent_external_id` names that parent.
+    member_link: bool = False
+    home_parent_external_id: str = ""
 
 
 class TicketDependencyRef(SQLModel):
@@ -287,6 +292,8 @@ class TicketDetail(TicketSummary):
     admission: dict | None = None
     description: str
     acceptance_criteria: list[str]
+    #: The subset of `acceptance_criteria` an operator has checked off.
+    checked_acceptance_criteria: list[str]
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
     dependencies: list[TicketDependencyRef] = Field(default_factory=list)
     dependents: list[TicketDependencyRef] = Field(default_factory=list)
@@ -606,6 +613,9 @@ class OrchestrationProfileView(SQLModel):
     #: The fallback profile's workspace-agnostic checks, offered as one-click adds.
     gates_suggested_commands: list[str] = Field(default_factory=list)
     max_stages_per_run: int = 0
+    #: The profile file these settings live in, repo-relative; None when no file
+    #: stores them yet (the built-in fallback). Gate Studio's "Stored in".
+    source_path: str | None = None
 
 
 class GatesConfigUpdate(SQLModel):
@@ -617,6 +627,9 @@ class GatesConfigUpdate(SQLModel):
     autofix_commands: list[str] | None = None
     autofix_agent_fallback: bool | None = None
     autofix_max_agent_attempts: int | None = Field(default=None, ge=0, le=10)
+    # The host capacity gate commands hold (services/gate_capacity.py); None
+    # keeps the saved value.
+    capacity_footprint: DockerFootprint | None = None
 
 
 class GateTestRequest(SQLModel):
@@ -651,7 +664,7 @@ class GitAutomationView(SQLModel):
     push: bool = False
     open_pr: bool = False
     auto_merge: bool = False
-    auto_resolve_conflicts: bool = False
+    auto_resolve_conflicts: bool = True
     max_conflict_resolve_attempts: int = 2
     base_branch: str = "main"
 
@@ -732,6 +745,9 @@ class UpdateTicketRequest(SQLModel):
     description: str | None = None
     #: Replaces the stored list; omit to leave it alone, [] to clear it.
     acceptance_criteria: list[str] | None = None
+    #: Replaces which criteria are checked off; omit to leave them alone. Any
+    #: text the ticket's criteria do not contain is dropped.
+    checked_acceptance_criteria: list[str] | None = None
     #: Replaces the stored tags; omit to leave them alone, [] to clear them.
     tags: list[str] | None = None
     state: TicketState | None = None

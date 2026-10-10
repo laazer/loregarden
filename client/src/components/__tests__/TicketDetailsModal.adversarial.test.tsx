@@ -618,7 +618,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         </QueryClientProvider>
       );
 
-      expect(screen.getByDisplayValue('Ticket 2')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Ticket 2' })).toBeInTheDocument();
     });
   });
 
@@ -1137,6 +1137,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     title: 'Test Ticket',
     description: 'Test description',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 1,
     workspace_slug: 'loregarden',

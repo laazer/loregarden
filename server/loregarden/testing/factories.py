@@ -18,6 +18,7 @@ literal it already reads for ("run-1"), instead of threading a uuid through.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -35,8 +36,10 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkItemType,
     Workspace,
+    utcnow,
 )
 from loregarden.services.exit_actions import resolve_exit_actions
+from loregarden.services.ticket_state_service import RESOLVED_STATES
 
 # Where a workspace points when the test never said. Absolute and deliberately
 # nonexistent, because `resolve_workspace_root` resolves a *relative* path
@@ -73,7 +76,8 @@ def make_workspace(
 def make_ticket(
     session: Session,
     *,
-    workspace_id: str,
+    #: None only for an initiative, which binds to no workspace.
+    workspace_id: str | None,
     ticket_id: str | None = None,
     external_id: str | None = None,
     title: str = "Test ticket",
@@ -84,6 +88,9 @@ def make_ticket(
     state: TicketState | None = None,
     parent_ticket_id: str | None = None,
     description: str = "",
+    #: When a resolved ticket closed. Defaults to now for a resolved `state`,
+    #: as `ticket_state_service` would stamp it; schedule forecasts read it.
+    resolved_at: datetime | None = None,
 ) -> Ticket:
     if ticket_id:
         existing = session.get(Ticket, ticket_id)
@@ -101,6 +108,8 @@ def make_ticket(
         ticket.id = ticket_id
     if state is not None:
         ticket.state = state
+        if state in RESOLVED_STATES:
+            ticket.resolved_at = resolved_at or utcnow()
     session.add(ticket)
     session.commit()
     session.refresh(ticket)
@@ -218,16 +227,25 @@ def make_artifact(
     title: str,
     content: dict,
     artifact_id: str | None = None,
+    run_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> Artifact:
     """An artifact on an existing ticket, its content serialised the way the
-    attach tools store it."""
+    attach tools store it. `created_at` defaults to now; pass it where the
+    row's place in a history matters."""
     if artifact_id:
         existing = session.get(Artifact, artifact_id)
         if existing:
             return existing
     artifact = Artifact(
-        ticket_id=ticket_id, kind=kind, title=title, content_json=json.dumps(content)
+        ticket_id=ticket_id,
+        run_id=run_id,
+        kind=kind,
+        title=title,
+        content_json=json.dumps(content),
     )
+    if created_at is not None:
+        artifact.created_at = created_at
     if artifact_id:
         artifact.id = artifact_id
     session.add(artifact)

@@ -168,6 +168,51 @@ def gate_would_skip_work(session: Session, ticket: Ticket, stage: WorkflowStageD
     )
 
 
+def _latest_succeeded_run(session: Session, ticket: Ticket, stage_key: str) -> AgentRun | None:
+    return session.exec(
+        select(AgentRun)
+        .where(
+            AgentRun.ticket_id == ticket.id,
+            AgentRun.stage_key == stage_key,
+            AgentRun.status == RunStatus.SUCCEEDED,
+        )
+        .order_by(col(AgentRun.created_at).desc())
+    ).first()
+
+
+def gate_on_orchestrator_pass(
+    session: Session, ticket: Ticket, stage: WorkflowStageDef
+) -> Approval | None:
+    """The gate an orchestrator's ``complete_stage`` pass must raise, or None.
+
+    An orchestrator can pass a stage that no agent run of its own completed —
+    an external driver advancing a gate stage directly. Advancing then skipped
+    every exit action, so an operator-judgment stage finished with nobody
+    asked. The stage's outstanding actions are resolved here exactly as
+    `request_exit_action_gate` resolves them; a pending gate already raised
+    for the stage is returned rather than duplicated.
+    """
+    run = _latest_succeeded_run(session, ticket, stage.key)
+    outstanding, settled = outstanding_exit_actions(session, run, stage)
+    if not outstanding:
+        return None
+    # A person's approval would finish an agent stage no agent ran; refuse the
+    # pass rather than open a gate nobody may approve.
+    reason = gate_would_skip_work(session, ticket, stage)
+    if reason:
+        raise ValueError(reason)
+    return create_workflow_gate_approval(
+        session,
+        ticket,
+        stage.key,
+        stage.name,
+        stage_def=stage,
+        human_required_actions=outstanding,
+        settled_action_keys=settled,
+        run_id=run.id if run is not None else None,
+    )
+
+
 def _assigned_but_unattested(run: AgentRun | None, settled: list[str]) -> list[str]:
     """Actions the run's agent was given that no passing report has confirmed."""
     if run is None:
@@ -201,15 +246,7 @@ def request_exit_action_gate(
     reason = gate_would_skip_work(session, ticket, stage)
     if reason:
         raise ValueError(reason)
-    run = session.exec(
-        select(AgentRun)
-        .where(
-            AgentRun.ticket_id == ticket.id,
-            AgentRun.stage_key == stage.key,
-            AgentRun.status == RunStatus.SUCCEEDED,
-        )
-        .order_by(col(AgentRun.created_at).desc())
-    ).first()
+    run = _latest_succeeded_run(session, ticket, stage.key)
     outstanding, settled = outstanding_exit_actions(session, run, stage)
     unattested = _assigned_but_unattested(run, settled)
     if unattested:

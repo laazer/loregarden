@@ -20,11 +20,10 @@ jest.mock('../QueueAdvancedControls', () => ({
 }));
 // Owns its own query and endpoint; covered by QueueGitAutomation.test.tsx.
 jest.mock('../QueueGitAutomation', () => ({
-  QueueGitAutomation: () => <div data-testid="queue-git-automation" />,
+  QueueGitAutomationList: () => <div data-testid="queue-git-automation" />,
 }));
 // The ticket board is its own panel with its own reads; this file renders no
 // QueryClient, and the board is not what it is exercising.
-jest.mock('../QueueTicketBoard', () => ({ QueueTicketBoard: () => <div>ticket board</div> }));
 
 jest.mock('../QueueHistoricalAnalytics', () => ({
   QueueHistoricalAnalytics: () => <div data-testid="queue-analytics" />,

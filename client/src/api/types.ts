@@ -1,4 +1,6 @@
+import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
+import type { LogLine } from "./runLogTypes";
 
 export type { TicketDependencyRef };
 
@@ -90,6 +92,10 @@ export interface TicketTreeNode {
   workflow_stage_status: StageStatus;
   child_count: number;
   children: TicketTreeNode[];
+  /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
+  member_link?: boolean;
+  /** The member's real parent (empty when it has none). */
+  home_parent_external_id?: string;
 }
 
 export interface WorkflowStageView {
@@ -142,6 +148,8 @@ export interface TicketDetail extends TicketSummary {
   } | null;
   description: string;
   acceptance_criteria: string[];
+  /** The subset of `acceptance_criteria` an operator has checked off. */
+  checked_acceptance_criteria: string[];
   /** Tickets this one waits for (its prerequisites). */
   dependencies?: TicketDependencyRef[];
   /** Tickets waiting on this one. */
@@ -240,38 +248,7 @@ export interface DiffArtifact {
   lines?: DiffLine[];
 }
 
-export interface LogLine {
-  time: string;
-  tag: string;
-  text: string;
-}
-
-/** One run's rendered log, as served by GET /api/runs/{id}/log. */
-export interface RunLog {
-  id: string;
-  run_code: string;
-  agent_id: string;
-  skill_name: string;
-  stage_key: string;
-  status: string;
-  command: string;
-  started_at: string | null;
-  finished_at: string | null;
-  /** Empty for runs that predate the log streamer. */
-  lines: LogLine[];
-  live: string | null;
-  stderr: string;
-}
-
-/** An operator's message to a run that is already in flight. */
-export interface RunMessage {
-  id: string;
-  run_id: string;
-  content: string;
-  created_at: string;
-  /** Null until the bridge has written it into the agent's stdin. */
-  delivered_at: string | null;
-}
+export type { LogLine, RunLog, RunMessage, RunMessagesPayload } from "./runLogTypes";
 
 /**
  * A question asked while a run was working — an aside.
@@ -334,6 +311,10 @@ export interface TicketArtifactItem {
   kind: string;
   title: string;
   run_id: string | null;
+  /** From the row's run, else a `stage_key` its content names; null when neither says. */
+  stage_key: string | null;
+  /** Platform bookkeeping (dispatch markers, run context, run-log pointers), not work output. */
+  system: boolean;
   evidence_kind: string;
   commit_sha: string;
   created_at: string | null;
@@ -448,6 +429,7 @@ export interface ContextSection {
   status?: string;
   confidence?: number;
   reroute_to_stage?: string | null;
+  reroute_to_agent?: string | null;
   reroute_context?: string;
 }
 
@@ -458,9 +440,13 @@ export interface WorkspaceSummary {
   repo_path: string;
   repo_root: string;
   repo_exists: boolean;
+  /** What is at `repo_root`; `missing` and `empty` can have a repository created there. */
+  repo_state: RepositoryState;
   ticket_count: number;
   blocked_count: number;
   workflow_template_slug: string;
+  /** ISO time the operator archived it; null while active. */
+  archived_at: string | null;
   cli_adapter: string;
   claude_model: string;
   cursor_model: string;

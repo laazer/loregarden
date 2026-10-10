@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.services.path_resolve import (
     expand_path,
     resolve_icloud_root,
@@ -46,10 +47,16 @@ class Settings(BaseSettings):
     #: to notice; 0 or less turns the timer off and leaves repair to startup,
     #: which is the cadence this replaced.
     reconcile_interval_seconds: float = 30.0
+    #: Host the network-wait probe connects to (port 443) to decide whether a
+    #: ticket parked on an unreachable provider can resume. Empty disables
+    #: network waits: an unreachable provider then spends its transient retries.
+    network_probe_host: str = "api.anthropic.com"
     # How often the GitHub issue scheduler looks for a workspace whose
     # background sync is due. Each workspace sets its own interval; this is
     # only the resolution. 0 disables the scheduler entirely.
     github_sync_tick_seconds: float = 60.0
+    #: How often initiative autopilot looks for ready work. Non-positive is off.
+    autopilot_interval_seconds: float = 60.0
     # Push-on-edit: how often the worker drains edited tickets (0 disables the
     # worker), and how long an edit waits for more before it is pushed.
     github_push_poll_seconds: float = 0.5
@@ -62,6 +69,15 @@ class Settings(BaseSettings):
     #: Files attached to Home chat turns, one directory per conversation.
     #: Relative paths resolve against ``repo_root``, beside the database.
     chat_attachments_dir: Path = Path("data/chat-attachments")
+    #: Where a detached agent writes its own stdout, stderr and exit code, one
+    #: `<run_code>-<run_id[:8]>.{out,err,rc}` trio per run. Resolved against
+    #: ``repo_root`` below, beside the other data dirs: the agent runs with a
+    #: ticket worktree as its cwd, so a relative path would scatter these.
+    run_log_dir: Path = Path("data/run-logs")
+    #: How an agent process is detached from this server. ``None`` means decide
+    #: at spawn — tmux when it is installed, files otherwise — which is not the
+    #: same as pinning FILE. The per-run toggle is lg-durable-remote-338.
+    agent_detach_transport: AgentTransport | None = None
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"
@@ -191,6 +207,23 @@ class Settings(BaseSettings):
     # being read. Comma-separated.
     docker_baseline_projects: str = ""
     docker_baseline_containers: str = ""
+    # The host pool — the machine itself, which docker claims are also charged
+    # to. Same shape as the docker knobs; the reserve is what the editor, the
+    # browser and the control plane itself use, which no lease accounts for.
+    host_capacity_headroom: float = 0.8
+    host_capacity_cpus: float = 0.0  # override; 0 = derive from the OS
+    host_capacity_memory_mb: int = 0  # override; 0 = derive
+    host_capacity_max_leases: int = 6
+    host_reserved_cpus: float = 1.0
+    host_reserved_memory_mb: int = 4096
+    # Every agent run holds a small host lease for its lifetime (see
+    # services/run_capacity.py). A run that cannot get one waits this long in
+    # line, then fails naming the wait.
+    agent_run_capacity_enabled: bool = True
+    agent_run_capacity_wait_seconds: float = 1800.0
+    # A transition's gate commands wait this long for their host lease, then the
+    # gate reports UNAVAILABLE naming the wait — never passes unexamined.
+    gate_capacity_wait_seconds: float = 1800.0
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod
@@ -201,6 +234,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+settings.run_log_dir = settings.repo_root / settings.run_log_dir
 settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 

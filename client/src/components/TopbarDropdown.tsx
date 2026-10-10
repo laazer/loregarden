@@ -1,6 +1,8 @@
+import { AnimatePresence, m } from "motion/react";
 import { useCallback, createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
+import { DURATION, EASE_OUT } from "../lib/motionTokens";
 import "./TopbarDropdown.css";
 
 const DropdownCloseContext = createContext<(() => void) | null>(null);
@@ -38,18 +40,31 @@ export function TopbarDropdown({
           ▾
         </span>
       </button>
-      {open ? (
-        <DropdownCloseContext.Provider value={() => setOpen(false)}>
-          <div
-            ref={panelRef}
-            className={`topbar-dropdown-menu topbar-dropdown-menu--${align} topbar-dropdown-menu--anchored`}
-            style={panelStyle ?? { position: "fixed", visibility: "hidden" }}
-            role="menu"
-          >
-            {children}
-          </div>
-        </DropdownCloseContext.Provider>
-      ) : null}
+      {/* A closing menu keeps its last render, position included, for the
+          length of its exit; pointer-events go first so a second click cannot
+          land on an item that is already leaving. */}
+      <AnimatePresence>
+        {open ? (
+          <DropdownCloseContext.Provider value={() => setOpen(false)}>
+            <m.div
+              ref={panelRef}
+              className={`topbar-dropdown-menu topbar-dropdown-menu--${align} topbar-dropdown-menu--anchored`}
+              style={panelStyle ?? { position: "fixed", visibility: "hidden" }}
+              role="menu"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: DURATION.med, ease: EASE_OUT } }}
+              exit={{
+                opacity: 0,
+                y: -4,
+                pointerEvents: "none",
+                transition: { duration: DURATION.fast, ease: EASE_OUT },
+              }}
+            >
+              {children}
+            </m.div>
+          </DropdownCloseContext.Provider>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

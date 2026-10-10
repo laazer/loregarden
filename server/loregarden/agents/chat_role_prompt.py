@@ -183,6 +183,10 @@ def chat_ui_primitives_blocks() -> list[str]:
         "  Do not end an execution turn while actionable items remain.",
         "  Stop only after all items are checked, or after emitting a `qa`",
         "  card for a concrete blocker, required approval, or operator input.",
-        "- To ask the operator before proceeding, emit `qa`.",
+        "- To ask the operator before proceeding, emit `qa`: one or more",
+        "  free-text questions in `items`. It has no choices or options field;",
+        "  to offer choices, list them in the question or in prose above it.",
+        '  Example: ```loregarden\\n{"primitive":"qa","title":"Before I file it",'
+        '"items":[{"id":"scope","question":"File it in loregarden or blobert?"}]}\\n```',
         "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
     ]

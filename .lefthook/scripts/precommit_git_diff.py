@@ -13,18 +13,14 @@ shape either way.
 
 from __future__ import annotations
 
-import argparse
 import ast
-import io
-import json
 import os
 import re
 import subprocess
-import sys
-from contextlib import redirect_stdout
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Optional
 
 HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -54,7 +50,7 @@ GIT_LOCATION_ENV_VARS = (
 GIT_CONFIG_ENV_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
 
-def scrubbed_git_env() -> Dict[str, str]:
+def scrubbed_git_env() -> dict[str, str]:
     """The ambient environment minus git's repo bindings and injected config."""
     env = dict(os.environ)
     for name in GIT_LOCATION_ENV_VARS:
@@ -148,7 +144,7 @@ def decode_git_path(token: str) -> str:
     return out.decode("utf-8", errors="surrogateescape")
 
 
-def decoded_git_paths(out: str) -> List[str]:
+def decoded_git_paths(out: str) -> list[str]:
     """Every path in a git command's path-per-line output, decoded.
 
     No ``.strip()``: git quotes anything that would make a line ambiguous, so
@@ -164,7 +160,7 @@ def decoded_git_paths(out: str) -> List[str]:
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 
-def read_source_text(path: Path, *, repo: Optional[Path]) -> str:
+def read_source_text(path: Path, *, repo: Path | None) -> str:
     """The text of a file a gate is about to grade, or a loud failure.
 
     Never ``None``. The caller has no way to tell a ``None`` meaning "nothing
@@ -269,7 +265,7 @@ def parse_python_source(source: str, path: Path) -> ast.Module:
         ) from exc
 
 
-def git_repo_root() -> Optional[Path]:
+def git_repo_root() -> Path | None:
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -328,7 +324,7 @@ def _validated_ref(ref: str) -> str:
     return ref
 
 
-def _scope_args(diff_scope: str, base_ref: str) -> List[str]:
+def _scope_args(diff_scope: str, base_ref: str) -> list[str]:
     """git-diff selectors for each scope.
 
     ``worktree`` uses ``HEAD`` so it covers staged *and* unstaged edits — an
@@ -346,7 +342,7 @@ def _scope_args(diff_scope: str, base_ref: str) -> List[str]:
     return ["--cached"]
 
 
-def _git(command: List[str], repo: Path) -> str:
+def _git(command: list[str], repo: Path) -> str:
     proc = subprocess.run(
         ["git", *command],
         cwd=repo,
@@ -369,7 +365,7 @@ def _git(command: List[str], repo: Path) -> str:
     return proc.stdout
 
 
-def _run_git(args: List[str], repo: Path) -> str:
+def _run_git(args: list[str], repo: Path) -> str:
     return _git(["diff", *args], repo)
 
 
@@ -420,7 +416,7 @@ def git_diff_cached(repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
     return _run_git([*_scope_args(diff_scope, base_ref), "--no-color", "-U0", "--"], repo)
 
 
-def git_untracked_paths(repo: Path) -> List[str]:
+def git_untracked_paths(repo: Path) -> list[str]:
     """Repo-relative paths git is not tracking yet, respecting .gitignore.
 
     A brand-new file is invisible to `git diff` until it is added. In pre-commit
@@ -430,6 +426,31 @@ def git_untracked_paths(repo: Path) -> List[str]:
     """
     out = _git(["ls-files", "--others", "--exclude-standard"], repo)
     return decoded_git_paths(out)
+
+
+def git_source_paths(repo: Path, under: Path) -> list[str]:
+    """Repo-relative paths under `under` that git shows: tracked, plus untracked
+    files it does not ignore.
+
+    For a gate that reads *other* files for context — the TypeScript gate's DRY
+    catalog. A filesystem walk reads ignored trees too, and in a workspace whose
+    source root is the repository itself `.claude/worktrees/` holds a full
+    checkout per session: every staged function was reported as duplicating its
+    own copies there. Untracked-but-not-ignored stays in, for the same reason
+    `git_untracked_paths` exists.
+    """
+    out = _git(
+        [
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            str(under.relative_to(repo)),
+        ],
+        repo,
+    )
+    return sorted(set(decoded_git_paths(out)))
 
 
 def git_has_head(repo: Path) -> bool:
@@ -451,17 +472,128 @@ def git_has_head(repo: Path) -> bool:
     return proc.returncode == 0
 
 
-def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
+def git_paths_at_head(repo: Path | None, paths: Iterable[Path]) -> set[Path]:
+    """The subset of `paths` that HEAD tracks — i.e. that a missing file can be a deletion of.
+
+    A path absent from disk is a deletion only if git had it. One HEAD never had
+    is a typo, or a whole file list that reached argv as one word (zsh does not
+    split an unquoted `$files`), and treating it as a deletion graded nothing and
+    exited 0. Outside a repository, or before the first commit, nothing is tracked.
+    """
+    if repo is None or not git_has_head(repo):
+        return set()
+    root = repo.resolve()
+    by_rel: dict[str, Path] = {}
+    for path in paths:
+        try:
+            by_rel[path.resolve().relative_to(root).as_posix()] = path
+        except ValueError:  # outside the repository: HEAD cannot track it, so it stays unknown
+            continue
+    if not by_rel:
+        return set()
+    out = _git(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *by_rel], repo)
+    tracked = {name for name in out.split("\0") if name}
+    return {path for rel, path in by_rel.items() if rel in tracked}
+
+
+def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> list[str]:
     """Repo-relative paths this diff touches, for callers given no explicit file list."""
-    if unborn_worktree(repo, diff_scope):
-        return sorted(set(git_untracked_paths(repo)))
-    out = _run_git(
-        [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=ACMR", "--"], repo
-    )
-    paths = decoded_git_paths(out)
-    if diff_scope in _UNTRACKED_SCOPES:
-        paths.extend(git_untracked_paths(repo))
-    return sorted(set(paths))
+    return _RunQueries(repo).changed_paths(diff_scope, base_ref)
+
+
+#: `--diff-filter=ACMR`: added, copied, modified, renamed — what a gate can read.
+_CHANGED_STATUSES = frozenset("ACMR")
+
+
+@dataclass(frozen=True)
+class _RawEntry:
+    """One `git diff --raw` line: status letter(s), both modes, the post-image path."""
+
+    status: str
+    modes: tuple[str, ...]
+    path: str
+
+
+def _parse_raw(out: str) -> list[_RawEntry]:
+    entries: list[_RawEntry] = []
+    for line in out.splitlines():
+        head, _, paths = line.partition("\t")
+        if not line.startswith(":") or not paths:
+            continue
+        fields = head.lstrip(":").split()
+        # A rename or copy names both paths; like `--name-only`, keep the new one.
+        path = decode_git_path(paths.split("\t")[-1])
+        entries.append(_RawEntry(fields[4] if len(fields) > 4 else "", tuple(fields[:2]), path))
+    return entries
+
+
+class _RunQueries:
+    """git's answers for one gate run, each question asked once.
+
+    A gate reads the repository and never writes it, so within one run a
+    repeated question has the answer the first asking got. One gate run asked
+    git 11 questions, 5 of them repeats; at the stage-transition rate that is
+    where a gate's time went.
+
+    Scoped to one `resolve_gate_scope` (or one public helper call), never the
+    process: the gate tests import this module and drive many repositories
+    through one interpreter, where a module-level cache would answer one test
+    with another's repository.
+
+    Changed paths (`--name-only --diff-filter=ACMR`), added paths
+    (`--diff-filter=A`) and submodule pointers all come from one `--raw` diff:
+    the same paths, quoted the same way, with the status and modes alongside.
+    `test_gate_raw_queries.py` holds the derivations to git's own answers.
+    """
+
+    def __init__(self, repo: Path) -> None:
+        self.repo = repo
+        self._has_head: bool | None = None
+        self._untracked: list[str] | None = None
+        self._raw: dict[tuple[str, str], list[_RawEntry]] = {}
+
+    def has_head(self) -> bool:
+        if self._has_head is None:
+            self._has_head = git_has_head(self.repo)
+        return self._has_head
+
+    def unborn(self, diff_scope: str) -> bool:
+        """`unborn_worktree`, answered from this run's `has_head`."""
+        return diff_scope == WORKTREE and not self.has_head()
+
+    def untracked(self) -> list[str]:
+        if self._untracked is None:
+            self._untracked = git_untracked_paths(self.repo)
+        return list(self._untracked)
+
+    def raw(self, diff_scope: str, base_ref: str) -> list[_RawEntry]:
+        key = (diff_scope, base_ref)
+        if key not in self._raw:
+            self._raw[key] = (
+                []
+                if self.unborn(diff_scope)
+                else _parse_raw(
+                    _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], self.repo)
+                )
+            )
+        return self._raw[key]
+
+    def changed_paths(self, diff_scope: str, base_ref: str) -> list[str]:
+        if self.unborn(diff_scope):
+            return sorted(set(self.untracked()))
+        paths = [
+            e.path for e in self.raw(diff_scope, base_ref) if e.status[:1] in _CHANGED_STATUSES
+        ]
+        if diff_scope in _UNTRACKED_SCOPES:
+            paths.extend(self.untracked())
+        return sorted(set(paths))
+
+    def added_paths(self, diff_scope: str, base_ref: str) -> list[str]:
+        # Unborn: every path is untracked, which the caller already treats as whole-file.
+        return [e.path for e in self.raw(diff_scope, base_ref) if e.status[:1] == "A"]
+
+    def gitlink_paths(self, diff_scope: str, base_ref: str) -> list[str]:
+        return sorted({e.path for e in self.raw(diff_scope, base_ref) if GITLINK_MODE in e.modes})
 
 
 def describe_scope(diff_scope: str, base_ref: str) -> str:
@@ -488,7 +620,7 @@ class ResolvedScope:
 
     diff_scope: str
     base_ref: str
-    paths: List[str]
+    paths: list[str]
     description: str
     #: True when ``base_ref`` did not resolve and this run fell back to a
     #: narrower scope than the caller asked for. The fallback still reads the
@@ -532,7 +664,7 @@ def git_empty_tree(repo: Path) -> str:
     return _git(["hash-object", "-t", "tree", os.devnull], repo).strip()
 
 
-def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
+def git_merge_base(repo: Path, base_ref: str) -> str | None:
     """The commit this branch forked from, or None when there is no such commit.
 
     None covers two cases the caller must tell apart — see `git_rev_exists`.
@@ -550,7 +682,7 @@ def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
     return proc.stdout.strip() or None
 
 
-def git_origin_head(repo: Path) -> Optional[str]:
+def git_origin_head(repo: Path) -> str | None:
     """The trunk ``origin/HEAD`` names, e.g. ``origin/master``, or None.
 
     The remote's own answer rather than a guess, so it is asked before the
@@ -617,21 +749,27 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     ``degraded`` so `resolve_gate_scope` can refuse to call it a pass if the
     narrower scope leaves this gate with nothing to grade.
     """
+    return _resolve_scope(_RunQueries(repo), diff_scope, base_ref)
+
+
+def _resolve_scope(queries: _RunQueries, diff_scope: str, base_ref: str) -> ResolvedScope:
+    """`resolve_scope`, asking git through one run's queries."""
+    repo = queries.repo
     base_ref = effective_base_ref(repo, base_ref)
     if diff_scope != WORKTREE:
         return ResolvedScope(
             diff_scope,
             base_ref,
-            git_changed_paths(repo, diff_scope, base_ref),
+            queries.changed_paths(diff_scope, base_ref),
             describe_scope(diff_scope, base_ref),
         )
-    if not git_has_head(repo):
+    if not queries.has_head():
         # Unborn HEAD: there is no commit to diff against and every file is
-        # untracked, which `git_changed_paths` already collects.
+        # untracked, which `changed_paths` already collects.
         return ResolvedScope(
             WORKTREE,
             base_ref,
-            git_changed_paths(repo, WORKTREE, base_ref),
+            queries.changed_paths(WORKTREE, base_ref),
             "worktree changes (no commits yet)",
         )
     merge_base = git_merge_base(repo, base_ref)
@@ -646,14 +784,14 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
         return ResolvedScope(
             SINCE,
             empty_tree,
-            git_changed_paths(repo, SINCE, empty_tree),
+            queries.changed_paths(SINCE, empty_tree),
             f"whole branch and worktree (no common ancestor with {base_ref!r})",
         )
     if merge_base is None:
         return ResolvedScope(
             WORKTREE,
             base_ref,
-            git_changed_paths(repo, WORKTREE, base_ref),
+            queries.changed_paths(WORKTREE, base_ref),
             f"worktree changes vs HEAD (base {base_ref!r} did not resolve; "
             "branch commits not examined)",
             degraded=True,
@@ -661,7 +799,7 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     return ResolvedScope(
         SINCE,
         merge_base,
-        git_changed_paths(repo, SINCE, merge_base),
+        queries.changed_paths(SINCE, merge_base),
         describe_scope(SINCE, base_ref),
     )
 
@@ -682,8 +820,8 @@ class GateInvocation:
     first.
     """
 
-    files: List[Path]
-    repo: Optional[Path]
+    files: list[Path]
+    repo: Path | None
     diff_scope: str
     base_ref: str
     label: str
@@ -691,8 +829,8 @@ class GateInvocation:
 
 def parse_gate_argv(argv: Sequence[str], *, suffix: str = ".py") -> GateInvocation:
     """The argv every gate accepts: flags, then paths this gate might grade."""
-    files: List[Path] = []
-    repo_arg: Optional[str] = None
+    files: list[Path] = []
+    repo_arg: str | None = None
     diff_scope = STAGED
     base_ref = DEFAULT_BASE_REF
     index = 0
@@ -730,10 +868,10 @@ def examined_line(label: str, count: int, description: str) -> str:
 #: the repo's source root, mirroring the lefthook glob, while an explicit list
 #: was already scoped by the caller and narrowing it again would silently drop
 #: files that caller meant to have graded.
-GateFileSelector = Callable[[Optional[Path], Sequence[Path], bool], List[Path]]
+GateFileSelector = Callable[[Optional[Path], Sequence[Path], bool], list[Path]]
 
 
-def all_line_numbers(path: Path, *, repo: Optional[Path]) -> Set[int]:
+def all_line_numbers(path: Path, *, repo: Path | None) -> set[int]:
     """Every line of ``path``, as a touched-line set.
 
     What a file with no diff to scope against is graded on: an untracked file
@@ -756,7 +894,7 @@ def located_path(path: Path) -> Path:
     return path.parent.resolve() / path.name
 
 
-def repo_relative_posix(path: Path, repo: Optional[Path]) -> str:
+def repo_relative_posix(path: Path, repo: Path | None) -> str:
     """``path`` as git names it in a diff, or unchanged when it is outside ``repo``."""
     if repo is None:
         return path.as_posix()
@@ -790,13 +928,13 @@ class GateRun:
     """
 
     label: str
-    repo: Optional[Path]
+    repo: Path | None
     scope: ResolvedScope
-    files: List[Path]
+    files: list[Path]
     #: relpath -> line numbers this change added or modified, from the resolved diff.
-    additions: Dict[str, Set[int]]
+    additions: dict[str, set[int]]
     #: relpaths git is not tracking; their whole contents count as touched.
-    untracked: FrozenSet[str]
+    untracked: frozenset[str]
     #: line counts for the "don't make it worse" size checks, and the relpaths
     #: whose diff git suppressed — see `DiffNumstat`.
     numstat: DiffNumstat
@@ -809,7 +947,7 @@ class GateRun:
     def base_ref(self) -> str:
         return self.scope.base_ref
 
-    def touched_lines(self, path: Path) -> Optional[Set[int]]:
+    def touched_lines(self, path: Path) -> set[int] | None:
         """Lines in ``path`` this run may report violations on.
 
         ``None`` means "no diff to scope against at all" — no repository, so
@@ -843,31 +981,19 @@ class GateRun:
 GITLINK_MODE = "160000"
 
 
-def git_gitlink_paths(repo: Path, diff_scope: str, base_ref: str) -> List[str]:
+def git_gitlink_paths(repo: Path, diff_scope: str, base_ref: str) -> list[str]:
     """Submodule paths this diff moved.
 
     ``--name-only`` lists the gitlink like any other path, every gate's language
     filter drops it (it is a directory), and the run prints ``examined 0
     file(s)`` and exits 0 — a change nobody graded, reported as a clean gate.
     """
-    if unborn_worktree(repo, diff_scope):
-        return []
-    out = _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], repo)
-    found: List[str] = []
-    for line in out.splitlines():
-        if not line.startswith(":"):
-            continue
-        head, _, paths = line.partition("\t")
-        if not paths:
-            continue
-        fields = head.lstrip(":").split()
-        if len(fields) < 2 or GITLINK_MODE not in fields[:2]:
-            continue
-        found.append(decode_git_path(paths.split("\t")[-1]))
-    return sorted(set(found))
+    return _RunQueries(repo).gitlink_paths(diff_scope, base_ref)
 
 
-def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -> None:
+def announce_ungraded_submodules(
+    label: str, repo: Path, scope: ResolvedScope, queries: _RunQueries | None = None
+) -> None:
     """Say out loud that a submodule bump went ungraded.
 
     A gate cannot grade another repository's contents, and failing on every
@@ -877,7 +1003,7 @@ def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -
     unexamined change is the one option this ticket exists to remove, so the
     run names them.
     """
-    gitlinks = git_gitlink_paths(repo, scope.diff_scope, scope.base_ref)
+    gitlinks = (queries or _RunQueries(repo)).gitlink_paths(scope.diff_scope, scope.base_ref)
     if gitlinks:
         print(
             f"{label}: not examined — {len(gitlinks)} submodule(s) changed "
@@ -888,7 +1014,7 @@ def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -
 def resolve_gate_scope(
     *,
     label: str,
-    repo: Optional[Path],
+    repo: Path | None,
     diff_scope: str,
     base_ref: str,
     explicit_files: Iterable[Path],
@@ -910,8 +1036,10 @@ def resolve_gate_scope(
         )
     candidates = list(explicit_files)
     discovered = not candidates and repo is not None
-    if discovered:
-        scope = resolve_scope(repo, diff_scope, base_ref)
+    # Every git question below goes through this one run's queries.
+    queries = _RunQueries(repo) if repo is not None else None
+    if discovered and queries is not None:
+        scope = _resolve_scope(queries, diff_scope, base_ref)
         candidates = [repo / rel for rel in scope.paths]
     else:
         scope = ResolvedScope(diff_scope, base_ref, [], describe_scope(diff_scope, base_ref))
@@ -920,7 +1048,17 @@ def resolve_gate_scope(
         # silence: the whole point of `read_source_text` refusing an unreadable
         # path is that "I could not read it" must never pass as "it is clean",
         # and a deletion is the one case where there is genuinely nothing to read.
-        deleted = [path for path in candidates if not path.exists()]
+        missing = [path for path in candidates if not path.exists()]
+        deleted = git_paths_at_head(repo, missing)
+        unknown = [path for path in missing if path not in deleted]
+        if unknown:
+            # Not a deletion — HEAD never had it. Skipping it by the deletion rule
+            # graded nothing and passed.
+            raise UnexaminableFileError(
+                f"{len(unknown)} path(s) do not exist and are not deletions of a tracked "
+                f"file: {', '.join(sorted(str(path) for path in unknown))} — check the "
+                f"argument list (a file list passed as one quoted word arrives as one path)"
+            )
         if deleted:
             names = ", ".join(sorted(path.name for path in deleted))
             print(f"{label}: skipping {len(deleted)} deleted file(s): {names}")
@@ -939,19 +1077,18 @@ def resolve_gate_scope(
     # Counted after filtering, always: the number has to be the number of files
     # the gate read, or it is one more thing that looks like a pass over work.
     print(examined_line(label, len(files), scope.description))
-    if discovered and repo is not None and git_has_head(repo):
-        announce_ungraded_submodules(label, repo, scope)
-    additions: Dict[str, Set[int]] = {}
-    untracked: FrozenSet[str] = frozenset()
+    if discovered and queries is not None and queries.has_head():
+        announce_ungraded_submodules(label, queries.repo, scope, queries)
+    additions: dict[str, set[int]] = {}
+    untracked: frozenset[str] = frozenset()
     numstat = DiffNumstat({}, frozenset())
-    if repo is not None and files:
+    if queries is not None and files:
+        repo = queries.repo
         diff = git_diff_cached(repo, scope.diff_scope, scope.base_ref)
         additions = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
-        untracked = (
-            frozenset(git_untracked_paths(repo)) if scope.includes_untracked else frozenset()
-        )
+        untracked = frozenset(queries.untracked()) if scope.includes_untracked else frozenset()
         numstat = git_diff_numstat(repo, scope.diff_scope, scope.base_ref)
         # Asked only of the files this gate grades: a path outside them is
         # never looked up, and a deleted path (no `+++ b/`, real counts) would
@@ -959,7 +1096,7 @@ def resolve_gate_scope(
         graded_rels = frozenset(repo_relative_posix(f, repo) for f in files) - untracked
         numstat = numstat.with_suppressed(
             suppressed_diff_paths(diff, numstat, graded_rels)
-            | (graded_rels & frozenset(git_added_paths(repo, scope.diff_scope, scope.base_ref)))
+            | (graded_rels & frozenset(queries.added_paths(scope.diff_scope, scope.base_ref)))
         )
     return GateRun(
         label=label,
@@ -972,7 +1109,7 @@ def resolve_gate_scope(
     )
 
 
-def diff_header_path(line: str) -> Optional[str]:
+def diff_header_path(line: str) -> str | None:
     """The relpath a ``+++ `` header names, or None for ``/dev/null``.
 
     The quoting wraps the *whole* operand, prefix included:
@@ -987,7 +1124,7 @@ def diff_header_path(line: str) -> Optional[str]:
 
 def suppressed_diff_paths(
     diff: str, numstat: DiffNumstat, candidates: Iterable[str]
-) -> FrozenSet[str]:
+) -> frozenset[str]:
     """Candidate relpaths whose diff did not describe the change git counted.
 
     This is the *mechanism* behind the ``.gitattributes`` hole rather than one
@@ -1024,10 +1161,10 @@ def suppressed_diff_paths(
     )
 
 
-def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
+def parse_staged_additions(diff: str) -> dict[str, list[tuple[int, str]]]:
     """Map relpath (as in diff, posix) -> [(new_line_no, added_line_without_leading_plus)]."""
-    result: Dict[str, List[Tuple[int, str]]] = {}
-    current_file: Optional[str] = None
+    result: dict[str, list[tuple[int, str]]] = {}
+    current_file: str | None = None
     lines = diff.splitlines()
     i = 0
     while i < len(lines):
@@ -1047,17 +1184,17 @@ def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
                 continue
             new_line = int(m.group(3))
             while i < len(lines):
-                l = lines[i]
-                if l.startswith("@@") or l.startswith("diff --git"):
+                line = lines[i]
+                if line.startswith("@@") or line.startswith("diff --git"):
                     break
-                if l.startswith("\\"):
+                if line.startswith("\\"):
                     i += 1
                     continue
-                if not l:
+                if not line:
                     i += 1
                     continue
-                prefix = l[0]
-                body = l[1:]
+                prefix = line[0]
+                body = line[1:]
                 if prefix == "+":
                     lst = result.setdefault(current_file, [])
                     lst.append((new_line, body))
@@ -1085,11 +1222,11 @@ class DiffNumstat:
     was what made the suppression invisible, so it is carried instead.
     """
 
-    counts: Dict[str, Tuple[int, int]]
+    counts: dict[str, tuple[int, int]]
     #: relpaths git reported as changed but refused to diff by line.
-    undiffable: FrozenSet[str]
+    undiffable: frozenset[str]
 
-    def with_suppressed(self, paths: FrozenSet[str]) -> DiffNumstat:
+    def with_suppressed(self, paths: frozenset[str]) -> DiffNumstat:
         """The same counts, with `suppressed_diff_paths` folded into ``undiffable``.
 
         Both arrive at the same place because they mean the same thing
@@ -1099,7 +1236,7 @@ class DiffNumstat:
         return DiffNumstat(self.counts, self.undiffable | paths)
 
 
-def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
+def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> list[str]:
     """Relpaths this scope *adds*, which are new in their entirety.
 
     Same standing as an untracked file, and graded the same way. Normally this
@@ -1111,18 +1248,10 @@ def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
     That pair is indistinguishable from a mode-only ``chmod`` by counts alone,
     so counts alone cannot decide it. "It is new, so all of it is new" can.
     """
-    if unborn_worktree(repo, diff_scope):
-        # Every path is untracked, which the caller already treats as whole-file.
-        return []
-    out = _run_git(
-        [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=A", "--"], repo
-    )
-    return decoded_git_paths(out)
+    return _RunQueries(repo).added_paths(diff_scope, base_ref)
 
 
-def git_diff_numstat(
-    repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
-) -> DiffNumstat:
+def git_diff_numstat(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> DiffNumstat:
     """relpath -> (added_lines, deleted_lines) for this diff, plus the undiffable ones.
 
     The counts drive "don't make it worse" checks (e.g. file-length caps) that
@@ -1137,8 +1266,8 @@ def git_diff_numstat(
     if unborn_worktree(repo, diff_scope):
         return DiffNumstat({}, frozenset())
     out = _run_git([*_scope_args(diff_scope, base_ref), "--numstat", "--"], repo)
-    counts: Dict[str, Tuple[int, int]] = {}
-    undiffable: Set[str] = set()
+    counts: dict[str, tuple[int, int]] = {}
+    undiffable: set[str] = set()
     for line in out.splitlines():
         parts = line.split("\t")
         if len(parts) != 3:
@@ -1151,7 +1280,7 @@ def git_diff_numstat(
     return DiffNumstat(counts, frozenset(undiffable))
 
 
-def staged_file_text(repo: Path, relpath: str) -> Optional[str]:
+def staged_file_text(repo: Path, relpath: str) -> str | None:
     proc = subprocess.run(
         ["git", "show", f":0:{relpath}"],
         cwd=repo,
@@ -1163,198 +1292,3 @@ def staged_file_text(repo: Path, relpath: str) -> Optional[str]:
     if proc.returncode != 0:
         return None
     return proc.stdout
-
-
-# --------------------------------------------------------------------------- #
-# `--emit-scope-json` — the scope, resolved once, for a gate in another language
-# --------------------------------------------------------------------------- #
-#
-# About 560 lines of `ts_organization_check.cjs` were a hand-port of this module:
-# the error classes, git-path decoding, env scrubbing, ref validation, scope
-# resolution, untracked discovery, submodule announcement and diff-suppression
-# detection. None of it was TypeScript-specific, and three of one review's nine
-# defects were the two copies drifting apart. The conformance table catches that
-# drift after the fact, on the repo states it enumerates; it does not remove the
-# surface, and every fix still had to be written twice (580).
-#
-# So the `.cjs` asks this instead. It already shells out to git repeatedly; one
-# more subprocess buys it a single implementation of scope policy.
-#
-# The language-specific half stays with the caller and is passed *in*: which
-# suffixes that gate grades, and which source root it confines discovery to.
-# That keeps the count honest — it is computed after the caller's own filter,
-# by the same code that computes it for the Python gates — without this module
-# needing to know what a TypeScript file is.
-
-
-def _suffix_selector(
-    suffixes: FrozenSet[str], select_root: Optional[Path]
-) -> "GateFileSelector":
-    """Build the caller's file filter from flags rather than from knowledge here.
-
-    `select_root` is applied only when the run *discovered* its own candidates,
-    matching every gate's existing behaviour: an explicitly named file was
-    chosen by the caller (lefthook passes staged paths) and is not second-
-    guessed, while a path the scope turned up is confined to the source root so
-    a stray match elsewhere in the repo is not graded.
-    """
-
-    def select(repo: Optional[Path], candidates: List[Path], discovered: bool) -> List[Path]:
-        chosen = []
-        for candidate in candidates:
-            if candidate.suffix not in suffixes:
-                continue
-            if discovered and select_root is not None:
-                # `located_path`, not `resolve()`: resolving the whole path
-                # follows a symlinked source out of the tree, drops it from the
-                # filter, and reports `examined 0` over a file the read guard
-                # was supposed to refuse. That is the vacuous pass this module's
-                # own docstring warns about, and using `resolve()` here
-                # reintroduced it (caught by the ts-org symlink tests).
-                try:
-                    located_path(candidate).relative_to(select_root)
-                except ValueError:
-                    continue
-            chosen.append(candidate)
-        return chosen
-
-    return select
-
-
-def emit_scope_json(argv: Optional[Sequence[str]] = None) -> int:
-    """Print one JSON object describing what a gate run should examine.
-
-    Everything a gate needs before it can apply a single rule: the resolved
-    scope, the files that survived the caller's filter, which of them git is not
-    tracking, which of them git changed but would not diff, and the line numbers
-    the change touched in each.
-
-    Two things are deliberately *not* decided here, because they are the
-    caller's: which suffixes to grade, and what to do about the result. The
-    caller also prints `notices` itself rather than this process writing to the
-    terminal — stdout is the JSON channel, so the human-facing lines
-    `resolve_gate_scope` emits are captured and handed back to be printed in
-    the caller's own order.
-
-    An unresolvable scope exits `EXIT_UNEXAMINABLE` with the reason on the JSON,
-    not a traceback: the caller has its own sentence for "cannot determine what
-    to examine" and needs the message, not a Python stack.
-    """
-    parser = argparse.ArgumentParser(
-        prog="precommit_git_diff.py --emit-scope-json",
-        description="Resolve a gate run's scope and print it as JSON.",
-    )
-    parser.add_argument("--emit-scope-json", action="store_true", required=True)
-    parser.add_argument("--repo", default=None)
-    # No `choices=`: an unknown scope is rejected by `resolve_gate_scope`, which
-    # owns that rule and whose message says why it matters. Validating it twice
-    # is how the two copies start disagreeing.
-    parser.add_argument("--scope", dest="diff_scope", default=STAGED)
-    parser.add_argument("--base", dest="base_ref", default=DEFAULT_BASE_REF)
-    parser.add_argument("--label", default="gate")
-    parser.add_argument(
-        "--suffix",
-        action="append",
-        default=[],
-        help="File suffix this gate grades, with the dot (repeatable).",
-    )
-    parser.add_argument(
-        "--select-root",
-        default=None,
-        help="Confine discovered candidates to this directory.",
-    )
-    parser.add_argument(
-        "--select-root-candidate",
-        action="append",
-        default=[],
-        help=(
-            "Repo-relative directory to confine discovered candidates to, first "
-            "one that exists wins (repeatable). Unlike --select-root this is "
-            "resolved against the repository root *this* process derived, so a "
-            "caller that does not know the root yet can still express its own "
-            "source-root policy."
-        ),
-    )
-    parser.add_argument("files", nargs="*")
-    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
-
-    # `git_repo_root()` when unset, exactly as every Python gate does it. A
-    # caller that resolves its own root from `cwd` gets a different answer than
-    # the Python gates whenever it is not standing at the top level, and the
-    # containment guard is then measured against the wrong tree — skipped
-    # entirely for a file outside that root (594).
-    repo = Path(args.repo).resolve() if args.repo else git_repo_root()
-    select_root = Path(args.select_root).resolve() if args.select_root else None
-    if select_root is None and repo is not None:
-        for candidate in args.select_root_candidate:
-            if (repo / candidate).is_dir():
-                select_root = (repo / candidate).resolve()
-                break
-        else:
-            select_root = repo if args.select_root_candidate else None
-    selector = _suffix_selector(frozenset(args.suffix), select_root)
-
-    # `resolve_gate_scope` prints the examined line (and any submodule notice)
-    # as it goes. Captured rather than suppressed: the caller still has to show
-    # them, and re-deriving the wording on the other side would reintroduce
-    # exactly the duplication this entry point exists to delete.
-    captured = io.StringIO()
-    try:
-        with redirect_stdout(captured):
-            run = resolve_gate_scope(
-                label=args.label,
-                repo=repo,
-                diff_scope=args.diff_scope,
-                base_ref=args.base_ref,
-                # Same reason as the selector above: `resolve()` here hands
-                # the caller the symlink's *target*, so a link pointing out of
-                # the repository arrives as an ordinary file and the caller's
-                # read guard has nothing left to refuse. The link's own path is
-                # what git spells and what must be graded.
-                explicit_files=[located_path(Path(f)) for f in args.files],
-                select=selector,
-            )
-    except UnexaminableError as exc:
-        json.dump({"error": str(exc), "notices": captured.getvalue().splitlines()}, sys.stdout)
-        sys.stdout.write("\n")
-        return EXIT_UNEXAMINABLE
-
-    json.dump(
-        {
-            "notices": captured.getvalue().splitlines(),
-            "scope": {
-                "diff_scope": run.scope.diff_scope,
-                "base_ref": run.scope.base_ref,
-                "description": run.scope.description,
-                "degraded": run.scope.degraded,
-                "includes_untracked": run.scope.includes_untracked,
-            },
-            # The root every check downstream must measure against — the
-            # caller does not re-derive it.
-            "repo_root": str(repo) if repo is not None else None,
-            "select_root": str(select_root) if select_root is not None else None,
-            "files": [str(path) for path in run.files],
-            "untracked": sorted(run.untracked),
-            # Graded whole: git changed them but produced no usable diff.
-            "undiffable": sorted(run.numstat.undiffable),
-            "additions": {rel: sorted(lines) for rel, lines in run.additions.items()},
-            # (added, deleted) per relpath — the caller's "is this file growing?"
-            "counts": {rel: list(pair) for rel, pair in run.numstat.counts.items()},
-        },
-        sys.stdout,
-    )
-    sys.stdout.write("\n")
-    return 0
-
-
-if __name__ == "__main__":
-    # Importable as a library (every gate does) and runnable as this one entry
-    # point. Guarded on the flag so a future second mode has to be added
-    # deliberately rather than by accident.
-    if "--emit-scope-json" in sys.argv[1:]:
-        raise SystemExit(emit_scope_json())
-    print(
-        "precommit_git_diff.py is a library; its only CLI mode is --emit-scope-json",
-        file=sys.stderr,
-    )
-    raise SystemExit(2)

@@ -11,7 +11,12 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
-from loregarden.services.approval_views import approval_to_view
+from loregarden.services.approval_views import (
+    ApprovalHistoryItem,
+    approval_history,
+    approval_to_view,
+)
+from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import (
@@ -42,6 +47,17 @@ def list_approvals(
     query = query.order_by(Approval.created_at.asc())
     approvals = session.exec(query).all()
     return [approval_to_view(session, item) for item in approvals]
+
+
+@router.get("/approvals/history")
+def list_approval_history(
+    ticket_id: str,
+    session: Session = Depends(get_session),
+) -> list[ApprovalHistoryItem]:
+    """What has already been decided on a ticket and its subtree, newest first."""
+    if session.get(Ticket, ticket_id) is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+    return approval_history(session, collect_ticket_scope_ids(session, ticket_id))
 
 
 @router.post("/approvals/{approval_id}")

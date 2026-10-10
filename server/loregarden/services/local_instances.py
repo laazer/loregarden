@@ -23,7 +23,9 @@ worktrees has no business being either.
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import lru_cache
@@ -34,6 +36,7 @@ from lore_eden.instances import (
     InstanceKind,
     InstanceManager,
     InstanceRecord,
+    InstanceRole,
     InstanceTemplate,
     LaunchContext,
     LaunchRequest,
@@ -48,6 +51,7 @@ from lore_eden.instances import (
 from loregarden.config import settings
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_resolve import resolve_sqlite_path, sqlite_url_for_path
+from loregarden.services.signal_relay import SignalRelay, Terminated
 from loregarden.services.workspace_instance_templates import WorkspaceTemplateSource
 
 logger = logging.getLogger(__name__)
@@ -322,3 +326,73 @@ def register_main() -> SelfRegistration | None:
         # Logged, so a client that cannot find main has a reason on record.
         logger.exception("could not register this server in the local instance registry")
         return None
+
+
+@dataclass(frozen=True)
+class SelfAdvertisement:
+    """How a process started outside the launcher describes itself to the registry."""
+
+    name: str
+    kind: InstanceKind
+    role: InstanceRole
+    host: str
+    port: int
+    health_path: str
+    labels: Mapping[str, str]
+
+
+def run_registered(
+    advertisement: SelfAdvertisement,
+    command: Sequence[str],
+    *,
+    report: Callable[[str], None],
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Run `command` registered in the local instance registry; return its status.
+
+    For processes that cannot register themselves — a Vite client, or a server
+    whose own `register_main` stands down (a sandbox). The record names this
+    wrapper's pid, which lives exactly as long as the command, and is removed
+    when the command exits. A failure to register is reported and the command
+    still runs: discovery is a convenience beside it, as in `register_main`.
+    """
+    registration: SelfRegistration | None = None
+    with SignalRelay() as relay:
+        try:
+            try:
+                registration = register_self(
+                    get_registry(),
+                    project=PROJECT,
+                    name=advertisement.name,
+                    kind=advertisement.kind,
+                    role=advertisement.role,
+                    host=advertisement.host,
+                    port=advertisement.port,
+                    health_path=advertisement.health_path,
+                    labels=dict(advertisement.labels),
+                )
+            except OSError as exc:
+                report(
+                    f"instance: could not register {PROJECT}/{advertisement.name} ({exc}); "
+                    "running it unregistered, so nothing can discover it"
+                )
+            if registration is not None:
+                report(
+                    f"instance: registered {registration.record.id} at {registration.record.url}"
+                )
+            return relay.run(command, environ or os.environ, None)
+        except Terminated as stopped:
+            return 128 + stopped.signum
+        finally:
+            if registration is not None:
+                _release(registration, report)
+
+
+def _release(registration: SelfRegistration, report: Callable[[str], None]) -> None:
+    try:
+        registration.release()
+    except OSError as exc:
+        # The pid in the record dies with this process, so every reader already
+        # sees it as exited; the stale file is cosmetic until the next start
+        # under the same id overwrites it.
+        report(f"instance: could not remove record {registration.record.id} ({exc})")

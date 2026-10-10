@@ -9,6 +9,8 @@ and the ticket read `in_progress` with no blocking text for three hours.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from loregarden.models.domain import (
     AgentRun,
@@ -113,6 +115,10 @@ def test_a_landing_that_still_conflicts_blocks_with_its_reason_and_is_not_retrie
     """The sweep must not paper over a conflict, and must reach a fixpoint:
     a BLOCKED terminal stage is no longer PENDING, so the next sweep skips it."""
     target = _target(session, parked, workspace, repo)
+    # The person-facing block is what this checks; the resolver is on by default.
+    parked.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
+    session.add(parked)
+    session.commit()
     commit_on(repo, parked.branch, "shared.txt", "ticket\n")
     commit_on(repo, target, "shared.txt", "sibling\n")
 

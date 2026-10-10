@@ -18,10 +18,18 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
     find_terminal_stage,
     is_terminal_stage,
 )
-from loregarden.models.domain import ClassifyRoute, StageType, Ticket, WorkflowStageDef
+from loregarden.models.domain import (
+    Artifact,
+    ArtifactKind,
+    ClassifyRoute,
+    StageType,
+    Ticket,
+    WorkflowStageDef,
+)
 from loregarden.models.domain.enums import ClassifyBasis
 from loregarden.services.workflow_service import resolve_ticket_stages
-from sqlmodel import Session
+from sqlalchemy.orm import object_session
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -511,7 +519,17 @@ def prunable_stage_keys(stages: list[WorkflowStageDef]) -> list[str]:
 # Conditions a stage may declare via `skip_when`. Deliberately a closed, named
 # vocabulary rather than an expression language: these are checked structurally
 # against ticket fields, which the classify keyword matcher cannot express.
-SKIP_CONDITIONS = ("has_description", "has_acceptance_criteria", "routed_as_light_work")
+SKIP_CONDITIONS = (
+    "has_description",
+    "has_acceptance_criteria",
+    "routed_as_light_work",
+    "no_ui_work",
+)
+
+#: Path fragments that mark a plan as touching UI code. Measured 2026-10-09 over
+#: 59 tickets that ran ui-design: all 4 that changed `client/` had a plan naming
+#: one of these, and 53 never changed `client/` at all.
+UI_PATH_MARKERS = ("client/", ".tsx")
 
 
 def took_light_route(ticket: Ticket, stages: list[WorkflowStageDef]) -> bool:
@@ -531,6 +549,28 @@ def took_light_route(ticket: Ticket, stages: list[WorkflowStageDef]) -> bool:
         if route is not None and (route.to_stage or "").strip():
             return True
     return False
+
+
+def plan_names_no_ui_paths(ticket: Ticket) -> bool:
+    """Whether the ticket has a plan and none of its plans names a UI path.
+
+    No plan means no evidence, so the answer is False and the stage runs.
+    """
+    session = object_session(ticket)
+    if session is None:
+        logger.warning(
+            "Ticket %s is detached; cannot read its plans, so not skipping on no_ui_work",
+            ticket.external_id,
+        )
+        return False
+    plans = session.exec(
+        select(Artifact.content_json).where(
+            Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.PLAN
+        )
+    ).all()
+    if not plans:
+        return False
+    return not any(marker in plan for plan in plans for marker in UI_PATH_MARKERS)
 
 
 def should_skip_stage(
@@ -564,6 +604,8 @@ def should_skip_stage(
         return bool(criteria)
     if condition == "routed_as_light_work":
         return took_light_route(ticket, stages or [])
+    if condition == "no_ui_work":
+        return took_light_route(ticket, stages or []) or plan_names_no_ui_paths(ticket)
     return False
 
 
@@ -582,17 +624,21 @@ def resolve_scope_reroute_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[
     pinned = (ticket.scope_reroute_agent or "").strip()
     if not pinned or not get_agent(pinned):
         return None
-    if stage.classify_routes:
-        for route in stage.classify_routes:
-            if route.agent_id == pinned:
-                return pinned, route.skill_name or stage.skill_name
-        # Fall through rather than giving up here: a classify stage can also name
-        # a static `agent_id` that is not repeated as a route, and that agent can
-        # still run the stage. Returning None on a route-table miss dropped a
-        # valid pin for exactly that shape, sending the stage back to keyword
-        # scoring — which is what pinned it to the wrong specialist to begin with.
-    if (stage.agent_id or "").strip() == pinned:
-        return pinned, stage.skill_name or ""
+    return stage_offers_agent(stage, pinned)
+
+
+def stage_offers_agent(stage: WorkflowStageDef, agent_id: str) -> tuple[str, str] | None:
+    """``(agent_id, skill)`` when ``stage`` can run ``agent_id``, else None."""
+    for route in stage.classify_routes:
+        if route.agent_id == agent_id:
+            return agent_id, route.skill_name or stage.skill_name
+    # Checked even when the route table missed: a classify stage can also name
+    # a static `agent_id` that is not repeated as a route, and that agent can
+    # still run the stage. Returning None on a route-table miss dropped a
+    # valid pin for exactly that shape, sending the stage back to keyword
+    # scoring — which is what pinned it to the wrong specialist to begin with.
+    if (stage.agent_id or "").strip() == agent_id:
+        return agent_id, stage.skill_name or ""
     return None
 
 

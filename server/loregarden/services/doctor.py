@@ -38,7 +38,7 @@ from loregarden.agents.mcp_context import (
 )
 from loregarden.config import resolved_database_path, settings
 from loregarden.db.migration_ledger import ledger_orphans
-from loregarden.db.migrations import MIGRATIONS
+from loregarden.db.migrations import MIGRATIONS, VERSION_CHAIN
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -50,8 +50,16 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
-from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
+from loregarden.services.git_subprocess import (
+    GH_USER_ENV,
+    GIT_LOCATION_ENV_VARS,
+    GhAccountUnavailable,
+    configured_gh_user,
+    gh_logins,
+    run_git,
+)
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.stage_parking import park_stage
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.workspace_paths import resolve_agent_context_dir
@@ -586,6 +594,112 @@ def check_migration_ledger(
     )
 
 
+def check_migration_chain(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
+    """Versioned migrations that claim to follow the same id.
+
+    Such a merge has no textual conflict, so it reaches main quietly; the build
+    then orders the siblings by id and logs it once at import, which nobody
+    reads. WARN rather than FAIL: the server runs and every migration still
+    applies — what is uncertain is only the order, against a database that may
+    have seen them the other way round.
+    """
+    if not VERSION_CHAIN.forks:
+        return _ok(DoctorCheck.MIGRATION_CHAIN, "Versioned migrations form one chain.")
+    return DoctorFinding(
+        check=DoctorCheck.MIGRATION_CHAIN,
+        status=DoctorStatus.WARN,
+        finding="; ".join(
+            f"{', '.join(fork.children)} all follow {fork.parent}" for fork in VERSION_CHAIN.forks
+        )
+        + ".",
+        remediation=(
+            "Point the later-merged migration's `after` at the earlier one in "
+            "server/loregarden/db/versions/. Do not rename either id."
+        ),
+    )
+
+
+def check_gh_account(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
+    """Which `gh` account loregarden acts as, and whether that is a decision.
+
+    Reads `gh auth status` — account names only, never a token — and asks
+    nothing of GitHub, so it cannot say whether an account can write a given
+    repository. It reports the case that produced that failure: several
+    accounts signed in, and the one in use chosen by `gh auth switch` rather
+    than by loregarden.
+    """
+    configured = configured_gh_user()
+    try:
+        logins = gh_logins()
+    except GhAccountUnavailable as exc:
+        return DoctorFinding(
+            check=DoctorCheck.GH_ACCOUNT,
+            status=DoctorStatus.FAIL if configured else DoctorStatus.WARN,
+            finding=f"Could not list gh accounts: {exc}.",
+            remediation="Install gh and run `gh auth login`; PR, merge and issue calls need it.",
+        )
+    signed_in = [login for login in logins if login.signed_in]
+    names = [login.login for login in signed_in]
+    if configured:
+        if configured in names:
+            return _ok(DoctorCheck.GH_ACCOUNT, f"gh calls act as {configured} ({GH_USER_ENV}).")
+        return DoctorFinding(
+            check=DoctorCheck.GH_ACCOUNT,
+            status=DoctorStatus.FAIL,
+            finding=(
+                f"{GH_USER_ENV}={configured}, but gh is signed in to "
+                f"{', '.join(names) or 'no account'}. Every gh call loregarden makes will fail."
+            ),
+            remediation=f"`gh auth login` as {configured}, or correct {GH_USER_ENV} in .env.",
+        )
+    active = next((login.login for login in signed_in if login.active), None)
+    if len(names) <= 1:
+        return _ok(DoctorCheck.GH_ACCOUNT, f"gh calls act as {active or 'no account'}.")
+    return DoctorFinding(
+        check=DoctorCheck.GH_ACCOUNT,
+        status=DoctorStatus.WARN,
+        finding=(
+            f"gh is signed in to {', '.join(names)}, and loregarden acts as whichever is "
+            f"active (now {active}). A `gh auth switch` anywhere changes who opens and merges PRs."
+        ),
+        remediation=(
+            f"Set {GH_USER_ENV}=<the account that can write the workspace repos> in .env "
+            "and restart the backend."
+        ),
+    )
+
+
+def check_agent_detach_transport(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """Whether a detached agent run will get a session an operator can attach to.
+
+    WARN rather than FAIL: a run without tmux still survives a restart and still
+    streams — that is the `sh -c` wrapper's three output files, not tmux's. What
+    is lost is `tmux attach`, so the honest report is "this works, and this one
+    affordance is missing", said before a run instead of inferred afterwards
+    from an `agent_transport` column reading `file`.
+    """
+    if shutil.which("tmux"):
+        return _ok(
+            DoctorCheck.AGENT_DETACH_TRANSPORT,
+            "tmux is installed; a detached run gets a session an operator can attach to.",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.AGENT_DETACH_TRANSPORT,
+        status=DoctorStatus.WARN,
+        finding=(
+            "tmux is not installed, so detached agent runs use the file transport. They "
+            "still survive a restart and still stream, but there is no session to "
+            "`tmux attach` to while one is working."
+        ),
+        remediation=(
+            "Install tmux (`brew install tmux`), or set "
+            "LOREGARDEN_AGENT_DETACH_TRANSPORT=file in .env to pin the choice explicitly."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -602,19 +716,40 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.DOCKER_CAPACITY: check_docker_capacity,
     DoctorCheck.DOCKER_UNACCOUNTED: check_docker_unaccounted,
     DoctorCheck.MIGRATION_LEDGER: check_migration_ledger,
+    DoctorCheck.MIGRATION_CHAIN: check_migration_chain,
+    DoctorCheck.GH_ACCOUNT: check_gh_account,
+    DoctorCheck.AGENT_DETACH_TRANSPORT: check_agent_detach_transport,
 }
 
 
 def preflight_run(
-    session: Session, run: AgentRun, workspace: Workspace, repo_root: Path
+    session: Session,
+    run: AgentRun,
+    workspace: Workspace,
+    repo_root: Path,
+    *,
+    ledger: PreflightLedger,
 ) -> list[DoctorFinding]:
     """Run the fast subset before a stage, and record which checks failed.
 
     Recorded on the run rather than raised: knowing that a stage started in a
     broken environment is worth having afterwards even when nobody stopped it at
     the time. The caller decides what a failure means; this only observes.
+
+    A repository-shape check this orchestration run already passed for
+    `repo_root` is taken from `ledger` instead of asked again; see
+    `services.preflight_ledger`.
     """
-    findings = run_checks(session, workspace, repo_root, checks=DISPATCH_PREFLIGHT_CHECKS)
+    reused = ledger.passed(run.orchestration_run_id, repo_root)
+    fresh = run_checks(
+        session,
+        workspace,
+        repo_root,
+        checks=tuple(check for check in DISPATCH_PREFLIGHT_CHECKS if check not in reused),
+    )
+    ledger.record(run.orchestration_run_id, repo_root, fresh)
+    by_check = {**reused, **{finding.check: finding for finding in fresh}}
+    findings = [by_check[check] for check in DISPATCH_PREFLIGHT_CHECKS]
     failures = [f.check.value for f in findings if f.status is DoctorStatus.FAIL]
     run.start_preflight_failures_json = json.dumps(failures)
     session.add(run)

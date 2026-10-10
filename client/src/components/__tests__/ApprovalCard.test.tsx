@@ -156,3 +156,21 @@ describe("ApprovalCard rework pause", () => {
     );
   });
 });
+
+describe("ApprovalCard ticket identity", () => {
+  it("names the ticket, so two tickets parked at one gate are distinguishable", () => {
+    renderWithRouter(
+      <>
+        <ApprovalCard approval={GATE_APPROVAL} onApprove={() => {}} onReject={() => {}} />
+        <ApprovalCard
+          approval={{ ...GATE_APPROVAL, id: "appr_3", ticket_external_id: "02-blobert-jump" }}
+          onApprove={() => {}}
+          onReject={() => {}}
+        />
+      </>,
+    );
+
+    expect(screen.getByText(/01-blobert-dash/)).toBeInTheDocument();
+    expect(screen.getByText(/02-blobert-jump/)).toBeInTheDocument();
+  });
+});

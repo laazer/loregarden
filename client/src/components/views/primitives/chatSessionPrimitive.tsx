@@ -32,6 +32,8 @@
 import { useState } from "react";
 
 import { useBaxterChatSessionAt } from "../../../hooks/useBaxterChatSession";
+import { useComposerAttachments } from "../../../hooks/useComposerAttachments";
+import { ComposerAttachButton, ComposerAttachmentTray } from "../../chat/ComposerAttachments";
 import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat";
 import { usePaneSize } from "../paneSize";
 import { definePrimitive } from "./definePrimitive";
@@ -49,6 +51,7 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
   // has to be *something*, and a no-op is the honest one.
   const chat = useBaxterChatSessionAt(workspaceSlug, sessionId, () => {});
   const [draft, setDraft] = useState("");
+  const attachments = useComposerAttachments();
   // A short pane is otherwise mostly composer: the page-sized box took 110px of
   // a 179px pane. `dense` is the composer's own compact size rather than this
   // stylesheet reaching into its internals.
@@ -60,8 +63,10 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
   // mutation removing the copy changed nothing, which is how it was found.
   const submit = () => {
     const text = draft.trim();
+    const files = attachments.items.map((item) => item.file);
     setDraft("");
-    void chat.send(text);
+    attachments.clear();
+    void chat.send(text, { files });
   };
 
   if (chat.loadError) {
@@ -99,6 +104,12 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
         variant="dock"
         dense={tier === "compact"}
         error={chat.error ?? undefined}
+        canSendEmpty={attachments.items.length > 0}
+        onFiles={attachments.add}
+        accessory={
+          <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />
+        }
+        toolbar={<ComposerAttachButton onFiles={attachments.add} />}
       />
     </div>
   );

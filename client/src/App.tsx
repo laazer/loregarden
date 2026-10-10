@@ -3,11 +3,12 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
+import { AgentActionHost } from "./components/AgentActionHost";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketRouteResolver } from "./components/TicketRouteResolver";
+import { TicketAgentActions } from "./components/TicketAgentActions";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
-import { InstancesPage } from "./pages/InstancesPage";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
@@ -15,9 +16,12 @@ import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
+import { InitiativePlanRoute } from "./pages/InitiativePlanPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
+import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
+import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
 import { ViewPage } from "./pages/ViewPage";
 import { viewIdFromPath } from "./lib/appNavigation";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
@@ -97,11 +101,14 @@ export function AppShell() {
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
             <Route path="/initiatives" element={<InitiativesPage />} />
+            <Route path="/initiatives/suggest" element={<InitiativeSuggestionsPage />} />
+            <Route path="/initiatives/:initiativeId" element={<InitiativePlanRoute />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
             <Route
               path="/tickets/:ticketId/:artifactTab"
               element={
                 <TicketRouteResolver>
+                  <TicketAgentActions />
                   <Dashboard />
                 </TicketRouteResolver>
               }
@@ -114,7 +121,8 @@ export function AppShell() {
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory/*" element={<MemoryPage />} />
             <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
-            <Route path="/instances" element={<InstancesPage />} />
+            <Route path="/workspaces/*" element={<WorkspacesPage />} />
+            <Route path="/instances/*" element={<LegacyInstancesRedirect />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
             {/* Before the catch-all, which would otherwise bounce every view
@@ -133,6 +141,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <RouterBridgeSync />
+        <AgentActionHost />
         <AppShell />
       </BrowserRouter>
     </QueryClientProvider>

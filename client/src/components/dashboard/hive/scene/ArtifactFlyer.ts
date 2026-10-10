@@ -63,6 +63,15 @@ export class ArtifactFlyerLayer extends Container {
     this.active = next;
   }
 
+  /** Drop every flight in progress; reduced motion shows no artifact in the air. */
+  finishAll(): void {
+    for (const flight of this.active) {
+      this.removeChild(flight.sprite);
+      flight.sprite.destroy();
+    }
+    this.active = [];
+  }
+
   resetSeen(): void {
     this.seen.clear();
   }

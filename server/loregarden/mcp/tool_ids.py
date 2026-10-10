@@ -26,6 +26,9 @@ class McpTool(StrEnum):
     BLOCK_TICKET = "loregarden_block_ticket"
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
+    WRITE_DOCUMENT = "loregarden_write_document"
+    LIST_ARTIFACTS = "loregarden_list_artifacts"
+    READ_ARTIFACT = "loregarden_read_artifact"
     REQUEST_APPROVAL = "loregarden_request_approval"
     COMPLETE_ORCHESTRATION = "loregarden_complete_orchestration"
     UPDATE_TICKET = "loregarden_update_ticket"
@@ -39,6 +42,7 @@ class McpTool(StrEnum):
     REQUEUE_TICKET = "loregarden_requeue_ticket"
     PIN_STAGE_AGENT = "loregarden_pin_stage_agent"
     LAND_TICKET = "loregarden_land_ticket"
+    MERGE_PULL_REQUEST = "loregarden_merge_pull_request"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
@@ -59,10 +63,19 @@ class McpTool(StrEnum):
     DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
     FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
     LIST_INSTANCES = "loregarden_list_instances"
+    LIST_UI_ACTIONS = "loregarden_list_ui_actions"
+    INVOKE_UI_ACTION = "loregarden_invoke_ui_action"
     LAUNCH_INSTANCE = "loregarden_launch_instance"
     INSTANCE_STATUS = "loregarden_instance_status"
     STOP_INSTANCE = "loregarden_stop_instance"
     SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
+    GET_INITIATIVE_PLAN = "loregarden_get_initiative_plan"
+    PROPOSE_INITIATIVE_SCHEDULE = "loregarden_propose_initiative_schedule"
+    SET_INITIATIVE_AUTOPILOT = "loregarden_set_initiative_autopilot"
+    START_INITIATIVE_WORK = "loregarden_start_initiative_work"
+    MARK_NEEDS_PERSON = "loregarden_mark_needs_person"
+    ADD_INITIATIVE_MEMBER = "loregarden_add_initiative_member"
+    REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -129,6 +142,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.GET_TICKET,
     McpTool.LIST_TICKETS,
     McpTool.ATTACH_ARTIFACT,
+    # The documents its ancestors carry — the architecture and decisions an
+    # initiative or milestone was planned with — are part of a stage's brief.
+    McpTool.LIST_ARTIFACTS,
+    McpTool.READ_ARTIFACT,
     # A stage that must produce evidence needs the tool to record it, or it is
     # blocked with no way to comply.
     McpTool.ATTACH_EVIDENCE,
@@ -167,6 +184,26 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.UNLINK_RELATION,
     McpTool.SEARCH_PRIOR_WORK,
     McpTool.SUPERSEDE_TICKET,
+    # Scoping a brief produces the documents its tickets are planned against.
+    McpTool.WRITE_DOCUMENT,
+    McpTool.LIST_ARTIFACTS,
+    McpTool.READ_ARTIFACT,
+)
+
+#: The initiative planner's floor: read the plan and the tickets behind it, and
+#: file a schedule proposal. It is offered nothing that writes a ticket.
+INITIATIVE_PLANNER_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.GET_INITIATIVE_PLAN,
+    McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+    # Driving the plan: these start real agent runs, so on a stage run they go
+    # to the inbox like any dispatch; marking a ticket as needing a person only
+    # ever stops work, so it does not.
+    McpTool.SET_INITIATIVE_AUTOPILOT,
+    McpTool.START_INITIATIVE_WORK,
+    McpTool.MARK_NEEDS_PERSON,
+    McpTool.GET_TICKET,
+    McpTool.GET_TICKET_BY_EXTERNAL,
+    McpTool.LIST_TICKETS,
 )
 
 # --- Permission-bridge policy (auto-approve vs inbox vs hard deny) ------------
@@ -176,11 +213,15 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.GET_TICKET,
         McpTool.GET_TICKET_BY_EXTERNAL,
         McpTool.LIST_TICKETS,
+        McpTool.LIST_ARTIFACTS,
+        McpTool.READ_ARTIFACT,
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
         McpTool.DOCKER_CAPACITY_STATUS,
+        McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
+        McpTool.LIST_UI_ACTIONS,
         # Also stamps `ready_at` the first time an instance answers — the
         # registry's own bookkeeping, not a change to anything it describes.
         McpTool.INSTANCE_STATUS,
@@ -199,11 +240,16 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
 CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {
         McpTool.APPEND_CHECKPOINT,
+        # Files a *pending* proposal only; a person accepting it is the write.
+        McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+        # A tag that keeps the autopilot away from a ticket; it starts nothing.
+        McpTool.MARK_NEEDS_PERSON,
         McpTool.APPEND_LEARNING,
         McpTool.UPSERT_MEMORY,
         McpTool.CREATE_MEMORY_RELATION,
         McpTool.UPSERT_BLOG_POST,
         McpTool.ATTACH_ARTIFACT,
+        McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
     }
@@ -277,7 +323,11 @@ AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
 #: name. `check_organization` reads a workspace for one action and rewrites that
 #: workspace's git hooks for another; auto-approving the name would auto-approve
 #: the write. `argument_gated_auto_approval` decides per call.
-ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.CHECK_ORGANIZATION})
+#: `invoke_ui_action` is gated by the invoked action's catalog effect: a view
+#: change auto-approves, a write is gated like any write tool.
+ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {McpTool.CHECK_ORGANIZATION, McpTool.INVOKE_UI_ACTION}
+)
 
 #: The operator moves triage can make on a work item: where it lives, how it
 #: runs, and whether it should exist at all. Offered to the ticket rail and the
@@ -289,6 +339,10 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.REQUEUE_TICKET,
     McpTool.PIN_STAGE_AGENT,
     McpTool.LAND_TICKET,
+    # Squash-merges the ticket's PR once GitHub says it can merge, then removes
+    # its branch. Gated like any write (not auto-approved), and never a pipeline
+    # stage's to call on the ticket it runs.
+    McpTool.MERGE_PULL_REQUEST,
     McpTool.SUPERSEDE_TICKET,
     # Publishes to, and pulls from, a GitHub repository: an operator move on a
     # ticket, never something a stage does to the ticket it was dispatched for.

@@ -6,7 +6,6 @@ import { api } from "../../api/client";
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
-import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 import { installPointerEvents } from "../../test/pointerEvents";
 
@@ -232,9 +231,6 @@ describe("the chat archive", () => {
         sendInNewChat: jest.fn().mockResolvedValue(undefined),
         forkSession: jest.fn().mockResolvedValue(undefined),
         forkFromMessage: jest.fn().mockResolvedValue(undefined),
-        runtime: DEFAULT_RUNTIME,
-        setRuntime: jest.fn().mockResolvedValue({}),
-        isSavingRuntime: false,
         ...overrides,
       },
     });
@@ -293,9 +289,6 @@ describe("the chat archive", () => {
           sendInNewChat: jest.fn().mockResolvedValue(undefined),
           forkSession: jest.fn().mockResolvedValue(undefined),
           forkFromMessage: jest.fn().mockResolvedValue(undefined),
-          runtime: DEFAULT_RUNTIME,
-          setRuntime: jest.fn().mockResolvedValue({}),
-          isSavingRuntime: false,
         },
       }),
     );

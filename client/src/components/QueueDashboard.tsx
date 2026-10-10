@@ -18,10 +18,10 @@ import { DockerQueueBoard } from "./DockerQueueBoard";
 import { QueueKindToggle, type QueueKind } from "./QueueKindToggle";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
-import { QueueGitAutomation } from "./QueueGitAutomation";
+import { QueueGitAutomationList } from "./QueueGitAutomation";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
 import { QueueHistoryRail } from "./QueueHistoryRail";
-import { QueueTicketBoard } from "./QueueTicketBoard";
+import { QueueLaneCount } from "./QueueLaneCount";
 import "./QueueDashboard.css";
 
 export interface QueueDashboardProps {
@@ -42,7 +42,7 @@ type SidebarTab =
  * The rail's panels, per queue.
  *
  * They differ because the two pools genuinely have different questions behind
- * them: an agent lane has a history, a review and controls; docker capacity has
+ * them: an agent lane has a history, a review and controls; machine capacity has
  * a ceiling and a short list of leases nobody could resolve automatically.
  * Carrying one queue's tabs into the other would offer panels with nothing to
  * put in them, which is worse than a shorter list.
@@ -69,7 +69,7 @@ export function QueueDashboard({
 
   const [queueKind, setQueueKind] = useState<QueueKind>("agents");
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("overview");
-  // One read for both halves of the Docker view, so the rail summary and the
+  // One read for both halves of the Machine view, so the rail summary and the
   // board beside it cannot disagree about the same moment.
   const docker = useDockerCapacity();
 
@@ -220,6 +220,7 @@ export function QueueDashboard({
               status={docker.status}
               error={docker.error}
               loading={docker.loading}
+              onChanged={docker.reload}
               headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
             />
           ) : (
@@ -227,10 +228,6 @@ export function QueueDashboard({
               headerSlot={<QueueKindToggle value={queueKind} onChange={selectQueueKind} />}
             />
           )}
-
-          {/* Below whichever queue is showing, and not in the review flow —
-              that one is a focused diff, not a dashboard. */}
-          {reviewing ? null : <QueueTicketBoard />}
         </main>
 
         <aside className="queue-rail">
@@ -326,12 +323,10 @@ export function QueueDashboard({
 
               {activeSidebarTab === "controls" && showControls ? (
                 <>
-                  {workspaces.map((ws) => (
-                    <div key={ws.id}>
-                      <QueueGitAutomation workspaceSlug={ws.slug} workspaceName={ws.name} />
-                      <div className="queue-rail-divider" />
-                    </div>
-                  ))}
+                  <QueueLaneCount />
+                  <div className="queue-rail-divider" />
+                  <QueueGitAutomationList workspaces={workspaces} />
+                  <div className="queue-rail-divider" />
                   <QueueAdvancedControls
                     activeRuns={activeRuns || []}
                     queuedRuns={queuedRuns || []}
@@ -344,10 +339,15 @@ export function QueueDashboard({
               ) : null}
             </div>
 
-            <div className="queue-rail-baxter">
-              <img src={baxterHead} alt="" width={32} height={32} />
-              <div className="queue-rail-baxter-copy">{idleCopy}</div>
-            </div>
+            {/* Agent-lane copy: on the Machine view it contradicted a
+                non-empty capacity line, and the rail beside it already
+                summarises capacity. */}
+            {queueKind === "agents" ? (
+              <div className="queue-rail-baxter">
+                <img src={baxterHead} alt="" width={32} height={32} />
+                <div className="queue-rail-baxter-copy">{idleCopy}</div>
+              </div>
+            ) : null}
           </div>
         </aside>
       </div>

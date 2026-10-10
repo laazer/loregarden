@@ -13,14 +13,14 @@ and refusing to pretend when that cannot be told — see `CommittedWorkBasis`.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.models.domain import AgentRun, Ticket
+from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import CommittedWorkBasis
 from loregarden.services.git_boundary import read_boundary
-from sqlmodel import Session, select
+from loregarden.services.recorded_paths import ticket_recorded_paths
+from sqlmodel import Session
 
 
 @dataclass(frozen=True)
@@ -52,21 +52,6 @@ class UncommittedWork:
             f"again — the next stage runs against the committed tree, so work "
             f"left here is work the next agent cannot see.\n{listed}"
         )
-
-
-def ticket_recorded_paths(session: Session, ticket: Ticket) -> set[str]:
-    """Every path this ticket's runs have claimed to touch.
-
-    The same source `gate_recovery._ticket_changed_paths` reads. Usually
-    empty, which is why it is never the only basis.
-    """
-    rows = session.exec(
-        select(AgentRun.changed_paths_json).where(AgentRun.ticket_id == ticket.id)
-    ).all()
-    paths: set[str] = set()
-    for raw in rows:
-        paths.update(json.loads(raw or "[]"))
-    return {path for path in paths if path}
 
 
 def uncommitted_ticket_work(

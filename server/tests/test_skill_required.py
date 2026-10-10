@@ -90,8 +90,11 @@ def test_build_prompt_never_emits_empty_skill_block_for_declared_skill(db_sessio
     )
 
     assert "## Skill\n" in prompt
-    assert "name: plan" not in prompt
-    assert "description: " not in prompt
+    # Scoped to the skill's own block: other embedded modules (the control-plane
+    # MCP doc) carry frontmatter of their own, which is not what this pins.
+    skill_block = prompt.split("## Skill\n", 1)[1].split("\n## ", 1)[0]
+    assert "name: plan" not in skill_block
+    assert "description: " not in skill_block
     assert "## Skill\n\n\n##" not in prompt
 
 

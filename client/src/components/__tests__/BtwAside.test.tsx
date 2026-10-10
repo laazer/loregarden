@@ -43,6 +43,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     branch: null,
     archive: null,
     composedOnScreen: false,
+    screenSession: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }
@@ -321,9 +322,9 @@ describe("the aside card", () => {
     mockApi.ticketAsides.mockResolvedValue({ exchanges: [exchange()] });
 
     renderWithClient(<BtwPrimitive part={part()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /open the run log/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open the run timeline/i }));
 
-    expect(navigateToTicketTab).toHaveBeenCalledWith("t1", "logs");
+    expect(navigateToTicketTab).toHaveBeenCalledWith("t1", "timeline");
   });
 
   it("offers neither control on a preview bound to no real aside", async () => {
@@ -331,6 +332,6 @@ describe("the aside card", () => {
 
     expect(await screen.findByText(/preview — this card is not bound/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /open the run log/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /open the run timeline/i })).toBeNull();
   });
 });

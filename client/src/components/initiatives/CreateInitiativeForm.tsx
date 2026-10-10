@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone } from "../../api/client";
+import { Input } from "../ui/Input";
 
 interface CreateInitiativeFormProps {
   /** Milestones ticked on the page; they are attached as soon as the initiative exists. */
@@ -34,12 +35,12 @@ export function CreateInitiativeForm({ milestones, isSaving, onCreate, onCancel 
     >
       <label className="modal-field">
         <span className="modal-field-label">Title</span>
-        <input
+        <Input
           className="btn-secondary filter-select initiative-input"
           value={title}
           autoFocus
           disabled={isSaving}
-          placeholder="e.g. Cross-repo auth migration"
+          placeholder="Name the shared goal its milestones work toward"
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>

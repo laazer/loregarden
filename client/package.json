@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -28,6 +31,7 @@
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "monaco-editor": "^0.55.1",
+    "motion": "13.4.4",
     "pixi.js": "^8.19.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -57,7 +61,13 @@
     "jscpd": "^4.0.5",
     "oxlint": "^1.71.0",
     "playwright": "^1.50.0",
+    "postcss": "^8.5.28",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
+  },
+  "overrides": {
+    "framer-motion": "13.4.4",
+    "motion-dom": "13.4.4",
+    "motion-utils": "13.3.0"
   }
 }

@@ -22,6 +22,7 @@ from loregarden.models.domain import (
     ExitActionGateLedger,
     OrchestrationDriver,
     OrchestrationRun,
+    OrchestrationRunStatus,
     RunStatus,
     RuntimeAvailability,
     RuntimeExitActionSnapshot,
@@ -315,3 +316,88 @@ def test_a_requested_gate_cannot_stand_in_for_unconfirmed_agent_work(
     ).all()
     assert gates == []
     assert _stage_status(db_session, unconfirmed_signoff, "signoff") != StageStatus.DONE
+
+
+def _orchestrator_run(db_session: Session, ticket: Ticket) -> OrchestrationRun:
+    run = OrchestrationRun(
+        run_code=f"orch_{ticket.external_id}",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        current_stage_key=_SIGNOFF,
+        status=OrchestrationRunStatus.RUNNING,
+        driver=OrchestrationDriver.EXTERNAL_MCP,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+def _succeeded_signoff_run(db_session: Session, ticket: Ticket) -> None:
+    """The run an external driver's begin/finish_external_stage leaves behind."""
+    db_session.add(
+        AgentRun(
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            stage_key=_SIGNOFF,
+            agent_id="backend_implementer",
+            status=RunStatus.SUCCEEDED,
+            run_code=f"RUN-{ticket.external_id}",
+        )
+    )
+    db_session.commit()
+
+
+def _signoff_ticket(db_session: Session, tmp_path, name: str, *actions: dict) -> Ticket:
+    stages = _stages_with(1, *actions) if actions else [dict(stage) for stage in _STAGES]
+    workspace = _make_workspace(db_session, tmp_path, name, stages=stages)
+    return _make_ticket(db_session, workspace, external_id=name, title=name)
+
+
+def test_an_orchestrator_pass_raises_the_gate_a_person_must_sign(db_session: Session, tmp_path):
+    """An external driver's complete_stage used to skip every exit action, so an
+    operator-judgment stage finished with nobody asked (AC-6, AC-12)."""
+    ticket = _signoff_ticket(db_session, tmp_path, "orch-pass-judgment", _ACCEPT_RISK)
+    _succeeded_signoff_run(db_session, ticket)
+    callbacks = OrchestrationCallbackService(db_session)
+
+    callbacks.complete_stage(_orchestrator_run(db_session, ticket), ticket, stage_key=_SIGNOFF)
+
+    gates = _gates(db_session, ticket)
+    assert _stage_status(db_session, ticket, _SIGNOFF) == StageStatus.AWAITING
+    assert [gate.status for gate in gates] == [ApprovalStatus.PENDING]
+    payload = json.loads(gates[0].tool_input_json)
+    assert [a["action_key"] for a in payload["human_required_actions"]] == ["accept-risk"]
+
+    # Passing again before the person answers does not open a second gate.
+    callbacks.complete_stage(_orchestrator_run(db_session, ticket), ticket, stage_key=_SIGNOFF)
+    assert len(_gates(db_session, ticket)) == 1
+
+    ApprovalService(db_session).resolve(gates[0].id, approved=True)
+    db_session.expire_all()
+    assert _stage_status(db_session, ticket, _SIGNOFF) == StageStatus.DONE
+
+
+def test_an_orchestrator_pass_over_an_unrun_agent_stage_is_refused(db_session: Session, tmp_path):
+    """No run, so no gate a person could approve: the pass is refused instead."""
+    ticket = _signoff_ticket(db_session, tmp_path, "orch-pass-unrun", _ACCEPT_RISK)
+
+    with pytest.raises(ValueError, match="none has succeeded"):
+        OrchestrationCallbackService(db_session).complete_stage(
+            _orchestrator_run(db_session, ticket), ticket, stage_key=_SIGNOFF
+        )
+
+    assert _gates(db_session, ticket) == []
+    assert _stage_status(db_session, ticket, _SIGNOFF) != StageStatus.DONE
+
+
+def test_an_orchestrator_pass_with_nothing_for_a_person_advances(db_session: Session, tmp_path):
+    """The control: the gate must not turn every pass into a wait."""
+    ticket = _signoff_ticket(db_session, tmp_path, "orch-pass-none")
+
+    OrchestrationCallbackService(db_session).complete_stage(
+        _orchestrator_run(db_session, ticket), ticket, stage_key=_SIGNOFF
+    )
+
+    assert _gates(db_session, ticket) == []
+    assert _stage_status(db_session, ticket, _SIGNOFF) == StageStatus.DONE
