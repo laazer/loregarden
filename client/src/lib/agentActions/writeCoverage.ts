@@ -140,6 +140,46 @@ export const API_WRITE_COVERAGE = {
   generateTicketStudioSurvey: { kind: "not_agent_driven", reason: CONVERSATION },
   saveTicketStudioSurvey: { kind: "not_agent_driven", reason: CONVERSATION },
 
+  // Ticket edges (ticketEdgeApi)
+  addDependency: { kind: "mcp_tool", tool: "loregarden_link_dependency" },
+  removeDependency: { kind: "mcp_tool", tool: "loregarden_unlink_dependency" },
+  addRelation: { kind: "mcp_tool", tool: "loregarden_link_relation" },
+  removeRelation: { kind: "mcp_tool", tool: "loregarden_unlink_relation" },
+
+  // Initiatives (initiativeApi)
+  createInitiative: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
+  // Creates initiatives over chosen work; an agent does the same with
+  // loregarden_create_ticket and loregarden_add_initiative_member.
+  applyInitiativeSuggestions: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
+  agentInitiativeSuggestions: { kind: "not_a_write", reason: DRAFT },
+  addInitiativeMember: { kind: "mcp_tool", tool: "loregarden_add_initiative_member" },
+  removeInitiativeMember: { kind: "mcp_tool", tool: "loregarden_remove_initiative_member" },
+  setMilestoneInitiative: { kind: "mcp_tool", tool: "loregarden_update_ticket" },
+  updateInitiativePlan: {
+    kind: "human_only",
+    reason:
+      "the schedule a person commits to; an agent proposes one with loregarden_propose_initiative_schedule for a person to accept",
+  },
+  resolveScheduleProposal: { kind: "human_only", reason: GATE },
+  setAutopilot: { kind: "mcp_tool", tool: "loregarden_set_initiative_autopilot" },
+  startInitiativeWork: { kind: "mcp_tool", tool: "loregarden_start_initiative_work" },
+  markNeedsPerson: { kind: "mcp_tool", tool: "loregarden_mark_needs_person" },
+  sendPlannerMessage: { kind: "not_agent_driven", reason: CONVERSATION },
+  stopPlannerTurn: { kind: "not_agent_driven", reason: CONVERSATION },
+  setPlannerRuntime: { kind: "not_agent_driven", reason: CONVERSATION },
+
+  // Memory curation (memoryApi). loregarden_upsert_memory is not the same
+  // write: it saves a `memory` node, while these curate learnings and record
+  // the curator's reason in the node's version history.
+  setMemoryNodeDiscredited: { kind: "gap" },
+  retitleMemoryNode: { kind: "gap" },
+  mergeMemoryNodes: { kind: "gap" },
+  createMemoryRelation: { kind: "mcp_tool", tool: "loregarden_create_memory_relation" },
+  recordMemoryGraphHealth: {
+    kind: "not_agent_driven",
+    reason: "a point on the operator's health trend line; an agent reads the graph with loregarden_memory_status",
+  },
+
   // Reference repositories
   addReferenceRepo: { kind: "agent_action", action: "reference_repo.add" },
   syncReferenceRepo: { kind: "agent_action", action: "reference_repo.sync" },
