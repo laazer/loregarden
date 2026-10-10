@@ -1554,3 +1554,322 @@ def test_oversized_ticket_is_split_and_its_parts_run_to_completion(
     assert parent.state == TicketState.DONE
     assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
     assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == []
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-779: a sibling prerequisite that is done but not landed
+#
+# `_partition_children` dropped *every* unmet prerequisite that was a sibling,
+# on the reasoning that `order_children_for_subtree` had already put it earlier
+# in the list. True for NOT_DONE — ordering will run it. False for NOT_LANDED:
+# it already ran, and the dependent's base still cannot see its work. Observed
+# on lg-milestone-that-714, where 715 reached `done` unlanded and 716 was
+# dispatched into a worktree containing none of 715's commits.
+#
+# AC10: `work_is_reachable` returns None when the prerequisite has no branch in
+# the repository, and None is not unmet — so a fixture without a real branch
+# carrying a real unlanded commit asserts nothing while reporting green. Both
+# tests below assert the fixture is in the state it claims before they exercise
+# the orchestrator.
+# ---------------------------------------------------------------------------
+
+
+def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=repo,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _unlanded_branch_with_a_commit(repo: Path, tmp_path: Path, branch: str, start: str) -> str:
+    """`branch` cut from `start` with one commit on it, landed nowhere.
+
+    The recipe the 770 test uses: a real branch, a real commit made in a
+    throwaway worktree that is then removed, so the tip is reachable from the
+    branch and from nothing else. Returns the tip.
+    """
+    subprocess.run(["git", "branch", branch, start], cwd=repo, check=True)
+    tree = tmp_path / f"tree-{branch.replace('/', '-')}"
+    subprocess.run(["git", "worktree", "add", "-q", str(tree), branch], cwd=repo, check=True)
+    (tree / "work.txt").write_text("work nobody landed\n")
+    subprocess.run(["git", "add", "-A"], cwd=tree, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "unlanded"], cwd=tree, check=True)
+    tip = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tree, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo, check=True)
+    return tip
+
+
+def test_a_sibling_prerequisite_that_is_done_but_unlanded_holds_its_dependent(
+    db_session: Session, tmp_path
+) -> None:
+    """AC1/AC9/AC10. The case that passed before 779: the prerequisite is a
+    *sibling*, so the old predicate dropped it and the child ran against a base
+    with none of its work. Ordering cannot help here — the sibling already ran.
+    """
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-sibling-unlanded")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-unlanded-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-unlanded-c",
+        title="Dependent child",
+        parent_ticket_id=parent.id,
+    )
+    # The one change from the 770 fixture: the prerequisite sits under the SAME
+    # parent, which is what makes it a sibling.
+    prerequisite = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-unlanded-a",
+        title="Finished sibling",
+        parent_ticket_id=parent.id,
+    )
+    prerequisite.state = TicketState.DONE
+    prerequisite.branch = "loregarden/sib-unlanded-a"
+    db_session.add(prerequisite)
+    db_session.commit()
+
+    repo = Path(ws.repo_path)
+    target = resolve_target_branch(db_session, child, ws, repo_root=repo)
+    tip = _unlanded_branch_with_a_commit(repo, tmp_path, prerequisite.branch, target)
+    TicketDependencyService(db_session).add_dependency(child.id, prerequisite.id)
+    db_session.commit()
+
+    # AC10: the fixture claims "done, with work the dependent's base cannot
+    # see". Without these three the test passes against any orchestrator,
+    # because `work_is_reachable` would be answering None.
+    assert tip, "the prerequisite's branch must have a real tip"
+    assert not _is_ancestor(repo, tip, target), "the work must not be on the target branch"
+    assert not _is_ancestor(repo, tip, "main"), "nor on the base branch"
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+
+    message = orch_run.error_message or ""
+    assert "waiting on a prerequisite" in message.lower(), message
+    assert "sib-unlanded-a" in message, (
+        f"the hold must name the prerequisite, not count it: {message}"
+    )
+    assert f"not landed on {target}" in message, (
+        f"and the branch its work is missing from: {message}"
+    )
+    # AC6: the hold does not clear itself — landing runs only on a terminal-stage
+    # transition — so the line carries the operator's next action, on the
+    # prerequisite's id and not the held child's.
+    assert "land it: loregarden_land_ticket sib-unlanded-a" in message, message
+    assert "loregarden_land_ticket sib-unlanded-c" not in message, message
+    # The whole point: the child never started against a base missing the work.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all() == [], (
+        "the held child must not be dispatched at all"
+    )
+    assert parent.state != TicketState.DONE
+
+
+def test_a_sibling_prerequisite_that_is_merely_not_done_does_not_hold_its_dependent(
+    db_session: Session, tmp_path
+) -> None:
+    """AC2. The regression guard for lg-workflow-integrity-449 / 676: an
+    integration-review child depends on every sibling, so a blanket sibling
+    hold would mean it never starts. Ordering owns this case and always did.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-sibling-not-done")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-notdone-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-notdone-c",
+        title="Dependent child",
+        parent_ticket_id=parent.id,
+    )
+    prerequisite = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-notdone-a",
+        title="Unstarted sibling",
+        parent_ticket_id=parent.id,
+    )
+    TicketDependencyService(db_session).add_dependency(child.id, prerequisite.id)
+    db_session.commit()
+
+    # AC10's other half: the fixture must really be in a non-satisfied state,
+    # and must really have no branch — otherwise this asserts nothing either.
+    db_session.refresh(prerequisite)
+    assert prerequisite.state == TicketState.BACKLOG, prerequisite.state
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "refs/heads/loregarden/sib-notdone-a"],
+            cwd=Path(ws.repo_path),
+            capture_output=True,
+        ).returncode
+        != 0
+    ), "a NOT_DONE prerequisite has no branch yet; that is what makes it NOT_DONE"
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(child)
+    db_session.refresh(prerequisite)
+
+    assert "waiting on a prerequisite" not in (orch_run.error_message or "").lower(), (
+        orch_run.error_message
+    )
+    child_runs = db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all()
+    prereq_runs = db_session.exec(
+        select(AgentRun).where(AgentRun.ticket_id == prerequisite.id)
+    ).all()
+    assert child_runs, "the dependent must still be dispatched"
+    assert prereq_runs, "and so must the prerequisite"
+    assert min(r.created_at for r in prereq_runs) < min(r.created_at for r in child_runs), (
+        "ordering's job, and still ordering's job: the prerequisite runs first"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC6: _why carries the remedy on the NOT_LANDED branch only
+# ---------------------------------------------------------------------------
+
+
+def test_why_names_the_landing_tool_for_an_unlanded_prerequisite() -> None:
+    from loregarden.services.builtin_orchestrator import _why
+    from loregarden.services.dependency_readiness import UnmetPrerequisite, UnmetReason
+
+    prerequisite = Ticket(
+        external_id="lg-milestone-that-715",
+        workspace_id="w",
+        title="Finished, never landed",
+        state=TicketState.DONE,
+    )
+
+    assert _why(
+        UnmetPrerequisite(prerequisite, UnmetReason.NOT_LANDED, "integration/lg-milestone-that-491")
+    ) == (
+        "done, not landed on integration/lg-milestone-that-491; "
+        "land it: loregarden_land_ticket lg-milestone-that-715"
+    )
+
+
+def test_why_is_unchanged_for_a_prerequisite_that_has_simply_not_run() -> None:
+    """A NOT_DONE prerequisite needs no operator action — ordering will run it —
+    so the bare state is still the whole answer."""
+    from loregarden.services.builtin_orchestrator import _why
+    from loregarden.services.dependency_readiness import UnmetPrerequisite, UnmetReason
+
+    prerequisite = Ticket(
+        external_id="lg-milestone-that-716",
+        workspace_id="w",
+        title="Not started",
+        state=TicketState.IN_PROGRESS,
+    )
+
+    assert _why(UnmetPrerequisite(prerequisite, UnmetReason.NOT_DONE)) == "in_progress"
+    assert "loregarden_land_ticket" not in _why(
+        UnmetPrerequisite(prerequisite, UnmetReason.NOT_DONE)
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC7: the parent's waiting line states its count before any names, and caps
+# the names. `_finish_orchestration_run` cuts error_message at 2000 characters;
+# one live parent has 93 children and 2 runs have already hit that cut, so a
+# line that leads with names loses both the count and the first child.
+# ---------------------------------------------------------------------------
+
+
+def _parent_with_held_children(
+    db_session: Session, tmp_path: Path, slug: str, count: int, *, title_pad: int = 0
+):
+    """A parent with `count` children, each held by a prerequisite in another
+    workspace — the cheapest hold there is, and one no git fixture can make
+    vacuous (a cross-workspace prerequisite is judged by state).
+    """
+    ws = _make_workspace(db_session, tmp_path, slug)
+    upstream_ws = _make_workspace(db_session, tmp_path, f"{slug}-upstream")
+    parent = _make_ticket(
+        db_session, ws, external_id=f"{slug}-p", title="Parent", work_item_type=WorkItemType.FEATURE
+    )
+    dependencies = TicketDependencyService(db_session)
+    titles = []
+    for n in range(1, count + 1):
+        title = f"Held child {n:02d}" + ("." * title_pad)
+        titles.append(title)
+        child = _make_ticket(
+            db_session, ws, external_id=f"{slug}-c{n:02d}", title=title, parent_ticket_id=parent.id
+        )
+        upstream = _make_ticket(
+            db_session, upstream_ws, external_id=f"{slug}-u{n:02d}", title=f"Upstream {n:02d}"
+        )
+        dependencies.add_dependency(child.id, upstream.id)
+    db_session.commit()
+    return parent, titles
+
+
+@pytest.mark.parametrize("count", [1, 5])
+def test_the_waiting_line_counts_its_children_and_names_them_all_up_to_five(
+    db_session: Session, tmp_path, count: int
+) -> None:
+    parent, titles = _parent_with_held_children(
+        db_session, tmp_path, f"auto-mode-waiting-{count}", count
+    )
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+
+    message = orch_run.error_message or ""
+    assert message.startswith(f"Child ticket waiting on a prerequisite ({count}): "), message
+    assert all(title in message for title in titles), message
+    assert "more" not in message.split(": ", 1)[1], (
+        f"at {count} held children nothing is elided: {message}"
+    )
+
+
+def test_the_waiting_line_names_the_first_five_and_counts_the_rest(
+    db_session: Session, tmp_path
+) -> None:
+    parent, titles = _parent_with_held_children(db_session, tmp_path, "auto-mode-waiting-7", 7)
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+
+    message = orch_run.error_message or ""
+    assert message.startswith("Child ticket waiting on a prerequisite (7): "), message
+    named = [title for title in titles if title in message]
+    assert len(named) == 5, f"five clauses, no more: named {named} in {message}"
+    assert message.endswith("; +2 more"), message
+
+
+def test_the_count_and_the_first_child_survive_the_two_thousand_character_cut(
+    db_session: Session, tmp_path
+) -> None:
+    """The reason the count leads. `_finish_orchestration_run` stores
+    `message[:2000]`, so anything after the first ~45 characters is at the
+    mercy of how long the children's titles happen to be.
+    """
+    parent, titles = _parent_with_held_children(
+        db_session, tmp_path, "auto-mode-waiting-long", 7, title_pad=500
+    )
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+
+    message = orch_run.error_message or ""
+    assert len(message) == 2000, (
+        f"this fixture must actually reach the cut, or it proves nothing: {len(message)}"
+    )
+    assert message.startswith("Child ticket waiting on a prerequisite (7): "), message
+    assert titles[0] in message, f"the first child's clause must survive the cut: {message[:200]}"
