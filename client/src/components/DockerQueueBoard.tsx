@@ -513,14 +513,12 @@ export function DockerQueueBoard({
         </div>
       )}
 
-      {confirming ? (
-        <DockerLeaseReleaseDialog
-          lease={confirming}
-          inFlight={pendingId === confirming.lease_id}
-          onClose={() => setConfirming(null)}
-          onConfirm={(reason) => void confirm(reason)}
-        />
-      ) : null}
+      <DockerLeaseReleaseDialog
+        lease={confirming}
+        inFlight={confirming !== null && pendingId === confirming.lease_id}
+        onClose={() => setConfirming(null)}
+        onConfirm={(reason) => void confirm(reason)}
+      />
     </div>
   );
 }
