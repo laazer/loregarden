@@ -267,7 +267,7 @@ function PullRequestSummary({
             {checks.length > 0 && (
               <span className="prp-tally">
                 {TALLY_ORDER.filter((outcome) => countBy(checks, outcome) > 0).map((outcome) => (
-                  <span key={outcome} className={`prp-tally-item prp-tally-item--${outcome}`}>
+                  <span key={outcome} className={`prp-tally-item--${outcome}`}>
                     {countBy(checks, outcome)} {OUTCOME_LABEL[outcome].toLowerCase()}
                   </span>
                 ))}
