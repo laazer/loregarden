@@ -100,4 +100,41 @@ describe('QueueHistoryRail', () => {
 
     expect(await screen.findByText('Nothing has run through a lane yet.')).toBeInTheDocument();
   });
+
+  it('clears history, then re-reads it', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ entries: [blockedEntry], total: 1, limit: 25, offset: 0, cleared_at: null }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ cleared_at: '2026-08-05T12:00:00Z' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ entries: [], total: 0, limit: 25, offset: 0, cleared_at: '2026-08-05T12:00:00Z' }),
+      });
+    global.fetch = fetchMock;
+    render(<QueueHistoryRail />);
+    await screen.findByText('Generate CHECKPOINTS.md');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(await screen.findByText(/since history was cleared/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/parallel\/lanes\/history\/clear$/);
+    expect(fetchMock.mock.calls[1][1]).toEqual({ method: 'POST' });
+    expect(screen.queryByText('Generate CHECKPOINTS.md')).not.toBeInTheDocument();
+  });
+
+  it('cannot clear an empty history', async () => {
+    mockPage([]);
+    render(<QueueHistoryRail />);
+    await screen.findByText('Nothing has run through a lane yet.');
+
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeDisabled();
+  });
 });

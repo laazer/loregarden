@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
-from loregarden.services.git_automation import run_git_automation
+from loregarden.services.git_automation import PublishSubject, publish_run
 from loregarden.services.git_automation_config import (
     enabled_steps,
     parse_override,
@@ -129,17 +129,23 @@ def test_unknown_and_unparseable_overrides_are_ignored():
 # ---- the pipeline ------------------------------------------------------
 
 
+def _publish(session, run, ticket, config):
+    title = f"{ticket.external_id}: {ticket.title}"
+    subject = PublishSubject(branch=ticket.branch, commit_message=title, pr_title=title, pr_body="")
+    return publish_run(session, run, session.get(Workspace, ticket.workspace_id), subject, config)
+
+
 def test_commit_off_does_nothing_at_all(session, run, ticket):
-    result = run_git_automation(session, run, ticket, GitAutomationConfig(commit=False))
+    result = _publish(session, run, ticket, GitAutomationConfig(commit=False))
 
     assert result.steps == []
     assert result.ok
 
 
-def test_commit_records_the_ticket_in_the_message(session, run, ticket, repo):
+def test_commit_uses_the_subjects_message(session, run, ticket, repo):
     (repo / "new.txt").write_text("work\n")
 
-    result = run_git_automation(session, run, ticket, GitAutomationConfig(commit=True))
+    result = _publish(session, run, ticket, GitAutomationConfig(commit=True))
 
     assert result.ok, result.as_dict()
     log = subprocess.run(
@@ -155,7 +161,7 @@ def test_commit_records_the_ticket_in_the_message(session, run, ticket, repo):
 def test_an_empty_tree_is_not_a_failure(session, run, ticket):
     """A stage that only read the codebase has nothing of its own to commit,
     and must not block a PR that should still open."""
-    result = run_git_automation(session, run, ticket, GitAutomationConfig(commit=True))
+    result = _publish(session, run, ticket, GitAutomationConfig(commit=True))
 
     assert result.ok
     assert result.steps[0].detail == "nothing to commit"
@@ -165,7 +171,7 @@ def test_a_failed_push_stops_the_pipeline_before_the_pr(session, run, ticket, re
     (repo / "new.txt").write_text("work\n")
 
     # No `origin` configured, so the push cannot succeed.
-    result = run_git_automation(
+    result = _publish(
         session, run, ticket, GitAutomationConfig(commit=True, push=True, open_pr=True)
     )
 
@@ -217,7 +223,7 @@ def test_the_run_commits_in_its_worktree_not_the_workspace(session, workspace, t
 
     (Path(worktree.worktree_path) / "in-worktree.txt").write_text("work\n")
 
-    result = run_git_automation(session, run, ticket, GitAutomationConfig(commit=True))
+    result = _publish(session, run, ticket, GitAutomationConfig(commit=True))
 
     assert result.ok, result.as_dict()
     # The shared checkout is untouched — the whole point of the isolation.

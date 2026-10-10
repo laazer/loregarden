@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
+from loregarden.db import versions
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
+from loregarden.db.migration_registry import Migration, chain_order, import_submodules
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     index_exists,
@@ -26,6 +28,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_agent_grants import m_agent_tool_grants
+from loregarden.db.migrations_agentless_gates import m_agentless_stage_exit_actions
 from loregarden.db.migrations_backend_lane import m_blobert_backend_lane
 from loregarden.db.migrations_block_kind_prompts import m_block_kind_in_role_prompts
 from loregarden.db.migrations_block_kinds import m_ticket_block_kind
@@ -38,6 +41,7 @@ from loregarden.db.migrations_btw import (
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
+    m_chat_message_attachments,
     m_chat_message_parts,
     m_chat_session_worktrees,
     m_chat_turn_answer,
@@ -62,16 +66,27 @@ from loregarden.db.migrations_doctor import (
     m_orchestration_run_lease,
     m_stage_park_approvals,
 )
+from loregarden.db.migrations_exit_actions import m_runtime_exit_actions
 from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
 )
+from loregarden.db.migrations_github_issues import (
+    m_github_issue_links,
+    m_github_push_on_edit,
+    m_github_sync_settings,
+)
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_human_verification import m_human_verification_brief
 from loregarden.db.migrations_initiative_ids import m_initiative_number_pool
+from loregarden.db.migrations_instances import m_instance_templates
 from loregarden.db.migrations_landing import m_ticket_landing_columns
+from loregarden.db.migrations_learning_applications import (
+    m_learning_applications_table,
+    m_memory_health_snapshots_table,
+)
 from loregarden.db.migrations_ledger import m_retire_unmerged_branch_ledger_ids
 from loregarden.db.migrations_lmstudio_iterations import m_lmstudio_max_iterations
 from loregarden.db.migrations_mcp import (
@@ -126,6 +141,7 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_criteria_checks import m_ticket_criteria_checked
 from loregarden.db.migrations_ticket_ids import (
     m_structured_ticket_ids,
     m_unique_ticket_number,
@@ -139,18 +155,18 @@ from loregarden.db.migrations_ticket_studio import (
 from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.db.migrations_ux_coverage import m_ux_design_everywhere
 from loregarden.db.migrations_ux_lanes import m_ux_lanes_in_v3
+from loregarden.db.migrations_ux_purpose import m_ux_purpose_in_design_lanes
 from loregarden.db.migrations_verdict_channel import m_verdict_channel
 from loregarden.db.migrations_views import (
     m_sidebar_entry_pinned,
     m_view_store,
     m_view_viewport,
 )
+from loregarden.db.migrations_workspace_archive import m_workspace_archived_at
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 logger = logging.getLogger(__name__)
-
-Migration = Callable[[Connection], None]
 
 
 def _m_workspace_workflow_override(conn: Connection) -> None:
@@ -1247,7 +1263,9 @@ def m_orchestration_idempotency_key(conn: Connection) -> None:
     )
 
 
-MIGRATIONS: list[tuple[str, Migration]] = [
+#: Closed: every id here has shipped, and `SHIPPED_MIGRATION_IDS` mirrors it. New
+#: migrations go in `db/versions/`, one per module — see `migration_registry`.
+FROZEN_MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
     ("0003_workspace_runtime_columns", _m_workspace_runtime_columns),
@@ -1393,18 +1411,68 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0136_auto_repair_columns", m_auto_repair_columns),
     ("0137_block_kind_in_role_prompts", m_block_kind_in_role_prompts),
     # Re-run: the first pass counted the automated reconciler as a human editor.
-    # 0139, not 0138: the live database already carries an unmerged branch's 0138.
+    # 0139, not 0138: 0138 is `0138_runtime_exit_actions`, registered at the end.
     ("0139_block_kind_in_role_prompts_again", m_block_kind_in_role_prompts),
     ("0140_ticket_landing_columns", m_ticket_landing_columns),
+    ("0141_learning_applications_table", m_learning_applications_table),
+    ("0142_memory_health_snapshots_table", m_memory_health_snapshots_table),
+    ("0143_github_issue_links", m_github_issue_links),
+    ("0144_github_sync_settings", m_github_sync_settings),
+    ("0145_github_push_on_edit", m_github_push_on_edit),
+    ("0146_instance_templates", m_instance_templates),
+    ("0147_ux_purpose_in_design_lanes", m_ux_purpose_in_design_lanes),
+    ("0148_chat_message_attachments", m_chat_message_attachments),
+    # Out of numeric order on purpose, and the id must never change: the live
+    # database applied 0138 from the branch that wrote it on 2026-09-16, before
+    # main had 0139..0148, so a renumbered id would run it a second time. On a
+    # fresh database it now runs after 0147 — which only edits a stage brief —
+    # and rewrites every `gate_required` the older migrations above wrote.
+    ("0138_runtime_exit_actions", m_runtime_exit_actions),
+    ("0149_agentless_stage_exit_actions", m_agentless_stage_exit_actions),
+    ("0150_workspace_archived_at", m_workspace_archived_at),
+    ("0151_ticket_criteria_checked", m_ticket_criteria_checked),
+]
+
+import_submodules(versions)
+#: The versioned migrations, ordered by their `after` links below the frozen tail.
+VERSION_CHAIN = chain_order(FROZEN_MIGRATIONS[-1][0], versions.REGISTRY.registered())
+for _fork in VERSION_CHAIN.forks:
+    logger.error(
+        "Migrations %s all follow %s. Two branches merged against the same tip; the "
+        "order between them here is by id, which may not be the order they applied to "
+        "the live database. Point the later one's `after` at the earlier one.",
+        ", ".join(_fork.children),
+        _fork.parent,
+    )
+
+#: Everything this build applies, in order.
+MIGRATIONS: list[tuple[str, Migration]] = [
+    *FROZEN_MIGRATIONS,
+    *((item.id, item.migrate) for item in VERSION_CHAIN.ordered),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
-from loregarden.db.migrations_runner import apply_pending  # noqa: E402
+from loregarden.db.migrations_runner import (  # noqa: E402
+    apply_pending,
+    pending_migration_ids,
+)
+from loregarden.db.shared_database_guard import assert_may_migrate  # noqa: E402
+
+#: The checkout this registry was loaded from — `server/loregarden/db/` is three
+#: levels below it.
+_CODE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def apply_migrations(engine: Engine) -> list[str]:
-    """Apply every pending migration in this registry, in order."""
+    """Apply every pending migration in this registry, in order.
+
+    Refuses first when this is a worktree build about to migrate the shared
+    database ahead of main — see `shared_database_guard`.
+    """
+    database = Path(engine.url.database) if engine.url.database else None
+    pending = pending_migration_ids(engine, [mid for mid, _ in MIGRATIONS])
+    assert_may_migrate(database, pending, code_root=_CODE_ROOT)
     return apply_pending(engine, MIGRATIONS)
 
 

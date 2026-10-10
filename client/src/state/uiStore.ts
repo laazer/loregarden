@@ -103,6 +103,12 @@ interface UiState {
   /** Whether the Baxter chat history drawer is visible. */
   baxterHistoryOpen: boolean;
   /**
+   * The chat workbench, as chosen this visit; `null` until someone toggles it.
+   * Not persisted here: `useChatWorkbench` keeps the wide-window preference in
+   * its own key, and a narrow window always starts closed.
+   */
+  baxterWorkbenchOpen: boolean | null;
+  /**
    * Whether the dock's rail is showing the chat archive instead of the openers.
    *
    * Separate from `baxterHistoryOpen`, which drives the chat page's drawer: the
@@ -154,6 +160,7 @@ interface UiState {
   setBaxterChatSessionId: (id: string) => void;
   setBaxterHistoryOpen: (open: boolean) => void;
   toggleBaxterHistory: () => void;
+  setBaxterWorkbenchOpen: (open: boolean) => void;
   setCopilotHistoryOpen: (open: boolean) => void;
   toggleCopilotHistory: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -223,6 +230,7 @@ export const useUiStore = create<UiState>()(
       branchTriageBranch: "",
       baxterChatResetNonce: 0,
       baxterHistoryOpen: false,
+      baxterWorkbenchOpen: null,
       copilotHistoryOpen: false,
       baxterChatSessionId: "",
       autoFollowByRunId: {},
@@ -298,6 +306,7 @@ export const useUiStore = create<UiState>()(
       setBaxterHistoryOpen: (baxterHistoryOpen) => set({ baxterHistoryOpen }),
       toggleBaxterHistory: () =>
         set((state) => ({ baxterHistoryOpen: !state.baxterHistoryOpen })),
+      setBaxterWorkbenchOpen: (baxterWorkbenchOpen) => set({ baxterWorkbenchOpen }),
       setCopilotHistoryOpen: (copilotHistoryOpen) => set({ copilotHistoryOpen }),
       toggleCopilotHistory: () =>
         set((state) => ({ copilotHistoryOpen: !state.copilotHistoryOpen })),

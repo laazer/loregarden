@@ -17,11 +17,12 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkItemType
+from loregarden.models.domain import AgentRun, ProcessState, RunStatus, Ticket, WorkItemType
 from loregarden.services.process_identity import (
+    IdentityReading,
     identify,
+    liveness,
     record_process_identity,
-    still_running,
 )
 from loregarden.services.ticket_service import TicketService
 
@@ -55,7 +56,9 @@ def run_fixture(db_session, ticket) -> AgentRun:
 
 def test_a_live_process_has_an_identity():
     """This interpreter is the most convenient live process available."""
-    assert identify(os.getpid())
+    reading = identify(os.getpid())
+    assert reading.state is ProcessState.ALIVE
+    assert reading.stamp
 
 
 def test_the_same_process_fingerprints_the_same_twice():
@@ -64,15 +67,15 @@ def test_the_same_process_fingerprints_the_same_twice():
 
 
 def test_a_dead_process_has_no_identity():
-    """A pid that is nobody answers None, not a stale value."""
-    assert identify(2147483000) is None
+    """A pid that is nobody answers GONE, not a stale value."""
+    assert identify(2147483000) == IdentityReading(ProcessState.GONE)
 
 
 def test_two_processes_do_not_share_a_fingerprint():
     """The property the whole module rests on: start time separates them."""
     child = subprocess.Popen(["sleep", "30"])
     try:
-        assert identify(child.pid) != identify(os.getpid())
+        assert identify(child.pid).stamp != identify(os.getpid()).stamp
     finally:
         child.kill()
         child.wait()
@@ -82,7 +85,7 @@ def test_two_processes_do_not_share_a_fingerprint():
 
 
 def test_a_matching_identity_is_still_running():
-    assert still_running(os.getpid(), identify(os.getpid())) is True
+    assert liveness(os.getpid(), identify(os.getpid()).stamp) is ProcessState.ALIVE
 
 
 def test_a_reused_pid_is_not_still_running():
@@ -92,7 +95,7 @@ def test_a_reused_pid_is_not_still_running():
     a familiar number. Adopting it would be the control plane reporting on, and
     later signalling, something it does not own.
     """
-    assert still_running(os.getpid(), "Thu Jan  1 00:00:00 1970") is False
+    assert liveness(os.getpid(), "Thu Jan  1 00:00:00 1970") is ProcessState.GONE
 
 
 def test_a_run_with_no_recorded_identity_is_not_adopted(db_session):
@@ -102,15 +105,31 @@ def test_a_run_with_no_recorded_identity_is_not_adopted(db_session):
     Falling back to a bare liveness check there is exactly the adoption mistake
     this module prevents, so absence of identity means "do not adopt".
     """
-    assert still_running(os.getpid(), "") is False
-    assert still_running(os.getpid(), None) is False
-    assert still_running(None, "anything") is False
+    assert liveness(os.getpid(), "") is ProcessState.GONE
+    assert liveness(os.getpid(), None) is ProcessState.GONE
+    assert liveness(None, "anything") is ProcessState.GONE
 
 
-def test_an_unreadable_identity_is_not_still_running():
-    """`ps` failing is not evidence the process is ours."""
-    with patch("loregarden.services.process_identity.identify", return_value=None):
-        assert still_running(os.getpid(), "something") is False
+def test_a_ps_that_cannot_answer_is_neither_alive_nor_gone():
+    """`ps` failing is not evidence the process is ours — nor that it is dead.
+
+    lg-run-durability-862: both used to be one `None`, so a slow `ps` at boot
+    read a live agent as dead and the reaper failed its run.
+    """
+
+    def times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    with patch("loregarden.services.process_identity.subprocess.run", times_out):
+        assert identify(os.getpid()) == IdentityReading(ProcessState.UNKNOWN)
+        assert liveness(os.getpid(), "something") is ProcessState.UNKNOWN
+
+
+def test_a_ps_that_runs_but_prints_nothing_usable_is_unknown():
+    """A zero exit with no stamp is not a process that is gone."""
+    empty = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with patch("loregarden.services.process_identity.subprocess.run", return_value=empty):
+        assert identify(os.getpid()).state is ProcessState.UNKNOWN
 
 
 # ---- recorded on the run ------------------------------------------------
@@ -124,7 +143,7 @@ def test_the_run_records_both_the_pid_and_its_identity(db_session, run):
     stored = db_session.get(AgentRun, run.id)
     assert stored.agent_pid == os.getpid()
     assert stored.agent_pid_identity
-    assert still_running(stored.agent_pid, stored.agent_pid_identity) is True
+    assert liveness(stored.agent_pid, stored.agent_pid_identity) is ProcessState.ALIVE
 
 
 def test_recording_never_fails_the_run(db_session, run):

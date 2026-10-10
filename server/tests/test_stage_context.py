@@ -2,6 +2,7 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.stage_context import build_orchestration_context, gate_prep_target
 from loregarden.models.domain import (
     AgentRun,
+    ClassifyRoute,
     MemoryBriefingAssembly,
     Ticket,
     WorkflowStageDef,
@@ -336,3 +337,31 @@ def test_context_omits_the_pruning_section_when_nothing_downstream_is_prunable()
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[2], stages=stages)
 
     assert "Stages you may declare won't-do" not in text
+
+
+def test_context_lists_the_specialists_a_reject_may_name():
+    """`reroute_to_agent` is a guess without the roster, and a guessed name is
+    discarded — so the stages that choose between agents are listed, and the
+    ones with a fixed agent are not."""
+    stages = [
+        WorkflowStageDef(key="test-break", name="Break", agent_id="test_breaker", order=1),
+        WorkflowStageDef(
+            key="implement",
+            name="Implement",
+            stage_type="classify",
+            order=2,
+            classify_routes=[
+                ClassifyRoute(agent_id="frontend_implementer", specialties=["frontend"]),
+                ClassifyRoute(agent_id="backend_implementer", specialties=["backend"]),
+            ],
+        ),
+        WorkflowStageDef(key="review", name="Review", agent_id="reviewer", order=3),
+    ]
+    ticket, run = _run_and_ticket("implement")
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[1], stages=stages)
+
+    section = text.split("### Valid `reroute_to_agent` values for this workflow")[1]
+    assert "- `implement`: `backend_implementer`, `frontend_implementer`" in section
+    assert "test_breaker" not in section
+    assert "reviewer" not in section

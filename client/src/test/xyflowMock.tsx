@@ -5,8 +5,10 @@ module.exports = {
     children,
     nodes = [],
     edges = [],
+    onNodeClick,
   }: {
     children?: React.ReactNode;
+    onNodeClick?: (event: unknown, node: { id: string }) => void;
     nodes?: Array<{
       id: string;
       position: { x: number; y: number };
@@ -26,6 +28,7 @@ module.exports = {
             "data-node-id": node.id,
             "data-x": node.position.x,
             "data-y": node.position.y,
+            onClick: onNodeClick ? (event: unknown) => onNodeClick(event, node) : undefined,
           },
           node.data?.label,
         ),
@@ -41,6 +44,9 @@ module.exports = {
         ),
       children,
     ),
+  ReactFlowProvider: ({ children }: { children?: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  useReactFlow: () => ({ fitView: () => Promise.resolve(true) }),
   Background: () => null,
   Controls: () => null,
   MarkerType: { ArrowClosed: "arrowclosed" },

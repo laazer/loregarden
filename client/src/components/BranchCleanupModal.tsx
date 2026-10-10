@@ -10,9 +10,10 @@ import {
 } from "../lib/branchCleanup";
 import { deleteBranchTriage, type BranchTriageEntry } from "../lib/branchTriageApi";
 import { describeError } from "../state/toastStore";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { IconCloseButton } from "./IconCloseButton";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
+import { ModalShell } from "./ui/ModalShell";
 
 interface BranchCleanupFailure {
   branch: string;
@@ -44,7 +45,7 @@ function TriStateCheckbox({
   id?: string;
 }) {
   return (
-    <input
+    <Input
       id={id}
       type="checkbox"
       checked={checked}
@@ -55,6 +56,14 @@ function TriStateCheckbox({
       onChange={(event) => onChange(event.target.checked)}
     />
   );
+}
+
+interface BranchCleanupModalProps {
+  workspaceSlug: string;
+  baseBranch: string;
+  branches: BranchTriageEntry[];
+  onClose: () => void;
+  onBranchesDeleted?: (branches: string[]) => void;
 }
 
 /**
@@ -70,24 +79,34 @@ function TriStateCheckbox({
  * on one branch must not decide the fate of the eleven behind it, and the
  * operator needs to be told which ones survived and why.
  */
-export function BranchCleanupModal({
+export function BranchCleanupModal({ open, ...props }: BranchCleanupModalProps & { open: boolean }) {
+  // The body owns the delete; it reports when one is running, which is when
+  // neither Escape nor the backdrop may close the dialog.
+  const [busy, setBusy] = useState(false);
+  return (
+    <ModalShell
+      open={open}
+      onDismiss={busy ? undefined : props.onClose}
+      labelledBy="branch-cleanup-title"
+      panelClassName="branch-cleanup-modal"
+    >
+      {open ? <BranchCleanupModalBody {...props} onBusyChange={setBusy} /> : null}
+    </ModalShell>
+  );
+}
+
+function BranchCleanupModalBody({
   workspaceSlug,
   baseBranch,
   branches,
   onClose,
   onBranchesDeleted,
-}: {
-  workspaceSlug: string;
-  baseBranch: string;
-  branches: BranchTriageEntry[];
-  onClose: () => void;
-  onBranchesDeleted?: (branches: string[]) => void;
-}) {
+  onBusyChange,
+}: BranchCleanupModalProps & { onBusyChange: (busy: boolean) => void }) {
   const qc = useQueryClient();
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
 
   const candidates = useMemo(() => cleanupCandidates(branches), [branches]);
-  // Seeded once, at mount. The caller mounts this only while it is open, so a
+  // Seeded once, at mount. The body mounts only while the dialog is open, so a
   // fresh open is a fresh decision — and a snapshot refresh mid-session cannot
   // silently re-tick boxes the operator just cleared.
   const [selected, setSelected] = useState<Set<string>>(
@@ -139,10 +158,12 @@ export function BranchCleanupModal({
   });
 
   const isDeleting = remove.isPending;
+  useEffect(() => {
+    onBusyChange(isDeleting);
+  }, [isDeleting, onBusyChange]);
   // Escape and the backdrop agree on purpose: whatever makes a click dismiss
   // this dialog is what makes the key dismiss it — including mid-delete, when
   // neither may.
-  useDialogDismiss(isDeleting ? undefined : onClose);
 
   const toggleBranch = (name: string, next: boolean) => {
     setSelected((current) => {
@@ -170,158 +191,144 @@ export function BranchCleanupModal({
 
   return (
     <>
-      <div
-        className="modal-overlay"
-        onClick={isDeleting ? undefined : onClose}
-        role="presentation"
-      />
-      <div
-        ref={dialogRef}
-        className="modal-panel branch-cleanup-modal"
-        role="dialog"
-        aria-labelledby="branch-cleanup-title"
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Branch triage</div>
-            <h2 id="branch-cleanup-title" className="modal-title">
-              Clean up branches
-            </h2>
-            <p className="modal-subtitle">
-              Deleting a branch also removes the worktrees checked out on it.
-            </p>
-          </div>
-          <IconCloseButton disabled={isDeleting} onClick={onClose} />
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Branch triage</div>
+          <h2 id="branch-cleanup-title" className="modal-title">
+            Clean up branches
+          </h2>
+          <p className="modal-subtitle">
+            Deleting a branch also removes the worktrees checked out on it.
+          </p>
         </div>
+        <IconCloseButton disabled={isDeleting} onClick={onClose} />
+      </div>
 
-        <div className="modal-body">
-          {candidates.length === 0 ? (
-            <p className="branch-cleanup-empty">
-              Nothing to clean up. Every branch in this workspace is either {baseBranch} or the
-              one you have checked out, and neither can be deleted from here.
-            </p>
-          ) : (
-            <>
-              <div className="branch-cleanup-section">
-                <div className="modal-section-title">Select by category</div>
-                <ul className="branch-cleanup-categories">
-                  {CLEANUP_CATEGORIES.map((category) => {
-                    const members = candidates.filter((item) =>
-                      item.categories.includes(category.id),
-                    );
-                    const chosen = members.filter((item) => selected.has(item.entry.name)).length;
-                    const inputId = `branch-cleanup-category-${category.id}`;
-                    return (
-                      <li key={category.id} className="branch-cleanup-category">
-                        <TriStateCheckbox
-                          id={inputId}
-                          checked={members.length > 0 && chosen === members.length}
-                          indeterminate={chosen > 0}
-                          disabled={isDeleting || members.length === 0}
-                          onChange={(next) => toggleCategory(members, next)}
-                        />
-                        <label htmlFor={inputId} className="branch-cleanup-category-copy">
-                          <span className="branch-cleanup-category-label">
-                            {category.label(baseBranch)}
-                            <span className="branch-cleanup-count">{members.length}</span>
-                          </span>
-                          <span className="branch-cleanup-category-hint">{category.hint}</span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-
-              <div className="branch-cleanup-section">
-                <div className="modal-section-title">Branches</div>
-                <ul className="branch-cleanup-branches">
-                  {candidates.map((item) => {
-                    const inputId = `branch-cleanup-branch-${item.entry.name}`;
-                    return (
-                      <li key={item.entry.name} className="branch-cleanup-branch">
-                        <input
-                          id={inputId}
-                          type="checkbox"
-                          checked={selected.has(item.entry.name)}
-                          disabled={isDeleting}
-                          onChange={(event) =>
-                            toggleBranch(item.entry.name, event.target.checked)
-                          }
-                        />
-                        <label htmlFor={inputId} className="branch-cleanup-branch-copy">
-                          <span className="branch-cleanup-branch-name">
-                            {item.entry.name}
-                            {item.dirty ? (
-                              <span className="branch-cleanup-flag">uncommitted work</span>
-                            ) : null}
-                          </span>
-                          <span className="branch-cleanup-branch-reason">
-                            {candidateReason(item, baseBranch)}
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </>
-          )}
-
-          {selectedDirty.length ? (
-            <p className="branch-cleanup-warning">
-              {selectedDirty.length} selected branch{selectedDirty.length === 1 ? " has" : "es have"}{" "}
-              uncommitted changes. Deleting {selectedDirty.length === 1 ? "it" : "them"} discards
-              that work permanently.
-            </p>
-          ) : null}
-
-          {failures.length ? (
-            <div className="branch-triage-delete-error branch-cleanup-failures">
-              <div className="modal-section-title">
-                {failures.length} branch{failures.length === 1 ? "" : "es"} could not be deleted
-              </div>
-              <ul>
-                {failures.map((failure) => (
-                  <li key={failure.branch}>
-                    <code>{failure.branch}</code> — {failure.message}
-                  </li>
-                ))}
+      <div className="modal-body">
+        {candidates.length === 0 ? (
+          <p className="branch-cleanup-empty">
+            Nothing to clean up. Every branch in this workspace is either {baseBranch} or the
+            one you have checked out, and neither can be deleted from here.
+          </p>
+        ) : (
+          <>
+            <div className="branch-cleanup-section">
+              <div className="modal-section-title">Select by category</div>
+              <ul className="branch-cleanup-categories">
+                {CLEANUP_CATEGORIES.map((category) => {
+                  const members = candidates.filter((item) =>
+                    item.categories.includes(category.id),
+                  );
+                  const chosen = members.filter((item) => selected.has(item.entry.name)).length;
+                  const inputId = `branch-cleanup-category-${category.id}`;
+                  return (
+                    <li key={category.id} className="branch-cleanup-category">
+                      <TriStateCheckbox
+                        id={inputId}
+                        checked={members.length > 0 && chosen === members.length}
+                        indeterminate={chosen > 0}
+                        disabled={isDeleting || members.length === 0}
+                        onChange={(next) => toggleCategory(members, next)}
+                      />
+                      <label htmlFor={inputId} className="branch-cleanup-category-copy">
+                        <span className="branch-cleanup-category-label">
+                          {category.label(baseBranch)}
+                          <span className="branch-cleanup-count">{members.length}</span>
+                        </span>
+                        <span className="branch-cleanup-category-hint">{category.hint}</span>
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
-          ) : null}
-        </div>
 
-        <div className="modal-footer">
-          <span className="branch-cleanup-status" aria-live="polite">
-            {progress
-              ? `Deleting ${progress.done} of ${progress.total}…`
-              : `${selected.size} selected${
-                  selectedWorktrees
-                    ? ` · ${selectedWorktrees} worktree${selectedWorktrees === 1 ? "" : "s"}`
-                    : ""
-                }`}
-          </span>
-          <button type="button" className="btn-secondary" disabled={isDeleting} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary branch-delete-confirm-submit"
-            disabled={isDeleting || selected.size === 0}
-            onClick={() => {
-              setFailures([]);
-              remove.mutate(
-                candidates
-                  .filter((item) => selected.has(item.entry.name))
-                  .map((item) => item.entry.name),
-              );
-            }}
-          >
-            {isDeleting ? "Deleting…" : `Delete selected (${selected.size})`}
-          </button>
-        </div>
+            <div className="branch-cleanup-section">
+              <div className="modal-section-title">Branches</div>
+              <ul className="branch-cleanup-branches">
+                {candidates.map((item) => {
+                  const inputId = `branch-cleanup-branch-${item.entry.name}`;
+                  return (
+                    <li key={item.entry.name} className="branch-cleanup-branch">
+                      <Input
+                        id={inputId}
+                        type="checkbox"
+                        checked={selected.has(item.entry.name)}
+                        disabled={isDeleting}
+                        onChange={(event) =>
+                          toggleBranch(item.entry.name, event.target.checked)
+                        }
+                      />
+                      <label htmlFor={inputId} className="branch-cleanup-branch-copy">
+                        <span className="branch-cleanup-branch-name">
+                          {item.entry.name}
+                          {item.dirty ? (
+                            <span className="branch-cleanup-flag">uncommitted work</span>
+                          ) : null}
+                        </span>
+                        <span className="branch-cleanup-branch-reason">
+                          {candidateReason(item, baseBranch)}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </>
+        )}
+
+        {selectedDirty.length ? (
+          <p className="branch-cleanup-warning">
+            {selectedDirty.length} selected branch{selectedDirty.length === 1 ? " has" : "es have"}{" "}
+            uncommitted changes. Deleting {selectedDirty.length === 1 ? "it" : "them"} discards
+            that work permanently.
+          </p>
+        ) : null}
+
+        {failures.length ? (
+          <div className="branch-triage-delete-error branch-cleanup-failures">
+            <div className="modal-section-title">
+              {failures.length} branch{failures.length === 1 ? "" : "es"} could not be deleted
+            </div>
+            <ul>
+              {failures.map((failure) => (
+                <li key={failure.branch}>
+                  <code>{failure.branch}</code> — {failure.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="modal-footer">
+        <span className="branch-cleanup-status" aria-live="polite">
+          {progress
+            ? `Deleting ${progress.done} of ${progress.total}…`
+            : `${selected.size} selected${
+                selectedWorktrees
+                  ? ` · ${selectedWorktrees} worktree${selectedWorktrees === 1 ? "" : "s"}`
+                  : ""
+              }`}
+        </span>
+        <Button variant="secondary" disabled={isDeleting} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary" className="branch-delete-confirm-submit"
+          disabled={isDeleting || selected.size === 0}
+          onClick={() => {
+            setFailures([]);
+            remove.mutate(
+              candidates
+                .filter((item) => selected.has(item.entry.name))
+                .map((item) => item.entry.name),
+            );
+          }}
+        >
+          {isDeleting ? "Deleting…" : `Delete selected (${selected.size})`}
+        </Button>
       </div>
     </>
   );

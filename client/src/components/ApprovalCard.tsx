@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
+import { exitActionCategoryLabel } from "./exitActionCategories";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { Textarea } from "./ui/Textarea";
 
 export type ApprovalResolvePayload = {
   answers?: Record<string, string | string[]>;
@@ -46,14 +51,78 @@ function answersComplete(
  */
 const COLLAPSED_BODY_MAX_HEIGHT = 320;
 
+/** How tall a clamped brief stands before "Show full brief" — about eight lines. */
+const CLAMPED_BRIEF_MAX_HEIGHT = 150;
+
+/**
+ * Past this, a checklist item is a paragraph, not a step: the ticket-intent item
+ * carries the whole ticket description. Clamped to three lines until opened.
+ */
+const LONG_CHECKLIST_ITEM_CHARS = 200;
+
+/**
+ * True once `node` is taller than `maxHeight`. Observed rather than measured
+ * once: markdown settles after the first paint.
+ */
+function useOverflows(enabled: boolean, maxHeight: number, resetKey: string) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    if (!enabled) {
+      setOverflows(false);
+      return;
+    }
+    const node = ref.current;
+    if (!node) return;
+    const measure = () => setOverflows(node.scrollHeight > maxHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, maxHeight, resetKey]);
+  return { ref, overflows };
+}
+
+/**
+ * The gate brief restates the ticket — title, description, often a frozen spec
+ * — and on real tickets runs 6–40 KB. Shown in full it buries the decision under
+ * it; clamped, the first lines say what is being signed off and the rest is one
+ * click away, in place.
+ */
+function ClampedBrief({ resetKey, children }: { resetKey: string; children: ReactNode }) {
+  const { ref, overflows } = useOverflows(true, CLAMPED_BRIEF_MAX_HEIGHT, resetKey);
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [resetKey]);
+  const clamped = overflows && !open;
+  return (
+    <div className="approval-brief">
+      <div
+        ref={ref}
+        className={clamped ? "approval-brief-body approval-brief-body--clamped" : "approval-brief-body"}
+        style={clamped ? { maxHeight: CLAMPED_BRIEF_MAX_HEIGHT } : undefined}
+      >
+        {children}
+      </div>
+      {overflows ? (
+        <Button variant="plain" className="approval-inline-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show full brief"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ApprovalCard({
   approval,
   onApprove,
   onReject,
+  onRecheck,
   onInspect,
   isSubmitting,
   compact = false,
   collapsible = false,
+  clampBrief = false,
   inspectLabel = "Inspect",
   onExpand,
   impactText,
@@ -61,11 +130,15 @@ export function ApprovalCard({
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
   onReject: (payload?: ApprovalResolvePayload) => void;
+  /** Prefer this for recheck-only exit-action gates; falls back to onApprove when omitted. */
+  onRecheck?: (payload?: ApprovalResolvePayload) => void;
   onInspect?: () => void;
   isSubmitting?: boolean;
   compact?: boolean;
   /** Clamp an over-tall body and offer `onExpand` instead of scrolling the rail. */
   collapsible?: boolean;
+  /** Clamp a long brief in place, with its own toggle — for full-width surfaces. */
+  clampBrief?: boolean;
   inspectLabel?: string;
   onExpand?: () => void;
   /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
@@ -94,6 +167,7 @@ export function ApprovalCard({
   const [allowForTicket, setAllowForTicket] = useState(false);
   const [allowForStage, setAllowForStage] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
+  const [openItems, setOpenItems] = useState<Record<number, boolean>>({});
   const [reworkEnabled, setReworkEnabled] = useState(false);
   const [reworkStageKey, setReworkStageKey] = useState("");
   const [reworkNote, setReworkNote] = useState("");
@@ -105,26 +179,11 @@ export function ApprovalCard({
   // too would label them a testing checklist, which they are not.
   const checklist = isHumanAction || isPark ? [] : approval.checklist ?? [];
 
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const [bodyOverflows, setBodyOverflows] = useState(false);
-
-  // Markdown and checklists settle after the first paint, so the height is
-  // observed rather than measured once — otherwise a long impact renders
-  // unclamped until the next unrelated re-render.
-  useEffect(() => {
-    if (!collapsible) {
-      setBodyOverflows(false);
-      return;
-    }
-    const node = bodyRef.current;
-    if (!node) return;
-    const measure = () => setBodyOverflows(node.scrollHeight > COLLAPSED_BODY_MAX_HEIGHT);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [collapsible, approval.id]);
+  const { ref: bodyRef, overflows: bodyOverflows } = useOverflows(
+    collapsible,
+    COLLAPSED_BODY_MAX_HEIGHT,
+    approval.id,
+  );
 
   const clamped = collapsible && bodyOverflows;
 
@@ -136,6 +195,7 @@ export function ApprovalCard({
     setAllowForTicket(false);
     setAllowForStage(false);
     setCheckedItems({});
+    setOpenItems({});
     setReworkEnabled(false);
     setReworkStageKey("");
     setReworkNote("");
@@ -168,8 +228,48 @@ export function ApprovalCard({
     });
   };
 
+  const humanRequired = approval.human_required_actions ?? [];
+  const allowedActions = approval.allowed_actions;
+  const isExitActionGate = approval.kind === "workflow_gate" && humanRequired.length > 0;
+  const allowApprove = Boolean(allowedActions?.includes("approve"));
+  const allowRecheck = Boolean(allowedActions?.includes("recheck"));
+  // Exit-action gates honour server allowed_actions; other kinds keep Approve.
+  const showApprove = isExitActionGate ? allowApprove : true;
+  const showRecheckPrimary = isExitActionGate && allowRecheck && !allowApprove;
+  const categoryLabels = (() => {
+    if (!isExitActionGate) return [] as string[];
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const action of humanRequired) {
+      const label = exitActionCategoryLabel(action);
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
+    }
+    return labels;
+  })();
+
+  const impactMarkdown = (
+    <MarkdownContent
+      content={impactText ?? approval.impact}
+      className="approval-impact"
+      readerTitle={approval.title}
+      readerSubtitle={approval.workspace_slug ?? undefined}
+    />
+  );
+
   const submitApproval = () => {
     onApprove(resolvePayload());
+  };
+
+  const submitRecheck = () => {
+    const payload = resolvePayload();
+    if (onRecheck) {
+      onRecheck(payload);
+      return;
+    }
+    onApprove(payload);
   };
 
   return (
@@ -189,8 +289,17 @@ export function ApprovalCard({
       <div ref={bodyRef} style={{ padding: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
+          {/* Gate titles name the stage, not the ticket, so a batch of tickets
+              parked at one gate read as the same card repeated. */}
+          {approval.ticket_external_id && <span>{approval.ticket_external_id} · </span>}
           {approval.stage_name}
-          {approval.kind === "workflow_gate" && <span> · stage sign-off</span>}
+          {approval.kind === "workflow_gate" &&
+            categoryLabels.map((label) => (
+              <span key={label} role="status" aria-label={label}>
+                {" "}
+                · {label}
+              </span>
+            ))}
           {approval.kind === "rework_pause" && <span> · rework loop paused</span>}
           {approval.kind === "block_decision" && (
             <span> · decision needed; answering reruns the stage</span>
@@ -201,7 +310,22 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
+        {isExitActionGate ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
+            {humanRequired.map((action) => (
+              <div key={action.action_key} style={{ fontSize: 12.5, color: "var(--txm)" }}>
+                <div style={{ fontWeight: 600, color: "var(--tx)", marginBottom: 2 }}>
+                  {action.action_label}
+                </div>
+                <div>{action.reason}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {/* Narrative impact remains available under structured actions when both exist. */}
+        {!isExitActionGate || (impactText ?? approval.impact) ? (
+          clampBrief ? <ClampedBrief resetKey={approval.id}>{impactMarkdown}</ClampedBrief> : impactMarkdown
+        ) : null}
 
         {isHumanAction && approval.prepared_action && (
           <PreparedActionPanel
@@ -237,7 +361,32 @@ export function ApprovalCard({
                   }
                   style={{ marginTop: 2 }}
                 />
-                <span style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}>{item}</span>
+                <span className="approval-checklist-item">
+                  <span
+                    className={
+                      item.length > LONG_CHECKLIST_ITEM_CHARS && !openItems[idx]
+                        ? "approval-checklist-text approval-checklist-text--clamped"
+                        : "approval-checklist-text"
+                    }
+                    style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}
+                  >
+                    {item}
+                  </span>
+                  {item.length > LONG_CHECKLIST_ITEM_CHARS ? (
+                    <Button
+                      variant="plain"
+                      className="approval-inline-toggle"
+                      aria-expanded={!!openItems[idx]}
+                      onClick={(event) => {
+                        // Inside the item's <label>: without this the click also ticks the box.
+                        event.preventDefault();
+                        setOpenItems((prev) => ({ ...prev, [idx]: !prev[idx] }));
+                      }}
+                    >
+                      {openItems[idx] ? "Show less" : "Show all"}
+                    </Button>
+                  ) : null}
+                </span>
               </label>
             ))}
           </div>
@@ -275,7 +424,8 @@ export function ApprovalCard({
             </label>
             {reworkEnabled && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 22 }}>
-                <select
+                <Select
+                  aria-label="Route back to stage"
                   value={reworkStageKey}
                   disabled={isSubmitting}
                   onChange={(e) => setReworkStageKey(e.target.value)}
@@ -294,8 +444,9 @@ export function ApprovalCard({
                       {option.name}
                     </option>
                   ))}
-                </select>
-                <textarea
+                </Select>
+                <Textarea
+                  aria-label="What should be formalized?"
                   value={reworkNote}
                   disabled={isSubmitting}
                   onChange={(e) => setReworkNote(e.target.value)}
@@ -382,8 +533,9 @@ export function ApprovalCard({
                     );
                   })}
                 </div>
-                <input
+                <Input
                   type="text"
+                  aria-label={`Custom answer: ${q.question}`}
                   placeholder="Or type a custom answer…"
                   value={customText[q.question] ?? ""}
                   onChange={(e) => {
@@ -513,7 +665,17 @@ export function ApprovalCard({
               Submit answers
             </button>
           )
-        ) : (
+        ) : showRecheckPrimary ? (
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ flex: 1, borderRadius: 0, color: "var(--ac2)" }}
+            disabled={!canSubmit || isSubmitting}
+            onClick={submitRecheck}
+          >
+            Re-check
+          </button>
+        ) : showApprove ? (
           <button
             type="button"
             className="btn-secondary"
@@ -529,7 +691,7 @@ export function ApprovalCard({
                   ? "Approve & route back"
                   : "Approve"}
           </button>
-        )}
+        ) : null}
         <button
           type="button"
           className="btn-secondary"

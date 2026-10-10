@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 import { api } from "../api/client";
-import { ticketIdFromPath } from "../lib/appNavigation";
+import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { useChatWorkspaceSlug } from "./useChatWorkspace";
 
@@ -35,7 +35,8 @@ export function useTerminalTarget(): TerminalTarget {
   const filterWorkspace = useUiStore((s) => s.workspace);
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
-  const ticketId = onBranchTriage ? null : ticketIdFromPath(pathname);
+  const pathTicketId = useTicketIdFromPath();
+  const ticketId = onBranchTriage ? null : pathTicketId;
   const onChat = pathname === "/chat" || pathname.startsWith("/chat/");
   const chatWorkspaceSlug = useChatWorkspaceSlug();
 

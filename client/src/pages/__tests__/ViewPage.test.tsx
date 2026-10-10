@@ -230,9 +230,14 @@ function promptIn(root: HTMLElement, containerId: string): HTMLElement {
  * reads as "the option in this view", and is used to assert the dialog is
  * outside it rather than to search within it.
  */
+/** Options in the picker that is open, not one still playing its exit (inert). */
+function liveOptions(selector: string): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => !el.closest("[inert]"));
+}
+
 async function primitiveOption(root: HTMLElement, primitiveId: string): Promise<HTMLElement> {
   return waitFor(() => {
-    const found = document.querySelector<HTMLElement>(`[data-primitive-id="${primitiveId}"]`);
+    const found = liveOptions(`[data-primitive-id="${primitiveId}"]`)[0] ?? null;
     expect(found).not.toBeNull();
     expect(root.contains(found)).toBe(false);
     return found as HTMLElement;
@@ -240,8 +245,8 @@ async function primitiveOption(root: HTMLElement, primitiveId: string): Promise<
 }
 
 /** Every option the open picker is offering, wherever it was portalled to. */
-function offeredOptions(): NodeListOf<HTMLElement> {
-  return document.querySelectorAll<HTMLElement>("[data-primitive-id]");
+function offeredOptions(): HTMLElement[] {
+  return liveOptions("[data-primitive-id]");
 }
 
 beforeEach(() => {

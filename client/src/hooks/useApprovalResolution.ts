@@ -5,7 +5,7 @@ import type { ApprovalResolvePayload } from "../components/ApprovalCard";
 
 export interface ResolveApprovalVariables extends ApprovalResolvePayload {
   id: string;
-  action: "approve" | "reject";
+  action: "approve" | "recheck" | "reject";
 }
 
 /**
@@ -45,7 +45,7 @@ export function useApprovalResolution(
 /** Convenience for the call sites, which all resolve a whole `Approval`. */
 export function approvalVariables(
   approval: Approval,
-  action: "approve" | "reject",
+  action: "approve" | "recheck" | "reject",
   payload?: ApprovalResolvePayload,
 ): ResolveApprovalVariables {
   return { id: approval.id, action, ...payload };

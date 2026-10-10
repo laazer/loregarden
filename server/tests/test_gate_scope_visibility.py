@@ -35,6 +35,7 @@ import pytest
 import yaml
 from loregarden.models.domain import Worktree
 from loregarden.services import worktree_lifecycle
+from tests.repo_templates import from_template
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
@@ -76,20 +77,28 @@ def _scrubbed_env() -> dict[str, str]:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A repository with a `main` base commit and a ticket branch checked out."""
-    _git(tmp_path, "init", "-q", "-b", "main", ".")
-    _git(tmp_path, "config", "user.email", "t@example.com")
-    _git(tmp_path, "config", "user.name", "t")
-    src = tmp_path / "src" / "pkg"
+    """A repository with a `main` base commit and a ticket branch checked out.
+
+    A copy of one built once per process (`tests/repo_templates.py`), in its own
+    directory so nothing else a test's fixtures put in `tmp_path` is committed.
+    """
+    return from_template(tmp_path / "repo", "gate_scope_visibility", _build_repo)
+
+
+def _build_repo(root: Path) -> None:
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main", ".")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    src = root / "src" / "pkg"
     src.mkdir(parents=True)
     (src / "base.py").write_text("x = 1\n")
-    client = tmp_path / "client" / "src"
+    client = root / "client" / "src"
     client.mkdir(parents=True)
     (client / "base.ts").write_text("export const x = 1;\n")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-qm", "base")
-    _git(tmp_path, "checkout", "-q", "-b", "ticket-branch")
-    return tmp_path
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+    _git(root, "checkout", "-q", "-b", "ticket-branch")
 
 
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]

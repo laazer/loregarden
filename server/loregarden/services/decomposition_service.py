@@ -10,15 +10,34 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from collections.abc import Callable
 
 from loregarden.models.domain import VALID_HIERARCHY, WorkItemType
 from loregarden.models.domain.schemas import HierarchyWorkItem
 from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
+from loregarden.services.ticket_studio_service import extract_json_block
 
 logger = logging.getLogger(__name__)
 
 GenerateFn = Callable[[str], str]
+
+
+def _require_criteria_partition(parent: list[str], children: list[HierarchyWorkItem]) -> None:
+    """Refuse a split that drops, invents or duplicates a criterion.
+
+    A criterion lost here is scope nobody finds out was cut: the parent closes
+    once its children do.
+    """
+    expected = Counter(ProposalValidator.normalize_text(ac) for ac in parent)
+    proposed = Counter(ac for child in children for ac in child.acceptance_criteria)
+    if proposed != expected:
+        missing = sum((expected - proposed).values())
+        extra = sum((proposed - expected).values())
+        raise ValueError(
+            f"Split must carry every criterion exactly once: {missing} missing, "
+            f"{extra} added or duplicated"
+        )
 
 
 class DecompositionService:
@@ -68,6 +87,75 @@ class DecompositionService:
         except ProposalValidationError:
             logger.exception("Proposal validation error")
             raise
+
+    def split(self, ticket_content: dict, *, child_type: WorkItemType) -> list[HierarchyWorkItem]:
+        """Split one oversized ticket into a flat, ordered list of children.
+
+        Unlike ``decompose`` this proposes one level only, every child of
+        ``child_type`` — the caller already holds the parent, and the children
+        run in the order returned.
+
+        Raises:
+            ValueError: no generator, unparseable reply, or a child of the wrong
+                type or with children of its own.
+            ProposalValidationError: a child breaks the proposal constraints.
+        """
+        if self._generate is None:
+            raise ValueError(
+                "DecompositionService requires a generate callable wired through the "
+                "CLI agent seam (run_cli_agent_turn); direct SDK calls are not supported"
+            )
+        reply = self._generate(self._build_split_prompt(ticket_content, child_type))
+        payload = extract_json_block(reply)
+        if payload is None:
+            raise ValueError("Split reply carried no JSON object")
+        children = [self._parse_item(item) for item in payload.get("children", [])]
+        if len(children) < 2:
+            raise ValueError(f"Split proposed {len(children)} child(ren); need at least 2")
+        for child in children:
+            if child.work_item_type != child_type or child.children:
+                raise ValueError(
+                    f"Split child '{child.title}' must be a {child_type.value} with no children"
+                )
+        validated = ProposalValidator.validate_all(children)
+        _require_criteria_partition(ticket_content.get("acceptance_criteria", []), validated)
+        return validated
+
+    @staticmethod
+    def _build_split_prompt(ticket_content: dict, child_type: WorkItemType) -> str:
+        criteria = "\n".join(f"- {ac}" for ac in ticket_content.get("acceptance_criteria", []))
+        max_acs = ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS
+        max_desc = ProposalValidator.MAX_DESCRIPTION_LENGTH
+        return f"""This ticket is too large for one agent run. Split it into smaller {child_type.value} tickets that each ship independently.
+
+TICKET
+Title: {ticket_content.get("title", "")}
+Description:
+{ticket_content.get("description", "")}
+
+Acceptance criteria:
+{criteria or "(none)"}
+
+RULES
+1. Every acceptance criterion above belongs to exactly one child, carried over verbatim. Add none, drop none.
+2. Each child has at most {max_acs} acceptance criteria and a description under {max_desc} characters, written so the child stands alone without the parent.
+3. List children in the order they must be built: a child may rely on any child before it, never one after it.
+4. Use between 2 and 8 children. Split along seams in the code (a module, a transport, a surface), not by step (design / build / test).
+
+Reply with ONLY this JSON object:
+{{
+  "children": [
+    {{
+      "external_id": "short-slug",
+      "title": "string",
+      "work_item_type": "{child_type.value}",
+      "description": "string",
+      "acceptance_criteria": ["string", ...],
+      "priority": 1,
+      "children": []
+    }}
+  ]
+}}"""
 
     def _build_prompt(self, ticket_content: dict) -> str:
         """Build the prompt for the model to generate hierarchy."""

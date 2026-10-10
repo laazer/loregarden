@@ -6,14 +6,27 @@ continues to work unchanged.
 """
 
 from loregarden.models.domain.block_kinds import *  # noqa: F401,F403
+from loregarden.models.domain.checkout_enums import *  # noqa: F401,F403
 from loregarden.models.domain.docker_tables import *  # noqa: F401,F403
 from loregarden.models.domain.enums import *  # noqa: F401,F403
+from loregarden.models.domain.enums_capacity import *  # noqa: F401,F403
+from loregarden.models.domain.enums_exit_actions import *  # noqa: F401,F403
+from loregarden.models.domain.gate_eval_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.git_tables import *  # noqa: F401,F403
+from loregarden.models.domain.github_issue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_schemas import *  # noqa: F401,F403
+from loregarden.models.domain.initiative_suggestion_schemas import *  # noqa: F401,F403
 from loregarden.models.domain.initiative_tables import *  # noqa: F401,F403
+from loregarden.models.domain.instance_template_tables import *  # noqa: F401,F403
+from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
+from loregarden.models.domain.memory_tables import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403
+from loregarden.models.domain.plan_enums import *  # noqa: F401,F403
+from loregarden.models.domain.process_enums import *  # noqa: F401,F403
+from loregarden.models.domain.pull_request_enums import *  # noqa: F401,F403
 from loregarden.models.domain.queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403
+from loregarden.models.domain.schemas_exit_actions import *  # noqa: F401,F403
 from loregarden.models.domain.stage_types import *  # noqa: F401,F403
 from loregarden.models.domain.tables import *  # noqa: F401,F403
 from loregarden.models.domain.work_item_types import *  # noqa: F401,F403

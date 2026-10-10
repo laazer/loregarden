@@ -116,7 +116,13 @@ def test_stage_report_artifact_content_shape():
     assert content["status"] == "fail"
     assert content["reroute_to_stage"] == "implement"
     row_keys = {row["k"] for row in content["rows"]}
-    assert row_keys == {"status", "confidence", "reroute_to_stage", "reroute_context"}
+    assert row_keys == {
+        "status",
+        "confidence",
+        "reroute_to_stage",
+        "reroute_context",
+        "reroute_to_agent",
+    }
 
 
 def test_parse_stage_report_from_stream_json_stdout():

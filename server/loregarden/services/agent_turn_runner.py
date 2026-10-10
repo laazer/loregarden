@@ -38,6 +38,7 @@ from loregarden.services.chat_worktree import (
 )
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
+    cap_reply,
     resolve_agent_timeout,
     run_cli_agent_turn,
 )
@@ -47,6 +48,7 @@ from loregarden.services.cli_settings import (
     resolve_effort_for_adapter,
     resolve_model_for_adapter,
 )
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.run_concurrency import (
     find_active_workspace_chat_run,
     new_run_code,
@@ -238,6 +240,9 @@ class AgentTurnRequest:
     surface: ChatSurface = ChatSurface.HOME
     """Which operator rail this turn is for — selects the shared prompt blocks
     and labels the tool-grant log line."""
+    extra_dirs: tuple[Path, ...] = ()
+    """Directories outside the checkout the agent may read — a chat turn's
+    attachments. Only claude honours the grant; callers check the adapter."""
 
 
 @dataclass
@@ -312,7 +317,11 @@ def _resolve_turn_root(request: AgentTurnRequest, run: AgentRun | None) -> Path:
     if request.ticket is not None:
         if run is None:
             return resolve_ticket_root(request.session, request.ticket, request.workspace)
-        return resolve_execution_root(request.session, run, request.ticket, request.workspace)
+        # Every turn through here is a chat turn (stage runs go through the CLI
+        # executor), so a stale integration branch is no reason to refuse it.
+        return resolve_execution_root(
+            request.session, run, request.ticket, request.workspace, stale_target_ok=True
+        )
 
     chat_session = (
         request.session.get(BaxterChatSession, request.chat_session_id)
@@ -363,6 +372,13 @@ def _resolve_checkout(request: AgentTurnRequest, run: AgentRun) -> Path:
         root = _resolve_turn_root(request, run)
         if not root.is_dir():
             raise ValueError(f"Workspace repo path does not exist: {root}")
+    except DirtyPrimaryCheckoutError as exc:
+        # Refused, not failed: nothing ran, and the turn can be retried once the
+        # shared checkout is clean (864). The run's stderr names the paths, and
+        # the raise is the error the conversation shows. (Ticket stage runs go
+        # through the executor, which also files an artifact and parks.)
+        _settle(request, run, status=RunStatus.CANCELLED, stderr=str(exc))
+        raise
     except Exception as exc:
         _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
         raise
@@ -399,6 +415,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
                 surface=request.surface,
                 agent_slug=request.agent.get("slug") or request.agent_id,
+                extra_dirs=request.extra_dirs,
             )
             bridge_kwargs: dict = {
                 "run_id": run.id,
@@ -423,7 +440,11 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
         if thinking:
             thinking.close()
 
-    reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
+    reply = cap_reply(
+        extract_triage_reply(result.stdout),
+        request.profile.reply_cap,
+        label=request.profile.assistant_label,
+    )
     if result.status != RunStatus.SUCCEEDED:
         _settle(request, run, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
@@ -465,6 +486,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             thinking_sink=thinking,
             workspace_root=root,
             surface=request.surface,
+            extra_dirs=request.extra_dirs,
         )
     except Exception as exc:
         if run is not None:

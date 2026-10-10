@@ -17,7 +17,12 @@ export function ChatMessageBubble({
         {chatRoleLabel(message.role, assistantLabel)}
         {timestamp ? ` · ${timestamp}` : ""}
       </div>
-      <MarkdownContent content={chatMessageBody(message)} className="chat-message-body" />
+      <MarkdownContent
+        content={chatMessageBody(message)}
+        className="chat-message-body"
+        readerTitle={chatRoleLabel(message.role, assistantLabel)}
+        readerSubtitle={timestamp || undefined}
+      />
     </div>
   );
 }

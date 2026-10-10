@@ -14,6 +14,8 @@ hypothetical.
 
 from __future__ import annotations
 
+import json
+
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
 from loregarden.models.domain import (
     OrchestrationRun,
@@ -37,7 +39,17 @@ def _setup(session: Session, external_id: str):
         select(WorkflowTemplate).where(WorkflowTemplate.slug == "blobert-tdd")
     ).first()
     ws = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
-    stages = get_template_stages(template)
+    # Routing is what is under test, not gates: live blobert-tdd gates `plan` as a
+    # design-plan sign-off (0133), and a pass now parks a gated stage for a person
+    # instead of advancing it. A repeated pass over a gated stage is covered in
+    # test_exit_action_continuation (one gate, not two).
+    stages = [
+        stage.model_copy(update={"exit_actions_enabled": False, "exit_actions": []})
+        for stage in get_template_stages(template)
+    ]
+    template.stages_json = json.dumps([stage.model_dump(mode="json") for stage in stages])
+    session.add(template)
+    session.commit()
     first = stages[0].key
 
     ticket = Ticket(

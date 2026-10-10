@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -7,6 +8,8 @@ import type {
   WorkspaceRuntimeSettings,
   WorkspaceSummary,
 } from "../api/client";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
 
 export function claudeModelEnabled(cliAdapter: string): boolean {
   return ["default", "claude"].includes(cliAdapter || "default");
@@ -110,6 +113,11 @@ function sourceLabel(source: string): string {
 }
 
 export function effectiveRuntimeSummary(effective: RuntimeEffective): string {
+  // Nothing above the agent pins a provider: each stage's agent runs on the
+  // adapter and model it declares, so there is no single answer to name.
+  if (effective.cli_adapter_source === "agent") {
+    return "each stage's agent, on the provider and model it declares";
+  }
   const parts = [
     `${effective.cli_adapter} (${sourceLabel(effective.cli_adapter_source)})`,
   ];
@@ -139,6 +147,7 @@ export function WorkspaceRuntimeFields({
   compact = false,
   onChange,
 }: WorkspaceRuntimeFieldsProps) {
+  const fieldId = useId();
   const adapter = runtime.cli_adapter || "default";
   const gap = compact ? 8 : 12;
   const selectStyle = { width: "100%", fontSize: 12 };
@@ -223,9 +232,10 @@ export function WorkspaceRuntimeFields({
     modelStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {lmOptions.length > 1 ? (
-          <select
+          <Select
             className="btn-secondary filter-select"
             style={selectStyle}
+            aria-label="LM Studio model"
             value={
               lmOptions.some((opt) => opt.id === (runtime.lmstudio_model ?? ""))
                 ? (runtime.lmstudio_model ?? "")
@@ -244,11 +254,12 @@ export function WorkspaceRuntimeFields({
                 {opt.label}
               </option>
             ))}
-          </select>
+          </Select>
         ) : null}
-        <input
+        <Input
           className="btn-secondary"
           style={{ ...selectStyle, boxSizing: "border-box" }}
+          aria-label="LM Studio model id"
           value={runtime.lmstudio_model ?? ""}
           placeholder={
             lmOptions.length > 1
@@ -264,8 +275,11 @@ export function WorkspaceRuntimeFields({
           }
         />
         <div className="modal-field" style={{ margin: 0 }}>
-          <div className="modal-field-label">Server URL</div>
-          <input
+          <label htmlFor={`${fieldId}-lmstudio-base-url`} className="modal-field-label">
+            Server URL
+          </label>
+          <Input
+            id={`${fieldId}-lmstudio-base-url`}
             className="btn-secondary"
             style={{ ...selectStyle, boxSizing: "border-box" }}
             value={runtime.lmstudio_base_url ?? ""}
@@ -312,9 +326,10 @@ export function WorkspaceRuntimeFields({
         ) : null}
         {/* The catalogue depends on which providers OpenCode is authenticated
             to, so a model the picker has not discovered is still valid to pin. */}
-        <input
+        <Input
           className="btn-secondary"
           style={{ ...selectStyle, boxSizing: "border-box" }}
+          aria-label="OpenCode model id"
           value={runtime.opencode_model ?? ""}
           placeholder={
             ocOptions.length > 1

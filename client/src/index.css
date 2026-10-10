@@ -1,4 +1,9 @@
 :root {
+  /* Native control parts the CSS cannot reach — a <select>'s open list, a
+     checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
+     a light-mode OS draws them light inside the dark app. A light theme sets
+     `color-scheme: light` beside its tokens. */
+  color-scheme: dark;
   /* v6 Agent SDLC IDE palette — warmer navy + sage */
   --bg0: #0b0f16;
   --bg1: #111722;
@@ -7,6 +12,8 @@
   --bg4: #2c3849;
   --bd: #232f42;
   --bd2: #35455c;
+  /* What a raised surface casts onto what is under it. */
+  --shadow: #000000;
   --tx: #f0efe8;
   --txm: #a5a394;
   --txl: #6b6a5c;
@@ -28,12 +35,43 @@
   --ui: "IBM Plex Sans", system-ui, sans-serif;
   --dp: "Fredoka", "Sora", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Motion. Same names and values as @lore-eden/ui's motion tokens
+     (ts/src/tokens/specs.ts), which hold the rules; keep the two in step until
+     this client consumes the kit. Motion explains a change of state, never
+     decorates. fast: hover, press, tooltip. med: toggle, dropdown, toast in.
+     slow: modal or panel in. An exit runs one step faster than its entrance.
+     Animate transform and opacity only. */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.12, 0.4, 1);
+  --t-fast: 0.12s;
+  --t-med: 0.2s;
+  --t-slow: 0.3s;
+  --t-stagger: 0.04s;
 }
 
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: #2e3626 transparent;
+}
+
+/* Motion is suppressed wholesale, not per animation: 17 of the client's
+   animated stylesheets had no reduced-motion rule of their own, and a reader
+   who asked for less motion did not mean less of the ones someone remembered.
+   Durations go to near zero rather than `none`, so every animation lands on
+   its end state and animationend/transitionend still fire for code that waits
+   on them. !important also beats inline `style` animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 html,
@@ -266,7 +304,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  animation: screen-fade 0.28s ease;
+  animation: screen-fade var(--t-slow) ease;
 }
 
 @keyframes screen-fade {
@@ -353,6 +391,7 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   height: 34px;
   padding: 0 12px;
   font-size: 12.5px;
@@ -362,6 +401,13 @@ textarea::placeholder {
 
 .topbar-action-btn.btn-secondary {
   border-color: var(--bd);
+}
+
+/* A panel toggle (History, Workbench) shows whether its panel is open. */
+.topbar-action-btn.btn-secondary[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd));
+  background: color-mix(in srgb, var(--ac) 12%, var(--bg2));
+  color: var(--tx);
 }
 
 .topbar-action-btn--strong.btn-secondary {
@@ -388,6 +434,57 @@ textarea::placeholder {
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* The select names a workspace on its own; below this width the label is the
+   first thing the row can give back without a control losing its words. */
+@media (max-width: 1100px) {
+  .topbar-workspace-picker-label {
+    display: none;
+  }
+
+  /* Icon-only; each keeps its name in `aria-label`. */
+  .topbar-action-btn--collapsible .topbar-action-label {
+    display: none;
+  }
+}
+
+/* The phone-width overflow menu. Hidden until the breakpoint below, where it
+   takes GitHub, Instances and Usage off the row. */
+.topbar-overflow {
+  display: none;
+  position: relative;
+  flex: none;
+}
+
+.topbar-overflow .overflow-menu-trigger {
+  height: 34px;
+  min-width: 34px;
+  border-radius: 9px;
+  border-color: var(--bd);
+}
+
+.topbar-overflow .overflow-menu-item {
+  align-items: center;
+}
+
+/* The near-limit Usage warning still has to be seen once Usage is folded away. */
+.topbar-overflow--warning::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--aml);
+  border: 2px solid var(--bg1);
+  pointer-events: none;
+}
+
+/* The chat's picker holds its width; it has nothing to give back. */
+.topbar-workspace-picker--fixed {
+  flex: none;
 }
 
 .topbar-workspace-picker-select.btn-secondary {
@@ -450,6 +547,68 @@ textarea::placeholder {
   padding: 0 14px;
   font-size: 12.5px;
   border-radius: 9px;
+}
+
+/* Phone width: next to the ~60px rail the row has ~300px. The rail already
+   carries the logo, so the brand goes; the secondary actions fold into the
+   overflow menu; the workspace picker and the inbox stay. */
+@media (max-width: 640px) {
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .ide-topbar-brand,
+  /* Doubled: `.btn-secondary` sets `display` later in this file. */
+  .topbar-action-btn.topbar-action-btn--overflowable,
+  .topbar-action-btn--phone-icon .topbar-action-label,
+  .topbar-search kbd {
+    display: none;
+  }
+
+  .topbar-overflow {
+    display: block;
+  }
+
+  /* Doubled with `.btn-secondary`, whose padding comes later in this file. */
+  .topbar-action-btn.btn-secondary {
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .topbar-search {
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .topbar-page:not(:empty) {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /* Icon-only buttons go square. */
+  .topbar-action-btn--collapsible.btn-secondary {
+    padding: 0 9px;
+  }
+
+  /* With search on the row, it is what fills the space — not the spacer. */
+  .app-topbar:has(.topbar-search) .topbar-spacer {
+    display: none;
+  }
+
+  /* The picker is the one control here that can give width back: it shrinks
+     (truncating the name) before anything is pushed off the edge. */
+  .topbar-workspace-picker--fixed {
+    flex: 0 1 130px;
+    min-width: 72px;
+  }
+
+  .topbar-workspace-picker-select.btn-secondary {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 72px;
+    max-width: 130px;
+  }
 }
 
 .studio-subtabs {
@@ -747,10 +906,6 @@ textarea::placeholder {
   max-width: 820px;
 }
 
-.studio-editor-inner--gates {
-  max-width: 760px;
-}
-
 .studio-card {
   background: var(--bg1);
   border: 1px solid var(--bd);
@@ -843,26 +998,6 @@ textarea::placeholder {
 
 .ticket-history-unavailable {
   color: var(--warn, #f0b429);
-}
-
-.monitor-findings {
-  border: 1px solid rgba(240, 180, 41, 0.45);
-  background: rgba(240, 180, 41, 0.08);
-  color: var(--tx);
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin: 0 0 8px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.monitor-findings ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
-.monitor-findings-count {
-  color: var(--txl);
 }
 
 .studio-drift-notice {
@@ -1160,6 +1295,18 @@ textarea::placeholder {
   font-size: 10.5px;
   color: var(--txl);
   margin-bottom: 5px;
+}
+
+/* These label classes were drawn on <div>s; a field's label is a <label htmlFor>
+   so a click focuses the field and a reader (or an agent) finds it by name. A
+   <label> is inline, which drops the margin-bottom — keep the block layout. */
+label:is(
+    .studio-field-label,
+    .studio-stage-field-label,
+    .import-preview-field-label,
+    .modal-field-label
+  ) {
+  display: block;
 }
 
 .studio-stage-input,
@@ -2292,6 +2439,11 @@ textarea::placeholder {
   /* Anchors the post-it strip and the `/` menu, both of which open upward out
      of a bar that already sits on the bottom edge of the screen. */
   position: relative;
+  /* More controls than a narrow window has room for: past it they take a
+     second row rather than pushing Send off the edge or squeezing the
+     suggestions to nothing. */
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 9px 14px 9px 16px;
   border-top: 1px solid var(--bd2);
   background: linear-gradient(180deg, var(--bg1), #070a10);
@@ -2347,10 +2499,11 @@ textarea::placeholder {
 }
 
 .app-action-bar-quick {
+  /* Whole or wrapped, never shrunk: a chip cut to "Wh…" is not a suggestion. */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 7px;
-  min-width: 0;
 }
 
 .app-action-bar-quick-btn {
@@ -2993,7 +3146,7 @@ textarea::placeholder {
   font-size: 14px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: opacity var(--t-fast) ease, border-color var(--t-fast) ease, color var(--t-fast) ease;
 }
 
 .tree-row:hover .tree-add-child-btn,
@@ -3536,54 +3689,6 @@ textarea::placeholder {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-}
-
-/* Nested under Artifacts — match the primary tab-bar inset and tab-btn rhythm. */
-.artifacts-subtabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--bd);
-  background: var(--bg1);
-}
-
-.artifacts-subtab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font-family: var(--ui);
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1;
-  border-radius: 8px;
-  padding: 6px 13px;
-  cursor: pointer;
-  border: 1px solid var(--bd);
-  background: transparent;
-  color: var(--txm);
-}
-
-.artifacts-subtab:hover:not(.active) {
-  color: var(--tx);
-}
-
-.artifacts-subtab.active {
-  font-weight: 600;
-  background: var(--bg2);
-  color: var(--tx);
-  border-color: var(--bd2);
-}
-
-.artifacts-subtab-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--red);
-  flex: none;
 }
 
 .dual-state {
@@ -4150,6 +4255,25 @@ textarea::placeholder {
   background: rgba(5, 6, 8, 0.6);
   backdrop-filter: blur(2px);
   z-index: 40;
+  animation: modal-overlay-in var(--t-slow) var(--ease-out);
+}
+
+/* Enter only: the 42 dialogs unmount themselves on close, so an exit needs a
+   shared shell that stays mounted for it. The panel moves with the individual
+   `translate`/`scale` properties, which compose with the centring `transform`
+   below instead of replacing it. */
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+    scale: 0.98;
+  }
 }
 
 .modal-panel {
@@ -4157,6 +4281,7 @@ textarea::placeholder {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  animation: modal-panel-in var(--t-slow) var(--ease-out);
   width: min(640px, 94vw);
   max-height: 88vh;
   z-index: 41;
@@ -4771,6 +4896,243 @@ textarea::placeholder {
  */
 .approval-detail-body > * {
   flex-shrink: 0;
+}
+
+.approvals-view {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+
+.approvals-view-empty {
+  padding: 40px;
+  color: var(--txl);
+  text-align: center;
+}
+
+.approvals-view-note {
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.approvals-view-criteria-block {
+  border-top: 1px solid var(--bd);
+  padding-top: 12px;
+}
+
+.approvals-view-criteria-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.approvals-view-criteria-summary::-webkit-details-marker {
+  display: none;
+}
+
+.approvals-view-criteria-summary::before {
+  content: "▸";
+  font-size: 10px;
+  color: var(--txl);
+}
+
+.approvals-view-criteria-block[open] > .approvals-view-criteria-summary::before {
+  content: "▾";
+}
+
+.approvals-view-criteria-summary .state-label {
+  margin-bottom: 0;
+}
+
+.approvals-view-criteria-summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.approvals-view-count {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--txm);
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg3);
+}
+
+.approvals-view-criteria-block[open] > .approvals-view-criteria {
+  margin-top: 10px;
+}
+
+.approvals-view-criteria-block[open] > .approvals-view-note {
+  margin-top: 8px;
+}
+
+.approvals-view-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg2);
+}
+
+.approvals-view-status-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.approvals-view-status-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.approvals-view-criterion.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.approvals-view-criterion.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+/* One decided approval per row; the row opens its ticket's Timeline. */
+.approval-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.approval-history-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.approval-history-row:hover {
+  background: var(--bg1);
+}
+
+.approval-history-row:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.approval-history-outcome {
+  flex: none;
+  min-width: 92px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: center;
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+}
+
+.approval-history-outcome--rejected {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+
+.approval-history-title {
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.approval-history-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-history-scope {
+  font-family: var(--mono);
+}
+
+.approval-history-when {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The toggle sits under the brief at its own width, not stretched across it. */
+.approval-brief {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* A clamped brief fades out above its toggle instead of ending mid-line. */
+.approval-brief-body {
+  position: relative;
+  align-self: stretch;
+}
+
+.approval-brief-body--clamped {
+  overflow: hidden;
+  /* A mask reads only alpha; any opaque token will do. */
+  mask-image: linear-gradient(to bottom, var(--tx) 65%, transparent);
+}
+
+.approval-inline-toggle {
+  padding: 2px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ac2);
+  cursor: pointer;
+}
+
+.approval-inline-toggle:hover {
+  text-decoration: underline;
+}
+
+.approval-inline-toggle:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.approval-checklist-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* Checklist items carry paths and spec ids with no spaces to break at. */
+.approval-checklist-text {
+  overflow-wrap: anywhere;
+}
+
+.approval-checklist-text--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .approvals-view-criteria {
@@ -5492,7 +5854,11 @@ textarea::placeholder {
   cursor: pointer;
   font-family: var(--ui);
   line-height: 1.2;
-  transition: all 150ms ease;
+  transition:
+      background var(--t-fast) var(--ease-out),
+      border-color var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      opacity var(--t-fast) var(--ease-out);
 }
 
 .import-mode-option:not(:disabled):hover {
@@ -5568,7 +5934,7 @@ textarea::placeholder {
 }
 
 .app-action-bar-chevron {
-  transition: transform 0.16s ease;
+  transition: transform var(--t-fast) ease;
 }
 
 .app-action-bar-chevron.is-open {
@@ -5607,7 +5973,7 @@ textarea::placeholder {
   border: 1px solid var(--bd);
   border-radius: 10px;
   background: var(--bg2);
-  transition: all 0.2s ease;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .view-kind-option:hover {

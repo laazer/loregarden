@@ -8,8 +8,10 @@ lifecycle, and splitting it would put a delete and an insert either side of ever
 grant — precisely where a double-booking would hide. Ended rows stay as the audit
 trail the reaper's warnings point at.
 
-`docker_capacity_pool` is a single row (`id = 'global'`) and exists for one
-reason: something a conditional UPDATE can key on. Admission has to decide
+`docker_capacity_pool` holds one row per `CapacityPool`: `'global'` (the
+docker VM — the id predates the host pool and older builds still read it) and
+`'host'` (the machine). The rows exist for one reason: something a conditional
+UPDATE can key on. Admission has to decide
 "does this claim fit" and "grant it" in one statement, and there is no SQLite
 statement that both sums a ledger and inserts conditionally on that sum —
 `SELECT SUM(...)` then `INSERT` is the select-then-mutate defect `claim_free_slot`
@@ -39,6 +41,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
+    CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
     DockerHolderKind,
@@ -49,13 +52,21 @@ from loregarden.models.domain.enums import (
 )
 from sqlmodel import Field, SQLModel
 
-#: There is one machine, so there is one pool. Named rather than implied, so a
-#: query reading the wrong row is a typo rather than a silent empty result.
+#: The docker pool's row. Named rather than implied, so a query reading the
+#: wrong row is a typo rather than a silent empty result. Still `'global'`
+#: because builds that predate the host pool read it under that id.
 GLOBAL_POOL_ID = "global"
+#: The machine's own pool, which every lease is charged to.
+HOST_POOL_ID = "host"
+
+POOL_ROW_IDS: dict[CapacityPool, str] = {
+    CapacityPool.DOCKER: GLOBAL_POOL_ID,
+    CapacityPool.HOST: HOST_POOL_ID,
+}
 
 
 class DockerCapacityPool(SQLModel, table=True):
-    """Running totals and the ceiling in force. Exactly one row.
+    """Running totals and the ceiling in force. One row per `CapacityPool`.
 
     `revision` is what tells "lost a race" apart from "genuinely full": a
     conditional UPDATE that matched no row could mean either, and retrying is
@@ -89,7 +100,8 @@ class DockerCapacityPool(SQLModel, table=True):
     #: the pool moved under its read.
     revision: int = 0
     #: Handed out to waiters. Monotonic and global, so two concurrent waiters
-    #: cannot both take position 7.
+    #: cannot both take position 7. Only the docker row's counter is used: there
+    #: is one line across both pools.
     next_position: int = 1
 
 
@@ -119,6 +131,30 @@ class DockerLease(SQLModel, table=True):
     #: no longer exists settles liveness outright, with no docker call at all.
     holder_pid: int | None = None
 
+    #: A child lease draws on its parent's grant before the pools: a gate run
+    #: inside an agent run that already holds capacity. `covered_*` is the part
+    #: of this lease's price the parent's unused allotment paid for; only the
+    #: rest is booked against the pools, and a child takes no lease-count slot of
+    #: its own. Children never wait in line — see `capacity_children`.
+    parent_lease_id: str | None = Field(default=None, foreign_key="docker_leases.id", index=True)
+    covered_cpus: float = 0.0
+    covered_memory_mb: int = 0
+    #: Whether this lease takes one of its pools' lease-count slots. The slot
+    #: dimension caps how many heavy things run at once; a child runs inside its
+    #: parent's slot, and an agent run's lease is a small standing claim that
+    #: must not crowd out the test suites the slots exist to space apart.
+    takes_slot: bool = True
+    #: On a parent: what its live children have drawn from it. A running total
+    #: so that covering a child is one conditional UPDATE, like the pool's.
+    child_covered_cpus: float = 0.0
+    child_covered_memory_mb: int = 0
+
+    #: The pool this claim asked for. A docker claim is also charged to the host
+    #: pool; see `CHARGED_POOLS`.
+    pool: CapacityPool = Field(
+        default=CapacityPool.DOCKER,
+        sa_column=str_enum_column(CapacityPool, CapacityPool.DOCKER),
+    )
     footprint: DockerFootprint = Field(
         default=DockerFootprint.CUSTOM,
         sa_column=str_enum_column(DockerFootprint, DockerFootprint.CUSTOM),
@@ -166,6 +202,15 @@ class DockerLease(SQLModel, table=True):
     last_polled_at: datetime | None = None
     poll_count: int = 0
     throttled_poll_count: int = 0
+
+    #: How far the held command has got, as it last reported through its
+    #: progress file (`services/capacity_progress.py`): the step it is on and,
+    #: for a test runner, how many of how many. Empty for a command that never
+    #: reports — the board then shows only how long it has held.
+    progress_step: str = ""
+    progress_done: int | None = None
+    progress_total: int | None = None
+    progress_at: datetime | None = None
 
     note: str = ""
     created_at: datetime = Field(default_factory=utcnow)

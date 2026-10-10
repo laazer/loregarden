@@ -23,6 +23,7 @@ from loregarden.services.orchestration_profile import (
 )
 from loregarden.services.organization_gate_service import READ_ONLY_ACTIONS, OrganizationAction
 from loregarden.services.tool_telemetry import DECISION_ALLOWLIST, DECISION_READ_ONLY_CLI
+from loregarden.services.ui_action_catalog import CATALOG, UiAction, UiActionEffect
 from sqlmodel import Session
 
 ASK_USER_QUESTION_TOOL = "AskUserQuestion"
@@ -285,6 +286,11 @@ def _argument_gated_auto_approval(tool: McpTool, tool_input: dict[str, Any]) -> 
     if tool is McpTool.CHECK_ORGANIZATION:
         action = tool_input.get("action") or OrganizationAction.CHECK.value
         return OrganizationAction.try_parse(action) in READ_ONLY_ACTIONS
+    if tool is McpTool.INVOKE_UI_ACTION:
+        # No default action: an invoke that names none, or names one the catalog
+        # does not know, is not a view change we can vouch for.
+        ui_action = UiAction.try_parse(str(tool_input.get("action") or ""))
+        return ui_action is not None and CATALOG[ui_action].effect is UiActionEffect.VIEW
     return False
 
 

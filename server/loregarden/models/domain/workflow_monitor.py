@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from loregarden.models.domain.enums import MonitorCondition
+from loregarden.models.domain.enums import MonitorCondition, TicketState
 from sqlmodel import Field, SQLModel
 
 
@@ -44,3 +44,10 @@ class MonitorFindingView(SQLModel):
     occurrences: int = 1
     first_seen: datetime | None = None
     last_seen: datetime | None = None
+    #: The ticket the finding is about, so a reader can tell *which* ticket and
+    #: whether it is still live without opening each one. Blank/None for a
+    #: workspace-scoped finding. See `services.monitor_finding_context`.
+    ticket_title: str = ""
+    ticket_external_id: str = ""
+    ticket_state: TicketState | None = None
+    workspace_slug: str = ""

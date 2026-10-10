@@ -1,0 +1,60 @@
+/* The toolchain gate picker — in the add-workspace dialog (Console and Workspaces page) and on setup cards. */
+.gate-preset-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gate-preset-picker > details > summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.gate-preset-picker > details[open] > summary {
+  margin-bottom: 8px;
+}
+
+.gate-preset-toolchain {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  min-width: 0;
+}
+
+.gate-preset-toolchain legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gate-preset-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.gate-preset-row input {
+  margin-top: 2px;
+}
+
+.gate-preset-command {
+  display: block;
+  margin-top: 2px;
+  color: var(--txm);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.gate-preset-output {
+  margin: 4px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}

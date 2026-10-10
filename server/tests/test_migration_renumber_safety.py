@@ -27,17 +27,35 @@ from loregarden.db.migrations import MIGRATIONS, apply_migrations
 from loregarden.models.domain import DoctorCheck, DoctorStatus, Workspace
 from loregarden.services.doctor import CHECKS, check_migration_ledger
 from sqlmodel import Session, SQLModel, create_engine, select, text
+from tests.db_templates import copy_database
 
 
-def _migrated_engine(tmp_path: Path, name: str):
-    engine = create_engine(f"sqlite:///{tmp_path / name}")
-    SQLModel.metadata.create_all(engine)
-    apply_migrations(engine)
-    return engine
+@pytest.fixture(scope="module")
+def migrated_database(tmp_path_factory) -> Path:
+    """A database with every table created and every migration applied, built once.
+
+    Running all ~150 migrations takes most of a second; each test copies this
+    instead of migrating its own.
+    """
+    path = tmp_path_factory.mktemp("migrated") / "migrated.db"
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        SQLModel.metadata.create_all(engine)
+        apply_migrations(engine)
+    finally:
+        engine.dispose()
+    return path
+
+
+def _migrated_engine(template: Path, tmp_path: Path, name: str):
+    copy_database(template, tmp_path / name)
+    return create_engine(f"sqlite:///{tmp_path / name}")
 
 
 @pytest.mark.parametrize("migration_id,migrate", MIGRATIONS, ids=[m for m, _ in MIGRATIONS])
-def test_every_migration_survives_running_twice(tmp_path: Path, migration_id, migrate):
+def test_every_migration_survives_running_twice(
+    migrated_database: Path, tmp_path: Path, migration_id, migrate
+):
     """The assertion that makes renumbering safe rather than merely visible.
 
     Parametrised per migration so a failure NAMES the one that is not
@@ -47,7 +65,7 @@ def test_every_migration_survives_running_twice(tmp_path: Path, migration_id, mi
     foreign-keys pragma — so a migration that only breaks under those conditions
     is not excused by a friendlier harness.
     """
-    engine = _migrated_engine(tmp_path, f"twice-{migration_id}.db")
+    engine = _migrated_engine(migrated_database, tmp_path, f"twice-{migration_id}.db")
     with engine.connect() as conn:
         conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
         conn.rollback()
@@ -59,14 +77,16 @@ def test_every_migration_survives_running_twice(tmp_path: Path, migration_id, mi
             conn.rollback()
 
 
-def test_a_renumbered_migration_is_reported_as_having_run_twice(tmp_path: Path):
+def test_a_renumbered_migration_is_reported_as_having_run_twice(
+    migrated_database: Path, tmp_path: Path
+):
     """The doctor check's discriminator, on the real shape.
 
     An applied id whose suffix matches a registered one under a different number
     is a renumber: the same migration, run again. That is a different fact from
     an id nothing registers at all, and they need different responses.
     """
-    engine = _migrated_engine(tmp_path, "renumbered.db")
+    engine = _migrated_engine(migrated_database, tmp_path, "renumbered.db")
     registered = [mid for mid, _ in MIGRATIONS]
     real = registered[-1]
     faked_old_id = "0001_" + real.partition("_")[2]
@@ -83,11 +103,11 @@ def test_a_renumbered_migration_is_reported_as_having_run_twice(tmp_path: Path):
     assert orphans[0].renumbered_to == real
 
 
-def test_a_deleted_migration_is_not_reported_as_a_renumber(tmp_path: Path):
+def test_a_deleted_migration_is_not_reported_as_a_renumber(migrated_database: Path, tmp_path: Path):
     """The other half. `0116_stage_timeout_budgets` is live in the real database
     and is this shape: applied, then removed from the build entirely. Nothing
     will undo what it did, which is a different problem from running twice."""
-    engine = _migrated_engine(tmp_path, "deleted.db")
+    engine = _migrated_engine(migrated_database, tmp_path, "deleted.db")
     registered = [mid for mid, _ in MIGRATIONS]
 
     with Session(engine) as session:
@@ -104,10 +124,10 @@ def test_a_deleted_migration_is_not_reported_as_a_renumber(tmp_path: Path):
     assert orphans[0].renumbered_to == ""
 
 
-def test_a_consistent_ledger_reports_nothing(tmp_path: Path):
+def test_a_consistent_ledger_reports_nothing(migrated_database: Path, tmp_path: Path):
     """The doctor must stay quiet on a healthy database, or it trains people to
     ignore it."""
-    engine = _migrated_engine(tmp_path, "clean.db")
+    engine = _migrated_engine(migrated_database, tmp_path, "clean.db")
     with Session(engine) as session:
         assert ledger_orphans(session, [mid for mid, _ in MIGRATIONS]) == []
 

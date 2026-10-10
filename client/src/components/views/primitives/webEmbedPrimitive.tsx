@@ -15,8 +15,10 @@
  * `WebEmbedFrame`.
  */
 
+import { platform } from "../../../services/platform";
+import { Button } from "../../ui/Button";
 import { definePrimitive } from "./definePrimitive";
-import { safeEmbedUrl } from "./embedUrl";
+import { isAppItself, safeEmbedUrl } from "./embedUrl";
 import { Unconfigured } from "./Unconfigured";
 import { WebEmbedFrame } from "./WebEmbedFrame";
 
@@ -61,6 +63,22 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
             localhost.
           </p>
           <code style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}>{settings.url}</code>
+        </div>
+      );
+    }
+
+    if (isAppItself(src)) {
+      return (
+        <div style={{ padding: 16, color: "var(--txl)", fontSize: 12.5 }}>
+          <p style={{ margin: "0 0 6px" }}>
+            This is Loregarden itself, which cannot run inside its own sandboxed embed.
+          </p>
+          <code style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}>{src}</code>
+          <p style={{ margin: "10px 0 0" }}>
+            <Button variant="secondary" compact onClick={() => void platform.openExternal(src)}>
+              Open outside
+            </Button>
+          </p>
         </div>
       );
     }

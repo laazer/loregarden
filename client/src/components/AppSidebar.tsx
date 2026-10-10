@@ -1,5 +1,6 @@
 /**
- * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest.
+ * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest,
+ * then the tickets running right now.
  *
  * **Tools is not stored.** It is the static page catalog, rendered directly.
  * The seven built-in pages are the application's own navigation, and reaching
@@ -18,7 +19,7 @@
  *     still leave the name unreadable to a screen reader on a collapsed rail.
  *   - **Expansion answers focus as well as hover**, so the rail is usable
  *     without a pointer, and it never traps focus once expanded.
- *   - **Each section scrolls, the panel does not.** The three lists are three
+ *   - **Each section scrolls, the panel does not.** The four lists are four
  *     scroll containers, so no list can push another — or the footer, which
  *     holds the controls for fixing a crowded rail — off the bottom. The
  *     containers are the `ul`s themselves, which add no tab stop of their own:
@@ -37,6 +38,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -48,6 +50,7 @@ import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { SIDEBAR_PAGES } from "./appSidebarPages";
+import { SidebarRunningSection } from "./AppSidebarRunning";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import {
   ControlIcon,
@@ -177,6 +180,44 @@ function PinTabMenu({
   );
 }
 
+/**
+ * How much of the rail's height the topbar and a bottom-docked utility bar
+ * take, written onto the `nav` as `--rail-inset-top` / `--rail-inset-bottom`.
+ *
+ * The expanded panel is clipped out of both bands (see `.app-sidebar-panel`),
+ * so the bars beside the rail stay whole instead of being half-covered by — or
+ * half-covering — the panel. The bottom band is not a constant: the dock moves
+ * between edges and grows with the terminal, so it is measured off the screen
+ * area the same way `ToastHost` finds its corner.
+ */
+function useRailInsets(navRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const nav = navRef.current;
+    const area = document.querySelector(".screen-area");
+    if (!nav || !area) return;
+
+    const measure = () => {
+      const rect = area.getBoundingClientRect();
+      const frame = nav.getBoundingClientRect();
+      nav.style.setProperty("--rail-inset-top", `${Math.max(0, rect.top - frame.top)}px`);
+      nav.style.setProperty(
+        "--rail-inset-bottom",
+        `${Math.max(0, frame.bottom - rect.bottom)}px`,
+      );
+    };
+    measure();
+
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(area);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [navRef]);
+}
+
 export function AppSidebar({
   workspaceSlug,
   onOpenSettings,
@@ -202,6 +243,7 @@ export function AppSidebar({
   const toolsHeadingId = useId();
   const pinnedHeadingId = useId();
   const tabsHeadingId = useId();
+  const runningHeadingId = useId();
 
   const { entries, viewsById, isReady, swapEntries, dropEntry } = tabs;
 
@@ -321,6 +363,8 @@ export function AppSidebar({
   }, [pendingDelete, closeView, activeViewId, navigate]);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  useRailInsets(navRef);
 
   /**
    * Bring the entry for the current route into its section's scroll window.
@@ -411,6 +455,7 @@ export function AppSidebar({
   return (
     <>
       <nav
+        ref={navRef}
         className="app-sidebar"
         aria-label="Main navigation"
         data-expanded={expanded ? "true" : "false"}
@@ -464,6 +509,8 @@ export function AppSidebar({
               {viewRows(false)}
             </ul>
           </div>
+
+          <SidebarRunningSection headingId={runningHeadingId} />
 
           <div className="app-sidebar-spacer" />
 
@@ -522,14 +569,13 @@ export function AppSidebar({
 
       {/* Outside the rail: the panel clips its own overflow, and a dialog is not
           part of the navigation landmark. */}
-      {newViewOpen ? (
-        <NewViewModal
-          isCreating={tabs.isCreatingView}
-          error={tabs.createViewError}
-          onClose={() => setNewViewOpen(false)}
-          onCreate={(input) => createView(input, onCreated)}
-        />
-      ) : null}
+      <NewViewModal
+        open={newViewOpen}
+        isCreating={tabs.isCreatingView}
+        error={tabs.createViewError}
+        onClose={() => setNewViewOpen(false)}
+        onCreate={(input) => createView(input, onCreated)}
+      />
       <DeleteViewConfirmModal
         view={pendingDelete}
         isDeleting={tabs.isClosingView}

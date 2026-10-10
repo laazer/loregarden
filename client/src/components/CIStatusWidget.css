@@ -14,7 +14,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--t-fast) var(--ease-out);
 }
 
 .ci-badge:hover {
@@ -153,7 +153,7 @@
   font-size: 11px;
   color: var(--tx);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--t-fast) var(--ease-out);
 }
 
 .ci-logs-panel .toggle-btn:hover {
@@ -282,7 +282,11 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+      background var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      border-color var(--t-fast) var(--ease-out),
+      opacity var(--t-fast) var(--ease-out);
 }
 
 .ci-logs-panel .retry-btn:hover:not(:disabled) {

@@ -85,3 +85,26 @@ export function safeEmbedUrl(raw: unknown): string | null {
   parsed.password = "";
   return parsed.href;
 }
+
+/**
+ * Whether `href` (an href `safeEmbedUrl` returned) is loregarden itself.
+ *
+ * The app cannot run inside its own embed. The sandbox makes the frame an
+ * opaque origin, so every module script it requests goes out with `Origin:
+ * null`; the dev server's CORS check refuses that, the app's code never runs,
+ * and the frame is a white sheet with no error anywhere. `allow-same-origin`
+ * would let it run, by handing a frame that *is* the app the app's storage and
+ * IPC — the one thing the sandbox is for. So it is refused, with a reason.
+ *
+ * Loopback names are aliases: `127.0.0.1:5173` is this app when it is open at
+ * `localhost:5173`, and both are in the backend's `cors_origins`.
+ */
+export function isAppItself(
+  href: string,
+  app: { protocol: string; hostname: string; port: string } = window.location,
+): boolean {
+  const target = new URL(href);
+  if (target.protocol !== app.protocol || target.port !== app.port) return false;
+  if (target.hostname === app.hostname) return true;
+  return LOOPBACK_HOSTS.has(target.hostname) && LOOPBACK_HOSTS.has(app.hostname);
+}

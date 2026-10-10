@@ -37,6 +37,14 @@ fi
 # Note: this token is scoped to inference only, so it fixes Baxter but the
 # Usage modal's live rate-limit numbers may still show HTTP 403 — see
 # usage_service.py's _format_usage_http_error for why.
+#
+# The setup token cannot read usage, so the Usage modal needs the interactive
+# login too — scripts/check-claude-login.sh asks for it. `task dev` runs that
+# check before starting the server and client side by side (where Vite would
+# bury the prompt and take the keystrokes), and sets
+# LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK=1 so it is not asked twice.
+"$ROOT/scripts/check-claude-login.sh"
+
 CLAUDE_OAUTH_TOKEN_FILE="$ROOT/data/.claude-oauth-token"
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -s "$CLAUDE_OAUTH_TOKEN_FILE" ]]; then
   export CLAUDE_CODE_OAUTH_TOKEN="$(<"$CLAUDE_OAUTH_TOKEN_FILE")"
@@ -74,6 +82,12 @@ touch "$RELOAD_TRIGGER"
 # Loopback unless asked otherwise. LOREGARDEN_DEV_HOST=0.0.0.0 serves the whole
 # local network — do that only on a network you trust, because the API writes
 # files and spawns agent processes, and LOREGARDEN_API_TOKEN is off by default.
+#
+# Exported, not just passed to uvicorn: the app reads them to advertise itself
+# as loregarden's main server in the local instance registry, which is how a
+# branch client launched from the Local instances panel finds it.
+export LOREGARDEN_DEV_HOST="${LOREGARDEN_DEV_HOST:-127.0.0.1}"
+export LOREGARDEN_DEV_PORT="${LOREGARDEN_DEV_PORT:-8000}"
 exec uv run uvicorn loregarden.main:app --reload \
-  --host "${LOREGARDEN_DEV_HOST:-127.0.0.1}" --port "${LOREGARDEN_DEV_PORT:-8000}" \
+  --host "$LOREGARDEN_DEV_HOST" --port "$LOREGARDEN_DEV_PORT" \
   --reload-exclude '*.py' --reload-include '.self-improve-restart'

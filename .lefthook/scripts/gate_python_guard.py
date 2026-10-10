@@ -35,8 +35,9 @@ import sys
 #: quietly skip the floor — and that `gate_runner.GATE_EX_UNAVAILABLE` still
 #: agrees with `EX_UNAVAILABLE` below.
 #:
-#: Note the gate scripts are deliberately *not* covered by `server/pyproject.
-#: toml`; they are standalone and ruff never reaches them (582).
+#: Ruff grades the gate scripts with `server/pyproject.toml` at a py39 target
+#: (see py-staged-paths.sh), which keeps it from suggesting syntax newer than
+#: the interpreters that run them; it cannot hold this module to 3.7.
 MIN_PYTHON = (3, 11)
 
 #: `sysexits.h` EX_UNAVAILABLE. Chosen over 127 (command not found) because the
@@ -51,11 +52,11 @@ def format_refusal(script_name, version):
     running = ".".join(str(part) for part in version[:3])
     required = ".".join(str(part) for part in MIN_PYTHON)
     return (
-        "%s: needs Python >= %s but was run under %s (%s).\n"
+        f"{script_name}: needs Python >= {required} but was run under {running} ({sys.executable}).\n"
         "This gate examined nothing — it is unavailable, not passing or failing.\n"
         "Run it through .lefthook/scripts/server_python.sh, which resolves the "
         "project interpreter."
-    ) % (script_name, required, running, sys.executable)
+    )
 
 
 def require_supported_python(script_name, version=None, stream=None):

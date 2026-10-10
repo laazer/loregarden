@@ -20,6 +20,7 @@ from unittest import mock
 
 from loregarden.services import evidence as evidence_module
 from loregarden.services.git_commit_push_service import working_tree_paths
+from loregarden.services.worktree_snapshot import TreeSnapshot
 from tests.worktree_helpers import make_repo
 
 
@@ -55,7 +56,13 @@ def test_evidence_does_not_treat_an_unreadable_tree_as_clean(tmp_path):
     repo = make_repo(tmp_path)
 
     with (
-        mock.patch.object(evidence_module, "working_tree_paths", return_value=None),
+        mock.patch.object(
+            evidence_module,
+            "read_tree",
+            return_value=TreeSnapshot(
+                repo_root=Path(repo), head_sha="", branch="", dirty_paths=None
+            ),
+        ),
         mock.patch.object(evidence_module, "resolve_head_sha", return_value="abc123"),
         mock.patch.object(evidence_module, "evidence_for_commit", return_value=[]) as looked_up,
     ):

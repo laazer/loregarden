@@ -49,6 +49,7 @@ AGENTS: dict[str, dict] = {
         "role_file": "agents/9_static_qa/static_qa_v1.md",
         "adapter": "claude",
         "timeout": 600,
+        "claude_model": "sonnet",
     },
     "gatekeeper": {
         "name": "Acceptance Criteria Gatekeeper",
@@ -142,6 +143,7 @@ AGENTS: dict[str, dict] = {
         "role_file": "agents/misc_agents/repair_v1.md",
         "adapter": "claude",
         "timeout": 900,
+        "claude_model": "sonnet",
     },
     "security_reviewer": {
         "name": "Security Reviewer",
@@ -177,6 +179,12 @@ AGENTS: dict[str, dict] = {
     "ticket_scoper": {
         "name": "Ticket Scoper",
         "role_file": "agents/misc_agents/ticket_scoper_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
+    "initiative_planner": {
+        "name": "Initiative Planner",
+        "role_file": "agents/misc_agents/initiative_planner_v1.md",
         "adapter": "claude",
         "timeout": 600,
     },

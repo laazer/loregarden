@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { useParams } from "react-router-dom";
+import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -15,7 +16,6 @@ import { AgentsAssembleModal, type AgentsAssembleOptions, orchestrateBody } from
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
-import { WorkflowRunOverflowMenu } from "../components/WorkflowRunOverflowMenu";
 import { WorkflowStageTimeline } from "../components/WorkflowStageTimeline";
 import { WorkflowReassignWarning } from "../components/WorkflowReassignWarning";
 import {
@@ -23,31 +23,30 @@ import {
   stageKindLabel,
   stageRunButtonLabel,
 } from "../lib/stageDisplay";
-import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
-import { IconCloseButton } from "../components/IconCloseButton";
-import { ImportTicketsModal, type ImportMode } from "../components/ImportTicketsModal";
-import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
-import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
+import { AddWorkspaceFlow } from "../components/workspaces/AddWorkspaceFlow";
+import { CreateWorkItemFlow, type CreateWorkItemRequest } from "../components/dashboard/CreateWorkItemFlow";
+import { DashboardWorkspacesPane } from "../components/dashboard/DashboardWorkspacesPane";
+import { ImportTicketsFlow } from "../components/dashboard/ImportTicketsFlow";
+import { PaneHideButton } from "../components/dashboard/PaneHideButton";
+import { WorkflowRunControls } from "../components/dashboard/WorkflowRunControls";
+import { WorkflowTicketSettings } from "../components/dashboard/WorkflowTicketSettings";
+import { archivedWorkspaceSlugs, withoutArchivedWorkspaces } from "../lib/archivedWorkspaces";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
 import { RunLogModal } from "../components/RunLogModal";
-import { canHaveChildren, isWorkspaceless } from "../lib/workItemHierarchy";
+import { canHaveChildren } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
 import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
-import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
-import { isArtifactTab } from "../lib/appNavigation";
+import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
+import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
+import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
 import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
-import { agentsAssembleLabel } from "../lib/workflowHelpers";
-import { PANE_LABELS } from "../lib/appTopbarConfig";
-import {
-  buildOrchestrateTerminalCommand,
-  buildStageTerminalHandoffCommand,
-} from "../lib/terminalCommands";
+import { buildStageTerminalHandoffCommand } from "../lib/terminalCommands";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -62,32 +61,14 @@ function formatDeleteTicketError(error: Error): string {
   return errorDetail(error, "Failed to delete ticket") ?? "Failed to delete ticket";
 }
 
-function PaneHideButton({
-  pane,
-  onHide,
-  disabled,
-  className,
-}: {
-  pane: PaneId;
-  onHide: () => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  return (
-    <IconCloseButton
-      className={`pane-hide-btn${className ? ` ${className}` : ""}`}
-      title={disabled ? "At least one pane must stay visible" : `Hide ${PANE_LABELS[pane]}`}
-      aria-label={`Hide ${PANE_LABELS[pane]}`}
-      disabled={disabled}
-      onClick={onHide}
-    />
-  );
-}
+/** Stable while the tree loads, so memos keyed on it do not recompute every render. */
+const NO_NODES: TicketTreeNode[] = [];
 
+/** Every ticket once: an initiative's member copies are skipped, the real rows counted. */
 function flattenTree(nodes: TicketTreeNode[]): TicketTreeNode[] {
   const out: TicketTreeNode[] = [];
   for (const n of nodes) {
-    out.push(n);
+    if (!n.member_link) out.push(n);
     out.push(...flattenTree(n.children));
   }
   return out;
@@ -122,7 +103,6 @@ function notifyIfQueued(detail: { admission?: { admitted: boolean; message: stri
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const routeTicketId = useTicketIdFromRoute();
   const { artifactTab: rawArtifactTab } = useParams<{ artifactTab?: string }>();
   const artifactTab = useArtifactTabFromRoute();
@@ -142,7 +122,6 @@ export function Dashboard() {
     paneVisibility,
     setPaneVisible,
     openEditorFile,
-    setBranchTriageWorkspaceSlug,
   } = useUiStore();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
@@ -162,38 +141,34 @@ export function Dashboard() {
         state: stateFilters.length ? stateFilters : undefined,
         work_item_type: typeFilters.length ? typeFilters : undefined,
         search: search.trim() || undefined,
+        include_members: true,
       }),
     refetchInterval: (query) =>
       treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000,
   });
 
 
-  const [createWorkItemOpen, setCreateWorkItemOpen] = useState(false);
-  const [createTargetWorkspace, setCreateTargetWorkspace] = useState("");
-  const [createParentTicket, setCreateParentTicket] = useState<{
-    id: string;
-    title: string;
-    type: WorkItemType;
-    workspaceSlug: string;
-  } | null>(null);
+  const [createRequest, setCreateRequest] = useState<CreateWorkItemRequest | null>(null);
+  const [importSlug, setImportSlug] = useState<string | null>(null);
   const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false);
-  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
-  const [importPickerOpen, setImportPickerOpen] = useState(false);
-  const [importPreview, setImportPreview] = useState<TicketImportPreviewResponse | null>(null);
-  const [importTargetWorkspace, setImportTargetWorkspace] = useState("");
-
-  const createTickets = useQuery({
-    queryKey: ["tickets", "create", createTargetWorkspace],
-    queryFn: () => api.tickets({ workspace: createTargetWorkspace }),
-    enabled: createWorkItemOpen && !!createTargetWorkspace,
-  });
-
-  const flatTickets = useMemo(
-    () => flattenTree(ticketTree.data ?? []),
-    [ticketTree.data],
-  );
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
+  const archivedSlugs = useMemo(() => archivedWorkspaceSlugs(workspaces.data ?? []), [workspaces.data]);
+  const activeWorkspaces = useMemo(
+    () => (workspaces.data ?? []).filter((w) => !archivedSlugs.has(w.slug)),
+    [workspaces.data, archivedSlugs],
+  );
+  // Archiving a workspace takes it out of the Console: its items leave "All workspaces" too.
+  // Lookups below still use the full list, so a deep link into one still resolves.
+  const visibleTree = useMemo(
+    () => withoutArchivedWorkspaces(ticketTree.data ?? NO_NODES, archivedSlugs),
+    [ticketTree.data, archivedSlugs],
+  );
+  const flatTickets = useMemo(() => flattenTree(visibleTree), [visibleTree]);
+
+  useEffect(() => {
+    if (workspace !== "all" && archivedSlugs.has(workspace)) setWorkspace("all");
+  }, [workspace, archivedSlugs, setWorkspace]);
   const workflowTemplates = useQuery({
     queryKey: ["workflow-templates"],
     queryFn: api.workflowTemplates,
@@ -211,7 +186,8 @@ export function Dashboard() {
   useEffect(() => {
     if (!routeTicketId || !rawArtifactTab) return;
     if (!isArtifactTab(rawArtifactTab)) {
-      navigateToTicket(routeTicketId, { tab: "diff", replace: true });
+      // A retired tab (/logs, /errors, /artifacts…) lands on the view that holds it now.
+      navigateToTicket(routeTicketId, { tab: canonicalArtifactTab(rawArtifactTab) ?? "diff", replace: true });
     }
   }, [routeTicketId, rawArtifactTab]);
 
@@ -289,25 +265,13 @@ export function Dashboard() {
     mutationFn: (ticketId: string) => api.openPr(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ticketPullRequestKey(ticketId) });
       navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
     },
   });
 
-  const commitPush = useMutation({
-    meta: { errorTitle: "Commit and push" },
-    mutationFn: (ticketId: string) => api.commitPush(ticketId),
-    onSuccess: (_data, ticketId) => {
-      qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
-        setBranchTriageWorkspaceSlug(sel?.workspace_slug ?? activeWorkspaceSlug);
-        navigate("/branch-triage");
-      }
-    },
-  });
+  const commitPush = useTicketCommitPush();
 
   const startRun = useMutation({
     meta: { errorTitle: "Start run" },
@@ -328,7 +292,7 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["runs", selectedId] });
-      navigateToTicketTab(selectedId!, "logs");
+      navigateToTicketTab(selectedId!, "timeline");
       setRunConfirmStageKey(null);
     },
     onError: () => {
@@ -465,17 +429,6 @@ export function Dashboard() {
     },
   });
 
-  const setTemplate = useMutation({
-    meta: { errorTitle: "Set workspace workflow" },
-    mutationFn: ({ slug, template }: { slug: string; template: string }) =>
-      api.setWorkspaceTemplate(slug, template),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["workspaces"] });
-      qc.invalidateQueries({ queryKey: ["workspace-workflow"] });
-      qc.invalidateQueries({ queryKey: ["ticket"] });
-    },
-  });
-
   const [pendingWorkflow, setPendingWorkflow] = useState<{
     template: string;
     preview: WorkflowReassignmentPreview;
@@ -535,6 +488,15 @@ export function Dashboard() {
     },
   });
 
+  // The ticket's Model settings dialog reports what *this ticket's* runs use —
+  // its own pin over its own workspace. The page-level query above is scoped to
+  // the sidebar's workspace (often "all"), which can only name the global fallback.
+  const ticketRuntimeOptions = useQuery({
+    queryKey: ["runtime-options", "ticket", selectedId],
+    queryFn: () => api.runtimeOptions({ ticket: selectedId ?? "" }),
+    enabled: ticketModelModalOpen && Boolean(selectedId),
+  });
+
   const setTicketRuntime = useMutation({
     meta: { errorTitle: "Save ticket runtime" },
     mutationFn: (runtime: import("../api/client").WorkspaceRuntimeSettings) => {
@@ -543,162 +505,7 @@ export function Dashboard() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-    },
-  });
-
-  const createWorkspace = useMutation({
-    meta: { errorTitle: "Create workspace" },
-    mutationFn: (draft: AddWorkspaceDraft) =>
-      api.createWorkspace({
-        slug: draft.slug,
-        name: draft.name,
-        repo_path: draft.repo_path,
-        workflow_template_slug: draft.workflow_template_slug,
-        orchestration_profile_slug: draft.orchestration_profile_slug || undefined,
-      }),
-    onSuccess: (created) => {
-      qc.invalidateQueries({ queryKey: ["workspaces"] });
-      qc.invalidateQueries({ queryKey: ["workspace-workflow"] });
-      setWorkspace(created.slug);
-      setAddWorkspaceOpen(false);
-    },
-  });
-
-  const previewTicketImport = useMutation({
-    meta: { errorTitle: "Preview import" },
-    mutationFn: ({
-      workspaceSlug,
-      filePaths,
-    }: {
-      workspaceSlug: string;
-      filePaths: string[];
-    }) =>
-      api.previewTicketImportPaths({
-        workspace_slug: workspaceSlug,
-        file_paths: filePaths,
-      }),
-    onSuccess: (preview) => {
-      setImportPreview(preview);
-      setImportPickerOpen(false);
-      setImportConfirmOpen(true);
-    },
-  });
-
-  const startSmartImport = useMutation({
-    meta: { errorTitle: "Start smart import" },
-    mutationFn: async ({
-      workspaceSlug,
-      filePaths,
-    }: {
-      workspaceSlug: string;
-      filePaths: string[];
-    }) => {
-      const preview = await api.previewTicketImportPaths({
-        workspace_slug: workspaceSlug,
-        file_paths: filePaths,
-      });
-      if (preview.tickets.length === 0) {
-        throw new Error(
-          preview.errors[0] || "No importable tickets found in the selected files.",
-        );
-      }
-      const created = await api.createTicketStudioSession({
-        workspace_slug: workspaceSlug,
-        title:
-          preview.tickets.length === 1
-            ? preview.tickets[0].title
-            : `Smart import (${preview.tickets.length} tickets)`,
-        brief: `Imported from ${filePaths.length} file${filePaths.length === 1 ? "" : "s"} via smart import.`,
-        is_preview: true,
-        imported_tickets: preview.tickets,
-      });
-      try {
-        // auto_scope: the server generates the breakdown itself when the scoper
-        // has nothing to ask, so the chain is not lost if this page goes away.
-        return await api.requestTicketStudioClarifications(created.id, true);
-      } catch (error) {
-        // Keep the session rather than lose the brief; an empty studio otherwise looks intended.
-        toastWarning("Session created without a breakdown", error, "Scoping did not start; retry it from the session");
-        return created;
-      }
-    },
-    onSuccess: (session) => {
-      setImportPickerOpen(false);
-      navigateToStudioTicketSession(session.id);
-    },
-  });
-
-  const importTickets = useMutation({
-    meta: { errorTitle: "Import tickets" },
-    mutationFn: ({
-      workspaceSlug,
-      tickets,
-    }: {
-      workspaceSlug: string;
-      tickets: TicketImportPreviewResponse["tickets"];
-    }) =>
-      api.importTickets({
-        workspace_slug: workspaceSlug,
-        tickets,
-      }),
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-      qc.invalidateQueries({ queryKey: ["tickets"] });
-      if (result.ticket_ids.length > 0) {
-        navigateToTicket(result.ticket_ids[0], { replace: true });
-      }
-      if (result.errors.length > 0) {
-        setImportPreview((current) =>
-          current
-            ? {
-                ...current,
-                tickets: [],
-                total: 0,
-                errors: result.errors,
-                warnings: [],
-                show_preview: false,
-              }
-            : current,
-        );
-        return;
-      }
-      setImportConfirmOpen(false);
-      setImportPreview(null);
-      importTickets.reset();
-    },
-  });
-
-  const createWorkItem = useMutation({
-    meta: { errorTitle: "Create work item" },
-    mutationFn: ({
-      draft,
-      workspaceSlug,
-    }: {
-      draft: CreateWorkItemDraft;
-      workspaceSlug: string;
-    }) =>
-      api.createTicket({
-        workspace_slug: isWorkspaceless(draft.work_item_type) ? "" : workspaceSlug,
-        title: draft.title.trim(),
-        work_item_type: draft.work_item_type,
-        parent_ticket_id: draft.parent_ticket_id || null,
-        description: draft.description.trim(),
-        acceptance_criteria: draft.acceptance_criteria
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean),
-        priority: draft.priority,
-      }),
-    onSuccess: (ticket) => {
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-      qc.invalidateQueries({ queryKey: ["tickets"] });
-      navigateToTicket(ticket.id, { replace: true });
-      if (ticket.parent_ticket_id && ticketTree.data) {
-        const ancestors = findAncestorIds(ticketTree.data, ticket.parent_ticket_id);
-        expandPath([...ancestors, ticket.parent_ticket_id]);
-      }
-      setCreateWorkItemOpen(false);
-      setCreateParentTicket(null);
+      qc.invalidateQueries({ queryKey: ["runtime-options", "ticket", selectedId] });
     },
   });
 
@@ -713,7 +520,7 @@ export function Dashboard() {
 
   const unfilteredTree = useQuery({
     queryKey: ["ticket-tree", workspace, "unfiltered"],
-    queryFn: () => api.ticketTree({ workspace: wsParam }),
+    queryFn: () => api.ticketTree({ workspace: wsParam, include_members: true }),
     enabled: filtersNarrowTree && Boolean(selectedId),
     refetchInterval: (query) => (treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000),
   });
@@ -725,64 +532,19 @@ export function Dashboard() {
   );
 
   const activeWorkspaceSlug =
-    workspace === "all" ? (sel?.workspace_slug || workspaces.data?.[0]?.slug || "loregarden") : workspace;
+    workspace === "all" ? (sel?.workspace_slug || activeWorkspaces[0]?.slug || "loregarden") : workspace;
   const defaultCreateWorkspaceSlug =
-    sel?.workspace_slug || workspaces.data?.[0]?.slug || "loregarden";
+    sel?.workspace_slug || activeWorkspaces[0]?.slug || "loregarden";
   const activeWorkspaceRecord = workspaces.data?.find((w) => w.slug === activeWorkspaceSlug);
   const activeWorkspaceRuntime = runtimeFromWorkspace(activeWorkspaceRecord);
-  const importWorkspaceSlug = importTargetWorkspace || defaultCreateWorkspaceSlug;
-  const importWorkspaceRecord = workspaces.data?.find((w) => w.slug === importWorkspaceSlug);
-  const importBrowsePath = importWorkspaceRecord?.repo_path?.trim() || ".";
-
   const openCreateWorkItem = () => {
-    const slug = workspace === "all" ? defaultCreateWorkspaceSlug : workspace;
-    setCreateParentTicket(null);
-    setCreateTargetWorkspace(slug);
-    createWorkItem.reset();
-    setCreateWorkItemOpen(true);
+    setCreateRequest({ workspaceSlug: workspace === "all" ? defaultCreateWorkspaceSlug : workspace, parent: null });
   };
 
   const openImportTickets = () => {
     const slug = workspace === "all" ? defaultCreateWorkspaceSlug : workspace;
-    if (!slug) return;
-    setImportTargetWorkspace(slug);
-    previewTicketImport.reset();
-    startSmartImport.reset();
-    importTickets.reset();
-    setImportPickerOpen(true);
+    if (slug) setImportSlug(slug);
   };
-
-  const handleImportPathsContinue = async (filePaths: string[], mode: ImportMode) => {
-    const slug = importTargetWorkspace || defaultCreateWorkspaceSlug;
-    if (!slug || filePaths.length === 0) return;
-    if (mode === "smart") {
-      try {
-        await startSmartImport.mutateAsync({ workspaceSlug: slug, filePaths });
-      } catch {
-        // silent-ok: startSmartImport.error renders as the modal's errorMessage
-      }
-      return;
-    }
-    try {
-      await previewTicketImport.mutateAsync({ workspaceSlug: slug, filePaths });
-    } catch {
-      setImportPreview({
-        tickets: [],
-        errors: ["Failed to read or parse the selected files. Check the format and try again."],
-        warnings: [],
-        total: 0,
-        by_type: {},
-        formats: [],
-        show_preview: false,
-      });
-      setImportPickerOpen(false);
-      setImportConfirmOpen(true);
-    }
-  };
-
-  const previewTicketImportError = errorDetail(previewTicketImport.error);
-
-  const startSmartImportError = errorDetail(startSmartImport.error);
 
   const openCreateSubTicket = (parent: {
     id: string;
@@ -791,28 +553,12 @@ export function Dashboard() {
     workspace_slug?: string;
   }) => {
     if (!canHaveChildren(parent.work_item_type)) return;
-    const slug =
-      parent.workspace_slug ||
-      (workspace !== "all" ? workspace : defaultCreateWorkspaceSlug);
+    const slug = parent.workspace_slug || (workspace !== "all" ? workspace : defaultCreateWorkspaceSlug);
     if (!slug) return;
-    setCreateParentTicket({
-      id: parent.id,
-      title: parent.title,
-      type: parent.work_item_type,
+    setCreateRequest({
       workspaceSlug: slug,
+      parent: { id: parent.id, title: parent.title, type: parent.work_item_type },
     });
-    setCreateTargetWorkspace(slug);
-    createWorkItem.reset();
-    setCreateWorkItemOpen(true);
-  };
-
-  const createWorkItemError = errorDetail(createWorkItem.error);
-
-  const createWorkspaceError = errorDetail(createWorkspace.error);
-
-  const openAddWorkspace = () => {
-    createWorkspace.reset();
-    setAddWorkspaceOpen(true);
   };
 
   const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
@@ -867,10 +613,13 @@ export function Dashboard() {
     (sel?.workflow_stage_key === stageKey && workflowBusy) ||
     (startRun.isPending && startRun.variables?.stageKey === stageKey);
 
+  // The latest run only (the list is newest first): a failure that a later run
+  // has already moved past is history on the Timeline, not "Run failed" now.
+  const latestRun = ticketRuns.data?.[0];
   const hasRunErrors = Boolean(
     sel?.blocking_issues ||
       sel?.artifacts?.error ||
-      ticketRuns.data?.some((r) => r.status === "failed" && r.stderr),
+      (latestRun?.status === "failed" && latestRun.stderr),
   );
 
   const lastAutoTabTicketId = useRef<string | null>(null);
@@ -884,7 +633,7 @@ export function Dashboard() {
     if (artifactTab !== "diff") return;
 
     if (sel.blocking_issues || sel.artifacts?.error) {
-      navigateToTicketTab(sel.id, "errors", true);
+      navigateToTicketTab(sel.id, "timeline", true);
     }
   }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, artifactTab]);
 
@@ -910,97 +659,18 @@ export function Dashboard() {
             className={`sidebar ${showWorkspaces && showTickets ? "" : "sidebar-single-pane"}`.trim()}
           >
             {showWorkspaces && (
-              <div className={`workspaces-pane ${showTickets ? "" : "pane-fill"}`.trim()}>
-                <div className="pane-header">
-                  <span className="pane-title">Workspaces</span>
-                  <span className="count-pill">{(workspaces.data?.length ?? 0) + 1}</span>
-                  <div style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    className="btn-secondary btn-compact"
-                    onClick={openAddWorkspace}
-                    title="Add workspace"
-                  >
-                    + Add
-                  </button>
-                  <PaneHideButton
-                    pane="workspaces"
-                    onHide={() => hidePane("workspaces")}
-                    disabled={visiblePaneCount <= 1}
-                  />
-                </div>
-            <div className="scroll-list">
-              <button
-                type="button"
-                className={`workspace-btn list-btn ${workspace === "all" ? "active" : ""}`}
-                onClick={() => setWorkspace("all")}
-              >
-                <span className="workspace-icon workspace-icon--all" aria-hidden>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                    <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                    <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                    <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                  </svg>
-                </span>
-                <span className="workspace-copy">
-                  <span className="workspace-name">All workspaces</span>
-                  <span className="workspace-meta">Every repo</span>
-                </span>
-                <span className="count-pill">{flatTickets.length}</span>
-              </button>
-              {workspaces.data?.map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  className={`workspace-btn list-btn ${workspace === w.slug ? "active" : ""}`}
-                  onClick={() => setWorkspace(w.slug)}
-                >
-                  <span
-                    className="workspace-icon"
-                    style={{ background: "rgba(111,174,143,.14)", color: "var(--ac2)" }}
-                    aria-hidden
-                  >
-                    {w.name.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="workspace-copy">
-                    <span className="workspace-name">{w.name}</span>
-                    <span className="workspace-meta">
-                      {w.workflow_template_slug || "No workflow"}
-                      {!w.repo_exists ? " · repo missing" : ""}
-                    </span>
-                  </span>
-                  {w.blocked_count > 0 ? (
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)", flex: "none" }} />
-                  ) : null}
-                  <span className="count-pill">{w.ticket_count}</span>
-                </button>
-              ))}
-              {workspace !== "all" && workflowTemplates.data && (
-                <div style={{ padding: "8px 4px 0" }}>
-                  <div className="state-label" style={{ marginBottom: 6 }}>
-                    Workflow template
-                  </div>
-                  <select
-                    className="btn-secondary"
-                    style={{ width: "100%", fontSize: 12 }}
-                    value={
-                      workspaces.data?.find((w) => w.slug === workspace)?.workflow_template_slug ?? ""
-                    }
-                    onChange={(e) =>
-                      setTemplate.mutate({ slug: workspace, template: e.target.value })
-                    }
-                  >
-                    {workflowTemplates.data.map((t) => (
-                      <option key={t.slug} value={t.slug}>
-                        {t.name} ({t.stage_count} stages)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-              </div>
+              <DashboardWorkspacesPane
+                workspaces={activeWorkspaces}
+                archivedCount={archivedSlugs.size}
+                selected={workspace}
+                allTicketCount={flatTickets.length}
+                workflowTemplates={workflowTemplates.data}
+                fill={!showTickets}
+                hideDisabled={visiblePaneCount <= 1}
+                onSelect={setWorkspace}
+                onAdd={() => setAddWorkspaceOpen(true)}
+                onHide={() => hidePane("workspaces")}
+              />
             )}
 
             {showTickets && (
@@ -1045,7 +715,7 @@ export function Dashboard() {
                             ? "Import work items from .md, .json, or .yaml files"
                             : "Load workspaces before importing work items"
                         }
-                        disabled={!defaultCreateWorkspaceSlug || previewTicketImport.isPending || startSmartImport.isPending}
+                        disabled={!defaultCreateWorkspaceSlug || importSlug !== null}
                         onClick={openImportTickets}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -1068,9 +738,9 @@ export function Dashboard() {
                   />
                 </div>
                 <div className="scroll-list lg-primitive-ticket-list--v6">
-                  {ticketTree.data?.length ? (
+                  {visibleTree.length ? (
                     <TicketTree
-                      nodes={ticketTree.data}
+                      nodes={visibleTree}
                       selectedId={selectedId}
                       expandedIds={expandedSet}
                       onSelect={selectTicket}
@@ -1121,6 +791,7 @@ export function Dashboard() {
                 </div>
                 <WorkflowPaneTicketMeta
                   ticket={sel}
+                  hasRunErrors={hasRunErrors}
                   onOpenParent={selectTicket}
                   onAddChild={openCreateSubTicket}
                 />
@@ -1132,7 +803,7 @@ export function Dashboard() {
                 >
                   Update state…
                 </button>
-                {sel.child_count > 0 ? (
+                {sel.child_count > 0 || selChildren.length > 0 ? (
                   <div>
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets
@@ -1152,173 +823,19 @@ export function Dashboard() {
                   </div>
                 ) : (
                 <>
-                {workflowTemplates.data && workflowTemplates.data.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div className="state-label" style={{ marginBottom: 6 }}>
-                      Workflow template
-                    </div>
-                    <select
-                      className="btn-secondary"
-                      style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
-                      value={sel.workflow_template_slug || ""}
-                      disabled={workflowBusy || setTicketTemplate.isPending}
-                      onChange={(e) => {
-                        if (!selectedId || e.target.value === sel.workflow_template_slug) return;
-                        void requestWorkflowChange(selectedId, e.target.value);
-                      }}
-                    >
-                      <option value="">No workflow</option>
-                      {workflowTemplates.data.map((t) => (
-                        <option key={t.slug} value={t.slug}>
-                          {t.name} ({t.stage_count} stages)
-                        </option>
-                      ))}
-                    </select>
-                    {sel.workflow_template_slug &&
-                      workspaceWorkflow.data?.template_slug &&
-                      sel.workflow_template_slug !== workspaceWorkflow.data.template_slug && (
-                        <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
-                          Workspace default: {workspaceWorkflow.data.template_name}
-                        </div>
-                      )}
-                  </div>
-                )}
-                <div style={{ marginBottom: 16 }}>
-                  <div className="state-label" style={{ marginBottom: 6 }}>
-                    Branch
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 360 }}>
-                    <input
-                      className="btn-secondary"
-                      style={{ flex: 1, minWidth: 0, fontSize: 12, boxSizing: "border-box" }}
-                      value={sel.branch || ""}
-                      placeholder={`loregarden/${sel.external_id}`}
-                      onChange={(e) => {
-                        if (!selectedId) return;
-                        qc.setQueryData(["ticket", selectedId], (current: TicketDetail | undefined) =>
-                          current ? { ...current, branch: e.target.value } : current,
-                        );
-                      }}
-                      onBlur={(e) => {
-                        if (!selectedId || e.target.value === (detail.data?.branch ?? "")) return;
-                        void saveTicketBranch(selectedId, e.target.value.trim());
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary btn-compact"
-                      title="Set branch to main"
-                      onClick={() => {
-                        if (!selectedId) return;
-                        qc.setQueryData(["ticket", selectedId], (current: TicketDetail | undefined) =>
-                          current ? { ...current, branch: "main" } : current,
-                        );
-                        if ((detail.data?.branch ?? "") !== "main") {
-                          void saveTicketBranch(selectedId, "main");
-                        }
-                      }}
-                    >
-                      Use main
-                    </button>
-                  </div>
-                </div>
-                <div className="dual-state">
-                  <div className="state-card">
-                    <div className="state-label">Ticket state · WHAT</div>
-                    <div style={{ fontWeight: 600, color: STATE_COLORS[sel.state] }}>
-                      {STATE_LABELS[sel.state]}
-                    </div>
-                    {sel.state_locked && (
-                      <span className="count-pill" style={{ marginTop: 8, fontSize: 10 }}>
-                        locked
-                      </span>
-                    )}
-                  </div>
-                  <div className="state-card">
-                    <div className="state-label">Workflow · HOW</div>
-                    <div style={{ fontWeight: 600 }}>
-                      {sel.workflow_stage_name || sel.workflow_stage_key || "—"}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 4 }}>
-                      {sel.workflow_stage_status.replace("_", " ")}
-                    </div>
-                    {sel.current_stage_agent?.trim() && (
-                      <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 6 }}>
-                        next agent · {sel.current_stage_agent}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <div className="state-label" style={{ marginBottom: 6 }}>
-                    Compatibility posture · HOW FREELY
-                  </div>
-                  <select
-                    className="btn-secondary"
-                    style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
-                    value={sel.compatibility_posture || ""}
-                    disabled={setCompatibilityPosture.isPending}
-                    onChange={(e) => {
-                      if (!selectedId || e.target.value === (sel.compatibility_posture || "")) return;
-                      setCompatibilityPosture.mutate(e.target.value);
-                    }}
-                  >
-                    <option value="">Inherit</option>
-                    <option value="greenfield">greenfield — no consumers; delete and rename freely</option>
-                    <option value="internal">internal — break freely, but migrate every caller</option>
-                    <option value="public">public — external consumers; preserve and deprecate</option>
-                  </select>
-                  {/* An inherited value is meaningless without its origin — always show which
-                      milestone/feature/workspace the agent will actually be told. */}
-                  <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
-                    Agents are told: <strong>{sel.resolved_compatibility_posture || "—"}</strong>
-                    {sel.compatibility_posture_source ? ` · ${sel.compatibility_posture_source}` : ""}
-                  </div>
-                </div>
-                {sel.blocking_issues?.trim() && (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: "10px 12px",
-                      borderRadius: 11,
-                      background: "rgba(199,125,45,.08)",
-                      border: "1px solid rgba(199,125,45,.28)",
-                      fontSize: 12,
-                      color: "var(--orl, #c77d2d)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Rework required</div>
-                    <div style={{ whiteSpace: "pre-wrap" }}>{sel.blocking_issues}</div>
-                  </div>
-                )}
-
-                {hasRunErrors && (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      padding: "10px 12px",
-                      borderRadius: 11,
-                      background: "rgba(240,96,63,.1)",
-                      border: "1px solid rgba(240,96,63,.3)",
-                      fontSize: 12,
-                      color: "var(--rdl)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <span>Run or workflow issue recorded</span>
-                    <button
-                      type="button"
-                      className="btn-secondary btn-compact"
-                      onClick={() => selectedId && navigateToTicketTab(selectedId, "errors")}
-                    >
-                      View Errors
-                    </button>
-                  </div>
-                )}
-
+                <WorkflowTicketSettings
+                  ticket={sel}
+                  workflowTemplates={workflowTemplates.data}
+                  workspaceWorkflow={workspaceWorkflow.data}
+                  workflowBusy={workflowBusy}
+                  templatePending={setTicketTemplate.isPending}
+                  postureSaving={setCompatibilityPosture.isPending}
+                  onWorkflowChange={(template) => {
+                    if (selectedId) void requestWorkflowChange(selectedId, template);
+                  }}
+                  onSaveBranch={(branch) => saveTicketBranch(sel.id, branch)}
+                  onPostureChange={(posture) => setCompatibilityPosture.mutate(posture)}
+                />
                 <div style={{ marginTop: 24 }}>
                   <div
                     className="workflow-lifecycle-label"
@@ -1424,104 +941,20 @@ export function Dashboard() {
                 </>
                 )}
               </div>
-              <div className="run-controls">
-                {sel.child_count === 0 ? (
-                  (() => {
-                    const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
-                    const cursorRun = cursorStage
-                      ? canRunStage(sel, cursorStage)
-                      : { allowed: false, reason: "No cursor stage" };
-                    const runningCursor = isStageRunning(sel.workflow_stage_key);
-                    const canPause =
-                      hasActiveRun ||
-                      sel.workflow_stage_status === "running" ||
-                      sel.workflow_stage_status === "awaiting";
-                    const templateLabel =
-                      workflowTemplates.data?.find((t) => t.slug === sel.workflow_template_slug)
-                        ?.name ??
-                      sel.workflow_template_slug ??
-                      "";
-                    const assemblePending =
-                      orchestrate.isPending && orchestrate.variables?.ticketId === selectedId;
-                    const rerunDisabled =
-                      workflowBusy || startRun.isPending || !cursorRun.allowed || runningCursor;
-                    return (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          disabled={!selectedId || assemblePending}
-                          onClick={() => setAssembleModalOpen(true)}
-                        >
-                          {agentsAssembleLabel(sel, assemblePending)}
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.6"
-                            aria-hidden
-                          >
-                            <path d="m9 18 6-6-6-6" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={!canPause || stopTicket.isPending}
-                          title={canPause ? "Pause the running stage" : "Nothing to pause"}
-                          onClick={() => stopTicket.mutate()}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            aria-hidden
-                          >
-                            <rect x="6" y="4" width="4" height="16" />
-                            <rect x="14" y="4" width="4" height="16" />
-                          </svg>
-                          {stopTicket.isPending ? "Pausing…" : "Pause"}
-                        </button>
-                        <div style={{ flex: 1 }} />
-                        {templateLabel ? (
-                          <span className="run-controls-template">{templateLabel}</span>
-                        ) : null}
-                        <WorkflowRunOverflowMenu
-                          ticket={sel}
-                          orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                          rerunDisabled={rerunDisabled}
-                          rerunTitle={cursorRun.reason}
-                          onRerun={() => requestStageRun(sel.workflow_stage_key)}
-                          onDelete={() => setDeleteTicketTarget(sel)}
-                        />
-                      </>
-                    );
-                  })()
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={
-                        !selectedId ||
-                        (orchestrate.isPending && orchestrate.variables?.ticketId === selectedId)
-                      }
-                      onClick={() => setAssembleModalOpen(true)}
-                    >
-                      {agentsAssembleLabel(
-                        sel,
-                        orchestrate.isPending && orchestrate.variables?.ticketId === selectedId,
-                      )}
-                    </button>
-                    <div style={{ flex: 1 }} />
-                  </>
-                )}
-              </div>
+              <WorkflowRunControls
+                ticket={sel}
+                workflowTemplates={workflowTemplates.data}
+                hasActiveRun={hasActiveRun}
+                workflowBusy={workflowBusy}
+                startRunPending={startRun.isPending}
+                assemblePending={orchestrate.isPending && orchestrate.variables?.ticketId === selectedId}
+                pausePending={stopTicket.isPending}
+                isStageRunning={isStageRunning}
+                onAssemble={() => setAssembleModalOpen(true)}
+                onPause={() => stopTicket.mutate()}
+                onRerun={requestStageRun}
+                onDelete={() => setDeleteTicketTarget(sel)}
+              />
             </>
           ) : (
             <div style={{ padding: 40, color: "var(--txl)" }}>Select a ticket</div>
@@ -1536,7 +969,7 @@ export function Dashboard() {
               artifactTab={artifactTab}
               selectedId={selectedId}
               hasRunErrors={hasRunErrors}
-              artifactCount={artifactsFeed.data?.total ?? 0}
+              outputCount={artifactsFeed.data?.items.filter((item) => !item.system).length ?? 0}
               approvalCount={humanApprovalCount}
               hasPr={!!sel?.artifacts?.pr}
             />
@@ -1554,7 +987,7 @@ export function Dashboard() {
               ticket={sel}
               runs={ticketRuns.data ?? []}
               hasActiveRun={hasActiveRun}
-              hasRunErrors={hasRunErrors}
+              pendingApprovals={humanApprovalCount}
               selectedId={selectedId}
               activeWorkspaceSlug={activeWorkspaceSlug}
               isOpeningPr={openPr.isPending}
@@ -1581,7 +1014,8 @@ export function Dashboard() {
       <TriageModelModal
         open={ticketModelModalOpen}
         runtime={sel?.orchestration_runtime ?? DEFAULT_ORCHESTRATION_RUNTIME}
-        runtimeOptions={runtimeOptions.data}
+        runtimeOptions={ticketRuntimeOptions.data}
+        runtimeOptionsError={ticketRuntimeOptions.error}
         isSaving={setTicketRuntime.isPending}
         scopeLabel="Workflow"
         subtitle="Choose a provider, then pick a model for this ticket's agent runs"
@@ -1591,84 +1025,41 @@ export function Dashboard() {
         }}
       />
 
-      <CreateWorkItemModal
-        open={createWorkItemOpen}
-        workspaceSlug={createTargetWorkspace}
-        workspacePicker={createParentTicket ? isWorkspaceless(createParentTicket.type) : workspace === "all"}
-        workspaces={(workspaces.data ?? []).map((w) => ({ slug: w.slug, name: w.name }))}
-        onWorkspaceSlugChange={setCreateTargetWorkspace}
-        tickets={createTickets.data ?? []}
-        selectedTicketId={selectedId}
-        ticketTree={ticketTree.data ?? []}
-        parentTicketId={createParentTicket?.id ?? null}
-        parentTicketTitle={createParentTicket?.title}
-        parentTicketType={createParentTicket?.type ?? null}
-        lockParent={!!createParentTicket}
-        isSaving={createWorkItem.isPending}
-        errorMessage={createWorkItemError}
-        onClose={() => {
-          createWorkItem.reset();
-          setCreateParentTicket(null);
-          setCreateWorkItemOpen(false);
-        }}
-        onCreate={async (draft) => {
-          await createWorkItem.mutateAsync({ draft, workspaceSlug: createTargetWorkspace });
-        }}
-      />
+      {createRequest && (
+        <CreateWorkItemFlow
+          request={createRequest}
+          workspaceIsAll={workspace === "all"}
+          workspaces={activeWorkspaces}
+          selectedTicketId={selectedId}
+          ticketTree={visibleTree}
+          onCreated={(ticket) => {
+            navigateToTicket(ticket.id, { replace: true });
+            if (ticket.parent_ticket_id && ticketTree.data) {
+              expandPath([...findAncestorIds(ticketTree.data, ticket.parent_ticket_id), ticket.parent_ticket_id]);
+            }
+          }}
+          onClose={() => setCreateRequest(null)}
+        />
+      )}
 
-      <ImportTicketsModal
-        open={importPickerOpen}
-        workspaceSlug={importWorkspaceSlug}
-        initialBrowsePath={importBrowsePath}
-        isLoading={previewTicketImport.isPending || startSmartImport.isPending}
-        errorMessage={previewTicketImportError || startSmartImportError}
-        onClose={() => {
-          if (previewTicketImport.isPending || startSmartImport.isPending) return;
-          setImportPickerOpen(false);
-          previewTicketImport.reset();
-          startSmartImport.reset();
-        }}
-        onContinue={handleImportPathsContinue}
-      />
+      {importSlug && (
+        <ImportTicketsFlow
+          workspaceSlug={importSlug}
+          browsePath={workspaces.data?.find((w) => w.slug === importSlug)?.repo_path?.trim() || "."}
+          onClose={() => setImportSlug(null)}
+        />
+      )}
 
-      <ImportTicketsConfirmModal
-        open={importConfirmOpen}
-        workspaceSlug={importTargetWorkspace || defaultCreateWorkspaceSlug}
-        preview={importPreview}
-        isImporting={importTickets.isPending}
-        importError={
-          errorDetail(importTickets.error)
-        }
-        onClose={() => {
-          if (importTickets.isPending) return;
-          setImportConfirmOpen(false);
-          setImportPreview(null);
-          importTickets.reset();
-        }}
-        onConfirm={async (tickets) => {
-          if (tickets.length === 0) return;
-          const slug = importTargetWorkspace || defaultCreateWorkspaceSlug;
-          await importTickets.mutateAsync({
-            workspaceSlug: slug,
-            tickets,
-          });
-        }}
-      />
-
-      <AddWorkspaceModal
-        open={addWorkspaceOpen}
-        templates={workflowTemplates.data ?? []}
-        existingSlugs={(workspaces.data ?? []).map((w) => w.slug)}
-        isSaving={createWorkspace.isPending}
-        errorMessage={createWorkspaceError ?? undefined}
-        onClose={() => {
-          createWorkspace.reset();
-          setAddWorkspaceOpen(false);
-        }}
-        onCreate={async (draft) => {
-          await createWorkspace.mutateAsync(draft);
-        }}
-      />
+      {addWorkspaceOpen && (
+        <AddWorkspaceFlow
+          existingSlugs={(workspaces.data ?? []).map((w) => w.slug)}
+          onClose={() => setAddWorkspaceOpen(false)}
+          onCreated={(created) => {
+            setWorkspace(created.slug);
+            setAddWorkspaceOpen(false);
+          }}
+        />
+      )}
 
       <WorkflowReassignWarning
         preview={pendingWorkflow?.preview ?? null}

@@ -58,6 +58,6 @@ describe("CapacityMeter", () => {
     const fill = screen
       .getByRole("meter", { name: "CPU" })
       .querySelector(".capacity-meter-fill") as HTMLElement;
-    expect(fill.style.width).toBe("100%");
+    expect(fill.style.transform).toBe("scaleX(1)");
   });
 });

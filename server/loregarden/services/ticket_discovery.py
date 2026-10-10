@@ -56,6 +56,25 @@ def compact_ticket_row(session: Session, ticket: Ticket) -> dict[str, Any]:
     }
 
 
+def _scoped_ticket_query(
+    session: Session, item_type: WorkItemType | None, workspace_slug: str
+) -> tuple[Any, str | None] | None:
+    """The base ticket query and the workspace it is scoped to.
+
+    None when the named workspace does not exist, which lists nothing.
+    """
+    if item_type == WorkItemType.INITIATIVE:
+        # Initiatives bind to no workspace, so a workspace filter could only ever
+        # answer "none" — list them globally and ignore the slug.
+        return select(Ticket), None
+    if not workspace_slug:
+        raise ValueError("workspace_slug is required unless work_item_type is 'initiative'")
+    ws = _workspace_by_slug(session, workspace_slug)
+    if not ws:
+        return None
+    return select(Ticket).where(Ticket.workspace_id == ws.id), ws.id
+
+
 def list_tickets_mcp(
     session: Session,
     *,
@@ -69,19 +88,10 @@ def list_tickets_mcp(
     limit: int = 50,
 ) -> dict[str, Any]:
     item_type = WorkItemType(work_item_type) if work_item_type else None
-    if item_type == WorkItemType.INITIATIVE:
-        # Initiatives bind to no workspace, so a workspace filter could only ever
-        # answer "none" — list them globally and ignore the slug.
-        workspace_id = None
-        query = select(Ticket)
-    else:
-        if not workspace_slug:
-            raise ValueError("workspace_slug is required unless work_item_type is 'initiative'")
-        ws = _workspace_by_slug(session, workspace_slug)
-        if not ws:
-            return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
-        workspace_id = ws.id
-        query = select(Ticket).where(Ticket.workspace_id == ws.id)
+    scoped = _scoped_ticket_query(session, item_type, workspace_slug)
+    if scoped is None:
+        return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
+    query, workspace_id = scoped
 
     if state:
         query = query.where(Ticket.state == TicketState(state))

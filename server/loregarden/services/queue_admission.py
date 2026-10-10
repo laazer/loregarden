@@ -148,7 +148,7 @@ def _slot(session: Session, slot_number: int) -> AgentSlot | None:
 
 
 class QueueAdmissionService:
-    def __init__(self, session: Session, max_concurrent: int = 3) -> None:
+    def __init__(self, session: Session, max_concurrent: int | None = None) -> None:
         self.session = session
         self.lanes = QueueLaneService(session, max_concurrent=max_concurrent)
 

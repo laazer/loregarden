@@ -22,13 +22,28 @@ from loregarden.mcp.docker_capacity_tool import (
     TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
 )
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
+from loregarden.mcp.document_tools import TOOL_DEFINITIONS as DOCUMENT_TOOL_DEFINITIONS
 from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
 )
+from loregarden.mcp.github_issue_tool import TOOL_DEFINITION as GITHUB_ISSUE_TOOL_DEFINITION
+from loregarden.mcp.initiative_membership_tools import (
+    TOOL_DEFINITIONS as INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS,
+)
+from loregarden.mcp.initiative_plan_tools import (
+    TOOL_DEFINITIONS as INITIATIVE_PLAN_TOOL_DEFINITIONS,
+)
+from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTANCE_TOOL_DEFINITIONS
 from loregarden.mcp.memory_tools import MEMORY_TOOL_NAMES, execute_memory_tool
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
+from loregarden.mcp.run_resolution import (
+    ORCHESTRATION_RUN_ID_DESCRIPTION,
+    TICKET_RUN_ID_DESCRIPTION,
+    attributed_agent_run_id,
+    resolve_run_ref,
+)
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
     normalize_update_ticket_args,
@@ -46,6 +61,7 @@ from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
 from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
 from loregarden.mcp.tool_args import coerce_string as _coerce_string
 from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
+from loregarden.mcp.tool_args import coerce_tag_list as _coerce_tag_list
 from loregarden.mcp.tool_args import reject_truncated_call as _reject_truncated_call
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
@@ -54,10 +70,12 @@ from loregarden.mcp.tool_schemas import enum_string_prop as _enum_string_prop
 from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
 from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
+from loregarden.mcp.ui_action_tools import TOOL_DEFINITIONS as UI_ACTION_TOOL_DEFINITIONS
 from loregarden.models.domain import (
     BlockOrigin,
     ExternalHarness,
     HumanActionTier,
+    MemoryRelationType,
     OrchestrationRunStatus,
     WorkItemType,
 )
@@ -80,13 +98,14 @@ from loregarden.services.ticket_service import TicketService
 
 
 def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
-    tags = args.get("tags")
-    if tags is None:
-        return
-    if isinstance(tags, str):
-        payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    elif isinstance(tags, list):
-        payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+    if args.get("tags") is not None:
+        payload["tags"] = _coerce_tag_list(args["tags"], field="tags")
+
+
+def _coerce_aliases(args: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Aliases arrive in the same shapes tags do."""
+    if args.get("aliases") is not None:
+        payload["aliases"] = _coerce_tag_list(args["aliases"], field="aliases")
 
 
 def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
@@ -114,8 +133,10 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
             "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
             "content": _coerce_string(args.get("content"), field="content"),
+            "title": _coerce_optional_string(args.get("title")) or "",
         }
         _coerce_tags(args, payload)
+        _coerce_aliases(args, payload)
         return payload
 
     if name == "loregarden_upsert_memory":
@@ -555,7 +576,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "Mark a workflow stage as running before invoking a sub-agent.",
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
                 "stage_key": _string_prop("Workflow stage key."),
                 "agent_id": _string_prop("Optional agent id override."),
                 "force": _boolean_prop(
@@ -574,7 +595,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
                 "stage_key": _string_prop("Workflow stage key."),
                 "next_agent": _string_prop("Optional next agent hint."),
                 "next_stage_key": _string_prop(
@@ -595,7 +616,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
                 "stage_key": _string_prop("Workflow stage key to skip."),
                 "reason": _string_prop(
                     "Why this ticket does not need the stage. Recorded on the stage and shown "
@@ -617,7 +638,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
                 "message": _string_prop("Blocking message for operators."),
                 "stage_key": _string_prop("Optional stage key context."),
                 "tier": _enum_string_prop(
@@ -662,7 +683,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Agent or orchestration run UUID."),
+                "run_id": _string_prop(TICKET_RUN_ID_DESCRIPTION),
                 "evidence_kind": _enum_string_prop(
                     "What this proves: a red-to-green test, output captured from the "
                     "real surface a user touches, a verifier's verdict, or the full "
@@ -680,7 +701,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "Attach an artifact (log, diff, test output) to a ticket.",
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Agent or orchestration run UUID."),
+                "run_id": _string_prop(TICKET_RUN_ID_DESCRIPTION),
                 "kind": _string_prop("Artifact kind, e.g. log, diff, test."),
                 "title": _string_prop("Short artifact title."),
                 "content_json": _string_prop("Optional JSON string payload."),
@@ -699,7 +720,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(TICKET_RUN_ID_DESCRIPTION),
                 "stage_key": _string_prop("Workflow stage key."),
                 "title": _string_prop("Approval title."),
                 "impact": _string_prop("Impact / description for the operator."),
@@ -712,7 +733,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "Finish the top-level orchestration run.",
         "inputSchema": _tool_schema(
             properties={
-                "run_id": _string_prop("Orchestration run UUID."),
+                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
                 "status": _enum_string_prop(
                     "Final orchestration status.",
                     ["succeeded", "failed", "blocked", "cancelled"],
@@ -908,6 +929,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "ticket_id": _string_prop("Ticket external id or UUID."),
                 "workspace_slug": _string_prop("Workspace slug."),
                 "content": _string_prop("Learning body (markdown)."),
+                "title": _string_prop(
+                    "What the learning says, as a canonical name (e.g. 'Use DELETE journal "
+                    "on iCloud SQLite'). Omitted: taken from the content's first line."
+                ),
+                "aliases": _string_prop("Other names for it: comma-separated or JSON array."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
             },
             required=["ticket_id", "workspace_slug", "content"],
@@ -1095,7 +1121,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             properties={
                 "source_id": _string_prop("Source memory node id."),
                 "target_id": _string_prop("Target memory node id."),
-                "relation_type": _string_prop("Relation label (default related)."),
+                "relation_type": _enum_string_prop(
+                    "What the edge asserts (default related, a plain mention). Type it only "
+                    "when the relationship is stated, never inferred.",
+                    [kind.value for kind in MemoryRelationType],
+                ),
                 "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
             },
             required=["source_id", "target_id", "workspace_slug"],
@@ -1106,20 +1136,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(GITHUB_ISSUE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
-
-
-def _get_run(session: Session, run_id: str):
-    from loregarden.models.domain import OrchestrationRun
-
-    run = session.get(OrchestrationRun, run_id)
-    if not run:
-        raise ValueError(f"Orchestration run not found: {run_id}")
-    return run
+TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(INITIATIVE_PLAN_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 
 
 def _create_ticket(
@@ -1187,7 +1214,23 @@ def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> st
     return json.dumps(_run_view(run), indent=2)
 
 
-def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -> str:
+def _attach_artifact(svc, ticket, arguments: dict[str, Any], *, run_id: str | None) -> str:
+    content = {}
+    if arguments.get("content_json"):
+        content = json.loads(arguments["content_json"])
+    artifact = svc.attach_artifact(
+        ticket,
+        kind=arguments.get("kind", "log"),
+        title=arguments.get("title", ""),
+        content=content,
+        run_id=run_id,
+    )
+    return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
+
+
+def _attach_evidence(
+    session: Session, svc, ticket, arguments: dict[str, Any], *, run_id: str | None
+) -> str:
     """Record proof of behaviour, stamped with the commit it proves."""
     evidence_kind = arguments["evidence_kind"]
     if evidence_kind not in EVIDENCE_KINDS:
@@ -1206,6 +1249,7 @@ def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -
         content=content,
         evidence_kind=evidence_kind,
         commit_sha=resolve_head_sha(session, ticket),
+        run_id=run_id,
     )
     return json.dumps(
         {"ok": True, "artifact_id": artifact.id, "commit_sha": artifact.commit_sha}, indent=2
@@ -1218,8 +1262,9 @@ def execute_tool(
     arguments: dict[str, Any] | Any,
     *,
     orchestrated: bool = False,
+    run_id: str = "",
 ) -> str:
-    """Dispatch a tool call.
+    """Dispatch a tool call. `run_id` names the orchestrated run, when known.
 
     `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
     supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
@@ -1310,16 +1355,37 @@ def execute_tool(
         )
         return json.dumps(result, indent=2)
 
-    memory_result = execute_memory_tool(session, name, arguments)
+    memory_result = execute_memory_tool(
+        session, name, arguments, orchestrated=orchestrated, run_id=run_id
+    )
     if memory_result is not None:
         return memory_result
 
-    run_id = arguments.get("run_id")
-    if not run_id:
+    named_run = arguments.get("run_id")
+    if not named_run:
         raise ValueError("run_id is required")
 
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
+    run_ref = resolve_run_ref(session, named_run)
+    ticket = svc.resolve_ticket(ticket_id=run_ref.ticket_id)
+    source_run_id = attributed_agent_run_id(session, run_ref, transport_run_id=run_id)
+
+    # Ticket-scoped: a standalone stage run, with no orchestration, may use these.
+    if name == McpTool.ATTACH_ARTIFACT:
+        return _attach_artifact(svc, ticket, arguments, run_id=source_run_id)
+
+    if name == McpTool.ATTACH_EVIDENCE:
+        return _attach_evidence(session, svc, ticket, arguments, run_id=source_run_id)
+
+    if name == McpTool.REQUEST_APPROVAL:
+        approval = svc.request_approval(
+            ticket,
+            stage_key=arguments["stage_key"],
+            title=arguments.get("title", ""),
+            impact=arguments.get("impact", ""),
+        )
+        return json.dumps({"ok": True, "approval_id": approval.id}, indent=2)
+
+    run = run_ref.require_orchestration(name)
 
     if name == "loregarden_start_stage":
         reservation, _ = run_admitted(
@@ -1403,30 +1469,6 @@ def execute_tool(
             },
             indent=2,
         )
-
-    if name == "loregarden_attach_artifact":
-        content = {}
-        if arguments.get("content_json"):
-            content = json.loads(arguments["content_json"])
-        artifact = svc.attach_artifact(
-            ticket,
-            kind=arguments.get("kind", "log"),
-            title=arguments.get("title", ""),
-            content=content,
-        )
-        return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
-
-    if name == "loregarden_attach_evidence":
-        return _attach_evidence(session, svc, ticket, arguments)
-
-    if name == "loregarden_request_approval":
-        approval = svc.request_approval(
-            ticket,
-            stage_key=arguments["stage_key"],
-            title=arguments.get("title", ""),
-            impact=arguments.get("impact", ""),
-        )
-        return json.dumps({"ok": True, "approval_id": approval.id}, indent=2)
 
     if name == "loregarden_complete_orchestration":
         status = OrchestrationRunStatus(arguments.get("status", "succeeded"))

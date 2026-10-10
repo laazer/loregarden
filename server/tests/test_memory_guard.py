@@ -10,8 +10,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from loregarden.config import resolved_memory_sqlite_path
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
-from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
+from tests.memory_guard import (
+    MEMORY_SQLITE_URL_ENV,
+    forbidden_memory_roots,
+    reject_if_forbidden,
+)
 
 
 def test_a_path_inside_a_forbidden_root_is_rejected(tmp_path):
@@ -114,3 +119,42 @@ def test_the_guard_is_live_for_this_suite_when_a_vault_is_configured():
 
     with pytest.raises(AssertionError, match="inside the real memory root"):
         ObsidianMemoryStore(Path(roots[0]))
+
+
+@pytest.mark.parametrize("source", ["local_config", "environment"])
+def test_an_explicit_live_graph_outside_the_vault_is_forbidden(tmp_path, monkeypatch, source):
+    """`memory_sqlite_url` can put the live graph anywhere, not only under the vault.
+
+    Per-workspace graphs are siblings of the configured file
+    (`<dir>/<slug>/memory.db`), so the whole directory is refused, not just the
+    file the URL names.
+    """
+    live = tmp_path / "live-graphs" / "memory.db"
+    url = f"sqlite:///{live}"
+    local = {"obsidian_vault_dir": "", "icloud_root": ""}
+    if source == "local_config":
+        local["memory_sqlite_url"] = url
+        monkeypatch.delenv(MEMORY_SQLITE_URL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(MEMORY_SQLITE_URL_ENV, url)
+
+    with (
+        patch("tests.memory_guard.read_local_memory_config", return_value=local),
+        patch("tests.memory_guard.detect_icloud_root", return_value=None),
+    ):
+        roots = forbidden_memory_roots()
+
+    assert live.parent.resolve() in roots
+    with pytest.raises(AssertionError, match="inside the real memory root"):
+        reject_if_forbidden("A memory graph store", live.parent / "loregarden" / "memory.db", roots)
+
+
+def test_the_graph_a_test_writes_to_is_not_a_live_graph():
+    """What every MCP memory write resolves to during a test — the path the MCP
+    smoke test's `smoke-anchor` / `smoke-memory` / `smoke learning` records took
+    into the live loregarden graph in July 2026 — must sit outside every
+    forbidden root. Checked on the resolved path itself, so it holds on a machine
+    whose live graph is configured by URL rather than by vault."""
+    graph = resolved_memory_sqlite_path("loregarden")
+    assert graph is not None, "isolated_memory_store configured no graph"
+    reject_if_forbidden("The per-test memory graph", graph, forbidden_memory_roots())

@@ -149,7 +149,7 @@
   color: var(--tx);
   padding: 8px 10px;
   font-family: var(--ui);
-  transition: all 0.2s ease;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
 
 .primitive-option:hover {

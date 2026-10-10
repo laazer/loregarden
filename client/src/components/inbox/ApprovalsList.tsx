@@ -38,6 +38,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import type { ApprovalResolutionAction } from "../../api/chatTypes";
 import { api, type Approval } from "../../api/client";
 import { hasHumanCriteria } from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
@@ -88,7 +89,7 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
       route_to_stage_key,
     }: {
       id: string;
-      action: "approve" | "reject";
+      action: ApprovalResolutionAction;
       answers?: Record<string, string | string[]>;
       response?: string;
       always_allow?: boolean;
@@ -157,6 +158,9 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
           onApprove={(payload) =>
             resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
           }
+          onRecheck={(payload) =>
+            resolveApproval.mutate({ id: a.id, action: "recheck", ...payload })
+          }
           onReject={(payload) => resolveApproval.mutate({ id: a.id, action: "reject", ...payload })}
           onInspect={onInspect !== undefined && a.ticket_id ? () => inspect(a) : undefined}
           inspectLabel={hasHumanCriteria(a) ? "Approvals tab" : "Inspect"}
@@ -185,6 +189,10 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
         onApprove={(payload?: ApprovalResolvePayload) => {
           if (!expandedApproval) return;
           resolveApproval.mutate({ id: expandedApproval.id, action: "approve", ...payload });
+        }}
+        onRecheck={(payload?: ApprovalResolvePayload) => {
+          if (!expandedApproval) return;
+          resolveApproval.mutate({ id: expandedApproval.id, action: "recheck", ...payload });
         }}
         onReject={(payload?: ApprovalResolvePayload) => {
           if (!expandedApproval) return;

@@ -342,7 +342,6 @@ describe("AC5 — panels ruled out are recorded with a reason and absent from th
   const RULED_OUT = [
     "CopilotDock",
     "HiveSimulationPanel",
-    "FailedRunsPanel",
     "TicketDiffReviewPanel",
     "InlineCodeDiffReview",
     "QueueDashboard",

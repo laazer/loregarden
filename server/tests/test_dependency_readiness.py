@@ -184,3 +184,29 @@ def test_refresh_is_a_no_op_when_the_base_has_not_moved(repo):
     git(repo, "branch", "integration/x", "main")
     assert refresh_integration_branch(repo, "integration/x", "main") is False
     assert _sha(repo, "integration/x") == _sha(repo, "main")
+
+
+def test_siblings_in_a_milestone_under_an_initiative_see_each_others_landed_work(
+    session, workspace, repo
+):
+    initiative = Ticket(
+        external_id="init-ready",
+        title="init",
+        workspace_id=None,
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    session.add(initiative)
+    session.commit()
+    ms = _ticket(session, workspace, "ms", parent=initiative, kind=WorkItemType.MILESTONE)
+    a = _ticket(session, workspace, "a", parent=ms, state=TicketState.DONE)
+    b = _ticket(session, workspace, "b", parent=ms)
+    _depends(session, b, a)
+    target = resolve_target_branch(session, a, workspace, repo_root=repo)
+    assert target == "integration/ms"
+    git(repo, "branch", a.branch, target)
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
+    assert _reasons(session, b, workspace) == {"a": UnmetReason.NOT_LANDED}
+
+    assert land_ticket(session, a, workspace).ok
+
+    assert _reasons(session, b, workspace) == {}

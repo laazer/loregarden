@@ -88,7 +88,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Ticket 1')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Ticket 1' })).toBeInTheDocument();
       });
 
       fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
@@ -104,7 +104,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Ticket 2')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Ticket 2' })).toBeInTheDocument();
       });
     });
   });
@@ -145,22 +145,26 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
-        expect(screen.getByDisplayValue('123456')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: '123456' })).toBeInTheDocument();
       });
     });
   });
 
   describe('Save Flow - Adversarial Cases', () => {
-    it('should surface save errors without crashing', async () => {
+    const openEditorWhenLoaded = async (title: string) => {
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    };
+
+    it('should surface save errors and keep the draft', async () => {
       jest.mocked(apiClient.api.ticket).mockResolvedValue(createMockTicket({ title: 'Original' }));
       jest.mocked(apiClient.api.updateTicket).mockRejectedValue(new Error('Save failed'));
 
       renderButton();
       fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
-
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Original')).toBeInTheDocument();
-      });
+      await openEditorWhenLoaded('Original');
 
       fireEvent.change(screen.getByDisplayValue('Original'), { target: { value: 'Updated title' } });
       fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
@@ -168,29 +172,65 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       await waitFor(() => {
         expect(screen.getByText('Save failed')).toBeInTheDocument();
       });
+      // Still editing: a failed save must not throw the operator's edit away.
+      expect(screen.getByDisplayValue('Updated title')).toBeInTheDocument();
+    });
+
+    it('should return to read mode after a successful save', async () => {
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(createMockTicket({ title: 'Original' }));
+      jest.mocked(apiClient.api.updateTicket).mockResolvedValue(createMockTicket({ title: 'Retitled' }));
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+      await openEditorWhenLoaded('Original');
+
+      fireEvent.change(screen.getByDisplayValue('Original'), { target: { value: 'Retitled' } });
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
     });
 
     it('should send edited acceptance criteria to the API', async () => {
       jest
         .mocked(apiClient.api.ticket)
-        .mockResolvedValue(createMockTicket({ acceptance_criteria: ['Original criterion'] }));
+        .mockResolvedValue(createMockTicket({ title: 'T', acceptance_criteria: ['Original criterion'] }));
       jest.mocked(apiClient.api.updateTicket).mockResolvedValue(createMockTicket());
 
       renderButton();
       fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+      await openEditorWhenLoaded('T');
 
-      await waitFor(() => {
-        expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue('Original criterion');
-      });
-
-      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
-        target: { value: 'Original criterion\nAdded criterion' },
-      });
+      expect(screen.getByLabelText('Criterion 1')).toHaveValue('Original criterion');
+      fireEvent.click(screen.getByRole('button', { name: /add criterion/i }));
+      fireEvent.change(screen.getByLabelText('Criterion 2'), { target: { value: 'Added criterion' } });
       fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
       await waitFor(() => {
         expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
           acceptance_criteria: ['Original criterion', 'Added criterion'],
+        });
+      });
+    });
+
+    it('should send checks made in edit mode with the rest of the edit', async () => {
+      jest
+        .mocked(apiClient.api.ticket)
+        .mockResolvedValue(createMockTicket({ title: 'T', acceptance_criteria: ['One', 'Two'] }));
+      jest.mocked(apiClient.api.updateTicket).mockResolvedValue(createMockTicket());
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+      await openEditorWhenLoaded('T');
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Criterion 2 done' }));
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
+          checked_acceptance_criteria: ['Two'],
         });
       });
     });
@@ -205,10 +245,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
       renderButton();
       fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
-
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Original')).toBeInTheDocument();
-      });
+      await openEditorWhenLoaded('Original');
 
       fireEvent.change(screen.getByDisplayValue('Original'), { target: { value: 'Retitled' } });
       fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
@@ -220,6 +257,47 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       });
     });
   });
+
+  describe('Checking criteria in read mode', () => {
+    it('saves only the checked criteria, immediately, without entering edit mode', async () => {
+      jest
+        .mocked(apiClient.api.ticket)
+        .mockResolvedValue(createMockTicket({ title: 'T', acceptance_criteria: ['One', 'Two'] }));
+      jest.mocked(apiClient.api.updateTicket).mockResolvedValue(
+        createMockTicket({ title: 'T', acceptance_criteria: ['One', 'Two'], checked_acceptance_criteria: ['Two'] }),
+      );
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+      const box = await screen.findByRole('checkbox', { name: 'Two' });
+      fireEvent.click(box);
+
+      await waitFor(() => {
+        expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
+          checked_acceptance_criteria: ['Two'],
+        });
+      });
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Two' })).toBeChecked());
+      expect(screen.getByRole('checkbox', { name: 'One' })).not.toBeChecked();
+      expect(screen.queryByLabelText('Ticket title')).not.toBeInTheDocument();
+    });
+
+    it('reverts the box and says why when the save fails', async () => {
+      jest
+        .mocked(apiClient.api.ticket)
+        .mockResolvedValue(createMockTicket({ title: 'T', acceptance_criteria: ['One'] }));
+      jest.mocked(apiClient.api.updateTicket).mockRejectedValue(new Error('Server said no'));
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'One' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Server said no')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('checkbox', { name: 'One' })).not.toBeChecked();
+    });
+  });
 });
 
 function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClient.TicketDetail {
@@ -229,6 +307,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     title: 'Test Ticket',
     description: 'Test description',
     acceptance_criteria: [],
+    checked_acceptance_criteria: [],
     state: 'in_progress',
     priority: 1,
     workspace_slug: 'loregarden',

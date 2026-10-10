@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { api, type WorkspaceRuntimeSettings } from "../api/client";
 import { ticketPath } from "../lib/appNavigation";
+import { useAgentAction } from "../lib/agentActions/useAgentAction";
 import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import {
@@ -133,6 +134,20 @@ export function BranchTriageOverviewPanel({
       api.setWorkspaceRuntime(workspaceSlug, runtime),
     onSuccess: applyRuntime,
   });
+
+  // Offered while this branch has a linked ticket — the condition the triage
+  // model picker needs too — and saved through the picker's own mutation.
+  useAgentAction(
+    "triage.set_runtime",
+    async ({ ticket_id, ...change }) => {
+      if (ticket_id !== linkedTicketId) {
+        throw new Error(`this branch's triage is linked to ${linkedTicketId}, not ${ticket_id}`);
+      }
+      if (Object.keys(change).length === 0) throw new Error("no runtime fields to change");
+      return saveTicketRuntime.mutateAsync({ ...savedRuntime, ...change });
+    },
+    Boolean(linkedTicketId),
+  );
 
   const summary = healthSummary(branchEntry, baseBranch);
   const linkedTicket = branchEntry?.linked_tickets[0];

@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import type { TicketDetail } from "../api/client";
 
 import { TicketRefLabel } from "./TicketRefLabel";
+import { Input } from "./ui/Input";
 
 interface TicketRelationsProps {
   ticket: TicketDetail;
@@ -79,8 +80,9 @@ export function TicketRelations({ ticket }: TicketRelationsProps) {
       )}
 
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-        <input
+        <Input
           type="text"
+          aria-label="Relate to ticket (id or external id)"
           className="btn-secondary filter-select"
           style={{ flex: 1, fontSize: 13 }}
           value={value}

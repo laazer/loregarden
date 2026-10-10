@@ -4,11 +4,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-import yaml
 from loregarden.config import settings
 from loregarden.core.workflow_loader import (
     get_template_stages,
     get_template_stages_at_version,
+    safe_load_yaml_file,
     sync_workflow_templates,
 )
 from loregarden.models.domain import (
@@ -33,8 +33,7 @@ def load_workspace_override(workspace_slug: str) -> dict:
     path = _overrides_dir() / f"{workspace_slug}.yaml"
     if not path.is_file():
         return {}
-    with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return safe_load_yaml_file(path) or {}
 
 
 def apply_stage_overrides(stages: list[WorkflowStageDef], override: dict) -> list[WorkflowStageDef]:

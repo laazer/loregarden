@@ -1,11 +1,43 @@
 version: "3"
 
 tasks:
+  setup:
+    desc: >-
+      Install server and client dependencies. Run it after a pull that touched
+      server/uv.lock or client/package-lock.json
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - task: setup:server
+      - task: setup:client
+
+  setup:server:
+    desc: Sync the server virtualenv from server/uv.lock
+    dir: "{{.ROOT_DIR}}/server"
+    cmds:
+      - uv sync
+
+  setup:client:
+    desc: Install client/node_modules from client/package-lock.json
+    dir: "{{.ROOT_DIR}}/client"
+    cmds:
+      # The Node check first: under a Node older than engines.node, npm ci
+      # installs a tree Vite cannot run, and the failure only shows up later as
+      # a client that exits 0 without ever serving.
+      - node scripts/check-node-version.cjs
+      - npm ci
+
+  setup:desktop:
+    desc: Install the root Tauri CLI dependency (only `task tauri:dev` / `tauri:build` need it)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - npm ci
+
   server:
     desc: Start FastAPI control plane (http://127.0.0.1:8000)
     dir: "{{.ROOT_DIR}}"
     env:
       LOREGARDEN_REPO_ROOT: "{{.ROOT_DIR}}"
+      LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "{{.LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK}}"
     cmds:
       - ./scripts/dev-server.sh
     interactive: true
@@ -61,9 +93,30 @@ tasks:
 
   dev:
     desc: Start client and server together
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      # Before the parallel start: Vite shares the terminal, reads stdin, and
+      # would bury the login prompt and take its answer.
+      - ./scripts/check-claude-login.sh
+      - task: dev:run
+    interactive: true
+
+  dev:run:
+    internal: true
     deps:
-      - server
+      - task: server
+        vars: { LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "1" }
       - client
+
+  sandbox:
+    desc: >-
+      Run this checkout's server (:8123) and client (:5174) on a copy of production
+      data — database and memory graphs, sandboxed. Look at UI work here before
+      merging it. `-- --keep` reuses the last snapshot.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/sandbox.sh {{.CLI_ARGS}}
+    interactive: true
 
   tauri:dev:
     desc: Launch the desktop app in dev mode (starts Vite + FastAPI automatically)
@@ -116,6 +169,24 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash .lefthook/scripts/server-tests.sh
+
+  test:profile:
+    desc: Run the server suite under xdist and list the slowest tests (writes .profile/server.json)
+    summary: |
+      Per-test setup/call/teardown seconds via lore_eden.testing.pytest_profile.
+      Narrow with args, e.g. `task test:profile -- tests/test_mcp_server.py`;
+      LORE_EDEN_PROFILE_TOP=50 prints more rows (default 15).
+    dir: "{{.ROOT_DIR}}/server"
+    env:
+      LOREGARDEN_REPO_ROOT: "{{.ROOT_DIR}}"
+      LORE_EDEN_PROFILE: "{{.ROOT_DIR}}/.profile/server.json"
+    cmds:
+      # A private basetemp: two pytest runs sharing the default root prune each
+      # other's trees (see .lefthook/scripts/server-tests.sh).
+      - |
+        base="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
+        trap 'rm -rf "$base"' EXIT
+        uv run pytest -q -n auto --basetemp "$base" {{.CLI_ARGS}}
 
   hooks:client:
     desc: Run pre-push client hook (oxlint + tsc + jest, mirrors CI) on demand
@@ -186,7 +257,7 @@ tasks:
   workspace:docs:
     desc: >-
       Install/refresh loregarden's control-plane section in a workspace's
-      AGENTS.md — `task workspace:docs -- [--check] [--slug <slug>] <workspace-root>`
+      AGENTS.md — `task workspace:docs -- [--check] (--all | [--slug <slug>] <workspace-root>)`
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash scripts/install-workspace-docs.sh {{.CLI_ARGS}}
@@ -194,15 +265,31 @@ tasks:
   workspace:hooks:
     desc: >-
       Install/refresh loregarden's organization guardrails in a workspace's
-      pre-commit — `task workspace:hooks -- [--check] <workspace-root>`
+      pre-commit — `task workspace:hooks -- [--check] (--all | <workspace-root>)`
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash scripts/install-workspace-hooks.sh {{.CLI_ARGS}}
 
+  workspace:hooks:pr:
+    desc: >-
+      Refresh the hook block in every workspace as a pull request each, without
+      touching their checkouts — `task workspace:hooks:pr [-- --gh-user <account>]`
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      # One branch name per run, shared by every repo. `{worktree}` is filled in
+      # by change-pr with each repo's throwaway worktree.
+      - >-
+        ./scripts/loregarden-cli.sh git change-pr --all-workspaces
+        --branch "loregarden/refresh-hooks-$(date +%Y%m%d-%H%M%S)"
+        --title "chore: refresh loregarden's managed hook block"
+        --body "Written by loregarden's scripts/install-workspace-hooks.sh. The block runs .lefthook/scripts/workspace-gates.sh from loregarden, which holds the gate list."
+        {{.CLI_ARGS}}
+        -- bash {{.ROOT_DIR}}/scripts/install-workspace-hooks.sh {worktree}
+
   workspace:check:
     desc: >-
       Report whether a workspace carries both managed blocks, writing nothing —
-      `task workspace:check -- <workspace-root>` (a path only; no other flags)
+      `task workspace:check -- (--all | <workspace-root>)` (no other flags)
     dir: "{{.ROOT_DIR}}"
     silent: true
     cmds:

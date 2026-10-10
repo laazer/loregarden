@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
+import { scrollableAncestor, scrollScrollerToBottom } from "../../lib/scrollWithin";
+
 /**
  * Keep a chat thread pinned to its newest content as that content grows.
  *
@@ -35,7 +37,7 @@ import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
  * again with no event to listen for.
  *
  * @param listRef The element whose height changes — the message list.
- * @param bottomRef The tail element a new turn scrolls into view.
+ * @param bottomRef The tail element; a new turn scrolls its nearest scroller to the bottom.
  * @param enabled False to stand down entirely (a surface that manages its own
  *   scrolling); nothing is observed and nothing is scrolled.
  * @param turnKeys Values that mean "a turn happened" rather than "it grew" —
@@ -59,10 +61,15 @@ export function useStickToBottom(
 
   // A new turn re-arms the follow and scrolls. Layout effect so the scroll is
   // issued in the frame the turn painted in.
+  //
+  // The thread's own scroller is scrolled, never `scrollIntoView`: that scrolls
+  // *every* ancestor, `overflow: hidden` ones included, and with its default
+  // `block: "start"` it kept going once the thread bottomed out — dragging the
+  // whole app frame up and leaving a blank band under it.
   useLayoutEffect(() => {
     if (!enabled) return;
     lastHeightRef.current = 0;
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+    if (bottomRef.current) scrollScrollerToBottom(bottomRef.current, "smooth");
   }, [enabled, bottomRef, turnSignature]);
 
   useEffect(() => {
@@ -95,17 +102,4 @@ export function useStickToBottom(
     // scroller lookup below, which is deliberately done per callback for the
     // same reason.
   }, [enabled, listRef]);
-}
-
-/** The nearest ancestor that actually scrolls, or null when nothing does. */
-function scrollableAncestor(node: HTMLElement): HTMLElement | null {
-  let current: HTMLElement | null = node.parentElement;
-  while (current) {
-    const overflowY = getComputedStyle(current).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
 }

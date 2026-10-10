@@ -93,7 +93,7 @@
   border-left: 3px solid var(--bd2);
   border-radius: 11px;
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color var(--t-med);
 }
 
 .run-control-item:hover {
@@ -158,7 +158,7 @@
   cursor: pointer;
   font-size: 16px;
   padding: 0;
-  transition: color 0.2s;
+  transition: color var(--t-med);
 }
 
 .run-control-toggle:hover {
@@ -184,7 +184,7 @@
   font-family: var(--ui);
   font-size: 11.5px;
   font-weight: 600;
-  transition: border-color 0.2s;
+  transition: border-color var(--t-med);
   flex: 1;
   min-width: 80px;
 }
@@ -232,7 +232,7 @@
   font-family: var(--ui);
   font-size: 12.5px;
   font-weight: 600;
-  transition: border-color 0.2s;
+  transition: border-color var(--t-med);
 }
 
 .bulk-btn:hover:not(:disabled) {

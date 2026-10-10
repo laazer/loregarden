@@ -34,7 +34,12 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.block_classification import classify_block_message
+from loregarden.services.block_classification import (
+    BLOCKING_POINTER_PHRASE,
+    LEGACY_BLOCKING_POINTER_PHRASE,
+    block_message_for,
+    classify_block_message,
+)
 from loregarden.services.block_settlement import settle_block, sweep_unclassified_blocks
 from loregarden.services.interruption_messages import (
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
@@ -288,7 +293,7 @@ def test_settling_a_block_does_not_raise_a_second_question_for_the_same_stage(db
     assert len(pending) == 1
 
 
-def test_the_sweep_reads_the_error_artifact_behind_an_errors_tab_pointer(db_session, ticket):
+def test_the_sweep_reads_the_error_artifact_behind_a_timeline_tab_pointer(db_session, ticket):
     """A long block leaves only a pointer inline; classifying the pointer would
     call every such block `work`. The sdf-39 shape: the real message names a
     person."""
@@ -301,11 +306,28 @@ def test_the_sweep_reads_the_error_artifact_behind_an_errors_tab_pointer(db_sess
     ticket.workflow_stage_status = StageStatus.BLOCKED
     db_session.add(ticket)
     db_session.commit()
-    assert "see the Errors tab" in ticket.blocking_issues  # the pointer, not the words
+    assert BLOCKING_POINTER_PHRASE in ticket.blocking_issues  # the pointer, not the words
 
     assert sweep_unclassified_blocks(db_session) == 1
     db_session.refresh(ticket)
     assert ticket.block_kind is BlockKind.HUMAN_ACTION
+
+
+@pytest.mark.parametrize("phrase", [BLOCKING_POINTER_PHRASE, LEGACY_BLOCKING_POINTER_PHRASE])
+def test_the_block_message_follows_either_pointer_wording(db_session, ticket, phrase):
+    """Rows stored before the Errors tab merged into Timeline still carry the
+    old pointer; both wordings must resolve to the artifact's own words."""
+    from loregarden.services.artifact_service import record_blocking_issue
+
+    long_message = "Needs a person to choose: " + "x" * 600
+    record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key=IMPLEMENT, message=long_message
+    )
+    ticket.blocking_issues = f"Stage '{IMPLEMENT}' {phrase} for details."
+    db_session.add(ticket)
+    db_session.commit()
+
+    assert block_message_for(db_session, ticket) == long_message
 
 
 def test_an_editor_trust_refusal_is_harness():

@@ -18,15 +18,18 @@ if [ ! -f "$PY_ROOT/pyproject.toml" ]; then
   exit 1
 fi
 
-rel_args=()
+server_args=()
+script_args=()
 for f in "$@"; do
   mapped="$(py_staged_server_rel "$f" "$PY_ROOT" || true)"
-  if [ -n "${mapped:-}" ]; then
-    rel_args+=("$mapped")
-  fi
+  case "${mapped:-}" in
+    "") ;;
+    ../*) script_args+=("$mapped") ;;
+    *) server_args+=("$mapped") ;;
+  esac
 done
 
-if [ "${#rel_args[@]}" -eq 0 ]; then
+if [ "${#server_args[@]}" -eq 0 ] && [ "${#script_args[@]}" -eq 0 ]; then
   exit 0
 fi
 
@@ -41,10 +44,22 @@ else
   exit 1
 fi
 
+ruff_check() {
+  if [ "${RUFF_CMD[0]}" = "uv" ]; then
+    uv run --extra dev ruff check --config pyproject.toml "$@"
+  else
+    "${RUFF_CMD[@]}" check --config pyproject.toml "$@"
+  fi
+}
+
 echo "pre-commit: running Ruff (server/pyproject.toml) on staged files..."
 cd "$PY_ROOT"
-if [ "${RUFF_CMD[0]}" = "uv" ]; then
-  uv run --extra dev ruff check --config pyproject.toml "${rel_args[@]}"
-else
-  "${RUFF_CMD[@]}" check --config pyproject.toml "${rel_args[@]}"
+status=0
+if [ "${#server_args[@]}" -gt 0 ]; then
+  ruff_check "${server_args[@]}" || status=$?
 fi
+# The scripts outside server/ run under the system python3; see py-staged-paths.sh.
+if [ "${#script_args[@]}" -gt 0 ]; then
+  ruff_check --target-version "$PY_SCRIPT_TARGET" "${script_args[@]}" || status=$?
+fi
+exit "$status"

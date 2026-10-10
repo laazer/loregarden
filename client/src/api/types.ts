@@ -1,4 +1,6 @@
+import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
+import type { LogLine } from "./runLogTypes";
 
 export type { TicketDependencyRef };
 
@@ -90,6 +92,10 @@ export interface TicketTreeNode {
   workflow_stage_status: StageStatus;
   child_count: number;
   children: TicketTreeNode[];
+  /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
+  member_link?: boolean;
+  /** The member's real parent (empty when it has none). */
+  home_parent_external_id?: string;
 }
 
 export interface WorkflowStageView {
@@ -142,6 +148,8 @@ export interface TicketDetail extends TicketSummary {
   } | null;
   description: string;
   acceptance_criteria: string[];
+  /** The subset of `acceptance_criteria` an operator has checked off. */
+  checked_acceptance_criteria: string[];
   /** Tickets this one waits for (its prerequisites). */
   dependencies?: TicketDependencyRef[];
   /** Tickets waiting on this one. */
@@ -240,38 +248,7 @@ export interface DiffArtifact {
   lines?: DiffLine[];
 }
 
-export interface LogLine {
-  time: string;
-  tag: string;
-  text: string;
-}
-
-/** One run's rendered log, as served by GET /api/runs/{id}/log. */
-export interface RunLog {
-  id: string;
-  run_code: string;
-  agent_id: string;
-  skill_name: string;
-  stage_key: string;
-  status: string;
-  command: string;
-  started_at: string | null;
-  finished_at: string | null;
-  /** Empty for runs that predate the log streamer. */
-  lines: LogLine[];
-  live: string | null;
-  stderr: string;
-}
-
-/** An operator's message to a run that is already in flight. */
-export interface RunMessage {
-  id: string;
-  run_id: string;
-  content: string;
-  created_at: string;
-  /** Null until the bridge has written it into the agent's stdin. */
-  delivered_at: string | null;
-}
+export type { LogLine, RunLog, RunMessage, RunMessagesPayload } from "./runLogTypes";
 
 /**
  * A question asked while a run was working — an aside.
@@ -334,6 +311,10 @@ export interface TicketArtifactItem {
   kind: string;
   title: string;
   run_id: string | null;
+  /** From the row's run, else a `stage_key` its content names; null when neither says. */
+  stage_key: string | null;
+  /** Platform bookkeeping (dispatch markers, run context, run-log pointers), not work output. */
+  system: boolean;
   evidence_kind: string;
   commit_sha: string;
   created_at: string | null;
@@ -448,6 +429,7 @@ export interface ContextSection {
   status?: string;
   confidence?: number;
   reroute_to_stage?: string | null;
+  reroute_to_agent?: string | null;
   reroute_context?: string;
 }
 
@@ -458,9 +440,13 @@ export interface WorkspaceSummary {
   repo_path: string;
   repo_root: string;
   repo_exists: boolean;
+  /** What is at `repo_root`; `missing` and `empty` can have a repository created there. */
+  repo_state: RepositoryState;
   ticket_count: number;
   blocked_count: number;
   workflow_template_slug: string;
+  /** ISO time the operator archived it; null while active. */
+  archived_at: string | null;
   cli_adapter: string;
   claude_model: string;
   cursor_model: string;
@@ -509,6 +495,13 @@ export interface RuntimeOptions {
   /** Cursor model ids that accept an `[effort=...]` bracket override. */
   cursor_effort_models?: string[];
   effective?: RuntimeEffective;
+}
+
+export interface StudioExitActionRequirementCatalog {
+  requirement_kinds: StudioExitActionRequirement["kind"][];
+  capability_ids: string[];
+  credential_keys: string[];
+  authority_scopes: string[];
 }
 
 export interface WorkspaceRuntimeSettings {
@@ -649,18 +642,6 @@ export interface MemoryConfigResponse {
   };
 }
 
-export interface OrchestrationProfileView {
-  slug: string;
-  name: string;
-  driver: string;
-  workflow_template: string;
-  orchestrator_skill: string;
-  gates_enabled: boolean;
-  gates_commands: string[];
-  gates_transition_script: string;
-  max_stages_per_run: number;
-}
-
 /**
  * What a queue is allowed to do with a finished run's work.
  *
@@ -711,6 +692,7 @@ export type {
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
   ChatAdvisoryCause,
+  ChatAttachment,
   ChatIntent,
   ChatMode,
   ChatModeName,
@@ -854,6 +836,19 @@ export interface ParallelAgentSpec {
   skill_name: string;
 }
 
+export type StudioExitActionRequirement =
+  | { kind: "runtime_capability"; capability_id: string }
+  | { kind: "credential"; credential_key: string }
+  | { kind: "authority"; authority_scope: string }
+  | { kind: "operator_judgment"; decision_prompt: string };
+
+export interface StudioExitAction {
+  key: string;
+  label: string;
+  description?: string;
+  requirement: StudioExitActionRequirement;
+}
+
 export interface StudioWorkflowStage {
   key: string;
   name: string;
@@ -862,7 +857,10 @@ export interface StudioWorkflowStage {
   skill_name: string;
   optional: boolean;
   order: number;
-  gate_required: boolean;
+  /** When true, authored exit_actions are evaluated before leaving the stage. */
+  exit_actions_enabled: boolean;
+  /** Typed requirements; empty when exit_actions_enabled is false. */
+  exit_actions: StudioExitAction[];
   /** Reaching this stage ends the workflow. */
   terminal?: boolean;
   /** Condition under which this stage is passed over; values from StudioDefaults.skip_conditions. */
@@ -935,6 +933,11 @@ export interface MonitorFinding {
   occurrences: number;
   first_seen: string | null;
   last_seen: string | null;
+  /** The ticket the finding is about; blank/null for a workspace-scoped finding. */
+  ticket_title: string;
+  ticket_external_id: string;
+  ticket_state: TicketState | null;
+  workspace_slug: string;
 }
 
 /**
@@ -1162,3 +1165,5 @@ export interface WorkflowReassignmentPreview {
   completed_stages: string[];
   resets_to_stage_key: string;
 }
+
+export type * from "./gateTypes";

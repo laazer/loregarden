@@ -1,13 +1,30 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
+import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import { ticketPullRequestApi } from "./ticketPullRequestApi";
+import type { ApprovalHistoryItem } from "./chatTypes";
+import type { GatePresets } from "./gatePresetTypes";
+import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
 export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
-export type { InitiativeMilestone, InitiativeView } from "./initiativeApi";
+export type {
+  InitiativeDraft,
+  InitiativeSuggestion,
+  InitiativeSuggestionSet,
+  SuggestedItem,
+  InitiativeMilestone,
+  InitiativePlan,
+  InitiativeView,
+  MilestoneSchedule,
+  PlannerSnapshot,
+  ScheduleProposal,
+} from "./initiativeApi";
+export type * from "./memoryApi";
 import type {
   WorkflowReassignmentPreview,
   TicketState,
@@ -35,16 +52,20 @@ import type {
   MemoryStatus,
   MemoryConfigResponse,
   OrchestrationProfileView,
+  GatesConfigUpdate,
+  GateTestReport,
   GitAutomationView,
   WorkspaceWorkflow,
   Approval,
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
+  ChatAttachment,
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
   StudioAgentVersion,
   StudioMcpToolGuide,
+  StudioExitActionRequirementCatalog,
   StudioAgentPreview,
   StudioDefaults,
   StudioGeneratedAgent,
@@ -70,6 +91,7 @@ import type {
   CIStatusResponse,
   ReloadStatus,
   RunLog,
+  RunMessagesPayload,
   BtwExchange,
   RunMessage,
   TicketLedger,
@@ -86,9 +108,11 @@ function ticketQuery(params?: {
   state?: TicketState | TicketState[];
   work_item_type?: WorkItemType | WorkItemType[];
   parent_ticket_id?: string;
+  ancestor_ticket_id?: string;
   roots_only?: boolean;
   milestone?: string;
   search?: string;
+  include_members?: boolean;
   limit?: number;
   offset?: number;
 }) {
@@ -107,9 +131,11 @@ function ticketQuery(params?: {
     : [];
   for (const workItemType of workItemTypes) q.append("work_item_type", workItemType);
   if (params?.parent_ticket_id) q.set("parent_ticket_id", params.parent_ticket_id);
+  if (params?.ancestor_ticket_id) q.set("ancestor_ticket_id", params.ancestor_ticket_id);
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
   if (params?.search) q.set("search", params.search);
+  if (params?.include_members) q.set("include_members", "true");
   if (params?.limit !== undefined) q.set("limit", String(params.limit));
   if (params?.offset !== undefined) q.set("offset", String(params.offset));
   const suffix = q.toString() ? `?${q}` : "";
@@ -138,6 +164,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  probeRepository: (path: string) =>
+    request<RepositoryProbe>(`/api/workspaces/repository-probe?path=${encodeURIComponent(path)}`),
+  createWorkspaceRepository: (slug: string) =>
+    request<WorkspaceRepositoryCreated>(`/api/workspaces/${encodeURIComponent(slug)}/repository`, {
+      method: "POST",
+    }),
+  archiveWorkspace: (slug: string) =>
+    request<WorkspaceSummary>(`/api/workspaces/${encodeURIComponent(slug)}/archive`, { method: "POST" }),
+  restoreWorkspace: (slug: string) =>
+    request<WorkspaceSummary>(`/api/workspaces/${encodeURIComponent(slug)}/restore`, { method: "POST" }),
   browseDirectory: (path?: string) => {
     const q = path ? `?path=${encodeURIComponent(path)}` : "";
     return request<BrowseDirectoryResponse>(`/api/system/browse${q}`);
@@ -153,11 +189,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ workflow_template_slug }),
     }),
-  runtimeOptions: (params?: { workspace?: string; lmstudio_base_url?: string }) => {
+  /** `ticket` resolves `effective` for that ticket's runs: its own pin over its own workspace. */
+  runtimeOptions: (params?: { workspace?: string; lmstudio_base_url?: string; ticket?: string }) => {
     const query = new URLSearchParams();
     if (params && typeof params === "object" && !Array.isArray(params)) {
       if (typeof params.workspace === "string" && params.workspace) {
         query.set("workspace", params.workspace);
+      }
+      if (typeof params.ticket === "string" && params.ticket) {
+        query.set("ticket", params.ticket);
       }
       if (typeof params.lmstudio_base_url === "string" && params.lmstudio_base_url) {
         query.set("lmstudio_base_url", params.lmstudio_base_url);
@@ -228,7 +268,7 @@ export const api = {
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
   runMessages: (runId: string) =>
-    request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
+    request<RunMessagesPayload>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>
     request<RunMessage>(`/api/runs/${runId}/messages`, {
       method: "POST",
@@ -239,6 +279,8 @@ export const api = {
     state?: TicketState | TicketState[];
     work_item_type?: WorkItemType | WorkItemType[];
     parent_ticket_id?: string;
+    /** Every level below this ticket, across workspaces — an initiative's board. */
+    ancestor_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
     /** Opt-in page size. Unset returns the whole filtered set, as before. */
@@ -255,6 +297,8 @@ export const api = {
     state?: TicketState | TicketState[];
     work_item_type?: WorkItemType | WorkItemType[];
     search?: string;
+    /** List initiative members under their initiative too (`member_link` copies). */
+    include_members?: boolean;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
   stopTicket: (id: string) =>
@@ -303,6 +347,8 @@ export const api = {
       title?: string;
       description?: string;
       acceptance_criteria?: string[];
+      /** Replaces which criteria are checked off; text not among the criteria is dropped. */
+      checked_acceptance_criteria?: string[];
       /** Replaces the stored tags; omit to leave them alone, [] to clear them. */
       tags?: string[];
       state?: TicketState;
@@ -328,12 +374,20 @@ export const api = {
     request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
-  updateWorkspaceGates: (
-    slug: string,
-    body: { enabled: boolean; commands: string[]; transition_script: string },
-  ) =>
+  updateWorkspaceGates: (slug: string, body: GatesConfigUpdate) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile/gates`, {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  gatePresetsForPath: (path: string) => request<GatePresets>(`/api/gate-presets?path=${encodeURIComponent(path)}`),
+  gatePresetsForWorkspace: (slug: string) =>
+    request<GatePresets>(`/api/gate-presets/workspaces/${encodeURIComponent(slug)}`),
+  testWorkspaceGates: (
+    slug: string,
+    body: { commands: string[]; from_stage?: string; to_stage?: string },
+  ) =>
+    request<GateTestReport>(`/api/orchestration/workspaces/${slug}/profile/gates/test`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   gitAutomation: (slug: string) =>
@@ -396,7 +450,9 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...ticketPullRequestApi,
   ...initiativeApi,
+  ...memoryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",
@@ -426,10 +482,12 @@ export const api = {
     request<Approval[]>(
       ticketId ? `/api/inbox/approvals?ticket_id=${encodeURIComponent(ticketId)}` : "/api/inbox/approvals",
     ),
+  approvalHistory: (ticketId: string) =>
+    request<ApprovalHistoryItem[]>(`/api/inbox/approvals/history?ticket_id=${encodeURIComponent(ticketId)}`),
   resolveApproval: (
     id: string,
     body: {
-      action: "approve" | "reject";
+      action: "approve" | "recheck" | "reject";
       answers?: Record<string, string | string[]>;
       response?: string;
       always_allow?: boolean;
@@ -529,11 +587,29 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
-  sendBaxterChatMessage: (slug: string, sessionId: string, content: string, skill = "") =>
+  sendBaxterChatMessage: (
+    slug: string,
+    sessionId: string,
+    content: string,
+    skill = "",
+    attachmentIds: string[] = [],
+  ) =>
     request<BaxterChatSnapshot>(
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
-      { method: "POST", body: JSON.stringify({ content, skill }) },
+      {
+        method: "POST",
+        body: JSON.stringify({ content, skill, attachment_ids: attachmentIds }),
+      },
     ),
+  /** Store one file for the next turn in this conversation. */
+  uploadBaxterChatAttachment: (slug: string, sessionId: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    return request<ChatAttachment>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/attachments`,
+      { method: "POST", body },
+    );
+  },
   /** Settles the pending turn immediately so the composer unlocks. */
   stopBaxterChatTurn: (slug: string, sessionId: string) =>
     request<BaxterChatSnapshot>(
@@ -543,6 +619,8 @@ export const api = {
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),
+  studioExitActionRequirements: () =>
+    request<StudioExitActionRequirementCatalog>("/api/studio/exit-action-requirements"),
   studioDefaults: () => request<StudioDefaults>("/api/studio/defaults"),
   previewStudioAgent: (body: Partial<StudioAgent> & { name: string }) =>
     request<StudioAgentPreview>("/api/studio/agents/preview", {

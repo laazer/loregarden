@@ -75,6 +75,7 @@ export abstract class ReconnectingSocket<THandlers extends SocketStatusHandler> 
       // only resets on data would keep growing across quiet reconnects.
       this.attempts = 0;
       this.emitStatus("open");
+      this.onOpen();
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -117,6 +118,19 @@ export abstract class ReconnectingSocket<THandlers extends SocketStatusHandler> 
 
   /** One parsed frame. Subclasses own the shape and what to do with it. */
   protected abstract handleMessage(message: unknown): void;
+
+  /** Every (re)connect. A socket that tells the server about itself says it
+   * again here: a backend restart forgets everything the last connection said. */
+  protected onOpen(): void {}
+
+  /** Send one frame. False when there is no open connection to send it on —
+   * the caller decides whether that matters; it is never thrown away silently. */
+  protected send(message: unknown): boolean {
+    // 1 is WebSocket.OPEN, spelled out: the global is absent where a fake socket is injected.
+    if (!this.socket || this.socket.readyState !== 1) return false;
+    this.socket.send(JSON.stringify(message));
+    return true;
+  }
 
   /** Connection state, straight to the caller. Framing differs between
    * sockets; "trying, up, or down" does not. */

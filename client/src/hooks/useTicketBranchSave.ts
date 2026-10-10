@@ -4,13 +4,12 @@ import { api } from "../api/client";
 import { toastActionFailed } from "../state/toastStore";
 
 /**
- * Save the branch a field was optimistically written into the cache with.
+ * Save a ticket's branch, then refetch the ticket so it shows the server's answer.
  *
- * The optimistic write is what makes the input feel immediate, and it is also
- * what makes a rejected save dangerous: the wrong branch stays on screen
- * looking saved. A failure rolls the cache back to the server's answer and says
- * what happened, rather than leaving the operator to start a run on a branch
- * that was never stored.
+ * The cached ticket is the stored branch, never a draft: callers compare
+ * against it to decide whether a save is needed. A rejected save says what
+ * happened and the refetch puts the stored branch back on screen, rather than
+ * leaving the operator to start a run on a branch that was never stored.
  */
 export function useTicketBranchSave(): {
   save: (ticketId: string, branch: string) => Promise<void>;

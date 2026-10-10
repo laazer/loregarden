@@ -1,0 +1,764 @@
+{
+ "checked_at": "2026-09-28T00:00:00Z",
+ "configured": true,
+ "counts": {
+  "entities": 34,
+  "links": 0
+ },
+ "include_discredited": false,
+ "inferred": [
+  {
+   "key": "lg-m2-55",
+   "kind": "same_ticket",
+   "label": "lg-m2-55 \u2014 Cache the run log's live tail",
+   "node_ids": [
+    "1aad10fc-5892-5780-a1f3-01d933a57851",
+    "408d8df5-f056-5004-8b5f-cc3406feceb0"
+   ]
+  },
+  {
+   "key": "lg-m3-56",
+   "kind": "same_ticket",
+   "label": "lg-m3-56 \u2014 Surface the rework ledger's loop cap",
+   "node_ids": [
+    "17c1eac2-be1f-5681-968c-312d52fe3997",
+    "fa4295af-b04c-5346-b4c2-766926c11cd8"
+   ]
+  },
+  {
+   "key": "lg-m4-57",
+   "kind": "same_ticket",
+   "label": "lg-m4-57 \u2014 Stop the rework ledger's loop cap",
+   "node_ids": [
+    "09cc3cd5-c435-57ae-8bbf-2831072eb633",
+    "b67c2f26-dc58-52d3-bd16-db46585137a2"
+   ]
+  },
+  {
+   "key": "c5aa36d9-c7a9-5ef9-9abc-95bf75238779",
+   "kind": "same_milestone",
+   "label": "M03 \u2014 Surface the rework ledger's loop cap",
+   "node_ids": [
+    "12bac95e-1699-57d7-8469-1374a4d12646",
+    "17c1eac2-be1f-5681-968c-312d52fe3997",
+    "fa4295af-b04c-5346-b4c2-766926c11cd8"
+   ]
+  },
+  {
+   "key": "df55b90d-a2be-573a-930e-e61a792f19d1",
+   "kind": "same_milestone",
+   "label": "M04 \u2014 Route the queue board's stalled lane",
+   "node_ids": [
+    "09cc3cd5-c435-57ae-8bbf-2831072eb633",
+    "612daf6d-a1b6-5028-bbc7-1271c82ac3dd",
+    "b67c2f26-dc58-52d3-bd16-db46585137a2"
+   ]
+  },
+  {
+   "key": "frontend",
+   "kind": "shared_tag",
+   "label": "frontend",
+   "node_ids": [
+    "61b7fe98-7b46-525d-829d-19d788cc1ba5",
+    "7cae9a51-e735-5618-83d3-4c661d8785f4",
+    "946c3a22-4ea5-59ef-b7b4-d9b3d16e9168",
+    "96981022-0d15-5920-95bb-2e510a512aae"
+   ]
+  },
+  {
+   "key": "gates",
+   "kind": "shared_tag",
+   "label": "gates",
+   "node_ids": [
+    "1aad10fc-5892-5780-a1f3-01d933a57851",
+    "3a0be6a9-fceb-53cd-ab1b-fc92623263d4",
+    "68504e59-6881-5d42-b4bc-8f31f0e95f42",
+    "fa4295af-b04c-5346-b4c2-766926c11cd8"
+   ]
+  },
+  {
+   "key": "orchestration",
+   "kind": "shared_tag",
+   "label": "orchestration",
+   "node_ids": [
+    "12bac95e-1699-57d7-8469-1374a4d12646",
+    "17c1eac2-be1f-5681-968c-312d52fe3997",
+    "2566967e-20cb-5d59-95ff-715673576f95",
+    "946c3a22-4ea5-59ef-b7b4-d9b3d16e9168",
+    "96981022-0d15-5920-95bb-2e510a512aae",
+    "b6b63fcd-f68b-543b-be86-27f3d719e6a2",
+    "f5c02397-c15a-5d5e-84d1-1b8a02470db5"
+   ]
+  },
+  {
+   "key": "retry-budget",
+   "kind": "shared_tag",
+   "label": "retry-budget",
+   "node_ids": [
+    "007322aa-23c9-5263-87e2-bfe81b7de1c0",
+    "02fc1419-ea73-5cb6-96d7-5c28ded3e641",
+    "0f8ae608-131e-53f1-ac74-de928f5ce632",
+    "408d8df5-f056-5004-8b5f-cc3406feceb0",
+    "5beb34b5-56ff-52de-b5ae-997215ceca05",
+    "62f07a8a-1db9-5f73-9140-4fa2b18ce609"
+   ]
+  },
+  {
+   "key": "sqlite",
+   "kind": "shared_tag",
+   "label": "sqlite",
+   "node_ids": [
+    "007322aa-23c9-5263-87e2-bfe81b7de1c0",
+    "0f8ae608-131e-53f1-ac74-de928f5ce632",
+    "10090327-1a1c-5175-ab5d-ac371974df69",
+    "2566967e-20cb-5d59-95ff-715673576f95",
+    "3339676a-2f08-541e-aaae-7dbfd1b564b9",
+    "612daf6d-a1b6-5028-bbc7-1271c82ac3dd",
+    "61b7fe98-7b46-525d-829d-19d788cc1ba5",
+    "62f07a8a-1db9-5f73-9140-4fa2b18ce609",
+    "749b1dd6-c970-5c68-baf7-b43adbd57f67",
+    "b6b63fcd-f68b-543b-be86-27f3d719e6a2",
+    "d20eea1a-d442-5553-9730-097884cffdca"
+   ]
+  },
+  {
+   "key": "testing",
+   "kind": "shared_tag",
+   "label": "testing",
+   "node_ids": [
+    "12bac95e-1699-57d7-8469-1374a4d12646",
+    "5b149234-faed-54fa-8dc9-8a0693b279a2",
+    "efd3038e-ce46-5038-b021-c6be0a8390db"
+   ]
+  },
+  {
+   "key": "triage",
+   "kind": "shared_tag",
+   "label": "triage",
+   "node_ids": [
+    "02fc1419-ea73-5cb6-96d7-5c28ded3e641",
+    "09cc3cd5-c435-57ae-8bbf-2831072eb633",
+    "10090327-1a1c-5175-ab5d-ac371974df69",
+    "3a0be6a9-fceb-53cd-ab1b-fc92623263d4",
+    "4aa5286e-fc38-59b6-b61a-e174566f24e0",
+    "749b1dd6-c970-5c68-baf7-b43adbd57f67",
+    "b67c2f26-dc58-52d3-bd16-db46585137a2",
+    "efd3038e-ce46-5038-b021-c6be0a8390db",
+    "fe158bbd-db26-5826-acf7-bafe3fffe97f"
+   ]
+  },
+  {
+   "key": "workflow",
+   "kind": "shared_tag",
+   "label": "workflow",
+   "node_ids": [
+    "04e567bd-6d14-5376-afd1-fd6a687e36cd",
+    "17c1eac2-be1f-5681-968c-312d52fe3997",
+    "a54500da-e393-54c1-a291-37d0183544bf",
+    "c034af92-4062-5e9d-9b90-ae3adfcf50e4",
+    "c4dd6af2-ebd4-52b2-9329-88c40ed8f7ae",
+    "d20eea1a-d442-5553-9730-097884cffdca",
+    "fa4295af-b04c-5346-b4c2-766926c11cd8"
+   ]
+  }
+ ],
+ "node_type": null,
+ "nodes": [
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Static gate session when vault payload.** Promotion sentinel skeleton budget; ledger cache toast percentile \u2014 migration hub token jest sync (lg-m17-286).",
+   "id": "62f07a8a-1db9-5f73-9140-4fa2b18ce609",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m17-286",
+   "title": "Learning \u2014 lg-m17-286",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Token rollup ladder when static pin.** Version markdown thrash graph; finding skeleton focus export \u2014 relation proposal restore digest session (lg-m10-279).",
+   "id": "c4dd6af2-ebd4-52b2-9329-88c40ed8f7ae",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "workflow"
+   ],
+   "ticket_id": "lg-m10-279",
+   "title": "Learning \u2014 lg-m10-279",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Visual escape boot when idempotent recovery.** Migration shard discredit transaction; graph curation sandbox websocket \u2014 keychain validator payload outcome de",
+   "id": "12bac95e-1699-57d7-8469-1374a4d12646",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "testing",
+    "orchestration"
+   ],
+   "ticket_id": "lg-m3-272",
+   "title": "Visual escape boot when idempotent recovery",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Branch wal rollup when initiative enum.** Pylint validator promotion rework; retry capacity stage proposal \u2014 percentile lease ruff probe merge (lg-m4-57).",
+   "id": "09cc3cd5-c435-57ae-8bbf-2831072eb633",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "triage"
+   ],
+   "ticket_id": "lg-m4-57",
+   "title": "Learning \u2014 lg-m4-57",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Capacity lane pin when migration backup.** Ledger transaction restore snapshot; report boot confidence token \u2014 factory sentinel keyboard validator branch (lg-",
+   "id": "02fc1419-ea73-5cb6-96d7-5c28ded3e641",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "triage",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m43-258",
+   "title": "Learning \u2014 lg-m43-258",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Journal clock ranker when stale visual.** Flake scenario label merge; rollup schema curation snapshot \u2014 import report cache template floor (lg-m36-251).",
+   "id": "4aa5286e-fc38-59b6-b61a-e174566f24e0",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "triage"
+   ],
+   "ticket_id": "lg-m36-251",
+   "title": "Learning \u2014 lg-m36-251",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Oauth timeout fixture when gate export.** Slot reroute asset backup; daemon commit verdict jest \u2014 event template pin security escape (lg-m29-244).",
+   "id": "749b1dd6-c970-5c68-baf7-b43adbd57f67",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "triage",
+    "sqlite"
+   ],
+   "ticket_id": "lg-m29-244",
+   "title": "Oauth timeout fixture when gate export",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Curation tree focus when shard child.** Label frontmatter escape event; backup security ladder session \u2014 lefthook idempotent factory branch briefing (lg-m22-2",
+   "id": "f5c02397-c15a-5d5e-84d1-1b8a02470db5",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "orchestration"
+   ],
+   "ticket_id": "lg-m22-237",
+   "title": "Learning \u2014 lg-m22-237",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Obsidian visual skill when digest template.** Promotion focus proposal restore; ladder queue idempotent scenario \u2014 prompt squash pin graph finding (lg-m3-56).",
+   "id": "17c1eac2-be1f-5681-968c-312d52fe3997",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "orchestration",
+    "workflow"
+   ],
+   "ticket_id": "lg-m3-56",
+   "title": "Learning \u2014 lg-m3-56",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Timeout dialog version when event zombie.** Promotion toast drain session; import graph retry sqlite \u2014 curation oauth migration percentile frontmatter (lg-m8-",
+   "id": "68504e59-6881-5d42-b4bc-8f31f0e95f42",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "gates"
+   ],
+   "ticket_id": "lg-m8-223",
+   "title": "Learning \u2014 lg-m8-223",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Pylint child sweep when skill clock.** Snapshot daemon sandbox confidence; journal static fixture flake \u2014 floor websocket cursor budget boot (lg-m1-216).",
+   "id": "96981022-0d15-5920-95bb-2e510a512aae",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "orchestration",
+    "frontend"
+   ],
+   "ticket_id": "lg-m1-216",
+   "title": "Pylint child sweep when skill clock",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Payload wal vault when fresh clock.** Scenario proposal token websocket; initiative journal oxlint fixture \u2014 parent child cache schema thrash (lg-m48-209).",
+   "id": "c034af92-4062-5e9d-9b90-ae3adfcf50e4",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "workflow"
+   ],
+   "ticket_id": "lg-m48-209",
+   "title": "Learning \u2014 lg-m48-209",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Pin coercion stall when lefthook queue.** Rollup commit reroute stage; prompt lease integration ruff \u2014 hook flake pragma contract clock (lg-m41-202).",
+   "id": "007322aa-23c9-5263-87e2-bfe81b7de1c0",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m41-202",
+   "title": "Learning \u2014 lg-m41-202",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Monitor baseline outcome when budget integration.** Template version push visual; vault verdict alias dependency \u2014 capacity payload skeleton idempotent briefi",
+   "id": "1aad10fc-5892-5780-a1f3-01d933a57851",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "gates"
+   ],
+   "ticket_id": "lg-m2-55",
+   "title": "Learning \u2014 lg-m2-55",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Lane digest ranker when dependency prompt.** Websocket orphan milestone issue; hook pragma merge snapshot \u2014 contract pin shard enum boot (lg-m27-188).",
+   "id": "946c3a22-4ea5-59ef-b7b4-d9b3d16e9168",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "frontend",
+    "orchestration"
+   ],
+   "ticket_id": "lg-m27-188",
+   "title": "Lane digest ranker when dependency prompt",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Frontmatter issue slot when reconcile commit.** Sync proposal session cursor; report graph jest import \u2014 export daemon briefing payload skeleton (lg-m20-181).",
+   "id": "5b149234-faed-54fa-8dc9-8a0693b279a2",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "testing"
+   ],
+   "ticket_id": "lg-m20-181",
+   "title": "Learning \u2014 lg-m20-181",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Factory cache session when issue ladder.** Migration keychain sample telemetry; sync handoff validator lane \u2014 frontmatter sqlite timeout stale briefing (lg-m1",
+   "id": "d20eea1a-d442-5553-9730-097884cffdca",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite",
+    "workflow"
+   ],
+   "ticket_id": "lg-m13-174",
+   "title": "Learning \u2014 lg-m13-174",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Event icloud ladder when migration github.** Relation hook journal issue; finding static sandbox initiative \u2014 version skeleton stale import stall (lg-m6-167).",
+   "id": "7cae9a51-e735-5618-83d3-4c661d8785f4",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "frontend"
+   ],
+   "ticket_id": "lg-m6-167",
+   "title": "Learning \u2014 lg-m6-167",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Rollup integration lane when security sample.** Scenario skeleton ruff graph; retry briefing hook atomic \u2014 pylint tree squash reroute child (lg-m5-58).",
+   "id": "10090327-1a1c-5175-ab5d-ac371974df69",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "sqlite",
+    "triage"
+   ],
+   "ticket_id": "lg-m5-58",
+   "title": "Rollup integration lane when security sample",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Capacity review clock when cursor telemetry.** Confidence flake briefing xdist; schema daemon recorder pragma \u2014 journal frontmatter finding markdown restore (",
+   "id": "5beb34b5-56ff-52de-b5ae-997215ceca05",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m46-153",
+   "title": "Learning \u2014 lg-m46-153",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Branch finding boot when initiative commit.** Briefing oauth promotion export; graph worktree toast lane \u2014 enum payload fresh timeout squash (lg-m39-146).",
+   "id": "61b7fe98-7b46-525d-829d-19d788cc1ba5",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "frontend",
+    "sqlite"
+   ],
+   "ticket_id": "lg-m39-146",
+   "title": "Learning \u2014 lg-m39-146",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Stall sweep lefthook when report telemetry.** Recorder stage handoff dialog; child ledger push percentile \u2014 gate validator oauth proposal pragma (lg-m32-139).",
+   "id": "3339676a-2f08-541e-aaae-7dbfd1b564b9",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite"
+   ],
+   "ticket_id": "lg-m32-139",
+   "title": "Learning \u2014 lg-m32-139",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Ruff label integration when telemetry cache.** Export floor sentinel markdown; branch fresh daemon recall \u2014 token squash sandbox schema lane (lg-m25-132).",
+   "id": "3a0be6a9-fceb-53cd-ab1b-fc92623263d4",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "gates",
+    "triage"
+   ],
+   "ticket_id": "lg-m25-132",
+   "title": "Ruff label integration when telemetry cache",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Monitor worktree payload when slot rework.** Ruff icloud sync cursor; stale skeleton visual reconcile \u2014 pylint toast curation proposal issue (lg-m4-57).",
+   "id": "b67c2f26-dc58-52d3-bd16-db46585137a2",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "triage"
+   ],
+   "ticket_id": "lg-m4-57",
+   "title": "Learning \u2014 lg-m4-57",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Digest event budget when escalation commit.** Security recovery atomic slot; validator sync merge version \u2014 enum toast ranker verdict worktree (lg-m11-118).",
+   "id": "0f8ae608-131e-53f1-ac74-de928f5ce632",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m11-118",
+   "title": "Learning \u2014 lg-m11-118",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Event pin template when verdict ladder.** Sweep discredit stage schema; lefthook cache sentinel skill \u2014 lane commit ruff probe alias (lg-m4-111).",
+   "id": "612daf6d-a1b6-5028-bbc7-1271c82ac3dd",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite"
+   ],
+   "ticket_id": "lg-m4-111",
+   "title": "Learning \u2014 lg-m4-111",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Probe transaction review when percentile push.** Discredit dependency cursor queue; verdict confidence reconcile toast \u2014 adapter backup briefing asset websock",
+   "id": "b6b63fcd-f68b-543b-be86-27f3d719e6a2",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "sqlite",
+    "orchestration"
+   ],
+   "ticket_id": "lg-m51-104",
+   "title": "Probe transaction review when percentile push",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Prompt review alias when vault spinner.** Tree validator template contract; report skill sqlite pylint \u2014 security skeleton label integration keyboard (lg-m44-",
+   "id": "fe158bbd-db26-5826-acf7-bafe3fffe97f",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "triage"
+   ],
+   "ticket_id": "lg-m44-97",
+   "title": "Learning \u2014 lg-m44-97",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Dialog push label when parent backup.** Thrash adapter outcome escalation; lane template queue focus \u2014 confidence integration finding obsidian initiative (lg-",
+   "id": "fa4295af-b04c-5346-b4c2-766926c11cd8",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "gates",
+    "workflow"
+   ],
+   "ticket_id": "lg-m3-56",
+   "title": "Learning \u2014 lg-m3-56",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Journal focus event when pragma telemetry.** Lefthook shard factory proposal; static pylint orphan daemon \u2014 dependency child spinner migration probe (lg-m30-8",
+   "id": "a54500da-e393-54c1-a291-37d0183544bf",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "workflow"
+   ],
+   "ticket_id": "lg-m30-83",
+   "title": "Learning \u2014 lg-m30-83",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Push floor ladder when role commit.** Digest wal issue pragma; probe report ruff reconcile \u2014 alias lefthook contract websocket milestone (lg-m23-76).",
+   "id": "efd3038e-ce46-5038-b021-c6be0a8390db",
+   "node_type": "memory",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "loregarden",
+    "triage",
+    "testing"
+   ],
+   "ticket_id": "lg-m23-76",
+   "title": "Push floor ladder when role commit",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Boot baseline spinner when asset pragma.** Pylint worktree telemetry markdown; coercion schema xdist sqlite \u2014 scenario issue sentinel sample session (lg-m16-6",
+   "id": "04e567bd-6d14-5376-afd1-fd6a687e36cd",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "workflow"
+   ],
+   "ticket_id": "lg-m16-69",
+   "title": "Learning \u2014 lg-m16-69",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Recall factory ladder when floor rework.** Issue squash role drain; promotion monitor outcome hook \u2014 cursor ranker fresh child curation (lg-m9-62).",
+   "id": "2566967e-20cb-5d59-95ff-715673576f95",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "sqlite",
+    "orchestration"
+   ],
+   "ticket_id": "lg-m9-62",
+   "title": "Learning \u2014 lg-m9-62",
+   "updated_at": "2026-09-28T00:00:00Z"
+  },
+  {
+   "created_at": "2026-09-28T00:00:00Z",
+   "discredited": false,
+   "excerpt": "**Docker sentinel spinner when pin thrash.** Relation github boot initiative; issue static promotion markdown \u2014 skill queue role jest xdist (lg-m2-55).",
+   "id": "408d8df5-f056-5004-8b5f-cc3406feceb0",
+   "node_type": "learning",
+   "origin_kind": null,
+   "origin_ref": null,
+   "tags": [
+    "learning",
+    "loregarden",
+    "retry-budget"
+   ],
+   "ticket_id": "lg-m2-55",
+   "title": "Learning \u2014 lg-m2-55",
+   "updated_at": "2026-09-28T00:00:00Z"
+  }
+ ],
+ "query": "",
+ "relations": [],
+ "source": "list",
+ "truncated": false,
+ "type_counts": {
+  "learning": 26,
+  "memory": 8
+ },
+ "workspace_slug": "loregarden"
+}

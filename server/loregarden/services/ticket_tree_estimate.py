@@ -150,14 +150,27 @@ class TicketTreeEstimator:
 
     # ---- batch loading --------------------------------------------------
 
+    def prime(self, roots: list[Ticket]) -> None:
+        """Load many subtrees at once: one query per tree level for all of them.
+
+        Pricing ninety tickets one `estimate` at a time costs two queries each;
+        a caller that knows the whole set up front pays a handful instead.
+        """
+        self._load_subtrees([r for r in roots if r.id not in self._loaded_for])
+
     def _load_subtree(self, root: Ticket) -> None:
         """Breadth-first, one query per level rather than per ticket."""
         if root.id in self._loaded_for:
             return
-        self._loaded_for.add(root.id)
+        self._load_subtrees([root])
 
-        frontier = [root.id]
-        collected: set[str] = {root.id}
+    def _load_subtrees(self, roots: list[Ticket]) -> None:
+        if not roots:
+            return
+        self._loaded_for.update(r.id for r in roots)
+
+        frontier = [r.id for r in roots]
+        collected: set[str] = set(frontier)
         while frontier:
             rows = self.session.exec(
                 select(Ticket).where(col(Ticket.parent_ticket_id).in_(frontier))

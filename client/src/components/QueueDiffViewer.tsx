@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import type { OperationComment } from './QueueOperationReview';
+import { Textarea } from './ui/Textarea';
 import './QueueDiffViewer.css';
 
 export interface DiffChange {
@@ -91,7 +92,8 @@ export function QueueDiffViewer({
         ))}
         {commentRunId === runId ? (
           <div className="diff-change-comment-form">
-            <textarea
+            <Textarea
+              aria-label="Review comment"
               className="diff-change-comment-input"
               rows={2}
               value={commentDraft}

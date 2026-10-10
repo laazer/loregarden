@@ -65,7 +65,9 @@ TRIAGE_CLI_PROFILE = CliAgentProfile(
     stub_env="LOREGARDEN_TRIAGE_STUB_RESPONSE",
     timeout_env="LOREGARDEN_TRIAGE_TIMEOUT",
     tmp_prefix="loregarden-triage-",
-    reply_cap=8000,
+    # Runaway-output guard only: a long answer is the answer. Anything past this is
+    # cut with a visible marker (see `cap_reply`).
+    reply_cap=200_000,
 )
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.git_subprocess import scrubbed_git_env
+from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.target_branch import (
     TargetBranchError,
     ensure_integration_branch,
@@ -161,3 +162,172 @@ def test_a_missing_base_is_an_error_not_an_empty_branch(repo: Path):
     with pytest.raises(TargetBranchError, match="does not exist"):
         ensure_integration_branch(repo, "integration/x", "no-such-base")
     assert "integration/x" not in _branches(repo)
+
+
+# --- an initiative is never a landing root -----------------------------------------
+
+
+def _initiative(db_session: Session, external_id: str) -> Ticket:
+    """Initiatives span workspaces, so they carry none of their own."""
+    initiative = Ticket(
+        external_id=external_id,
+        title=external_id,
+        workspace_id=None,
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    db_session.add(initiative)
+    db_session.commit()
+    db_session.refresh(initiative)
+    return initiative
+
+
+def test_a_milestone_under_an_initiative_keeps_its_own_integration_branch(
+    db_session: Session, workspace: Workspace
+):
+    initiative = _initiative(db_session, "init-x-1")
+    milestone = _ticket(
+        db_session, workspace, "lg-ms-10", parent=initiative, work_item_type=WorkItemType.MILESTONE
+    )
+    feature = _ticket(
+        db_session, workspace, "lg-ft-10", parent=milestone, work_item_type=WorkItemType.FEATURE
+    )
+    task = _ticket(db_session, workspace, "lg-tk-10", parent=feature)
+
+    assert subtree_root(db_session, task).id == milestone.id
+    assert target_branch_name(db_session, task, workspace) == "integration/lg-ms-10"
+    assert target_branch_name(db_session, feature, workspace) == "integration/lg-ms-10"
+    # The milestone is still the root, so its completion is what publishes.
+    assert target_branch_name(db_session, milestone, workspace) == "main"
+
+
+def test_two_milestones_under_one_initiative_land_on_separate_branches(
+    db_session: Session, workspace: Workspace
+):
+    initiative = _initiative(db_session, "init-x-2")
+    first = _ticket(
+        db_session, workspace, "lg-ms-11", parent=initiative, work_item_type=WorkItemType.MILESTONE
+    )
+    second = _ticket(
+        db_session, workspace, "lg-ms-12", parent=initiative, work_item_type=WorkItemType.MILESTONE
+    )
+    a = _ticket(
+        db_session, workspace, "lg-ft-11", parent=first, work_item_type=WorkItemType.FEATURE
+    )
+    b = _ticket(
+        db_session, workspace, "lg-ft-12", parent=second, work_item_type=WorkItemType.FEATURE
+    )
+
+    assert target_branch_name(db_session, a, workspace) == "integration/lg-ms-11"
+    assert target_branch_name(db_session, b, workspace) == "integration/lg-ms-12"
+
+
+def test_attaching_or_detaching_a_milestone_leaves_its_target_branch_alone(
+    db_session: Session, workspace: Workspace
+):
+    initiative = _initiative(db_session, "init-x-3")
+    milestone = _ticket(db_session, workspace, "lg-ms-13", work_item_type=WorkItemType.MILESTONE)
+    feature = _ticket(
+        db_session, workspace, "lg-ft-13", parent=milestone, work_item_type=WorkItemType.FEATURE
+    )
+    task = _ticket(db_session, workspace, "lg-tk-13", parent=feature)
+
+    def targets() -> list[str]:
+        return [target_branch_name(db_session, t, workspace) for t in (milestone, feature, task)]
+
+    before = targets()
+    assert before == ["main", "integration/lg-ms-13", "integration/lg-ms-13"]
+
+    reparent_ticket(db_session, milestone, initiative.id)
+    db_session.commit()
+    assert targets() == before
+
+    reparent_ticket(db_session, milestone, None)
+    db_session.commit()
+    assert targets() == before
+
+
+def test_a_feature_filed_directly_under_an_initiative_roots_its_own_tree(
+    db_session: Session, workspace: Workspace
+):
+    """The hierarchy allows a feature or bug straight under an initiative."""
+    initiative = _initiative(db_session, "init-x-4")
+    feature = _ticket(
+        db_session, workspace, "lg-ft-14", parent=initiative, work_item_type=WorkItemType.FEATURE
+    )
+    capability = _ticket(
+        db_session, workspace, "lg-cp-14", parent=feature, work_item_type=WorkItemType.CAPABILITY
+    )
+
+    assert target_branch_name(db_session, feature, workspace) == "main"
+    assert target_branch_name(db_session, capability, workspace) == "integration/lg-ft-14"
+
+
+def test_an_initiative_passed_in_directly_is_refused(db_session: Session, workspace: Workspace):
+    initiative = _initiative(db_session, "init-x-5")
+
+    with pytest.raises(TargetBranchError, match="init-x-5"):
+        subtree_root(db_session, initiative)
+    with pytest.raises(TargetBranchError, match="init-x-5"):
+        integration_branch_for(initiative)
+    with pytest.raises(TargetBranchError, match="init-x-5"):
+        target_branch_name(db_session, initiative, workspace)
+
+
+def test_a_type_the_hierarchy_forbids_under_an_initiative_is_refused(
+    db_session: Session, workspace: Workspace
+):
+    """A task written straight under an initiative (bypassing the hierarchy
+    checks) has no tree to land in; it must not borrow the initiative's."""
+    initiative = _initiative(db_session, "init-x-6")
+    stray = _ticket(db_session, workspace, "lg-tk-16", parent=initiative)
+
+    with pytest.raises(TargetBranchError, match="lg-tk-16"):
+        target_branch_name(db_session, stray, workspace)
+
+
+def test_no_ticket_under_an_initiative_resolves_a_branch_named_after_it(
+    db_session: Session, workspace: Workspace, repo: Path
+):
+    """Every legal shape under an initiative, resolved for real against git."""
+    initiative = _initiative(db_session, "init-x-7")
+    tickets: list[Ticket] = []
+    for m in range(2):
+        ms = _ticket(
+            db_session,
+            workspace,
+            f"ms-7{m}",
+            parent=initiative,
+            work_item_type=WorkItemType.MILESTONE,
+        )
+        ft = _ticket(
+            db_session, workspace, f"ft-7{m}", parent=ms, work_item_type=WorkItemType.FEATURE
+        )
+        cp = _ticket(
+            db_session, workspace, f"cp-7{m}", parent=ft, work_item_type=WorkItemType.CAPABILITY
+        )
+        tk = _ticket(db_session, workspace, f"tk-7{m}", parent=cp)
+        bug = _ticket(db_session, workspace, f"bg-7{m}", parent=ms, work_item_type=WorkItemType.BUG)
+        tickets += [ms, ft, cp, tk, bug]
+    direct_ft = _ticket(
+        db_session, workspace, "ft-7d", parent=initiative, work_item_type=WorkItemType.FEATURE
+    )
+    direct_bug = _ticket(
+        db_session, workspace, "bg-7d", parent=initiative, work_item_type=WorkItemType.BUG
+    )
+    direct_cp = _ticket(
+        db_session, workspace, "cp-7d", parent=direct_ft, work_item_type=WorkItemType.CAPABILITY
+    )
+    tickets += [direct_ft, direct_bug, direct_cp]
+
+    resolved = {
+        t.external_id: resolve_target_branch(db_session, t, workspace, repo_root=repo)
+        for t in tickets
+    }
+
+    assert all(initiative.external_id not in branch for branch in resolved.values()), resolved
+    assert not any(initiative.external_id in b for b in _branches(repo))
+    assert {b for b in _branches(repo) if b.startswith("integration/")} == {
+        "integration/ms-70",
+        "integration/ms-71",
+        "integration/ft-7d",
+    }

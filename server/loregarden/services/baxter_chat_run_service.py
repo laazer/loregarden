@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Sequence
 
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.db.session import engine
@@ -25,6 +26,11 @@ from loregarden.services.baxter_chat_service import (
     latest_pending_turn,
     list_chat_messages,
     touch_chat_session,
+)
+from loregarden.services.chat_attachments import (
+    ChatAttachment,
+    dump_attachments_json,
+    load_attachments_json,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
 from loregarden.services.chat_publish import publish_chat_turn
@@ -47,7 +53,12 @@ CANCELLED_TURN_MESSAGE = f"{TRIAGE_AGENT_NAME} stopped this turn at your request
 
 
 def start_baxter_chat_turn(
-    session: Session, chat_session: BaxterChatSession, content: str, *, skill_name: str = ""
+    session: Session,
+    chat_session: BaxterChatSession,
+    content: str,
+    *,
+    skill_name: str = "",
+    attachments: Sequence[ChatAttachment] = (),
 ) -> tuple[BaxterChatMessage, BaxterChatMessage]:
     """Persist the user message and a pending assistant row, then return.
 
@@ -55,10 +66,11 @@ def start_baxter_chat_turn(
 
     ``skill_name`` is the skill picked from the composer's `/` menu. It rides on
     the user row so the background worker reads it from the same place it reads
-    the message — the request thread is long gone by then.
+    the message — the request thread is long gone by then. ``attachments``
+    ride there for the same reason; a turn may be files alone, with no text.
     """
     text = content.strip()
-    if not text:
+    if not text and not attachments:
         raise ValueError("Message content is required")
     skill = skill_name.strip()
     if skill and skill not in list_skills():
@@ -76,6 +88,7 @@ def start_baxter_chat_turn(
         content=text,
         status="complete",
         skill_name=skill,
+        attachments_json=dump_attachments_json(list(attachments)),
     )
     assistant_message = BaxterChatMessage(
         session_id=chat_session.id,
@@ -88,7 +101,7 @@ def start_baxter_chat_turn(
     # The opening message names the thread, so the archive is useful before the
     # first reply lands rather than only after it.
     if not chat_session.title or chat_session.title == UNTITLED_SESSION_TITLE:
-        chat_session.title = derive_session_title(text)
+        chat_session.title = derive_session_title(text or ", ".join(a.name for a in attachments))
     session.add(chat_session)
     session.commit()
     session.refresh(user_message)
@@ -171,6 +184,9 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                     history=history,
                     turn_id=assistant_id,
                     skill_name=latest_user.skill_name if latest_user else "",
+                    attachments=(
+                        load_attachments_json(latest_user.attachments_json) if latest_user else []
+                    ),
                 )
             except Exception as exc:
                 logger.exception("Baxter chat turn failed: %s", assistant_id)

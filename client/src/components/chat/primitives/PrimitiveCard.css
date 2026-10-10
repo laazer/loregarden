@@ -158,9 +158,9 @@
   font-weight: 650;
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    color 120ms ease;
+    border-color var(--t-fast) ease,
+    background var(--t-fast) ease,
+    color var(--t-fast) ease;
 }
 
 .lg-primitive-resource-btn:hover {
@@ -307,7 +307,7 @@
   padding: clamp(16px, 3vw, 40px);
   background: color-mix(in srgb, var(--bg0) 74%, transparent);
   backdrop-filter: blur(6px);
-  animation: lg-primitive-overlay-in 130ms ease-out;
+  animation: lg-primitive-overlay-in var(--t-fast) ease-out;
 }
 
 @keyframes lg-primitive-overlay-in {
@@ -1163,9 +1163,9 @@
   background: var(--bg1);
   box-shadow: none;
   transition:
-    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
+    transform var(--t-fast) cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color var(--t-fast) ease,
+    box-shadow var(--t-fast) ease;
 }
 
 .lg-primitive-ticket-list--v6 .tree-row--v6:hover {
@@ -1448,8 +1448,8 @@
   background: var(--bg1);
   border: 1px solid var(--bd);
   transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
+    border-color var(--t-fast) ease,
+    box-shadow var(--t-fast) ease;
 }
 
 .lg-primitive-ticket-tile:hover {
@@ -1462,6 +1462,11 @@
   position: absolute;
   top: 7px;
   right: 7px;
+}
+
+/* A host's extra control under the tile body — the initiative board's state menu. */
+.lg-primitive-ticket-tile-foot {
+  margin-top: 8px;
 }
 
 .lg-primitive-ticket-tile .lg-primitive-ticket-v6-title {
@@ -1848,4 +1853,17 @@
   background: color-mix(in srgb, var(--red) 18%, var(--bg3));
   border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
   color: var(--red);
+}
+
+/* An initiative's member, listed under it; the real row sits under its parent. */
+.lg-primitive-ticket-list--v6 .tree-row--v6.tree-row--member,
+.tree-row--member {
+  border-style: dashed;
+}
+
+.tree-member-note {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
 }

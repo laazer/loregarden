@@ -384,6 +384,36 @@ describe("AC2 — z-order is user-controllable, and focus raises", () => {
     );
   });
 
+  it("raises a container without moving its element, so a drag it started keeps its capture", async () => {
+    // A press on a header both raises the item and starts its drag. Moving the
+    // item's element to the end of the surface when the raise lands — which is
+    // what drawing in z-order does — detaches it, and a detached element loses
+    // pointer capture: the drag stops following the cursor and its `pointerup`
+    // lands somewhere else, so the gesture never ends. Stacking is `z-index`.
+    const { container } = await shown(threeItemCanvas());
+    const order = () =>
+      Array.from(surfaceEl(container).querySelectorAll("[data-canvas-item]"), (el) =>
+        el.getAttribute("data-canvas-item"),
+      );
+    const before = order();
+    const raised = canvasItemEl(container, "i-1");
+    const detached: Node[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) detached.push(...record.removedNodes);
+    });
+    observer.observe(surfaceEl(container), { childList: true });
+
+    fireEvent.pointerDown(dragHandle(container, "i-1"), { pointerId: 3, clientX: 10, clientY: 10 });
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    await waitFor(() => expect(drawnBox(container, "i-1").zIndex).toBe(2));
+    observer.disconnect();
+
+    expect(detached).not.toContain(raised);
+    expect(order()).toEqual(before);
+    expect(canvasItemEl(container, "i-1")).toBe(raised);
+  });
+
   it("writes nothing when the container clicked into is already at the front", async () => {
     // Focus raises on every click, and the front-most container is clicked most.
     const { container } = await shown(threeItemCanvas());

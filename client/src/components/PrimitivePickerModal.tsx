@@ -39,8 +39,8 @@ import { IconCloseButton } from "./IconCloseButton";
 import { PrimitivePicker } from "./views/PrimitivePicker";
 import { CONTAINER_PRIMITIVES } from "./views/primitives/registry";
 import type { RegisteredPrimitive } from "./views/primitives/types";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { Input } from "./ui/Input";
+import { ModalShell } from "./ui/ModalShell";
 
 /** Whether `entry` answers `query`, matched against everything the row shows. */
 function matches(entry: RegisteredPrimitive, query: string): boolean {
@@ -82,23 +82,32 @@ export interface PrimitivePickerModalProps {
   onClose: () => void;
 }
 
-export function PrimitivePickerModal({
+/**
+ * Portalled out of the pane (a zoomed canvas would scale it). The shell stays
+ * mounted so a close can play its exit; the list mounts only while open, so
+ * each visit starts with an empty search.
+ */
+export function PrimitivePickerModal({ open, ...props }: PrimitivePickerModalProps & { open: boolean }) {
+  // Two pickers can be open in one document — a grid of panes each has a
+  // header — so the title id is per instance rather than a constant.
+  const titleId = useId();
+  return createPortal(
+    <ModalShell open={open} onDismiss={props.onClose} labelledBy={titleId}>
+      {open ? <PrimitivePickerBody {...props} titleId={titleId} /> : null}
+    </ModalShell>,
+    document.body,
+  );
+}
+
+function PrimitivePickerBody({
   legend,
   entries = CONTAINER_PRIMITIVES,
   onPick,
   onClose,
-}: PrimitivePickerModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  titleId,
+}: PrimitivePickerModalProps & { titleId: string }) {
   const [query, setQuery] = useState("");
-  // Two pickers can be open in one document — a grid of panes each has a
-  // header — so the label/input pairing is per instance rather than a constant.
   const searchId = useId();
-  const titleId = useId();
-
-  // Through the shared stack rather than a listener of its own: two of these
-  // mounted at once both closed on a single press, because nothing decided
-  // whose press it was.
-  useDialogDismiss(onClose);
 
   const groups = useMemo(
     () =>
@@ -108,73 +117,63 @@ export function PrimitivePickerModal({
     [entries, query],
   );
 
-  return createPortal(
+  return (
     <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby={titleId}
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Pane</div>
-            <h2 id={titleId} className="modal-title">
-              {legend}
-            </h2>
-            <p className="modal-subtitle">
-              Every widget this build can put in a pane. You can change it later.
-            </p>
-          </div>
-          <IconCloseButton onClick={onClose} />
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Pane</div>
+          <h2 id={titleId} className="modal-title">
+            {legend}
+          </h2>
+          <p className="modal-subtitle">
+            Every widget this build can put in a pane. You can change it later.
+          </p>
         </div>
-
-        <div className="modal-body">
-          <div className="modal-field">
-            <label className="field-label" htmlFor={searchId}>
-              Search
-            </label>
-            <input
-              id={searchId}
-              className="input"
-              type="search"
-              value={query}
-              autoFocus
-              placeholder="Ticket, branch, terminal…"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-
-          {groups.length === 0 ? (
-            <p className="modal-hint">Nothing matches that.</p>
-          ) : (
-            groups.map((group) => (
-              // Wrapped, and the wrapper is load-bearing rather than tidy:
-              // `.primitive-picker` declares `min-height: 0`, which is right in
-              // a pane — a flex child that cannot shrink is what overflows one —
-              // and wrong as a child of `.modal-body`, which is itself a flex
-              // column. Left to shrink there, every list collapsed to nothing
-              // and its rows drew on top of the next group's heading. Seen in a
-              // browser; jsdom reports every element at 0px and cannot show it.
-              //
-              // The category is the group's heading *and* the list's accessible
-              // name, which is what `PrimitivePicker`'s legend already does.
-              // Reused rather than reimplemented so the option row is drawn in
-              // one place, and so this module still names no primitive.
-              <div className="primitive-picker-group" key={group.category}>
-                <PrimitivePicker
-                  legend={group.category}
-                  entries={group.entries}
-                  onPick={onPick}
-                />
-              </div>
-            ))
-          )}
-        </div>
+        <IconCloseButton onClick={onClose} />
       </div>
-    </>,
-    document.body,
+
+      <div className="modal-body">
+        <div className="modal-field">
+          <label className="field-label" htmlFor={searchId}>
+            Search
+          </label>
+          <Input
+            id={searchId}
+            className="input"
+            type="search"
+            value={query}
+            autoFocus
+            placeholder="Ticket, branch, terminal…"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+
+        {groups.length === 0 ? (
+          <p className="modal-hint">Nothing matches that.</p>
+        ) : (
+          groups.map((group) => (
+            // Wrapped, and the wrapper is load-bearing rather than tidy:
+            // `.primitive-picker` declares `min-height: 0`, which is right in
+            // a pane — a flex child that cannot shrink is what overflows one —
+            // and wrong as a child of `.modal-body`, which is itself a flex
+            // column. Left to shrink there, every list collapsed to nothing
+            // and its rows drew on top of the next group's heading. Seen in a
+            // browser; jsdom reports every element at 0px and cannot show it.
+            //
+            // The category is the group's heading *and* the list's accessible
+            // name, which is what `PrimitivePicker`'s legend already does.
+            // Reused rather than reimplemented so the option row is drawn in
+            // one place, and so this module still names no primitive.
+            <div className="primitive-picker-group" key={group.category}>
+              <PrimitivePicker
+                legend={group.category}
+                entries={group.entries}
+                onPick={onPick}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </>
   );
 }

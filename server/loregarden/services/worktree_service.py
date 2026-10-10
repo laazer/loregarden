@@ -9,6 +9,7 @@ from uuid import uuid4
 from loregarden.models.domain import (
     AgentRun,
     BaxterChatSession,
+    PrimaryCheckoutUse,
     Ticket,
     Workspace,
     Worktree,
@@ -20,6 +21,7 @@ from loregarden.services.git_branch import (
     validate_branch_name,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -507,6 +509,10 @@ class WorktreeService:
                 self.session.commit()
                 return True
 
+            # The merge checks `target_branch` out in the primary checkout below;
+            # refuse first if that checkout holds someone's uncommitted work (864).
+            require_clean_checkout(Path(self.repo_path), use=PrimaryCheckoutUse.MERGE_WORKTREE)
+
             # Detect conflicts before attempting merge
             has_conflicts = self.detect_conflicts(worktree, target_branch)
 
@@ -573,6 +579,11 @@ class WorktreeService:
             logger.info(f"Successfully merged worktree {worktree.id}")
             return True
 
+        except DirtyPrimaryCheckoutError:
+            # Nothing was touched: the worktree stays ACTIVE and mergeable once
+            # the primary is clean. Raised so the caller names the paths rather
+            # than reading a refusal as a failed merge.
+            raise
         except Exception:  # noqa: BLE001 - boundary: any failure fails the merge
             logger.exception("Error merging worktree %s", worktree.id)
             worktree.state = WorktreeState.FAILED

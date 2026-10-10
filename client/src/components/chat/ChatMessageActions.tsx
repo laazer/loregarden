@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { copyText } from "../../lib/clipboard";
 import { describeError, pushToast } from "../../state/toastStore";
 import { OverflowMenu, OverflowMenuItem } from "../OverflowMenu";
+import { Button } from "../ui/Button";
 import type { ChatMessageView } from "./chatUtils";
 
 /**
@@ -44,11 +45,11 @@ export function ChatMessageActions({
     // operator has to hear about — a Copy that silently did nothing is worse
     // than one that says so.
     copyText(body).then(
-      () => pushToast({ title: "Copied", message: "The reply is on your clipboard.", tone: "success" }),
+      () => pushToast({ title: "Copied", message: "The message is on your clipboard.", tone: "success" }),
       (error: unknown) =>
         pushToast({
           title: "Copy",
-          message: describeError(error, "Could not copy the reply"),
+          message: describeError(error, "Could not copy the message"),
           tone: "error",
         }),
     );
@@ -76,15 +77,19 @@ export function ChatMessageActions({
 
   return (
     <div className="lg-chat-message-actions">
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="lg-chat-message-action"
         onClick={copy}
         disabled={!body.trim()}
-        title="Copy this reply"
+        title="Copy this message"
       >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <rect x="9" y="9" width="12" height="12" rx="2" />
+          <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+        </svg>
         Copy
-      </button>
+      </Button>
       {onFork ? (
         <button
           type="button"

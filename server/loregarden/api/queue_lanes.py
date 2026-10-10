@@ -11,6 +11,8 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
+from loregarden.services.lane_count import MAX_LANE_COUNT, MIN_LANE_COUNT, lane_count
+from loregarden.services.lane_resize import resize_lanes
 from loregarden.services.queue_history import OUTCOMES, QueueHistoryService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.websocket_events import emit_execution_update
@@ -33,9 +35,41 @@ class AddToLaneRequest(BaseModel):
     timeout_seconds: int | None = Field(default=None, ge=30)
 
 
+class LaneCountRequest(BaseModel):
+    lane_count: int = Field(ge=MIN_LANE_COUNT, le=MAX_LANE_COUNT)
+
+
 class MoveEntryRequest(BaseModel):
     slot_number: int = Field(ge=1)
     position: int = Field(ge=1)
+
+
+@router.get("/count")
+def get_lane_count(session: Session = Depends(get_session)):
+    """How many lanes run at once, and the range it may be set within."""
+    return {
+        "lane_count": lane_count(session),
+        "min": MIN_LANE_COUNT,
+        "max": MAX_LANE_COUNT,
+    }
+
+
+@router.put("/count")
+def set_lane_count(
+    body: LaneCountRequest = Body(...),
+    session: Session = Depends(get_session),
+):
+    """Change the lane count. Lowering it never interrupts running work.
+
+    Idle lanes past the new count go at once; busy ones finish first. Entries
+    waiting in a retired lane move to the remaining lanes.
+    """
+    result = resize_lanes(session, body.lane_count)
+    return {
+        "lane_count": result.lane_count,
+        "retiring_lanes": result.retiring_lanes,
+        "moved_entries": result.moved_entries,
+    }
 
 
 @router.post("/{slot_number}/entries")
@@ -82,7 +116,8 @@ def get_lane_history(
         raise HTTPException(
             status_code=400, detail=f"Unknown outcome '{outcome}'; expected one of {OUTCOMES}"
         )
-    entries, total = QueueHistoryService(session).list_history(
+    history = QueueHistoryService(session)
+    entries, total = history.list_history(
         workspace_id=workspace_id,
         outcome=outcome,
         slot_number=slot_number,
@@ -95,7 +130,30 @@ def get_lane_history(
         "total": total,
         "limit": limit,
         "offset": offset,
+        "cleared_at": history.last_cleared_at(),
     }
+
+
+@router.post("/history/clear")
+def clear_lane_history(session: Session = Depends(get_session)):
+    """Hide everything that has finished so far from the history rail.
+
+    Nothing is deleted — see `QueueHistoryService.clear_history`. A lane's
+    needs-attention cards are not touched; those clear per lane.
+    """
+    return {"status": "cleared", "cleared_at": QueueHistoryService(session).clear_history()}
+
+
+@router.post("/{slot_number}/attention/dismiss")
+def dismiss_lane_attention(
+    slot_number: int = Path(..., ge=1),
+    session: Session = Depends(get_session),
+):
+    """Acknowledge every blocked/failed card a lane is holding at once."""
+    dismissed = QueueHistoryService(session).dismiss_lane(slot_number)
+    if dismissed:
+        emit_execution_update()
+    return {"status": "dismissed", "slot_number": slot_number, "dismissed": dismissed}
 
 
 @router.post("/entries/{entry_id}/dismiss")

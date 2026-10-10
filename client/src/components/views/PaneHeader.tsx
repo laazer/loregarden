@@ -186,27 +186,25 @@ export function PaneHeader({
           that moved the picker out in 557 and were already true here: 554
           measured a 167px form in a 149px pane with its Save below the fold,
           and a panel inside a zoomed canvas is scaled with the pane. */}
-      {editing && configurable && primitive !== undefined ? (
-        <PaneSettingsModal
-          containerId={containerId}
-          container={container}
-          primitive={primitive}
-          onClose={() => setEditing(false)}
-        />
-      ) : null}
+      <PaneSettingsModal
+        open={editing && configurable}
+        containerId={containerId}
+        container={container}
+        primitive={primitive}
+        onClose={() => setEditing(false)}
+      />
       {/* A dialog rather than a panel under the header (557): sixteen options
           do not fit in a pane, and one drawn inside a zoomed canvas would be
           scaled with it. `PrimitivePickerModal` portals out of both. */}
-      {picking ? (
-        <PrimitivePickerModal
-          legend="Change contents to"
-          onClose={() => setPicking(false)}
-          onPick={(primitiveId) => {
-            setPicking(false);
-            onPickPrimitive(containerId, primitiveId);
-          }}
-        />
-      ) : null}
+      <PrimitivePickerModal
+        open={picking}
+        legend="Change contents to"
+        onClose={() => setPicking(false)}
+        onPick={(primitiveId) => {
+          setPicking(false);
+          onPickPrimitive(containerId, primitiveId);
+        }}
+      />
     </>
   );
 }

@@ -1,9 +1,12 @@
 import { useLocation, useParams } from "react-router-dom";
 
+import { useTicketRefStore } from "../state/ticketRefStore";
 import { getRouterNavigate } from "./routerBridge";
 import {
   artifactTabFromPath,
-  isArtifactTab,
+  canonicalArtifactTab,
+  INITIATIVE_SUGGESTIONS_PATH,
+  initiativePath,
   isStudioSection,
   pageFromPath,
   pathForPage,
@@ -11,7 +14,9 @@ import {
   studioResourceFromPath,
   studioResourcePath,
   studioSectionFromPath,
+  ticketIdFromPath,
   ticketPath,
+  ticketUuidForRef,
   type AppPage,
   type ArtifactTab,
   type StudioSection,
@@ -20,6 +25,10 @@ import {
 export type { AppPage, ArtifactTab, StudioSection } from "./appNavigation";
 export {
   artifactTabFromPath,
+  canonicalArtifactTab,
+  INITIATIVE_SUGGESTIONS_PATH,
+  initiativeIdFromPath,
+  initiativePath,
   isArtifactTab,
   isStudioNewResource,
   isStudioSection,
@@ -37,12 +46,25 @@ export {
   studioWorkflowPath,
   ticketIdFromPath,
   ticketPath,
+  ticketUuidForRef,
 } from "./appNavigation";
 
 export function navigateToPage(page: AppPage, replace = false) {
   const navigate = getRouterNavigate();
   if (!navigate) return;
   navigate(pathForPage(page), { replace });
+}
+
+export function navigateToInitiative(initiativeId: string, replace = false) {
+  const navigate = getRouterNavigate();
+  if (!navigate) return;
+  navigate(initiativePath(initiativeId), { replace });
+}
+
+export function navigateToInitiativeSuggestions() {
+  const navigate = getRouterNavigate();
+  if (!navigate) return;
+  navigate(INITIATIVE_SUGGESTIONS_PATH);
 }
 
 export function navigateToStudio(section: StudioSection = "agents", replace = false) {
@@ -103,15 +125,28 @@ export function useAppPage(): AppPage {
   return pageFromPath(pathname);
 }
 
+/** The open ticket's UUID, from a `/tickets/:ticketId` route param.
+ *
+ * The param is usually the shareable id; see `ticketIdFromPath`.
+ */
 export function useTicketIdFromRoute(): string | null {
   const { ticketId } = useParams<{ ticketId?: string }>();
-  return ticketId ?? null;
+  const uuidByRef = useTicketRefStore((s) => s.uuidByRef);
+  return ticketId ? ticketUuidForRef(ticketId, uuidByRef) : null;
+}
+
+/** The open ticket's UUID, for chrome that sits outside the ticket route. */
+export function useTicketIdFromPath(): string | null {
+  const { pathname } = useLocation();
+  const uuidByRef = useTicketRefStore((s) => s.uuidByRef);
+  return ticketIdFromPath(pathname, uuidByRef);
 }
 
 export function useArtifactTabFromRoute(defaultTab: ArtifactTab = "diff"): ArtifactTab {
   const { pathname } = useLocation();
   const { artifactTab } = useParams<{ artifactTab?: string }>();
-  if (artifactTab && isArtifactTab(artifactTab)) return artifactTab;
+  const fromParam = canonicalArtifactTab(artifactTab);
+  if (fromParam) return fromParam;
   return artifactTabFromPath(pathname) ?? defaultTab;
 }
 

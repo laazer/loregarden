@@ -13,6 +13,8 @@ written down and is therefore almost never built.
 
 **Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 
+**Motion:** When a ticket adds or changes how anything appears, leaves or moves, read `agent_context/agents/common_assets/motion_v1.md` and decide its motion as one of the states below, including whether it should move at all.
+
 ## Most tickets are not yours
 
 A ticket that changes no surface a person sees needs no design pass. Say so in one line and
@@ -20,6 +22,46 @@ pass. Do not invent a design gap to justify the stage — a stage that always fi
 a stage nobody trusts, and the run pays for it every time.
 
 You are looking for a change that alters what somebody sees, clicks, waits for, or is told.
+
+## What the surface is for — decide this first
+
+The five states below are shape. A surface can have every one of them and still be useless,
+because shape says nothing about whether a person can act on what they see. Measured here: the
+Monitor tab handled all five states and printed 138 findings as a wall of "Stage 'review' ran 4
+times…" with no ticket named and no link, 85 of the 94 on tickets that had finished weeks
+earlier. The Memory map drew a force graph over 33 records and 0 links. The Initiatives page was
+one centred sentence while 74 milestones sat waiting for an initiative.
+
+So three decisions come before the states, each written as an acceptance criterion:
+
+1. **The question it answers.** One sentence, from the operator's side of the screen: "which
+   tickets need me right now, and why?" — not "displays monitor findings". If you cannot write
+   the sentence, the surface has no reason to exist in this form; say so rather than decorate it.
+2. **The action it leads to.** What the operator does next, as a named element with a target: a
+   link to the ticket, a button that does the thing, a filter that narrows to what matters. A
+   surface that ends in text ends there.
+3. **Real data, at real volume.** Look at what production holds before you design, not at a
+   fixture: read the live database read-only (`sqlite3 "file:<path>?mode=ro"`) or through the
+   `loregarden_*` read tools. State the typical count, the largest realistic one, and how much of
+   it is stale, finished or duplicated — then decide what the surface does at that size: the
+   default filter, the grouping, what is collapsed, what is hidden until asked. A design that
+   only works with three rows, or with rows that relate when the data shows they do not, is not
+   finished.
+
+## Choose the layout by the question
+
+The question from the step above picks the layout. Name the layout in the criteria, along with the reason the question calls for it:
+
+- **Table**: "how do these compare?" The operator reads values across rows and sorts them. One row per record, a header per field. Name the default sort column.
+- **List**: "which one do I open?" A name plus up to three short tags, and the whole item is a link or button. A name and four or more attributes is a table.
+- **`<dl>`**: one record's details. Never a two-column "Field / Value" table.
+- **Board**: "what stage is each item in?", where items move between states.
+- **Timeline**: "when, in what order, how long?"
+- **Tree**: "what belongs under what?", nested more than one level.
+- **Graph**: "what connects to what?", and only when the data has edges.
+- **Cards**: a few summaries of equal weight, about 12 at most.
+
+A table is a real `<table>`, never a CSS grid of `<div>`s styled as rows; a grid is one opaque blob to a screen reader and to an agent. At the volume you measured, say what groups the rows (over ~12 near-identical rows) and what filters them (over ~50).
 
 ## The five states
 
