@@ -669,6 +669,37 @@ def check_gh_account(session: Session, workspace: Workspace, repo_root: Path) ->
     )
 
 
+def check_agent_detach_transport(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """Whether a detached agent run will get a session an operator can attach to.
+
+    WARN rather than FAIL: a run without tmux still survives a restart and still
+    streams — that is the `sh -c` wrapper's three output files, not tmux's. What
+    is lost is `tmux attach`, so the honest report is "this works, and this one
+    affordance is missing", said before a run instead of inferred afterwards
+    from an `agent_transport` column reading `file`.
+    """
+    if shutil.which("tmux"):
+        return _ok(
+            DoctorCheck.AGENT_DETACH_TRANSPORT,
+            "tmux is installed; a detached run gets a session an operator can attach to.",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.AGENT_DETACH_TRANSPORT,
+        status=DoctorStatus.WARN,
+        finding=(
+            "tmux is not installed, so detached agent runs use the file transport. They "
+            "still survive a restart and still stream, but there is no session to "
+            "`tmux attach` to while one is working."
+        ),
+        remediation=(
+            "Install tmux (`brew install tmux`), or set "
+            "LOREGARDEN_AGENT_DETACH_TRANSPORT=file in .env to pin the choice explicitly."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -687,6 +718,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.MIGRATION_LEDGER: check_migration_ledger,
     DoctorCheck.MIGRATION_CHAIN: check_migration_chain,
     DoctorCheck.GH_ACCOUNT: check_gh_account,
+    DoctorCheck.AGENT_DETACH_TRANSPORT: check_agent_detach_transport,
 }
 
 

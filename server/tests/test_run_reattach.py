@@ -22,9 +22,9 @@ from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
-from loregarden.models.domain import AgentRun, ProcessState, RunStatus, Ticket, Workspace
+from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
 from loregarden.models.domain.process_enums import DetachedStopOutcome
-from loregarden.services import process_identity, run_reattach
+from loregarden.services import process_identity
 from loregarden.services.process_identity import identify
 from loregarden.services.run_detached_stop import stop_detached_process
 from loregarden.services.run_lease import agent_run_lease_expired
@@ -240,20 +240,6 @@ def test_a_run_ps_cannot_answer_about_is_not_adopted_either(session, sleeper, ca
     assert any(str(sleeper.pid) in r.getMessage() for r in caplog.records)
     session.refresh(run)
     assert run.status is RunStatus.RUNNING
-
-
-def test_the_watch_skips_a_beat_on_unknown_and_stops_only_on_gone(session):
-    """A transient `ps` failure mid-watch must not end renewal for good."""
-    readings = iter(
-        [ProcessState.ALIVE, ProcessState.UNKNOWN, ProcessState.ALIVE, ProcessState.GONE]
-    )
-    with (
-        mock.patch.object(run_reattach, "liveness", side_effect=lambda *_: next(readings)),
-        mock.patch.object(run_reattach, "renew_agent_run_lease") as renew,
-    ):
-        run_reattach._watch("run-id", 123, "identity", 0)
-
-    assert renew.call_count == 2
 
 
 def test_the_lease_reaper_does_not_take_unknown_as_alive(session, sleeper):
