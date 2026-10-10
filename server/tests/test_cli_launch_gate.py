@@ -17,11 +17,13 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors import launch_gate
 from loregarden.agents.executors.launch_gate import acquire_launch_slot
 from loregarden.agents.executors.print_mode import run_print_mode
+from loregarden.config import settings
 from sqlmodel import Session
 
 
@@ -47,9 +49,29 @@ def _no_leaked_launch_slot():
 class _CollectingStreamer:
     def __init__(self) -> None:
         self.lines: list[str] = []
+        #: Set by `run_print_mode` after every appended line (spec S4/S5).
+        self.tail_offset = 0
+        #: (tag, text, force) for every `append` — the SYS transport line.
+        self.tagged: list[tuple[str, str, bool]] = []
 
     def append_stream_line(self, line: str) -> None:
         self.lines.append(line)
+
+    def append(self, tag: str, text: str, *, force: bool = False) -> None:
+        """The tagged-line sink `RunLogStreamer` also exposes.
+
+        `run_print_mode` announces the transport it spawned on through this,
+        beside `record_agent_transport`. Collected separately from the stream
+        lines so this module's assertions still see only the agent's output.
+        """
+        self.tagged.append((tag, text, force))
+
+
+@pytest.fixture(name="run_log_dir", autouse=True)
+def run_log_dir_fixture(tmp_path, monkeypatch):
+    """The agent writes its own output files now; keep them out of the repo."""
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run-logs")
+    return tmp_path / "run-logs"
 
 
 def _acquire_in_thread(adapter: str) -> tuple[threading.Event, threading.Thread, list]:
@@ -171,7 +193,11 @@ def test_print_mode_frees_the_slot_once_the_process_emits(db_session: Session, t
                 # must not fire while this test is still asserting.
                 timeout=60,
                 streamer=streamer,
-                run_id="test-launch-gate-run",
+                # Unique per call: a fixed pair gives every spawning test in
+                # this module one tmux session name, and the second
+                # `tmux new-session -d -s <existing>` exits 1 under `pytest -n`.
+                run_id=f"test-launch-gate-run-{uuid4().hex[:8]}",
+                run_code=f"run_{uuid4().hex[:6]}",
             )
         )
 

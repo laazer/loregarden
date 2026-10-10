@@ -1,11 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import { CopyValueButton } from "./CopyValueButton";
 import { IconCloseButton } from "./IconCloseButton";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
 import { ModalShell } from "./ui/ModalShell";
+import {
+  LOG_FEED_EMPTY,
+  LOG_FEED_ERROR,
+  LOG_FEED_LOADING,
+  LOG_FEED_RECONNECTING,
+  detachedEmptyText,
+  logFeedState,
+} from "../lib/logFeedState";
 
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
@@ -29,6 +38,19 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
   const data = log.data;
   const lines = data?.lines ?? [];
   const live = data?.live ?? null;
+  const transport = data?.transport ?? "";
+  const attachCommand = data?.attach_command ?? "";
+  const isRunning = ACTIVE_STATUSES.has(data?.status?.toLowerCase() ?? "");
+  // The five states are decided in one module both log panes import; fixing
+  // this one alone is how the other keeps blanking on a restart.
+  const feed = logFeedState({
+    lines,
+    live,
+    isPending: log.isPending,
+    isError: log.isError,
+    isRunning,
+    transport,
+  });
 
   return (
     <ModalShell open onDismiss={onClose} labelledBy="run-log-modal-title" panelClassName="modal-panel-wide">
@@ -40,10 +62,14 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
           </h2>
           {data && (
             <p className="modal-subtitle">
-              {data.agent_id || "—"} · {data.stage_key || "—"} · {data.status}
+              {data.agent_id || "—"} · {data.stage_key || "—"} · {data.status} ·{" "}
+              {transport || "—"}
             </p>
           )}
         </div>
+        {attachCommand ? (
+          <CopyValueButton value={attachCommand} what="tmux attach command" />
+        ) : null}
         <IconCloseButton onClick={onClose} />
       </div>
 
@@ -62,14 +88,20 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
           </div>
         )}
 
-        {log.isPending ? (
-          <div className="log-feed-empty">Loading log…</div>
-        ) : log.isError ? (
-          <div className="log-feed-empty">Could not load this run&rsquo;s log.</div>
-        ) : lines.length === 0 && !live ? (
-          <div className="log-feed-empty">No log recorded for this run.</div>
+        {feed === "loading" ? (
+          <div className="log-feed-empty">{LOG_FEED_LOADING}</div>
+        ) : feed === "error" ? (
+          <div className="log-feed-empty">{LOG_FEED_ERROR}</div>
+        ) : feed === "empty" ? (
+          <div className="log-feed-empty">{LOG_FEED_EMPTY}</div>
+        ) : feed === "empty-detached" ? (
+          <div className="log-feed-empty">{detachedEmptyText(transport)}</div>
         ) : (
           <div className="log-feed">
+            {feed === "reconnecting" && (
+              <div className="log-feed-empty">{LOG_FEED_RECONNECTING}</div>
+            )}
+            {/* ux-ok: zero rows never reach this branch; logFeedState returns "empty"/"empty-detached" for them, rendered above. */}
             {lines.map((line, index) => (
               <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
             ))}
@@ -78,10 +110,7 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
         )}
 
         {runId && (
-          <RunSteerComposer
-            runId={runId}
-            isActive={ACTIVE_STATUSES.has(data?.status?.toLowerCase() ?? "")}
-          />
+          <RunSteerComposer runId={runId} isActive={isRunning} />
         )}
 
         {data?.stderr && (

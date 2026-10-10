@@ -16,7 +16,11 @@ from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
-from loregarden.agents.executors.run_evidence import record_run_evidence
+from loregarden.agents.executors.run_evidence import (
+    record_run_evidence,
+    run_context_artifacts,
+    run_paths_before,
+)
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -51,7 +55,6 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
-from loregarden.services.artifact_records import RUN_CONTEXT_ARTIFACT_TITLE
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
@@ -180,12 +183,11 @@ class CliAgentExecutor:
         stage_def = self._resolve_stage_def(ticket, run)
         ticket_runtime = get_ticket_orchestration_runtime(ticket)
 
-        # Bracket the run so its commit can be scoped to what it touched. Paths
-        # already dirty beforehand belong to whatever else is in the workspace
-        # and must not be attributed to this ticket.
-        # One read serves the boundary and the evidence ledger too: nothing
-        # between here and the agent's start touches the tree. See
-        # `TreeSnapshot.bracket_paths` for an unreadable tree.
+        # One read serves the run's git boundary and the evidence ledger:
+        # nothing between here and the agent's start touches the tree. What the
+        # run inherited is read back off its own row afterwards
+        # (`run_paths_before`), so the reattaching path and this one give one
+        # answer rather than two.
         before = read_tree(repo_root)
 
         parked = self._record_and_check_boundary(
@@ -292,12 +294,19 @@ class CliAgentExecutor:
                     )
                     stdout, stderr, status = result.stdout, result.stderr, result.status
                 else:
+                    # The transport is resolved by whoever performs the spawn,
+                    # and announced from the answer that spawn returned — see
+                    # `print_mode.run_print_mode`. Resolved here as well it was
+                    # two independent readings of one fact, and the SYS line was
+                    # written BEFORE the spawn, so a tmux spawn that raised left
+                    # a line in the feed naming a session that never existed.
                     stdout, stderr, status = run_print_mode(
                         invocation=invocation,
                         repo_root=repo_root,
                         timeout=timeout,
                         streamer=streamer,
                         run_id=run.id,
+                        run_code=run.run_code,
                     )
 
                 streamer.finalize(status=status, stderr=stderr)
@@ -305,11 +314,11 @@ class CliAgentExecutor:
                     self.session,
                     run,
                     repo_root=repo_root,
-                    paths_before=before.bracket_paths(),
+                    paths_before=run_paths_before(run),
                     stdout=stdout,
                     invocation=invocation,
                 )
-                artifacts = self._build_context_artifact(ticket, run, status)
+                artifacts = run_context_artifacts(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
                     status=status,
@@ -327,7 +336,7 @@ class CliAgentExecutor:
                     invocation=invocation,
                     fallback_timeout=timeout,
                     repo_root=repo_root,
-                    paths_before=before.bracket_paths(),
+                    paths_before=run_paths_before(run),
                     streamer=streamer,
                     advance_workflow=advance_workflow,
                 )
@@ -1052,32 +1061,3 @@ class CliAgentExecutor:
             },
             run_id=run.id,
         )
-
-    def _build_context_artifact(
-        self,
-        ticket: Ticket,
-        run: AgentRun,
-        status: RunStatus,
-    ) -> list[dict]:
-        return [
-            {
-                "kind": "context",
-                "title": RUN_CONTEXT_ARTIFACT_TITLE,
-                "content": {
-                    "sections": [
-                        {
-                            "title": "Execution",
-                            "rows": [
-                                {"k": "Run", "v": run.run_code},
-                                {"k": "Ticket", "v": ticket.external_id},
-                                {"k": "Agent", "v": run.agent_id},
-                                {"k": "Skill", "v": run.skill_name or "—"},
-                                {"k": "Stage", "v": run.stage_key},
-                                {"k": "Command", "v": run.command or "—"},
-                                {"k": "Status", "v": status.value},
-                            ],
-                        }
-                    ]
-                },
-            },
-        ]

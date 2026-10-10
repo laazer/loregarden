@@ -1,5 +1,6 @@
 import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
+import type { LogLine } from "./runLogTypes";
 
 export type { TicketDependencyRef };
 
@@ -247,38 +248,7 @@ export interface DiffArtifact {
   lines?: DiffLine[];
 }
 
-export interface LogLine {
-  time: string;
-  tag: string;
-  text: string;
-}
-
-/** One run's rendered log, as served by GET /api/runs/{id}/log. */
-export interface RunLog {
-  id: string;
-  run_code: string;
-  agent_id: string;
-  skill_name: string;
-  stage_key: string;
-  status: string;
-  command: string;
-  started_at: string | null;
-  finished_at: string | null;
-  /** Empty for runs that predate the log streamer. */
-  lines: LogLine[];
-  live: string | null;
-  stderr: string;
-}
-
-/** An operator's message to a run that is already in flight. */
-export interface RunMessage {
-  id: string;
-  run_id: string;
-  content: string;
-  created_at: string;
-  /** Null until the bridge has written it into the agent's stdin. */
-  delivered_at: string | null;
-}
+export type { LogLine, RunLog, RunMessage, RunMessagesPayload } from "./runLogTypes";
 
 /**
  * A question asked while a run was working — an aside.

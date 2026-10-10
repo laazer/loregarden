@@ -25,6 +25,28 @@ class ProcessState(StrEnum):
     UNKNOWN = "unknown"
 
 
+class AgentTransport(StrEnum):
+    """How an agent process was detached from the server that spawned it.
+
+    The member is FILE rather than SETSID because this value is read by a
+    person: it crosses the wire verbatim and the run log modal renders it as
+    one word, so server and client share one vocabulary instead of a server
+    word translated at the boundary.
+
+    The mechanism is the same either way — `start_new_session=True` plus the
+    `sh -c` wrapper of `services.run_output_files`, which both transports run
+    identically. What TMUX buys is operator attach: a human can `tmux attach`
+    to a live agent. It is also strictly *less* reliable, since its server can
+    die independently of both the agent and loregarden, which is why survival
+    rests on the wrapper rather than on it.
+    """
+
+    #: The wrapper is a tmux pane, so the run has a session to attach to.
+    TMUX = "tmux"
+    #: The wrapper is a plain session-leader subprocess; output is the files only.
+    FILE = "file"
+
+
 class DetachedStopOutcome(StrEnum):
     """What an operator stop did to a detached agent process.
 
@@ -43,4 +65,4 @@ class DetachedStopOutcome(StrEnum):
     NOT_OURS = "not_ours"
 
 
-__all__ = ["DetachedStopOutcome", "ProcessState"]
+__all__ = ["AgentTransport", "DetachedStopOutcome", "ProcessState"]

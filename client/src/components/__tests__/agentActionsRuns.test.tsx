@@ -69,7 +69,7 @@ beforeAll(() => {
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   api.ticket.mockResolvedValue(OPEN);
-  api.runMessages.mockResolvedValue({ messages: [], refusal: "" });
+  api.runMessages.mockResolvedValue({ messages: [], refusal: "", cancel_requested_at: null });
   api.sendRunMessage.mockResolvedValue({ id: "m1" });
   api.cancelRun.mockResolvedValue({});
   api.queueRunAction.mockResolvedValue({});

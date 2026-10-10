@@ -1,28 +1,54 @@
-"""Run a CLI agent in print mode: spawn it, stream its lines, hold two deadlines.
+"""Supervise a CLI agent in print mode: tail its output file, hold two deadlines.
 
-Extracted from `CliAgentExecutor`, which had grown past the organization gate's
-class size cap. The seam is natural: nothing here reads executor state. It is a
-subprocess, a line reader and two clocks, and the caller supplies everything
-else.
+The agent is no longer this process's pipe. `agent_spawn` starts an `sh -c`
+wrapper that redirects the agent's own stdout, stderr and exit code into three
+files; this module tails `.out`, holds the budgets, and shapes the result. The
+output therefore outlives any reader — which is what lets the process that
+replaces this one after a restart pick the same run up (`run_resupervise`).
 
-The two clocks are the point. `timeout` is an *idle* budget — the longest the
-agent may go producing no output before it is presumed hung — and as long as it
-keeps streaming it may run to an absolute ceiling of
-`timeout * TIMEOUT_HARD_CAP_MULTIPLIER`. A long-but-progressing test run is not
-killed mid-progress; a chatty runaway is still bounded. Which one fired is
-recorded on the raised `RunTimeout`, because "it said nothing" and "it would not
-stop" are opposite failures that read identically as elapsed seconds.
+Two things here break quietly if they are got wrong:
+
+* **The loop's terminator.** EOF on a regular file is the *normal* state of a
+  file being appended to, so a loop ending on `readline() is None` truncates
+  the transcript — including the `<<<LOREGARDEN_STAGE_REPORT>>>` block the
+  orchestrator routes on. It may only end on the wrapper being gone, after
+  which it drains and flushes the unterminated remainder once.
+* **The kill.** `proc.kill()` now reaches the `sh` wrapper, not the agent, and
+  killing a shell does not kill what it is waiting on. A cancel or a hard cap
+  that killed only the wrapper would leave the agent running, detached, still
+  appending to `.out` and still holding the worktree the orchestrator is about
+  to commit — while the row reads CANCELLED. So both branches signal the
+  process *group*, which the wrapper leads.
+
+The two clocks are otherwise unchanged. `timeout` is an *idle* budget — the
+longest the agent may go producing no output before it is presumed hung — and
+as long as it keeps streaming it may run to an absolute ceiling of
+`timeout * TIMEOUT_HARD_CAP_MULTIPLIER`. Which one fired is recorded on the
+raised `RunTimeout`, because "it said nothing" and "it would not stop" are
+opposite failures that read identically as elapsed seconds.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.agents.cli_adapters import invocation_env
+from loregarden.agents.executors.agent_spawn import (
+    SpawnedAgent,
+    record_agent_transport,
+    resolve_transport,
+    spawn_agent,
+    tmux_session_gone,
+    transport_line,
+)
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
+from loregarden.config import settings
+from loregarden.dot_line import SYS
 from loregarden.models.domain import RunStatus
 from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
@@ -32,35 +58,16 @@ from loregarden.services.run_errors import (
     RunTimeoutKind,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
-from loregarden.services.subprocess_lines import SubprocessLineReader
+from loregarden.services.run_output_files import (
+    RunOutputPaths,
+    RunOutputTail,
+    paths_for,
+    read_output_text,
+    recorded_exit_status,
+    run_file_stem,
+)
 
-
-def _spawn_print_process(invocation, repo_root: Path):
-    """Open the CLI subprocess in its own session, and feed it any stdin prompt.
-
-    `start_new_session` is what detaches it. Without it the agent is in this
-    process's group, so a Ctrl-C, a reload, or anything else that signals the
-    group takes a turn that may be minutes in — and backend edits *require* a
-    reload to be picked up, so that happens by design rather than by accident.
-
-    Detaching alone does not make the run recoverable; 470 is what reattaches
-    to it. What this owes 470 is a pid it can trust, which is why the caller
-    records an identity alongside the number.
-    """
-    proc = subprocess.Popen(
-        invocation.argv,
-        cwd=invocation.cwd or str(repo_root),
-        env=invocation_env(invocation),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-        bufsize=0,
-        start_new_session=True,
-    )
-    if invocation.stdin_prompt and proc.stdin:
-        proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-        proc.stdin.close()
-    return proc
+logger = logging.getLogger(__name__)
 
 
 def _record_print_line(
@@ -69,32 +76,54 @@ def _record_print_line(
     stdout_lines: list[str],
     launch_slot,
     streamer: RunLogStreamer,
+    tail: RunOutputTail,
 ) -> None:
     line = line.rstrip("\n")
     stdout_lines.append(line)
     # Output proves this process is past its credential read, so a
     # sibling lane may start authenticating now.
     launch_slot.release()
+    # Set before the append, not after: `append_stream_line` can itself trigger
+    # a persist, and the offset written in that transaction has to be the one
+    # just PAST the row it is being written with. Set afterwards it lags by a
+    # line, and the next restart re-ingests that line.
+    streamer.tail_offset = tail.offset
     streamer.append_stream_line(line)
 
 
 def _drain_print_stdout(
-    reader: SubprocessLineReader,
+    tail: RunOutputTail,
     *,
     stdout_lines: list[str],
     launch_slot,
     streamer: RunLogStreamer,
 ) -> None:
-    """Empty the pipe after exit so trailing stage-report lines are not lost."""
+    """Empty the file after exit, then recover any unterminated last line.
+
+    `flush_partial` is legal here and only here: the wrapper has exited, so the
+    file is complete and nothing is still writing. An agent killed mid-line, or
+    one that simply never printed its newline, has that line as the only record
+    of what it was doing.
+    """
     while True:
-        leftover = reader.readline(timeout=0)
+        leftover = tail.readline(timeout=0)
         if leftover is None:
-            return
+            break
         _record_print_line(
             leftover,
             stdout_lines=stdout_lines,
             launch_slot=launch_slot,
             streamer=streamer,
+            tail=tail,
+        )
+    remainder = tail.flush_partial()
+    if remainder is not None:
+        _record_print_line(
+            remainder,
+            stdout_lines=stdout_lines,
+            launch_slot=launch_slot,
+            streamer=streamer,
+            tail=tail,
         )
 
 
@@ -136,6 +165,73 @@ class _Budgets:
         self.idle_deadline = time.time() + self.timeout
 
 
+def _wrapper_exited(spawned: SpawnedAgent) -> bool:
+    """Whether the wrapper is gone, on either transport.
+
+    The FILE transport's wrapper is this process's child, so `poll()` is both
+    the test and the reap — `os.kill(pid, 0)` would succeed on a zombie and read
+    a finished run as a live one. A tmux pane is not our child, so the pane's
+    pid is asked directly and tmux does the reaping.
+
+    No pid at all is only reachable on tmux (`_spawn_in_tmux`), and tmux is
+    then the only thing that can still answer: it destroys a session with its
+    last pane, so a session that is still there is an agent still working.
+    Reading "no pid" as "finished" outright would settle a live run and have
+    the orchestrator commit the tree while the agent was still writing to it.
+    """
+    if spawned.handle is not None:
+        return spawned.handle.poll() is not None
+    if spawned.pid is None:
+        return spawned.session is None or tmux_session_gone(spawned.session)
+    try:
+        os.kill(spawned.pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        # A live process holds the pid and it is no longer ours to signal. Not a
+        # death — reading it as one would settle a working run — but it should
+        # not happen to a wrapper this process started, so it is reported rather
+        # than absorbed into "still running".
+        logger.warning(
+            "pid %s is alive but no longer ours to signal; treating the run as still in "
+            "flight, which will end at its hard cap if the pid was reused",
+            spawned.pid,
+        )
+        return False
+    return False
+
+
+def _kill_agent_group(spawned: SpawnedAgent) -> None:
+    """Signal the whole process group the wrapper leads.
+
+    Not `handle.kill()`: that reaches the `sh` wrapper, and killing a shell does
+    not kill what it is waiting on. The agent is a child of the wrapper, in the
+    wrapper's group, so this is what reaches it — the same identity the detached
+    stop path rests on.
+
+    A run with no pid has no group left to signal; `_wrapper_exited` already
+    reads it as finished, so there is nothing here to do.
+    """
+    if spawned.pid is None:
+        return
+    try:
+        os.killpg(os.getpgid(spawned.pid), signal.SIGKILL)
+    except ProcessLookupError:
+        return  # silent-ok: the group is already gone, which is the outcome asked for
+    except OSError:
+        logger.warning(
+            "Could not signal the process group of pid %s; the agent may still be running",
+            spawned.pid,
+            exc_info=True,
+        )
+    if spawned.handle is not None:
+        # Reap our own child so it does not linger as a zombie.
+        try:
+            spawned.handle.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("pid %s did not exit after a group SIGKILL", spawned.pid)
+
+
 def run_print_mode(
     *,
     invocation,
@@ -143,10 +239,25 @@ def run_print_mode(
     timeout: int,
     streamer: RunLogStreamer,
     run_id: str,
+    run_code: str,
 ) -> tuple[str, str, RunStatus]:
+    """Run `invocation` detached and return its stdout, stderr and status.
+
+    `run_code` is taken explicitly rather than read off the streamer: the file
+    stem is collision-critical — a shared stem lets a reattaching server settle
+    a live run from a dead one's `.rc` — so the key's provenance belongs in the
+    signature rather than in a collaborator's mutable attribute.
+    """
+    paths = paths_for(run_code, run_id)
     launch_slot = acquire_launch_slot(invocation.adapter)
     try:
-        proc = _spawn_print_process(invocation, repo_root)
+        spawned = spawn_agent(
+            invocation,
+            repo_root,
+            run_id=run_id,
+            run_code=run_code,
+            transport=resolve_transport(settings.agent_detach_transport),
+        )
     except BaseException:
         launch_slot.release()
         raise
@@ -154,33 +265,50 @@ def run_print_mode(
     # Recorded together, and immediately: the identity is the process start
     # time, so it has to be read while this pid is still certainly ours. A
     # pid stored without one is a number a later process can wear.
-    record_process_identity(run_id, proc.pid)
+    #
+    # An absent pid is recorded as nothing rather than as a zero: the agent
+    # exited before tmux could name its pane, so there is no process to
+    # identify, and `run_reattach` declining to adopt a run with no identity
+    # is the right answer for one that has already finished.
+    if spawned.pid is not None:
+        record_process_identity(run_id, spawned.pid)
+    record_agent_transport(run_id, spawned.transport_used)
+    # Announced from `transport_used` rather than from a second reading of the
+    # host, and AFTER the spawn rather than before it: a tmux spawn that raises
+    # must not leave a line in the feed naming a session that never existed.
+    streamer.append(
+        SYS.name,
+        transport_line(spawned.transport_used, run_file_stem(run_code, run_id)),
+        force=True,
+    )
 
     stdout_lines: list[str] = []
-    assert proc.stdout is not None
-    reader = SubprocessLineReader(proc.stdout)
+    tail = RunOutputTail(paths.out)
     budgets = _Budgets.starting_now(timeout)
     cancelled = False
+    timed_out = False
     try:
         while True:
             now = time.time()
             expired = budgets.expired(now)
             if expired is not None:
-                proc.kill()
+                _kill_agent_group(spawned)
+                timed_out = True
                 raise _timeout_expired(invocation.argv, budgets.start, stdout_lines, kind=expired)
             if cancel_requested(run_id):
-                proc.kill()
+                _kill_agent_group(spawned)
                 cancelled = True
                 break
-            exited = proc.poll() is not None
-            # After exit, keep draining with a short poll so the last
-            # buffered lines (e.g. a stage-report block) are not dropped
-            # by a timeout=0 select race against the closing pipe.
-            line = reader.readline(timeout=0.05 if exited else 0.5)
+            exited = _wrapper_exited(spawned)
+            # A short poll after exit: the file is complete, so there is nothing
+            # to wait for, only the rest of it to read.
+            line = tail.readline(timeout=0 if exited else 0.5)
             if line is None:
+                # EOF is NOT the end. Only the wrapper being gone is, and the
+                # drain below is what keeps the last lines of the transcript.
                 if exited:
                     _drain_print_stdout(
-                        reader,
+                        tail,
                         stdout_lines=stdout_lines,
                         launch_slot=launch_slot,
                         streamer=streamer,
@@ -194,62 +322,91 @@ def run_print_mode(
                 stdout_lines=stdout_lines,
                 launch_slot=launch_slot,
                 streamer=streamer,
+                tail=tail,
             )
             budgets.saw_output()
     finally:
         launch_slot.release()
         _reap(
-            proc,
+            spawned,
             budgets=budgets,
             argv=invocation.argv,
             stdout_lines=stdout_lines,
-            cancelled=cancelled,
+            settled=cancelled or timed_out,
         )
 
-    return _print_mode_result(proc, stdout_lines=stdout_lines, cancelled=cancelled)
+    if cancelled:
+        # The partial transcript is the only record of what a cancelled run did,
+        # and the group is gone by now, so this drain cannot race a writer.
+        _drain_print_stdout(
+            tail,
+            stdout_lines=stdout_lines,
+            launch_slot=launch_slot,
+            streamer=streamer,
+        )
+
+    return _print_mode_result(paths, stdout_lines=stdout_lines, cancelled=cancelled)
 
 
 def _reap(
-    proc,
+    spawned: SpawnedAgent,
     *,
     budgets: _Budgets,
     argv,
     stdout_lines: list[str],
-    cancelled: bool,
+    settled: bool,
 ) -> None:
-    """Make sure the process is gone before the caller reads its pipes.
+    """Make sure the agent is gone before the caller reads its files.
 
     Reached on every exit from the loop, including the one that is already
-    raising. A process still running here has outlived the hard cap, so it is
-    killed and — unless the operator is the one who stopped it — reported as a
+    raising. A process still running here and NOT already accounted for has
+    outlived the hard cap, so its group is killed and it is reported as a
     hard-cap timeout rather than left to look like a clean exit.
+
+    `settled` says the loop already decided this run's outcome — the operator
+    cancelled it, or a budget expired and the loop is raising that budget's
+    timeout right now. The group still gets killed; the verdict does not get
+    overwritten. Without it the tmux transport mislabels every timeout:
+    `handle` is None there, so there is nothing to wait on, and the raise below
+    would replace the IDLE timeout propagating out of the loop with a HARD_CAP
+    one — a one-second hang reported as a four-second runaway, which is the
+    only difference the operator has between "the agent wedged" and "the agent
+    would not stop talking".
     """
-    if proc.poll() is not None:
+    if _wrapper_exited(spawned):
         return
-    try:
-        proc.wait(timeout=max(0.1, budgets.hard_deadline - time.time()))
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        if not cancelled:
-            raise _timeout_expired(
-                argv, budgets.start, stdout_lines, kind=RunTimeoutKind.HARD_CAP
-            ) from None
+    if spawned.handle is not None:
+        try:
+            spawned.handle.wait(timeout=max(0.1, budgets.hard_deadline - time.time()))
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    _kill_agent_group(spawned)
+    if settled:
+        return
+    raise _timeout_expired(
+        argv, budgets.start, stdout_lines, kind=RunTimeoutKind.HARD_CAP
+    ) from None
 
 
 def _print_mode_result(
-    proc,
+    paths: RunOutputPaths,
     *,
     stdout_lines: list[str],
     cancelled: bool,
 ) -> tuple[str, str, RunStatus]:
-    """The finished run as the caller wants it: stdout, stderr and a status."""
-    # Read before the cancelled branch: the pipe is drained either way, as it
-    # was when this lived inline.
-    stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+    """The finished run as the caller wants it: stdout, stderr and a status.
+
+    stderr comes from `.err` — `proc.stderr` is DEVNULL now, and merging the two
+    streams would silently change what `run_completion.failure_reason()` sees.
+    The status comes from `.rc`, because that is also what the reattached path
+    reads and the two must not disagree about what one run did.
+    """
+    stderr = read_output_text(paths.err)
     stdout = "\n".join(stdout_lines)
     if cancelled:
         return stdout, "Cancelled by operator", RunStatus.CANCELLED
-    status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
+    status = RunStatus.SUCCEEDED if recorded_exit_status(paths.rc) == 0 else RunStatus.FAILED
     return stdout, stderr, status
 
 

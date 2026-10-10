@@ -21,12 +21,70 @@ from pathlib import Path
 from loregarden.agents.cli_adapters import CliAdapter, CliInvocation
 from loregarden.agents.executors.read_paths import record_read_paths
 from loregarden.agents.run_usage import parse_run_usage, usage_status_for
-from loregarden.models.domain import AgentRun
+from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.services.artifact_records import RUN_CONTEXT_ARTIFACT_TITLE
 from loregarden.services.git_commit_push_service import paths_committed_since
 from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+
+def run_paths_before(run: AgentRun) -> set[str]:
+    """What was already dirty when this run started, read off the run's own row.
+
+    The one answer to "what did this run inherit". The dispatch path used to
+    take its own, from a live `TreeSnapshot.bracket_paths()` — which a
+    *reattaching* process cannot take, because the run started minutes or hours
+    ago and the tree has moved since. The column already holds exactly that set
+    (`git_boundary.stamp_run_boundary` writes `boundary.dirty_paths`, which is
+    `TreeSnapshot.dirty_paths`, which is what `bracket_paths()` returned), so
+    both callers read it rather than keeping two answers.
+
+    An unreadable value inherits nothing. That is the conservative direction
+    *for bracketing only*: the delta taken after the run then attributes what it
+    finds to the run rather than silently dropping paths, and the post-run read
+    reports its own failure.
+    """
+    try:
+        stored = json.loads(run.start_dirty_paths_json or "[]")
+    except json.JSONDecodeError:
+        logger.warning(
+            "Run %s has an unreadable start boundary; bracketing it against nothing", run.id
+        )
+        return set()
+    return {str(path) for path in stored}
+
+
+def run_context_artifacts(ticket: Ticket, run: AgentRun, status: RunStatus) -> list[dict]:
+    """The "Run context" artifact every finished dispatch carries.
+
+    Lives here rather than on the executor because two settlement paths build
+    it: the dispatch that spawned the run, and `run_resupervise` finishing one
+    whose server died. A second copy would be a second answer to what a run was.
+    """
+    return [
+        {
+            "kind": "context",
+            "title": RUN_CONTEXT_ARTIFACT_TITLE,
+            "content": {
+                "sections": [
+                    {
+                        "title": "Execution",
+                        "rows": [
+                            {"k": "Run", "v": run.run_code},
+                            {"k": "Ticket", "v": ticket.external_id},
+                            {"k": "Agent", "v": run.agent_id},
+                            {"k": "Skill", "v": run.skill_name or "—"},
+                            {"k": "Stage", "v": run.stage_key},
+                            {"k": "Command", "v": run.command or "—"},
+                            {"k": "Status", "v": status.value},
+                        ],
+                    }
+                ]
+            },
+        },
+    ]
 
 
 def record_changed_paths(
