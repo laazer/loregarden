@@ -28,6 +28,14 @@ const OUTCOME_LABEL: Record<PullRequestCheckOutcome, string> = {
   passing: "Passed",
   skipped: "Skipped",
 };
+/** Decorative: the outcome is also spelled out beside it. */
+const OUTCOME_GLYPH: Record<PullRequestCheckOutcome, string> = {
+  failing: "✕",
+  pending: "•",
+  passing: "✓",
+  skipped: "–",
+};
+const TALLY_ORDER: readonly PullRequestCheckOutcome[] = ["failing", "pending", "passing", "skipped"];
 const REVIEW_LABEL: Record<PullRequestReview, string> = {
   approved: "Approved",
   changes_requested: "Changes requested",
@@ -252,32 +260,50 @@ function PullRequestSummary({
 
       {isOpen && (
         <section className="prp-section" aria-labelledby="prp-checks-heading">
-          <h4 id="prp-checks-heading" className="prp-section-title">
-            Checks
-          </h4>
+          <div className="prp-checks-head">
+            <h4 id="prp-checks-heading" className="prp-section-title">
+              Checks
+            </h4>
+            {checks.length > 0 && (
+              <span className="prp-tally">
+                {TALLY_ORDER.filter((outcome) => countBy(checks, outcome) > 0).map((outcome) => (
+                  <span key={outcome} className={`prp-tally-item prp-tally-item--${outcome}`}>
+                    {countBy(checks, outcome)} {OUTCOME_LABEL[outcome].toLowerCase()}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
           {checks.length === 0 ? (
             <p className="prp-muted">No CI checks reported for this PR.</p>
           ) : (
             <ul className="prp-checks">
               {checks.map((check) => (
-                <li key={`${check.name}-${check.url}`} className="prp-check">
-                  <span className={`prp-outcome prp-outcome--${check.outcome}`}>{OUTCOME_LABEL[check.outcome]}</span>
+                <li key={`${check.name}-${check.url}`} className={`prp-check prp-check--${check.outcome}`}>
+                  <span className="prp-check-icon" aria-hidden="true">
+                    {OUTCOME_GLYPH[check.outcome]}
+                  </span>
                   {check.url ? (
-                    <a href={check.url} target="_blank" rel="noreferrer">
+                    <a className="prp-check-name" href={check.url} target="_blank" rel="noreferrer">
                       {check.name}
                     </a>
                   ) : (
-                    <span>{check.name}</span>
+                    <span className="prp-check-name">{check.name}</span>
                   )}
+                  <span className="prp-outcome">{OUTCOME_LABEL[check.outcome]}</span>
                 </li>
               ))}
             </ul>
           )}
           <dl className="prp-facts">
-            <dt>Review</dt>
-            <dd>{REVIEW_LABEL[pr.review]}</dd>
-            <dt>Conflicts</dt>
-            <dd>{pr.has_conflicts ? `Yes, with ${pr.base}` : "None"}</dd>
+            <div className="prp-fact">
+              <dt>Review</dt>
+              <dd>{REVIEW_LABEL[pr.review]}</dd>
+            </div>
+            <div className={`prp-fact${pr.has_conflicts ? " prp-fact--bad" : ""}`}>
+              <dt>Conflicts</dt>
+              <dd>{pr.has_conflicts ? `Yes, with ${pr.base}` : "None"}</dd>
+            </div>
           </dl>
         </section>
       )}

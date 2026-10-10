@@ -158,66 +158,151 @@
   cursor: pointer;
 }
 
+.prp-checks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.prp-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prp-tally-item--failing {
+  color: var(--rdl);
+}
+
+.prp-tally-item--pending {
+  color: var(--aml);
+}
+
+.prp-tally-item--passing {
+  color: var(--grl);
+}
+
+.prp-tally-item--skipped {
+  color: var(--txl);
+}
+
+/* One card, rows split by hairlines; the outcome colours the icon, and a
+ * failing row is also tinted so it reads first even at a glance. */
 .prp-checks {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  overflow: hidden;
 }
 
 .prp-check {
+  --prp-tone: var(--txl);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+  padding: 8px 12px;
   font-size: 13px;
   min-width: 0;
 }
 
-.prp-check a {
+.prp-check + .prp-check {
+  border-top: 1px solid var(--bd);
+}
+
+.prp-check--passing {
+  --prp-tone: var(--grl);
+}
+
+.prp-check--pending {
+  --prp-tone: var(--aml);
+}
+
+.prp-check--failing {
+  --prp-tone: var(--rdl);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+
+.prp-check-icon {
+  flex: 0 0 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--prp-tone);
+  background: color-mix(in srgb, var(--prp-tone) 16%, transparent);
+}
+
+.prp-check-name {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--tx);
   overflow-wrap: anywhere;
 }
 
+a.prp-check-name {
+  text-decoration: none;
+}
+
+a.prp-check-name:hover,
+a.prp-check-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
 .prp-outcome {
-  flex: 0 0 64px;
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 11px;
+  color: var(--prp-tone);
 }
 
-.prp-outcome--passing {
-  color: var(--grl);
-}
-
-.prp-outcome--failing {
-  color: var(--rdl);
+.prp-check--failing .prp-outcome {
   font-weight: 600;
 }
 
-.prp-outcome--pending {
-  color: var(--aml);
-}
-
-.prp-outcome--skipped {
-  color: var(--txl);
-}
-
 .prp-facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  margin: 4px 0 0;
-  font-size: 12.5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 0;
+  font-size: 12px;
 }
 
-.prp-facts dt {
+.prp-fact {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+}
+
+.prp-fact dt {
   color: var(--txl);
 }
 
-.prp-facts dd {
+.prp-fact dd {
   margin: 0;
   color: var(--txm);
+}
+
+.prp-fact--bad {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd));
+}
+
+.prp-fact--bad dd {
+  color: var(--rdl);
 }
 
 .prp-muted {
