@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from loregarden.services import transcript_token_index, usage_service, usage_snapshot_cache
+from loregarden.services import (
+    transcript_token_index,
+    usage_rate_limit,
+    usage_service,
+    usage_snapshot_cache,
+)
 
 
 class _RefusingHttpx:
@@ -173,7 +178,11 @@ def test_claude_usage_on_setup_token_names_the_login_fix(monkeypatch):
 
     fresh = usage_service._fetch_claude_usage_oauth(MagicMock(), None)
     backing_off = usage_service._fetch_claude_usage_oauth(
-        MagicMock(), {"rate_limited_until": fresh.rate_limited_until}
+        MagicMock(),
+        {
+            "rate_limited_until": fresh.rate_limited_until,
+            "rate_limited_credential": fresh.rate_limited_credential,
+        },
     )
 
     for result in (fresh, backing_off):
@@ -617,7 +626,17 @@ def test_usage_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
     future = (datetime.now(tz=timezone.utc) + timedelta(minutes=10)).isoformat()
     cache_path.parent.mkdir(parents=True)
     cache_path.write_text(
-        json.dumps({"claude": {"provider": "claude", "rate_limited_until": future}}),
+        json.dumps(
+            {
+                "claude": {
+                    "provider": "claude",
+                    "rate_limited_until": future,
+                    "rate_limited_credential": usage_rate_limit.credential_fingerprint(
+                        {"accessToken": "token"}
+                    ),
+                }
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -652,6 +671,71 @@ def test_usage_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
     assert calls["count"] == 0
     claude = next(p for p in snapshot["providers"] if p["provider"] == "claude")
     assert "backing off" in claude["error"].lower()
+
+
+def test_claude_backoff_earned_by_another_credential_does_not_block_a_new_login(monkeypatch):
+    """A setup token's 429 backoff kept a fresh `claude /login` showing cached
+    meters for up to four hours; the backoff belongs to the credential refused."""
+    setup_token = {"accessToken": "setup-token"}
+    login = {"accessToken": "login-token", "refreshToken": "r", "scopes": ["user:profile"]}
+    future = (datetime.now(tz=timezone.utc) + timedelta(hours=4)).isoformat()
+    cache_entry = {
+        "rate_limited_until": future,
+        "rate_limit_streak": 35,
+        "rate_limited_credential": usage_rate_limit.credential_fingerprint(setup_token),
+    }
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: login)
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda: [])
+    request = MagicMock(
+        return_value=httpx.Response(
+            200, json={"five_hour": {"utilization": 8.0, "resets_at": future}}
+        )
+    )
+    monkeypatch.setattr(usage_service, "_claude_usage_request", request)
+
+    provider = usage_service._fetch_claude_usage_oauth(MagicMock(), cache_entry)
+
+    request.assert_called_once()
+    assert provider.error is None
+    assert [m.key for m in provider.meters] == ["five_hour"]
+
+
+def test_claude_backoff_from_before_credentials_were_recorded_is_retried(monkeypatch):
+    """An entry with no credential is the state the live cache was left in; it must
+    not keep blocking, and a new 429 restarts the streak rather than doubling 35."""
+    future = (datetime.now(tz=timezone.utc) + timedelta(hours=4)).isoformat()
+    monkeypatch.setattr(
+        usage_service, "_claude_oauth", lambda: {"accessToken": "t", "refreshToken": "r"}
+    )
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda: [])
+    monkeypatch.setattr(
+        usage_service,
+        "_claude_usage_request",
+        lambda client, token: httpx.Response(429, json={"error": {"type": "rate_limit_error"}}),
+    )
+
+    provider = usage_service._fetch_claude_usage_oauth(
+        MagicMock(), {"rate_limited_until": future, "rate_limit_streak": 35}
+    )
+
+    assert provider.rate_limit_streak == 1
+    assert provider.rate_limited_credential == usage_rate_limit.credential_fingerprint(
+        {"refreshToken": "r"}
+    )
+    merged = usage_service._merge_cache_entry(provider, {})
+    assert merged["rate_limited_credential"] == provider.rate_limited_credential
+
+
+def test_malformed_backoff_state_is_ignored_and_reported(caplog):
+    """A corrupt cache entry must neither block the provider nor break the endpoint."""
+    with caplog.at_level("WARNING", logger=usage_rate_limit.__name__):
+        state = usage_rate_limit.rate_limit_state(
+            {"rate_limited_until": "not a date", "rate_limit_streak": -3}
+        )
+
+    assert state.active_until() is None
+    assert state.rate_limit_streak == 0
+    assert caplog.records
 
 
 def test_cursor_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
@@ -953,6 +1037,7 @@ def test_session_key_fallback_preserves_rate_limit_backoff():
         error="Claude usage API rate limited — backing off.",
         rate_limited_until="2026-08-03T13:00:00+00:00",
         rate_limit_streak=2,
+        rate_limited_credential="abc",
     )
 
     with (
@@ -967,6 +1052,7 @@ def test_session_key_fallback_preserves_rate_limit_backoff():
     assert provider.meters
     assert provider.rate_limited_until == "2026-08-03T13:00:00+00:00"
     assert provider.rate_limit_streak == 2
+    assert provider.rate_limited_credential == "abc"
 
 
 def test_network_error_in_fallback_leaves_the_oauth_error_intact():

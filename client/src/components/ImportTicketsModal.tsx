@@ -7,8 +7,8 @@ import {
   type SelectedImportFile,
 } from "./ImportTicketFileExplorer";
 import { selectedImportFileList } from "../lib/importTicketFiles";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 export type ImportMode = "regular" | "smart";
 
@@ -40,10 +40,6 @@ export function ImportTicketsModal({
   initialMode = "regular",
   lockMode = false,
 }: ImportTicketsModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : isLoading ? undefined : () => onClose());
   const normalizedInitialMode = normalizeInitialMode(initialMode);
   const [selectedFiles, setSelectedFiles] = useState<Map<string, SelectedImportFile>>(new Map());
   const [mode, setMode] = useState<ImportMode>(normalizedInitialMode);
@@ -75,7 +71,10 @@ export function ImportTicketsModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onContinue]);
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="import-tickets-picker-title">{null}</ModalShell>;
+  }
 
   const selected = selectedImportFileList(selectedFiles);
   const canContinue = selected.length > 0 && !isLoading && !hasSubmitted;
@@ -126,119 +125,109 @@ export function ImportTicketsModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isLoading ? undefined : () => onClose()} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="import-tickets-picker-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">{workspaceSlug}</div>
-            <h2 id="import-tickets-picker-title" className="modal-title">
-              Import work items
-            </h2>
-            <p className="modal-subtitle">
-              {lockMode && mode === "smart"
-                ? "Select ticket files to open as a scoping session in Ticket Studio."
-                : "Select ticket files to import from the repository."}
-            </p>
-          </div>
-          <IconCloseButton disabled={isLoading} onClick={onClose} />
+    <ModalShell open onDismiss={isLoading ? undefined : () => onClose()} labelledBy="import-tickets-picker-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">{workspaceSlug}</div>
+          <h2 id="import-tickets-picker-title" className="modal-title">
+            Import work items
+          </h2>
+          <p className="modal-subtitle">
+            {lockMode && mode === "smart"
+              ? "Select ticket files to open as a scoping session in Ticket Studio."
+              : "Select ticket files to import from the repository."}
+          </p>
         </div>
-
-        <div className="modal-body">
-          {!lockMode && (
-          <div className="modal-field">
-            <div
-              role="radiogroup"
-              aria-label="Import mode"
-              onKeyDown={(e) => {
-                if (e.key.startsWith("Arrow")) {
-                  e.preventDefault();
-                  handleModeKeyDown(e.key, mode);
-                }
-              }}
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={mode === "regular"}
-                aria-describedby={descriptionId}
-                disabled={isLoading}
-                onClick={() => !isLoading && setMode("regular")}
-                className="import-mode-option"
-              >
-                Regular import
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={mode === "smart"}
-                aria-describedby={descriptionId}
-                title="Smart import enriches your work items with Studio-style preview data and enhanced descriptions"
-                disabled={isLoading}
-                onClick={() => !isLoading && setMode("smart")}
-                className="import-mode-option"
-              >
-                Smart import
-              </button>
-            </div>
-            <p id={descriptionId} style={{ fontSize: 12, color: "var(--txm)", margin: "6px 0 0 0" }}>
-              Smart import includes Studio-style metadata; Regular import uses standard fields only.
-            </p>
-          </div>
-          )}
-
-          {errorMessage && (
-            <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-              {errorMessage}
-            </p>
-          )}
-
-          <ImportTicketFileExplorer
-            explorerKey={`import-tickets-${workspaceSlug}`}
-            selectedFiles={selectedFiles}
-            onToggleFile={toggleFile}
-            onToggleFiles={toggleFiles}
-            disabled={isLoading}
-            startPath={initialBrowsePath}
-          />
-
-          {selected.length > 0 && (
-            <div className="modal-field" style={{ marginTop: 12 }}>
-              <div className="modal-field-label">
-                Selected ({selected.length})
-              </div>
-              <ul
-                className="import-selected-list"
-                style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}
-              >
-                {selected.map((file) => (
-                  <li key={file.path}>{file.repo_path}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isLoading} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!canContinue}
-            onClick={handleContinue}
-          >
-            {isLoading ? "Reading files…" : `Continue with ${selected.length || 0} file${selected.length === 1 ? "" : "s"}`}
-          </button>
-        </div>
+        <IconCloseButton disabled={isLoading} onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body">
+        {!lockMode && (
+        <div className="modal-field">
+          <div
+            role="radiogroup"
+            aria-label="Import mode"
+            onKeyDown={(e) => {
+              if (e.key.startsWith("Arrow")) {
+                e.preventDefault();
+                handleModeKeyDown(e.key, mode);
+              }
+            }}
+          >
+            <Button
+              variant="plain"
+              role="radio"
+              aria-checked={mode === "regular"}
+              aria-describedby={descriptionId}
+              disabled={isLoading}
+              onClick={() => !isLoading && setMode("regular")}
+              className="import-mode-option"
+            >
+              Regular import
+            </Button>
+            <Button
+              variant="plain"
+              role="radio"
+              aria-checked={mode === "smart"}
+              aria-describedby={descriptionId}
+              title="Smart import enriches your work items with Studio-style preview data and enhanced descriptions"
+              disabled={isLoading}
+              onClick={() => !isLoading && setMode("smart")}
+              className="import-mode-option"
+            >
+              Smart import
+            </Button>
+          </div>
+          <p id={descriptionId} style={{ fontSize: 12, color: "var(--txm)", margin: "6px 0 0 0" }}>
+            Smart import includes Studio-style metadata; Regular import uses standard fields only.
+          </p>
+        </div>
+        )}
+
+        {errorMessage && (
+          <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+            {errorMessage}
+          </p>
+        )}
+
+        <ImportTicketFileExplorer
+          explorerKey={`import-tickets-${workspaceSlug}`}
+          selectedFiles={selectedFiles}
+          onToggleFile={toggleFile}
+          onToggleFiles={toggleFiles}
+          disabled={isLoading}
+          startPath={initialBrowsePath}
+        />
+
+        {selected.length > 0 && (
+          <div className="modal-field" style={{ marginTop: 12 }}>
+            <div className="modal-field-label">
+              Selected ({selected.length})
+            </div>
+            <ul
+              className="import-selected-list"
+              style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}
+            >
+              {selected.map((file) => (
+                <li key={file.path}>{file.repo_path}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isLoading} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={!canContinue}
+          onClick={handleContinue}
+        >
+          {isLoading ? "Reading files…" : `Continue with ${selected.length || 0} file${selected.length === 1 ? "" : "s"}`}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

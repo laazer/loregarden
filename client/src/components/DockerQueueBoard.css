@@ -35,6 +35,35 @@
   color: var(--txl);
 }
 
+/* How far the holder has got: its step, and a test runner's count as a bar. */
+.docker-slot-progress {
+  margin-top: 6px;
+}
+
+.docker-slot-progress-step {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-slot-progress-track {
+  margin-top: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ac) 18%, transparent);
+  overflow: hidden;
+}
+
+.docker-slot-progress-fill {
+  height: 100%;
+  background: var(--ac);
+  transform-origin: left center;
+  transition: transform var(--t-med) var(--ease-out);
+}
+
 .docker-slot-error {
   margin-top: 4px;
   font-size: 11px;

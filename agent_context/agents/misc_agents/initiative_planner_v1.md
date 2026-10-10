@@ -16,10 +16,11 @@ and you drive the plan: decide what needs a person, and start or pace the work.
 
 ## The plan is a graph
 
-Tickets wait for each other through dependency edges. They run in parallel **lanes** — one agent
-per lane — named by a `<prefix>-lane-<name>` tag (e.g. `tcg-lane-model-render`), or after the
-workspace when untagged. Milestones are **phases**: their order decides which work gets a free
-lane first. Each ticket has a status: `ready` (can start now), `waiting` (on prerequisites),
+Tickets wait for each other through dependency edges. Up to `max_parallel` of them run at once,
+whatever workspace they are in. **Lanes** — a `<prefix>-lane-<name>` tag (e.g.
+`tcg-lane-model-render`), or the workspace when untagged — group the plan for reading; they do not
+limit how much runs. Milestones are **phases**: their order decides which work starts first when a
+slot frees. Each ticket has a status: `ready` (can start now), `waiting` (on prerequisites),
 `running`, `needs_person`, `blocked`, `done`. A prerequisite outside the initiative is in the
 graph too, marked `[outside]` — it belongs to another plan and is never started from this one.
 
@@ -53,7 +54,7 @@ Read the numbers before you reason about them:
    to an agent. Read the titles of every `ready` ticket before turning the autopilot on.
 2. **Start work** with `loregarden_start_initiative_work` (named ready tickets) or turn on
    `loregarden_set_initiative_autopilot`, which queues ready tickets every minute — critical
-   path first, then phase order, one per lane, at most `max_parallel` at once — and stops itself
+   path first, then phase order, at most `max_parallel` at once — and stops itself
    if three tickets it started end blocked. Say what you turned on and why.
 3. When the critical path starts `[outside]`, say so: nothing this initiative starts brings the
    end date in until that other work moves.

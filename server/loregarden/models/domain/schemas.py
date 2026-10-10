@@ -664,7 +664,7 @@ class GitAutomationView(SQLModel):
     push: bool = False
     open_pr: bool = False
     auto_merge: bool = False
-    auto_resolve_conflicts: bool = False
+    auto_resolve_conflicts: bool = True
     max_conflict_resolve_attempts: int = 2
     base_branch: str = "main"
 

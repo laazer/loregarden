@@ -133,6 +133,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "settled_stranded_stage",
         "overruled_stale_gate",
         "approved_design_plan",
+        # Normal tone, like approved_design_plan: the autopilot letting work proceed.
+        "approved_legacy_sign_off",
         "classified_block",
         "requeued_after_decision",
         "dispatched_repair",

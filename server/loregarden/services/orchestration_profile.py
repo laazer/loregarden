@@ -49,9 +49,14 @@ class GatesConfig(BaseModel):
     autofix_max_agent_attempts: int = 3
     # The host capacity a transition's gate commands hold while they run, so
     # gates across agents and workspaces queue instead of piling onto the
-    # machine (services/gate_capacity.py). `heavy` because pytest/jest dominate;
+    # machine (services/gate_capacity.py). `service`, sized to what the gates
+    # are: static analysis, no tests in any shipped profile. Measured
+    # 2026-10-09, loregarden's set took 7s wall and 6.3 CPU-seconds, 85 MB peak.
+    # At `heavy` they held no more than that but queued behind test suites for
+    # it — 6.5, 7.5 and 9.8 minutes on lg-durable-remote-336 for 10 seconds of
+    # work. A profile that adds a test suite to its gates sets `heavy` itself;
     # `none` runs them unreserved.
-    capacity_footprint: DockerFootprint = DockerFootprint.HEAVY
+    capacity_footprint: DockerFootprint = DockerFootprint.SERVICE
 
 
 class GitAutomationConfig(BaseModel):
@@ -78,7 +83,13 @@ class GitAutomationConfig(BaseModel):
     #: On a merge conflict, hand the conflicted files to an implementer agent
     #: rather than blocking. Independent of auto_merge: a conflict can surface
     #: from the pre-merge check even when nothing is auto-merging.
-    auto_resolve_conflicts: bool = False
+    #:
+    #: On by default: a landing conflict is usually two sibling tickets editing
+    #: one file on their shared integration branch, and blocking a ticket whose
+    #: every stage passed for a person to do the merge stalled whole trees
+    #: (lg-durable-remote-336). The attempt cap below still hands a conflict the
+    #: resolver cannot settle to a person.
+    auto_resolve_conflicts: bool = True
     #: How many times the resolver agent may try before the ticket blocks.
     max_conflict_resolve_attempts: int = 2
     #: Branch PRs target, and the branch a worktree is cut from.

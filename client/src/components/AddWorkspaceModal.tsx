@@ -10,8 +10,10 @@ import { GatePresetPicker } from "./workspaces/GatePresetPicker";
 import { describeError } from "../state/toastStore";
 import { slugify } from "../lib/slugify";
 import { RepoPathExplorer } from "./RepoPathExplorer";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { ModalShell } from "./ui/ModalShell";
 
 export interface AddWorkspaceDraft {
   name: string;
@@ -56,7 +58,10 @@ const PROBE_SUMMARY: Record<RepositoryState, string> = {
 const isAbsolute = (path: string) => path.startsWith("/");
 
 function RepoPathStatus({ path, probe }: { path: string; probe: ReturnType<typeof useRepositoryProbe> }) {
-  if (!path) return null;
+  if (!path) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="add-workspace-title">{null}</ModalShell>;
+  }
   if (!isAbsolute(path)) {
     return <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 6 }}>Enter an absolute path, starting with /.</p>;
   }
@@ -99,10 +104,6 @@ export function AddWorkspaceModal({
   onClose,
   onCreate,
 }: AddWorkspaceModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const [draft, setDraft] = useState<AddWorkspaceDraft>({
     name: "",
     slug: "",
@@ -195,175 +196,166 @@ export function AddWorkspaceModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-workspace-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Workspaces</div>
-            <h2 id="add-workspace-title" className="modal-title">
-              Add workspace
-            </h2>
-            <p className="modal-subtitle">Register a repository — or create one — and pick its workflow template</p>
-          </div>
-          <IconCloseButton disabled={isSaving} onClick={onClose} />
+    <ModalShell open onDismiss={isSaving ? undefined : onClose} labelledBy="add-workspace-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Workspaces</div>
+          <h2 id="add-workspace-title" className="modal-title">
+            Add workspace
+          </h2>
+          <p className="modal-subtitle">Register a repository — or create one — and pick its workflow template</p>
+        </div>
+        <IconCloseButton disabled={isSaving} onClick={onClose} />
+      </div>
+
+      <div className="modal-body">
+        {errorMessage && (
+          <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+            {errorMessage}
+          </p>
+        )}
+
+        <div className="modal-field">
+          <div className="modal-field-label">Name</div>
+          <Input
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={draft.name}
+            disabled={isSaving}
+            aria-label="Name"
+            placeholder="Blobert"
+            autoFocus
+            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+          />
         </div>
 
-        <div className="modal-body">
-          {errorMessage && (
-            <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-              {errorMessage}
+        <div className="modal-field">
+          <div className="modal-field-label">Slug</div>
+          <Input
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            value={draft.slug}
+            disabled={isSaving}
+            aria-label="Slug"
+            placeholder="blobert"
+            onChange={(e) => {
+              setSlugTouched(true);
+              setDraft((d) => ({ ...d, slug: slugify(e.target.value) }));
+            }}
+          />
+          {slugConflict && (
+            <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 6 }}>
+              A workspace with this slug already exists.
             </p>
           )}
+        </div>
 
-          <div className="modal-field">
-            <div className="modal-field-label">Name</div>
-            <input
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
-              value={draft.name}
-              disabled={isSaving}
-              aria-label="Name"
-              placeholder="Blobert"
-              autoFocus
-              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-            />
+        <div className="modal-field">
+          <div className="modal-field-label">Repo path</div>
+          <Input
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            value={draft.repo_path}
+            disabled={isSaving}
+            aria-label="Repo path"
+            placeholder="/Users/you/workspace/project"
+            onChange={(e) => setDraft((d) => ({ ...d, repo_path: e.target.value }))}
+          />
+          <div aria-live="polite">
+            <RepoPathStatus path={repoPath} probe={probe} />
           </div>
+          <RepoPathExplorer
+            explorerKey="workspace-repo"
+            value={draft.repo_path}
+            startPath={draft.repo_path || "."}
+            onChange={(repo_path) => setDraft((d) => ({ ...d, repo_path }))}
+            disabled={isSaving}
+            absolutePaths
+          />
+        </div>
 
+        {repoState !== undefined && !UNUSABLE.has(repoState) && (
           <div className="modal-field">
-            <div className="modal-field-label">Slug</div>
-            <input
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
-              value={draft.slug}
-              disabled={isSaving}
-              aria-label="Slug"
-              placeholder="blobert"
-              onChange={(e) => {
-                setSlugTouched(true);
-                setDraft((d) => ({ ...d, slug: slugify(e.target.value) }));
-              }}
-            />
-            {slugConflict && (
-              <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 6 }}>
-                A workspace with this slug already exists.
+            <div className="modal-field-label">Toolchain gates</div>
+            <p className="modal-hint" style={{ marginTop: 0 }}>
+              Checks every stage transition runs, beside loregarden's own guardrails. Change them later on the
+              workspace's card.
+            </p>
+            {presets.isPending ? (
+              <div className="local-instances-skeleton" aria-label="Looking for toolchains" />
+            ) : presets.error ? (
+              <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+                Could not look for toolchains: {describeError(presets.error, "the request failed")}. The workspace
+                can still be added; pick gates on its card.
               </p>
+            ) : (
+              <GatePresetPicker
+                presets={presets.data}
+                selected={gateSelection}
+                disabled={isSaving}
+                idPrefix="add-workspace-gates"
+                onToggle={(command, on) =>
+                  setGateSelection((current) => {
+                    const next = new Set(current);
+                    if (on) next.add(command);
+                    else next.delete(command);
+                    return next;
+                  })
+                }
+              />
             )}
           </div>
+        )}
 
-          <div className="modal-field">
-            <div className="modal-field-label">Repo path</div>
-            <input
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
-              value={draft.repo_path}
-              disabled={isSaving}
-              aria-label="Repo path"
-              placeholder="/Users/you/workspace/project"
-              onChange={(e) => setDraft((d) => ({ ...d, repo_path: e.target.value }))}
-            />
-            <div aria-live="polite">
-              <RepoPathStatus path={repoPath} probe={probe} />
-            </div>
-            <RepoPathExplorer
-              explorerKey="workspace-repo"
-              value={draft.repo_path}
-              startPath={draft.repo_path || "."}
-              onChange={(repo_path) => setDraft((d) => ({ ...d, repo_path }))}
-              disabled={isSaving}
-              absolutePaths
-            />
-          </div>
-
-          {repoState !== undefined && !UNUSABLE.has(repoState) && (
-            <div className="modal-field">
-              <div className="modal-field-label">Toolchain gates</div>
-              <p className="modal-hint" style={{ marginTop: 0 }}>
-                Checks every stage transition runs, beside loregarden's own guardrails. Change them later on the
-                workspace's card.
-              </p>
-              {presets.isPending ? (
-                <div className="local-instances-skeleton" aria-label="Looking for toolchains" />
-              ) : presets.error ? (
-                <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-                  Could not look for toolchains: {describeError(presets.error, "the request failed")}. The workspace
-                  can still be added; pick gates on its card.
-                </p>
-              ) : (
-                <GatePresetPicker
-                  presets={presets.data}
-                  selected={gateSelection}
-                  disabled={isSaving}
-                  idPrefix="add-workspace-gates"
-                  onToggle={(command, on) =>
-                    setGateSelection((current) => {
-                      const next = new Set(current);
-                      if (on) next.add(command);
-                      else next.delete(command);
-                      return next;
-                    })
-                  }
-                />
-              )}
-            </div>
-          )}
-
-          <div className="modal-field">
-            <div className="modal-field-label">Workflow template</div>
-            <select
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
-              value={draft.workflow_template_slug}
-              disabled={isSaving || templates.length === 0}
-              aria-label="Workflow template"
-              onChange={(e) => setDraft((d) => ({ ...d, workflow_template_slug: e.target.value }))}
-            >
-              {templates.length === 0 ? (
-                <option value="">No templates available</option>
-              ) : (
-                templates.map((t) => (
-                  <option key={t.slug} value={t.slug}>
-                    {t.name} ({t.stage_count} stages)
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-
-          <div className="modal-field">
-            <div className="modal-field-label">Orchestration profile (optional)</div>
-            <input
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
-              value={draft.orchestration_profile_slug}
-              disabled={isSaving}
-              aria-label="Orchestration profile"
-              placeholder="blobert"
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, orchestration_profile_slug: e.target.value.trim() }))
-              }
-            />
-            <p className="modal-hint" style={{ marginTop: 6 }}>
-              YAML stem under agent_context/orchestration. Leave blank to auto-resolve from slug.
-            </p>
-          </div>
+        <div className="modal-field">
+          <div className="modal-field-label">Workflow template</div>
+          <Select
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={draft.workflow_template_slug}
+            disabled={isSaving || templates.length === 0}
+            aria-label="Workflow template"
+            onChange={(e) => setDraft((d) => ({ ...d, workflow_template_slug: e.target.value }))}
+          >
+            {templates.length === 0 ? (
+              <option value="">No templates available</option>
+            ) : (
+              templates.map((t) => (
+                <option key={t.slug} value={t.slug}>
+                  {t.name} ({t.stage_count} stages)
+                </option>
+              ))
+            )}
+          </Select>
         </div>
 
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="btn-primary" disabled={isSaving || !canSubmit} onClick={handleCreate}>
-            {isSaving ? "Creating…" : probing ? "Checking path…" : initializing ? "Create workspace and repository" : "Create workspace"}
-          </button>
+        <div className="modal-field">
+          <div className="modal-field-label">Orchestration profile (optional)</div>
+          <Input
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            value={draft.orchestration_profile_slug}
+            disabled={isSaving}
+            aria-label="Orchestration profile"
+            placeholder="blobert"
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, orchestration_profile_slug: e.target.value.trim() }))
+            }
+          />
+          <p className="modal-hint" style={{ marginTop: 6 }}>
+            YAML stem under agent_context/orchestration. Leave blank to auto-resolve from slug.
+          </p>
         </div>
       </div>
-    </>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isSaving} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" disabled={isSaving || !canSubmit} onClick={handleCreate}>
+          {isSaving ? "Creating…" : probing ? "Checking path…" : initializing ? "Create workspace and repository" : "Create workspace"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

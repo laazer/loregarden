@@ -62,6 +62,8 @@ function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     estimate_basis: "unknown",
     poll_count: 0,
     requested_at: null,
+    held_seconds: null,
+    progress: null,
     waiting_seconds: null,
     last_seen_seconds_ago: null,
     poll_stalled: false,
@@ -310,6 +312,40 @@ describe("DockerQueueBoard", () => {
     expect(within(card).getAllByText(/lg-x-e33a13/)).toHaveLength(1);
     expect(within(card).getByText("pid 22339")).toBeInTheDocument();
     expect(within(card).queryByText(/in lg-x-e33a13/)).not.toBeInTheDocument();
+  });
+
+  it("shows how far a holder has got, and how long it has run", () => {
+    const row = lease({
+      held_seconds: 250,
+      progress: {
+        step: "pytest on 3 file(s) (5/5)",
+        done: 412,
+        total: 1830,
+        summary: "pytest on 3 file(s) (5/5) · 412/1830 (22%)",
+        reported_at: null,
+      },
+    });
+    render(<DockerQueueBoard status={status({ holders: [row] })} {...idle} />);
+
+    const card = screen.getByTestId("docker-slot-lease-1");
+    expect(within(card).getByText("pytest on 3 file(s) (5/5) · 412/1830 (22%)")).toBeInTheDocument();
+    const bar = within(card).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "412");
+    expect(bar).toHaveAttribute("aria-valuemax", "1830");
+    expect(within(card).getByText(/running 4m/)).toBeInTheDocument();
+  });
+
+  it("draws no bar for a step with no count, and nothing for a holder that never reported", () => {
+    const stepOnly = lease({
+      lease_id: "lease-1",
+      progress: { step: "tsc -b (2/3)", done: null, total: null, summary: "tsc -b (2/3)", reported_at: null },
+    });
+    const silent = lease({ lease_id: "lease-2" });
+    render(<DockerQueueBoard status={status({ holders: [stepOnly, silent] })} {...idle} />);
+
+    expect(within(screen.getByTestId("docker-slot-lease-1")).getByText("tsc -b (2/3)")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("docker-progress-lease-2")).not.toBeInTheDocument();
   });
 
   it("links a lease to its ticket only when it names one", () => {

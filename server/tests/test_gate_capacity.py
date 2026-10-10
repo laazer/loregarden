@@ -140,4 +140,4 @@ def test_the_profile_yaml_spelling_round_trips() -> None:
     assert GatesConfig.model_validate({"capacity_footprint": "stack"}).capacity_footprint is (
         DockerFootprint.STACK
     )
-    assert GatesConfig().capacity_footprint is DockerFootprint.HEAVY
+    assert GatesConfig().capacity_footprint is DockerFootprint.SERVICE

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../api/client";
 import { NotThisTarget } from "../lib/agentActions/registry";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 import { useAgentAction } from "../lib/agentActions/useAgentAction";
 
 /**
@@ -21,6 +23,12 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // Set in the click handler itself, before React has re-rendered anything: a
+  // `disabled` driven by mutation state is still false for every press inside
+  // one tick, and three presses were three POSTs. After this ticket each one
+  // signals a real process group the server no longer owns.
+  const stopSignalled = useRef(false);
+  const [stopPressed, setStopPressed] = useState(false);
 
   const state = useQuery({
     queryKey: ["run-messages", runId],
@@ -55,7 +63,7 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
   });
   useAgentAction("run.cancel", async ({ run_id }) => {
     ownRun(run_id);
-    await stop.mutateAsync();
+    await requestStop();
     return { run_id, cancelled: true };
   });
 
@@ -69,32 +77,53 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
       qc.invalidateQueries({ queryKey: ["run-messages", runId] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
     },
+    onError: () => {
+      // The signal never left, so the control must be pressable again — the
+      // error is shown beside it either way.
+      stopSignalled.current = false;
+      setStopPressed(false);
+    },
   });
+
+  const requestStop = () => {
+    if (stopSignalled.current) return Promise.resolve();
+    stopSignalled.current = true;
+    setStopPressed(true);
+    return stop.mutateAsync();
+  };
+
+  // Latched off the run's own record, not the mutation: `isPending` is false
+  // again the instant the POST resolves, and `cancel_requested_at` only
+  // appears on the next 2s poll. A control latched off the mutation alone is
+  // clickable in between, and a detached agent takes longer to die than that.
+  const stopRequested = stopPressed || Boolean(state.data?.cancel_requested_at);
 
   // Ending a turn is not undoable and the button sits beside a text input, so
   // it asks once. A run minutes deep should not be lost to a misclick meant
   // for the message box.
   const stopControl = isActive ? (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-      {confirming ? (
+      {stopRequested ? (
+        <Button variant="secondary" disabled>
+          Stopping…
+        </Button>
+      ) : confirming ? (
         <>
-          <button
-            type="button"
-            className="btn-primary"
+          <Button
+            variant="primary"
             style={{ background: "var(--rd)" }}
-            disabled={stop.isPending}
-            onClick={() => stop.mutate()}
+            onClick={() => void requestStop()}
           >
-            {stop.isPending ? "Stopping…" : "Confirm stop"}
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>
+            Confirm stop
+          </Button>
+          <Button variant="secondary" onClick={() => setConfirming(false)}>
             Keep going
-          </button>
+          </Button>
         </>
       ) : (
-        <button type="button" className="btn-secondary" onClick={() => setConfirming(true)}>
+        <Button variant="secondary" onClick={() => setConfirming(true)}>
           Stop this run
-        </button>
+        </Button>
       )}
       {stop.isError && (
         <span className="modal-subtitle" style={{ color: "var(--rdl)" }}>
@@ -110,7 +139,9 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
   if (!state.data) return null;
 
   const { refusal, messages } = state.data;
-  const canSend = !refusal && draft.trim().length > 0 && !send.isPending;
+  // A message queued behind a stop is either dropped unread or is the last
+  // thing an agent is told before being killed. Neither was asked for.
+  const canSend = !refusal && !stopRequested && draft.trim().length > 0 && !send.isPending;
 
   // Nothing to say and nothing sendable. A live run is still stoppable though:
   // a cursor-adapter run cannot take a message and must not therefore be
@@ -157,18 +188,18 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
             if (canSend) sendDraft(draft.trim());
           }}
         >
-          <input
+          <Input
             aria-label="Message to this run"
             className="btn-secondary filter-select"
             style={{ flex: 1, fontSize: 12.5 }}
             placeholder="e.g. use the existing helper in services/"
             value={draft}
-            disabled={send.isPending}
+            disabled={send.isPending || stopRequested}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <button type="submit" className="btn-primary" disabled={!canSend}>
+          <Button type="submit" variant="primary" disabled={!canSend}>
             {send.isPending ? "Sending…" : "Send"}
-          </button>
+          </Button>
         </form>
       )}
 

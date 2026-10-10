@@ -26,12 +26,23 @@ import { describeError } from "../state/toastStore";
  *
  * Every rewrite replaces rather than pushes: Back should leave the ticket, not
  * land on the other spelling and bounce forward again.
+ *
+ * An initiative is a ticket too, so `/initiatives/:initiativeId` uses the same
+ * resolver under its own param and base path.
  */
-export function TicketRouteResolver({ children }: { children: ReactNode }) {
-  const { ticketId } = useParams<{ ticketId: string }>();
+export function TicketRouteResolver({
+  children,
+  param = "ticketId",
+  basePath = "/tickets",
+}: {
+  children: ReactNode;
+  param?: string;
+  basePath?: string;
+}) {
+  const params = useParams();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const ref = ticketId ?? "";
+  const ref = params[param] ?? "";
   const isUuid = looksLikeTicketUuid(ref);
   const uuid = useTicketRefStore((s) => (isUuid ? ref : s.uuidByRef[ref]));
   const shareableId = useTicketRefStore((s) => (isUuid ? s.refByUuid[ref] : ref));
@@ -59,7 +70,7 @@ export function TicketRouteResolver({ children }: { children: ReactNode }) {
     const rest = location.pathname.split("/").slice(3).join("/");
     const suffix = rest ? `/${rest}` : "";
     return (
-      <Navigate to={`/tickets/${encodeURIComponent(id)}${suffix}${location.search}${location.hash}`} replace />
+      <Navigate to={`${basePath}/${encodeURIComponent(id)}${suffix}${location.search}${location.hash}`} replace />
     );
   };
 

@@ -198,3 +198,31 @@ def test_a_milestone_under_an_initiative_publishes_its_own_branch_on_completion(
     assert ms.state == TicketState.DONE
     assert _remote_sha(repo, target) == _sha(repo, target)
     assert (ms.landed_branch, ms.landed_sha) == (target, _sha(repo, target))
+
+
+def test_a_ticket_with_no_tree_publishes_its_own_branch_on_completion(session, workspace, repo):
+    """Its target is the base, so nothing lands on an integration branch for it."""
+    ticket = _ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
+    git(repo, "branch", ticket.branch, "main")
+    tip = commit_on(repo, ticket.branch, "solo.txt", "solo work\n")
+    at_terminal_stage(session, ticket)
+
+    OrchestrationService(session).advance_stage(ticket)
+
+    session.refresh(ticket)
+    assert ticket.state == TicketState.DONE
+    assert _remote_sha(repo, ticket.branch) == tip
+    assert (ticket.landed_branch, ticket.landed_sha) == (ticket.branch, tip)
+
+
+def test_a_ticket_whose_branch_adds_nothing_publishes_nothing(session, workspace, repo):
+    """A ticket that committed nothing has no branch worth a push, and a PR would fail."""
+    ticket = _ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
+    git(repo, "branch", ticket.branch, "main")
+    at_terminal_stage(session, ticket)
+
+    OrchestrationService(session).advance_stage(ticket)
+
+    session.refresh(ticket)
+    assert ticket.state == TicketState.DONE
+    assert _remote_sha(repo, ticket.branch) == ""

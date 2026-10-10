@@ -65,10 +65,13 @@ def workspace(tmp_path: Path) -> Path:
     return repo
 
 
-def _with_tsx_change(workspace: Path) -> Path:
+def _with_client_change(workspace: Path) -> Path:
+    # One of each source kind: the motion gate reads only stylesheets, and a
+    # gate handed nothing it reads would pass instead of reporting unavailable.
     (workspace / "client" / "src" / "A.tsx").write_text(
         "export const A = () => <div>{items.map((i) => <p key={i}>{i}</p>)}</div>;\n"
     )
+    (workspace / "client" / "src" / "a.css").write_text(".a { transition: opacity 0.2s; }\n")
     return workspace
 
 
@@ -88,7 +91,7 @@ def test_every_ts_gate_is_covered():
 
 @pytest.mark.parametrize("gate", _GATES)
 def test_missing_toolchain_is_unavailable_not_failed(gate, scripts_without_client, workspace):
-    result = _run(scripts_without_client, gate, _with_tsx_change(workspace))
+    result = _run(scripts_without_client, gate, _with_client_change(workspace))
     assert result.returncode == GATE_EX_UNAVAILABLE, result.stdout + result.stderr
 
 
@@ -112,7 +115,7 @@ def test_installed_toolchain_examines_the_change(gate, scripts_without_client, w
     """Control: the same tree with node_modules present does not report 69, so
     the cases above reach the parser rather than failing for some other reason."""
     (scripts_without_client.parents[1] / "client" / "node_modules").symlink_to(_NODE_MODULES)
-    result = _run(scripts_without_client, gate, _with_tsx_change(workspace))
+    result = _run(scripts_without_client, gate, _with_client_change(workspace))
     assert result.returncode in (0, 1), result.stdout + result.stderr
 
 

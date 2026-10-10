@@ -317,7 +317,11 @@ def _resolve_turn_root(request: AgentTurnRequest, run: AgentRun | None) -> Path:
     if request.ticket is not None:
         if run is None:
             return resolve_ticket_root(request.session, request.ticket, request.workspace)
-        return resolve_execution_root(request.session, run, request.ticket, request.workspace)
+        # Every turn through here is a chat turn (stage runs go through the CLI
+        # executor), so a stale integration branch is no reason to refuse it.
+        return resolve_execution_root(
+            request.session, run, request.ticket, request.workspace, stale_target_ok=True
+        )
 
     chat_session = (
         request.session.get(BaxterChatSession, request.chat_session_id)

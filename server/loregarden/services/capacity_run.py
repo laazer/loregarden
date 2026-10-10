@@ -31,9 +31,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import tempfile
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +51,12 @@ from loregarden.models.domain import (
     DockerWaitBasis,
 )
 from loregarden.services.capacity_children import reserve_child
+from loregarden.services.capacity_progress import (
+    PROGRESS_ENV,
+    ProgressSync,
+    describe_progress,
+    format_seconds,
+)
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
     DockerReservation,
@@ -95,6 +103,15 @@ CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
 #: How often a waiting process runs a reap pass of its own. The server's timer
 #: does this every 30s when it is up; this is the floor when it is not.
 _REAP_INTERVAL_SECONDS = 60.0
+
+#: How often a waiter repeats its place in line when nothing about it changed.
+#: The line used to be printed once, on change, and then nothing for as long as
+#: an hour-long suite ahead kept running — which reads exactly like a hang.
+_REPRINT_SECONDS = 60.0
+
+#: How many holders a queue line names. The line is about this waiter; the
+#: board lists every holder.
+_HOLDERS_NAMED = 3
 
 Report = Callable[[str], None]
 SessionFactory = Callable[[], Session]
@@ -255,9 +272,10 @@ def _poll_until_granted(
     sleep: Callable[[float], None],
     clock: Callable[[], float],
 ) -> DockerReservation:
-    moved_at = clock()
+    joined_at = moved_at = clock()
     last_reap = clock()
     last_line = ""
+    said_at: float | None = None
     ahead_of_us: set[str] = set()
     while True:
         session.expire_all()
@@ -290,9 +308,13 @@ def _poll_until_granted(
 
         estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
         line = _queue_line(session, lease, estimate)
-        if line != last_line:
-            report(line)
+        now = clock()
+        if line != last_line or said_at is None or now - said_at >= _REPRINT_SECONDS:
+            report(f"{line} · waited {format_seconds(now - joined_at)}")
+            for holder in _holder_lines(front.values()):
+                report(holder)
             last_line = line
+            said_at = now
         session.commit()  # end any read transaction before sleeping on it
         stall_left = request.stall_seconds - (clock() - moved_at)
         sleep(max(1.0, min(poll_interval_for(estimate), stall_left)))
@@ -365,6 +387,29 @@ def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) ->
     )
 
 
+def _holder_lines(front: Iterable[DockerLease]) -> list[str]:
+    """What the line is waiting on: the oldest holders, and how far each has got."""
+    now = datetime.now(timezone.utc)
+    holders = sorted(
+        (lease for lease in front if lease.status in OCCUPYING),
+        key=lambda lease: as_utc(lease.granted_at) or now,
+    )
+    lines = []
+    for holder in holders[:_HOLDERS_NAMED]:
+        granted = as_utc(holder.granted_at)
+        held = f"held {format_seconds((now - granted).total_seconds())}" if granted else "held"
+        progress = describe_progress(
+            holder.progress_step, holder.progress_done, holder.progress_total
+        )
+        lines.append(
+            f"capacity:   ahead: '{holder.holder_label or 'unlabelled'}' {held}"
+            + (f" — {progress}" if progress else "")
+        )
+    if len(holders) > _HOLDERS_NAMED:
+        lines.append(f"capacity:   … and {len(holders) - _HOLDERS_NAMED} more holding")
+    return lines
+
+
 class _Heartbeat:
     """Renews the lease from a thread of its own while the command runs."""
 
@@ -420,15 +465,18 @@ def run_holding(
     A SIGTERM or SIGHUP before the command starts gives the place in line back
     and returns 128+N without starting it; once it runs, they are forwarded to it.
     """
+    joined = time.monotonic()
     with SignalRelay() as relay:
         try:
             with session_factory() as session:
                 reservation = acquire(session, request, report=report)
         except Terminated as stopped:
             return 128 + stopped.signum
+        waited = time.monotonic() - joined
         lease_id = reservation.lease_id
         report(
             f"capacity: holding {reservation.cpus:g} cpus / {reservation.memory_mb} MB ({lease_id})"
+            f" after waiting {format_seconds(waited)}"
         )
         ttl = (
             reservation.expires_at - datetime.now(timezone.utc)
@@ -436,18 +484,30 @@ def run_holding(
             else None
         )
         interval = heartbeat_seconds or max(1.0, ttl.total_seconds() / 3 if ttl else 60.0)
+        progress_dir = Path(tempfile.mkdtemp(prefix="lg-progress-"))
+        progress_file = progress_dir / "progress.json"
+        env = child_environment(reservation, environ or os.environ)
+        env[PROGRESS_ENV] = str(progress_file)
         code: int | None = None
+        ran_from = time.monotonic()
         try:
-            with _Heartbeat(session_factory, lease_id, interval, report):
+            with (
+                _Heartbeat(session_factory, lease_id, interval, report),
+                ProgressSync(session_factory, lease_id, progress_file, report),
+            ):
                 if started_file is not None:
                     started_file.touch()
-                code = relay.run(
-                    command, child_environment(reservation, environ or os.environ), cwd
-                )
+                code = relay.run(command, env, cwd)
         except Terminated as stopped:
             code = 128 + stopped.signum
         finally:
             _release(session_factory, lease_id, report, reason=_end_reason(code))
+            # A temp dir left behind costs disk; a cleanup that raises would cost the run's status.
+            shutil.rmtree(progress_dir, ignore_errors=True)
+        report(
+            f"capacity: '{request.label}' exited {code} after waiting {format_seconds(waited)}"
+            f" and running {format_seconds(time.monotonic() - ran_from)}"
+        )
     return code
 
 

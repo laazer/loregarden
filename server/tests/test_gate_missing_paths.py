@@ -29,6 +29,7 @@ _TS_PARSER = _ROOT / "client" / "node_modules" / "@typescript-eslint" / "typescr
 
 PY_BODY = "x = 1\n"
 TS_BODY = "export const x = 1;\n"
+CSS_BODY = ".x { opacity: 1; }\n"
 
 GATES = [
     pytest.param(
@@ -47,6 +48,9 @@ GATES = [
     ),
     pytest.param(["node", str(_SCRIPTS / "ts_ux_states_check.cjs")], "client/src/m.ts", id="ts-ux"),
     pytest.param(["node", str(_SCRIPTS / "ts_theme_check.cjs")], "client/src/m.ts", id="ts-theme"),
+    pytest.param(
+        ["node", str(_SCRIPTS / "ts_motion_check.cjs")], "client/src/m.css", id="ts-motion"
+    ),
     pytest.param(
         ["node", str(_SCRIPTS / "ts_no_silent_failures_check.cjs")],
         "client/src/m.ts",
@@ -85,6 +89,7 @@ def _build_repo(root: Path) -> None:
     (root / "src" / "pkg" / "m.py").write_text(PY_BODY)
     (root / "client" / "src").mkdir(parents=True)
     (root / "client" / "src" / "m.ts").write_text(TS_BODY)
+    (root / "client" / "src" / "m.css").write_text(CSS_BODY)
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "base")
 

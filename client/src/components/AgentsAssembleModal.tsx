@@ -13,10 +13,10 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 /**
  * The request body `POST /orchestrate` takes for what this dialog collected.
@@ -88,12 +88,8 @@ export function AgentsAssembleModal({
   onClose,
   onConfirm,
 }: AgentsAssembleModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const fieldId = useId();
   const busy = isRunning || isSavingRuntime;
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open || !ticket ? null : busy ? undefined : onClose);
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -113,7 +109,10 @@ export function AgentsAssembleModal({
     setTimeoutSeconds("");
   }, [open, ticket, workspaceRuntime, defaultSlotNumber]);
 
-  if (!open || !ticket) return null;
+  if (!open || !ticket) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="agents-assemble-title">{null}</ModalShell>;
+  }
 
   const runnableStages = stages.filter((s) => s.key !== "done");
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
@@ -122,204 +121,194 @@ export function AgentsAssembleModal({
   const isParent = (ticket.child_count ?? 0) > 0;
 
   return (
-    <>
-      <div className="modal-overlay" onClick={busy ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agents-assemble-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Orchestration</div>
-            <h2 id="agents-assemble-title" className="modal-title">
-              Agents Assemble
-            </h2>
-            <p className="modal-subtitle">{ticket.title}</p>
-          </div>
-          <IconCloseButton disabled={busy} onClick={onClose} />
+    <ModalShell open onDismiss={busy ? undefined : onClose} labelledBy="agents-assemble-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Orchestration</div>
+          <h2 id="agents-assemble-title" className="modal-title">
+            Agents Assemble
+          </h2>
+          <p className="modal-subtitle">{ticket.title}</p>
         </div>
+        <IconCloseButton disabled={busy} onClick={onClose} />
+      </div>
 
-        <div className="modal-body">
-          {!isParent && (
-            <div style={{ marginBottom: 16 }}>
-              <div id={`${fieldId}-branch`} className="modal-section-title">Branch</div>
-              <Input
-                aria-labelledby={`${fieldId}-branch`}
-                className="btn-secondary"
-                style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
-                value={branch}
-                disabled={busy}
-                onChange={(e) => setBranch(e.target.value)}
-                placeholder={`loregarden/${ticket.external_id}`}
-              />
-              <p className="modal-hint" style={{ marginTop: 6 }}>
-                Agent runs checkout this branch before executing.
-              </p>
-            </div>
-          )}
-
-          {runtimeOptions && (
-            <div style={{ marginBottom: 16 }}>
-              <div className="modal-section-title">Model for this run</div>
-              <WorkspaceRuntimeFields
-                runtime={draftRuntime}
-                options={runtimeOptions}
-                disabled={busy}
-                compact
-                onChange={setDraftRuntime}
-              />
-              {runtimeDirty && (
-                <p className="modal-hint" style={{ marginTop: 8 }}>
-                  Runtime changes will be saved when you start orchestration.
-                </p>
-              )}
-            </div>
-          )}
-
+      <div className="modal-body">
+        {!isParent && (
           <div style={{ marginBottom: 16 }}>
-            <div id={`${fieldId}-stop-at`} className="modal-section-title">
-              Stop at stage (optional)
-            </div>
-            <Select
-              aria-labelledby={`${fieldId}-stop-at`}
-              className="btn-secondary"
-              style={{ width: "100%", fontSize: 12 }}
-              value={stopAtStageKey}
-              disabled={busy}
-              onChange={(e) => setStopAtStageKey(e.target.value)}
-            >
-              <option value="">Run until blocked or complete</option>
-              {runnableStages.map((stage) => (
-                <option key={stage.key} value={stage.key}>
-                  {stage.name} ({stage.key})
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <LanePicker
-              value={slotNumber}
-              onChange={setSlotNumber}
-              enabled={open}
-              disabled={busy}
-            />
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <div id={`${fieldId}-timeout`} className="modal-section-title">
-              Max agent runtime (seconds, optional)
-            </div>
+            <div id={`${fieldId}-branch`} className="modal-section-title">Branch</div>
             <Input
-              aria-labelledby={`${fieldId}-timeout`}
-              type="number"
-              min={30}
+              aria-labelledby={`${fieldId}-branch`}
               className="btn-secondary"
-              style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
-              value={timeoutSeconds}
+              style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
+              value={branch}
               disabled={busy}
-              onChange={(e) => setTimeoutSeconds(e.target.value)}
-              placeholder="Agent default"
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder={`loregarden/${ticket.external_id}`}
             />
             <p className="modal-hint" style={{ marginTop: 6 }}>
-              Applies to every agent run for this ticket and its child tickets.
+              Agent runs checkout this branch before executing.
             </p>
           </div>
+        )}
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              color: "var(--txm)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={autoApprove}
+        {runtimeOptions && (
+          <div style={{ marginBottom: 16 }}>
+            <div className="modal-section-title">Model for this run</div>
+            <WorkspaceRuntimeFields
+              runtime={draftRuntime}
+              options={runtimeOptions}
               disabled={busy}
-              onChange={(e) => setAutoApprove(e.target.checked)}
+              compact
+              onChange={setDraftRuntime}
             />
-            Auto-approve CLI tool permissions and workflow gates for this ticket and its subtree
-          </label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              color: "var(--txm)",
-              cursor: "pointer",
-              marginTop: 8,
-            }}
+            {runtimeDirty && (
+              <p className="modal-hint" style={{ marginTop: 8 }}>
+                Runtime changes will be saved when you start orchestration.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginBottom: 16 }}>
+          <div id={`${fieldId}-stop-at`} className="modal-section-title">
+            Stop at stage (optional)
+          </div>
+          <Select
+            aria-labelledby={`${fieldId}-stop-at`}
+            className="btn-secondary"
+            style={{ width: "100%", fontSize: 12 }}
+            value={stopAtStageKey}
+            disabled={busy}
+            onChange={(e) => setStopAtStageKey(e.target.value)}
           >
-            <input
-              type="checkbox"
-              checked={approveDesignPlans}
-              disabled={busy || autoApprove}
-              onChange={(e) => setApproveDesignPlans(e.target.checked)}
-            />
-            Let the orchestrator approve design plans (untick to review the plan before implementation)
-          </label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              color: "var(--txm)",
-              cursor: "pointer",
-              marginTop: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={autoRepair}
-              disabled={busy}
-              onChange={(e) => setAutoRepair(e.target.checked)}
-            />
-            Let the orchestrator repair blocks an agent can fix (one turn, then it asks you)
-          </label>
+            <option value="">Run until blocked or complete</option>
+            {runnableStages.map((stage) => (
+              <option key={stage.key} value={stage.key}>
+                {stage.name} ({stage.key})
+              </option>
+            ))}
+          </Select>
         </div>
 
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy || (!isParent && !branch.trim())}
-            onClick={() => {
-              const parsedTimeout = timeoutSeconds.trim()
-                ? Number(timeoutSeconds)
-                : undefined;
-              void onConfirm({
-                runtime: draftRuntime,
-                stopAtStageKey,
-                autoApprove,
-                approveDesignPlans,
-                autoRepair,
-                // A parent's branch is unused; pass its stored value so confirmAssemble
-                // treats it as unchanged and never rewrites it.
-                branch: isParent ? (ticket.branch ?? "") : branch.trim(),
-                slotNumber,
-                timeoutSeconds:
-                  parsedTimeout !== undefined && Number.isFinite(parsedTimeout)
-                    ? parsedTimeout
-                    : undefined,
-              });
-            }}
-          >
-            {isSavingRuntime ? "Saving…" : isRunning ? "Starting…" : "Start orchestration"}
-          </button>
+        <div style={{ marginBottom: 16 }}>
+          <LanePicker
+            value={slotNumber}
+            onChange={setSlotNumber}
+            enabled={open}
+            disabled={busy}
+          />
         </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div id={`${fieldId}-timeout`} className="modal-section-title">
+            Max agent runtime (seconds, optional)
+          </div>
+          <Input
+            aria-labelledby={`${fieldId}-timeout`}
+            type="number"
+            min={30}
+            className="btn-secondary"
+            style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+            value={timeoutSeconds}
+            disabled={busy}
+            onChange={(e) => setTimeoutSeconds(e.target.value)}
+            placeholder="Agent default"
+          />
+          <p className="modal-hint" style={{ marginTop: 6 }}>
+            Applies to every agent run for this ticket and its child tickets.
+          </p>
+        </div>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            color: "var(--txm)",
+            cursor: "pointer",
+          }}
+        >
+          <Input
+            type="checkbox"
+            checked={autoApprove}
+            disabled={busy}
+            onChange={(e) => setAutoApprove(e.target.checked)}
+          />
+          Auto-approve CLI tool permissions and workflow gates for this ticket and its subtree
+        </label>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            color: "var(--txm)",
+            cursor: "pointer",
+            marginTop: 8,
+          }}
+        >
+          <Input
+            type="checkbox"
+            checked={approveDesignPlans}
+            disabled={busy || autoApprove}
+            onChange={(e) => setApproveDesignPlans(e.target.checked)}
+          />
+          Let the orchestrator approve design plans (untick to review the plan before implementation)
+        </label>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            color: "var(--txm)",
+            cursor: "pointer",
+            marginTop: 8,
+          }}
+        >
+          <Input
+            type="checkbox"
+            checked={autoRepair}
+            disabled={busy}
+            onChange={(e) => setAutoRepair(e.target.checked)}
+          />
+          Let the orchestrator repair blocks an agent can fix (one turn, then it asks you)
+        </label>
       </div>
-    </>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={busy} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={busy || (!isParent && !branch.trim())}
+          onClick={() => {
+            const parsedTimeout = timeoutSeconds.trim()
+              ? Number(timeoutSeconds)
+              : undefined;
+            void onConfirm({
+              runtime: draftRuntime,
+              stopAtStageKey,
+              autoApprove,
+              approveDesignPlans,
+              autoRepair,
+              // A parent's branch is unused; pass its stored value so confirmAssemble
+              // treats it as unchanged and never rewrites it.
+              branch: isParent ? (ticket.branch ?? "") : branch.trim(),
+              slotNumber,
+              timeoutSeconds:
+                parsedTimeout !== undefined && Number.isFinite(parsedTimeout)
+                  ? parsedTimeout
+                  : undefined,
+            });
+          }}
+        >
+          {isSavingRuntime ? "Saving…" : isRunning ? "Starting…" : "Start orchestration"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

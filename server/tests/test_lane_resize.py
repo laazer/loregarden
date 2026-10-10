@@ -18,7 +18,7 @@ from loregarden.services import queue_lanes
 from loregarden.services.lane_count import DEFAULT_LANE_COUNT, lane_count, store_lane_count
 from loregarden.services.lane_resize import resize_lanes
 from loregarden.services.parallel_queue import ParallelQueueService
-from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from sqlmodel import Session, select
 
 
@@ -217,6 +217,26 @@ def test_a_retried_entry_whose_lane_retired_goes_to_a_live_lane(session, workspa
     session.refresh(retried)
     assert retried.slot_number in (1, 2)
     assert position == 1
+
+
+def test_new_work_goes_to_an_idle_lane_not_behind_a_running_one(session, workspace):
+    """Lane 1 has a stale entry waiting, lane 2 is mid-run with nothing behind
+    it, lane 3 is empty: the autopilot once picked lane 2 and the ticket waited
+    out the whole run while lane 3 sat free."""
+    resize_lanes(session, 3)
+    _wait(session, workspace, 1, "stale")
+    _occupy(session, workspace, 2, "running")
+
+    assert least_busy_lane(QueueLaneService(session)) == 3
+
+
+def test_new_work_never_goes_to_a_retired_lane(session, workspace):
+    resize_lanes(session, 5)
+    resize_lanes(session, 2)
+    _occupy(session, workspace, 1, "one")
+    _occupy(session, workspace, 2, "two")
+
+    assert least_busy_lane(QueueLaneService(session)) in (1, 2)
 
 
 def test_lane_count_endpoints(client):

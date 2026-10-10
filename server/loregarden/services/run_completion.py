@@ -17,6 +17,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from loregarden.agents.registry import REPAIR_AGENT_ID
+from loregarden.config import settings
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.core.workflow_terminal import is_terminal_stage
@@ -41,6 +42,12 @@ from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
 )
+from loregarden.services.autopilot_sign_off import (
+    auto_approve_may_sign_off,
+    autopilot_may_sign_off,
+    record_auto_approve_sign_off,
+    record_autopilot_sign_off,
+)
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.block_repair import record_repair_outcome
 from loregarden.services.block_settlement import BlockSettlement, settle_block
@@ -54,6 +61,13 @@ from loregarden.services.exit_action_ledger import (
 )
 from loregarden.services.exit_actions import attest_assigned_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval
+from loregarden.services.network_wait import (
+    is_network_unreachable,
+    network_wait_message,
+    network_waits_enabled,
+    provider_reachable,
+    record_network_wait,
+)
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
@@ -81,7 +95,7 @@ from loregarden.services.usage_limits import (
     format_usage_limit_hint,
     usage_limit_blocking_issue,
 )
-from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
+from loregarden.services.workflow_routing import apply_stage_route, reject_fallback_key
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 
@@ -106,19 +120,19 @@ def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: st
     )
 
 
-def _rework_target(stages, from_key: str, reroute_to_stage: str) -> str:
+def _rework_target(stages, from_key: str, reroute_to_stage: str, reroute_to_agent: str) -> str:
     """The stage this rework will re-run, for keying the rework-feedback ledger.
 
     Mirrors ``apply_stage_route``'s reject resolution for the common cases: an
-    explicit, valid ``reroute_to_stage`` wins; otherwise it falls back to the
-    immediately preceding stage. A template ``reject`` route to a non-adjacent
+    explicit, valid ``reroute_to_stage`` wins; otherwise ``reject_fallback_key``
+    — the same stage for a hand-off to a sibling agent, else the one before. A template ``reject`` route to a non-adjacent
     stage isn't modelled here, so the ledger key can differ by one in that rare
     case — the feedback is still recorded, just under the fallback key.
     """
     keys = {stage.key for stage in stages}
     if reroute_to_stage and reroute_to_stage in keys:
         return reroute_to_stage
-    return previous_stage_key(stages, from_key) or ""
+    return reject_fallback_key(stages, from_key, reroute_to_agent) or ""
 
 
 def _rework_context(report: StageReport, stderr: str) -> str:
@@ -155,7 +169,9 @@ def _reroute_or_block_for_rework(
     loop cap — block for a human instead of bouncing the work yet again.
     """
     full_context = _rework_context(report, stderr)
-    target_stage = _rework_target(stages, run.stage_key, report.reroute_to_stage or "")
+    target_stage = _rework_target(
+        stages, run.stage_key, report.reroute_to_stage or "", report.reroute_to_agent or ""
+    )
     exhausted = record_reroute_exhausts_budget(
         orch.session,
         ticket,
@@ -310,26 +326,38 @@ def _classify_raw_failure(
     )
 
 
-def _sign_off_design_plan_if_permitted(
+def _sign_off_gate_if_permitted(
     orch: OrchestrationService,
     ticket: Ticket,
     run: AgentRun,
     stages: list[WorkflowStageDef],
     gate_approval: Approval,
 ) -> None:
-    """The post-run gate on a design plan, signed off by the run that reached it.
+    """The post-run gate, signed off unattended when something may sign it.
 
-    Narrowed to the design-plan stages and to a parent orchestration started
-    with `approve_design_plans` (746); `auto_approve` alone never signs a gate. A standalone run has no orchestrator to sign
-    for it, so its gate waits for a person. Recorded in the history either way.
+    Three may: the parent orchestration, for a design-plan stage when it was
+    started with `approve_design_plans` (746); the initiative autopilot, for a
+    legacy stage sign-off on a ticket it started; and a parent run started with
+    `auto_approve`, for a legacy stage sign-off and nothing else
+    (`autopilot_sign_off`). Otherwise the gate waits for a person. Recorded in
+    the history either way.
     """
-    if not run.orchestration_run_id:
-        return
-    parent = orch.session.get(OrchestrationRun, run.orchestration_run_id)
+    parent = (
+        orch.session.get(OrchestrationRun, run.orchestration_run_id)
+        if run.orchestration_run_id
+        else None
+    )
     stage_def = next((s for s in stages if s.key == run.stage_key), None)
-    if parent is None or stage_def is None:
-        return
-    if not orchestrator_may_sign_off(parent, stage_def, auto_approve=False):
+    design_plan = (
+        parent is not None
+        and stage_def is not None
+        and orchestrator_may_sign_off(parent, stage_def, auto_approve=False)
+    )
+    autopilot = None if design_plan else autopilot_may_sign_off(orch.session, ticket, gate_approval)
+    by_run = (
+        not design_plan and autopilot is None and auto_approve_may_sign_off(parent, gate_approval)
+    )
+    if not design_plan and autopilot is None and not by_run:
         return
     # A sign-off answers operator judgment and nothing else: a grant or a
     # recheck is a person's to make, and the gate stays in the inbox for them.
@@ -341,13 +369,20 @@ def _sign_off_design_plan_if_permitted(
         # Run completion must not raise past here: the run is already settled.
         # The gate stays pending and visible in the inbox, which is the fallback.
         logger.warning(
-            "Design-plan sign-off of gate %s on %s refused; left for a person",
+            "Unattended sign-off of gate %s on %s refused; left for a person",
             gate_approval.id,
             ticket.external_id,
             exc_info=True,
         )
         return
-    record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
+    if autopilot is not None:
+        orch.session.refresh(gate_approval)
+        record_autopilot_sign_off(orch.session, ticket, autopilot, gate_approval)
+    elif by_run and parent is not None:
+        orch.session.refresh(gate_approval)
+        record_auto_approve_sign_off(orch.session, ticket, parent, gate_approval)
+    elif parent is not None:
+        record_design_plan_sign_off(orch.session, ticket, parent, run.stage_key)
 
 
 def complete_run_tail(
@@ -647,6 +682,8 @@ def _rearmed_for_transient_retry(
         # about a budget nobody was spending.
         return False
     detail = stderr[:2000] or stdout[-500:] or "Agent run failed"
+    if _parked_for_network(orch, ticket, run, instance, stages, stdout=stdout, detail=detail):
+        return True
     spent = count_transient_retries(orch.session, ticket.id, run.stage_key)
 
     if spent >= config.max_transient_retries:
@@ -686,6 +723,49 @@ def _rearmed_for_transient_retry(
         spent + 1,
         config.max_transient_retries,
         reason,
+    )
+    return True
+
+
+def _parked_for_network(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance,
+    stages,
+    *,
+    stdout: str,
+    detail: str,
+) -> bool:
+    """Park the stage when the provider is unreachable from this machine too.
+
+    No retry is spent and no repair turn is offered — neither can reach the
+    provider either. The reconcile pass resumes it (`network_wait_resume`).
+    """
+    if not network_waits_enabled() or not is_network_unreachable(stdout, detail):
+        return False
+    if provider_reachable():
+        return False
+    message = network_wait_message(run.stage_key, detail)
+    ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+    choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
+    record_network_wait(orch.session, ticket.id, run.stage_key, run_id=run.id)
+    logger.warning(
+        "Stage %r on ticket %s parked until %s is reachable",
+        run.stage_key,
+        ticket.external_id,
+        settings.network_probe_host,
+    )
+    _settle_block(
+        orch,
+        ticket,
+        run,
+        instance,
+        stages,
+        message=message,
+        declared=BlockKind.HARNESS,
+        repairable=False,
     )
     return True
 
@@ -771,9 +851,10 @@ def advance_stage_after_run(
     orch.session.commit()
 
     # Human-required exit actions never auto-resolve under auto_approve (AC-6).
-    # Design-plan stages may still be signed off when approve_design_plans is on.
+    # Design-plan stages may still be signed off when approve_design_plans is on,
+    # and legacy sign-offs when the initiative autopilot started the ticket.
     if gate_approval is not None:
-        _sign_off_design_plan_if_permitted(orch, ticket, run, stages, gate_approval)
+        _sign_off_gate_if_permitted(orch, ticket, run, stages, gate_approval)
         orch.session.refresh(ticket)
 
 

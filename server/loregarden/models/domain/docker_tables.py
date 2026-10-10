@@ -203,5 +203,14 @@ class DockerLease(SQLModel, table=True):
     poll_count: int = 0
     throttled_poll_count: int = 0
 
+    #: How far the held command has got, as it last reported through its
+    #: progress file (`services/capacity_progress.py`): the step it is on and,
+    #: for a test runner, how many of how many. Empty for a command that never
+    #: reports — the board then shows only how long it has held.
+    progress_step: str = ""
+    progress_done: int | None = None
+    progress_total: int | None = None
+    progress_at: datetime | None = None
+
     note: str = ""
     created_at: datetime = Field(default_factory=utcnow)

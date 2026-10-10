@@ -172,7 +172,7 @@
   border-radius: 999px;
   background: var(--bg4);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--t-fast);
 }
 
 .gate-switch::after {
@@ -184,7 +184,7 @@
   height: 14px;
   border-radius: 50%;
   background: var(--tx);
-  transition: transform 0.15s;
+  transition: transform var(--t-fast);
 }
 
 .gate-switch:checked {
@@ -228,7 +228,7 @@
   border: 1px solid var(--bd);
   border-radius: 14px;
   background: var(--bg1);
-  transition: opacity 0.15s;
+  transition: opacity var(--t-fast);
 }
 
 .gate-card-head {

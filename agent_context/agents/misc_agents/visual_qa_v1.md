@@ -11,6 +11,8 @@ You are Visual QA. Verify that frontend changes actually work in a browser, then
 
 **Memory protocol:** When recording a recurring visual failure as a learning, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 
+**Motion:** When the change animates anything, read `agent_context/agents/common_assets/motion_v1.md` and walk its "Checking it" list for each state change the surface has.
+
 ## How to capture
 
 From `client/`, with the dev server running:

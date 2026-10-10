@@ -52,8 +52,10 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
 from loregarden.models.domain import (
+    BlockKind,
     Workspace,
 )
+from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
 from sqlmodel import Session
 
@@ -239,3 +241,22 @@ def test_an_unknown_queue_operation_type_is_rejected_before_it_is_written(
     listing = lenient_client.get(base)
 
     assert (created.status_code, listing.status_code) == (422, 200)
+
+
+#: The blocking message `settle_stage_after_failed_completion` wrote for
+#: lg-run-durability-679's passing test-design run on 2026-10-08, trimmed of the
+#: SQL parameters.
+_LOCKED_COMPLETION = (
+    "Run completion failed: (sqlite3.OperationalError) database is locked\n"
+    "[SQL: UPDATE artifacts SET run_id=?, content_json=?, created_at=? WHERE artifacts.id = ?]\n"
+    "(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="lg-run-durability-906 — open: a transient SQLite lock in the completion tail "
+    "is classified as a work block, and the settle offers no repair",
+)
+def test_a_locked_database_in_run_completion_is_not_a_work_block() -> None:
+    assert classify_block_message(_LOCKED_COMPLETION) is BlockKind.HARNESS

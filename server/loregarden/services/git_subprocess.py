@@ -111,6 +111,13 @@ def gh_binary() -> str:
 #: (gitignored, sourced by `scripts/dev-server.sh`), never a committed profile.
 GH_USER_ENV = "LOREGARDEN_GH_USER"
 
+#: `gh` reads this as "act as this token's account". A *lookup* must never carry
+#: an ambient one: `gh auth token --user X` and `gh auth status` would both answer
+#: for the ambient token's account and hide the keyring's, which is the silent
+#: wrong-account answer `GH_USER_ENV` exists to prevent. Passing it through to a
+#: real `gh` call is still how an unconfigured machine acts as its active account.
+GH_TOKEN_ENV = "GH_TOKEN"
+
 #: `gh auth token` reads the local keyring; it does not touch the network.
 GH_TOKEN_LOOKUP_TIMEOUT_SECONDS = 15
 
@@ -162,6 +169,13 @@ def _spawn_gh(
     )
 
 
+def _lookup_env() -> dict[str, str]:
+    """The environment to ask `gh` about accounts in; see `GH_TOKEN_ENV`."""
+    env = scrubbed_git_env()
+    env.pop(GH_TOKEN_ENV, None)
+    return env
+
+
 def configured_gh_user() -> str | None:
     """The account `LOREGARDEN_GH_USER` names, or None to act as the active one."""
     return os.environ.get(GH_USER_ENV, "").strip() or None
@@ -180,7 +194,7 @@ def gh_token_for_user(user: str) -> str:
         result = _spawn_gh(
             ["auth", "token", "--user", user],
             cwd=None,
-            env=scrubbed_git_env(),
+            env=_lookup_env(),
             timeout=GH_TOKEN_LOOKUP_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -213,7 +227,7 @@ def gh_logins(*, timeout: float | None = GH_TOKEN_LOOKUP_TIMEOUT_SECONDS) -> lis
         result = _spawn_gh(
             ["auth", "status", "--hostname", "github.com", "--json", "hosts"],
             cwd=None,
-            env=scrubbed_git_env(),
+            env=_lookup_env(),
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -266,5 +280,5 @@ def run_gh(
                 stderr=f"{exc} (set by {GH_USER_ENV})",
             )
     if gh_token:
-        env["GH_TOKEN"] = gh_token
+        env[GH_TOKEN_ENV] = gh_token
     return _spawn_gh(args, cwd=cwd, env=env, timeout=timeout)

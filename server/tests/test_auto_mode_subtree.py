@@ -25,10 +25,15 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.integration_review import backfill_integration_reviews
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.oversized_ticket_split import (
+    MAX_ACCEPTANCE_CRITERIA,
+    TICKET_SPLIT_CLI_PROFILE,
+)
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
@@ -1502,3 +1507,50 @@ def test_a_child_whose_prerequisite_is_done_but_unlanded_is_held_and_says_so(
     assert "unlanded-a" in message, message
     assert "not landed on integration/unlanded-p" in message, message
     assert parent.state != TicketState.DONE
+
+
+def test_oversized_ticket_is_split_and_its_parts_run_to_completion(
+    db_session: Session, tmp_path, monkeypatch
+):
+    """An oversized feature never runs its own stages: it is split before the
+    first one, and the aggregator loop runs the parts."""
+    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    parts = [criteria[:8], criteria[8:]]
+    reply = json.dumps(
+        {
+            "children": [
+                {
+                    "external_id": f"part-{i}",
+                    "title": f"Part {i}",
+                    "work_item_type": "capability",
+                    "description": f"Part {i}.",
+                    "acceptance_criteria": group,
+                    "priority": 2,
+                    "children": [],
+                }
+                for i, group in enumerate(parts, start=1)
+            ]
+        }
+    )
+    monkeypatch.setenv(TICKET_SPLIT_CLI_PROFILE.stub_env, reply)
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-split")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="split-e2e-parent",
+        title="Oversized parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    parent.acceptance_criteria_json = serialize_criteria(criteria)
+    db_session.add(parent)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+
+    children = db_session.exec(select(Ticket).where(Ticket.parent_ticket_id == parent.id)).all()
+    assert len([c for c in children if not c.is_integration_review]) == 2
+    assert all(child.state == TicketState.DONE for child in children)
+    assert parent.state == TicketState.DONE
+    assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == []

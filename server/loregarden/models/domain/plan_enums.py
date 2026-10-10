@@ -125,6 +125,8 @@ class AutopilotAction(StrEnum):
     REFUSED = "refused"
     #: Stopped itself: too many of the tickets it started ended blocked.
     PAUSED = "paused"
+    #: Approved a legacy stage sign-off on a ticket it started.
+    SIGNED_OFF = "signed_off"
 
 
 class SuggestionKind(StrEnum):

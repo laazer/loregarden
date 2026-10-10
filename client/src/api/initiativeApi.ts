@@ -152,7 +152,7 @@ export interface PlanNode {
   external: boolean;
 }
 
-export type AutopilotAction = "enabled" | "disabled" | "dispatched" | "refused" | "paused";
+export type AutopilotAction = "enabled" | "disabled" | "dispatched" | "refused" | "paused" | "signed_off";
 
 export interface AutopilotView {
   enabled: boolean;

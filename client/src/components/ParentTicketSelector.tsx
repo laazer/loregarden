@@ -11,8 +11,8 @@ import {
 } from "../lib/parentTicketTree";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "./TicketTree";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 import { Input } from "./ui/Input";
 
 export interface ParentTicketSelection {
@@ -56,13 +56,7 @@ export function ParentTicketSelector({
   hint,
   placeholder = "Choose a parent work item…",
 }: ParentTicketSelectorProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [open, setOpen] = useState(false);
-  // Escape and the backdrop agree on purpose: whatever makes a click dismiss
-  // this dialog is what makes the key dismiss it. Gated on `open` because this
-  // component stays mounted while the picker is closed, and a registered
-  // dismisser would swallow Escape from the dialog it was opened from.
-  useDialogDismiss(open ? () => setOpen(false) : null);
   const [search, setSearch] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(value);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -149,8 +143,8 @@ export function ParentTicketSelector({
     <>
       <div className="modal-field" style={{ marginBottom: 0 }}>
         {label ? <div className="modal-field-label">{label}</div> : null}
-        <button
-          type="button"
+        <Button
+          variant="plain"
           className="parent-ticket-selector-trigger btn-secondary"
           disabled={disabled || !workspaceSlug}
           onClick={() => setOpen(true)}
@@ -159,122 +153,115 @@ export function ParentTicketSelector({
             {displayValue}
           </span>
           <span className="parent-ticket-selector-action">Browse</span>
-        </button>
+        </Button>
         {hint ? <p className="modal-hint" style={{ margin: "6px 0 0" }}>{hint}</p> : null}
       </div>
 
-      {open && (
-        <>
-          <div className="modal-overlay" onClick={() => setOpen(false)} role="presentation" />
-          <div
-            ref={dialogRef}
-            className="modal-panel modal-panel-wide parent-ticket-selector-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="parent-ticket-selector-title"
-          >
-            <div className="modal-header">
-              <div>
-                <div className="state-label">{workspaceSlug}</div>
-                <h2 id="parent-ticket-selector-title" className="modal-title">
-                  Select parent
-                </h2>
-                <p className="modal-subtitle">
-                  Choose a {allowedLabel} to contain this {childLabel}.
-                </p>
-              </div>
-              <IconCloseButton className="modal-close-btn" onClick={() => setOpen(false)} />
-            </div>
-
-            <div className="modal-body" style={{ gap: 12 }}>
-              <Input
-                aria-label="Search tickets by title or id"
-                className="btn-secondary ticket-search"
-                style={{ width: "100%", boxSizing: "border-box" }}
-                value={search}
-                placeholder="Search tickets by title or id…"
-                onChange={(e) => setSearch(e.target.value)}
-                autoFocus
-              />
-
-              <div className="parent-ticket-selector-tree">
-                {treeQuery.isLoading || (search.trim() && searchQuery.isLoading) ? (
-                  <p className="modal-hint">Loading ticket tree…</p>
-                ) : filteredTree.length === 0 ? (
-                  <p className="modal-hint">
-                    {search.trim()
-                      ? "No matching parents found."
-                      : `No valid parent ${allowedLabel} in this workspace.`}
-                  </p>
-                ) : (
-                  <TicketTree
-                    nodes={filteredTree}
-                    selectedId={pendingId}
-                    expandedIds={expandedIds}
-                    showExternalId
-                    onSelect={(id) => {
-                      const node = findTicketTreeNode(filteredTree, id);
-                      if (node && allowedTypes.has(node.work_item_type)) {
-                        setPendingId(id);
-                      } else {
-                        setPendingId(id);
-                        setExpandedIds((current) => {
-                          const next = new Set(current);
-                          next.add(id);
-                          return next;
-                        });
-                      }
-                    }}
-                    onToggle={(id) => {
-                      setExpandedIds((current) => {
-                        const next = new Set(current);
-                        if (next.has(id)) next.delete(id);
-                        else next.add(id);
-                        return next;
-                      });
-                    }}
-                  />
-                )}
-              </div>
-
-              {pendingNode && (
-                <div className="state-card" style={{ fontSize: 12 }}>
-                  <div className="state-label">Selected</div>
-                  <div>
-                    {pendingNode.external_id} · {pendingNode.title}
-                  </div>
-                  {!allowedTypes.has(pendingNode.work_item_type) && (
-                    <p className="modal-hint" style={{ color: "var(--rdl)", margin: "6px 0 0" }}>
-                      This {workItemTypeLabel(pendingNode.work_item_type).toLowerCase()} cannot be a parent for a{" "}
-                      {childLabel}.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              {allowNone && (
-                <button type="button" className="btn-secondary" onClick={clearSelection}>
-                  {noneLabel}
-                </button>
-              )}
-              <div style={{ flex: 1 }} />
-              <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={!selectablePending}
-                onClick={confirmSelection}
-              >
-                Select parent
-              </button>
-            </div>
+      <ModalShell
+        open={open}
+        onDismiss={() => setOpen(false)}
+        labelledBy="parent-ticket-selector-title"
+        panelClassName="modal-panel-wide parent-ticket-selector-modal"
+      >
+        <div className="modal-header">
+          <div>
+            <div className="state-label">{workspaceSlug}</div>
+            <h2 id="parent-ticket-selector-title" className="modal-title">
+              Select parent
+            </h2>
+            <p className="modal-subtitle">
+              Choose a {allowedLabel} to contain this {childLabel}.
+            </p>
           </div>
-        </>
-      )}
+          <IconCloseButton className="modal-close-btn" onClick={() => setOpen(false)} />
+        </div>
+
+        <div className="modal-body" style={{ gap: 12 }}>
+          <Input
+            aria-label="Search tickets by title or id"
+            className="btn-secondary ticket-search"
+            style={{ width: "100%", boxSizing: "border-box" }}
+            value={search}
+            placeholder="Search tickets by title or id…"
+            onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+          />
+
+          <div className="parent-ticket-selector-tree">
+            {treeQuery.isLoading || (search.trim() && searchQuery.isLoading) ? (
+              <p className="modal-hint">Loading ticket tree…</p>
+            ) : filteredTree.length === 0 ? (
+              <p className="modal-hint">
+                {search.trim()
+                  ? "No matching parents found."
+                  : `No valid parent ${allowedLabel} in this workspace.`}
+              </p>
+            ) : (
+              <TicketTree
+                nodes={filteredTree}
+                selectedId={pendingId}
+                expandedIds={expandedIds}
+                showExternalId
+                onSelect={(id) => {
+                  const node = findTicketTreeNode(filteredTree, id);
+                  if (node && allowedTypes.has(node.work_item_type)) {
+                    setPendingId(id);
+                  } else {
+                    setPendingId(id);
+                    setExpandedIds((current) => {
+                      const next = new Set(current);
+                      next.add(id);
+                      return next;
+                    });
+                  }
+                }}
+                onToggle={(id) => {
+                  setExpandedIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
+              />
+            )}
+          </div>
+
+          {pendingNode && (
+            <div className="state-card" style={{ fontSize: 12 }}>
+              <div className="state-label">Selected</div>
+              <div>
+                {pendingNode.external_id} · {pendingNode.title}
+              </div>
+              {!allowedTypes.has(pendingNode.work_item_type) && (
+                <p className="modal-hint" style={{ color: "var(--rdl)", margin: "6px 0 0" }}>
+                  This {workItemTypeLabel(pendingNode.work_item_type).toLowerCase()} cannot be a parent for a{" "}
+                  {childLabel}.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          {allowNone && (
+            <Button variant="secondary" onClick={clearSelection}>
+              {noneLabel}
+            </Button>
+          )}
+          <div style={{ flex: 1 }} />
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!selectablePending}
+            onClick={confirmSelection}
+          >
+            Select parent
+          </Button>
+        </div>
+      </ModalShell>
     </>
   );
 }

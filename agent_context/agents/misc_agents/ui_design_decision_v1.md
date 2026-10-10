@@ -13,6 +13,8 @@ written down and is therefore almost never built.
 
 **Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 
+**Motion:** When a ticket adds or changes how anything appears, leaves or moves, read `agent_context/agents/common_assets/motion_v1.md` and decide its motion as one of the states below, including whether it should move at all.
+
 ## Most tickets are not yours
 
 A ticket that changes no surface a person sees needs no design pass. Say so in one line and

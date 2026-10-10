@@ -20,9 +20,9 @@ import {
   runtimeFromWorkspace,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { describeError } from "../state/toastStore";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 import { Select } from "./ui/Select";
 
 type SettingsTab = "runtime" | "memory";
@@ -68,7 +68,6 @@ export function SettingsModal({
   onSave,
 }: SettingsModalProps) {
   const qc = useQueryClient();
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const workspaceFieldId = useId();
   const [tab, setTab] = useState<SettingsTab>("runtime");
   const workspace = workspaces.find((w) => w.slug === workspaceSlug);
@@ -95,9 +94,6 @@ export function SettingsModal({
   // Either tab's in-flight save holds the dialog open: dismissing mid-write
   // would leave the user with no idea whether it landed.
   const busy = isSaving || setMemoryConfig.isPending;
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : busy ? undefined : onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -110,7 +106,14 @@ export function SettingsModal({
     setMemoryDraft(memorySaved);
   }, [open, memorySaved]);
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return (
+      <ModalShell open={false} onDismiss={undefined} labelledBy="settings-modal-title">
+        {null}
+      </ModalShell>
+    );
+  }
 
   const saved = runtimeFromWorkspace(workspace);
   const dirty = !runtimeSettingsEqual(draft, saved);
@@ -136,144 +139,138 @@ export function SettingsModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={busy ? undefined : close} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel modal-panel-wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-modal-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">{heading.eyebrow}</div>
-            <h2 id="settings-modal-title" className="modal-title">
-              {heading.title}
-            </h2>
-            <p className="modal-subtitle">{heading.subtitle}</p>
-          </div>
-          <IconCloseButton disabled={busy} onClick={close} />
+    // Escape and the backdrop agree on purpose: the shell routes both to onDismiss.
+    <ModalShell
+      open
+      onDismiss={busy ? undefined : close}
+      labelledBy="settings-modal-title"
+      panelClassName="modal-panel-wide"
+    >
+      <div className="modal-header">
+        <div>
+          <div className="state-label">{heading.eyebrow}</div>
+          <h2 id="settings-modal-title" className="modal-title">
+            {heading.title}
+          </h2>
+          <p className="modal-subtitle">{heading.subtitle}</p>
         </div>
-
-        <div className="tab-bar">
-          <div className="tab-bar-scroll" role="tablist" aria-label="Settings sections">
-            {TABS.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry.key}
-                className={`tab-btn${tab === entry.key ? " active" : ""}`}
-                disabled={busy}
-                onClick={() => setTab(entry.key)}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {tab === "runtime" ? (
-          <>
-            <div className="modal-body">
-              {workspaces.length > 1 && (
-                <div className="modal-field">
-                  <label htmlFor={workspaceFieldId} className="modal-field-label">Workspace</label>
-                  <Select
-                    id={workspaceFieldId}
-                    className="btn-secondary filter-select"
-                    style={{ width: "100%", fontSize: 12 }}
-                    value={workspaceSlug}
-                    disabled={busy}
-                    onChange={(e) => onWorkspaceChange(e.target.value)}
-                  >
-                    {workspaces.map((w) => (
-                      <option key={w.id} value={w.slug}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              )}
-
-              {runtimeOptions ? (
-                <WorkspaceRuntimeFields
-                  runtime={draft}
-                  options={runtimeOptions}
-                  disabled={busy}
-                  onChange={setDraft}
-                />
-              ) : (
-                <p className="modal-hint">Loading runtime options…</p>
-              )}
-
-              <p className="modal-hint" style={{ marginTop: 4 }}>
-                Workspace default uses each agent&apos;s registry CLI. Choose Claude, Cursor, or LM
-                Studio to override for all stage runs in this workspace.
-              </p>
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="btn-secondary" disabled={busy} onClick={close}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={busy || !runtimeOptions || !dirty}
-                onClick={() => void handleSave()}
-              >
-                {isSaving ? "Saving…" : "Save settings"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="modal-body">
-              {memorySaveError || memoryLoadError ? (
-                <p className="modal-hint" style={{ color: "var(--rdl)" }}>
-                  {memorySaveError ?? memoryLoadError}
-                </p>
-              ) : null}
-
-              {memoryConfig.isLoading && !memoryConfig.data ? (
-                <p className="modal-hint">Loading memory configuration…</p>
-              ) : (
-                <MemorySettingsFields
-                  draft={memoryDraft}
-                  data={memoryConfig.data}
-                  disabled={busy}
-                  onChange={setMemoryDraft}
-                />
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={busy}
-                onClick={() => void memoryConfig.refetch()}
-              >
-                Refresh
-              </button>
-              <div style={{ flex: 1 }} />
-              <button type="button" className="btn-secondary" disabled={busy} onClick={close}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={busy || memoryConfig.isLoading || !memoryDirty}
-                onClick={() => void setMemoryConfig.mutateAsync(memoryDraft)}
-              >
-                {setMemoryConfig.isPending ? "Saving…" : "Save setup"}
-              </button>
-            </div>
-          </>
-        )}
+        <IconCloseButton disabled={busy} onClick={close} />
       </div>
-    </>
+
+      <div className="tab-bar">
+        <div className="tab-bar-scroll" role="tablist" aria-label="Settings sections">
+          {TABS.map((entry) => (
+            <Button
+              key={entry.key}
+              variant="plain"
+              role="tab"
+              aria-selected={tab === entry.key}
+              className={`tab-btn${tab === entry.key ? " active" : ""}`}
+              disabled={busy}
+              onClick={() => setTab(entry.key)}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "runtime" ? (
+        <>
+          <div className="modal-body">
+            {workspaces.length > 1 && (
+              <div className="modal-field">
+                <label htmlFor={workspaceFieldId} className="modal-field-label">Workspace</label>
+                <Select
+                  id={workspaceFieldId}
+                  className="btn-secondary filter-select"
+                  style={{ width: "100%", fontSize: 12 }}
+                  value={workspaceSlug}
+                  disabled={busy}
+                  onChange={(e) => onWorkspaceChange(e.target.value)}
+                >
+                  {workspaces.map((w) => (
+                    <option key={w.id} value={w.slug}>
+                      {w.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {runtimeOptions ? (
+              <WorkspaceRuntimeFields
+                runtime={draft}
+                options={runtimeOptions}
+                disabled={busy}
+                onChange={setDraft}
+              />
+            ) : (
+              <p className="modal-hint">Loading runtime options…</p>
+            )}
+
+            <p className="modal-hint" style={{ marginTop: 4 }}>
+              Workspace default uses each agent&apos;s registry CLI. Choose Claude, Cursor, or LM
+              Studio to override for all stage runs in this workspace.
+            </p>
+          </div>
+
+          <div className="modal-footer">
+            <Button variant="secondary" disabled={busy} onClick={close}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !runtimeOptions || !dirty}
+              onClick={() => void handleSave()}
+            >
+              {isSaving ? "Saving…" : "Save settings"}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="modal-body">
+            {memorySaveError || memoryLoadError ? (
+              <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+                {memorySaveError ?? memoryLoadError}
+              </p>
+            ) : null}
+
+            {memoryConfig.isLoading && !memoryConfig.data ? (
+              <p className="modal-hint">Loading memory configuration…</p>
+            ) : (
+              <MemorySettingsFields
+                draft={memoryDraft}
+                data={memoryConfig.data}
+                disabled={busy}
+                onChange={setMemoryDraft}
+              />
+            )}
+          </div>
+
+          <div className="modal-footer">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void memoryConfig.refetch()}
+            >
+              Refresh
+            </Button>
+            <div style={{ flex: 1 }} />
+            <Button variant="secondary" disabled={busy} onClick={close}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || memoryConfig.isLoading || !memoryDirty}
+              onClick={() => void setMemoryConfig.mutateAsync(memoryDraft)}
+            >
+              {setMemoryConfig.isPending ? "Saving…" : "Save setup"}
+            </Button>
+          </div>
+        </>
+      )}
+    </ModalShell>
   );
 }

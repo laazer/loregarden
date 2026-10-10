@@ -39,6 +39,7 @@ from loregarden.services.git_branch import validate_branch_name
 from loregarden.services.git_merge_noco import BranchTips, merge_tips, read_branch_tips
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.hierarchy_service import validate_parent_child
+from loregarden.services.integration_conflict_card import report_integration_conflict
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
 
@@ -49,6 +50,21 @@ INTEGRATION_PREFIX = "integration/"
 
 class TargetBranchError(RuntimeError):
     """The target branch could not be resolved or created."""
+
+
+class IntegrationConflictError(TargetBranchError):
+    """An integration branch exists but cannot take its base: the merge conflicts.
+
+    Its own type because it is the one failure a caller can still work around:
+    the branch is there, only stale, so a turn that does not need the base's
+    newest commits (a chat turn) can run on it as it is.
+    """
+
+    def __init__(self, branch: str, base: str, files: tuple[str, ...]) -> None:
+        super().__init__(f"{branch!r} cannot take {base!r}: merge conflicts in {', '.join(files)}")
+        self.branch = branch
+        self.base = base
+        self.files = files
 
 
 def subtree_root(session: Session, ticket: Ticket) -> Ticket:
@@ -179,10 +195,7 @@ def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_bran
             logger.info("Refreshed %s from %s as %s", branch, base_branch, outcome.sha[:12])
         return not outcome.already_contained
     if outcome.conflicted:
-        raise TargetBranchError(
-            f"{branch!r} cannot take {base_branch!r}: merge conflicts in "
-            f"{', '.join(outcome.conflicted_files)}"
-        )
+        raise IntegrationConflictError(branch, base_branch, outcome.conflicted_files)
     raise TargetBranchError(f"Cannot refresh {branch!r} from {base_branch!r}: {outcome.detail}")
 
 
@@ -200,7 +213,19 @@ def resolve_target_branch(
     target = target_branch_name(session, ticket, workspace)
     if target != base:
         # One reading of both refs decides creation and the refresh alike.
-        _refresh_from_tips(
-            repo_root, ensure_integration_branch(repo_root, target, base), target, base
-        )
+        try:
+            _refresh_from_tips(
+                repo_root, ensure_integration_branch(repo_root, target, base), target, base
+            )
+        except IntegrationConflictError as exc:
+            # Whoever hits it first files the card; raising alone left the only
+            # record in one failed run or chat reply.
+            report_integration_conflict(
+                session,
+                subtree_root(session, ticket),
+                branch=exc.branch,
+                base=exc.base,
+                files=exc.files,
+            )
+            raise
     return target

@@ -2,18 +2,20 @@
 
 The plan an agent drives is not a list of milestones run one after another. It
 is tickets joined by "waits for" edges (`ticket_dependencies`), worked in
-parallel lanes — one agent per lane — with milestones as phases. This module
-turns that into answers:
+parallel up to the plan's `max_parallel`, with milestones as phases. This
+module turns that into answers:
 
 * **status** per ticket — done, running, ready now, waiting on prerequisites,
   or waiting on a person (`needs-person` tag, parked, or blocked on a decision
   or human action). The autopilot dispatches only `READY`.
-* **a schedule** — each lane takes one ticket at a time; a ticket starts when
-  its prerequisites have finished and its lane is free. Lanes come from a
-  ``<prefix>-lane-<name>`` tag (e.g. ``tcg-lane-model-render``); a ticket with
-  none runs in a lane named after its workspace.
+* **a schedule** — the initiative's own tickets share `max_parallel` slots; a
+  ticket starts when its prerequisites have finished and a slot is free. That
+  is the limit the autopilot runs to, so the dates are the pace it works at.
+  Lanes come from a ``<prefix>-lane-<name>`` tag (e.g.
+  ``tcg-lane-model-render``), or the workspace when untagged; they group the
+  plan for reading and do not limit how much of it runs.
 * **the critical path** — traced back from the last finish through whichever
-  constraint set each start: a prerequisite, or the lane being busy.
+  constraint set each start: a prerequisite, or waiting for a free slot.
 
 Durations blend the two measurements `initiative_forecast` describes: the
 workspace's pace (resolved work items per day, shared across its lanes) and the
@@ -21,8 +23,9 @@ agent run-time for the ticket's remaining stages. The longer wins. A ticket with
 neither takes the median of the ones that have one, and is marked as such; with
 no measurement anywhere, its finish is unknown and so is everything after it.
 
-A prerequisite outside the initiative is scheduled too, in its own workspace's
-lane, so a plan that waits on another repository's ticket says when.
+A prerequisite outside the initiative is scheduled too, one at a time in its
+own workspace's lane — it is another plan's work — so a plan that waits on
+another repository's ticket says when.
 """
 
 from __future__ import annotations
@@ -36,8 +39,10 @@ from statistics import median
 from loregarden.models.domain import (
     BlockKind,
     ForecastBasis,
+    InitiativePlan,
     NodeStatus,
     ScheduleTarget,
+    StageStatus,
     Ticket,
     TicketActivity,
     TicketDependency,
@@ -76,6 +81,20 @@ _UNPLANNED_ORDER = 1_000_000
 
 
 @dataclass
+class _Slot:
+    """Room for one ticket during the schedule's simulation."""
+
+    free_at: datetime
+    #: The ticket last scheduled into it, which the next one follows.
+    holder: str | None = None
+
+
+#: The slot pool the initiative's own tickets share. An outside prerequisite is
+#: scheduled in a pool of one named after its lane.
+_OWN_POOL = ""
+
+
+@dataclass
 class PlanNode:
     ticket: Ticket
     lane: str
@@ -102,6 +121,8 @@ class PlanNode:
     external: bool = False
     #: Its milestone's position in the plan's order (phase); lower goes first.
     phase: int = _UNPLANNED_ORDER
+    #: The open ticket whose finish freed the slot this one starts in.
+    follows: str | None = None
 
     @property
     def id(self) -> str:
@@ -134,7 +155,9 @@ def _status(ticket: Ticket, activity: TicketActivity) -> tuple[NodeStatus, bool]
     """(status before dependencies are considered, whether it holds its lane)."""
     if ticket.state in RESOLVED_STATES:
         return NodeStatus.DONE, False
-    if activity == TicketActivity.AWAITING:
+    # A stage parked on its gate has no live run, so activity reads idle; it is
+    # mid-workflow and waiting on an answer, not ready to start again.
+    if activity == TicketActivity.AWAITING or ticket.workflow_stage_status == StageStatus.AWAITING:
         return NodeStatus.NEEDS_PERSON, True
     if activity in (TicketActivity.RUNNING, TicketActivity.QUEUED):
         return NodeStatus.RUNNING, True
@@ -147,6 +170,24 @@ def _status(ticket: Ticket, activity: TicketActivity) -> tuple[NodeStatus, bool]
     if ticket.state == TicketState.BLOCKED:
         return NodeStatus.BLOCKED, False
     return NodeStatus.READY, False
+
+
+def _mark_ancestors_underway(nodes: dict[str, PlanNode]) -> None:
+    """A parent whose child is running or parked reads as its child does, not READY.
+
+    A parent's orchestration runs its children, so starting it while a child
+    runs on its own (or waits at a gate) runs that child twice. The lane stays
+    the child's: the parent takes no second share of the parallel budget.
+    """
+    for node in [n for n in nodes.values() if n.holds_lane]:
+        seen = {node.id}
+        parent_id = node.ticket.parent_ticket_id
+        while parent_id in nodes and parent_id not in seen:
+            seen.add(parent_id)
+            parent = nodes[parent_id]
+            if parent.status == NodeStatus.READY:
+                parent.status = node.status
+            parent_id = parent.ticket.parent_ticket_id
 
 
 def _blend(
@@ -173,6 +214,10 @@ def _finished_by(node: PlanNode, clock: datetime) -> bool:
     return node.finish is not None and node.finish <= clock
 
 
+def _pool(node: PlanNode) -> str:
+    return node.lane if node.external else _OWN_POOL
+
+
 def _priority(node: PlanNode) -> tuple[int, float, str]:
     """Which ticket a free lane takes: work already holding it, earlier phase, longer chain."""
     return (-1 if node.holds_lane else node.phase, -node.rank, node.ticket.external_id)
@@ -181,9 +226,10 @@ def _priority(node: PlanNode) -> tuple[int, float, str]:
 class PlanGraphBuilder:
     """Builds and schedules one initiative's graph against one read of history."""
 
-    def __init__(self, session: Session, *, now: datetime) -> None:
+    def __init__(self, session: Session, *, now: datetime, max_parallel: int) -> None:
         self.session = session
         self.now = now
+        self.max_parallel = max_parallel
 
     def build(
         self,
@@ -260,6 +306,8 @@ class PlanGraphBuilder:
             node.duration_days, node.basis = _blend(
                 agent_days=seconds / _DAY if seconds else None,
                 pace=paces.get(workspace_id),
+                # Per lane, not per slot: the pace was measured while each
+                # lane ran one ticket, so it is already one agent's rate.
                 lanes=len(lanes_per_workspace[workspace_id]),
             )
         known = [n.duration_days for n in open_nodes if n.duration_days is not None]
@@ -278,6 +326,7 @@ class PlanGraphBuilder:
             node.status, node.holds_lane = _status(
                 node.ticket, activity.get(node.id, TicketActivity.IDLE)
             )
+        _mark_ancestors_underway(nodes)
         for node in nodes.values():
             node.waiting_on = [d for d in node.deps if nodes[d].status != NodeStatus.DONE]
             if node.status == NodeStatus.READY and node.waiting_on:
@@ -313,14 +362,14 @@ class PlanGraphBuilder:
     def _schedule(
         self, nodes: dict[str, PlanNode], order: dict[str, int], cyclic: set[str]
     ) -> None:
-        """Simulate the lanes over time: one ticket per lane, best ticket first.
+        """Simulate the slots over time: the best eligible ticket takes each free one.
 
         Time-stepped, not greedy by discovery order: at each moment a free
-        lane takes, among *its* tickets whose prerequisites have actually
-        finished, the one with the highest priority — work already holding the
-        lane, then earlier phase, then the longest chain behind it. Handing a
-        lane to whichever ticket became eligible first instead let a phase-2
-        ticket book a lane for next month and push the slice's first ticket
+        slot takes, among the tickets whose prerequisites have actually
+        finished, the one with the highest priority — work already running,
+        then earlier phase, then the longest chain behind it. Handing a slot
+        to whichever ticket became eligible first instead let a phase-2
+        ticket book one for next month and push the slice's first ticket
         behind it.
         """
         for node in nodes.values():
@@ -328,11 +377,15 @@ class PlanGraphBuilder:
                 resolved = node.ticket.resolved_at
                 node.start = node.finish = comparable_utc(resolved) if resolved else self.now
         pending = self._priceable(nodes, cyclic)
-        lane_free: dict[str, datetime] = defaultdict(lambda: self.now)
+        slots: dict[str, list[_Slot]] = {}
+        for nid in pending:
+            node = nodes[nid]
+            width = 1 if node.external else self.max_parallel
+            slots.setdefault(_pool(node), [_Slot(self.now) for _ in range(width)])
         clock: datetime | None = self.now
         while pending and clock is not None:
-            if not self._start_free_lanes(nodes, pending, lane_free, clock):
-                clock = self._next_event(nodes, pending, lane_free, clock)
+            if not self._start_free_slots(nodes, pending, slots, clock):
+                clock = self._next_event(nodes, pending, slots, clock)
 
     def _priceable(self, nodes: dict[str, PlanNode], cyclic: set[str]) -> set[str]:
         """Open tickets that can be dated: not cyclic, priced, and after priced work."""
@@ -347,39 +400,39 @@ class PlanGraphBuilder:
         return open_ids - unknown
 
     @staticmethod
-    def _start_free_lanes(
+    def _start_free_slots(
         nodes: dict[str, PlanNode],
         pending: set[str],
-        lane_free: dict[str, datetime],
+        slots: dict[str, list[_Slot]],
         clock: datetime,
     ) -> bool:
-        """Start the best eligible ticket in every free lane. True if any started."""
+        """Fill every free slot with the best eligible ticket. True if any started."""
         eligible: dict[str, list[PlanNode]] = defaultdict(list)
         for nid in pending:
             node = nodes[nid]
             if all(_finished_by(nodes[d], clock) for d in node.deps):
-                eligible[node.lane].append(node)
+                eligible[_pool(node)].append(node)
         started = False
-        for lane, candidates in eligible.items():
-            if lane_free[lane] > clock:
-                continue
-            node = min(candidates, key=_priority)
-            node.start = clock
-            node.finish = clock + timedelta(days=node.duration_days or 0.0)
-            lane_free[lane] = node.finish
-            pending.discard(node.id)
-            started = True
+        for pool, candidates in eligible.items():
+            free = [slot for slot in slots[pool] if slot.free_at <= clock]
+            for slot, node in zip(free, sorted(candidates, key=_priority), strict=False):
+                node.start = clock
+                node.finish = clock + timedelta(days=node.duration_days or 0.0)
+                node.follows = slot.holder
+                slot.free_at, slot.holder = node.finish, node.id
+                pending.discard(node.id)
+                started = True
         return started
 
     @staticmethod
     def _next_event(
         nodes: dict[str, PlanNode],
         pending: set[str],
-        lane_free: dict[str, datetime],
+        slots: dict[str, list[_Slot]],
         clock: datetime,
     ) -> datetime | None:
-        """The next moment a lane frees or a prerequisite finishes; None if never."""
-        upcoming = [t for t in lane_free.values() if t > clock]
+        """The next moment a slot frees or a prerequisite finishes; None if never."""
+        upcoming = [s.free_at for pool in slots.values() for s in pool if s.free_at > clock]
         upcoming += [
             f
             for nid in pending
@@ -409,28 +462,20 @@ class PlanGraphBuilder:
         ]
         if not open_nodes:
             return []
-        lane_prev: dict[str, PlanNode] = {}
-        by_lane: dict[str, list[PlanNode]] = defaultdict(list)
-        for open_node in open_nodes:
-            by_lane[open_node.lane].append(open_node)
-        for lane_nodes in by_lane.values():
-            lane_nodes.sort(key=lambda n: n.start or self.now)
-            for before, after in zip(lane_nodes, lane_nodes[1:], strict=False):
-                lane_prev[after.id] = before
         chain: list[str] = []
         node: PlanNode | None = max(open_nodes, key=lambda n: n.finish or self.now)
         while node is not None and node.id not in chain:
             node.critical = True
             chain.append(node.id)
             # Whatever finished last before this started is what held it back:
-            # an open prerequisite, or the ticket ahead of it in its lane.
+            # an open prerequisite, or the ticket whose slot it took.
             candidates = [
                 nodes[d]
                 for d in node.deps
                 if nodes[d].status != NodeStatus.DONE and nodes[d].finish is not None
             ]
-            if node.id in lane_prev:
-                candidates.append(lane_prev[node.id])
+            if node.follows is not None:
+                candidates.append(nodes[node.follows])
             gate = max(candidates, key=lambda n: n.finish or self.now, default=None)
             started = node.start or self.now
             held_back = (
@@ -462,7 +507,9 @@ def build_plan(session: Session, initiative: Ticket, *, now: datetime) -> PlanCo
     # Outside prerequisites need their workspace's slug too; resolve after the
     # graph has found them, with the milestones' as the starting set.
     slugs = workspace_slugs(session, milestones)
-    builder = PlanGraphBuilder(session, now=now)
+    plan = session.get(InitiativePlan, initiative.id)
+    max_parallel = plan.max_parallel if plan is not None else InitiativePlan().max_parallel
+    builder = PlanGraphBuilder(session, now=now, max_parallel=max_parallel)
     graph, paces = builder.build(coverage, slugs, targets)
     outside = [n.ticket for n in graph.nodes.values() if n.external]
     if outside:

@@ -3,6 +3,8 @@ import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import { ticketPullRequestApi } from "./ticketPullRequestApi";
+import type { ApprovalHistoryItem } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
 import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
@@ -89,6 +91,7 @@ import type {
   CIStatusResponse,
   ReloadStatus,
   RunLog,
+  RunMessagesPayload,
   BtwExchange,
   RunMessage,
   TicketLedger,
@@ -265,7 +268,7 @@ export const api = {
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
   runMessages: (runId: string) =>
-    request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
+    request<RunMessagesPayload>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>
     request<RunMessage>(`/api/runs/${runId}/messages`, {
       method: "POST",
@@ -447,6 +450,7 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...ticketPullRequestApi,
   ...initiativeApi,
   ...memoryApi,
   openPr: (id: string) =>
@@ -478,6 +482,8 @@ export const api = {
     request<Approval[]>(
       ticketId ? `/api/inbox/approvals?ticket_id=${encodeURIComponent(ticketId)}` : "/api/inbox/approvals",
     ),
+  approvalHistory: (ticketId: string) =>
+    request<ApprovalHistoryItem[]>(`/api/inbox/approvals/history?ticket_id=${encodeURIComponent(ticketId)}`),
   resolveApproval: (
     id: string,
     body: {

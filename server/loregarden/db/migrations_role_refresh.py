@@ -72,6 +72,21 @@ def refresh_role_from_seed(
         text("UPDATE studio_agents SET role_body=:body, version=:v, updated_at=:now WHERE id=:id"),
         {"body": role_body, "v": new_version, "now": now, "id": row["id"]},
     )
+    snapshot_agent_version(
+        conn,
+        agent_id=row["id"],
+        version=new_version,
+        note=f"{migration_id}: role body refreshed from seed ({marker})",
+        now=now,
+    )
+    logger.info("%s: refreshed %r from %s", migration_id, slug, path)
+    return True
+
+
+def snapshot_agent_version(
+    conn: Connection, *, agent_id: str, version: int, note: str, now: datetime
+) -> None:
+    """Record the agent row as it now stands as `version`, authored by a migration."""
     snapshot = (
         conn.execute(
             text(
@@ -79,7 +94,7 @@ def refresh_role_from_seed(
                 "mcp_enabled, mcp_tools_json, gate_checks_json, handoff_checks_json, "
                 "tool_grants_json, built_in FROM studio_agents WHERE id=:id"
             ),
-            {"id": row["id"]},
+            {"id": agent_id},
         )
         .mappings()
         .fetchone()
@@ -92,12 +107,10 @@ def refresh_role_from_seed(
         ),
         {
             "id": str(uuid4()),
-            "agent_id": row["id"],
-            "v": new_version,
+            "agent_id": agent_id,
+            "v": version,
             "snapshot": json.dumps(dict(snapshot)),
-            "note": f"{migration_id}: role body refreshed from seed ({marker})",
+            "note": note,
             "now": now,
         },
     )
-    logger.info("%s: refreshed %r from %s", migration_id, slug, path)
-    return True

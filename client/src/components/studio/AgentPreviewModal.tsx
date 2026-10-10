@@ -3,8 +3,7 @@ import { createPortal } from "react-dom";
 import type { StudioAgentPreview } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { AgentPreviewContent } from "./AgentPreviewContent";
-import { useDialogDismiss } from "../../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
+import { ModalShell } from "../ui/ModalShell";
 
 export function AgentPreviewModal({
   open,
@@ -19,39 +18,35 @@ export function AgentPreviewModal({
   slug?: string;
   onClose: () => void;
 }) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : onClose);
-  if (!open) return null;
-
   const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
 
+  // Portalled whether open or not: the shell has to stay in the same place in
+  // the tree for its exit to play when `open` turns false.
   return createPortal(
-    <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel studio-preview-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-preview-modal-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Agent Studio</div>
-            <h2 id="agent-preview-modal-title" className="modal-title">
-              Assembled prompt
-            </h2>
-            <p className="modal-subtitle">{fileLabel}</p>
+    <ModalShell
+      open={open}
+      onDismiss={onClose}
+      labelledBy="agent-preview-modal-title"
+      panelClassName="studio-preview-modal"
+    >
+      {open ? (
+        <>
+          <div className="modal-header">
+            <div>
+              <div className="state-label">Agent Studio</div>
+              <h2 id="agent-preview-modal-title" className="modal-title">
+                Assembled prompt
+              </h2>
+              <p className="modal-subtitle">{fileLabel}</p>
+            </div>
+            <IconCloseButton onClick={onClose} />
           </div>
-          <IconCloseButton onClick={onClose} />
-        </div>
-        <div className="studio-preview-modal-scroll">
-          <AgentPreviewContent preview={preview} loading={loading} slug={slug} showMeta={false} />
-        </div>
-      </div>
-    </>,
+          <div className="studio-preview-modal-scroll">
+            <AgentPreviewContent preview={preview} loading={loading} slug={slug} showMeta={false} />
+          </div>
+        </>
+      ) : null}
+    </ModalShell>,
     document.body,
   );
 }

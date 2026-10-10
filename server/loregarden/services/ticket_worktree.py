@@ -25,7 +25,7 @@ from loregarden.models.domain import AgentRun, PrimaryCheckoutUse, Ticket, Works
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.primary_checkout import require_clean_checkout
 from loregarden.services.recorded_paths import ticket_recorded_paths
-from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.target_branch import IntegrationConflictError, resolve_target_branch
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
@@ -53,6 +53,8 @@ def resolve_execution_root(
     run: AgentRun,
     ticket: Ticket,
     workspace: Workspace,
+    *,
+    stale_target_ok: bool = False,
 ) -> Path:
     """The directory this run should execute in, creating a worktree if needed.
 
@@ -64,6 +66,14 @@ def resolve_execution_root(
     that cannot be cut is a degraded run, not a dead ticket — but only onto a
     checkout holding nothing but this ticket's own work. Anything else raises
     `DirtyPrimaryCheckoutError` for the caller to park on (864).
+
+    ``stale_target_ok`` is for chat turns. A stage run refuses to start on an
+    integration branch that cannot take its base, because the work it builds
+    would not merge; a chat turn about the ticket does not build anything that
+    lands, so it runs on the branch as it is. The conflict is already in the
+    inbox by then (`resolve_target_branch` files the card before raising).
+    Before this, one conflicting commit on `main` made the triage chat answer
+    "unavailable" for every ticket in the tree.
     """
     workspace_root = resolve_workspace_root(workspace)
     if run.worktree_id:
@@ -81,7 +91,19 @@ def resolve_execution_root(
     # Cut from the branch this ticket's work will land on, not from the base:
     # a sibling's landed work lives on the integration branch and never on
     # main until the tree completes (lg-milestone-that-769).
-    target = resolve_target_branch(session, ticket, workspace, repo_root=workspace_root)
+    try:
+        target = resolve_target_branch(session, ticket, workspace, repo_root=workspace_root)
+    except IntegrationConflictError as exc:
+        if not stale_target_ok:
+            raise
+        logger.warning(
+            "Chat turn for %s runs on %s without %s: %s",
+            ticket.external_id,
+            exc.branch,
+            exc.base,
+            exc,
+        )
+        target = exc.branch
     service = WorktreeService(session, repo_path=str(workspace_root))
     worktree = service.get_or_create_for_ticket(ticket, run.id, parent_branch=target)
     if not worktree:

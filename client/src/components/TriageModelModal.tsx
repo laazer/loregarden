@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../api/client";
 import { WorkspaceRuntimeFields, runtimeSettingsEqual } from "./WorkspaceRuntimeFields";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { describeError } from "../state/toastStore";
+import { Button } from "./ui/Button";
+import { ModalShell } from "./ui/ModalShell";
 
 interface TriageModelModalProps {
   open: boolean;
@@ -32,10 +32,6 @@ export function TriageModelModal({
   scopeLabel = "Triage",
   subtitle = "Choose a provider, then pick a model for this ticket",
 }: TriageModelModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // Escape and the backdrop agree on purpose: whatever makes a click
-  // dismiss this dialog is what makes the key dismiss it.
-  useDialogDismiss(!open ? null : isSaving ? undefined : onClose);
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(runtime);
 
   useEffect(() => {
@@ -43,7 +39,10 @@ export function TriageModelModal({
     setDraft(runtime);
   }, [open, runtime]);
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="triage-model-modal-title">{null}</ModalShell>;
+  }
 
   const dirty = !runtimeSettingsEqual(draft, runtime);
 
@@ -54,58 +53,48 @@ export function TriageModelModal({
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="triage-model-modal-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">{scopeLabel}</div>
-            <h2 id="triage-model-modal-title" className="modal-title">
-              Model settings
-            </h2>
-            <p className="modal-subtitle">{subtitle}</p>
-          </div>
-          <IconCloseButton disabled={isSaving} onClick={onClose} />
+    <ModalShell open onDismiss={isSaving ? undefined : onClose} labelledBy="triage-model-modal-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">{scopeLabel}</div>
+          <h2 id="triage-model-modal-title" className="modal-title">
+            Model settings
+          </h2>
+          <p className="modal-subtitle">{subtitle}</p>
         </div>
-
-        <div className="modal-body">
-          {runtimeOptions ? (
-            <WorkspaceRuntimeFields
-              runtime={draft}
-              options={runtimeOptions}
-              disabled={isSaving}
-              onChange={setDraft}
-            />
-          ) : runtimeOptionsError ? (
-            <p className="modal-hint" role="alert">
-              {describeError(runtimeOptionsError, "Could not load the model options")}. Close
-              and reopen to retry.
-            </p>
-          ) : (
-            <p className="modal-hint">Loading runtime options…</p>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={isSaving || !runtimeOptions || !dirty}
-            onClick={() => void handleSave()}
-          >
-            {isSaving ? "Saving…" : "Save"}
-          </button>
-        </div>
+        <IconCloseButton disabled={isSaving} onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body">
+        {runtimeOptions ? (
+          <WorkspaceRuntimeFields
+            runtime={draft}
+            options={runtimeOptions}
+            disabled={isSaving}
+            onChange={setDraft}
+          />
+        ) : runtimeOptionsError ? (
+          <p className="modal-hint" role="alert">
+            {describeError(runtimeOptionsError, "Could not load the model options")}. Close
+            and reopen to retry.
+          </p>
+        ) : (
+          <p className="modal-hint">Loading runtime options…</p>
+        )}
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" disabled={isSaving} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          disabled={isSaving || !runtimeOptions || !dirty}
+          onClick={() => void handleSave()}
+        >
+          {isSaving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

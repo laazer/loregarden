@@ -162,9 +162,17 @@ test('turning off commit clears every step that needs it', async () => {
       push: false,
       open_pr: false,
       auto_merge: false,
-      auto_resolve_conflicts: false,
+      // Landing arms the resolver whatever the publish chain says.
+      auto_resolve_conflicts: true,
     }),
   );
+});
+
+test('auto-resolve does not wait on auto-merge', async () => {
+  renderPanel();
+  await screen.findByText('Commit');
+
+  expect(toggle('Auto-resolve conflicts')).not.toBeDisabled();
 });
 
 test('the resolution budget only appears when auto-resolve is on', async () => {

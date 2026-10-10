@@ -303,9 +303,11 @@ export function AppActionBar() {
         disabled={!session}
         onClick={() => setChatOpen(!chatOpen)}
       >
+        {/* Busy rocks (the wag) rather than bobs: this is the only Baxter in
+            the triage chat now that the thread drops its per-reply avatar. */}
         <BaxterAvatar
           variant="head"
-          state={session?.isBusy ? "typing" : "idle"}
+          state={session?.isBusy ? "responding" : "idle"}
           size={26}
           label="Baxter"
         />

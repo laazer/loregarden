@@ -1107,3 +1107,27 @@ class QueueLaneService:
             entry.position = index
             self.session.add(entry)
         self.session.commit()
+
+
+def least_busy_lane(lanes: QueueLaneService) -> int:
+    """The live lane that would start new work soonest: fewest entries waiting,
+    counting the one it is running, and the lowest on a tie.
+
+    Waiting entries alone call a lane mid-run with nothing behind it as idle as
+    an empty one, and a ticket queued there waits out the whole run while
+    another lane sits free.
+    """
+    numbers = range(1, lanes.max_concurrent + 1)
+    if not numbers:
+        raise ValueError("The queue has no agent slots")
+    lanes.slots.initialize_slots()
+    busy = {
+        slot.slot_number
+        for slot in lanes.session.exec(
+            select(AgentSlot).where(AgentSlot.is_available == False)  # noqa: E712
+        ).all()
+    }
+    return min(
+        numbers,
+        key=lambda number: (len(lanes.waiting_in_lane(number)) + (number in busy), number),
+    )

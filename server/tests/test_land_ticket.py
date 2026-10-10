@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from unittest import mock
 
@@ -210,6 +211,10 @@ def test_landing_runs_once_per_finish(session, workspace, repo, milestone):
 
 def test_a_conflict_blocks_the_ticket_naming_the_files(session, workspace, repo, milestone):
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-9")
+    # The person-facing block is what this checks; the resolver is on by default.
+    ticket.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
+    session.add(ticket)
+    session.commit()
     commit_on(repo, ticket.branch, "shared.txt", "ticket\n")
     commit_on(repo, target, "shared.txt", "sibling\n")
 

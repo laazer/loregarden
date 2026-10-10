@@ -97,7 +97,9 @@
 .initiative-progress-fill {
   height: 100%;
   background: var(--grn);
-  transition: width 200ms ease;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
 .initiative-milestones {

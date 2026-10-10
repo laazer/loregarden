@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-import { tilePercent } from "../../../lib/hive/coords";
+import { tilePercent, tileTranslate } from "../../../lib/hive/coords";
 import { floorBackgroundStyle, resolveSkinSprites } from "../../../lib/hive/spriteUrls";
 import {
   HIVE_FLYER_FADE_MS,
@@ -130,14 +130,10 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
         img.className = "hive-css__flyer-img";
         el.appendChild(img);
       }
-      const from = tilePercent(flight.from, map);
-      const to = tilePercent(flight.to, map);
-      el.style.left = from.left;
-      el.style.top = from.top;
+      el.style.translate = tileTranslate(flight.from, map);
       host.appendChild(el);
       requestAnimationFrame(() => {
-        el.style.left = to.left;
-        el.style.top = to.top;
+        el.style.translate = tileTranslate(flight.to, map);
         el.style.opacity = "0";
       });
       window.setTimeout(() => el.remove(), flyerFadeMs);

@@ -205,6 +205,24 @@ def previous_stage_key(stages: list[WorkflowStageDef], from_key: str) -> str | N
     return keys[idx - 1]
 
 
+def reject_fallback_key(
+    stages: list[WorkflowStageDef], from_key: str, next_agent: str = ""
+) -> str | None:
+    """Where a reject with no explicit target and no template route goes.
+
+    A reject that names an agent the rejecting stage itself runs is a hand-off
+    between specialists, not a defect upstream: re-run this stage with that
+    agent. Falling back to the previous stage instead sent implement's
+    frontend → backend hand-off through test-break and its sign-off gate on
+    every round (lg-durable-remote-336, twice). Anything else goes one stage back.
+    """
+    agent_id = next_agent.strip()
+    stage = next((s for s in stages if s.key == from_key), None)
+    if agent_id and stage is not None and stage_offers_agent(stage, agent_id):
+        return from_key
+    return previous_stage_key(stages, from_key)
+
+
 def apply_stage_route(
     ticket: Ticket,
     instance: WorkflowInstance,
@@ -254,7 +272,7 @@ def apply_stage_route(
         explicit_to=next_stage_key or branch_to,
     )
     if not plan and outcome == "reject":
-        fallback_key = previous_stage_key(stages, from_key)
+        fallback_key = reject_fallback_key(stages, from_key, next_agent)
         if fallback_key:
             plan = StageRoutePlan(
                 from_key=from_key,

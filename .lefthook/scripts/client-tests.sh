@@ -18,6 +18,8 @@ source "$SCRIPT_DIR/hook-noninteractive.sh"
 source "$SCRIPT_DIR/ensure-node.sh"
 # shellcheck source=test-workers.sh
 source "$SCRIPT_DIR/test-workers.sh"
+# shellcheck source=push-progress.sh
+source "$SCRIPT_DIR/push-progress.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CLIENT_ROOT="$ROOT/client"
@@ -29,10 +31,13 @@ if [ ! -d node_modules ]; then
   exit 1
 fi
 
-echo "pre-push: npm run lint (oxlint) ..."
+trap 'progress_finish $?' EXIT
+progress_begin "client-tests" 3
+
+progress_step "oxlint"
 npm run lint
 
-echo "pre-push: npx tsc -b ..."
+progress_step "tsc -b"
 npx tsc -b
 
 # Base for "what is being pushed": the remote-tracking commit when the branch
@@ -56,24 +61,31 @@ if [ -n "$BASE" ]; then
     client/src/test || true)"
 fi
 
+# The second reporter counts finished files into the progress file; it does
+# nothing when no capacity holder named one.
+REPORTERS=(--reporters=default --reporters="$SCRIPT_DIR/jest_push_progress.cjs")
+
 # `--bail` is jest's `-x`: stop at the first failing suite. Same reasoning as
 # the server runner — the first failure is the one to read, and a client suite
 # that has already gone red does not get more informative by finishing.
 if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
   echo "pre-push: full jest run — LOREGARDEN_FULL_TESTS is set"
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
+  progress_step "jest, full suite"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 elif [ -z "$BASE" ]; then
   echo "pre-push: full jest run — no @{push} or origin/main to diff against"
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
+  progress_step "jest, full suite"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 elif [ -n "$WIDE_CHANGE" ]; then
   echo "pre-push: full jest run — shared config changed:"
   printf '  %s\n' $WIDE_CHANGE
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS"
+  progress_step "jest, full suite"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 else
-  echo "pre-push: jest --changedSince=$BASE --maxWorkers=$TEST_WORKERS ..."
-  echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
+  echo "pre-push: jest --changedSince=$BASE (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
+  progress_step "jest, changed since push base"
   # --passWithNoTests because "no test imports what you changed" is a real
   # answer here, not a misconfiguration. It is printed, never silent, and CI
   # still runs everything.
-  "${TEST_NICE[@]}" npm test -- --bail --changedSince="$BASE" --passWithNoTests --maxWorkers="$TEST_WORKERS"
+  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}" --changedSince="$BASE" --passWithNoTests
 fi

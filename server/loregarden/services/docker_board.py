@@ -28,6 +28,7 @@ from loregarden.models.domain import (
     DockerProbeOutcome,
 )
 from loregarden.services.capacity_label import parse_holder_label
+from loregarden.services.capacity_progress import describe_progress
 from loregarden.services.docker_capacity import Ceiling, DockerInvoke
 from loregarden.services.docker_leases import refresh_ceiling
 from loregarden.services.docker_ledger import (
@@ -98,6 +99,22 @@ def _run_tickets(session: Session, leases: list[DockerLease]) -> dict[str, str]:
     return {run_id: ticket_id for run_id, ticket_id in rows if ticket_id}
 
 
+def _progress_payload(lease: DockerLease) -> dict | None:
+    """The step and count the held command last reported; None if it never has."""
+    if not lease.progress_step:
+        return None
+    reported_at = as_utc(lease.progress_at)
+    return {
+        "step": lease.progress_step,
+        "done": lease.progress_done,
+        "total": lease.progress_total,
+        "summary": describe_progress(
+            lease.progress_step, lease.progress_done, lease.progress_total
+        ),
+        "reported_at": reported_at.isoformat() if reported_at else None,
+    }
+
+
 def _lease_payload(
     lease: DockerLease,
     *,
@@ -108,6 +125,7 @@ def _lease_payload(
 ) -> dict:
     expires_at = as_utc(lease.expires_at)
     requested_at = as_utc(lease.requested_at)
+    granted_at = as_utc(lease.granted_at) if lease.status is not DockerLeaseStatus.WAITING else None
     return {
         "lease_id": lease.id,
         "status": lease.status.value,
@@ -135,6 +153,11 @@ def _lease_payload(
         **(estimate or UNKNOWN_WAIT).as_dict(),
         "poll_count": lease.poll_count,
         "requested_at": requested_at.isoformat() if requested_at else None,
+        # How long a holder has run, and how far it says it has got. A push is
+        # mostly one long test suite; "holding" alone cannot tell minute two
+        # from minute forty.
+        "held_seconds": (int((now - granted_at).total_seconds()) if granted_at else None),
+        "progress": _progress_payload(lease),
         **(
             _waiting_payload(lease, now=now)
             if lease.status is DockerLeaseStatus.WAITING

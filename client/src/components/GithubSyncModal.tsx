@@ -8,14 +8,16 @@ import {
   type GithubWorkspaceSyncRequest,
   type GithubWorkspaceSyncResult,
 } from "../api/githubIssueApi";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { describeLinkSync, syncFieldList } from "../lib/githubSyncSummary";
 import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import { GithubBackgroundSync } from "./GithubBackgroundSync";
 import { IconCloseButton } from "./IconCloseButton";
 import { ParentTicketSelector } from "./ParentTicketSelector";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
+import { Select } from "./ui/Select";
+import { ModalShell } from "./ui/ModalShell";
 
 interface GithubSyncModalProps {
   open: boolean;
@@ -86,8 +88,6 @@ function SyncSummary({ result }: { result: GithubWorkspaceSyncResult }) {
 /** Sync every linked ticket in a workspace with its GitHub issue, and
  * optionally import the repository's unlinked open issues under a parent. */
 export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  useDialogDismiss(open ? onClose : null);
   const qc = useQueryClient();
   const activeWorkspace = useUiStore((s) => s.workspace);
   const workspaceFieldId = useId();
@@ -127,130 +127,123 @@ export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
     },
   });
 
-  if (!open) return null;
+  if (!open) {
+    // Closed but mounted: the shell plays its exit with the last content it drew.
+    return <ModalShell open={false} onDismiss={undefined} labelledBy="github-sync-title">{null}</ModalShell>;
+  }
 
   return (
-    <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="github-sync-title"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">GitHub</div>
-            <h2 id="github-sync-title" className="modal-title">
-              Sync GitHub issues
-            </h2>
-            <p className="modal-subtitle">
-              Brings every linked ticket and its issue up to date: title, description and open/closed state
-              move in whichever direction changed.
-            </p>
-          </div>
-          <IconCloseButton onClick={onClose} />
+    <ModalShell open onDismiss={onClose} labelledBy="github-sync-title">
+      <div className="modal-header">
+        <div>
+          <div className="state-label">GitHub</div>
+          <h2 id="github-sync-title" className="modal-title">
+            Sync GitHub issues
+          </h2>
+          <p className="modal-subtitle">
+            Brings every linked ticket and its issue up to date: title, description and open/closed state
+            move in whichever direction changed.
+          </p>
         </div>
-
-        <div className="modal-body" style={{ display: "grid", gap: 12 }}>
-          {workspaces.isPending ? (
-            <p className="modal-hint">Loading workspaces…</p>
-          ) : workspaces.isError ? (
-            <p className="modal-hint" role="alert" style={{ color: "var(--red)" }}>
-              Could not load workspaces: {describeError(workspaces.error, "request failed")}
-            </p>
-          ) : slugs.length === 0 ? (
-            <p className="modal-hint">No workspaces yet. Add one before syncing with GitHub.</p>
-          ) : syncSettings.isPending ? (
-            // The saved settings prefill the import fields below; showing them
-            // first would let a choice made now be overwritten when they land.
-            <p className="modal-hint">Loading this workspace's GitHub settings…</p>
-          ) : (
-            <>
-              <div>
-                <label className="field-label" htmlFor={workspaceFieldId}>
-                  Workspace
-                </label>
-                <select
-                  id={workspaceFieldId}
-                  className="input"
-                  value={slug}
-                  disabled={sync.isPending}
-                  onChange={(e) => {
-                    setChosenSlug(e.target.value);
-                    setParentId(null);
-                    sync.reset();
-                  }}
-                >
-                  {slugs.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <ParentTicketSelector
-                key={slug}
-                workspaceSlug={slug}
-                value={parentId}
-                onChange={(id) => setParentId(id)}
-                childWorkItemType="bug"
-                noneLabel="None — don't import new issues"
-                label="Import new issues under"
-                hint="Unlinked open issues become bugs under this work item. Leave empty to only sync existing links."
-                disabled={sync.isPending}
-              />
-
-              {parentId && (
-                <div>
-                  <label className="field-label" htmlFor={labelFieldId}>
-                    Only import issues labelled (optional)
-                  </label>
-                  <input
-                    id={labelFieldId}
-                    className="input"
-                    value={label}
-                    placeholder="e.g. loregarden"
-                    disabled={sync.isPending}
-                    onChange={(e) => setLabel(e.target.value)}
-                  />
-                </div>
-              )}
-
-              <GithubBackgroundSync
-                workspaceSlug={slug}
-                settings={syncSettings}
-                importParentTicketId={parentId ?? ""}
-                importLabel={label.trim()}
-              />
-
-              {sync.isError && (
-                <p className="modal-hint" role="alert" style={{ color: "var(--red)", margin: 0 }}>
-                  Sync failed: {describeError(sync.error, "request failed")}
-                </p>
-              )}
-              {sync.isPending && <p className="modal-hint">Syncing with GitHub…</p>}
-              {sync.data && <SyncSummary result={sync.data} />}
-            </>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Close
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!slug || sync.isPending}
-            onClick={() => sync.mutate({ import_parent_ticket_id: parentId ?? "", import_label: label.trim() })}
-          >
-            {sync.isPending ? "Syncing…" : parentId ? "Sync and import" : "Sync now"}
-          </button>
-        </div>
+        <IconCloseButton onClick={onClose} />
       </div>
-    </>
+
+      <div className="modal-body" style={{ display: "grid", gap: 12 }}>
+        {workspaces.isPending ? (
+          <p className="modal-hint">Loading workspaces…</p>
+        ) : workspaces.isError ? (
+          <p className="modal-hint" role="alert" style={{ color: "var(--red)" }}>
+            Could not load workspaces: {describeError(workspaces.error, "request failed")}
+          </p>
+        ) : slugs.length === 0 ? (
+          <p className="modal-hint">No workspaces yet. Add one before syncing with GitHub.</p>
+        ) : syncSettings.isPending ? (
+          // The saved settings prefill the import fields below; showing them
+          // first would let a choice made now be overwritten when they land.
+          <p className="modal-hint">Loading this workspace's GitHub settings…</p>
+        ) : (
+          <>
+            <div>
+              <label className="field-label" htmlFor={workspaceFieldId}>
+                Workspace
+              </label>
+              <Select
+                id={workspaceFieldId}
+                className="input"
+                value={slug}
+                disabled={sync.isPending}
+                onChange={(e) => {
+                  setChosenSlug(e.target.value);
+                  setParentId(null);
+                  sync.reset();
+                }}
+              >
+                {slugs.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <ParentTicketSelector
+              key={slug}
+              workspaceSlug={slug}
+              value={parentId}
+              onChange={(id) => setParentId(id)}
+              childWorkItemType="bug"
+              noneLabel="None — don't import new issues"
+              label="Import new issues under"
+              hint="Unlinked open issues become bugs under this work item. Leave empty to only sync existing links."
+              disabled={sync.isPending}
+            />
+
+            {parentId && (
+              <div>
+                <label className="field-label" htmlFor={labelFieldId}>
+                  Only import issues labelled (optional)
+                </label>
+                <Input
+                  id={labelFieldId}
+                  className="input"
+                  value={label}
+                  placeholder="e.g. loregarden"
+                  disabled={sync.isPending}
+                  onChange={(e) => setLabel(e.target.value)}
+                />
+              </div>
+            )}
+
+            <GithubBackgroundSync
+              workspaceSlug={slug}
+              settings={syncSettings}
+              importParentTicketId={parentId ?? ""}
+              importLabel={label.trim()}
+            />
+
+            {sync.isError && (
+              <p className="modal-hint" role="alert" style={{ color: "var(--red)", margin: 0 }}>
+                Sync failed: {describeError(sync.error, "request failed")}
+              </p>
+            )}
+            {sync.isPending && <p className="modal-hint">Syncing with GitHub…</p>}
+            {sync.data && <SyncSummary result={sync.data} />}
+          </>
+        )}
+      </div>
+
+      <div className="modal-footer">
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          disabled={!slug || sync.isPending}
+          onClick={() => sync.mutate({ import_parent_ticket_id: parentId ?? "", import_label: label.trim() })}
+        >
+          {sync.isPending ? "Syncing…" : parentId ? "Sync and import" : "Sync now"}
+        </Button>
+      </div>
+    </ModalShell>
   );
 }

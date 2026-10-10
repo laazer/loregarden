@@ -32,7 +32,7 @@ const STDERR_PREVIEW_LINES = 8;
 /**
  * "What happened to this ticket, and where is it now?"
  *
- * One list of stage visits, oldest first, each holding its attempts and the
+ * One list of stage visits, most recent first, each holding its attempts and the
  * outputs that landed while it ran. It replaces four views that each held a
  * slice of the same story — Logs, Context, Ledger and Errors — so an error is
  * read next to the stage it happened in, and a revisit shows up as a second
@@ -89,7 +89,8 @@ export function TicketTimeline({
 
   const stageNames = new Map(ticket.stages.map((stage) => [stage.key, stage.name]));
   const nothingYet = timeline.visits.length === 0 && timeline.beforeFirstRun.length === 0;
-  const current = [...timeline.visits].reverse().find((visit) => visit.active);
+  const newestFirst = [...timeline.visits].reverse();
+  const current = newestFirst.find((visit) => visit.active);
   const data = ledger.data;
 
   return (
@@ -121,6 +122,16 @@ export function TicketTimeline({
           </div>
 
           <ol className="tl-list">
+            {newestFirst.map((visit, index) => (
+              <VisitItem
+                key={visit.key}
+                visit={visit}
+                stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
+                isLatest={index === 0}
+                runs={runs}
+                onOpenRunLog={onOpenRunLog}
+              />
+            ))}
             {timeline.beforeFirstRun.length > 0 ? (
               <li className="tl-visit tl-visit--quiet">
                 <div className="tl-visit-static">
@@ -133,16 +144,6 @@ export function TicketTimeline({
                 <OutputList outputs={timeline.beforeFirstRun} />
               </li>
             ) : null}
-            {timeline.visits.map((visit, index) => (
-              <VisitItem
-                key={visit.key}
-                visit={visit}
-                stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
-                isLatest={index === timeline.visits.length - 1}
-                runs={runs}
-                onOpenRunLog={onOpenRunLog}
-              />
-            ))}
           </ol>
         </>
       )}
@@ -351,21 +352,29 @@ function Attention({
   pendingApprovals: number;
   onOpenRunLog: (runId: string) => void;
 }) {
+  // The server sends only an error nothing has run since; older ones are
+  // outputs on the visits below, not a state the ticket is in.
   const errorArt = ticket.artifacts?.error ?? null;
   const retries = ticket.artifacts?.transient_retries ?? [];
-  const blockMessage = errorArt?.message || ticket.blocking_issues;
+  // "Blocked" is the ticket's word for itself, never inferred from an artifact:
+  // a failed run the orchestrator is about to retry is not a block.
+  const blocked = ticket.state === "blocked" || Boolean(ticket.blocking_issues?.trim());
+  const blockMessage = blocked ? ticket.blocking_issues?.trim() || errorArt?.message || "" : errorArt?.message || "";
   // The error artifact records a run_code; the log fetch needs the run's id.
   const errorRunId = errorArt ? runs.find((run) => run.run_code === errorArt.run_code)?.id : undefined;
 
-  if (!blockMessage && retries.length === 0 && pendingApprovals === 0) return null;
+  if (!blockMessage && !blocked && retries.length === 0 && pendingApprovals === 0) return null;
 
   return (
     <div className="tl-attention">
-      {blockMessage ? (
-        <section className="tl-callout tl-callout--bad" aria-label="Blocking issue">
+      {blocked || blockMessage ? (
+        <section
+          className={`tl-callout ${blocked ? "tl-callout--bad" : "tl-callout--warn"}`}
+          aria-label={blocked ? "Blocking issue" : "Last run failed"}
+        >
           <div className="tl-callout-head">
             <span className="tl-callout-title">
-              Blocked{ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}
+              {blocked ? `Blocked${ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}` : "Last run failed"}
             </span>
             {errorArt ? (
               <span className="tl-callout-meta">
@@ -378,8 +387,16 @@ function Attention({
               </Button>
             ) : null}
           </div>
-          {ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
-          <pre className="tl-callout-body">{blockMessage}</pre>
+          {blocked && ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
+          {blockMessage ? (
+            <pre className="tl-callout-body">{blockMessage}</pre>
+          ) : (
+            <div className="tl-callout-sub">
+              {ticket.child_count > 0
+                ? "Blocked because work under it is blocked. Open its child tickets to see which."
+                : "No reason was recorded on this ticket. The run log of the stage that stopped is the place to look."}
+            </div>
+          )}
         </section>
       ) : null}
       {retries.length > 0 ? <RetryCallout notices={retries} /> : null}

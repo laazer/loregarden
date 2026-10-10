@@ -54,6 +54,20 @@ export interface HolderLabel {
   pid: number | null;
 }
 
+/**
+ * What a held command last reported about itself: a pre-push suite's step
+ * ("pytest on 3 file(s) (5/5)") and, inside a test runner, how many of how many.
+ */
+export interface LeaseProgress {
+  step: string;
+  done: number | null;
+  total: number | null;
+  /** The step and count as one line, as the terminal prints it. */
+  summary: string;
+  /** ISO-8601: when the holder last copied a report onto the lease. */
+  reported_at: string | null;
+}
+
 export interface DockerLeaseRow {
   lease_id: string;
   status: "waiting" | "held" | "released" | "orphaned";
@@ -80,6 +94,10 @@ export interface DockerLeaseRow {
   poll_count: number;
   /** ISO-8601: when the claim was made. */
   requested_at: string | null;
+  /** How long a holder has run; null for a waiter. */
+  held_seconds: number | null;
+  /** How far the held command says it has got; null if it never reported. */
+  progress: LeaseProgress | null;
   /** How long a waiter has been in line; null for a holder. */
   waiting_seconds: number | null;
   /** Since a waiter last polled (or was queued); null for a holder. */

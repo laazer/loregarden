@@ -282,6 +282,11 @@ class DoctorCheck(str, Enum):
     #: ledger is advisory, so nothing else can tell a ledger everybody uses from
     #: one everybody ignores — both report capacity free and reap nothing.
     DOCKER_UNACCOUNTED = "docker_unaccounted"
+    #: tmux absent, so detached agent runs fall back to the file transport.
+    #: Survival is unaffected — that is the wrapper's job — but there is then no
+    #: session for an operator to attach to, and reported here so the fallback
+    #: is visible BEFORE a run rather than inferred from a column after one.
+    AGENT_DETACH_TRANSPORT = "agent_detach_transport"
     #: Which `gh` account loregarden's PR, merge and issue calls act as. With
     #: several signed in and none configured, it is whichever is active — one
     #: here was read-only on every workspace repo while `git push` still worked.
@@ -393,6 +398,9 @@ class ArtifactKind(StrEnum):
     PLAN = "plan"
     #: A handoff between stages, validated against its item keys.
     HANDOFF = "handoff"
+    #: A handoff no gate checked. A notice, not a failure: it was filed as
+    #: `error` until 2026-10, where it read as a block on tickets that were fine.
+    HANDOFF_NOT_VALIDATED = "handoff_not_validated"
     #: A pull request this run opened.
     PR = "pr"
     #: A gate evaluation recorded against a workflow transition.
@@ -424,6 +432,9 @@ class StageBudgetArtifactKind(StrEnum):
     #: because a transient retry is not an attempt at the work and must not
     #: spend the runaway backstop. See `services.stage_transient_retry`.
     TRANSIENT_RETRY = "stage_transient_retry"
+    #: The ticket is parked until the provider is reachable again, and the
+    #: reconcile pass resumes it then. See `services.network_wait`.
+    NETWORK_WAIT = "stage_network_wait"
 
 
 class GateFaultAttribution(StrEnum):
