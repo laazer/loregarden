@@ -27,6 +27,15 @@ const PR: PullRequestStatus = {
     { name: "Server (Python)", outcome: "failing", url: "https://ci/1" },
   ],
   body: "Detaches print-mode agent runs.",
+  head_sha: "a".repeat(40),
+  mergeable_now: false,
+  unsigned_commits: [],
+};
+
+const READY: PullRequestStatus = {
+  ...PR,
+  checks: PR.checks.map((check) => ({ ...check, outcome: "passing" as const })),
+  mergeable_now: true,
 };
 
 function lookup(overrides: Partial<TicketPullRequest>): TicketPullRequest {
@@ -44,6 +53,8 @@ function renderPanel(data: TicketPullRequest, handlers: { onOpenPr?: () => void;
 }
 
 describe("TicketPullRequestPanel", () => {
+  beforeEach(() => jest.clearAllMocks());
+
   it("shows a PR GitHub has even when Loregarden never recorded one, failing checks first", async () => {
     renderPanel(lookup({}));
 
@@ -91,6 +102,50 @@ describe("TicketPullRequestPanel", () => {
 
     expect(await screen.findByText("integration/lg-ms-1")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open PR" })).not.toBeInTheDocument();
+  });
+
+  it("asks before merging, merges at the head on screen, and lists the cleanup", async () => {
+    mockApi.mergeTicketPullRequest.mockResolvedValue({
+      number: 555,
+      merge_commit: "b".repeat(40),
+      steps: [
+        { step: "local branch", ok: true, detail: "deleted" },
+        { step: "worktree /w/336", ok: false, detail: "kept: it has uncommitted changes" },
+      ],
+    });
+    renderPanel(lookup({ pull_request: READY }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Merge and clean up" }));
+    expect(mockApi.mergeTicketPullRequest).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: "Merge #555" });
+    expect(confirm).toHaveFocus();
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(mockApi.mergeTicketPullRequest).toHaveBeenCalledWith("t1", { number: 555, head_sha: "a".repeat(40) }),
+    );
+    expect(await screen.findByText(/1 cleanup step need you/)).toBeInTheDocument();
+    expect(screen.getByText("kept: it has uncommitted changes")).toBeInTheDocument();
+  });
+
+  it("cancels the merge with Escape", async () => {
+    renderPanel(lookup({ pull_request: READY }));
+    fireEvent.click(await screen.findByRole("button", { name: "Merge and clean up" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Merge #555" }), { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Merge and clean up" })).toBeInTheDocument();
+    expect(mockApi.mergeTicketPullRequest).not.toHaveBeenCalled();
+  });
+
+  it("offers no merge, and says so, while GitHub's rules still block it", async () => {
+    renderPanel(lookup({ pull_request: { ...READY, mergeable_now: false } }));
+    expect(await screen.findByText(/rules for main still block the merge/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Merge and clean up" })).not.toBeInTheDocument();
+  });
+
+  it("names the unsigned commits when they are what blocks the merge", async () => {
+    renderPanel(lookup({ pull_request: { ...READY, mergeable_now: false, unsigned_commits: ["20a44d8c test: x"] } }));
+    expect(await screen.findByText(/1 commit is unsigned, and main requires signed commits/)).toBeInTheDocument();
+    expect(screen.getByText("20a44d8c test: x")).toBeInTheDocument();
   });
 
   it("does not call a failed lookup 'no pull request', and links the recorded one", async () => {

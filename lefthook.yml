@@ -144,6 +144,12 @@ pre-push:
   # line, and buffered until exit that reads exactly like a hang.
   follow: true
   commands:
+    # First and cheap: a git read per pushed commit, no capacity lease. An
+    # unsigned commit is refused before the test suites spend minutes on it.
+    signed-commits:
+      name: Every pushed commit is signed
+      use_stdin: true
+      run: bash .lefthook/scripts/signed-commits.sh
     # Each runs under a host-capacity lease (capacity-run.sh), so pushes from
     # every repo on this machine queue instead of piling on; the grant sets the
     # worker count. `interactive` hands the terminal to the wrapper's

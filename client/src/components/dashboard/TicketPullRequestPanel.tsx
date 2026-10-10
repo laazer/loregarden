@@ -15,6 +15,7 @@ import { describeError, toastActionFailed } from "../../state/toastStore";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { MergeAndCleanUpButton } from "./MergeAndCleanUpButton";
 import "./ArtifactPane.css";
 import "./TicketPullRequestPanel.css";
 
@@ -67,6 +68,18 @@ function verdict(pr: PullRequestStatus): { text: string; tone: "good" | "bad" | 
   if (pending) return { text: `${pending} check${pending === 1 ? "" : "s"} still running.`, tone: "warn" };
   if (pr.is_draft) return { text: "Draft: mark it ready for review on GitHub.", tone: "warn" };
   if (pr.review === "review_required") return { text: "Checks pass; waiting on a review.", tone: "warn" };
+  if (pr.unsigned_commits.length) {
+    const n = pr.unsigned_commits.length;
+    return {
+      text: `${n} commit${n === 1 ? " is" : "s are"} unsigned, and ${pr.base} requires signed commits.`,
+      tone: "bad",
+    };
+  }
+  if (!pr.mergeable_now) {
+    // GitHub's branch rules can still hold it (signatures, a required check not
+    // yet reported); saying "ready" here sent people to a merge button that refused.
+    return { text: `Checks pass, but GitHub's rules for ${pr.base} still block the merge.`, tone: "warn" };
+  }
   return { text: "Checks pass; ready to merge.", tone: "good" };
 }
 
@@ -246,8 +259,15 @@ function PullRequestSummary({
         {summary.text}
       </p>
 
+      <MergeAndCleanUpButton ticketId={ticketId} pr={pr} />
+
       <div className="prp-actions prp-actions--start">
-        <a className="btn-primary prp-link-btn" href={pr.url} target="_blank" rel="noreferrer">
+        <a
+          className={`${pr.mergeable_now ? "btn-secondary" : "btn-primary"} prp-link-btn`}
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+        >
           Open on GitHub
         </a>
         {isOpen && failing > 0 && (
@@ -294,6 +314,22 @@ function PullRequestSummary({
                 </li>
               ))}
             </ul>
+          )}
+          {pr.unsigned_commits.length > 0 && (
+            <div className="prp-unsigned">
+              <h4 className="prp-section-title">Unsigned commits</h4>
+              <ul className="prp-unsigned-list">
+                {pr.unsigned_commits.map((line) => (
+                  <li key={line}>
+                    <code>{line}</code>
+                  </li>
+                ))}
+              </ul>
+              <p className="prp-muted">
+                Re-sign them on the branch (<code>git rebase -r --exec &apos;git commit --amend --no-edit -S&apos;</code>{" "}
+                from the oldest one&rsquo;s parent) and force-push, or squash the branch into one signed commit.
+              </p>
+            </div>
           )}
           <dl className="prp-facts">
             <div className="prp-fact">

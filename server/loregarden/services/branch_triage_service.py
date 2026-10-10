@@ -829,7 +829,7 @@ def _branch_exists(repo_root: Path, branch: str) -> bool:
     return proc.returncode == 0
 
 
-def _worktree_paths_for_branch(repo_root: Path, branch: str) -> list[str]:
+def worktree_paths_for_branch(repo_root: Path, branch: str) -> list[str]:
     paths: list[str] = []
     for item in _parse_worktrees(repo_root):
         if item.get("branch") == branch:
@@ -867,7 +867,7 @@ def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None
     if not _is_git_repo(repo_root):
         raise ValueError("Workspace is not a git repository")
 
-    worktree_paths = _worktree_paths_for_branch(repo_root, branch)
+    worktree_paths = worktree_paths_for_branch(repo_root, branch)
     if path not in worktree_paths:
         raise ValueError(f"No worktree at '{path}' for branch '{branch}'")
 
@@ -896,7 +896,7 @@ def delete_branch(
 
     current = _current_branch(repo_root)
     main_repo_path = str(repo_root.resolve())
-    worktree_paths = _worktree_paths_for_branch(repo_root, branch)
+    worktree_paths = worktree_paths_for_branch(repo_root, branch)
 
     if branch == current and main_repo_path in worktree_paths:
         raise ValueError(
@@ -925,7 +925,7 @@ def delete_branch(
         if "not found" in detail.lower():
             return False
         if "used by worktree" in detail.lower():
-            match_paths = worktree_paths or _worktree_paths_for_branch(repo_root, branch)
+            match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
             if match_paths:
                 raise ValueError(_format_worktree_block_message(branch, match_paths))
         raise ValueError(detail)

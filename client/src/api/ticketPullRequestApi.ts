@@ -27,6 +27,25 @@ export interface PullRequestStatus {
   has_conflicts: boolean;
   checks: PullRequestCheck[];
   body: string;
+  /** The commit GitHub would merge; "Merge and clean up" is pinned to it. */
+  head_sha: string;
+  /** GitHub's own "can merge now": open and `mergeStateStatus` CLEAN. */
+  mergeable_now: boolean;
+  /** "<short sha> <subject>" per commit GitHub cannot verify; asked only while the PR is blocked. */
+  unsigned_commits: string[];
+}
+
+export interface MergeStep {
+  step: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** Mirrors `services/pull_request_merge.py`. */
+export interface MergeAndCleanUp {
+  number: number;
+  merge_commit: string;
+  steps: MergeStep[];
 }
 
 export interface TicketPullRequest {
@@ -48,4 +67,10 @@ export const ticketPullRequestKey = (ticketId: string) => ["ticket-pull-request"
 export const ticketPullRequestApi = {
   /** Asks GitHub (via `gh`) for the PR on the ticket's branch, live. */
   ticketPullRequest: (id: string) => request<TicketPullRequest>(`/api/tickets/${id}/pull-request`),
+  /** Squash-merges at `head_sha` (refused if the PR moved), then removes its branch everywhere. */
+  mergeTicketPullRequest: (id: string, body: { number: number; head_sha: string }) =>
+    request<MergeAndCleanUp>(`/api/tickets/${id}/pull-request/merge`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

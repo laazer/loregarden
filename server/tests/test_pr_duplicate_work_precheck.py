@@ -111,3 +111,30 @@ def test_the_script_speaks_the_hook_protocol(repo):
     )
     decision = json.loads(out.stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "deny"
+
+
+# --- the ship-early escape ---------------------------------------------------------
+
+
+def test_shipping_a_child_early_on_purpose_passes_with_its_reason(repo, tmp_path):
+    body = tmp_path / "body.md"
+    body.write_text(
+        "## Summary\nx\n\nShip-early: runs must survive restarts now; the tree has 15 children left\n"
+    )
+    verdict = _decide(f"gh pr create --head loregarden/child --title t --body-file {body}", repo)
+    assert verdict is not None and verdict[0] is None
+    assert "runs must survive restarts" in verdict[1]
+
+
+@pytest.mark.parametrize(
+    "line", ["Ship-early: yes", "Ship-early:", "ship early: because it is needed now"]
+)
+def test_a_thin_or_misspelled_ship_early_line_is_still_refused(repo, line):
+    verdict = _decide(f"gh pr create --head loregarden/child --title t --body '{line}'", repo)
+    assert verdict is not None and verdict[0] == "deny"
+    assert "Ship-early:" in verdict[1], "the deny names the escape"
+
+
+def test_an_unreadable_body_cannot_carry_the_escape(repo):
+    verdict = _decide("gh pr create --head loregarden/child --fill", repo)
+    assert verdict is not None and verdict[0] == "deny"
