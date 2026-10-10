@@ -20,6 +20,8 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/hook-noninteractive.sh"
 # shellcheck source=test-workers.sh
 source "$(cd "$(dirname "$0")" && pwd)/test-workers.sh"
+# shellcheck source=push-progress.sh
+source "$(cd "$(dirname "$0")" && pwd)/push-progress.sh"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PY_ROOT="$ROOT/server"
@@ -63,7 +65,8 @@ fi
 # its own: a temp dir that outlives a run costs disk, a cleanup that raises
 # costs the push.
 BASETEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
-trap 'rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
+trap 'rc=$?; progress_finish "$rc"; rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
+progress_begin "server-tests" 5
 
 # Fail fast. `-x` stops at the first failure instead of collecting every one,
 # because the first failure is the only one worth reading: a cascade dominates
@@ -79,13 +82,13 @@ trap 'rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
 # this only changes which report arrives first, and how long a broken push waits
 # to be told.
 
-echo "pre-push: ruff check ..."
+progress_step "ruff check"
 "${RUFF_CMD[@]}" check .
 
-echo "pre-push: ruff format --check ..."
+progress_step "ruff format --check"
 "${RUFF_CMD[@]}" format --check .
 
-echo "pre-push: ruff on the scripts outside server/ ..."
+progress_step "ruff on scripts outside server/"
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" check
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" format --check
 
@@ -99,6 +102,7 @@ if [ -z "$BASE" ]; then
   BASE="$(git -C "$ROOT" rev-parse --verify --quiet origin/main || true)"
 fi
 
+progress_step "select tests"
 TARGETS=""
 SELECT_REASON=""
 if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
@@ -118,11 +122,15 @@ else
   rm -f "$ERR_FILE"
 fi
 
+# The plugin counts tests into the progress file; it does nothing when no
+# capacity holder named one.
+export PYTHONPATH="$ROOT/.lefthook/scripts${PYTHONPATH:+:$PYTHONPATH}"
+
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
-  echo "pre-push: pytest -x -q -n $TEST_WORKERS ..."
+  progress_step "pytest, full suite"
   LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP"
+    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress
   exit 0
 fi
 
@@ -140,8 +148,9 @@ while IFS= read -r target; do
   FILES+=("$rel")
 done <<< "$TARGETS"
 
-echo "pre-push: pytest -x -q -n $TEST_WORKERS on ${#FILES[@]} test file(s) reaching the pushed changes:"
+echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes:"
 printf '  %s\n' "${FILES[@]}"
 echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
+progress_step "pytest on ${#FILES[@]} file(s)"
 LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-  pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" "${FILES[@]}"
+  pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress "${FILES[@]}"
