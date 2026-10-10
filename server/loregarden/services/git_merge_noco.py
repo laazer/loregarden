@@ -125,6 +125,23 @@ def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[s
     return "", (), (result.stderr or result.stdout or "git merge-tree failed").strip()
 
 
+def merge_preview(repo_root: Path, target_sha: str, source_sha: str) -> MergeOutcome:
+    """Whether ``source_sha`` would merge into ``target_sha``, writing nothing.
+
+    The read-only half of `merge_tips`: same ancestry shortcut, same
+    `merge-tree`, no commit and no ref update. ``ok`` with ``already_contained``
+    means nothing to merge; ``ok`` alone means a clean merge is waiting.
+    """
+    if source_sha == target_sha or is_ancestor(repo_root, source_sha, target_sha):
+        return MergeOutcome(ok=True, sha=source_sha, already_contained=True)
+    tree, conflicts, words = _merge_tree(repo_root, target_sha, source_sha)
+    if conflicts:
+        return MergeOutcome(ok=False, detail=words, conflicted_files=conflicts)
+    if not tree:
+        return MergeOutcome(ok=False, detail=words)
+    return MergeOutcome(ok=True)
+
+
 def merge_without_checkout(
     repo_root: Path, *, target: str, source: str, subject: str
 ) -> MergeOutcome:

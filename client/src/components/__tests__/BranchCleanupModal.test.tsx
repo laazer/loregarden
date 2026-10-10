@@ -36,6 +36,7 @@ function renderModal(branches: BranchTriageEntry[], onClose = jest.fn()) {
   render(
     <QueryClientProvider client={qc}>
       <BranchCleanupModal
+        open
         workspaceSlug="demo"
         baseBranch="main"
         branches={branches}

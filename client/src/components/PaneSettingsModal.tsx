@@ -31,11 +31,10 @@
 import { useId } from "react";
 import { createPortal } from "react-dom";
 
-import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 import { IconCloseButton } from "./IconCloseButton";
 import { PaneSettingsEditor } from "./views/PaneSettingsEditor";
 import type { RegisteredPrimitive } from "./views/primitives/types";
-import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { ModalShell } from "./ui/ModalShell";
 
 export interface PaneSettingsModalProps {
   containerId: string;
@@ -45,60 +44,66 @@ export interface PaneSettingsModalProps {
   onClose: () => void;
 }
 
+/**
+ * The shell stays mounted so a close can play its exit; the editor mounts only
+ * while open (and while there is a primitive to edit), so each visit starts
+ * from the stored settings.
+ */
 export function PaneSettingsModal({
+  open,
+  primitive,
+  ...props
+}: Omit<PaneSettingsModalProps, "primitive"> & {
+  open: boolean;
+  primitive: RegisteredPrimitive | undefined;
+}) {
+  // A grid of panes can have more than one of these mounted, so the title's id
+  // is per instance rather than a constant.
+  const titleId = useId();
+  const shown = open && primitive !== undefined;
+  return createPortal(
+    <ModalShell open={shown} onDismiss={props.onClose} labelledBy={titleId}>
+      {shown ? <PaneSettingsBody {...props} primitive={primitive} titleId={titleId} /> : null}
+    </ModalShell>,
+    document.body,
+  );
+}
+
+function PaneSettingsBody({
   containerId,
   container,
   primitive,
   onClose,
-}: PaneSettingsModalProps) {
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
-  // A grid of panes can have more than one of these mounted, so the title's id
-  // is per instance rather than a constant.
-  const titleId = useId();
-
-  // Through the shared stack rather than a listener of its own: two of these
-  // mounted at once both closed on a single press, because nothing decided
-  // whose press it was.
-  useDialogDismiss(onClose);
-
-  return createPortal(
+  titleId,
+}: PaneSettingsModalProps & { titleId: string }) {
+  return (
     <>
-      <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div
-        ref={dialogRef}
-        className="modal-panel"
-        role="dialog"
-        aria-labelledby={titleId}
-        aria-modal="true"
-      >
-        <div className="modal-header">
-          <div>
-            <div className="state-label">Pane</div>
-            <h2 id={titleId} className="modal-title">
-              {primitive.displayName} settings
-            </h2>
-            <p className="modal-subtitle">
-              What this pane shows. Changing the contents is a separate control.
-            </p>
-          </div>
-          <IconCloseButton onClick={onClose} />
+      <div className="modal-header">
+        <div>
+          <div className="state-label">Pane</div>
+          <h2 id={titleId} className="modal-title">
+            {primitive.displayName} settings
+          </h2>
+          <p className="modal-subtitle">
+            What this pane shows. Changing the contents is a separate control.
+          </p>
         </div>
-
-        <div className="modal-body">
-          {/* Keyed by the primitive for the reason the header's panel was: a
-              pick made while this is open is a different schema, and a form
-              that kept its draft across that would hold one primitive's values
-              against another's fields. */}
-          <PaneSettingsEditor
-            key={primitive.id}
-            containerId={containerId}
-            container={container}
-            primitive={primitive}
-            onDone={onClose}
-          />
-        </div>
+        <IconCloseButton onClick={onClose} />
       </div>
-    </>,
-    document.body,
+
+      <div className="modal-body">
+        {/* Keyed by the primitive for the reason the header's panel was: a
+            pick made while this is open is a different schema, and a form
+            that kept its draft across that would hold one primitive's values
+            against another's fields. */}
+        <PaneSettingsEditor
+          key={primitive.id}
+          containerId={containerId}
+          container={container}
+          primitive={primitive}
+          onDone={onClose}
+        />
+      </div>
+    </>
   );
 }

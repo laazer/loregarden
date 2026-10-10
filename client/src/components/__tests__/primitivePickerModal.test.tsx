@@ -39,6 +39,7 @@ const SYNTHETIC = definePrimitive<{ label: string }>({
 function open(props: Partial<React.ComponentProps<typeof PrimitivePickerModal>> = {}) {
   return render(
     <PrimitivePickerModal
+      open
       legend="Choose a widget"
       onPick={noop}
       onClose={noop}
@@ -75,7 +76,7 @@ describe("AC4 — the picker is a dialog", () => {
      */
     const { container } = render(
       <div style={{ transform: "scale(0.6)" }}>
-        <PrimitivePickerModal legend="Choose a widget" onPick={noop} onClose={noop} />
+        <PrimitivePickerModal open legend="Choose a widget" onPick={noop} onClose={noop} />
       </div>,
     );
     const dialog = screen.getByRole("dialog");
@@ -268,8 +269,8 @@ describe("two pickers open at once do not collide", () => {
     // dialog's input.
     render(
       <>
-        <PrimitivePickerModal legend="One" onPick={noop} onClose={noop} />
-        <PrimitivePickerModal legend="Two" onPick={noop} onClose={noop} />
+        <PrimitivePickerModal open legend="One" onPick={noop} onClose={noop} />
+        <PrimitivePickerModal open legend="Two" onPick={noop} onClose={noop} />
       </>,
     );
     const ids = Array.from(document.querySelectorAll("[id]")).map((el) => el.id);

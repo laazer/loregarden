@@ -56,16 +56,15 @@ function EmptyContainerPrompt({
           the list (557). The list is now long enough that an empty pane could
           not hold it, and a modal is not something the pane has to make room
           for. */}
-      {picking ? (
-        <PrimitivePickerModal
-          legend="Choose a widget"
-          onClose={() => setPicking(false)}
-          onPick={(primitiveId) => {
-            setPicking(false);
-            onPick(primitiveId);
-          }}
-        />
-      ) : null}
+      <PrimitivePickerModal
+        open={picking}
+        legend="Choose a widget"
+        onClose={() => setPicking(false)}
+        onPick={(primitiveId) => {
+          setPicking(false);
+          onPick(primitiveId);
+        }}
+      />
     </div>
   );
 }

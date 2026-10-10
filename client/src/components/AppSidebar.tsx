@@ -569,14 +569,13 @@ export function AppSidebar({
 
       {/* Outside the rail: the panel clips its own overflow, and a dialog is not
           part of the navigation landmark. */}
-      {newViewOpen ? (
-        <NewViewModal
-          isCreating={tabs.isCreatingView}
-          error={tabs.createViewError}
-          onClose={() => setNewViewOpen(false)}
-          onCreate={(input) => createView(input, onCreated)}
-        />
-      ) : null}
+      <NewViewModal
+        open={newViewOpen}
+        isCreating={tabs.isCreatingView}
+        error={tabs.createViewError}
+        onClose={() => setNewViewOpen(false)}
+        onCreate={(input) => createView(input, onCreated)}
+      />
       <DeleteViewConfirmModal
         view={pendingDelete}
         isDeleting={tabs.isClosingView}

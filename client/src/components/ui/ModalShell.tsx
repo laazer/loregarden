@@ -1,4 +1,4 @@
-import { AnimatePresence, m, useIsPresent } from "motion/react";
+import { AnimatePresence, LazyMotion, domAnimation, m, useIsPresent } from "motion/react";
 import { useLayoutEffect, type ReactNode } from "react";
 
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
@@ -12,6 +12,8 @@ interface ModalShellProps {
   onDismiss: (() => void) | undefined;
   /** Id of the element that names the dialog. */
   labelledBy: string;
+  /** Id of the element that describes it, when there is one (`aria-describedby`). */
+  describedBy?: string;
   /** Extra classes for the panel, e.g. `modal-panel-wide`. */
   panelClassName?: string;
   children: ReactNode;
@@ -21,40 +23,60 @@ interface ModalShellProps {
  * The overlay, panel, focus trap and Escape for a dialog, with an enter and an exit.
  *
  * A dialog that unmounts itself on close vanishes in one frame; this one stays
- * mounted for the length of its exit. `.modal-panel` centres itself with
- * `transform`, which Motion writes inline, so the centring is carried as
- * Motion's own `x`/`y` percentages and the entrance moves `y` by 2% of the
- * panel's height. Reduced motion is the root `MotionConfig`'s job.
+ * mounted for the length of its exit.
+ *
+ * The entrance is the CSS one every `.modal-panel` already has
+ * (`modal-panel-in`), so an opened dialog is fully drawn wherever CSS
+ * animation does not run, a test included. Motion plays only the exit.
+ * `.modal-panel` centres itself with `transform`, which Motion writes inline,
+ * so the centring is carried as Motion's own `x`/`y` percentages and the exit
+ * moves `y` by 2% of the panel's height. Reduced motion: the global CSS rule
+ * covers the entrance, the root `MotionConfig` the exit.
  */
-export function ModalShell({ open, onDismiss, labelledBy, panelClassName, children }: ModalShellProps) {
+export function ModalShell({
+  open,
+  onDismiss,
+  labelledBy,
+  describedBy,
+  panelClassName,
+  children,
+}: ModalShellProps) {
   // Registered from the shell, not the panel: a closed dialog stops claiming
   // Escape at once, not when its exit finishes.
   useDialogDismiss(open ? onDismiss : null);
 
+  // Its own features, not only the app root's: `m.*` does nothing without a
+  // LazyMotion above it, so a dialog rendered under another root (a test, a
+  // portal) would lose its exit. domAnimation is already in the bundle.
   return (
-    <AnimatePresence>
-      {open ? (
-        <ModalShellContent
-          key="modal"
-          onDismiss={onDismiss}
-          labelledBy={labelledBy}
-          panelClassName={panelClassName}
-        >
-          {children}
-        </ModalShellContent>
-      ) : null}
-    </AnimatePresence>
+    <LazyMotion features={domAnimation} strict>
+      <AnimatePresence>
+        {open ? (
+          <ModalShellContent
+            key="modal"
+            onDismiss={onDismiss}
+            labelledBy={labelledBy}
+            describedBy={describedBy}
+            panelClassName={panelClassName}
+          >
+            {children}
+          </ModalShellContent>
+        ) : null}
+      </AnimatePresence>
+    </LazyMotion>
   );
 }
 
 function ModalShellContent({
   onDismiss,
   labelledBy,
+  describedBy,
   panelClassName,
   children,
 }: Omit<ModalShellProps, "open">) {
   // False for the length of the exit. A leaving dialog lets go of focus (the
-  // trap's teardown hands it back to the opener) and takes no input.
+  // trap's teardown hands it back to the opener), takes no input, and is gone
+  // from the accessibility tree: nothing should announce a dialog that is closing.
   const isPresent = useIsPresent();
   const trapRef = useDialogFocusTrap<HTMLDivElement>();
   // Set in this render, not by the exit animation, which applies on a later frame.
@@ -70,13 +92,14 @@ function ModalShellContent({
   return (
     <>
       <m.div
-        className="modal-overlay modal-overlay--shell"
+        className="modal-overlay"
         onClick={isPresent ? onDismiss : undefined}
         role="presentation"
         inert={!isPresent}
+        aria-hidden={isPresent ? undefined : true}
         style={leaving}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1, transition: { duration: DURATION.slow, ease: EASE_OUT } }}
+        initial={false}
+        animate={{ opacity: 1 }}
         exit={{
           opacity: 0,
           transition: { duration: DURATION.med, ease: EASE_OUT },
@@ -84,20 +107,16 @@ function ModalShellContent({
       />
       <m.div
         ref={trapRef}
-        className={["modal-panel", "modal-panel--shell", panelClassName].filter(Boolean).join(" ")}
+        className={["modal-panel", panelClassName].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         inert={!isPresent}
+        aria-hidden={isPresent ? undefined : true}
         style={leaving}
-        initial={{ opacity: 0, x: "-50%", y: "-48%", scale: 0.98 }}
-        animate={{
-          opacity: 1,
-          x: "-50%",
-          y: "-50%",
-          scale: 1,
-          transition: { duration: DURATION.slow, ease: EASE_OUT },
-        }}
+        initial={false}
+        animate={{ opacity: 1, x: "-50%", y: "-50%", scale: 1 }}
         exit={{
           opacity: 0,
           x: "-50%",

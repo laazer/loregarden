@@ -30,7 +30,7 @@ const PR: PullRequestStatus = {
 };
 
 function lookup(overrides: Partial<TicketPullRequest>): TicketPullRequest {
-  return { lookup: "found", branch: PR.head, pull_request: PR, error: "", recorded: null, ...overrides };
+  return { lookup: "found", branch: PR.head, pull_request: PR, error: "", recorded: null, ships_with: "", ...overrides };
 }
 
 function renderPanel(data: TicketPullRequest, handlers: { onOpenPr?: () => void; onCommitPush?: () => void } = {}) {
@@ -81,6 +81,16 @@ describe("TicketPullRequestPanel", () => {
     expect(await screen.findByText(PR.head)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open PR" }));
     expect(onOpenPr).toHaveBeenCalled();
+  });
+
+  it("offers no PR of its own to a ticket that ships with its tree", async () => {
+    renderPanel(lookup({ lookup: "none", pull_request: null, ships_with: "integration/lg-ms-1" }), {
+      onOpenPr: jest.fn(),
+      onCommitPush: jest.fn(),
+    });
+
+    expect(await screen.findByText("integration/lg-ms-1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open PR" })).not.toBeInTheDocument();
   });
 
   it("does not call a failed lookup 'no pull request', and links the recorded one", async () => {
