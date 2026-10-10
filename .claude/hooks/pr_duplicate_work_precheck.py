@@ -15,7 +15,12 @@ beyond the base: their merge-base is not on the base. That covers a branch
 cut from an integration branch and one landed on it, including after later
 commits (a containment test on the head alone missed 336 once it gained a
 merge commit). A head that is itself an integration branch is the tree's PR
-and passes. When the check cannot run, the command passes with a
+and passes.
+
+Shipping a finished child ahead of its tree is sometimes right (336 makes runs
+survive a restart; its tree has 15 children still to go). That is allowed when
+the PR body says so on a line of its own, `Ship-early: <why>`, with a real
+reason. The duplicate is then a decision on record rather than an accident. When the check cannot run, the command passes with a
 note saying so.
 
 Standard library only, Python 3.9: hooks run under the system `python3`.
@@ -32,6 +37,13 @@ from types import ModuleType
 
 _GH_PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b")
 _INTEGRATION = "integration/"
+#: The escape: a finished child shipped ahead of its tree, on purpose. The line
+#: lives in the PR body, so the reason is on record where reviewers read it.
+_SHIP_EARLY = re.compile(
+    r"^[\s>*_-]*ship-early:[*_\s]*(?P<reason>.*\S)", re.IGNORECASE | re.MULTILINE
+)
+#: Long enough that "yes", "n/a" or "ship it" cannot pass for a reason.
+SHIP_EARLY_MIN_REASON = 20
 
 
 def _shared() -> ModuleType:
@@ -86,6 +98,21 @@ def _shares_work(workdir: Path, sha: str, branch_sha: str, bases: list) -> bool:
     return any(not _on_base(workdir, commit, bases) for commit in common)
 
 
+def _holders(workdir: Path, sha: str, bases: list) -> list:
+    """The integration branches ``sha`` shares work with beyond the base."""
+    holders = []
+    for line in ux._git(
+        workdir,
+        "for-each-ref",
+        "--format=%(refname:short) %(objectname)",
+        f"refs/heads/{_INTEGRATION}",
+    ).splitlines():
+        name, _, branch_sha = line.rpartition(" ")
+        if name and _shares_work(workdir, sha, branch_sha, bases):
+            holders.append(name)
+    return holders
+
+
 def decide(payload: dict):
     """("deny", reason), (None, note) or None, like the UX precheck."""
     command = (payload.get("tool_input") or {}).get("command") or ""
@@ -107,27 +134,37 @@ def decide(payload: dict):
             raise ux.Unreadable(f"base branch {base!r} is not known locally")
         if _on_base(workdir, sha, bases):
             return None  # nothing new on it; gh reports that itself
-        holders = []
-        for line in ux._git(
-            workdir,
-            "for-each-ref",
-            "--format=%(refname:short) %(objectname)",
-            f"refs/heads/{_INTEGRATION}",
-        ).splitlines():
-            name, _, branch_sha = line.rpartition(" ")
-            if name and _shares_work(workdir, sha, branch_sha, bases):
-                holders.append(name)
+        holders = _holders(workdir, sha, bases)
     except (ux.Unreadable, ValueError) as exc:  # ValueError: shlex on unbalanced quotes
         return None, f"The duplicate-work precheck did not run ({exc})."
     if not holders:
         return None
     named = ", ".join(holders)
+    early = _ship_early_reason(command, match, args, workdir)
+    if early:
+        return None, (
+            f"Shipping {head} ahead of {named}, as the PR body records: {early!r}. Until the "
+            f"PR merges, a conflict with {base} has to be resolved on both branches."
+        )
     return "deny", (
         f"{head} shares its work with {named}. That tree's work reaches {base} as one pull request "
         f"when its root completes; a PR for {head} would carry the same commits twice, and "
         f"every conflict with {base} would have to be resolved on both. Leave it to the tree. "
-        f"If the tree should ship now, open the PR from {holders[0]} instead."
+        f"If the tree should ship now, open the PR from {holders[0]} instead. To ship this "
+        f"one ticket ahead of its tree on purpose, put a line 'Ship-early: <why it cannot "
+        f"wait>' (at least {SHIP_EARLY_MIN_REASON} characters of reason) in the PR body."
     )
+
+
+def _ship_early_reason(command: str, match: re.Match, args: list, workdir: Path) -> str:
+    """The body's `Ship-early:` reason, or "" when there is none or it is too thin."""
+    try:
+        body = ux._body(command, match, args, workdir) or ""
+    except ux.Unreadable:
+        return ""  # silent-ok: an unreadable body cannot carry the escape; the deny names the fix
+    found = _SHIP_EARLY.search(body)
+    reason = found.group("reason").strip() if found else ""
+    return reason if len(reason) >= SHIP_EARLY_MIN_REASON else ""
 
 
 def main() -> int:

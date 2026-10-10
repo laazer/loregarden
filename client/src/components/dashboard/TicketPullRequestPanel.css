@@ -323,3 +323,42 @@ a.prp-check-name:focus-visible {
   margin-bottom: 8px;
   color: var(--rdl);
 }
+
+.prp-merge-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+
+.prp-merge-question {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.prp-merge-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prp-unsigned {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prp-unsigned-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--rdl);
+  overflow-wrap: anywhere;
+}

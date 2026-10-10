@@ -52,6 +52,11 @@ NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
 #   loregarden_read_artifact -> needs the id of a row written earlier in the same run,
 #   which the argument table is built before; test_mcp_documents writes one and reads it.
 NEEDS_A_WRITTEN_ARTIFACT = "loregarden_read_artifact"
+#   loregarden_merge_pull_request -> merges only a PR GitHub says can merge now, so a
+#   well-formed call needs a git repository and a GitHub answering for it; the seed
+#   has neither, and its honest answer here is a refusal. test_pull_request_merge.py
+#   drives it over MCP against a fake GitHub.
+NEEDS_A_MERGEABLE_PULL_REQUEST = "loregarden_merge_pull_request"
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
@@ -477,6 +482,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
         NEEDS_A_SECOND_WORKSPACE,
         NEEDS_A_WRITTEN_ARTIFACT,
+        NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
     }
     assert set(ordered) | exempt >= advertised, (

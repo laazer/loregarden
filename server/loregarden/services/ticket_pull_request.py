@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+from pathlib import Path
 
 from loregarden.models.domain import (
     Artifact,
@@ -25,9 +26,15 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.git_merge_noco import rev
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.target_branch import TargetBranchError, target_branch_name
+from loregarden.services.target_branch import (
+    TargetBranchError,
+    integration_branch_for,
+    subtree_root,
+    target_branch_name,
+)
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlmodel import Session, col, select
@@ -37,7 +44,7 @@ logger = logging.getLogger(__name__)
 GH_TIMEOUT_SECONDS = 15
 _GH_FIELDS = (
     "number,url,title,state,isDraft,baseRefName,headRefName,additions,deletions,"
-    "changedFiles,reviewDecision,mergeable,statusCheckRollup,body"
+    "changedFiles,reviewDecision,mergeable,statusCheckRollup,body,headRefOid,mergeStateStatus"
 )
 #: What `gh pr view` prints, on exit 1, when the branch simply has no PR.
 _NO_PR_MARKER = "no pull requests found"
@@ -89,6 +96,8 @@ class _GhPullRequest(BaseModel):
     changed_files: int = Field(0, alias="changedFiles")
     review_decision: str = Field("", alias="reviewDecision")
     mergeable: str = ""
+    head_sha: str = Field("", alias="headRefOid")
+    merge_state: str = Field("", alias="mergeStateStatus")
     checks: list[_GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
     body: str = ""
 
@@ -114,6 +123,15 @@ class PullRequestStatus(BaseModel):
     has_conflicts: bool
     checks: list[PullRequestCheck]
     body: str
+    #: The commit GitHub would merge; a merge is pinned to it.
+    head_sha: str = ""
+    #: GitHub's own "this can merge now": open, and `mergeStateStatus` CLEAN
+    #: (required checks green, signatures and reviews satisfied, no conflicts).
+    mergeable_now: bool = False
+    #: "<short sha> <subject>" for each commit GitHub cannot verify, asked only
+    #: while the PR is blocked: `main` requires signed commits, and an unsigned
+    #: one blocks a PR whose checks are all green (#555).
+    unsigned_commits: list[str] = Field(default_factory=list)
 
 
 class RecordedPullRequest(BaseModel):
@@ -176,6 +194,8 @@ def _to_status(raw: _GhPullRequest) -> PullRequestStatus:
             for check in raw.checks
         ],
         body=raw.body,
+        head_sha=raw.head_sha,
+        mergeable_now=raw.state == "OPEN" and raw.merge_state == "CLEAN",  # py-org: allow-string
     )
 
 
@@ -224,11 +244,38 @@ def ticket_pull_request(
     return result
 
 
+def _candidate_branches(session: Session, ticket: Ticket, repo_root: Path) -> list[str]:
+    """Where this ticket's PR would be, most likely first.
+
+    A tree's root publishes its integration branch (`publish_tree`), so that
+    is where its PR lives; its own branch is asked as well, for a root whose
+    tree never formed. Any other ticket's PR is on its own branch.
+    """
+    own = resolve_ticket_branch(ticket)
+    try:
+        is_root = subtree_root(session, ticket).id == ticket.id
+    except TargetBranchError:
+        return [own]
+    if not is_root:
+        return [own]
+    integration = integration_branch_for(ticket)
+    return [integration, own] if rev(repo_root, f"refs/heads/{integration}") else [own]
+
+
 def _lookup(session: Session, ticket: Ticket, workspace: Workspace) -> TicketPullRequest:
-    branch = resolve_ticket_branch(ticket)
     repo_root = resolve_workspace_root(workspace)
+    branches = _candidate_branches(session, ticket, repo_root)
     if not (repo_root / ".git").exists():
-        return _failed(session, ticket, branch, f"{repo_root} is not a git repository")
+        return _failed(session, ticket, branches[0], f"{repo_root} is not a git repository")
+    result = TicketPullRequest(lookup=PullRequestLookup.NONE, branch=branches[-1])
+    for branch in branches:
+        result = _view(session, ticket, repo_root, branch)
+        if result.lookup is not PullRequestLookup.NONE:
+            return result
+    return result
+
+
+def _view(session: Session, ticket: Ticket, repo_root: Path, branch: str) -> TicketPullRequest:
     try:
         proc = run_gh(
             ["pr", "view", branch, "--json", _GH_FIELDS], cwd=repo_root, timeout=GH_TIMEOUT_SECONDS
@@ -246,6 +293,36 @@ def _lookup(session: Session, ticket: Ticket, workspace: Workspace) -> TicketPul
         raw = _GhPullRequest.model_validate(json.loads(proc.stdout or "{}"))
     except (ValueError, ValidationError) as exc:
         return _failed(session, ticket, branch, f"unexpected gh output: {exc}")
-    return TicketPullRequest(
-        lookup=PullRequestLookup.FOUND, branch=branch, pull_request=_to_status(raw)
-    )
+    status = _to_status(raw)
+    if raw.state == "OPEN" and raw.merge_state == "BLOCKED":  # py-org: allow-string
+        status.unsigned_commits = _unsigned_commits(repo_root, raw.number)
+    return TicketPullRequest(lookup=PullRequestLookup.FOUND, branch=branch, pull_request=status)
+
+
+_UNSIGNED_JQ = (
+    ".[] | select(.commit.verification.verified | not) "
+    '| "\\(.sha[0:8]) \\(.commit.message | split("\\n")[0])"'
+)
+
+
+def _unsigned_commits(repo_root: Path, number: int) -> list[str]:
+    """The PR's commits GitHub cannot verify. Best-effort: the verdict falls back
+    to "GitHub's rules block it" without them, and a failure is logged."""
+    try:
+        proc = run_gh(
+            [
+                "api",
+                f"repos/{{owner}}/{{repo}}/pulls/{number}/commits?per_page=100",
+                "--jq",
+                _UNSIGNED_JQ,
+            ],
+            cwd=repo_root,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        logger.warning("Could not list PR #%s's commits", number, exc_info=True)
+        return []
+    if proc.returncode != 0:
+        logger.warning("Could not list PR #%s's commits: %s", number, (proc.stderr or "").strip())
+        return []
+    return [line for line in proc.stdout.splitlines() if line.strip()]

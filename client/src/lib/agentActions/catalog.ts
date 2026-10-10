@@ -31,6 +31,7 @@ export interface UiActionArgs {
   };
   "ticket.set_state": { ticket_id: string; state: TicketState };
   "ticket.trigger_auto_fix": { ticket_id: string };
+  "ticket.merge_pull_request": { ticket_id: string; number: number; head_sha: string };
   "workspace.archive": { workspace_slug: string };
   "workspace.restore": { workspace_slug: string };
   "workspace.set_workflow": { workspace_slug: string; template: string };
@@ -64,6 +65,7 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "ticket.update": "Edited the ticket",
   "ticket.set_state": "Changed the ticket's state",
   "ticket.trigger_auto_fix": "Started the CI auto-fix",
+  "ticket.merge_pull_request": "Merged the ticket's pull request",
   "workspace.archive": "Archived a workspace",
   "workspace.restore": "Restored a workspace",
   "workspace.set_workflow": "Changed a workspace's workflow",
