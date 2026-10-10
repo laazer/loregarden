@@ -58,6 +58,7 @@ export const API_WRITE_COVERAGE = {
   advance: { kind: "human_only", reason: GATE },
   openPr: { kind: "not_agent_driven", reason: "publishes to the remote; the pipeline's publish chain does this for agents" },
   commitPush: { kind: "not_agent_driven", reason: "publishes to the remote; the pipeline's publish chain does this for agents" },
+  mergeTicketPullRequest: { kind: "agent_action", action: "ticket.merge_pull_request" },
   buildTerminalHandoffCommand: { kind: "not_a_write", reason: DRAFT },
   buildExternalHarnessPrompt: { kind: "not_a_write", reason: DRAFT },
   setTicketRuntime: { kind: "agent_action", action: "ticket.set_runtime" },
