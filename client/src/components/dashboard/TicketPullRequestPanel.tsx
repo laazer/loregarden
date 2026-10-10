@@ -309,7 +309,7 @@ function PullRequestSummary({
       )}
 
       {pr.body.trim() && (
-        <details className="prp-section prp-body">
+        <details className="prp-section prp-body" open>
           <summary className="prp-section-title">Description</summary>
           <MarkdownContent content={pr.body} normalize={false} readerTitle={`PR #${pr.number}`} />
         </details>
