@@ -249,6 +249,34 @@ def _block_on_checkout_failure(
     return message
 
 
+def member_runs_and_results(
+    session: Session,
+    ticket: Ticket,
+    stage_def: WorkflowStageDef,
+    stage_key: str,
+) -> tuple[int, list[ParallelMemberResult]]:
+    """How many members are still outstanding, and how the settled ones judged.
+
+    A member is outstanding while it has no run of this stage at all, or its
+    latest one is still in flight. The stage cannot settle until none are.
+
+    Public, and here, because three drivers ask it now: the external-harness
+    protocol, and `run_resupervise` settling a member whose server died. A
+    reattach *will* land on a parallel stage — this ticket's own `plan` stage
+    has three members — and a second copy of this is a second answer to
+    "is the stage done".
+    """
+    outstanding = 0
+    results: list[ParallelMemberResult] = []
+    for spec in stage_def.parallel_agents:
+        latest = latest_member_run(session, ticket, stage_def, stage_key, spec)
+        if latest is None or latest.status == RunStatus.RUNNING:
+            outstanding += 1
+            continue
+        results.append(member_result_from_run(latest))
+    return outstanding, results
+
+
 def reconcile_parallel_stage(
     session: Session,
     ticket: Ticket,

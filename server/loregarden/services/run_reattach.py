@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 from loregarden.models.domain import AgentRun, ProcessState
 from loregarden.services.process_identity import liveness
@@ -79,24 +78,30 @@ def runs_to_spare(session: Session) -> list[AgentRun]:
     return grouped[ProcessState.ALIVE] + grouped[ProcessState.UNKNOWN]
 
 
-def _watch(run_id: str, pid: int, identity: str, interval_seconds: float) -> None:
-    """Renew `run_id`'s lease while its process lives, then stop.
+def _supervise(run_id: str, interval_seconds: float) -> None:
+    """The thread's entry point: resume `run_id`, and report a crash as one.
 
-    Stopping is the half a naive renewer misses. `lease_renewal` ties renewal to
-    a body executing in this process; a reattached run has no such body, so an
-    unconditional renewer would hold a run alive forever after its agent died —
-    turning a run this control plane could no longer see into one it swore was
-    fine. When the process goes, renewal stops and `settle_expired_agent_runs`
-    settles the row at the lease boundary, which is the honest outcome: nobody
-    is supervising it any more.
+    `run_resupervise` is imported HERE rather than at module scope, and not to
+    dodge a cycle: it pulls in `OrchestrationService`, and this module is on the
+    boot-reaper path that S6's split exists to keep orchestration off. Importing
+    it at the top undoes the split while leaving every test of it green. The
+    cost is one import inside a thread that is about to supervise a run for
+    minutes to hours.
+
+    An exception escaping a daemon thread reaches `threading.excepthook` and
+    nothing else — no log line naming the run, no record on the row. A
+    supervisor that died leaves its run at RUNNING for the lease reaper to
+    settle, which is the honest fallback, but only if somebody can find out it
+    happened.
     """
-    while (state := liveness(pid, identity)) is not ProcessState.GONE:
-        # An unanswered `ps` is not a death: skip this beat and ask again. Only
-        # a reading that the process is gone ends the watch.
-        if state is ProcessState.ALIVE:
-            renew_agent_run_lease(run_id)
-        time.sleep(interval_seconds)
-    logger.info("Reattached run %s: its process is gone; renewal stopped", run_id[:8])
+    from loregarden.services import run_resupervise
+
+    try:
+        run_resupervise.resupervise(run_id, interval_seconds=interval_seconds)
+    except Exception:  # noqa: BLE001 — logged, and the lease reaper is the fallback
+        logger.exception(
+            "Resupervising run %s failed; it stays in flight for the lease reaper", run_id[:8]
+        )
 
 
 def reattach_surviving_runs(
@@ -105,17 +110,19 @@ def reattach_surviving_runs(
     """Adopt every run whose agent outlived the restart. Returns what was adopted.
 
     Called before the boot reapers, which skip these runs on the strength of the
-    same predicate. Each adopted run gets a daemon thread renewing its lease for
-    as long as its process lives — without one it would be reaped ten minutes
-    later by the very sweep this ticket exists to keep it away from.
+    same predicate. Each adopted run gets a daemon thread that RESUMES it — see
+    `services.run_resupervise`. A thread that only renewed the lease was the
+    half-measure this replaced: the agent finished, nothing read its exit status
+    or its stage report, and the row settled at the lease boundary as
+    un-supervised, so the stage never completed, committed or routed.
     """
     adopted = surviving_runs(session)
     for run in adopted:
         renew_agent_run_lease(run.id)
         threading.Thread(
-            target=_watch,
-            args=(run.id, run.agent_pid, run.agent_pid_identity, interval_seconds),
-            name=f"reattach-{run.id[:8]}",
+            target=_supervise,
+            args=(run.id, interval_seconds),
+            name=f"resupervise-{run.id[:8]}",
             daemon=True,
         ).start()
         logger.info(

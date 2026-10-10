@@ -91,6 +91,7 @@ import type {
   CIStatusResponse,
   ReloadStatus,
   RunLog,
+  RunMessagesPayload,
   BtwExchange,
   RunMessage,
   TicketLedger,
@@ -267,7 +268,7 @@ export const api = {
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
   runMessages: (runId: string) =>
-    request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
+    request<RunMessagesPayload>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>
     request<RunMessage>(`/api/runs/${runId}/messages`, {
       method: "POST",
