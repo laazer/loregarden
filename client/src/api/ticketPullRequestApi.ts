@@ -37,6 +37,8 @@ export interface TicketPullRequest {
   error: string;
   /** The PR Loregarden's own "Open PR" recorded, for when GitHub cannot be asked. */
   recorded: { url: string; number: string; title: string } | null;
+  /** The integration branch a tree member ships on; "" when the ticket ships its own branch. */
+  ships_with: string;
 }
 
 /** Its own key, not under ["ticket", id]: that prefix is invalidated on every

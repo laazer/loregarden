@@ -130,6 +130,19 @@ export function TicketPullRequestPanel({
   );
 
   if (data.lookup === "failed") return <LookupFailed data={data} refresh={refresh} />;
+  if ((data.lookup === "none" || !data.pull_request) && data.ships_with) {
+    return (
+      <div className="ap-state">
+        <div className="ap-state-title">Ships in its tree&rsquo;s pull request</div>
+        <div className="ap-state-body">
+          This ticket&rsquo;s work lands on <code className="prp-branch">{data.ships_with}</code>, which goes to the
+          base as one PR when the tree&rsquo;s root completes. A PR for its own branch would carry the same commits
+          twice.
+        </div>
+        <div className="prp-actions">{refresh}</div>
+      </div>
+    );
+  }
   if (data.lookup === "none" || !data.pull_request) {
     return (
       <div className="ap-state">
