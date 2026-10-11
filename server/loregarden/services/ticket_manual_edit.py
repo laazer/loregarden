@@ -67,8 +67,45 @@ def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
     )
 
 
+CRITERIA_FROZEN_MESSAGE = (
+    "Acceptance criteria are frozen on a done ticket: they are the record of what "
+    "was delivered. Link follow-up work with a relation or dependency instead, or "
+    "reopen the ticket to change what it asks for."
+)
+
+
+def _criteria_frozen(ticket: Ticket, body: UpdateTicketRequest) -> bool:
+    """Whether this request leaves the ticket done, so its criteria may not change.
+
+    A request that also moves the ticket out of done is a reopen, and a reopened
+    ticket's requirement is open for editing again.
+    """
+    return ticket.state == TicketState.DONE and body.state in (None, TicketState.DONE)
+
+
+def _guard_frozen_criteria(ticket: Ticket, body: UpdateTicketRequest) -> None:
+    """Refuse a change to a done ticket's criteria or their checks.
+
+    Compared rather than refused on presence: the edit form sends every field
+    back on save, so an unchanged list must still pass.
+    """
+    if not _criteria_frozen(ticket, body):
+        return
+    criteria = load_criteria(ticket.acceptance_criteria_json)
+    if (
+        body.acceptance_criteria is not None
+        and load_criteria(serialize_criteria(body.acceptance_criteria)) != criteria
+    ):
+        raise ValueError(CRITERIA_FROZEN_MESSAGE)
+    if body.checked_acceptance_criteria is not None and set(
+        load_checked(serialize_checked(body.checked_acceptance_criteria, criteria), criteria)
+    ) != set(load_checked(ticket.checked_criteria_json, criteria)):
+        raise ValueError(CRITERIA_FROZEN_MESSAGE)
+
+
 def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
     """The fields whose change earns a revision bump. Returns whether any did."""
+    _guard_frozen_criteria(ticket, body)
     before = _content_fields(ticket)
 
     if body.title is not None:

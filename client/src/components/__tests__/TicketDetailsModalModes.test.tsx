@@ -255,3 +255,37 @@ describe('edit mode', () => {
     expect(screen.getByLabelText('Ticket title')).toHaveValue('Kept');
   });
 });
+
+describe('a done ticket', () => {
+  const done = () => mockTicket({ state: 'done' });
+
+  it('shows its criteria read-only and says why, in read mode', () => {
+    const onSaveChecks = jest.fn().mockResolvedValue(undefined);
+    renderModal({ ticket: done(), onSaveChecks });
+
+    for (const box of screen.getAllByRole('checkbox')) expect(box).toBeDisabled();
+    expect(screen.getByText(/this ticket is done/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Edit can change text' }));
+    expect(onSaveChecks).not.toHaveBeenCalled();
+  });
+
+  it('locks the criteria editor while the draft stays done, but not the other fields', () => {
+    renderModal({ ticket: done(), onSave: jest.fn() });
+    fireEvent.click(editButton());
+
+    expect(screen.getByLabelText('Criterion 1')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Criterion 1 done' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /add criterion/i })).toBeDisabled();
+    expect(screen.getByLabelText('Ticket title')).toBeEnabled();
+  });
+
+  it('unlocks the criteria when the draft reopens the ticket', () => {
+    renderModal({ ticket: done(), onSave: jest.fn() });
+    fireEvent.click(editButton());
+
+    fireEvent.change(screen.getByLabelText('State'), { target: { value: 'backlog' } });
+
+    expect(screen.getByLabelText('Criterion 1')).toBeEnabled();
+    expect(screen.queryByText(/this ticket is done/i)).not.toBeInTheDocument();
+  });
+});
