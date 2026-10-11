@@ -364,7 +364,7 @@ function LaneGroup({
     <>
       <LaneRow row={first} axis={axis} now={now} depth={depth} />
       {open ? rest.map((row) => <LaneRow key={row.id} row={row} axis={axis} now={now} depth={depth} />) : null}
-      <li className="ptl-group">
+      <li>
         <Button variant="plain" compact className="ptl-group-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
           {open ? "Show fewer" : `+ ${rest.length} more at ${nowLabel(first)}`}
         </Button>
@@ -523,7 +523,7 @@ function PendingList({
   const [open, setOpen] = useState(!collapsed && rows.length <= COLLAPSE_LIST_AT);
   const headingId = useId();
   return (
-    <div className="ptl-pending-group">
+    <div>
       <Button
         variant="plain"
         compact
