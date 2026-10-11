@@ -105,6 +105,12 @@ Field rules:
   ticket and the stage reruns without anyone asking. `human_action`: a person's hands are needed
   (credentials, hardware, an external account). A `blocked` report with no kind is treated as
   `work`, and the history says the agent did not say — earn the person's attention by naming it.
+  **A `decision` is also the only way to get a person's go-ahead for an irreversible or outward
+  action** (force-pushing or publishing a ref, opening or closing a pull request, re-cutting
+  another ticket's branch): make each option the exact command. The pick comes back as the
+  `Decision — <stage>` artifact, and **that pick is the authorization**: on the rerun, carry it
+  out; do not ask again. `loregarden_request_approval` cannot grant it (it only opens stage
+  gates), so a spec must not name it as the channel for one.
 - `options`: only with `blocked_kind: decision`. Each is the answer itself ("Relax the bar to
   0.5", "Try approach B", "Accept and continue"), not a question.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.
