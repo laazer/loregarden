@@ -119,7 +119,11 @@ Field rules:
   link the two with `loregarden_link_relation`, and leave only code criteria here. Code that
   *implements* such an operation (a feature that opens PRs) is ordinary code and stays. An
   implementer cannot finish an operation criterion without stopping for a person every round;
-  lg-milestone-that-782 ran four implement rounds on one before it was split out.
+  lg-milestone-that-782 ran four implement rounds on one before it was split out. This is
+  checked: a passing spec whose criteria name such an operation (a force-push or
+  force-update, an admin bypass, re-signing history, re-cutting worktrees onto a rebuilt
+  branch, editing `landed_sha` through the tools) does not advance until a person chooses to
+  split them out or keep them.
 - `options`: only with `blocked_kind: decision`. Each is the answer itself ("Relax the bar to
   0.5", "Try approach B", "Accept and continue"), not a question.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.

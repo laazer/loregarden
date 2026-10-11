@@ -39,6 +39,13 @@ from loregarden.services.interruption_messages import (
     STRANDED_STAGE_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
 )
+from loregarden.services.operation_criteria import (
+    OPERATION_DECISION_OPTIONS,
+    SPLIT_OPTION,
+    keep_operation_criteria,
+    pending_operation_criteria,
+    split_operation_criteria,
+)
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.ticket_stage_control import StageControl
@@ -287,8 +294,21 @@ def chosen_option(approval: Approval, answers: dict[str, str | list[str]] | None
     return str(raw or "").strip()
 
 
+#: What each way of acting on an answer is called in the history.
+_DECISION_OUTCOMES: dict[OrchestratorDecision, str] = {
+    OrchestratorDecision.REQUEUED_AFTER_DECISION: "requeued there",
+    OrchestratorDecision.PARKED_AFTER_DECISION: "parked the ticket",
+    OrchestratorDecision.ADVANCED_AFTER_DECISION: "carried it out and moved the stage on",
+}
+
+
 def record_decision_outcome(
-    session: Session, ticket: Ticket, approval: Approval, *, choice: str, parked: bool = False
+    session: Session,
+    ticket: Ticket,
+    approval: Approval,
+    *,
+    choice: str,
+    decision: OrchestratorDecision = OrchestratorDecision.REQUEUED_AFTER_DECISION,
 ) -> None:
     """The choice, on the ticket where the next stage will read it."""
     session.add(
@@ -311,17 +331,15 @@ def record_decision_outcome(
             ),
         )
     )
-    outcome = "parked the ticket" if parked else "requeued there"
     record_orchestrator_decision(
         session,
         ticket,
-        decision=(
-            OrchestratorDecision.PARKED_AFTER_DECISION
-            if parked
-            else OrchestratorDecision.REQUEUED_AFTER_DECISION
-        ),
+        decision=decision,
         stage_key=approval.stage_key,
-        reason=f"A person chose '{choice}' for the block on '{approval.stage_key}'; {outcome}.",
+        reason=(
+            f"A person chose '{choice}' for the block on '{approval.stage_key}'; "
+            f"{_DECISION_OUTCOMES[decision]}."
+        ),
         evidence={"approval_id": approval.id, "choice": choice},
     )
     session.commit()
@@ -350,9 +368,18 @@ def resolve_block_decision(
     answers = json.loads(approval.response_json or "{}").get("updated_input", {}).get("answers")
     choice = chosen_option(approval, answers) or response_text.strip()
     if choice == PARK_OPTION:
-        record_decision_outcome(session, ticket, approval, choice=choice, parked=True)
+        record_decision_outcome(
+            session,
+            ticket,
+            approval,
+            choice=choice,
+            decision=OrchestratorDecision.PARKED_AFTER_DECISION,
+        )
         orch.update_ticket_manual(ticket, UpdateTicketRequest(state=TicketState.PARKED))
         return False
+    if choice in OPERATION_DECISION_OPTIONS:
+        _settle_operation_criteria(session, orch, ticket, approval, choice=choice)
+        return True
     record_decision_outcome(session, ticket, approval, choice=choice)
     requeue_stage(
         session,
@@ -364,3 +391,28 @@ def resolve_block_decision(
         state=TicketState.IN_PROGRESS,
     )
     return True
+
+
+def _settle_operation_criteria(
+    session: Session, orch: StageControl, ticket: Ticket, approval: Approval, *, choice: str
+) -> None:
+    """Carry out the answer to a spec's operation-criteria question, then move on.
+
+    The spec's own work passed; only its criteria were in question. So the
+    stage advances as a pass instead of requeueing, which would run the spec
+    agent again to reach the same criteria.
+    """
+    pending = pending_operation_criteria(session, ticket)
+    if pending and choice == SPLIT_OPTION:
+        split_operation_criteria(session, ticket, pending)
+    elif pending:
+        keep_operation_criteria(session, ticket, pending)
+    record_decision_outcome(
+        session,
+        ticket,
+        approval,
+        choice=choice,
+        decision=OrchestratorDecision.ADVANCED_AFTER_DECISION,
+    )
+    orch.update_ticket_manual(ticket, UpdateTicketRequest(state=TicketState.IN_PROGRESS))
+    orch.route_workflow_stage(ticket, from_stage_key=approval.stage_key, outcome="pass")

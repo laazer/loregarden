@@ -122,3 +122,20 @@ def test_no_function_local_service_imports_in_the_queue_modules():
             if re.match(r"\s+from loregarden\.services", line):
                 offenders.append(f"{name}.py:{number}: {line.strip()}")
     assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "entry_point",
+    ["loregarden.main", "loregarden.cli.mcp_server", "loregarden.cli.main", "loregarden.mcp.tools"],
+)
+def test_every_entry_point_installs_the_operation_splitter(entry_point):
+    """Uninstalled, a person's "split them out" answer to a spec raises instead
+    of splitting. Same shape and reason as the scheduler check above."""
+    probe = (
+        f"import {entry_point};"
+        "from loregarden.services import operation_criteria;"
+        "import sys; sys.exit(0 if operation_criteria._splitter else 1)"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+
+    assert result.returncode == 0, f"{entry_point} installs no splitter\n{result.stderr}"

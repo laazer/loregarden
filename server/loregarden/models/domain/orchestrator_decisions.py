@@ -45,6 +45,10 @@ class OrchestratorDecision(StrEnum):
     #: A person answered a repeated decision block by parking the ticket rather
     #: than buying another round on the same stage.
     PARKED_AFTER_DECISION = "parked_after_decision"
+    #: A person answered a decision the control plane can carry out itself
+    #: (a spec's operation criteria split or kept), so it did, and the stage
+    #: moved on rather than running its agent again.
+    ADVANCED_AFTER_DECISION = "advanced_after_decision"
     #: A harness/work block got its one repair turn: the stage was re-armed
     #: under the repair agent instead of waiting for a person (750).
     DISPATCHED_REPAIR = "dispatched_repair"
