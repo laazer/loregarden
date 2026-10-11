@@ -1,4 +1,5 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
+import type { ChildrenTimeline } from "./childrenTimeline";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
@@ -12,6 +13,7 @@ export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
+export type * from "./childrenTimeline";
 export type {
   InitiativeDraft,
   InitiativeSuggestion,
@@ -265,6 +267,8 @@ export const api = {
     request<{ deleted: string }>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
   ticketLedger: (ticketId: string) =>
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
+  ticketChildrenTimeline: (ticketId: string) =>
+    request<ChildrenTimeline>(`/api/tickets/${ticketId}/children-timeline`),
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
   runMessages: (runId: string) =>

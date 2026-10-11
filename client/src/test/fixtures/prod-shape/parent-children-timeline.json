@@ -1,0 +1,1884 @@
+{
+ "children": [
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-91",
+   "id": "3932c6ad-a44f-543b-8f36-1cd08085f8ac",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T00:18:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T00:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T00:58:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T00:28:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T02:06:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T00:59:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T02:42:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T02:07:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T03:43:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T02:45:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T04:04:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T03:56:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T04:36:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T04:17:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T05:09:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T04:37:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T05:36:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-13T05:26:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T06:21:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-13T05:43:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T06:53:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-13T06:27:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T07:32:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-13T07:11:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "done",
+   "title": "Retry the rework ledger's loop cap",
+   "total_runs": 14,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "done"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-92",
+   "id": "0c5204dc-f905-5e64-96db-06feb82ad49d",
+   "segments": [
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T04:18:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T03:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T05:04:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T04:27:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T05:31:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T05:15:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T06:07:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T05:42:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T07:20:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T06:13:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T08:07:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T07:34:00Z",
+     "status": "failed",
+     "visit_number": 1
+    }
+   ],
+   "state": "blocked",
+   "title": "Make the queue board's stalled lane",
+   "total_runs": 8,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "verify",
+   "workflow_stage_name": "verify",
+   "workflow_stage_status": "blocked"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-93",
+   "id": "4b9d3963-2f2f-520a-9010-5e836f28ddde",
+   "segments": [
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T07:09:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T06:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T07:34:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T07:12:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T08:09:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T07:40:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T08:29:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T08:23:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T08:52:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T08:31:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T09:22:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T08:55:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T09:40:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-13T09:23:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T10:03:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-13T09:57:00Z",
+     "status": "failed",
+     "visit_number": 1
+    }
+   ],
+   "state": "blocked",
+   "title": "Split docker capacity leases",
+   "total_runs": 9,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "gate",
+   "workflow_stage_name": "gate",
+   "workflow_stage_status": "blocked"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-94",
+   "id": "7391ea18-3188-5bfa-a890-d9d230872bb4",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T09:12:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T09:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T09:29:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T09:22:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T10:15:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T09:48:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T10:38:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T10:27:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T12:19:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T10:47:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T12:52:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T12:25:00Z",
+     "status": "failed",
+     "visit_number": 1
+    }
+   ],
+   "state": "blocked",
+   "title": "Route the rework ledger's loop cap",
+   "total_runs": 7,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "verify",
+   "workflow_stage_name": "verify",
+   "workflow_stage_status": "blocked"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-95",
+   "id": "cdb42b08-1116-5bf6-a310-85b8480624cc",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T12:11:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T12:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T12:34:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T12:14:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T13:01:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T12:51:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T13:50:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T13:15:00Z",
+     "status": "failed",
+     "visit_number": 1
+    }
+   ],
+   "state": "blocked",
+   "title": "Surface GitHub issue two-way sync",
+   "total_runs": 4,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "test-break",
+   "workflow_stage_name": "test-break",
+   "workflow_stage_status": "blocked"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-96",
+   "id": "69546896-45b5-59f7-b6ab-67cef477376d",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T15:29:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T15:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T15:38:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T15:32:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T16:09:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T15:44:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T17:30:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T16:11:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T18:19:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T17:38:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T19:07:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T18:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T19:46:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-13T19:21:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T20:25:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-13T19:54:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T21:25:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-13T20:45:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T21:59:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-13T21:44:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Split the run log's live tail",
+   "total_runs": 12,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-97",
+   "id": "01bf88f5-d7db-59ce-9ad1-4c3a67fa50f5",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T18:37:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T18:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T19:58:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T18:54:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T20:30:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T20:17:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T20:42:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T20:34:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-13T21:51:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T20:58:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T22:36:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T22:04:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T23:13:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T22:43:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T23:58:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-13T23:27:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T00:26:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T00:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T01:28:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T00:39:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T02:03:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T01:30:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T02:49:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T02:22:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Retry stage timeout budgets",
+   "total_runs": 15,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-98",
+   "id": "e90d549d-0db7-5130-a653-e77aea32622c",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T21:36:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-13T21:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T22:09:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-13T21:48:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T22:50:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-13T22:14:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T23:22:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-13T22:58:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-13T23:58:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-13T23:30:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T00:57:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T00:12:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T02:24:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T01:06:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T03:08:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T02:44:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T04:31:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T03:12:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T04:56:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T04:32:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Add memory recall ranking",
+   "total_runs": 13,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-99",
+   "id": "1b70d844-28dd-548b-92db-f03c792784dd",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T00:26:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T00:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T02:08:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T00:43:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T02:31:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T02:14:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T03:49:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T02:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T04:27:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T03:57:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T04:41:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T04:34:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T04:57:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T04:47:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T05:32:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T05:09:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:14:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T05:45:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:57:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T06:22:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Surface docker capacity leases",
+   "total_runs": 12,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-100",
+   "id": "32243994-3bfb-53ff-a315-37e79154a2aa",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T03:05:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T03:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T03:59:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T03:16:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T04:49:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T04:15:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T05:44:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T05:01:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:11:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T06:04:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:36:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T06:16:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:52:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T06:42:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T07:32:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T07:10:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T08:52:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T07:49:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T09:01:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T08:57:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T09:37:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T09:07:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T10:33:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T09:53:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Stop GitHub issue two-way sync",
+   "total_runs": 15,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-101",
+   "id": "1f30f5a7-926f-5eae-8b55-87371bff5a37",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:10:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T06:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:32:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T06:16:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T06:44:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T06:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T07:03:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T06:53:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T07:53:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T07:13:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T08:52:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T07:56:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T09:43:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T09:10:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T10:27:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T09:45:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T11:06:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T10:31:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T12:02:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T11:23:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Add stage timeout budgets",
+   "total_runs": 12,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-102",
+   "id": "038832b8-d8fe-57cf-bf5c-3fb47da030f9",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T09:05:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T09:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T09:32:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T09:20:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T10:25:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T09:49:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T10:41:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T10:33:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T11:53:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T10:49:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T12:32:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T12:04:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T12:49:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T12:41:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T13:27:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T12:52:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T14:13:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T13:28:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T14:38:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T14:30:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Fix docker capacity leases",
+   "total_runs": 12,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-103",
+   "id": "894c645a-9564-5823-9f9c-4e6024e6feab",
+   "segments": [
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T13:04:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T12:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T13:51:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T13:13:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T14:40:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T14:09:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T15:06:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T14:56:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T15:22:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T15:14:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T15:44:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T15:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T16:08:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T15:55:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T17:13:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T16:13:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T18:12:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T17:32:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T18:46:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T18:30:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T20:02:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T19:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T20:25:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T20:03:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Route the run log's live tail",
+   "total_runs": 16,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-104",
+   "id": "49125b33-182d-526b-a6c1-4e8d83b01287",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T15:30:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T15:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T16:23:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T15:44:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T17:07:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T16:39:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T17:58:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T17:22:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T18:31:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T18:13:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T19:18:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T18:45:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T19:31:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T19:21:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T19:55:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T19:40:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T20:21:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T20:09:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T21:42:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T20:38:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Add stage timeout budgets",
+   "total_runs": 11,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-105",
+   "id": "339dc077-2933-5d35-be36-21acf3de2a2d",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T18:31:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T18:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T18:55:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T18:43:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T19:34:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T19:15:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T20:18:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T19:48:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T21:23:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T20:20:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T21:56:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-14T21:43:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T22:33:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-14T22:11:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T22:52:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-14T22:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T23:26:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-14T23:02:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-15T00:47:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-14T23:33:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Surface initiative progress rollup",
+   "total_runs": 13,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-106",
+   "id": "531919f7-f698-54db-8d82-1f12f9a103d2",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T21:17:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-14T21:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T21:44:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-14T21:34:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-14T22:46:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-14T21:52:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-14T23:28:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-14T22:54:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T00:04:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-14T23:36:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T00:28:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-15T00:14:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T01:16:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-15T00:40:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T01:54:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-15T01:23:00Z",
+     "status": "succeeded",
+     "visit_number": 2
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-15T03:10:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-15T01:58:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T03:54:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-15T03:20:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T04:12:00Z",
+     "stage_key": "learning",
+     "stage_name": "learning",
+     "started_at": "2026-09-15T04:04:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T04:31:00Z",
+     "stage_key": "playtest",
+     "stage_name": "playtest",
+     "started_at": "2026-09-15T04:25:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Fix the run log's live tail",
+   "total_runs": 14,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "playtest",
+   "workflow_stage_name": "playtest",
+   "workflow_stage_status": "awaiting"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-107",
+   "id": "628e8265-480a-507d-9be5-2a1a33e5c966",
+   "segments": [
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-15T01:08:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-15T00:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T01:26:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-15T01:18:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T02:19:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-15T01:44:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Split gate outcomes on stage transitions",
+   "total_runs": 4,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "test-design",
+   "workflow_stage_name": "test-design",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-108",
+   "id": "e51060f6-53c3-5202-95ce-add31dd39861",
+   "segments": [
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T03:29:00Z",
+     "stage_key": "planning",
+     "stage_name": "planning",
+     "started_at": "2026-09-15T03:00:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T04:09:00Z",
+     "stage_key": "spec",
+     "stage_name": "spec",
+     "started_at": "2026-09-15T03:39:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 2,
+     "finished_at": "2026-09-15T04:44:00Z",
+     "stage_key": "test-design",
+     "stage_name": "test-design",
+     "started_at": "2026-09-15T04:12:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T05:11:00Z",
+     "stage_key": "test-break",
+     "stage_name": "test-break",
+     "started_at": "2026-09-15T05:03:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T06:04:00Z",
+     "stage_key": "implement",
+     "stage_name": "implement",
+     "started_at": "2026-09-15T05:25:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T06:58:00Z",
+     "stage_key": "verify",
+     "stage_name": "verify",
+     "started_at": "2026-09-15T06:23:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T07:38:00Z",
+     "stage_key": "review",
+     "stage_name": "review",
+     "started_at": "2026-09-15T07:17:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    },
+    {
+     "attempts": 1,
+     "finished_at": "2026-09-15T08:28:00Z",
+     "stage_key": "gate",
+     "stage_name": "gate",
+     "started_at": "2026-09-15T07:51:00Z",
+     "status": "succeeded",
+     "visit_number": 1
+    }
+   ],
+   "state": "in_progress",
+   "title": "Add branch cleanup after a squash merge",
+   "total_runs": 9,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "gate",
+   "workflow_stage_name": "gate",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-109",
+   "id": "035c52a6-53e5-5ec9-be71-a67fe4e3cbdf",
+   "segments": [],
+   "state": "backlog",
+   "title": "Fix the queue board's stalled lane",
+   "total_runs": 0,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-110",
+   "id": "fa26b255-bf32-5ce3-9f2b-e0f16ed16adc",
+   "segments": [],
+   "state": "backlog",
+   "title": "Make branch cleanup after a squash merge",
+   "total_runs": 0,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-111",
+   "id": "bea5a389-a956-5d89-b182-d9fa9732ad6f",
+   "segments": [],
+   "state": "backlog",
+   "title": "Show worktree isolation for chat turns",
+   "total_runs": 0,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-112",
+   "id": "eccf8e4d-fb86-5b75-bb65-7d48a3c0e79e",
+   "segments": [],
+   "state": "backlog",
+   "title": "Show initiative progress rollup",
+   "total_runs": 0,
+   "waiting_on": [],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-113",
+   "id": "95af05c6-5b5c-5a0a-aacb-edc3129c8014",
+   "segments": [],
+   "state": "backlog",
+   "title": "Add worktree isolation for chat turns",
+   "total_runs": 0,
+   "waiting_on": [
+    {
+     "external_id": "blob-m90-97",
+     "id": "01bf88f5-d7db-59ce-9ad1-4c3a67fa50f5",
+     "state": "in_progress",
+     "title": "Retry stage timeout budgets"
+    }
+   ],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  },
+  {
+   "block_kind": null,
+   "child_count": 0,
+   "external_id": "blob-m90-114",
+   "id": "6ab7a65a-80c9-534b-be78-c6c092f7a477",
+   "segments": [],
+   "state": "backlog",
+   "title": "Fix stage timeout budgets",
+   "total_runs": 0,
+   "waiting_on": [
+    {
+     "external_id": "blob-m90-96",
+     "id": "69546896-45b5-59f7-b6ab-67cef477376d",
+     "state": "in_progress",
+     "title": "Split the run log's live tail"
+    }
+   ],
+   "work_item_type": "feature",
+   "workflow_stage_key": "",
+   "workflow_stage_name": "",
+   "workflow_stage_status": "pending"
+  }
+ ],
+ "parent_id": "26e1c730-2693-5499-9027-bd4dc06c1de4",
+ "window_end": "2026-09-15T08:28:00Z",
+ "window_start": "2026-09-13T00:00:00Z"
+}

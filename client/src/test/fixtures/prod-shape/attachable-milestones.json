@@ -648,5 +648,15 @@
   "title": "M06 \u2014 Surface docker capacity leases",
   "work_item_type": "milestone",
   "workspace_slug": "loremaker"
+ },
+ {
+  "external_id": "blob-m90-90",
+  "home_milestone": "",
+  "id": "26e1c730-2693-5499-9027-bd4dc06c1de4",
+  "member": false,
+  "state": "in_progress",
+  "title": "M90 \u2014 Absorb the core loop",
+  "work_item_type": "milestone",
+  "workspace_slug": "blobert"
  }
 ]
