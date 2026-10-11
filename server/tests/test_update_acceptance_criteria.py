@@ -293,3 +293,98 @@ def test_patch_judges_checks_against_criteria_sent_with_them(client: TestClient)
 
     assert res.status_code == 200, res.text
     assert res.json()["checked_acceptance_criteria"] == ["New"]
+
+
+def _make_done_ticket(client: TestClient, criteria: list[str], checked: list[str]) -> dict:
+    ticket = _make_ticket(client, criteria)
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"checked_acceptance_criteria": checked, "state": "done"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["state"] == "done"
+    return res.json()
+
+
+def test_patch_refuses_to_change_a_done_tickets_criteria(client: TestClient):
+    """A done ticket's criteria are the record of what was delivered."""
+    ticket = _make_done_ticket(client, ["Delivered"], ["Delivered"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"acceptance_criteria": ["Delivered", "Sneaked in later"]},
+    )
+
+    assert res.status_code == 400, res.text
+    assert "done" in res.json()["detail"]
+    assert client.get(f"/api/tickets/{ticket['id']}").json()["acceptance_criteria"] == ["Delivered"]
+
+
+def test_patch_refuses_to_change_a_done_tickets_checks(client: TestClient):
+    ticket = _make_done_ticket(client, ["One", "Two"], ["One"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"checked_acceptance_criteria": ["One", "Two"]},
+    )
+
+    assert res.status_code == 400, res.text
+    assert client.get(f"/api/tickets/{ticket['id']}").json()["checked_acceptance_criteria"] == [
+        "One"
+    ]
+
+
+def test_patch_of_a_done_ticket_resending_unchanged_criteria_succeeds(client: TestClient):
+    """The edit form sends every field back on save; an unchanged list must pass."""
+    ticket = _make_done_ticket(client, ["One", "Two"], ["Two"])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={
+            "title": "Retitled after delivery",
+            "acceptance_criteria": ["One", "Two"],
+            "checked_acceptance_criteria": ["Two"],
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["title"] == "Retitled after delivery"
+
+
+def test_reopening_a_done_ticket_unfreezes_its_criteria(client: TestClient):
+    ticket = _make_done_ticket(client, ["Old"], [])
+
+    res = client.patch(
+        f"/api/tickets/{ticket['id']}",
+        json={"state": "backlog", "acceptance_criteria": ["Old", "New"]},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["acceptance_criteria"] == ["Old", "New"]
+
+
+def test_mcp_update_ticket_refuses_to_append_to_a_done_ticket(client: TestClient):
+    ticket = _make_done_ticket(client, ["Delivered"], [])
+
+    body = call_mcp(
+        client,
+        "loregarden_update_ticket",
+        {"ticket_id": ticket["id"], "acceptance_criteria": ["Later"], "mode": "append"},
+    )
+
+    assert body.get("error") or body["result"].get("isError"), body
+    assert client.get(f"/api/tickets/{ticket['id']}").json()["acceptance_criteria"] == ["Delivered"]
+
+
+def test_a_done_ticket_can_still_be_related_to_follow_up_work(client: TestClient):
+    """Relations are how follow-up work attaches to a delivered ticket."""
+    done = _make_done_ticket(client, ["Delivered"], [])
+    follow_up = _make_ticket(client, ["Follow-up"])
+
+    body = call_mcp(
+        client,
+        "loregarden_link_relation",
+        {"ticket_id": done["id"], "related_to": follow_up["id"]},
+    )
+
+    assert "error" not in body and not body["result"].get("isError"), body
