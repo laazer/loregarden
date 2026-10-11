@@ -232,21 +232,25 @@ function VisitItem({
             {visit.outputs.length} output{visit.outputs.length === 1 ? "" : "s"}
           </span>
         ) : null}
-        <span className="tl-when">
-          {visit.active ? (
-            <span className="tl-live">{visit.visit.status.replace("_", " ")}</span>
-          ) : (
-            duration(visit.durationSeconds)
-          )}
-          {visit.startedAt ? (
-            <span title={formatLocalTimestamp(visit.startedAt.toISOString())}>
-              {" · "}
-              {formatShortTime(visit.startedAt.toISOString())}
-            </span>
-          ) : null}
-        </span>
-        <span className="tl-chevron" aria-hidden>
-          {open ? "▾" : "▸"}
+        <span className="tl-head-end">
+          <span className="tl-when">
+            {visit.active ? (
+              <span className="tl-live">{visit.visit.status.replace("_", " ")}</span>
+            ) : (
+              <span>{duration(visit.durationSeconds)}</span>
+            )}
+            {visit.startedAt ? (
+              <>
+                {" · "}
+                <span title={formatLocalTimestamp(visit.startedAt.toISOString())}>
+                  {formatShortTime(visit.startedAt.toISOString())}
+                </span>
+              </>
+            ) : null}
+          </span>
+          <span className="tl-chevron" aria-hidden>
+            {open ? "▾" : "▸"}
+          </span>
         </span>
       </Button>
 
