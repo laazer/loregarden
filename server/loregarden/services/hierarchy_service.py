@@ -9,6 +9,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.ticket_ids import respell_external_id
 from sqlmodel import Session, col, select
 
 
@@ -199,7 +200,28 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
     ticket.revision += 1
     ticket.last_updated_by = "human"
     session.add(ticket)
+    _respell_subtree(session, ticket)
     return ticket
+
+
+def _respell_subtree(session: Session, ticket: Ticket) -> None:
+    """Re-derive the milestone segment of ``ticket`` and everything under it.
+
+    A move can put the subtree under a different milestone, or under none, and
+    every descendant's id carries that segment too. The number is unchanged, so
+    the old spelling still resolves. Initiatives keep their global ``init-*``
+    id, and rows that predate ``ticket_number`` keep theirs rather than being
+    spelled ``-0``.
+    """
+    if ticket.workspace_id is None:
+        return
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        return
+    for item in [ticket, *descendants_by_root(session, [ticket.id])[ticket.id]]:
+        if item.ticket_number:
+            respell_external_id(session, item, workspace)
+            session.add(item)
 
 
 def descendants_by_root(session: Session, root_ids: list[str]) -> dict[str, list[Ticket]]:

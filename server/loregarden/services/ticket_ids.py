@@ -518,11 +518,11 @@ def reissue_in_workspace(
 def respell_external_id(session: Session, ticket: Ticket, workspace: Workspace) -> str:
     """Re-derive the milestone segment for a ticket that has moved parents.
 
-    Nothing re-parents a ticket inside a workspace today — the only move that
-    exists crosses workspaces and goes through :func:`reissue_in_workspace`. This
-    is here for the write that adds one, and is the reason the number, not the
-    spelling, is what :func:`resolve` matches on: an id shared before the move
-    keeps working, so nothing has to record the old spelling.
+    Called for a move inside a workspace (``hierarchy_service.reparent_ticket``);
+    a move across workspaces goes through :func:`reissue_in_workspace` instead.
+    The number, not the spelling, is what :func:`resolve` matches on, so an id
+    shared before the move keeps working and nothing has to record the old
+    spelling.
     """
     ticket.external_id = spell_external_id(
         prefix=workspace_prefix(session, workspace),
