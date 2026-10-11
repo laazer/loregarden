@@ -22,6 +22,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_stage import prepare_tree_for_parallel_stage
 from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
 from tests.worktree_helpers import (
@@ -254,14 +255,19 @@ def _ancestor(cwd, ancestor: str, descendant: str) -> bool:
     )
 
 
-def _dispatch(session, workspace, ticket, code: str):
-    """One stage dispatch's tree preparation, as the single-agent path does it."""
+def _dispatch(session, workspace, ticket, code: str, *, skip_git_branch: bool = False):
+    """One stage dispatch's tree preparation, as the single-agent path does it.
+
+    ``skip_git_branch`` is the flag the parallel driver passes its members
+    (`_run_and_collect_parallel_results`), which is why it is a parameter here:
+    it is the one skip AC4 keeps, and a test has to be able to ask for it.
+    """
     return CliAgentExecutor(session)._prepare_tree(
         make_run(session, workspace, ticket, code),
         ticket,
         workspace,
         workspace_root=Path(workspace.repo_path),
-        skip_git_branch=False,
+        skip_git_branch=skip_git_branch,
         advance_workflow=False,
     )
 
@@ -422,3 +428,145 @@ def test_the_parallel_path_blocks_the_stage_when_the_refresh_conflicts(
     session.refresh(dependent)
     assert dependent.workflow_stage_status == StageStatus.BLOCKED
     assert "could not take" in (dependent.blocking_issues or ""), dependent.blocking_issues
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-779 (B), adversarial: what the refresh must *not* do.
+#
+# Unskipping `ensure_ticket_branch` for a worktree puts a merge on every stage
+# dispatch of every ticket — the most-travelled path in the app. The tests
+# above pin that the merge happens; these pin its blast radius, because each
+# of them is a way to make them pass and still lose work.
+# ---------------------------------------------------------------------------
+
+
+def test_a_dispatch_with_nothing_new_on_the_target_moves_neither_tree(
+    session, workspace, dependent, repo
+):
+    """Idempotent, and one-directional.
+
+    Two mutants pass every test above. One merges unconditionally and leaves a
+    merge commit per stage, so a twelve-stage ticket's history is eleven
+    "Merge branch 'integration/...'" commits nobody made. The other merges the
+    wrong way and puts the ticket's unfinished work on the integration branch,
+    where its siblings would cut from it — landing is a terminal-stage
+    transition (768), and nothing before it may publish.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    before_head = _sha(root)
+    before_target = _sha(repo, target)
+    assert not _ancestor(repo, before_head, target), (
+        "fixture: the ticket's own commit must not already be on the target"
+    )
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None
+    assert second == root
+    assert _sha(root) == before_head, "nothing landed, so there was nothing to merge"
+    assert _sha(repo, target) == before_target, "and the target branch is not written to at all"
+    assert not _ancestor(repo, before_head, target), (
+        "the ticket's work reaches its target at landing, not at dispatch"
+    )
+    assert git(root, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_the_one_remaining_skip_still_skips(session, workspace, dependent, repo):
+    """AC4 removes `repo_root != workspace_root` from the skip and keeps
+    `skip_git_branch`, which is what the parallel driver passes every member
+    (`skip_git_branch=True`) *because* `prepare_tree_for_parallel_stage`
+    already did the refresh once. A mutant that drops both skips has every
+    member of a fan-out merging concurrently in one tree.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    before_head = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2", skip_git_branch=True)
+
+    assert stopped is None
+    assert second == root
+    assert _sha(root) == before_head, "the member asked for no branch work and must get none"
+    assert not _ancestor(root, landed, "HEAD")
+
+
+def test_a_worktree_left_on_another_branch_is_put_back_without_losing_its_commits(
+    session, workspace, dependent, repo
+):
+    """The ticket's branch is not where the worktree is guaranteed to be — a
+    crashed stage, a resolver, or a person can leave it elsewhere, and until
+    now no dispatch into a worktree looked. `ensure_ticket_branch` is also the
+    call that once reset an existing ticket branch to HEAD and orphaned its
+    commits (lg-milestone-that-772); it now runs on this path too, so the
+    no-loss guarantee has to hold here.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+    assert head_branch(root) != dependent.branch, "fixture: the tree starts off the branch"
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None, stopped.stderr if stopped else None
+    assert second == root
+    assert head_branch(root) == dependent.branch, "the stage runs on the ticket's branch"
+    assert _ancestor(root, own, "HEAD"), "and the ticket's earlier stages are still in it"
+    assert (root / "own.txt").exists()
+    assert _ancestor(root, landed, "HEAD")
+
+
+def test_every_member_of_a_parallel_stage_shares_the_one_refreshed_tree(
+    session, workspace, dependent, repo
+):
+    """`prepare_tree_for_parallel_stage` resolves the tree once, from `runs[0]`,
+    so that the members do not race to create it. With the early return gone
+    that single resolution is also the single refresh — a mutant that resolves
+    or refreshes per member reintroduces the race it exists to prevent.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    runs = [make_run(session, workspace, dependent, f"p{n}") for n in range(1, 4)]
+
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", runs) == ""
+
+    assert _ancestor(root, landed, "HEAD")
+    for run in runs:
+        assert resolve_execution_root(session, run, dependent, workspace) == root, (
+            f"{run.run_code} must execute in the tree that was prepared"
+        )
+    assert git(root, "rev-list", "--merges", "--count", "HEAD").stdout.strip() == "1", (
+        "one refresh for the stage, so one merge commit — not one per member"
+    )
+
+
+def test_a_conflicting_parallel_refresh_loses_nothing_in_the_worktree(
+    session, workspace, dependent, repo
+):
+    """The stage is blocked (above); this is what the operator finds in the tree
+    afterwards. A conflicted merge left half-applied is how the resolver they
+    send in next loses the ticket's side of it.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    (root / "shared.txt").write_text("the ticket's version\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "ticket side")
+    own = _sha(root)
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+    at_terminal_stage(session, dependent)
+
+    assert "could not take" in prepare_tree_for_parallel_stage(
+        session, dependent, "work", [make_run(session, workspace, dependent, "p1")]
+    )
+
+    assert git(root, "status", "--porcelain").stdout.strip() == "", (
+        "the merge was aborted, not left conflicted"
+    )
+    assert _sha(root) == own, "and the ticket's own commit is still what HEAD points at"
+    assert (root / "shared.txt").read_text() == "the ticket's version\n"
+    assert head_branch(root) == dependent.branch

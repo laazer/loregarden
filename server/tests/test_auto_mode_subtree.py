@@ -1873,3 +1873,178 @@ def test_the_count_and_the_first_child_survive_the_two_thousand_character_cut(
     )
     assert message.startswith("Child ticket waiting on a prerequisite (7): "), message
     assert titles[0] in message, f"the first child's clause must survive the cut: {message[:200]}"
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-779 (A), adversarial: the hold is keyed on *reachability*,
+# per entry, and nothing wider.
+#
+# Three implementations pass both tests above and are wrong: "hold any sibling
+# whose state is done", "hold any sibling at all once one of its prerequisites
+# is unlanded", and a filter applied to the unmet *list* rather than to each
+# entry. The two below separate them.
+# ---------------------------------------------------------------------------
+
+
+def _land_onto(repo: Path, tmp_path: Path, branch: str, target: str) -> None:
+    """Merge `branch` into `target`, as landing does, in a throwaway worktree."""
+    tree = tmp_path / f"land-{target.replace('/', '-')}"
+    subprocess.run(["git", "worktree", "add", "-q", str(tree), target], cwd=repo, check=True)
+    subprocess.run(["git", "merge", "--no-edit", "-q", branch], cwd=tree, check=True)
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo, check=True)
+
+
+def test_a_sibling_prerequisite_whose_work_is_landed_does_not_hold_its_dependent(
+    db_session: Session, tmp_path
+) -> None:
+    """The control AC1 needs. `done` is not what holds the child — unreachable
+    work is (770) — so a sibling that finished *and* landed must hold nothing.
+    Without this, "hold every sibling in `done`" satisfies AC1 and AC2 both,
+    and stalls every tree whose siblings land normally.
+    """
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-sibling-landed")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-landed-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="sib-landed-c", title="Dependent", parent_ticket_id=parent.id
+    )
+    prerequisite = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-landed-a",
+        title="Landed sibling",
+        parent_ticket_id=parent.id,
+    )
+    prerequisite.state = TicketState.DONE
+    prerequisite.branch = "loregarden/sib-landed-a"
+    db_session.add(prerequisite)
+    db_session.commit()
+
+    repo = Path(ws.repo_path)
+    target = resolve_target_branch(db_session, child, ws, repo_root=repo)
+    tip = _unlanded_branch_with_a_commit(repo, tmp_path, prerequisite.branch, target)
+    _land_onto(repo, tmp_path, prerequisite.branch, target)
+    TicketDependencyService(db_session).add_dependency(child.id, prerequisite.id)
+    db_session.commit()
+
+    # The mirror of AC10's trap: a prerequisite with no branch is judged by
+    # state and also does not hold, so a fixture that never landed anything
+    # would prove nothing here either.
+    assert _is_ancestor(repo, tip, target), "fixture: the work must really be on the target"
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(child)
+
+    assert "waiting on a prerequisite" not in (orch_run.error_message or "").lower(), (
+        orch_run.error_message
+    )
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all(), (
+        "a dependent whose prerequisite landed must run"
+    )
+
+
+def test_an_unlanded_sibling_holds_only_the_child_that_depends_on_it(
+    db_session: Session, tmp_path
+) -> None:
+    """Two separations at once.
+
+    Per entry: the held child also depends on a sibling that has merely not
+    run, and that entry is still ordering's job — the clause must name the
+    unlanded prerequisite and not the unstarted one, which a filter applied to
+    the unmet list rather than to each entry gets wrong in both directions.
+
+    Per child: the hold is one child's, and the rest of the subtree keeps
+    moving (lg-workflow-integrity-449) — including the prerequisite that has
+    not run, which is exactly the sibling the held child is waiting for.
+    """
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-sibling-mixed")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-mixed-p",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="sib-mixed-c", title="Dependent", parent_ticket_id=parent.id
+    )
+    unlanded = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-mixed-unlanded",
+        title="Finished sibling",
+        parent_ticket_id=parent.id,
+    )
+    unstarted = _make_ticket(
+        db_session,
+        ws,
+        external_id="sib-mixed-unstarted",
+        title="Unstarted sibling",
+        parent_ticket_id=parent.id,
+    )
+    unlanded.state = TicketState.DONE
+    unlanded.branch = "loregarden/sib-mixed-unlanded"
+    db_session.add(unlanded)
+    db_session.commit()
+
+    repo = Path(ws.repo_path)
+    target = resolve_target_branch(db_session, child, ws, repo_root=repo)
+    tip = _unlanded_branch_with_a_commit(repo, tmp_path, unlanded.branch, target)
+    dependencies = TicketDependencyService(db_session)
+    dependencies.add_dependency(child.id, unlanded.id)
+    dependencies.add_dependency(child.id, unstarted.id)
+    db_session.commit()
+
+    assert not _is_ancestor(repo, tip, target), "fixture: the finished sibling never landed"
+    assert not _is_ancestor(repo, tip, "main"), "nor reached the base"
+    db_session.refresh(unstarted)
+    assert unstarted.state == TicketState.BACKLOG, unstarted.state
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(child)
+    db_session.refresh(unstarted)
+
+    message = orch_run.error_message or ""
+    assert "waiting on a prerequisite" in message.lower(), message
+    assert "sib-mixed-unlanded" in message, message
+    assert "sib-mixed-unstarted" not in message, (
+        f"a sibling that has not run is ordering's job and is not a hold: {message}"
+    )
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all() == [], (
+        "the child is held by the unlanded prerequisite"
+    )
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == unstarted.id)).all(), (
+        "and one child's hold must not stop the rest of the subtree"
+    )
+
+
+def test_the_waiting_line_elides_one_child_at_six_and_reads_the_same_twice(
+    db_session: Session, tmp_path
+) -> None:
+    """The slope of the cap, and that it does not wander.
+
+    N=7 pins "+2" at one point; a `+{N - 4}` or a `[:4]` is still arithmetic
+    that fits it. N=6 is the first N that elides anything, so it separates
+    them. Running the same unchanged parent twice pins that the five names are
+    chosen deterministically — the error_message is what an operator diffs
+    between ticks, and a set-ordered five would churn.
+    """
+    parent, titles = _parent_with_held_children(db_session, tmp_path, "auto-mode-waiting-6", 6)
+    orchestrator = BuiltinOrchestrator(db_session)
+
+    first = orchestrator.execute(parent, _profile(), auto_approve=True).error_message or ""
+    second = orchestrator.execute(parent, _profile(), auto_approve=True).error_message or ""
+
+    assert first.startswith("Child ticket waiting on a prerequisite (6): "), first
+    assert first.endswith("; +1 more"), first
+    assert len([title for title in titles if title in first]) == 5, first
+    assert second == first, f"the same six held children must read the same:\n{first}\n{second}"
