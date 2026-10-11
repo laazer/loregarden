@@ -67,8 +67,8 @@ test("one row per ticket, linking to it, in slot order", () => {
   const links = within(list).getAllByRole("link");
   expect(links).toHaveLength(2);
   expect(links[0]).toHaveTextContent("Ticket A");
-  expect(links[0]).toHaveAttribute("href", `/tickets/${TICKET_A}/diff`);
-  expect(links[1]).toHaveAttribute("href", `/tickets/${TICKET_B}/diff`);
+  expect(links[0]).toHaveAttribute("href", `/tickets/${TICKET_A}/timeline`);
+  expect(links[1]).toHaveAttribute("href", `/tickets/${TICKET_B}/timeline`);
 });
 
 test("the ticket on screen is marked current", () => {

@@ -68,7 +68,7 @@ describe("appNavigation", () => {
   });
 
   it("builds and parses ticket routes", () => {
-    expect(ticketPath("abc-123")).toBe("/tickets/abc-123/diff");
+    expect(ticketPath("abc-123")).toBe("/tickets/abc-123/timeline");
     expect(ticketPath("abc-123", "timeline")).toBe("/tickets/abc-123/timeline");
     expect(artifactTabFromPath("/tickets/abc-123/timeline")).toBe("timeline");
     expect(artifactTabFromPath("/tickets/abc-123")).toBeNull();
@@ -150,6 +150,6 @@ describe("appNavigation", () => {
 
   it("keeps the UUID for a ticket with no shareable id", () => {
     useTicketRefStore.getState().remember({ id: UUID, external_id: "" });
-    expect(ticketPath(UUID)).toBe(`/tickets/${UUID}/diff`);
+    expect(ticketPath(UUID)).toBe(`/tickets/${UUID}/timeline`);
   });
 });

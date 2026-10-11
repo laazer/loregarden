@@ -15,9 +15,9 @@ export type AppPage =
   | "workspaces";
 
 export type ArtifactTab =
-  | "diff"
   /** What happened, stage by stage, and what needs a person. */
   | "timeline"
+  | "diff"
   /** What the agents produced: every attachment, machinery hidden. */
   | "outputs"
   | "pr"
@@ -33,10 +33,13 @@ export type ArtifactTab =
   | "monitor";
 
 /** Every routable ticket pane. */
-export const ARTIFACT_TABS: ArtifactTab[] = ["diff", "timeline", "outputs", "pr", "approvals", "hive", "monitor"];
+export const ARTIFACT_TABS: ArtifactTab[] = ["timeline", "diff", "outputs", "pr", "approvals", "hive", "monitor"];
 
 /** The tab strip; the rest sit behind "More". */
-export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = ["diff", "timeline", "outputs", "pr", "approvals"];
+export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = ["timeline", "diff", "outputs", "pr", "approvals"];
+
+/** The tab a ticket opens on when the link names none: where it is, and what needs a person. */
+export const DEFAULT_ARTIFACT_TAB: ArtifactTab = "timeline";
 export const MORE_ARTIFACT_TABS: ArtifactTab[] = ["hive", "monitor"];
 
 /**
@@ -192,7 +195,7 @@ export function isStudioSection(value: string | undefined | null): value is Stud
  * UUID link opens the same page and `TicketRouteResolver` swaps the address for
  * the readable one once it has the ticket.
  */
-export function ticketPath(ticketId: string, tab: ArtifactTab = "diff"): string {
+export function ticketPath(ticketId: string, tab: ArtifactTab = DEFAULT_ARTIFACT_TAB): string {
   const ref = useTicketRefStore.getState().refByUuid[ticketId] ?? ticketId;
   return `/tickets/${encodeURIComponent(ref)}/${tab}`;
 }

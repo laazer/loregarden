@@ -189,7 +189,7 @@ describe("resource action buttons", () => {
     [
       "Open ticket",
       () => <OpenTicketButton ticketId="ticket/42" />,
-      "/tickets/ticket%2F42/diff",
+      "/tickets/ticket%2F42/timeline",
     ],
     [
       "Open in Agent Studio",
@@ -216,7 +216,7 @@ describe("resource action buttons", () => {
     [
       "Open ticket",
       () => <OpenTicketButton ticketId="ticket/42" label="Open ticket" />,
-      "/tickets/ticket%2F42/diff",
+      "/tickets/ticket%2F42/timeline",
     ],
   ])("navigates %s to its resource surface", (label, renderButton, path) => {
     renderResourceAction(renderButton());
