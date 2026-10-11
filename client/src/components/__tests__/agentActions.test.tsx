@@ -81,7 +81,7 @@ it("navigates to a page and to a ticket", async () => {
   await act(() => uiActionRegistry.run("navigate.page", { page: "queue" }));
   await waitFor(() => expect(location).toBe("/queue"));
   await act(() => uiActionRegistry.run("ticket.open", { ticket_id: "lg-open-1" }));
-  await waitFor(() => expect(location).toBe("/tickets/lg-open-1/diff"));
+  await waitFor(() => expect(location).toBe("/tickets/lg-open-1/timeline"));
   view.unmount();
 });
 
