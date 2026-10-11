@@ -30,6 +30,7 @@ from loregarden.models.domain import (
     OrchestratorDecision,
     Ticket,
     TicketState,
+    UpdateTicketRequest,
 )
 from loregarden.services.interruption_messages import (
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
@@ -93,6 +94,18 @@ _HARNESS_SIGNATURES = (
 #: question uses, so the inbox renders the options without a new card.
 DECISION_QUESTION_HEADER = "Decision"
 
+#: From this many decisions on one stage, the question also offers to park the
+#: ticket. Each answer requeues the stage under a fresh orchestration, so the
+#: rework loop cap (`MAX_REWORK_REROUTES`), which counts within one, never sees
+#: the repeats: 782 blocked on implement four times, four orchestrations, about
+#: 2.3M input tokens a round, and every answer bought another round
+#: (lg-milestone-that-929's follow-up).
+DECISION_ROUNDS_BEFORE_PARK_OFFER = 3
+
+#: The option that ends the rounds. Chosen, it parks the ticket (owed to a
+#: person, not stuck) instead of requeueing the stage.
+PARK_OPTION = "Park this ticket: stop running it until a person picks it up"
+
 
 def looks_like_human_work(message: str) -> bool:
     """Whether a block message asks a person to do something."""
@@ -124,6 +137,19 @@ def _decision_question(stage_key: str, message: str, options: list[str]) -> dict
     }
 
 
+def _decision_rounds(session: Session, ticket: Ticket, stage_key: str) -> int:
+    """How many decisions this ticket has already been asked on `stage_key`."""
+    return len(
+        session.exec(
+            select(Approval.id).where(
+                Approval.ticket_id == ticket.id,
+                Approval.stage_key == stage_key,
+                Approval.kind == ApprovalKind.BLOCK_DECISION,
+            )
+        ).all()
+    )
+
+
 def _raise_decision(
     session: Session, ticket: Ticket, *, stage_key: str, message: str, options: list[str]
 ) -> Approval:
@@ -137,6 +163,13 @@ def _raise_decision(
     ).first()
     if existing is not None:
         return existing
+    rounds = _decision_rounds(session, ticket, stage_key) + 1
+    if rounds >= DECISION_ROUNDS_BEFORE_PARK_OFFER and PARK_OPTION not in options:
+        options = [*options, PARK_OPTION]
+        message = (
+            f"Decision {rounds} on '{stage_key}': each answer so far has started another "
+            f"round on this stage.\n\n{message}"
+        )
     approval = Approval(
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
@@ -255,7 +288,7 @@ def chosen_option(approval: Approval, answers: dict[str, str | list[str]] | None
 
 
 def record_decision_outcome(
-    session: Session, ticket: Ticket, approval: Approval, *, choice: str
+    session: Session, ticket: Ticket, approval: Approval, *, choice: str, parked: bool = False
 ) -> None:
     """The choice, on the ticket where the next stage will read it."""
     session.add(
@@ -278,12 +311,17 @@ def record_decision_outcome(
             ),
         )
     )
+    outcome = "parked the ticket" if parked else "requeued there"
     record_orchestrator_decision(
         session,
         ticket,
-        decision=OrchestratorDecision.REQUEUED_AFTER_DECISION,
+        decision=(
+            OrchestratorDecision.PARKED_AFTER_DECISION
+            if parked
+            else OrchestratorDecision.REQUEUED_AFTER_DECISION
+        ),
         stage_key=approval.stage_key,
-        reason=f"A person chose '{choice}' for the block on '{approval.stage_key}'; requeued there.",
+        reason=f"A person chose '{choice}' for the block on '{approval.stage_key}'; {outcome}.",
         evidence={"approval_id": approval.id, "choice": choice},
     )
     session.commit()
@@ -299,7 +337,8 @@ def resolve_block_decision(
     response_text: str,
 ) -> bool:
     """Act on a person's answer. True when the stage was requeued and the run
-    should resume; False when the block stays (rejected, with their words on it).
+    should resume; False when the block stays (rejected, with their words on it)
+    or the person parked the ticket.
 
     The whole point is that nobody has to requeue by hand afterwards.
     """
@@ -310,6 +349,10 @@ def resolve_block_decision(
         return False
     answers = json.loads(approval.response_json or "{}").get("updated_input", {}).get("answers")
     choice = chosen_option(approval, answers) or response_text.strip()
+    if choice == PARK_OPTION:
+        record_decision_outcome(session, ticket, approval, choice=choice, parked=True)
+        orch.update_ticket_manual(ticket, UpdateTicketRequest(state=TicketState.PARKED))
+        return False
     record_decision_outcome(session, ticket, approval, choice=choice)
     requeue_stage(
         session,

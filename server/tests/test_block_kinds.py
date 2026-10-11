@@ -36,7 +36,9 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_classification import (
     BLOCKING_POINTER_PHRASE,
+    DECISION_ROUNDS_BEFORE_PARK_OFFER,
     LEGACY_BLOCKING_POINTER_PHRASE,
+    PARK_OPTION,
     block_message_for,
     classify_block_message,
 )
@@ -370,3 +372,40 @@ def test_an_invented_kind_is_named_in_the_history(db_session, ticket):
         d for d in decision_payloads(db_session, ticket.id) if d["decision"] == "classified_block"
     ]
     assert "unknown kind 'awaiting_human'" in classified[0]["reason"]
+
+
+def _decide_again(session: Session, ticket: Ticket, choice: str) -> tuple[list[str], bool]:
+    """Block on a decision, answer it with `choice`; the options asked, and whether it resumed."""
+    _complete_blocked(session, ticket, _blocked_report("decision", SDF_39_OPTIONS))
+    approval = _pending_decision(session, ticket)
+    assert approval is not None
+    question = json.loads(approval.tool_input_json)["questions"][0]
+    with patch("loregarden.services.run_service.schedule_orchestration") as scheduled:
+        ApprovalService(session).resolve(
+            approval.id, approved=True, answers={question["question"]: choice}
+        )
+    return [o["label"] for o in question["options"]], scheduled.called
+
+
+def test_repeated_decisions_on_one_stage_offer_to_park(db_session, ticket):
+    """Each answer starts a fresh orchestration, so the rework loop cap never
+    counts the repeats; 782 paid four full implement rounds this way."""
+    asked = [
+        _decide_again(db_session, ticket, "Try approach B")[0]
+        for _ in range(DECISION_ROUNDS_BEFORE_PARK_OFFER)
+    ]
+
+    assert all(PARK_OPTION not in options for options in asked[:-1])
+    assert asked[-1] == [*SDF_39_OPTIONS, PARK_OPTION]
+
+
+def test_choosing_park_stops_the_rounds(db_session, ticket):
+    for _ in range(DECISION_ROUNDS_BEFORE_PARK_OFFER - 1):
+        _decide_again(db_session, ticket, "Try approach B")
+
+    _, resumed = _decide_again(db_session, ticket, PARK_OPTION)
+
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.PARKED
+    assert resumed is False, "parking must not start another round"
+    assert "parked_after_decision" in decision_kinds(db_session, ticket.id)

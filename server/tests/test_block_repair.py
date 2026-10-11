@@ -512,3 +512,63 @@ def test_a_classify_stage_gets_its_repair_turn_and_never_spins(db_session, monke
     kinds = decision_kinds(db_session, ticket.id)
     assert kinds.count("dispatched_repair") == 1
     assert "repair_escalated" in kinds
+
+
+def test_the_repair_turn_is_told_what_blocked(db_session, ticket, monkeypatch):
+    """The brief has to reach the repair agent's prompt, not only the ticket row.
+
+    Dispatch blanks `blocking_issues` before the executor renders the prompt, and
+    the brief lived only there, so every repair turn ran without knowing why
+    (lg-milestone-that-929). The block's own words must be in what it reads.
+    """
+    from loregarden.agents.stage_context import build_orchestration_context
+
+    rendered: dict[str, str] = {}
+    outcomes = {
+        WORKER: (RunStatus.SUCCEEDED, _report("blocked", kind="work"), ""),
+        REPAIR_AGENT_ID: (RunStatus.SUCCEEDED, _report("pass"), ""),
+        REVIEWER: (RunStatus.SUCCEEDED, _report("pass"), ""),
+    }
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        rendered[run.agent_id] = build_orchestration_context(
+            ticket=worker_ticket, run=run, stage_def=None, session=self.session
+        )
+        status, stdout, stderr = outcomes[run.agent_id]
+        return OrchestrationService(self.session).complete_run(
+            run, status=status, stdout=stdout, stderr=stderr
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="repair-test"), max_stages=10
+    )
+
+    assert REPAIR_AGENT_ID in rendered, "the repair turn must have been dispatched"
+    assert "the block text" in rendered[REPAIR_AGENT_ID]
+
+
+def test_only_arm_repair_turn_pins_the_repair_agent():
+    """A repair turn armed anywhere else would run without its brief (929).
+
+    `arm_repair_turn` writes the brief the prompt reads; pinning the repair
+    agent by any other call skips that, which is the bug this replaced. Asserted
+    over the AST so a new caller fails here rather than in production.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "loregarden"
+    pinning: list[str] = []
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):  # py-org: allow-isinstance — AST node dispatch
+                continue
+            for keyword in node.keywords:
+                if (
+                    keyword.arg == "next_agent"
+                    and getattr(keyword.value, "id", "") == "REPAIR_AGENT_ID"
+                ):
+                    pinning.append(str(path.relative_to(root)))
+    assert pinning == ["services/repair_brief.py"], pinning

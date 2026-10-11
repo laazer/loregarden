@@ -149,6 +149,10 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # The orchestrator handling it rather than waiting for a person, like
         # dispatched_repair — normal in the client's tone().
         "dispatched_landing_resolver",
+        # Normal: selected only when git says the landing now succeeds (928).
+        "finished_cleared_landing",
+        # Normal, like requeued_after_decision: a person's answer, acted on.
+        "parked_after_decision",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

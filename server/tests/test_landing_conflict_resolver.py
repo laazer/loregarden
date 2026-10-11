@@ -13,6 +13,7 @@ ticket already is.
 from __future__ import annotations
 
 import json
+import subprocess
 
 import pytest
 from loregarden.agents.registry import REPAIR_AGENT_ID
@@ -280,3 +281,225 @@ def test_the_loop_dispatches_the_pinned_resolver_instead_of_finalizing(
     assert dispatched == [(REPAIR_AGENT_ID, "done")], (
         "the resolver runs on the terminal stage; the loop must not finalize past the pin"
     )
+
+
+def test_the_dispatched_resolver_is_told_what_conflicted(session, conflicted, monkeypatch):
+    """The brief has to reach the agent, not just the ticket row.
+
+    It was carried only in `ticket.blocking_issues`, which `_prepare_stage_start`
+    blanks the moment the stage is dispatched — before the executor renders the
+    prompt. 782's resolver therefore read "no blocking_issues", never learned
+    there was a conflict, and spent its one turn calling the landing tool it is
+    refused (lg-milestone-that-929).
+    """
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.agents.stage_context import build_orchestration_context
+    from loregarden.models.domain import AgentRun, RunStatus
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+
+    _land(session, conflicted)
+    rendered: list[str] = []
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        rendered.append(
+            build_orchestration_context(
+                ticket=worker_ticket, run=run, stage_def=None, session=self.session
+            )
+        )
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=(
+                "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+                + json.dumps({"status": "pass", "confidence": 0.9})
+                + "\n<<<END_STAGE_REPORT>>>\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    profile = OrchestrationProfile(slug="resolver", gates=GatesConfig(enabled=False))
+
+    BuiltinOrchestrator(session).execute(conflicted, profile, max_stages=1)
+
+    assert len(rendered) == 1, "the resolver must have been dispatched once"
+    assert "shared.txt" in rendered[0], "the resolver's prompt names the conflicted file"
+    assert conflicted.branch in rendered[0], "and the branch it has to resolve on"
+
+
+def test_a_resolver_that_blocks_ends_the_run_blocked(session, conflicted, monkeypatch):
+    """782's resolver blocked for a person, and its orchestration still completed
+    `succeeded` over a blocked ticket (lg-milestone-that-929)."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.models.domain import AgentRun, OrchestrationRunStatus, RunStatus
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+
+    _land(session, conflicted)
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=(
+                "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+                + json.dumps(
+                    {
+                        "status": "blocked",
+                        "confidence": 0.9,
+                        "reroute_context": "needs a person",
+                        "blocked_kind": "human_action",
+                    }
+                )
+                + "\n<<<END_STAGE_REPORT>>>\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    profile = OrchestrationProfile(slug="resolver", gates=GatesConfig(enabled=False))
+
+    orch_run = BuiltinOrchestrator(session).execute(conflicted, profile, max_stages=5)
+
+    session.refresh(conflicted)
+    assert conflicted.state is TicketState.BLOCKED
+    assert orch_run.status is OrchestrationRunStatus.BLOCKED
+
+
+def _resolve_by_hand(repo, ticket, target):
+    """Merge the target into the ticket branch and keep both sides, as a person
+    did for 782 (41f216f9)."""
+    tree = repo.parent / "hand-resolve"
+    git(repo, "worktree", "add", "-q", str(tree), ticket.branch)
+    merged = subprocess.run(
+        ["git", "merge", "-q", "--no-edit", target], cwd=tree, capture_output=True, text=True
+    )
+    assert merged.returncode != 0, "the fixture's conflict must be real"
+    (tree / "shared.txt").write_text("sibling\nticket\n")
+    git(tree, "add", "shared.txt")
+    git(tree, "commit", "-q", "--no-edit")
+    git(repo, "worktree", "remove", "--force", str(tree))
+
+
+def test_landing_by_hand_finishes_a_ticket_blocked_on_its_landing(
+    session, conflicted, workspace, repo
+):
+    """A person resolves the conflict and lands it; the ticket finishes.
+
+    782 was landed by hand at 15:16 and its `landed_sha` recorded, but the
+    terminal stage stayed BLOCKED until someone requeued it and started an
+    orchestration that had nothing to do but notice (lg-milestone-that-928).
+    """
+    from loregarden.mcp.ticket_ops_tools import execute_ticket_ops_tool
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+    conflicted.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
+    session.add(conflicted)
+    session.commit()
+    _land(session, conflicted)
+    session.refresh(conflicted)
+    assert conflicted.state is TicketState.BLOCKED, "the fixture must block on the landing"
+
+    target = resolve_target_branch(session, conflicted, workspace, repo_root=repo)
+    _resolve_by_hand(repo, conflicted, target)
+
+    payload = json.loads(
+        execute_ticket_ops_tool(
+            "loregarden_land_ticket",
+            session,
+            OrchestrationCallbackService(session),
+            {"ticket_id": conflicted.id},
+        )
+    )
+
+    assert payload["ok"] is True
+    session.refresh(conflicted)
+    instance, stages = OrchestrationService(session)._resolve_stages(conflicted)
+    assert conflicted.state is TicketState.DONE
+    assert parse_stage_map(instance, stages)["done"] is StageStatus.DONE
+    assert conflicted.blocking_issues == ""
+    assert conflicted.block_kind is None
+
+
+def test_landing_by_hand_that_still_conflicts_leaves_the_block(session, conflicted):
+    """The tool only finishes what actually landed; a conflict stays a block."""
+    from loregarden.mcp.ticket_ops_tools import execute_ticket_ops_tool
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+    conflicted.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
+    session.add(conflicted)
+    session.commit()
+    _land(session, conflicted)
+
+    payload = json.loads(
+        execute_ticket_ops_tool(
+            "loregarden_land_ticket",
+            session,
+            OrchestrationCallbackService(session),
+            {"ticket_id": conflicted.id},
+        )
+    )
+
+    assert payload["ok"] is False
+    session.refresh(conflicted)
+    assert conflicted.state is TicketState.BLOCKED
+
+
+def _blocked_on_landing(session, conflicted):
+    conflicted.git_automation_json = json.dumps({"auto_resolve_conflicts": False})
+    session.add(conflicted)
+    session.commit()
+    _land(session, conflicted)
+    session.refresh(conflicted)
+    assert conflicted.state is TicketState.BLOCKED, "the fixture must block on the landing"
+
+
+def test_the_sweep_finishes_a_ticket_whose_conflict_was_resolved(
+    session, conflicted, workspace, repo
+):
+    """Resolved on the branch, never landed: the sweep lands it and finishes (928)."""
+    from loregarden.services.terminal_stage_sweep import finish_tickets_whose_landing_cleared
+
+    _blocked_on_landing(session, conflicted)
+    target = resolve_target_branch(session, conflicted, workspace, repo_root=repo)
+    _resolve_by_hand(repo, conflicted, target)
+
+    finished = finish_tickets_whose_landing_cleared(session, ticket_id=conflicted.id)
+
+    session.refresh(conflicted)
+    assert [t.id for t in finished] == [conflicted.id]
+    assert conflicted.state is TicketState.DONE
+    assert git(repo, "merge-base", "--is-ancestor", conflicted.branch, target).returncode == 0
+    assert "finished_cleared_landing" in decision_kinds(session, conflicted.id)
+
+
+def test_the_sweep_leaves_a_conflict_that_is_still_there(session, conflicted):
+    """No retry of an unchanged conflict: git says no, so the ticket is not touched."""
+    from loregarden.services.terminal_stage_sweep import finish_tickets_whose_landing_cleared
+
+    _blocked_on_landing(session, conflicted)
+    before = len(decision_kinds(session, conflicted.id))
+
+    assert finish_tickets_whose_landing_cleared(session, ticket_id=conflicted.id) == []
+
+    session.refresh(conflicted)
+    assert conflicted.state is TicketState.BLOCKED
+    assert len(decision_kinds(session, conflicted.id)) == before
+
+
+def test_relanding_keeps_the_commit_that_landed_it(session, conflicted, workspace, repo):
+    """`landed_sha` is the commit that landed the branch; landing again must not
+    swap it for the branch tip, as 782's did (26be6aea → 41f216f9)."""
+    from loregarden.services.land_ticket import land_ticket
+
+    _blocked_on_landing(session, conflicted)
+    target = resolve_target_branch(session, conflicted, workspace, repo_root=repo)
+    _resolve_by_hand(repo, conflicted, target)
+    first = land_ticket(session, conflicted, workspace)
+    assert first.ok and first.landed_sha, "the first landing must merge"
+
+    land_ticket(session, conflicted, workspace)
+
+    session.refresh(conflicted)
+    assert conflicted.landed_sha == first.landed_sha
