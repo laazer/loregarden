@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import {
+  DEFAULT_ARTIFACT_TAB,
   navigateToPage,
   navigateToStudio,
   navigateToStudioAgent,
@@ -72,7 +73,7 @@ export function OpenTicketButton({
   ticketId,
   label = "Open ticket",
   compact,
-  tab = "diff",
+  tab = DEFAULT_ARTIFACT_TAB,
 }: {
   ticketId: string;
   label?: string;

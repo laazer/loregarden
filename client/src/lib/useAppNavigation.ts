@@ -5,6 +5,7 @@ import { getRouterNavigate } from "./routerBridge";
 import {
   artifactTabFromPath,
   canonicalArtifactTab,
+  DEFAULT_ARTIFACT_TAB,
   INITIATIVE_SUGGESTIONS_PATH,
   initiativePath,
   isStudioSection,
@@ -26,6 +27,7 @@ export type { AppPage, ArtifactTab, StudioSection } from "./appNavigation";
 export {
   artifactTabFromPath,
   canonicalArtifactTab,
+  DEFAULT_ARTIFACT_TAB,
   INITIATIVE_SUGGESTIONS_PATH,
   initiativeIdFromPath,
   initiativePath,
@@ -113,7 +115,7 @@ export function navigateToTicket(
 ) {
   const navigate = getRouterNavigate();
   if (!navigate) return;
-  navigate(ticketPath(ticketId, options?.tab ?? "diff"), { replace: options?.replace ?? false });
+  navigate(ticketPath(ticketId, options?.tab ?? DEFAULT_ARTIFACT_TAB), { replace: options?.replace ?? false });
 }
 
 export function navigateToTicketTab(ticketId: string, tab: ArtifactTab, replace = false) {
@@ -142,7 +144,7 @@ export function useTicketIdFromPath(): string | null {
   return ticketIdFromPath(pathname, uuidByRef);
 }
 
-export function useArtifactTabFromRoute(defaultTab: ArtifactTab = "diff"): ArtifactTab {
+export function useArtifactTabFromRoute(defaultTab: ArtifactTab = DEFAULT_ARTIFACT_TAB): ArtifactTab {
   const { pathname } = useLocation();
   const { artifactTab } = useParams<{ artifactTab?: string }>();
   const fromParam = canonicalArtifactTab(artifactTab);
