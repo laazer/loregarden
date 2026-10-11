@@ -17,6 +17,7 @@ export function ChatComposerMenu({
   onNewChat,
   onOpenGallery,
 }: {
+  /** "" for a global chat, which belongs to no workspace. */
   workspaceSlug: string;
   /** "" until the first message creates the thread; nothing to send to a tab yet. */
   sessionId: string;
@@ -36,7 +37,8 @@ export function ChatComposerMenu({
       <OverflowMenuItem onSelect={onToggleWorkbench}>
         {workbenchOpen ? "Hide workbench" : "Show workbench"}
       </OverflowMenuItem>
-      {sessionId ? (
+      {/* A tab's chat pane is picked by workspace, so a global thread has no tab to go to. */}
+      {sessionId && workspaceSlug ? (
         <AddToTabItems
           primitiveId="chat_session"
           values={

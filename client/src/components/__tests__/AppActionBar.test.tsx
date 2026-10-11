@@ -310,7 +310,7 @@ it("turns Send into Stop while a Baxter turn is in flight", () => {
       label: "Baxter · loregarden",
       ticketId: null,
       archive: {
-        workspaceSlug: "loregarden",
+        scope: "loregarden",
         sessionId: "s1",
         openSession: jest.fn(),
         startNewChat: jest.fn(),
@@ -485,7 +485,7 @@ describe("a screen that composes for its own thread", () => {
         composedOnScreen: true,
         ticketId: null,
         archive: {
-          workspaceSlug: "loregarden",
+          scope: "loregarden",
           sessionId: "s1",
           openSession: jest.fn(),
           startNewChat: jest.fn(),
@@ -523,7 +523,7 @@ describe("a screen that composes for its own thread", () => {
 
 describe("the chat options", () => {
   const archive = (overrides = {}) => ({
-    workspaceSlug: "loregarden",
+    scope: "loregarden",
     sessionId: "s1",
     openSession: jest.fn(),
     startNewChat: jest.fn(),

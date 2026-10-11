@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -40,6 +40,7 @@ jest.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {},
   api: {
     workspaces: jest.fn(async () => []),
+    initiatives: jest.fn(async () => []),
     baxterChatSession: jest.fn(async () => ({
       messages: [],
       runtime: {
@@ -83,12 +84,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockSidebarProps.length = 0;
   mockedApi.workspaces.mockResolvedValue([]);
+  mockedApi.initiatives.mockResolvedValue([]);
   useUiStore.setState({
     utilityDockEdge: "bottom",
     terminalOpen: false,
     workspace: "all",
     baxterHistoryOpen: false,
-    chatWorkspaceSlug: "",
+    chatScope: "",
   });
 });
 
@@ -151,19 +153,57 @@ it("names the chat workspace in the topbar without re-filtering the Console", as
 
   wrap(<div>chat body</div>, "/chat");
 
-  const picker = await screen.findByLabelText("Chat workspace");
+  const picker = await screen.findByLabelText("Chat scope");
   await waitFor(() => expect(picker).toHaveValue("loregarden"));
 
   fireEvent.change(picker, { target: { value: "blobert" } });
-  expect(useUiStore.getState().chatWorkspaceSlug).toBe("blobert");
+  expect(useUiStore.getState().chatScope).toBe("blobert");
   // Home and the Console keep their own filter — confining chat must not
   // confine them too.
   expect(useUiStore.getState().workspace).toBe("all");
 });
 
-it("keeps the chat workspace picker off non-chat pages", () => {
+it("keeps the chat scope picker off non-chat pages", async () => {
+  wrap(<div>chat body</div>, "/chat");
+  // Proves the label below is the picker's, so its absence means something.
+  expect(await screen.findByLabelText("Chat scope")).toBeInTheDocument();
+  cleanup();
+
   wrap(<div>console body</div>, "/console");
-  expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Chat scope")).not.toBeInTheDocument();
+});
+
+it("offers every workspace and each open initiative as a global chat scope", async () => {
+  mockedApi.workspaces.mockResolvedValue([{ slug: "loregarden", name: "Loregarden" }] as never);
+  mockedApi.initiatives.mockResolvedValue([
+    { id: "i-open", external_id: "INI-1", title: "Cross-repo launch", state: "in_progress" },
+    { id: "i-done", external_id: "INI-2", title: "Finished work", state: "done" },
+  ] as never);
+  useUiStore.setState({ chatScope: "loregarden", baxterChatSessionId: "thread-1" });
+
+  wrap(<div>chat body</div>, "/chat");
+
+  const picker = await screen.findByLabelText("Chat scope");
+  const focused = await screen.findByRole("option", { name: "Initiative: INI-1 · Cross-repo launch" });
+  expect(screen.getByRole("option", { name: "All workspaces" })).toBeInTheDocument();
+  // A finished initiative is not something to start working on.
+  expect(screen.queryByRole("option", { name: /INI-2/ })).not.toBeInTheDocument();
+
+  fireEvent.change(picker, { target: { value: (focused as HTMLOptionElement).value } });
+
+  expect(useUiStore.getState().chatScope).toBe("@initiative:i-open");
+  // The open thread belongs to the workspace's archive, not the initiative's.
+  expect(useUiStore.getState().baxterChatSessionId).toBe("");
+});
+
+it("says so in the picker when initiatives fail to load", async () => {
+  mockedApi.workspaces.mockResolvedValue([{ slug: "loregarden", name: "Loregarden" }] as never);
+  mockedApi.initiatives.mockRejectedValue(new Error("boom"));
+
+  wrap(<div>chat body</div>, "/chat");
+
+  expect(await screen.findByRole("option", { name: "Couldn't load initiatives" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "All workspaces" })).toBeInTheDocument();
 });
 
 it("keeps the sidebar's workspace off the route, and off the page-scoped slugs", async () => {

@@ -17,7 +17,12 @@ from collections.abc import Sequence
 
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.db.session import engine
-from loregarden.models.domain import BaxterChatMessage, BaxterChatSession, Workspace
+from loregarden.models.domain import (
+    BaxterChatMessage,
+    BaxterChatScope,
+    BaxterChatSession,
+    Workspace,
+)
 from loregarden.services.baxter_chat_service import (
     UNTITLED_SESSION_TITLE,
     BaxterChatConflictError,
@@ -202,7 +207,14 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                 assistant_id,
                 content=outcome.reply,
                 status="complete",
-                parts_json=parts_json_for_reply(session, outcome.reply, workspace_id=workspace.id),
+                parts_json=parts_json_for_reply(
+                    session,
+                    outcome.reply,
+                    # A global thread's refs may name a ticket in any workspace.
+                    workspace_id=(
+                        None if chat_session.scope == BaxterChatScope.GLOBAL else workspace.id
+                    ),
+                ),
             )
             # After the row settles, never before: publishing runs `git push`,
             # which runs lefthook's pre-push suite, and a `pending` assistant row

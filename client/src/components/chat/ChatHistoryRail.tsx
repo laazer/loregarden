@@ -16,20 +16,20 @@ import { relativeTime } from "./relativeTime";
  * whether this or the openers fill it.
  */
 export function ChatHistoryRail({
-  workspaceSlug,
+  scope,
   activeSessionId,
   onSelectSession,
 }: {
-  workspaceSlug: string;
+  scope: string;
   activeSessionId: string;
   onSelectSession: (id: string) => void;
 }) {
   const sessions = useQuery({
-    queryKey: baxterChatSessionsKey(workspaceSlug),
-    queryFn: () => api.baxterChatSessions(workspaceSlug),
+    queryKey: baxterChatSessionsKey(scope),
+    queryFn: () => api.baxterChatSessions(scope),
     // Mounted only while the rail is showing it, so no guard on visibility is
     // needed here — an archive nobody is looking at issues no request.
-    enabled: Boolean(workspaceSlug),
+    enabled: Boolean(scope),
     staleTime: 10_000,
   });
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from loregarden.models.domain.block_kinds import BlockKind
+from loregarden.models.domain.chat_enums import BaxterChatScope
 from loregarden.models.domain.enums import (
     DEFAULT_COMPATIBILITY_POSTURE,
     ApprovalKind,
@@ -1187,7 +1188,15 @@ class BaxterChatSession(SQLModel, table=True):
     __tablename__ = "baxter_chat_sessions"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    # The workspace that owns a workspace-scoped thread. For a global thread it
+    # is the host whose checkout the CLI runs in (see `baxter_chat_scope`).
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    scope: BaxterChatScope = Field(
+        sa_column=str_enum_column(BaxterChatScope, BaxterChatScope.WORKSPACE, index=True)
+    )
+    # The initiative a global thread is focused on, or None for an unfocused one.
+    # Always None on a workspace-scoped thread.
+    initiative_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     # Derived from the first operator message unless the operator renames it.
     title: str = ""
     runtime_json: str = "{}"

@@ -156,7 +156,7 @@ export function CopilotDock() {
               <aside className="copilot-dock-rail">
                 {showHistory && archive ? (
                   <ChatHistoryRail
-                    workspaceSlug={archive.workspaceSlug}
+                    scope={archive.scope}
                     activeSessionId={archive.sessionId}
                     onSelectSession={(id) => {
                       archive.openSession(id);

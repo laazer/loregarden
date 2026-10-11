@@ -46,12 +46,13 @@ interface ForkRequest {
   throughMessageId?: string;
 }
 
-export function baxterChatSessionsKey(slug: string) {
-  return ["baxter-chat-sessions", slug] as const;
+/** Keyed by chat scope (`lib/chatScope`): each scope is its own archive. */
+export function baxterChatSessionsKey(scope: string) {
+  return ["baxter-chat-sessions", scope] as const;
 }
 
-function baxterChatSessionKey(slug: string, sessionId: string) {
-  return ["baxter-chat-session", slug, sessionId] as const;
+function baxterChatSessionKey(scope: string, sessionId: string) {
+  return ["baxter-chat-session", scope, sessionId] as const;
 }
 
 /**
@@ -75,10 +76,10 @@ function baxterChatSessionKey(slug: string, sessionId: string) {
  * switch the other's. Those callers use `useBaxterChatSessionAt` and hold the
  * id themselves.
  */
-export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBinding {
+export function useBaxterChatSession(scope: string): BaxterChatSessionBinding {
   const sessionId = useUiStore((s) => s.baxterChatSessionId);
   const setSessionId = useUiStore((s) => s.setBaxterChatSessionId);
-  return useBaxterChatSessionAt(workspaceSlug, sessionId, setSessionId);
+  return useBaxterChatSessionAt(scope, sessionId, setSessionId);
 }
 
 /**
@@ -92,21 +93,21 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
  * `setSessionId`; only where they come from has changed.
  */
 export function useBaxterChatSessionAt(
-  workspaceSlug: string,
+  scope: string,
   sessionId: string,
   setSessionId: (id: string) => void,
 ): BaxterChatSessionBinding {
   const qc = useQueryClient();
 
-  const enabled = Boolean(workspaceSlug && sessionId);
+  const enabled = Boolean(scope && sessionId);
   const queryKey = useMemo(
-    () => baxterChatSessionKey(workspaceSlug, sessionId),
-    [workspaceSlug, sessionId],
+    () => baxterChatSessionKey(scope, sessionId),
+    [scope, sessionId],
   );
 
   const snapshot = useQuery({
     queryKey,
-    queryFn: () => api.baxterChatSession(workspaceSlug, sessionId),
+    queryFn: () => api.baxterChatSession(scope, sessionId),
     enabled,
     // Poll fast while a turn is in flight or waiting on the operator.
     refetchInterval: (query) => {
@@ -128,8 +129,8 @@ export function useBaxterChatSessionAt(
   }, [snapshot.error, setSessionId]);
 
   const invalidateArchive = useCallback(() => {
-    qc.invalidateQueries({ queryKey: baxterChatSessionsKey(workspaceSlug) });
-  }, [qc, workspaceSlug]);
+    qc.invalidateQueries({ queryKey: baxterChatSessionsKey(scope) });
+  }, [qc, scope]);
 
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },
@@ -144,7 +145,7 @@ export function useBaxterChatSessionAt(
     }) => {
       let id = sessionId;
       if (!id) {
-        const created = await api.createBaxterChatSession(workspaceSlug);
+        const created = await api.createBaxterChatSession(scope);
         id = created.id;
         setSessionId(id);
       }
@@ -152,19 +153,19 @@ export function useBaxterChatSessionAt(
       // and a failed upload rejects the whole send rather than a thinner one.
       const attachmentIds: string[] = [];
       for (const file of files) {
-        const stored = await api.uploadBaxterChatAttachment(workspaceSlug, id, file);
+        const stored = await api.uploadBaxterChatAttachment(scope, id, file);
         attachmentIds.push(stored.id);
       }
-      return api.sendBaxterChatMessage(workspaceSlug, id, content, skill, attachmentIds);
+      return api.sendBaxterChatMessage(scope, id, content, skill, attachmentIds);
     },
     onSuccess: (result) => {
       // The POST returns the thread with the user turn already on it, so the
       // message appears without waiting a poll interval.
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      qc.setQueryData(baxterChatSessionKey(scope, result.id), result);
       invalidateArchive();
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["baxter-chat-session", workspaceSlug] });
+      qc.invalidateQueries({ queryKey: ["baxter-chat-session", scope] });
     },
   });
 
@@ -175,12 +176,12 @@ export function useBaxterChatSessionAt(
   const sendInNewChat = useMutation({
     meta: { errorTitle: "Send message" },
     mutationFn: async (content: string) => {
-      const created = await api.createBaxterChatSession(workspaceSlug);
+      const created = await api.createBaxterChatSession(scope);
       setSessionId(created.id);
-      return api.sendBaxterChatMessage(workspaceSlug, created.id, content);
+      return api.sendBaxterChatMessage(scope, created.id, content);
     },
     onSuccess: (result) => {
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      qc.setQueryData(baxterChatSessionKey(scope, result.id), result);
       invalidateArchive();
     },
   });
@@ -190,19 +191,19 @@ export function useBaxterChatSessionAt(
     mutationFn: async ({ body = "", throughMessageId = "" }: ForkRequest = {}) => {
       if (!sessionId) throw new Error("No chat session to fork");
       const forked = await baxterChatApi.forkSession(
-        workspaceSlug,
+        scope,
         sessionId,
         throughMessageId,
       );
       setSessionId(forked.id);
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, forked.id), forked);
+      qc.setQueryData(baxterChatSessionKey(scope, forked.id), forked);
       invalidateArchive();
       const text = body.trim();
       if (!text) return forked;
-      return api.sendBaxterChatMessage(workspaceSlug, forked.id, text);
+      return api.sendBaxterChatMessage(scope, forked.id, text);
     },
     onSuccess: (result) => {
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      qc.setQueryData(baxterChatSessionKey(scope, result.id), result);
       invalidateArchive();
     },
   });
@@ -210,16 +211,16 @@ export function useBaxterChatSessionAt(
   const renameSession = useMutation({
     meta: { errorTitle: "Rename session" },
     mutationFn: ({ id, title }: { id: string; title: string }) =>
-      api.renameBaxterChatSession(workspaceSlug, id, title),
+      api.renameBaxterChatSession(scope, id, title),
     onSuccess: (result) => {
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      qc.setQueryData(baxterChatSessionKey(scope, result.id), result);
       invalidateArchive();
     },
   });
 
   const deleteSession = useMutation({
     meta: { errorTitle: "Delete session" },
-    mutationFn: (id: string) => api.deleteBaxterChatSession(workspaceSlug, id),
+    mutationFn: (id: string) => api.deleteBaxterChatSession(scope, id),
     onSuccess: (_result, id) => {
       if (id === sessionId) setSessionId("");
       invalidateArchive();
@@ -230,14 +231,14 @@ export function useBaxterChatSessionAt(
     meta: { errorTitle: "Stop turn" },
     mutationFn: async () => {
       if (!sessionId) throw new Error("No chat session");
-      return api.stopBaxterChatTurn(workspaceSlug, sessionId);
+      return api.stopBaxterChatTurn(scope, sessionId);
     },
     onSuccess: (result) => {
-      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      qc.setQueryData(baxterChatSessionKey(scope, result.id), result);
       invalidateArchive();
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["baxter-chat-session", workspaceSlug] });
+      qc.invalidateQueries({ queryKey: ["baxter-chat-session", scope] });
     },
   });
 
@@ -246,19 +247,19 @@ export function useBaxterChatSessionAt(
     mutationFn: async (runtime: WorkspaceRuntimeSettings) => {
       let id = sessionId;
       if (!id) {
-        const created = await api.createBaxterChatSession(workspaceSlug);
+        const created = await api.createBaxterChatSession(scope);
         id = created.id;
         setSessionId(id);
-        qc.setQueryData(baxterChatSessionKey(workspaceSlug, id), created);
+        qc.setQueryData(baxterChatSessionKey(scope, id), created);
         invalidateArchive();
       }
-      return api.setBaxterChatRuntime(workspaceSlug, id, runtime);
+      return api.setBaxterChatRuntime(scope, id, runtime);
     },
     onSuccess: (runtime, _variables) => {
       const id = sessionId || useUiStore.getState().baxterChatSessionId;
       if (id) {
         qc.setQueryData<BaxterChatSnapshot>(
-          baxterChatSessionKey(workspaceSlug, id),
+          baxterChatSessionKey(scope, id),
           (current) => (current ? { ...current, runtime } : current),
         );
       }

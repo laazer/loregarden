@@ -418,8 +418,8 @@ def test_the_transport_column_ships_as_a_named_module():
     AC20 wrote it as `20261007_layout_by_question`, the registry tip when the
     spec was authored, and every merge from main since has moved that tip — so
     a named parent makes this test fail on main's landings rather than on
-    anything about this column. What has to hold is that the column is the
-    chain's tail, parented on a migration that exists: two migrations off one
+    anything about this column. What has to hold is that the column is
+    parented on a migration that exists and has at most one successor: two migrations off one
     parent make the apply order between them id order rather than the order the
     live database saw, which is what `test_the_real_chain_does_not_fork`
     reports.
@@ -430,7 +430,9 @@ def test_the_transport_column_ships_as_a_named_module():
     assert MIGRATION_ID in registered, sorted(registered)
     predecessor = registered[MIGRATION_ID].after
     assert predecessor in registered, predecessor
-    assert [m.id for m in registered.values() if m.after == MIGRATION_ID] == []
+    # Not "nothing follows it": later migrations must. At most one may, or the
+    # chain forks below this column.
+    assert len([m.id for m in registered.values() if m.after == MIGRATION_ID]) <= 1
 
 
 def test_no_numbered_migration_id_is_claimed():

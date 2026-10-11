@@ -31,7 +31,7 @@ export function ChatHistorySidebar({
   open,
   onClose,
   onOpenPrimitiveGallery,
-  workspaceSlug,
+  scope,
   activeSessionId,
   onSelectSession,
   onDeleteSession,
@@ -39,17 +39,17 @@ export function ChatHistorySidebar({
   open: boolean;
   onClose: () => void;
   onOpenPrimitiveGallery: () => void;
-  workspaceSlug: string;
+  scope: string;
   activeSessionId: string;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
 }) {
   const sessions = useQuery({
-    queryKey: baxterChatSessionsKey(workspaceSlug),
-    queryFn: () => api.baxterChatSessions(workspaceSlug),
+    queryKey: baxterChatSessionsKey(scope),
+    queryFn: () => api.baxterChatSessions(scope),
     // Only fetched while the drawer is showing — an archive nobody is looking
     // at does not need to be current.
-    enabled: open && Boolean(workspaceSlug),
+    enabled: open && Boolean(scope),
     staleTime: 10_000,
   });
   const [query, setQuery] = useState("");
