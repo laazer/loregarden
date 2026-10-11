@@ -54,12 +54,18 @@ ENDPOINTS = {
     # The scenario's worked ticket, at the live p90 of runs and artifact rows.
     "ticket-history-artifacts.json": ("/api/tickets/{worked_ticket}/artifacts", {}),
     "ticket-history-ledger.json": ("/api/tickets/{worked_ticket}/ledger", {}),
+    # The scenario's worked milestone, at the live p90 of children with runs.
+    "parent-children-timeline.json": ("/api/tickets/{worked_milestone}/children-timeline", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
 #: as recorded — and must stay unpinned, because where a row sits on the ticket's
 #: timeline is read from them.
-_STAMPED = {"ticket-history-artifacts.json", "ticket-history-ledger.json"}
+_STAMPED = {
+    "ticket-history-artifacts.json",
+    "ticket-history-ledger.json",
+    "parent-children-timeline.json",
+}
 
 #: Fixtures whose response is computed from "now" (the sprint's dates), recorded
 #: with the clock pinned. The scenario's own timestamps are stamped at build
@@ -105,7 +111,12 @@ def test_fixture_matches_the_api(api, isolated_db, name):
                 mock.patch.object(initiative_suggestions, "clock", return_value=pinned)
             )
         response = api.get(
-            path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket), params=params
+            path.format(
+                plan_ticket=plan_ticket,
+                worked_ticket=worked_ticket,
+                worked_milestone=prod_shape_id("worked-milestone", 0),
+            ),
+            params=params,
         )
     assert response.status_code == 200, response.text
     payload = response.json() if name in _STAMPED else _pin(response.json())

@@ -3,6 +3,7 @@ import type { ArtifactTab } from "../../lib/appNavigation";
 import { ApprovalsView } from "./ApprovalsView";
 import { ArtifactView } from "./ArtifactView";
 import { HiveSimulationPanel } from "./HiveSimulationPanel";
+import { ParentTimeline } from "./ParentTimeline";
 import { TicketOutputs } from "./TicketOutputs";
 import { TicketTimeline, type TimelineRun } from "./TicketTimeline";
 import { WorkflowMonitorView } from "./WorkflowMonitorView";
@@ -56,7 +57,7 @@ export function ArtifactPaneBody({
   const isActive = hasActiveRun || ticket?.workflow_stage_status === "running";
 
   if (artifactTab === "timeline" && ticket) {
-    return (
+    const own = (
       <TicketTimeline
         ticket={ticket}
         runs={runs}
@@ -65,6 +66,8 @@ export function ArtifactPaneBody({
         onOpenRunLog={onOpenRunLog}
       />
     );
+    // A parent's history is its children's; its own runs sit behind a switch.
+    return ticket.child_count > 0 ? <ParentTimeline ticket={ticket} isActive={isActive} own={own} /> : own;
   }
 
   if (artifactTab === "outputs" && ticket) return <TicketOutputs ticketId={ticket.id} isActive={isActive} />;

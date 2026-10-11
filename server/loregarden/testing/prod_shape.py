@@ -30,7 +30,9 @@ from loregarden.models.domain import (
     MonitorArtifactKind,
     RunStatus,
     StageBudgetArtifactKind,
+    StageStatus,
     Ticket,
+    TicketDependency,
     TicketState,
     WorkItemType,
 )
@@ -57,6 +59,22 @@ class WorkspaceShape(BaseModel):
     milestones: int
 
 
+class WorkedMilestoneShape(BaseModel):
+    """A parent whose children have run, for the parent-ticket timeline.
+
+    Children are dealt in this order: done, blocked, in progress (the first
+    `awaiting` of those waiting on a person), then not started, the last
+    `waiting` of which wait on an open started sibling.
+    """
+
+    children: int
+    started: int
+    done: int
+    blocked: int
+    awaiting: int
+    waiting: int
+
+
 class Calibration(BaseModel):
     """The proportions the scenario reproduces. Re-measure, and re-date, when
     production drifts — a stale shape is a fixture again."""
@@ -79,6 +97,11 @@ class Calibration(BaseModel):
     worked_runs: int
     worked_artifacts: int
     worked_system_share: float
+    #: Measured 2026-10-11 over the 55 parents whose children have runs: children
+    #: median 6, p90 24, max 93; a typical one has 2 started. This is the p90,
+    #: modelled on the busiest (blob-core-absorption-131): 18 of 24 started, 11
+    #: waiting on a person at playtest, 4 blocked, ~11 runs per started child.
+    worked_milestone: WorkedMilestoneShape
 
 
 #: Measured from the live database, 2026-09-28 (read-only).
@@ -130,6 +153,9 @@ CALIBRATION = Calibration(
     worked_runs=33,
     worked_artifacts=172,
     worked_system_share=0.40,
+    worked_milestone=WorkedMilestoneShape(
+        children=24, started=18, done=1, blocked=4, awaiting=11, waiting=2
+    ),
 )
 
 #: Live had no initiatives at calibration, with every milestone unclaimed. The
@@ -204,6 +230,7 @@ class ProdShapeSummary(BaseModel):
     memory_records: dict[str, int]
     worked_runs: int
     worked_artifacts: int
+    worked_milestone_runs: int
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -386,6 +413,7 @@ def build_prod_shape(
     worked_runs, worked_artifacts = _add_worked_history(
         session, all_tickets, random.Random(_RNG_SEED + 1)
     )
+    worked_milestone_runs = _add_worked_milestone(session, random.Random(_RNG_SEED + 2))
     memory = {}
     if graph_path is not None:
         for slug, count in CALIBRATION.memory.items():
@@ -404,6 +432,7 @@ def build_prod_shape(
         memory_records=memory,
         worked_runs=worked_runs,
         worked_artifacts=worked_artifacts,
+        worked_milestone_runs=worked_milestone_runs,
     )
 
 
@@ -730,3 +759,131 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
             created_at=row["at"],
         )
     return run_n, len(system) + len(work)
+
+
+#: The worked milestone's children run this pipeline, each stopping where its
+#: state says; blobert's own ends at a person's playtest.
+_MILESTONE_PIPELINE = [
+    ("planning", "planner"),
+    ("spec", "spec"),
+    ("test-design", "test_designer"),
+    ("test-break", "test_breaker"),
+    ("implement", "backend_implementer"),
+    ("verify", "verifier"),
+    ("review", "static_qa"),
+    ("gate", "gatekeeper"),
+    ("learning", "learning_curator"),
+    ("playtest", "playtest_review"),
+]
+
+
+def _add_worked_milestone(session: Session, rng: random.Random) -> int:
+    """One blobert milestone whose children have run, at the live p90 (see
+    `CALIBRATION.worked_milestone`). Returns the number of runs it holds.
+
+    It sits on top of the calibrated workspace counts rather than inside them:
+    drawing its children from the existing rows would restate their states and
+    shift every proportion the other surfaces were calibrated on.
+    """
+    shape = CALIBRATION.worked_milestone
+    workspace = make_workspace(session, slug="blobert", repo_path=NO_REPO)
+    milestone = make_ticket(
+        session,
+        workspace_id=workspace.id,
+        ticket_id=prod_shape_id("worked-milestone", 0),
+        external_id="blob-m90-90",
+        title="M90 — Absorb the core loop",
+        work_item_type=WorkItemType.MILESTONE,
+        state=TicketState.IN_PROGRESS,
+    )
+    clock = _EPOCH + timedelta(days=12)
+    children: list[Ticket] = []
+    run_n = 0
+    for n in range(shape.children):
+        state = _milestone_child_state(n, shape)
+        child = make_ticket(
+            session,
+            workspace_id=workspace.id,
+            ticket_id=prod_shape_id("worked-milestone/child", n),
+            external_id=f"blob-m90-{91 + n}",
+            title=_title(rng),
+            work_item_type=WorkItemType.FEATURE,
+            state=state,
+            parent_ticket_id=milestone.id,
+        )
+        children.append(child)
+        if n >= shape.started:
+            continue
+        awaiting = (
+            state == TicketState.IN_PROGRESS and n - shape.done - shape.blocked < shape.awaiting
+        )
+        reaches_end = state == TicketState.DONE or awaiting
+        depth = (
+            len(_MILESTONE_PIPELINE)
+            if reaches_end
+            else rng.randint(3, len(_MILESTONE_PIPELINE) - 2)
+        )
+        stages = list(_MILESTONE_PIPELINE[:depth])
+        if n % 3 == 0 and depth > 6:
+            # Verify sent it back: implement and verify come round again.
+            stages[6:6] = [_MILESTONE_PIPELINE[4], _MILESTONE_PIPELINE[5]]
+        at = clock + timedelta(hours=3 * n)
+        for i, (stage, agent) in enumerate(stages):
+            failed_last = state == TicketState.BLOCKED and i == len(stages) - 1
+            statuses = [RunStatus.FAILED] if failed_last else [RunStatus.SUCCEEDED]
+            if not failed_last and rng.random() < 0.2:
+                statuses.insert(0, RunStatus.FAILED)
+            for status in statuses:
+                finish = at + timedelta(minutes=rng.randint(4, 40))
+                make_agent_run(
+                    session,
+                    workspace_id=workspace.id,
+                    ticket_id=child.id,
+                    run_id=prod_shape_id("worked-milestone/run", run_n),
+                    run_code=f"run_m{run_n:05d}",
+                    agent_id=agent,
+                    stage_key=stage,
+                    status=status,
+                    command="",
+                    stdout="",
+                    stderr="",
+                    created_at=at,
+                    started_at=at,
+                    finished_at=finish,
+                )
+                run_n += 1
+                at = finish + timedelta(minutes=rng.randint(1, 20))
+        child.workflow_stage_key = stages[-1][0]
+        child.workflow_stage_status = _milestone_child_stage_status(state, awaiting)
+        session.add(child)
+    first_open = shape.done + shape.blocked
+    for k in range(shape.waiting):
+        dep_id = prod_shape_id("worked-milestone/dependency", k)
+        if session.get(TicketDependency, dep_id) is None:
+            session.add(
+                TicketDependency(
+                    id=dep_id,
+                    ticket_id=children[-1 - k].id,
+                    depends_on_ticket_id=children[first_open + k].id,
+                )
+            )
+    session.commit()
+    return run_n
+
+
+def _milestone_child_state(n: int, shape: WorkedMilestoneShape) -> TicketState:
+    if n >= shape.started:
+        return TicketState.BACKLOG
+    if n < shape.done:
+        return TicketState.DONE
+    if n < shape.done + shape.blocked:
+        return TicketState.BLOCKED
+    return TicketState.IN_PROGRESS
+
+
+def _milestone_child_stage_status(state: TicketState, awaiting: bool) -> StageStatus:
+    if state == TicketState.DONE:
+        return StageStatus.DONE
+    if state == TicketState.BLOCKED:
+        return StageStatus.BLOCKED
+    return StageStatus.AWAITING if awaiting else StageStatus.PENDING
