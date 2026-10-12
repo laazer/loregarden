@@ -48,6 +48,7 @@ from loregarden.services.integration_conflict_card import (
     clear_integration_conflict,
     report_integration_conflict,
 )
+from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
 
@@ -73,6 +74,13 @@ class IntegrationConflictError(TargetBranchError):
         self.branch = branch
         self.base = base
         self.files = files
+        #: Why the automatic merge turn did not resolve it, when one was tried.
+        self.automatic = ""
+
+    def __str__(self) -> str:
+        if not self.automatic:
+            return super().__str__()
+        return f"{super().__str__()} (automatic merge: {self.automatic})"
 
 
 def subtree_root(session: Session, ticket: Ticket) -> Ticket:
@@ -252,7 +260,12 @@ def _fast_forward_superseded(
 
 
 def resolve_target_branch(
-    session: Session, ticket: Ticket, workspace: Workspace, *, repo_root: Path
+    session: Session,
+    ticket: Ticket,
+    workspace: Workspace,
+    *,
+    repo_root: Path,
+    merge_conflicts: bool = True,
 ) -> str:
     """The branch ``ticket`` lands on, existing and current in ``repo_root`` on return.
 
@@ -260,26 +273,63 @@ def resolve_target_branch(
     nothing, and merges nothing unless the base moved. ``base_branch`` is never
     created here — a workspace whose base is missing is misconfigured, and
     that is reported, not repaired.
+
+    A branch that cannot take its base gets an agent turn to merge it
+    (`integration_merge_agent`), which blocks this call while it runs; only
+    when that is off, spent or fails is the conflict raised and put in front of
+    a person. ``merge_conflicts=False`` skips the turn, for a caller that can
+    run on the stale branch rather than wait (a chat turn).
     """
     base = resolve_orchestration_profile(workspace).git.base_branch
     target = target_branch_name(session, ticket, workspace)
     if target != base:
-        # One reading of both refs decides creation and the refresh alike.
+        root = subtree_root(session, ticket)
         try:
-            _refresh_from_tips(
-                repo_root, ensure_integration_branch(repo_root, target, base), target, base
+            _refresh_or_merge(
+                session, workspace, root, repo_root, target, base, merge_conflicts=merge_conflicts
             )
         except IntegrationConflictError as exc:
             # Whoever hits it first files the card; raising alone left the only
             # record in one failed run or chat reply.
             report_integration_conflict(
                 session,
-                subtree_root(session, ticket),
+                root,
                 branch=exc.branch,
                 base=exc.base,
                 files=exc.files,
+                automatic=exc.automatic,
             )
             raise
         # The branch takes its base now; a card filed earlier no longer holds.
-        clear_integration_conflict(session, subtree_root(session, ticket), branch=target, base=base)
+        clear_integration_conflict(session, root, branch=target, base=base)
     return target
+
+
+def _refresh_or_merge(
+    session: Session,
+    workspace: Workspace,
+    root: Ticket,
+    repo_root: Path,
+    target: str,
+    base: str,
+    *,
+    merge_conflicts: bool,
+) -> None:
+    try:
+        # One reading of both refs decides creation and the refresh alike.
+        _refresh_from_tips(
+            repo_root, ensure_integration_branch(repo_root, target, base), target, base
+        )
+        return
+    except IntegrationConflictError as exc:
+        if not merge_conflicts:
+            raise
+        merged = merge_base_by_agent(
+            session, workspace, root, repo_root=repo_root, branch=target, base=base, files=exc.files
+        )
+        if not merged.ok:
+            exc.automatic = merged.detail
+            raise
+    # Merged: the refresh is a no-op now, unless the base moved again meanwhile,
+    # which raises for the next dispatch rather than looping here.
+    _refresh_from_tips(repo_root, read_branch_tips(repo_root, target, base), target, base)

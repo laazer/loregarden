@@ -1,5 +1,5 @@
-import { useState } from "react";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
@@ -85,6 +85,9 @@ export function SubtreeAutopilotCard({
 }) {
   const qc = useQueryClient();
   const kind = workItemTypeLabel(workItemType).toLowerCase();
+  // Off, a picked number waits for "Turn on", which sends it with the switch.
+  // Running, a pick saves at once. Keyed by ticket so a draft never follows
+  // the card to another one.
   const [draft, setDraft] = useState<{ ticketId: string; parallel: number } | null>(null);
 
   const query = useQuery({
@@ -99,10 +102,7 @@ export function SubtreeAutopilotCard({
   const change = useMutation({
     meta: { errorTitle: "Change the autopilot" },
     mutationFn: (body: { enabled?: boolean; max_parallel?: number }) => api.setTicketAutopilot(ticketId, body),
-    onSuccess: (next) => {
-      qc.setQueryData(subtreeAutopilotKey(ticketId), next);
-      setDraft(null);
-    },
+    onSuccess: (next) => qc.setQueryData(subtreeAutopilotKey(ticketId), next),
   });
 
   const view = query.data;
@@ -131,13 +131,13 @@ export function SubtreeAutopilotCard({
   }
 
   const { autopilot, running_above: runningAbove } = view;
-  const parallel = draft?.ticketId === ticketId ? draft.parallel : autopilot.max_parallel;
-  const parallelChanged = parallel !== autopilot.max_parallel;
-  const toggleTitle = !autopilot.available
+  const drafted = draft?.ticketId === ticketId ? draft.parallel : null;
+  const parallel = autopilot.enabled ? autopilot.max_parallel : (drafted ?? autopilot.max_parallel);
+  const onTitle = !autopilot.available
     ? "The autopilot does not run on a sandbox server"
     : autopilot.enabled
-      ? "Stop starting new work; what is running carries on"
-      : `Start this ${kind}'s ready items, up to ${autopilot.max_parallel} at once`;
+      ? "Already on"
+      : `Start this ${kind}'s ready items, up to ${parallel} at once`;
 
   return (
     <section className="state-card subtree-autopilot" aria-labelledby="subtree-autopilot-title" aria-busy={busy}>
@@ -154,7 +154,11 @@ export function SubtreeAutopilotCard({
             className="subtree-autopilot-select"
             value={String(parallel)}
             disabled={busy}
-            onChange={(e) => setDraft({ ticketId, parallel: Number(e.target.value) })}
+            onChange={(e) => {
+              const picked = Number(e.target.value);
+              if (autopilot.enabled) change.mutate({ max_parallel: picked });
+              else setDraft({ ticketId, parallel: picked });
+            }}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -162,26 +166,26 @@ export function SubtreeAutopilotCard({
               </option>
             ))}
           </Select>
-          {parallelChanged ? (
-            <Button
-              variant="secondary"
-              compact
-              disabled={busy}
-              title={`Run at most ${parallel} at once`}
-              onClick={() => change.mutate({ max_parallel: parallel })}
-            >
-              Update
-            </Button>
-          ) : null}
           <Button
-            variant={autopilot.enabled ? "secondary" : "primary"}
+            variant="primary"
             compact
-            aria-pressed={autopilot.enabled}
-            disabled={busy || !autopilot.available}
-            title={toggleTitle}
-            onClick={() => change.mutate({ enabled: !autopilot.enabled })}
+            disabled={busy || !autopilot.available || autopilot.enabled}
+            title={onTitle}
+            onClick={() => change.mutate({ enabled: true, max_parallel: parallel })}
           >
-            {busy ? "Saving…" : autopilot.enabled ? "Turn off" : "Turn on"}
+            Turn on
+          </Button>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || !autopilot.enabled}
+            title={autopilot.enabled ? "Stop starting new work; what is running carries on" : "Already off"}
+            onClick={() => {
+              setDraft(null);
+              change.mutate({ enabled: false });
+            }}
+          >
+            Turn off
           </Button>
         </div>
       </div>

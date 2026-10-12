@@ -45,9 +45,12 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
+  // Off, a picked number waits for "Turn on", which sends it with the switch.
+  // Running, a pick saves at once. A draft kept while off and dropped by "Turn
+  // on" is what showed 1 while the autopilot ran 2.
   const [draftParallel, setDraftParallel] = useState<number | null>(null);
-  const parallel = draftParallel ?? autopilot.max_parallel;
-  const parallelChanged = parallel !== autopilot.max_parallel;
+  const parallel = autopilot.enabled ? autopilot.max_parallel : (draftParallel ?? autopilot.max_parallel);
+  const unavailable = autopilot.available ? undefined : "The autopilot does not run on a sandbox server";
 
   return (
     <section className="plan-autopilot" aria-labelledby="plan-autopilot-title">
@@ -68,7 +71,11 @@ export function AutopilotPanel({
             className="plan-parallel-select"
             value={String(parallel)}
             disabled={busy}
-            onChange={(e) => setDraftParallel(Number(e.target.value))}
+            onChange={(e) => {
+              const picked = Number(e.target.value);
+              if (autopilot.enabled) onAutopilot({ max_parallel: picked });
+              else setDraftParallel(picked);
+            }}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -77,23 +84,25 @@ export function AutopilotPanel({
             ))}
           </Select>
           <Button
-            variant="secondary"
+            variant="primary"
             compact
-            disabled={busy || !parallelChanged}
-            title={parallelChanged ? `Run at most ${parallel} at once` : "Pick a different number first"}
-            onClick={() => onAutopilot({ max_parallel: parallel })}
+            disabled={busy || !autopilot.available || autopilot.enabled}
+            title={unavailable ?? (autopilot.enabled ? "Already on" : `Start ready work, up to ${parallel} at once`)}
+            onClick={() => onAutopilot({ enabled: true, max_parallel: parallel })}
           >
-            Update
+            Turn on
           </Button>
           <Button
-            variant={autopilot.enabled ? "secondary" : "primary"}
+            variant="secondary"
             compact
-            aria-pressed={autopilot.enabled}
-            disabled={busy || !autopilot.available}
-            title={autopilot.available ? undefined : "The autopilot does not run on a sandbox server"}
-            onClick={() => onAutopilot({ enabled: !autopilot.enabled })}
+            disabled={busy || !autopilot.enabled}
+            title={autopilot.enabled ? "Stop starting new work; what is running carries on" : "Already off"}
+            onClick={() => {
+              setDraftParallel(null);
+              onAutopilot({ enabled: false });
+            }}
           >
-            {autopilot.enabled ? "Turn off" : "Turn on"}
+            Turn off
           </Button>
         </div>
       </header>
