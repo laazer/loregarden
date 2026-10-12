@@ -1,4 +1,3 @@
-import { useState } from "react";
 
 import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
@@ -45,9 +44,6 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
-  const [draftParallel, setDraftParallel] = useState<number | null>(null);
-  const parallel = draftParallel ?? autopilot.max_parallel;
-  const parallelChanged = parallel !== autopilot.max_parallel;
 
   return (
     <section className="plan-autopilot" aria-labelledby="plan-autopilot-title">
@@ -66,9 +62,11 @@ export function AutopilotPanel({
           <Select
             aria-label="Most tickets the autopilot runs at once"
             className="plan-parallel-select"
-            value={String(parallel)}
+            value={String(autopilot.max_parallel)}
             disabled={busy}
-            onChange={(e) => setDraftParallel(Number(e.target.value))}
+            // Saved on pick: a draft held until "Update" was dropped by "Turn on",
+            // so the select showed 1 while the autopilot ran 2.
+            onChange={(e) => onAutopilot({ max_parallel: Number(e.target.value) })}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -76,15 +74,6 @@ export function AutopilotPanel({
               </option>
             ))}
           </Select>
-          <Button
-            variant="secondary"
-            compact
-            disabled={busy || !parallelChanged}
-            title={parallelChanged ? `Run at most ${parallel} at once` : "Pick a different number first"}
-            onClick={() => onAutopilot({ max_parallel: parallel })}
-          >
-            Update
-          </Button>
           <Button
             variant={autopilot.enabled ? "secondary" : "primary"}
             compact

@@ -92,7 +92,13 @@ def resolve_execution_root(
     # a sibling's landed work lives on the integration branch and never on
     # main until the tree completes (lg-milestone-that-769).
     try:
-        target = resolve_target_branch(session, ticket, workspace, repo_root=workspace_root)
+        target = resolve_target_branch(
+            session,
+            ticket,
+            workspace,
+            repo_root=workspace_root,
+            merge_conflicts=not stale_target_ok,
+        )
     except IntegrationConflictError as exc:
         if not stale_target_ok:
             raise

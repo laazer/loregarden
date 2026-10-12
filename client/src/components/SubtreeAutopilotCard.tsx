@@ -1,4 +1,3 @@
-import { useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -85,7 +84,6 @@ export function SubtreeAutopilotCard({
 }) {
   const qc = useQueryClient();
   const kind = workItemTypeLabel(workItemType).toLowerCase();
-  const [draft, setDraft] = useState<{ ticketId: string; parallel: number } | null>(null);
 
   const query = useQuery({
     queryKey: subtreeAutopilotKey(ticketId),
@@ -99,10 +97,7 @@ export function SubtreeAutopilotCard({
   const change = useMutation({
     meta: { errorTitle: "Change the autopilot" },
     mutationFn: (body: { enabled?: boolean; max_parallel?: number }) => api.setTicketAutopilot(ticketId, body),
-    onSuccess: (next) => {
-      qc.setQueryData(subtreeAutopilotKey(ticketId), next);
-      setDraft(null);
-    },
+    onSuccess: (next) => qc.setQueryData(subtreeAutopilotKey(ticketId), next),
   });
 
   const view = query.data;
@@ -131,8 +126,6 @@ export function SubtreeAutopilotCard({
   }
 
   const { autopilot, running_above: runningAbove } = view;
-  const parallel = draft?.ticketId === ticketId ? draft.parallel : autopilot.max_parallel;
-  const parallelChanged = parallel !== autopilot.max_parallel;
   const toggleTitle = !autopilot.available
     ? "The autopilot does not run on a sandbox server"
     : autopilot.enabled
@@ -152,9 +145,11 @@ export function SubtreeAutopilotCard({
           <Select
             aria-label="Most items the autopilot runs at once"
             className="subtree-autopilot-select"
-            value={String(parallel)}
+            value={String(autopilot.max_parallel)}
             disabled={busy}
-            onChange={(e) => setDraft({ ticketId, parallel: Number(e.target.value) })}
+            // Saved on pick: a draft held until "Update" was dropped by "Turn on",
+            // so the select showed 1 while the autopilot ran 2.
+            onChange={(e) => change.mutate({ max_parallel: Number(e.target.value) })}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -162,17 +157,6 @@ export function SubtreeAutopilotCard({
               </option>
             ))}
           </Select>
-          {parallelChanged ? (
-            <Button
-              variant="secondary"
-              compact
-              disabled={busy}
-              title={`Run at most ${parallel} at once`}
-              onClick={() => change.mutate({ max_parallel: parallel })}
-            >
-              Update
-            </Button>
-          ) : null}
           <Button
             variant={autopilot.enabled ? "secondary" : "primary"}
             compact

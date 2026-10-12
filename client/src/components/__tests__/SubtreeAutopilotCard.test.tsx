@@ -73,19 +73,21 @@ test("turning it on sends the switch and shows what it starts next", async () =>
   expect(onOpen).toHaveBeenCalledWith("t2");
 });
 
-test("the parallel cap applies only on Update", async () => {
+test("picking a parallel cap saves it, so turning on cannot drop it", async () => {
   mockApi.ticketAutopilot.mockResolvedValue(view());
-  mockApi.setTicketAutopilot.mockResolvedValue(view({}, { max_parallel: 6 }));
+  mockApi.setTicketAutopilot
+    .mockResolvedValueOnce(view({}, { max_parallel: 1 }))
+    .mockResolvedValueOnce(view({}, { max_parallel: 1, enabled: true }));
   renderCard();
 
   const select = await screen.findByRole("combobox", { name: "Most items the autopilot runs at once" });
-  expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
-  await userEvent.selectOptions(select, "6");
-  expect(mockApi.setTicketAutopilot).not.toHaveBeenCalled();
+  await userEvent.selectOptions(select, "1");
+  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { max_parallel: 1 });
+  await waitFor(() => expect(select).toHaveValue("1"));
 
-  await userEvent.click(screen.getByRole("button", { name: "Update" }));
-  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { max_parallel: 6 });
-  await waitFor(() => expect(screen.queryByRole("button", { name: "Update" })).toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "Turn on" }));
+  await screen.findByRole("button", { name: "Turn off" });
+  expect(select).toHaveValue("1");
 });
 
 test("a long waiting list is cut short and points at the child tickets", async () => {

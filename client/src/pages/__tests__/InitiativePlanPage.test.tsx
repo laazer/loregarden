@@ -410,21 +410,24 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
 });
 
-test("the parallel cap changes only on Update", async () => {
-  mockApi.setAutopilot.mockResolvedValue(plan({ autopilot: { ...plan().autopilot, max_parallel: 8 } }));
+test("picking a parallel cap saves it, so turning on cannot drop it", async () => {
+  const capped = plan({ autopilot: { ...plan().autopilot, max_parallel: 1 } });
+  mockApi.setAutopilot
+    .mockResolvedValueOnce(capped)
+    .mockResolvedValueOnce(plan({ autopilot: { ...capped.autopilot, enabled: true } }));
   const user = userEvent.setup();
   renderPage();
 
   const panel = await screen.findByRole("region", { name: "Autopilot" });
-  const update = within(panel).getByRole("button", { name: "Update" });
-  expect(update).toBeDisabled();
+  const select = within(panel).getByRole("combobox", { name: /Most tickets/ });
+  await user.selectOptions(select, "1");
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 1 }));
+  await waitFor(() => expect(select).toHaveValue("1"));
 
-  await user.selectOptions(within(panel).getByRole("combobox", { name: /Most tickets/ }), "8");
-  expect(mockApi.setAutopilot).not.toHaveBeenCalled();
-
-  await user.click(update);
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 8 }));
-  await waitFor(() => expect(within(panel).getByRole("button", { name: "Update" })).toBeDisabled());
+  await user.click(within(panel).getByRole("button", { name: "Turn on" }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenLastCalledWith("init1", { enabled: true }));
+  await within(panel).findByRole("button", { name: "Turn off" });
+  expect(select).toHaveValue("1");
 });
 
 test("a paused autopilot says why", async () => {

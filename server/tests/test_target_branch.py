@@ -2,19 +2,24 @@
 
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    RunStatus,
     Ticket,
     WorkItemType,
     Workspace,
 )
+from loregarden.services import integration_merge_agent
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.integration_conflict_card import report_integration_conflict
+from loregarden.services.integration_merge_agent import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import (
     IntegrationConflictError,
     TargetBranchError,
@@ -452,3 +457,182 @@ def test_a_squash_merged_branch_with_one_more_commit_is_not_reset(
 
     assert _git(["rev-parse", SQUASHED], cwd=repo) == tip
     assert len(_pending_cards(db_session, milestone)) == 1
+
+
+# --- an integration branch the base conflicts with is merged by an agent -------------
+#
+# init-pre-tinkercg-3: #578/#583/#592 changed three files on `main` that the
+# milestone's integration branch had also changed. Every ticket the autopilot
+# dispatched in that tree blocked two seconds in, the autopilot paused itself,
+# and the only way forward was a person merging by hand.
+
+MERGED = "integration/ms-mg"
+
+
+@pytest.fixture
+def conflicted(db_session: Session, workspace: Workspace, repo: Path):
+    """Milestone ``ms-mg`` whose integration branch and ``main`` both rewrote one line."""
+    milestone = _ticket(db_session, workspace, "ms-mg", work_item_type=WorkItemType.MILESTONE)
+    child = _ticket(db_session, workspace, "tk-mg", parent=milestone)
+    assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == MERGED
+    tip = _commit(repo, MERGED, {"shared.txt": "branch side\n"}, "branch side")
+    _commit(repo, "main", {"shared.txt": "main side\n"}, "main side")
+    return milestone, child, tip
+
+
+def _resolving(content: str = "branch side\nmain side\n"):
+    """A merge turn that keeps both sides and commits."""
+
+    def turn(*_args, tree: Path, **_kwargs) -> str:
+        (tree / "shared.txt").write_text(content, encoding="utf-8")
+        _git(["add", "shared.txt"], cwd=tree)
+        _git(["commit", "--no-edit"], cwd=tree)
+        return "Kept both sides."
+
+    return turn
+
+
+def _giving_up(*_args, **_kwargs) -> str:
+    return "This needs a person: both sides rewrote the same line for different reasons."
+
+
+def _merge_runs(db_session: Session, milestone: Ticket) -> list[AgentRun]:
+    return list(
+        db_session.exec(
+            select(AgentRun).where(
+                AgentRun.ticket_id == milestone.id, AgentRun.stage_key == INTEGRATION_MERGE_STAGE
+            )
+        ).all()
+    )
+
+
+def test_a_conflict_is_merged_by_the_agent_and_the_ticket_starts(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    milestone, child, tip = conflicted
+    main_tip = _git(["rev-parse", "main"], cwd=repo)
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_resolving()):
+        assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == MERGED
+
+    merged = _git(["rev-parse", MERGED], cwd=repo)
+    _git(["merge-base", "--is-ancestor", tip, merged], cwd=repo)
+    _git(["merge-base", "--is-ancestor", main_tip, merged], cwd=repo)
+    assert _git(["show", f"{MERGED}:shared.txt"], cwd=repo) == "branch side\nmain side"
+    assert _pending_cards(db_session, milestone) == []
+    [run] = _merge_runs(db_session, milestone)
+    assert (run.status, run.start_head_sha, run.stdout) == (
+        RunStatus.SUCCEEDED,
+        tip,
+        "Kept both sides.",
+    )
+    assert len(_git(["worktree", "list"], cwd=repo).splitlines()) == 1, "the merge tree is removed"
+
+
+def test_a_turn_that_leaves_the_merge_unfinished_moves_nothing_and_asks_a_person(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    milestone, child, tip = conflicted
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_giving_up):
+        with pytest.raises(IntegrationConflictError, match="without committing the merge"):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", MERGED], cwd=repo) == tip
+    [card] = _pending_cards(db_session, milestone)
+    assert "An agent tried the merge first" in card.impact
+    [run] = _merge_runs(db_session, milestone)
+    assert run.status == RunStatus.FAILED
+    assert "This needs a person" in run.stdout
+
+
+def test_committed_conflict_markers_are_refused(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    _, child, tip = conflicted
+    markers = "<<<<<<< HEAD\nbranch side\n=======\nmain side\n>>>>>>> main\n"
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_resolving(markers)):
+        with pytest.raises(IntegrationConflictError, match="conflict markers were committed"):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", MERGED], cwd=repo) == tip
+
+
+def test_failed_turns_stop_at_the_attempt_cap_for_that_tip(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    milestone, child, _ = conflicted
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_giving_up) as turn:
+        for _ in range(3):
+            with pytest.raises(IntegrationConflictError):
+                resolve_target_branch(db_session, child, workspace, repo_root=repo)
+        # The default `max_conflict_resolve_attempts` is 2.
+        assert turn.call_count == 2
+
+        [card] = _pending_cards(db_session, milestone)
+        assert "2 automatic merge attempt(s)" in card.impact
+
+        # A new landing is a new tip, and a new budget.
+        _commit(repo, MERGED, {"shared.txt": "branch side again\n"}, "branch again")
+        with pytest.raises(IntegrationConflictError):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+        assert turn.call_count == 3
+
+
+def test_the_switch_off_leaves_the_conflict_for_a_person(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    milestone, child, _ = conflicted
+    milestone.git_automation_json = '{"auto_resolve_conflicts": false}'
+    db_session.add(milestone)
+    db_session.commit()
+
+    with mock.patch.object(integration_merge_agent, "_run_agent") as turn:
+        with pytest.raises(IntegrationConflictError, match="auto_resolve_conflicts is off"):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    turn.assert_not_called()
+    assert _merge_runs(db_session, milestone) == []
+
+
+def test_a_caller_that_can_run_stale_skips_the_turn(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    _, child, _ = conflicted
+
+    with mock.patch.object(integration_merge_agent, "_run_agent") as turn:
+        with pytest.raises(IntegrationConflictError):
+            resolve_target_branch(
+                db_session, child, workspace, repo_root=repo, merge_conflicts=False
+            )
+
+    turn.assert_not_called()
+
+
+def test_a_sibling_landing_during_the_turn_is_kept(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    """The branch moves by compare-and-swap: a landing made while the agent
+    worked is never overwritten by the merge."""
+    milestone, child, _ = conflicted
+    resolve = _resolving()
+    landed: list[str] = []
+
+    def turn_with_a_landing(*args, tree: Path, **kwargs) -> str:
+        sibling = repo.parent / "sibling"
+        _git(["worktree", "add", "-q", str(sibling), MERGED], cwd=repo)
+        (sibling / "sibling.txt").write_text("landed\n", encoding="utf-8")
+        _git(["add", "."], cwd=sibling)
+        _git(["commit", "-qm", "sibling landed"], cwd=sibling)
+        _git(["worktree", "remove", "--force", str(sibling)], cwd=repo)
+        landed.append(_git(["rev-parse", MERGED], cwd=repo))
+        return resolve(*args, tree=tree, **kwargs)
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=turn_with_a_landing):
+        with pytest.raises(IntegrationConflictError, match="moved while the merge ran"):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", MERGED], cwd=repo) == landed[0]
+    assert _merge_runs(db_session, milestone)[0].status == RunStatus.FAILED
