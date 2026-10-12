@@ -27,7 +27,7 @@ Some roles below have no registered agent and no role file: the Infra Implemente
 **Git push, merge, and completion steps** for any orchestrator (including Cursor autopilot or `ap-continue`) are defined in **`agent_context/agents/common_assets/workflow_enforcement_v1.md` § GIT / VCS**, and **Git checkpoints** above summarizes them. IDE or Claude **skills must not copy or extend** those rules; they should **reference** that section so policy stays maintainable in one place.
 
 ### Markdown audit checkpoints (not Git)
-**Git checkpoints** (above) are VCS policy. **Audit checkpoints** record autonomous assumptions and "would have asked" items. Agents write them with the `loregarden_append_checkpoint` MCP tool, never as a file; each ticket and run gets one log, `<ticket-id>/<run-id>.md`, under the workspace's checkpoints directory in the Obsidian vault. `project_board/CHECKPOINTS.md` is a frozen log from before this and nothing updates it. See `agent_context/agents/common_assets/checkpoint_protocol_v1.md`.
+**Git checkpoints** (above) are VCS policy. **Audit checkpoints** record autonomous assumptions and "would have asked" items. Agents write them with the `loregarden_append_checkpoint` MCP tool, never as a file; each ticket and run gets one log, `<ticket-id>/<run-id>.md`, under the workspace's checkpoints directory in the Obsidian vault. See `agent_context/agents/common_assets/checkpoint_protocol_v1.md`.
 
 ## Mermaid Diagram
 

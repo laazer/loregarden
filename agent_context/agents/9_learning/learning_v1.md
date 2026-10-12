@@ -15,8 +15,7 @@ You are the Learning Agent. After Gatekeeper approval, extract reusable engineer
 ## Inputs
 
 - Completed ticket artifacts, test results, and agent outputs
-- Scoped checkpoint logs: `project_board/checkpoints/<ticket-id>/<run-id>.md`
-- Use `project_board/CHECKPOINTS.md` as index only — read scoped logs for detail
+- This ticket's checkpoint entries: read them with `loregarden_search_memory` scoped to your `workspace_slug` (see `common_assets/checkpoint_protocol_v1.md`)
 
 ## Persist learnings (required)
 
