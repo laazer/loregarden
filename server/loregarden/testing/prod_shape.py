@@ -26,6 +26,10 @@ from loregarden.models.domain import (
     AgentRun,
     Artifact,
     ArtifactKind,
+    AutoFixAttempt,
+    AutoFixStatus,
+    CIRunResult,
+    CIStatus,
     InitiativeMember,
     MonitorArtifactKind,
     RunStatus,
@@ -204,6 +208,7 @@ class ProdShapeSummary(BaseModel):
     memory_records: dict[str, int]
     worked_runs: int
     worked_artifacts: int
+    ci_attempts: int
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -386,6 +391,7 @@ def build_prod_shape(
     worked_runs, worked_artifacts = _add_worked_history(
         session, all_tickets, random.Random(_RNG_SEED + 1)
     )
+    ci_attempts = _add_ci_history(session, all_tickets)
     memory = {}
     if graph_path is not None:
         for slug, count in CALIBRATION.memory.items():
@@ -404,6 +410,7 @@ def build_prod_shape(
         memory_records=memory,
         worked_runs=worked_runs,
         worked_artifacts=worked_artifacts,
+        ci_attempts=ci_attempts,
     )
 
 
@@ -730,3 +737,106 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
             created_at=row["at"],
         )
     return run_n, len(system) + len(work)
+
+
+#: Live had 0 CI results and 0 auto-fix attempts on 2026-10-12, the day the loop
+#: began to run, so there is nothing to calibrate from yet. The scenario carries
+#: one ticket at the loop's limit instead: four commits, ci_retry_limit (3)
+#: charged fix turns, and a refusal between them, ending green. Each entry is a
+#: commit's result and the attempts it armed: (status, summary, completed after).
+_CI_FAILURE = "1 failing check(s): server-tests"
+_CI_HISTORY: list[tuple[CIStatus, str | None, list[tuple[AutoFixStatus, int, str]]]] = [
+    (
+        CIStatus.FAILING,
+        _CI_FAILURE,
+        [(AutoFixStatus.FAILED, 1, "CI failing at {next} after the fix")],
+    ),
+    (
+        CIStatus.FAILING,
+        "2 failing check(s): server-tests, client-tests",
+        [
+            (
+                AutoFixStatus.REFUSED,
+                2,
+                "the pull request's head {sha} is not the local loregarden/{ext} ({next}); "
+                "a fix built here would not apply to it",
+            ),
+            (AutoFixStatus.FAILED, 2, "the fix turn finished without a new commit"),
+        ],
+    ),
+    (
+        CIStatus.FAILING,
+        _CI_FAILURE,
+        [(AutoFixStatus.SUCCEEDED, 3, "CI passing at {next} after the fix")],
+    ),
+    (CIStatus.PASSING, None, []),
+]
+
+
+def ci_history_ticket(session: Session) -> str | None:
+    """The ticket carrying the scenario's CI history, once it is built."""
+    result = session.get(CIRunResult, prod_shape_id("ci-result", 0))
+    return result.ticket_id if result else None
+
+
+def _add_ci_history(session: Session, tickets: list) -> int:
+    """A standalone done ticket's CI results and auto-fix attempts; returns the attempts.
+
+    Standalone, because only a ticket that publishes its own branch gets fix
+    turns: a tree's tickets ship in its integration branch's PR.
+    """
+    workspace_id = session.get(
+        Ticket, next(row[1] for row in tickets if row[0] == "loregarden")
+    ).workspace_id
+    ticket = make_ticket(
+        session,
+        workspace_id=workspace_id,
+        ticket_id=prod_shape_id("ci-ticket", 0),
+        external_id="lg-900",
+        title="Retry flaky CI on the ticket's own pull request",
+        work_item_type=WorkItemType.BUG,
+        state=TicketState.DONE,
+        # Before the three-week pace window the sprint forecast reads, so the
+        # history does not move the scenario's throughput.
+        resolved_at=_EPOCH - timedelta(days=1),
+    )
+    ticket_id = ticket.id
+    shas = [prod_shape_id("ci-sha", n).replace("-", "") for n in range(len(_CI_HISTORY) + 1)]
+    clock = _EPOCH + timedelta(days=12)
+    attempts = 0
+    for n, (status, summary, armed) in enumerate(_CI_HISTORY):
+        session.merge(
+            CIRunResult(
+                id=prod_shape_id("ci-result", n),
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket_id,
+                status=status,
+                provider="github_actions",
+                head_sha=shas[n],
+                pr_number=812,
+                logs_url="https://github.com/laazer/loregarden/pull/812",
+                failure_summary=summary,
+                created_at=clock,
+                updated_at=clock + timedelta(minutes=9),
+            )
+        )
+        for attempt_status, number, text in armed:
+            started = clock + timedelta(minutes=10 + attempts)
+            session.merge(
+                AutoFixAttempt(
+                    id=prod_shape_id("ci-attempt", attempts),
+                    ci_run_result_id=prod_shape_id("ci-result", n),
+                    attempt_number=number,
+                    status=attempt_status,
+                    result_summary=text.format(
+                        sha=shas[n][:12], next=shas[n + 1][:12], ext=ticket.external_id
+                    ),
+                    created_at=started,
+                    completed_at=started
+                    + timedelta(minutes=0 if attempt_status is AutoFixStatus.REFUSED else 31),
+                )
+            )
+            attempts += 1
+        clock += timedelta(hours=2)
+    session.commit()
+    return attempts
