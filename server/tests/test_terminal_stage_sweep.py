@@ -24,7 +24,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.target_branch import resolve_target_branch
-from loregarden.services.terminal_stage_sweep import finish_parked_terminal_tickets
+from loregarden.services.terminal_stage_sweep import (
+    finish_parked_terminal_tickets,
+    finish_tickets_whose_landing_cleared,
+)
 from sqlmodel import Session
 from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
 
@@ -188,3 +191,18 @@ def test_a_ticket_still_short_of_its_terminal_stage_is_not_finished(session, par
     assert finish_parked_terminal_tickets(session) == []
     session.refresh(parked)
     assert parked.state == TicketState.IN_PROGRESS
+
+
+@pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
+def test_the_cleared_landing_sweep_skips_a_blocked_initiative(session):
+    """An initiative has no workspace, so nothing to land; the sweep must not look one up."""
+    initiative = Ticket(
+        external_id="lg-init-1",
+        title="Initiative",
+        work_item_type=WorkItemType.INITIATIVE,
+        state=TicketState.BLOCKED,
+    )
+    session.add(initiative)
+    session.commit()
+
+    assert finish_tickets_whose_landing_cleared(session) == []
