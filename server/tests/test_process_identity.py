@@ -71,6 +71,12 @@ def test_a_dead_process_has_no_identity():
     assert identify(2147483000) == IdentityReading(ProcessState.GONE)
 
 
+def test_a_zombie_has_no_identity(zombie_pid):
+    """Exited but unreaped still holds the pid, and `ps` still prints its start
+    time. A tmux pane its server never reaped read as a live agent forever."""
+    assert identify(zombie_pid) == IdentityReading(ProcessState.GONE)
+
+
 def test_two_processes_do_not_share_a_fingerprint():
     """The property the whole module rests on: start time separates them."""
     child = subprocess.Popen(["sleep", "30"])

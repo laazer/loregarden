@@ -67,6 +67,7 @@ from loregarden.services.run_output_files import (
     paths_for,
     recorded_exit_status,
     run_file_stem,
+    tmux_argv,
     tmux_session_name,
     write_env_file,
 )
@@ -130,7 +131,7 @@ def _spawn(
 
 def _kill_session(stem: str) -> None:
     subprocess.run(
-        ["tmux", "kill-session", "-t", tmux_session_name(stem)],
+        tmux_argv("kill-session", "-t", tmux_session_name(stem)),
         capture_output=True,
         check=False,
     )
@@ -182,7 +183,7 @@ def stale_tmux_server_fixture():
     """
     decoy = f"lg-stale-server-decoy-{uuid4().hex[:8]}"
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", decoy, "sh", "-c", "sleep 300"],
+        tmux_argv("new-session", "-d", "-s", decoy, "sh", "-c", "sleep 300"),
         env={**{RUN_ID_ENV: POISON_RUN_ID}, "PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": "/tmp"},
         capture_output=True,
         check=True,
@@ -190,7 +191,7 @@ def stale_tmux_server_fixture():
     try:
         yield
     finally:
-        subprocess.run(["tmux", "kill-session", "-t", decoy], capture_output=True, check=False)
+        subprocess.run(tmux_argv("kill-session", "-t", decoy), capture_output=True, check=False)
 
 
 # --- AC1 / AC18: the pane runs under THIS run's identity ---------------------
@@ -373,7 +374,7 @@ def test_a_tmux_pane_receives_its_secrets_without_putting_them_in_argv(stale_tmu
             extra_env={SECRET_ENV: SECRET_VALUE},
         )
         listed = subprocess.run(
-            ["tmux", "list-panes", "-t", tmux_session_name(stem), "-F", "#{pane_start_command}"],
+            tmux_argv("list-panes", "-t", tmux_session_name(stem), "-F", "#{pane_start_command}"),
             capture_output=True,
             text=True,
             check=False,
