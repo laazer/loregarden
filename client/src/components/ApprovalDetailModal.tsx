@@ -17,6 +17,8 @@ export function ApprovalDetailModal({
   onApprove,
   onRecheck,
   onReject,
+  onIgnore,
+  hasDuplicate,
   onOpenApprovalsTab,
 }: {
   open: boolean;
@@ -26,6 +28,8 @@ export function ApprovalDetailModal({
   onApprove: (payload?: ApprovalResolvePayload) => void;
   onRecheck?: (payload?: ApprovalResolvePayload) => void;
   onReject: (payload?: ApprovalResolvePayload) => void;
+  onIgnore?: (reason: string) => void;
+  hasDuplicate?: boolean;
   onOpenApprovalsTab?: () => void;
 }) {
 
@@ -55,6 +59,8 @@ export function ApprovalDetailModal({
           onApprove={onApprove}
           onRecheck={onRecheck}
           onReject={onReject}
+          onIgnore={onIgnore}
+          hasDuplicate={hasDuplicate}
           onInspect={onOpenApprovalsTab}
           inspectLabel="Open Approvals tab"
         />

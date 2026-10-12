@@ -30,6 +30,22 @@ class ApprovalResolutionAction(StrEnum):
     APPROVE = "approve"
     RECHECK = "recheck"
     REJECT = "reject"
+    #: Dismiss with a reason; see `ApprovalStatus.IGNORED`.
+    IGNORE = "ignore"
+
+
+class IgnoreEffect(StrEnum):
+    """What ignoring a pending approval does to whatever is waiting on it.
+
+    Decided by the server so the inbox can warn before the click, not after.
+    """
+
+    #: Nothing waits: a human-action card, or a gate on a finished ticket.
+    NONE = "none"
+    #: A live agent is blocked on the prompt; it gets a denial.
+    DENIES_AGENT = "denies_agent"
+    #: A stage is parked on it; the stage is answered as Reject answers it.
+    DECLINES_STAGE = "declines_stage"
 
 
 class RuntimeAvailability(StrEnum):

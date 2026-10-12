@@ -73,6 +73,9 @@ _ENGINE_BINDINGS = (
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
     "loregarden.services.github_push_on_edit.engine",
+    # The CI poll loop and the webhook's poll-now open their own sessions.
+    "loregarden.services.ci_poll_scheduler.engine",
+    "loregarden.api.ci.engine",
 )
 
 

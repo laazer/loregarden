@@ -71,16 +71,19 @@ export function TicketTimeline({
     [ledger.data?.visits, feed.data?.items],
   );
 
-  if (ledger.isPending || feed.isPending) {
+  // The stages come from the ledger alone; the feed only hangs outputs on them.
+  // The feed is the heavier read, so a done ticket's stages are not held behind
+  // it — except before any run, where the feed's outputs are all there is.
+  const noVisits = (ledger.data?.visits.length ?? 0) === 0;
+  if (ledger.isPending || (noVisits && feed.isPending)) {
     return <PaneSkeleton variant="list" rows={6} label="Loading timeline…" />;
   }
-  if (ledger.isError || feed.isError) {
-    const failed = ledger.isError ? "run ledger" : "artifact feed";
+  if (ledger.isError) {
     return (
       <div className="ap-state" role="alert">
-        <div className="ap-state-title">Could not load this ticket&rsquo;s {failed}</div>
-        <div className="ap-state-body">{describeError(ledger.error ?? feed.error, "The request failed.")}</div>
-        <Button variant="secondary" compact onClick={() => void (ledger.isError ? ledger.refetch() : feed.refetch())}>
+        <div className="ap-state-title">Could not load this ticket&rsquo;s run ledger</div>
+        <div className="ap-state-body">{describeError(ledger.error, "The request failed.")}</div>
+        <Button variant="secondary" compact onClick={() => void ledger.refetch()}>
           Try again
         </Button>
       </div>
@@ -96,6 +99,21 @@ export function TicketTimeline({
   return (
     <div className="tl">
       <Attention ticket={ticket} runs={runs} pendingApprovals={pendingApprovals} onOpenRunLog={onOpenRunLog} />
+
+      {feed.isError ? (
+        <div className="tl-feed-note" role="alert">
+          <span>
+            Could not load what each stage produced: {describeError(feed.error, "The request failed.")}
+          </span>
+          <Button variant="secondary" compact onClick={() => void feed.refetch()} disabled={feed.isFetching}>
+            Try again
+          </Button>
+        </div>
+      ) : feed.isPending ? (
+        <div className="tl-feed-note" role="status">
+          Loading what each stage produced…
+        </div>
+      ) : null}
 
       {nothingYet ? (
         <div className="ap-state">

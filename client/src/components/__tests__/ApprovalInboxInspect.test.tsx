@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { api, type Approval } from "../../api/client";
 import { setRouterNavigate } from "../../lib/routerBridge";
@@ -53,33 +53,42 @@ describe("ApprovalInboxPanel inspect target", () => {
     act(() => useUiStore.getState().setInboxOpen(false));
   });
 
-  it("sends a human sign-off to the Approvals tab", async () => {
-    mockApi.approvals.mockResolvedValue([approval()]);
-    renderInbox();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Approvals tab" }));
-
-    expect(navigate).toHaveBeenCalledWith("/tickets/ticket_1/approvals", { replace: false });
-  });
-
-  it("sends a checklist-bearing permission to the Approvals tab too", async () => {
-    mockApi.approvals.mockResolvedValue([
+  it.each([
+    ["a human sign-off", approval()],
+    [
+      "a checklist-bearing permission",
       approval({ kind: "cli_permission", tool_name: "Bash", checklist: ["Play the level"] }),
-    ]);
-    renderInbox();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Approvals tab" }));
-
-    expect(navigate).toHaveBeenCalledWith("/tickets/ticket_1/approvals", { replace: false });
-  });
-
-  it("leaves a plain permission on the diff", async () => {
-    mockApi.approvals.mockResolvedValue([approval({ kind: "cli_permission", tool_name: "Bash" })]);
+    ],
+    // These two used to land on the Diff tab, where the card is nowhere on screen.
+    ["a plain permission", approval({ kind: "cli_permission", tool_name: "Bash" })],
+    ["a human-action card", approval({ kind: "human_action", stage_key: "", stage_name: "" })],
+  ])("sends %s to the Approvals tab", async (_label, card) => {
+    mockApi.approvals.mockResolvedValue([card]);
     renderInbox();
 
     fireEvent.click(await screen.findByRole("button", { name: "Inspect" }));
 
-    expect(navigate).toHaveBeenCalledWith("/tickets/ticket_1/diff", { replace: false });
+    expect(navigate).toHaveBeenCalledWith("/tickets/ticket_1/approvals", { replace: false });
+  });
+
+  it("ignores a card with the chosen reason", async () => {
+    mockApi.approvals.mockResolvedValue([approval({ kind: "human_action" })]);
+    mockApi.resolveApproval.mockResolvedValue({ id: "appr_1", status: "ignored" });
+    renderInbox();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ignore" }));
+    const dialog = await screen.findByRole("dialog", { name: /ignore this approval/i });
+    const confirm = within(dialog).getByRole("button", { name: "Ignore" });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(mockApi.resolveApproval).toHaveBeenCalledWith("appr_1", {
+        action: "ignore",
+        response: "Duplicate",
+      }),
+    );
   });
 
   it("opens the clamped card in a modal", async () => {

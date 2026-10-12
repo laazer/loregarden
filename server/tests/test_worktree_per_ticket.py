@@ -11,10 +11,29 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from loregarden.models.domain import Ticket, Workspace, WorktreeState
+from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.models.domain import (
+    RunStatus,
+    StageStatus,
+    Ticket,
+    WorkItemType,
+    Workspace,
+    WorktreeState,
+)
+from loregarden.services.parallel_stage import prepare_tree_for_parallel_stage
+from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
-from tests.worktree_helpers import head_branch, make_repo, make_run, make_ticket
+from tests.worktree_helpers import (
+    at_terminal_stage,
+    commit_on,
+    git,
+    head_branch,
+    make_repo,
+    make_run,
+    make_ticket,
+)
 
 
 @pytest.fixture(name="session")
@@ -169,3 +188,385 @@ def test_linking_is_best_effort_when_the_parent_has_nothing_installed(
 
     assert worktree is not None
     assert not (Path(worktree.worktree_path) / "client" / "node_modules").exists()
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-779 (B): an existing worktree picks up a prerequisite that
+# landed after the tree was cut.
+#
+# 769 added the target-branch refresh (`git_branch._refresh_onto`, reached
+# through `ensure_ticket_branch(start_point=...)`), but both dispatch paths
+# skipped the call entirely when the run executed in the ticket's own worktree.
+# `test_cut_from_target.py` covers the refresh on *creation*; the reuse path
+# above returns the existing tree untouched, so a dependent whose prerequisite
+# landed mid-flight never saw that work until a brand-new worktree was cut.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="milestone")
+def milestone_fixture(session, workspace):
+    """A milestone parent, which is what gives the ticket an integration branch.
+
+    `target_branch_name` returns the base branch for a ticket that is its own
+    subtree root, so a parentless ticket would refresh from `main` and never
+    exercise the branch a sibling's work actually lands on.
+    """
+    ms = Ticket(
+        external_id="LG-MS",
+        workspace_id=workspace.id,
+        title="Milestone",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    session.add(ms)
+    session.commit()
+    session.refresh(ms)
+    return ms
+
+
+@pytest.fixture(name="dependent")
+def dependent_fixture(session, workspace, milestone):
+    ticket = Ticket(
+        external_id="LG-9",
+        workspace_id=workspace.id,
+        title="Dependent",
+        branch="loregarden/lg-9-dependent",
+        parent_ticket_id=milestone.id,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def _sha(cwd, ref="HEAD") -> str:
+    return git(cwd, "rev-parse", ref).stdout.strip()
+
+
+def _ancestor(cwd, ancestor: str, descendant: str) -> bool:
+    from loregarden.services.git_subprocess import scrubbed_git_env
+
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=cwd,
+            env=scrubbed_git_env(),
+        ).returncode
+        == 0
+    )
+
+
+def _dispatch(session, workspace, ticket, code: str, *, skip_git_branch: bool = False):
+    """One stage dispatch's tree preparation, as the single-agent path does it.
+
+    ``skip_git_branch`` is the flag the parallel driver passes its members
+    (`_run_and_collect_parallel_results`), which is why it is a parameter here:
+    it is the one skip AC4 keeps, and a test has to be able to ask for it.
+    """
+    return CliAgentExecutor(session)._prepare_tree(
+        make_run(session, workspace, ticket, code),
+        ticket,
+        workspace,
+        workspace_root=Path(workspace.repo_path),
+        skip_git_branch=skip_git_branch,
+        advance_workflow=False,
+    )
+
+
+def _existing_worktree(session, workspace, ticket) -> Path:
+    """The ticket's worktree, cut by a first dispatch and holding its own commit.
+
+    The state every test below starts from: a tree that already exists, so the
+    refresh-on-creation path cannot be what makes the assertion pass.
+    """
+    root, stopped = _dispatch(session, workspace, ticket, "r1")
+    assert stopped is None
+    assert root != Path(workspace.repo_path), "the first dispatch must cut a worktree"
+    (root / "own.txt").write_text("the ticket's own earlier stage\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "stage one")
+    return root
+
+
+def test_an_existing_worktree_picks_up_a_prerequisite_that_landed_since_it_was_cut(
+    session, workspace, dependent, repo
+):
+    """AC4/AC11. The commit must be reachable from the worktree's HEAD after the
+    next dispatch — not after the tree is thrown away and re-cut."""
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    assert not (root / "sibling.txt").exists(), (
+        "fixture: the worktree must not already have the work, or this proves nothing"
+    )
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None
+    assert second == root, "the ticket's stages share one tree; the refresh happens in it"
+    assert _ancestor(root, landed, "HEAD"), "the landed prerequisite is reachable from HEAD"
+    assert (root / "sibling.txt").exists()
+    assert _ancestor(root, own, "HEAD") and (root / "own.txt").exists(), (
+        "and the ticket's own earlier commits survived the refresh"
+    )
+    # S3: the integration-branch bookkeeping stays in the shared checkout, so
+    # the refresh must not have moved it off its own branch.
+    assert head_branch(repo) == "main"
+    assert head_branch(root) == dependent.branch
+
+
+def test_a_dirty_worktree_is_left_alone_and_the_stage_still_runs(
+    session, workspace, dependent, repo, caplog
+):
+    """AC5/AC11. Merging over uncommitted work is how it gets lost. The tree is
+    dirty precisely because an agent is mid-stage there, so the run proceeds
+    un-refreshed and the existing warning is the record.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    (root / "in-flight.txt").write_text("an agent is still writing this\n")
+    assert git(root, "status", "--porcelain").stdout.strip(), "fixture: the tree must be dirty"
+
+    with caplog.at_level("WARNING"):
+        second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None, "a dirty tree is not a reason to stop the stage"
+    assert second == root
+    assert (root / "in-flight.txt").read_text() == "an agent is still writing this\n", (
+        "the uncommitted work is untouched"
+    )
+    assert _ancestor(root, own, "HEAD"), "and no commit was lost"
+    assert not (root / "sibling.txt").exists(), "no merge was attempted"
+    assert any("uncommitted" in r.getMessage() for r in caplog.records), (
+        "a skipped refresh must not be silent"
+    )
+
+
+def test_a_conflicting_refresh_fails_the_run_instead_of_escaping(
+    session, workspace, dependent, repo
+):
+    """AC5. `_refresh_onto` raises `ValueError`; the single-agent path records it
+    as a failed run with the conflict named, rather than letting it escape as an
+    unhandled exception now that this path is no longer skipped."""
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    (root / "shared.txt").write_text("the ticket's version\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "ticket side")
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is not None, "a refresh that conflicts must not be swallowed"
+    assert stopped.status == RunStatus.FAILED
+    assert "could not take" in (stopped.stderr or ""), stopped.stderr
+    assert git(root, "status", "--porcelain").stdout.strip() == "", "the merge was aborted cleanly"
+    assert second == root
+
+
+def test_a_target_branch_that_cannot_take_its_base_fails_the_run_too(
+    session, workspace, dependent, repo
+):
+    """Unskipping the worktree path moves target-branch resolution onto every
+    dispatch, so an integration branch that conflicts with its base — which
+    previously escaped only on the rare shared-checkout path — must be recorded
+    on the common one rather than raised out of the executor.
+    """
+    _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    commit_on(Path(repo), target, "clash.txt", "integration side\n")
+    commit_on(Path(repo), "main", "clash.txt", "main side\n")
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is not None, "an unresolvable target branch must not escape the executor"
+    assert stopped.status == RunStatus.FAILED
+    assert "clash.txt" in (stopped.stderr or ""), stopped.stderr
+    assert second is not None
+
+
+# --- the parallel path prepares the same tree the same way ----------------------
+
+
+def test_the_parallel_path_refreshes_an_existing_worktree_onto_its_target(
+    session, workspace, dependent, repo
+):
+    """AC4(b). `prepare_tree_for_parallel_stage` returned early whenever the
+    execution root was not the workspace root, which is every worktree run."""
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    run = make_run(session, workspace, dependent, "p1")
+
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", [run]) == ""
+
+    assert _ancestor(root, landed, "HEAD"), "the members share a tree that can see the work"
+    assert _ancestor(root, own, "HEAD")
+    assert head_branch(repo) == "main", "and the shared checkout was not moved onto the branch"
+
+
+def test_the_parallel_path_blocks_the_stage_when_the_refresh_conflicts(
+    session, workspace, dependent, repo
+):
+    """AC5's other half: the same failure, recorded the way the parallel path
+    records every checkout failure — the stage blocked before any member ran."""
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    (root / "shared.txt").write_text("the ticket's version\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "ticket side")
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+    at_terminal_stage(session, dependent)
+    run = make_run(session, workspace, dependent, "p1")
+
+    message = prepare_tree_for_parallel_stage(session, dependent, "work", [run])
+
+    assert "could not take" in message, message
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status == StageStatus.BLOCKED
+    assert "could not take" in (dependent.blocking_issues or ""), dependent.blocking_issues
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-779 (B), adversarial: what the refresh must *not* do.
+#
+# Unskipping `ensure_ticket_branch` for a worktree puts a merge on every stage
+# dispatch of every ticket — the most-travelled path in the app. The tests
+# above pin that the merge happens; these pin its blast radius, because each
+# of them is a way to make them pass and still lose work.
+# ---------------------------------------------------------------------------
+
+
+def test_a_dispatch_with_nothing_new_on_the_target_moves_neither_tree(
+    session, workspace, dependent, repo
+):
+    """Idempotent, and one-directional.
+
+    Two mutants pass every test above. One merges unconditionally and leaves a
+    merge commit per stage, so a twelve-stage ticket's history is eleven
+    "Merge branch 'integration/...'" commits nobody made. The other merges the
+    wrong way and puts the ticket's unfinished work on the integration branch,
+    where its siblings would cut from it — landing is a terminal-stage
+    transition (768), and nothing before it may publish.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    before_head = _sha(root)
+    before_target = _sha(repo, target)
+    assert not _ancestor(repo, before_head, target), (
+        "fixture: the ticket's own commit must not already be on the target"
+    )
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None
+    assert second == root
+    assert _sha(root) == before_head, "nothing landed, so there was nothing to merge"
+    assert _sha(repo, target) == before_target, "and the target branch is not written to at all"
+    assert not _ancestor(repo, before_head, target), (
+        "the ticket's work reaches its target at landing, not at dispatch"
+    )
+    assert git(root, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_the_one_remaining_skip_still_skips(session, workspace, dependent, repo):
+    """AC4 removes `repo_root != workspace_root` from the skip and keeps
+    `skip_git_branch`, which is what the parallel driver passes every member
+    (`skip_git_branch=True`) *because* `prepare_tree_for_parallel_stage`
+    already did the refresh once. A mutant that drops both skips has every
+    member of a fan-out merging concurrently in one tree.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    before_head = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2", skip_git_branch=True)
+
+    assert stopped is None
+    assert second == root
+    assert _sha(root) == before_head, "the member asked for no branch work and must get none"
+    assert not _ancestor(root, landed, "HEAD")
+
+
+def test_a_worktree_left_on_another_branch_is_put_back_without_losing_its_commits(
+    session, workspace, dependent, repo
+):
+    """The ticket's branch is not where the worktree is guaranteed to be — a
+    crashed stage, a resolver, or a person can leave it elsewhere, and until
+    now no dispatch into a worktree looked. `ensure_ticket_branch` is also the
+    call that once reset an existing ticket branch to HEAD and orphaned its
+    commits (lg-milestone-that-772); it now runs on this path too, so the
+    no-loss guarantee has to hold here.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+    assert head_branch(root) != dependent.branch, "fixture: the tree starts off the branch"
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None, stopped.stderr if stopped else None
+    assert second == root
+    assert head_branch(root) == dependent.branch, "the stage runs on the ticket's branch"
+    assert _ancestor(root, own, "HEAD"), "and the ticket's earlier stages are still in it"
+    assert (root / "own.txt").exists()
+    assert _ancestor(root, landed, "HEAD")
+
+
+def test_every_member_of_a_parallel_stage_shares_the_one_refreshed_tree(
+    session, workspace, dependent, repo
+):
+    """`prepare_tree_for_parallel_stage` resolves the tree once, from `runs[0]`,
+    so that the members do not race to create it. With the early return gone
+    that single resolution is also the single refresh — a mutant that resolves
+    or refreshes per member reintroduces the race it exists to prevent.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    runs = [make_run(session, workspace, dependent, f"p{n}") for n in range(1, 4)]
+
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", runs) == ""
+
+    assert _ancestor(root, landed, "HEAD")
+    for run in runs:
+        assert resolve_execution_root(session, run, dependent, workspace) == root, (
+            f"{run.run_code} must execute in the tree that was prepared"
+        )
+    assert git(root, "rev-list", "--merges", "--count", "HEAD").stdout.strip() == "1", (
+        "one refresh for the stage, so one merge commit — not one per member"
+    )
+
+
+def test_a_conflicting_parallel_refresh_loses_nothing_in_the_worktree(
+    session, workspace, dependent, repo
+):
+    """The stage is blocked (above); this is what the operator finds in the tree
+    afterwards. A conflicted merge left half-applied is how the resolver they
+    send in next loses the ticket's side of it.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    (root / "shared.txt").write_text("the ticket's version\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "ticket side")
+    own = _sha(root)
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+    at_terminal_stage(session, dependent)
+
+    assert "could not take" in prepare_tree_for_parallel_stage(
+        session, dependent, "work", [make_run(session, workspace, dependent, "p1")]
+    )
+
+    assert git(root, "status", "--porcelain").stdout.strip() == "", (
+        "the merge was aborted, not left conflicted"
+    )
+    assert _sha(root) == own, "and the ticket's own commit is still what HEAD points at"
+    assert (root / "shared.txt").read_text() == "the ticket's version\n"
+    assert head_branch(root) == dependent.branch
