@@ -192,6 +192,8 @@ def finish_tickets_whose_landing_cleared(
     )
     query = select(Ticket).where(
         Ticket.state == TicketState.BLOCKED,
+        # An initiative has no workspace (ck_tickets_workspace_binding), so nothing to land.
+        col(Ticket.workspace_id).is_not(None),
         col(Ticket.state_locked).is_(False),
         col(Ticket.id).not_in(live_run_tickets),
         col(Ticket.id).not_in(live_orch_tickets),
