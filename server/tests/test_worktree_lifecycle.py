@@ -10,6 +10,7 @@ left for the resume path.
 import logging
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
@@ -21,11 +22,14 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services import worktree_lifecycle
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import (
     KeepReason,
     reconcile_worktrees,
     release_ticket_worktree,
+    retire_worktree,
 )
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
@@ -555,3 +559,210 @@ def test_a_checkout_whose_refs_git_cannot_list_is_never_retired(session, workspa
     assert release_ticket_worktree(session, ticket) is False
     assert (path / "work.txt").exists()
     assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+
+
+# --------------------------------------------------------------------------
+# Adversarial cover for the third premise: the question it asks git, the
+# answers it refuses to trust, where it sits in the cascade, and the shapes it
+# must *not* claim.
+# --------------------------------------------------------------------------
+
+
+def _argv(call: mock._Call) -> list[str]:
+    """The git arguments of a recorded `run_git` call, however it was passed."""
+    args = call.args[0] if call.args else call.kwargs["args"]
+    return list(args)
+
+
+#: The one question AC2 pins. Any other spelling answers 0 for the shape this
+#: module is guarding against (`--not --all` includes HEAD itself) or over-
+#: refuses a shape some ref still reaches (dropping `--tags`/`--remotes`).
+REF_REACH_ARGV = [
+    "rev-list",
+    "--count",
+    "HEAD",
+    "--not",
+    "--branches",
+    "--tags",
+    "--remotes",
+]
+
+
+def _is_ref_reach(argv: list[str]) -> bool:
+    """Loose match on "HEAD against other refs", whatever form it took.
+
+    Deliberately not `== REF_REACH_ARGV`: a stub keyed on the exact spelling
+    would quietly stop firing for a wrong one, and a test whose mutation stops
+    being applied passes for the wrong reason. `_has_preserved_commits`' own
+    `rev-list base..branch` is excluded — it has no `--not` and no bare `HEAD`.
+    """
+    return argv[:1] == ["rev-list"] and "--not" in argv and "HEAD" in argv
+
+
+def test_the_premise_asks_git_which_commits_only_this_checkout_reaches(session, workspace):
+    """The exact question, asked of the checkout, in the one form that answers it.
+
+    `--remotes` is otherwise inert under test (the fixture repos have no remote)
+    and `--tags`'s only behavioural cover is one shape, so the form itself is
+    pinned here: every near-miss spelling is wrong in a way no fixture shows.
+    `HEAD --not --all` answers 0 for this very tree because `--all` includes
+    HEAD; dropping `--branches` claims every ordinary checkout.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    _detach_and_commit(path, "more.txt")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    with mock.patch.object(worktree_lifecycle, "run_git", wraps=run_git) as spy:
+        assert release_ticket_worktree(session, ticket) is False
+
+    asked = [call for call in spy.call_args_list if _argv(call) == REF_REACH_ARGV]
+    assert len(asked) == 1, [_argv(call) for call in spy.call_args_list]
+    assert asked[0].kwargs["cwd"] == str(path)
+    assert asked[0].kwargs["check"] is False
+
+
+def test_a_ref_count_git_answers_with_something_other_than_a_number_keeps_the_tree(
+    session, workspace, caplog
+):
+    """Fail closed on a zero exit whose stdout is not a count.
+
+    The sibling premises both refuse what they cannot prove, and `--count`
+    printing something unparseable is the half of that rule no repository state
+    can reach: a broken ref makes `rev-list` exit non-zero, never exit 0 with
+    prose. So the answer is substituted directly, on an otherwise perfectly
+    retirable tree — clean, attached HEAD, a commit on the branch — leaving the
+    unreadable count as the only thing standing between it and deletion. A
+    truthy-stdout read, or `int(...)` wrapped in a swallowed except, keeps
+    nothing and deletes this tree.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    def unreadable_count(args, **kwargs):
+        if _is_ref_reach(list(args)):
+            return subprocess.CompletedProcess(
+                list(args), 0, "warning: refs/heads/wip does not point to a valid object\n", ""
+            )
+        return run_git(args, **kwargs)
+
+    with (
+        mock.patch.object(worktree_lifecycle, "run_git", side_effect=unreadable_count) as spy,
+        caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
+    ):
+        assert release_ticket_worktree(session, ticket) is False
+
+    # The substitution really was applied — otherwise this test would pass on a
+    # tree nothing was ever done to.
+    assert [call for call in spy.call_args_list if _is_ref_reach(_argv(call))]
+    assert (path / "work.txt").exists()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+    assert KeepReason.STRANDED_HEAD.value in caplog.text
+
+
+def test_a_tree_that_is_both_dirty_and_stranded_names_the_work_that_has_no_commit(
+    session, workspace, caplog
+):
+    """Order, at the top of the cascade this time.
+
+    An interrupted rebase that also left edits behind satisfies two refusals at
+    once. The one worth saying is the uncommitted work: that is what removing
+    the checkout would destroy outright, where the stranded commit survives in
+    the object store and only loses its last reference. Running the new premise
+    first would report a recoverable loss and stay silent about the total one.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    _detach_and_commit(path, "more.txt")
+    (path / "still_unsaved.txt").write_text("not committed anywhere\n")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        assert release_ticket_worktree(session, ticket) is False
+
+    assert (path / "still_unsaved.txt").exists()
+    assert (path / "more.txt").exists()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+    assert KeepReason.UNCOMMITTED.value in caplog.text
+    assert KeepReason.STRANDED_HEAD.value not in caplog.text
+
+
+def test_a_checkout_detached_at_an_ancestor_is_still_retired(session, workspace):
+    """What `git bisect` actually leaves: HEAD mid-history, not at the tip.
+
+    A bisect run checks out a commit *between* the endpoints, so the
+    detached-at-the-tip case is not the shape that leaks — this one is, and it
+    is the one an implementation that compares HEAD against the branch tip, or
+    merely asks "is HEAD detached", refuses forever. Nothing here is
+    unreachable: every commit HEAD reaches, the branch reaches too.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path, "first.txt")
+    _commit_in(path, "second.txt")
+    git(path, "checkout", "-q", "--detach", "HEAD~1")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is True
+    assert not path.exists()
+    assert _row(session, ticket).state == WorktreeState.CLEANUP.value
+
+
+@pytest.mark.parametrize("reason", list(KeepReason), ids=lambda r: r.name)
+def test_every_keep_reason_refuses_the_removal_and_says_so(session, workspace, reason, caplog):
+    """The vocabulary, not a list of branches — including members not yet written.
+
+    `retire_worktree`'s fallthrough is `cleanup_worktree`, so a `KeepReason`
+    `_keep_reason` can return and `retire_worktree` has no branch for deletes
+    the checkout it was meant to protect. Per-member `if`s pass every behavioural
+    test in this module and still hold that hazard open for the next member;
+    this parametrization grows with the enum, so the member added after this one
+    cannot fall through silently. The reason is returned rather than a bare
+    False, because the chat sweep has to report which premise fired, and the
+    refusal is logged at `warning` — below that is reported nowhere.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
+    service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
+
+    with (
+        mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=reason),
+        caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
+    ):
+        assert retire_worktree(session, service, row) is reason
+
+    service.cleanup_worktree.assert_not_called()
+    assert path.is_dir()
+    refusals = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(refusals) == 1
+    assert str(path) in refusals[0].getMessage()
+
+
+def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace):
+    """The other half of the inversion: refusing on `reason is not None` must not
+    turn into refusing everything. With every premise satisfied the removal goes
+    through, and `None` — not the service's own answer — is what says so."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
+    service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
+
+    with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
+        assert retire_worktree(session, service, row) is None
+
+    service.cleanup_worktree.assert_called_once_with(row)
+    # The stub did not actually remove it; the call is the assertion.
+    assert path.is_dir()
