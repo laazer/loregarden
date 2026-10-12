@@ -211,6 +211,15 @@
   color: var(--aml);
 }
 
+.tl-feed-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--txl);
+}
+
 /* One rail down the left; each visit hangs a dot on it. The rail's x is
    derived from the dot's, so the two cannot drift apart: head padding + dot
    margin + half the dot, minus half the rail. The head's right gutter
