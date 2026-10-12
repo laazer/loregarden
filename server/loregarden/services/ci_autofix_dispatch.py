@@ -12,10 +12,11 @@ A done ticket has no orchestration left to run that stage, so this starts one
 through the slot pool (`admit_resumes`), as the network-wait resume does. In a
 full pool the ticket waits in a lane; it is not dropped.
 
-Only a ticket that publishes its own branch is handled here. A tree root's
-pull request is on its integration branch, which the root's own worktree does
-not commit to, so a repair turn there would fix nothing the PR contains. The
-caller refuses that case before it gets here, and says why.
+A tree root's pull request is on its integration branch, which the root's
+own worktree does not commit to. The caller (`CIService.trigger_auto_fix`)
+merges the integration branch into the root's branch before calling this, and
+`publish_tree` folds the root's branch back before pushing; see
+`root_integration_sync`. From here a root is reopened like any other ticket.
 """
 
 from __future__ import annotations

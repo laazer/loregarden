@@ -10,7 +10,7 @@ ticket that is already done, it reopens the ticket for an agent to fix it.
 | Reading CI results | **Polling, by default.** Every `ci_poll_tick_seconds`, one `gh pr list` per workspace. No setup beyond a signed-in `gh`. |
 | GitHub webhook | Optional. A delivery makes that workspace poll now instead of waiting for the next tick. |
 | Auto-fix | Done tickets that publish their own branch. Bounded by `ci_retry_limit`. |
-| Tree roots (PR on `integration/<id>`) | **Not auto-fixed.** Recorded, refused with the reason, fixed by hand. |
+| Tree roots (PR on `integration/<id>`) | **Auto-fixed** on the root, the same way and under the same budget. See *Tree roots* below. |
 | GitLab, generic webhooks | **Removed.** The endpoint answers 400. |
 
 Before this, the auto-fix was a stub. It logged "Would trigger…" below the
@@ -46,13 +46,37 @@ integration branch) is matched to that ticket. Other PRs are ignored.
    passed on it, the next failure blocks the ticket at its terminal stage, with
    the failing checks in the block message.
 
+### Tree roots
+
+A tree's PR is on `integration/<root id>`, where every child landed, but the
+root's turns run on the root's own branch and landing skips a root. So before
+the repair turn, the root's branch merges the integration branch (in the
+checkout that holds it, if one does) and the point it reached is recorded as
+`refs/loregarden/tree-fix-base/<root branch>`. When the turn passes, publishing
+moves the integration branch onto the commits the turn made past that point,
+fast-forwarding where it can, and pushes it. A turn that committed nothing
+leaves the PR where it was, and its attempt fails like any other. One
+exception: when the root's worktree had been retired, recreating it merges the
+newest base into the root's branch, and that merge is folded and pushed, so CI
+runs again on it. The rest of the loop,
+including the budget and the block, is unchanged
+(`services/root_integration_sync.py`).
+
+The fix goes to the root rather than to the child whose work broke CI. A
+failing check names a test, not a culprit, and a failure can come from two
+children's work combined. A child's fix would also land without publishing,
+because only the root's completion pushes the integration branch.
+
 ### What is not fixed automatically, and why
 
 These are recorded as a `refused` attempt with the reason and logged at
 warning. They are not charged to the budget.
 
-- **Tree integration branch.** A root's repair turn commits to the root's own
-  branch, which the integration branch's PR does not contain.
+- **The root's branch cannot take the integration branch.** The checkout
+  holding it has uncommitted changes, or the merge conflicts. Nothing is
+  discarded; the merge is aborted.
+- **Unreachable branch.** The PR is on neither the ticket's own branch nor the
+  integration branch it roots.
 - **Head moved.** The PR's head is not the local branch tip, which means someone
   pushed to it from outside Loregarden. A fix built locally would not apply to it.
 - **Dispatch failed.** There is no `repair` agent, no workflow with a terminal

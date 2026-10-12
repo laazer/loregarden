@@ -19,6 +19,9 @@ nothing new on the branch publishes nothing, and neither does a branch the
 base already contains. A failure is recorded on the root ticket and emitted,
 never only logged — the tree looked finished, and this is the step that
 decides whether it is.
+
+Commits a CI repair turn made on the root's own branch are folded into the
+integration branch first, so they are what gets pushed (`root_integration_sync`).
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from loregarden.services.git_automation import AutomationResult, PublishSubject,
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import is_ancestor, rev
+from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -57,6 +61,16 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     repo_root = resolve_workspace_root(workspace)
     if subtree_root(session, ticket).id != ticket.id or not (repo_root / ".git").exists():
         return PublishOutcome(ok=True, branch="", skipped=True)
+    integration = integration_branch_for(ticket)
+    folded = fold_root_branch(repo_root, ticket, integration)
+    if folded is not None and not folded.ok:
+        failed = PublishOutcome(
+            ok=False,
+            branch=integration,
+            detail=f"the root's branch could not be folded into {integration}: {folded.detail}",
+        )
+        _emit(session, ticket, resolve_git_automation(workspace, ticket).base_branch, failed)
+        return failed
     branch, tip = published_branch(repo_root, ticket)
     if not tip:
         return PublishOutcome(ok=True, branch=branch, skipped=True)
@@ -83,6 +97,11 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         session.add(ticket)
         session.commit()
         logger.info("Published %s at %s for %s", branch, tip[:12], ticket.external_id)
+    _emit(session, ticket, config.base_branch, outcome)
+    return outcome
+
+
+def _emit(session: Session, ticket: Ticket, base_branch: str, outcome: PublishOutcome) -> None:
     event_bus.publish(
         session,
         EventType.TICKET_LANDED,
@@ -90,16 +109,15 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         ticket_id=ticket.id,
         payload={
             "ok": outcome.ok,
-            "branch": branch,
-            "target": config.base_branch,
-            "landed_sha": tip if outcome.ok else "",
+            "branch": outcome.branch,
+            "target": base_branch,
+            "landed_sha": outcome.tip if outcome.ok else "",
             "pr_url": outcome.pr_url,
             "published": True,
             "skipped": "already_published" if outcome.skipped else "",
             "detail": outcome.detail,
         },
     )
-    return outcome
 
 
 def published_branch(repo_root: Path, root: Ticket) -> tuple[str, str]:
