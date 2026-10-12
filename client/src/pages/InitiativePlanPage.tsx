@@ -6,8 +6,8 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
 import { AutopilotPanel } from "../components/initiatives/plan/AutopilotPanel";
+import { InitiativeAgentPanel } from "../components/initiatives/plan/InitiativeAgentPanel";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
-import { PlannerPanel } from "../components/initiatives/plan/PlannerPanel";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
@@ -24,18 +24,18 @@ import { useTicketRefStore } from "../state/ticketRefStore";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/plan/InitiativePlan.css";
 
-type PlanTab = "schedule" | "board" | "planner";
+type PlanTab = "schedule" | "board" | "agents";
 
 /** Past roughly three lines the brief is clamped, with a toggle to read it all. */
 const BRIEF_PREVIEW_CHARS = 240;
 
-/** Below this the planner stops being docked and becomes a tab — the same breakpoint as the layout. */
+/** Below this the agent panel stops being docked and becomes a tab — the same breakpoint as the layout. */
 const NARROW = "(max-width: 1100px)";
 
 const TAB_LABEL: Record<PlanTab, string> = {
   schedule: "Schedule",
   board: "Board",
-  planner: "Planner",
+  agents: "Agents",
 };
 
 /**
@@ -70,7 +70,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
   const narrow = useMediaQuery(NARROW);
   const [tab, setTab] = useState<PlanTab>("schedule");
   const [showBrief, setShowBrief] = useState(false);
-  const tabs: PlanTab[] = narrow ? ["schedule", "board", "planner"] : ["schedule", "board"];
+  const tabs: PlanTab[] = narrow ? ["schedule", "board", "agents"] : ["schedule", "board"];
   const activeTab = tabs.includes(tab) ? tab : "schedule";
 
   const plan = useQuery({
@@ -276,7 +276,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                   onStart={(ids) => startWork.mutateAsync(ids)}
                 />
               ) : (
-                <PlannerPanel
+                <InitiativeAgentPanel
                   initiativeId={data.id}
                   canPlan={data.milestones.length > 0}
                   replaces={scheduleToReplace(data)}
@@ -286,7 +286,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
             </div>
           </main>
           {narrow ? null : (
-            <PlannerPanel
+            <InitiativeAgentPanel
               initiativeId={data.id}
               canPlan={data.milestones.length > 0}
               replaces={scheduleToReplace(data)}
