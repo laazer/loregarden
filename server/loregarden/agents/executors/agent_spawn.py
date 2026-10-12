@@ -18,9 +18,11 @@ rather than assumed complete.
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -177,6 +179,12 @@ def _spawn_detached(wrapped: list[str], *, cwd: str, env: dict[str, str]) -> sub
 _ENV_BIN = "/usr/bin/env"
 _SH_BIN = "/bin/sh"
 
+#: How long a pane tmux has named gets to become its own session leader. The
+#: transition is the child's first syscall after `fork()`, so it normally takes
+#: microseconds; the budget is for a host so loaded the child is not scheduled.
+_PANE_SETSID_SECONDS = 10.0
+_PANE_SETSID_POLL_SECONDS = 0.001
+
 
 def _under_env(paths: RunOutputPaths, wrapped: list[str]) -> list[str]:
     """`wrapped`, prefixed so the pane runs under exactly this run's environment.
@@ -272,7 +280,7 @@ def _spawn_in_tmux(
     )
     reported = created.stdout.strip()
     if reported.isdigit():
-        return int(reported)
+        return _await_session_leader(int(reported), session)
     logger.warning(
         "tmux started session %s but reported no pane pid (%r); the agent exited before "
         "tmux could name it, so this run is supervised and settled from its .rc file "
@@ -281,6 +289,49 @@ def _spawn_in_tmux(
         reported,
     )
     return None
+
+
+def _await_session_leader(pid: int, session: str) -> int:
+    """Return `pid` once it leads its own process group, as `SpawnedAgent` promises.
+
+    `new-session -P` prints the pane pid from the tmux server straight after
+    `fork()`, while the child's `forkpty` has not necessarily reached its
+    `setsid()`. Until it does, the pane is still in the tmux *server's* group,
+    so `os.getpgid(pid)` names the server, and a stop in that window would
+    either be refused as "not ours" or — through `getpgid` — signal the server
+    and every agent's pane with it. `Popen(start_new_session=True)` closes the
+    same window for the FILE transport by not returning until the child has
+    exec'd; this does the same for tmux, so the pid is a session leader on both
+    transports by the time anyone holds it.
+
+    A pane that is already gone is returned as is: it exited after `setsid()`
+    (it ran the wrapper, which is the only thing that exits on its own), and the
+    run settles from its `.rc`.
+    """
+    deadline = time.monotonic() + _PANE_SETSID_SECONDS
+    while True:
+        try:
+            if os.getpgid(pid) == pid:
+                return pid
+        except ProcessLookupError:
+            return pid  # silent-ok: the pane already exited; its .rc settles the run
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(_PANE_SETSID_POLL_SECONDS)
+    killed = subprocess.run(
+        ["tmux", "kill-session", "-t", session], capture_output=True, text=True, check=False
+    )
+    if killed.returncode != 0:
+        logger.warning(
+            "Could not kill tmux session %s after its pane never led a group: %s",
+            session,
+            killed.stderr.strip(),
+        )
+    raise subprocess.SubprocessError(
+        f"tmux pane {pid} of session {session} did not become a session leader within "
+        f"{_PANE_SETSID_SECONDS:.0f}s; the session was killed rather than left running "
+        "with a pid no stop could reach"
+    )
 
 
 def tmux_session_gone(session: str) -> bool:
