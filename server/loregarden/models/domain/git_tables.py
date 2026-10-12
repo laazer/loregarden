@@ -50,6 +50,10 @@ class CIRunResult(SQLModel, table=True):
         sa_column=str_enum_column(CIStatus, CIStatus.PENDING, index=True),
     )
     provider: str = ""
+    #: The commit these checks ran on. One commit is one result: the poller
+    #: updates this row as checks settle and arms an auto-fix once per commit.
+    head_sha: str = ""
+    pr_number: int | None = None
     external_run_id: str | None = None
     logs_url: str | None = None
     failure_summary: str | None = None

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useActiveChatSession } from "../useActiveChatSession";
+import { useTicketRefStore } from "../../state/ticketRefStore";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../api/client", () => ({
@@ -183,6 +184,9 @@ it("binds to nothing on an initiative plan page, whose planner chat composes for
 });
 
 it("binds the planner's model, not Baxter's, on an initiative plan page", async () => {
+  const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+  useTicketRefStore.getState().remember({ id: uuid, external_id: "init-tinkercg-build-1" });
+  (api.plannerChat as jest.Mock).mockClear();
   const { result } = renderHook(() => useActiveChatSession(), {
     wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
   });
@@ -191,7 +195,21 @@ it("binds the planner's model, not Baxter's, on an initiative plan page", async 
   expect(result.current.model?.scopeLabel).toBe("Initiative planner");
   // Options come from the workspace the planner runs in, not the chat workspace.
   expect(result.current.model?.workspaceSlug).toBe("tinkercg");
-  expect(api.plannerChat).toHaveBeenCalledWith("init-tinkercg-build-1");
+  // The API is keyed by UUID; the shareable id in the path would 404.
+  expect(api.plannerChat).toHaveBeenCalledWith(uuid);
+  expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+});
+
+it("asks for no planner conversation until the initiative's shareable id resolves", () => {
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  (api.plannerChat as jest.Mock).mockClear();
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/initiatives/init-pre-tinkercg-3"),
+  });
+
+  // Still the planner's page: Baxter's composer stays off it.
+  expect(result.current.composedOnScreen).toBe(true);
+  expect(api.plannerChat).not.toHaveBeenCalled();
 });
 
 it("asks for no planner conversation off an initiative page", () => {

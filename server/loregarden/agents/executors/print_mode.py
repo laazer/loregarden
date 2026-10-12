@@ -209,13 +209,18 @@ def _kill_agent_group(spawned: SpawnedAgent) -> None:
     wrapper's group, so this is what reaches it — the same identity the detached
     stop path rests on.
 
+    The group is named by the pid itself, never looked up with `getpgid`: a pid
+    that does not lead a group would hand back whatever group it sits in — for a
+    tmux pane caught before its `setsid()`, the tmux server's, and every other
+    agent's pane with it.
+
     A run with no pid has no group left to signal; `_wrapper_exited` already
     reads it as finished, so there is nothing here to do.
     """
     if spawned.pid is None:
         return
     try:
-        os.killpg(os.getpgid(spawned.pid), signal.SIGKILL)
+        os.killpg(spawned.pid, signal.SIGKILL)
     except ProcessLookupError:
         return  # silent-ok: the group is already gone, which is the outcome asked for
     except OSError:

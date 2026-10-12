@@ -23,7 +23,7 @@ from pathlib import Path
 
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.git_merge_noco import MergeOutcome, merge_preview
+from loregarden.services.git_merge_noco import MergeOutcome, merge_preview, superseding_commit
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_conflict_card import (
     clear_integration_conflict,
@@ -102,6 +102,11 @@ def _preview(repo_root: Path, branch_sha: str, base_sha: str) -> MergeOutcome:
     cached = _PREVIEWS.get(key)
     if cached is None:
         cached = merge_preview(repo_root, branch_sha, base_sha)
+        if cached.conflicted and superseding_commit(repo_root, branch_sha, base_sha):
+            # The base already holds the branch's work (a squash merge); the next
+            # cut moves the branch to the base tip instead of merging, so there
+            # is nothing for a person to resolve.
+            cached = MergeOutcome(ok=True, sha=base_sha, already_contained=True)
         # A failed preview (git could not merge at all) is not cached: it may be
         # transient, and caching it would hide a recovery.
         if cached.ok or cached.conflicted:
