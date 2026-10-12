@@ -24,6 +24,7 @@ from loregarden.services import (
 from loregarden.services.cli_settings import ADAPTER_BINARIES
 from loregarden.services.git_subprocess import GH_BINARY_ENV, GH_USER_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
+from loregarden.services.run_output_files import tmux_argv
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
@@ -94,6 +95,25 @@ def _no_shutdown_drain_in_tests():
     settings.drain_timeout_seconds = 0
     yield
     settings.drain_timeout_seconds = previous
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _private_tmux_server():
+    """Every tmux test runs on a socket of this worker's own, never `loregarden`'s.
+
+    The production socket is where this machine's real agents run, and its
+    server never exits on empty — so a test sharing it would leave sessions
+    beside live agents, and a test that killed its server would kill them. One
+    socket per process keeps `pytest -n` workers off each other's server too,
+    and lets teardown `kill-server` without reaching anything that is not ours.
+    """
+    previous = settings.agent_tmux_socket
+    settings.agent_tmux_socket = f"lg-pytest-{os.getpid()}"
+    yield
+    if shutil.which("tmux"):
+        # No `check`: a worker that never spawned a tmux agent has no server to kill.
+        subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    settings.agent_tmux_socket = previous
 
 
 @pytest.fixture(autouse=True, scope="session")

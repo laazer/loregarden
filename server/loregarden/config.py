@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     #: at spawn — tmux when it is installed, files otherwise — which is not the
     #: same as pinning FILE. The per-run toggle is lg-durable-remote-338.
     agent_detach_transport: AgentTransport | None = None
+    #: The tmux socket (`tmux -L <name>`) every tmux-transport agent runs on. A
+    #: server of loregarden's own rather than the operator's default one: it
+    #: never exits when its last session does (see `_spawn_in_tmux`), and an
+    #: operator's `kill-server` or `~/.tmux.conf` cannot reach the agents on it.
+    agent_tmux_socket: str = "loregarden"
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"

@@ -27,19 +27,30 @@ from uuid import uuid4
 import pytest
 from loregarden.agents.executors.agent_spawn import (
     SpawnedAgent,
+    TmuxSpawnError,
     resolve_transport,
     spawn_agent,
+    tmux_session_gone,
 )
 from loregarden.config import settings
 from loregarden.db import versions
 from loregarden.db.migration_ids import SHIPPED_MIGRATION_IDS
 from loregarden.db.migration_registry import import_submodules
-from loregarden.models.domain import AgentTransport, DoctorCheck, DoctorStatus, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    AgentTransport,
+    DoctorCheck,
+    DoctorStatus,
+    RunStatus,
+    Workspace,
+)
 from loregarden.models.domain.process_enums import ProcessState
 from loregarden.services import doctor
 from loregarden.services.run_output_files import (
+    attach_command,
     paths_for,
     run_file_stem,
+    tmux_argv,
     tmux_session_name,
     wrap_for_files,
 )
@@ -76,7 +87,7 @@ def tmux_cleanup_fixture(run_key):
     """Kill the session this test created, whatever the assertions did."""
     yield
     subprocess.run(
-        ["tmux", "kill-session", "-t", tmux_session_name(run_file_stem(*run_key))],
+        tmux_argv("kill-session", "-t", tmux_session_name(run_file_stem(*run_key))),
         capture_output=True,
         check=False,
     )
@@ -261,7 +272,7 @@ def test_tmux_ls_shows_the_runs_own_session(run_log_dir, run_key, tmux_cleanup):
     """AC18. This is what makes `attach_command` usable: the session is there."""
     _spawn(run_key, AgentTransport.TMUX, "import time; print('up', flush=True); time.sleep(5)")
 
-    listed = subprocess.run(["tmux", "ls"], capture_output=True, text=True, check=False)
+    listed = subprocess.run(tmux_argv("ls"), capture_output=True, text=True, check=False)
 
     assert tmux_session_name(run_file_stem(*run_key)) in listed.stdout
     assert tmux_session_name(run_file_stem(*run_key)) == f"lg-{run_file_stem(*run_key)}"
@@ -331,8 +342,10 @@ def test_the_pane_pid_comes_from_the_spawn_itself(run_log_dir, run_key, tmux_cle
     ):
         spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
 
-    tmux_calls = [argv[:2] for argv in calls if argv[0] == "tmux"]
-    assert tmux_calls == [["tmux", "new-session"]]
+    tmux_calls = [argv for argv in calls if argv[0] == "tmux"]
+    assert len(tmux_calls) == 1
+    assert "new-session" in tmux_calls[0]
+    assert "display-message" not in tmux_calls[0]
     assert spawned.pid == os.getpgid(spawned.pid)
 
 
@@ -348,7 +361,7 @@ def test_an_agent_gone_before_tmux_names_its_pane_still_settles(run_log_dir, run
 
     def without_a_pid(argv, *args, **kwargs):
         completed = real(argv, *args, **kwargs)
-        if list(argv)[:2] == ["tmux", "new-session"]:
+        if "new-session" in argv:
             completed.stdout = "\n"
         return completed
 
@@ -360,6 +373,108 @@ def test_an_agent_gone_before_tmux_names_its_pane_still_settles(run_log_dir, run
     assert spawned.pid is None
     assert spawned.transport_used is AgentTransport.TMUX
     assert _wait_for_rc(run_key) == "7"
+
+
+# --- the server must not exit under a concurrent spawn -----------------------
+#
+# With tmux's default `exit-empty on`, a server whose last session ends exits,
+# and a `new-session` client connecting in that instant fails with "server
+# exited unexpectedly" (7/200 in an isolated repro): a parallel lane failed to
+# spawn because a sibling lane finished. Racing it is load-dependent, so these
+# pin the precondition instead: the server outlives its last session, so there
+# is no exit for a spawn to collide with.
+
+
+def _exit_empty() -> subprocess.CompletedProcess:
+    """Ask the worker's tmux server for `exit-empty`. Starts no server: a dead
+    one answers non-zero with "no server running"."""
+    return subprocess.run(
+        tmux_argv("show-options", "-gv", "exit-empty"), capture_output=True, text=True, check=False
+    )
+
+
+def _wait_for_session_gone(session: str, timeout: float = 20.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if tmux_session_gone(session):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"tmux session {session} never ended")
+
+
+@has_tmux
+def test_the_tmux_server_outlives_the_last_agent_session(run_log_dir, run_key):
+    # The socket is this worker's own (conftest), so a fresh server is ours to start.
+    subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+
+    spawned = _spawn(run_key, AgentTransport.TMUX, "raise SystemExit(0)")
+    assert _wait_for_rc(run_key) == "0"
+    _wait_for_session_gone(spawned.session)
+
+    alive = _exit_empty()
+    assert alive.returncode == 0, alive.stderr
+    assert alive.stdout.strip() == "off"
+
+
+@has_tmux
+def test_a_server_another_client_started_is_switched_to_outlive_its_sessions(run_log_dir, run_key):
+    """The setting travels with every spawn, not only with the one that starts the server."""
+    subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    foreign = f"lg-foreign-{uuid4().hex[:8]}"
+    subprocess.run(
+        tmux_argv("new-session", "-d", "-s", foreign, "sh", "-c", "sleep 300"),
+        capture_output=True,
+        check=True,
+    )
+    assert _exit_empty().stdout.strip() == "on", "precondition: tmux's default"
+
+    spawned = _spawn(run_key, AgentTransport.TMUX, "raise SystemExit(0)")
+    _wait_for_session_gone(spawned.session)
+    subprocess.run(tmux_argv("kill-session", "-t", foreign), capture_output=True, check=True)
+
+    alive = _exit_empty()
+    assert alive.returncode == 0, alive.stderr
+    assert alive.stdout.strip() == "off"
+
+
+def test_a_failed_tmux_spawn_carries_what_tmux_said(run_log_dir, run_key):
+    """`CalledProcessError` leaves stderr out of its message, so a spawn failure
+    read "returned non-zero exit status 1" with the reason captured and dropped."""
+    refused = subprocess.CompletedProcess(
+        ["tmux"], returncode=1, stdout="", stderr="server exited unexpectedly\n"
+    )
+    with (
+        mock.patch("loregarden.agents.executors.agent_spawn.subprocess.run", return_value=refused),
+        pytest.raises(TmuxSpawnError) as raised,
+    ):
+        _spawn(run_key, AgentTransport.TMUX, "print('never runs')")
+
+    assert isinstance(raised.value, subprocess.CalledProcessError)
+    assert raised.value.returncode == 1
+    assert "server exited unexpectedly" in str(raised.value)
+
+
+@has_tmux
+def test_spawn_liveness_and_attach_all_reach_the_same_tmux_server(
+    run_log_dir, run_key, tmux_cleanup
+):
+    """A liveness check asked of a different server than the spawn used reads
+    "gone" and settles a live run, so every call site must name one socket."""
+    spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(30)")
+
+    assert not tmux_session_gone(spawned.session)
+    attach = attach_command(
+        AgentRun(
+            id=run_key[1],
+            run_code=run_key[0],
+            agent_id="backend_implementer",
+            stage_key="implement",
+            status=RunStatus.RUNNING,
+            agent_transport=AgentTransport.TMUX,
+        )
+    )
+    assert attach.split()[:3] == ["tmux", "-L", settings.agent_tmux_socket]
+    assert attach.endswith(f"attach -t {spawned.session}")
 
 
 # --- AC1/AC3/AC18: the prompt arrives on EVERY transport ---------------------

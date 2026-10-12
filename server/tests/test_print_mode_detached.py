@@ -39,6 +39,7 @@ from loregarden.services.run_output_files import (
     RunOutputPaths,
     paths_for,
     run_file_stem,
+    tmux_argv,
     tmux_session_name,
 )
 from sqlmodel import Session
@@ -135,7 +136,7 @@ def pinned_transport_fixture(monkeypatch, run_key):
 
     yield pin
     for session in created:
-        subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, check=False)
+        subprocess.run(tmux_argv("kill-session", "-t", session), capture_output=True, check=False)
 
 
 def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamespace:
@@ -380,7 +381,7 @@ def test_an_agent_gone_before_tmux_named_its_pane_is_still_reported_from_rc(
 
     def without_a_pid(argv, *args, **kwargs):
         completed = real(argv, *args, **kwargs)
-        if list(argv)[:2] == ["tmux", "new-session"]:
+        if "new-session" in argv:
             completed.stdout = "\n"
         return completed
 

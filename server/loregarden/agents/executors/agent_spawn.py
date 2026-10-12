@@ -32,6 +32,7 @@ from loregarden.services.run_output_files import (
     ensure_dir,
     paths_for,
     run_file_stem,
+    tmux_argv,
     tmux_session_name,
     wrap_for_files,
     write_env_file,
@@ -40,6 +41,21 @@ from loregarden.services.run_output_files import (
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+
+class TmuxSpawnError(subprocess.CalledProcessError):
+    """`tmux new-session` failed, with tmux's own words in the message.
+
+    A plain `CalledProcessError` drops `stderr` from `str()`, so the run's
+    failure read "returned non-zero exit status 1" and nothing else — the reason
+    (`server exited unexpectedly`, `duplicate session`, an unknown option on an
+    old tmux) was captured and then thrown away. Still a `CalledProcessError`,
+    so nothing that catches one changes.
+    """
+
+    def __str__(self) -> str:
+        said = (self.stderr or "").strip() or "<tmux printed nothing on stderr>"
+        return f"{super().__str__()} tmux said: {said}"
 
 
 @dataclass(frozen=True)
@@ -176,6 +192,8 @@ def _spawn_detached(wrapped: list[str], *, cwd: str, env: dict[str, str]) -> sub
 #: server's environment is the thing this prefix exists to stop mattering.
 _ENV_BIN = "/usr/bin/env"
 _SH_BIN = "/bin/sh"
+#: The config file loregarden's tmux server starts from: none. See `_spawn_in_tmux`.
+_NO_TMUX_CONFIG = "/dev/null"
 
 
 def _under_env(paths: RunOutputPaths, wrapped: list[str]) -> list[str]:
@@ -246,30 +264,54 @@ def _spawn_in_tmux(
     None therefore means "the pane is already gone", not "the spawn failed":
     the wrapper wrote `.rc` before it exited, and that is what settles the run.
 
+    The server is loregarden's own (`tmux_argv`), and `exit-empty off` is set in
+    the SAME client call that creates the session, ahead of it. With tmux's
+    default `exit-empty on` the server exits when its last session ends, so a
+    sibling lane's agent finishing at the moment this client connected killed
+    the server under it: `server exited unexpectedly`, exit 1, and a parallel
+    lane that failed to spawn for no reason of its own (7/200 in an isolated
+    repro). A server that never exits on empty cannot race that way, and setting
+    it in the call itself covers a server some other client started first.
+    `new-session` stays the LAST command in the list: tmux splits its argv on a
+    bare `;`, and the pane command is the tail.
+
+    `-f /dev/null` because this server forks agents, not the operator's shells:
+    a `destroy-unattached on` or `remain-on-exit on` in `~/.tmux.conf` would
+    destroy a detached session at once, or keep a finished one alive and read as
+    a working agent. `-f` applies only to the client that starts the server.
+
     The pane command sources its own environment (`_under_env`) because `env=`
     below reaches only the tmux client. `cwd` does NOT need the same treatment:
     the client resolves it and hands the server the result as the session's
     start directory.
     """
     session = tmux_session_name(stem)
+    argv = [
+        *tmux_argv("-f", _NO_TMUX_CONFIG),
+        "set-option",
+        "-g",
+        "exit-empty",
+        "off",
+        ";",
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{pane_pid}",
+        "-s",
+        session,
+        *_under_env(paths, wrapped),
+    ]
     created = subprocess.run(
-        [
-            "tmux",
-            "new-session",
-            "-d",
-            "-P",
-            "-F",
-            "#{pane_pid}",
-            "-s",
-            session,
-            *_under_env(paths, wrapped),
-        ],
+        argv,
         cwd=cwd,
         env=env,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    if created.returncode != 0:
+        raise TmuxSpawnError(created.returncode, argv, created.stdout, created.stderr)
     reported = created.stdout.strip()
     if reported.isdigit():
         return int(reported)
@@ -299,7 +341,7 @@ def tmux_session_gone(session: str) -> bool:
     nothing left to watch the run with.
     """
     asked = subprocess.run(
-        ["tmux", "has-session", "-t", session],
+        tmux_argv("has-session", "-t", session),
         capture_output=True,
         text=True,
         check=False,

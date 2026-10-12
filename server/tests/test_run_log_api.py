@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 from loregarden.models.domain import AgentRun, AgentTransport, Artifact, RunStatus, Ticket
 from sqlmodel import Session, select
 
@@ -161,7 +162,9 @@ def test_run_log_reports_the_transport_a_live_run_is_detached_on(
     body = client.get(f"/api/runs/{run.id}/log").json()
 
     assert body["transport"] == "tmux"
-    assert body["attach_command"] == f"tmux attach -t lg-run_modal1-{run.id[:8]}"
+    assert body["attach_command"] == (
+        f"tmux -L {settings.agent_tmux_socket} attach -t lg-run_modal1-{run.id[:8]}"
+    )
 
 
 def test_run_log_offers_no_attach_command_for_a_file_transport_run(
