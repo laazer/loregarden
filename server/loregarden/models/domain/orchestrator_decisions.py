@@ -72,3 +72,6 @@ class OrchestratorDecision(StrEnum):
     #: resolution turn was armed on the terminal stage rather than blocking
     #: for a person (801).
     DISPATCHED_LANDING_RESOLVER = "dispatched_landing_resolver"
+    #: CI failed on a done ticket's pull request, so the ticket was reopened at
+    #: its terminal stage with a repair turn briefed on the failing checks.
+    DISPATCHED_CI_FIX = "dispatched_ci_fix"
