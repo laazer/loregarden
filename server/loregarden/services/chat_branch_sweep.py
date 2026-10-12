@@ -147,11 +147,13 @@ def sweep_chat_branches(session: Session, workspace: Workspace) -> ChatBranchSwe
         if not branch_work_has_landed(repo_root, base, branch):
             result.kept.append((branch, f"work is not yet in {base}"))
             continue
-        # `retire_worktree` applies the same refusal the ticket path does: a tree
-        # holding uncommitted changes keeps its checkout, whatever the branch
-        # looks like from outside.
-        if not retire_worktree(session, service, worktree):
-            result.kept.append((branch, "its worktree holds uncommitted work"))
+        # `retire_worktree` applies the same refusals the ticket path does, and
+        # answers with the premise that fired. Which one it was is what the
+        # operator acts on, so it is reported rather than guessed at: a tree kept
+        # for a stranded commit holds no uncommitted work to go looking for.
+        kept_for = retire_worktree(session, service, worktree)
+        if kept_for is not None:
+            result.kept.append((branch, f"its worktree is kept: {kept_for.value}"))
             continue
 
         remote = _remote_for_branch(repo_root, branch)
