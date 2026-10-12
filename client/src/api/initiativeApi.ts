@@ -173,6 +173,29 @@ export interface AutopilotView {
   }[];
 }
 
+/** A ticket the parent's autopilot card names; it links to the ticket. */
+export interface AutopilotTicketRef {
+  id: string;
+  external_id: string;
+  title: string;
+}
+
+/** The autopilot of a plan rooted at a milestone or parent ticket. */
+export interface SubtreeAutopilot {
+  root_id: string;
+  autopilot: AutopilotView;
+  /** Work items under the parent the autopilot plans over, and how many are open. */
+  total_items: number;
+  open_items: number;
+  next_up: AutopilotTicketRef[];
+  waiting_on_person: AutopilotTicketRef[];
+  blocked: AutopilotTicketRef[];
+  /** The parent or an ancestor running its own workflow; the autopilot waits for it. */
+  running_above: AutopilotTicketRef | null;
+  /** Initiatives and parents above whose autopilot is on and also starts work here. */
+  also_driven_by: AutopilotTicketRef[];
+}
+
 export interface WorkspacePace {
   workspace_slug: string;
   per_day: number | null;
@@ -300,6 +323,13 @@ export const initiativeApi = {
     }),
   setAutopilot: (id: string, body: { enabled?: boolean; max_parallel?: number }) =>
     request<InitiativePlan>(`/api/initiatives/${id}/autopilot`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  /** The autopilot of a milestone or parent ticket (an initiative's is on its plan). */
+  ticketAutopilot: (id: string) => request<SubtreeAutopilot>(`/api/tickets/${id}/autopilot`),
+  setTicketAutopilot: (id: string, body: { enabled?: boolean; max_parallel?: number }) =>
+    request<SubtreeAutopilot>(`/api/tickets/${id}/autopilot`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),

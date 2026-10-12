@@ -37,6 +37,7 @@ import { canHaveChildren } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
 import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
+import { SubtreeAutopilotCard } from "../components/SubtreeAutopilotCard";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
 import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
@@ -790,6 +791,14 @@ export function Dashboard() {
                 </button>
                 {sel.child_count > 0 || selChildren.length > 0 ? (
                   <div>
+                    {canHaveChildren(sel.work_item_type) && sel.work_item_type !== "initiative" ? (
+                      // An initiative's autopilot lives on its plan page, beside the schedule.
+                      <SubtreeAutopilotCard
+                        ticketId={sel.id}
+                        workItemType={sel.work_item_type}
+                        onOpenTicket={selectTicket}
+                      />
+                    ) : null}
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets
                     </div>

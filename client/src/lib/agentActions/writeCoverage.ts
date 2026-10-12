@@ -163,6 +163,8 @@ export const API_WRITE_COVERAGE = {
   },
   resolveScheduleProposal: { kind: "human_only", reason: GATE },
   setAutopilot: { kind: "mcp_tool", tool: "loregarden_set_initiative_autopilot" },
+  // The same tool takes a milestone or parent ticket's id.
+  setTicketAutopilot: { kind: "mcp_tool", tool: "loregarden_set_initiative_autopilot" },
   startInitiativeWork: { kind: "mcp_tool", tool: "loregarden_start_initiative_work" },
   markNeedsPerson: { kind: "mcp_tool", tool: "loregarden_mark_needs_person" },
   sendPlannerMessage: { kind: "not_agent_driven", reason: CONVERSATION },

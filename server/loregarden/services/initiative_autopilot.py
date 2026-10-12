@@ -1,11 +1,18 @@
-"""Keep an initiative's lanes busy: start ready work as its prerequisites land.
+"""Keep a plan's lanes busy: start ready work as its prerequisites land.
+
+A plan is rooted at an initiative or at any parent ticket — a milestone, a
+feature (`load_plan_root`); a parent's plan is its subtree as one phase. The
+same engine, settings and log serve both, so a milestone can run its features
+in parallel without an initiative around it. Plans may nest: each one's
+`max_parallel` counts everything in flight in its own subtree, whoever started
+it, so an inner plan never pushes an outer one past its cap.
 
 Deterministic, not an agent turn: choosing the next ticket is mechanical once
 the plan is a graph, and a model deciding it every minute would cost money to
 reproduce a sort. The planner agent decides the *plan* — order, dates, what
 needs a person; this executes it.
 
-Each tick, per initiative with autopilot on:
+Each tick, per plan with autopilot on:
 
 1. Build the plan graph (`initiative_graph`).
 2. Pick `READY` tickets in schedule order, at most `max_parallel` in flight
@@ -16,6 +23,8 @@ Each tick, per initiative with autopilot on:
 3. Re-check each pick against git (`unmet_prerequisites_for_start`): a
    prerequisite can be `done` with its work never landed, and the queue does
    not check prerequisites at all — a queued ticket starts when its slot frees.
+   Nor does it check ancestors: a ticket whose parent (or the plan's root) has
+   its own orchestration running waits, since that run works through it.
 4. Queue it the way the Queue page's "Add ticket" does
    (`QueueLaneService.add_to_lane`), into the least loaded agent slot, with
    `auto_approve` on: tool prompts do not stop it. Legacy stage sign-offs on
@@ -51,6 +60,7 @@ from loregarden.models.domain import (
     NodeStatus,
     Ticket,
     TicketState,
+    WorkItemType,
     Workspace,
     comparable_utc,
     utcnow,
@@ -67,7 +77,7 @@ from loregarden.services.initiative_graph import (
     PlanNode,
     build_plan,
 )
-from loregarden.services.initiative_service import load_initiative
+from loregarden.services.initiative_service import load_plan_root
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from loregarden.services.run_concurrency import find_active_orchestration_run
@@ -86,7 +96,9 @@ RECENT_EVENTS = 8
 def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
     """The ready tickets it would start now, in order."""
     graph = ctx.graph
-    own = [n for n in graph.nodes.values() if not n.external]
+    # A parent's plan never starts the parent itself: a childless one would be
+    # its own only node, and running it is the Run button's job.
+    own = [n for n in graph.nodes.values() if not n.external and n.id != ctx.initiative.id]
     in_flight = [n for n in own if n.holds_lane]
     budget = max_parallel - len(in_flight)
     candidates = sorted(
@@ -154,6 +166,21 @@ def _last_event_for(session: Session, initiative_id: str, ticket_id: str) -> Aut
     ).first()
 
 
+def _record_once(session: Session, plan_id: str, ticket_id: str, detail: str) -> None:
+    """Record a refusal once, not every minute it stays true."""
+    last = _last_event_for(session, plan_id, ticket_id)
+    if last is None or last.detail != detail:
+        _record(session, plan_id, AutopilotAction.REFUSED, ticket_id=ticket_id, detail=detail)
+
+
+def _ancestor_running(session: Session, ticket: Ticket) -> Ticket | None:
+    """The nearest ancestor with its own orchestration running, if any."""
+    for ancestor_id in self_and_ancestors(session, ticket)[1:]:
+        if find_active_orchestration_run(session, ancestor_id) is not None:
+            return session.get(Ticket, ancestor_id)
+    return None
+
+
 def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticket]:
     """Tickets it started since it was turned on that are now blocked."""
     since = plan.autopilot_since
@@ -209,22 +236,22 @@ def _dispatch(
             detail="ticket has no workspace",
         )
         return False
+    running_above = _ancestor_running(session, ticket)
+    if running_above is not None:
+        _record_once(
+            session,
+            plan.initiative_id,
+            ticket.id,
+            f"waiting: {running_above.external_id} is running and works through its children",
+        )
+        return False
     unmet = unmet_prerequisites_for_start(session, ticket, workspace)
     if unmet:
         detail = "waiting for prerequisite work to land: " + ", ".join(
             f"{u.ticket.external_id} ({u.reason.value}{' on ' + u.target if u.target else ''})"
             for u in unmet
         )
-        last = _last_event_for(session, plan.initiative_id, ticket.id)
-        # Said once, not every minute it stays true.
-        if last is None or last.detail != detail:
-            _record(
-                session,
-                plan.initiative_id,
-                AutopilotAction.REFUSED,
-                ticket_id=ticket.id,
-                detail=detail,
-            )
+        _record_once(session, plan.initiative_id, ticket.id, detail)
         return False
     try:
         slot = least_busy_lane(lanes)
@@ -320,7 +347,7 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
     # The resume a sign-off schedules starts on another thread, so this tick
     # would read those tickets idle and queue them a second time.
     resuming = _sign_off_parked_gates(session, plan)
-    ctx = build_plan(session, load_initiative(session, initiative_id), now=now or utcnow())
+    ctx = build_plan(session, load_plan_root(session, initiative_id), now=now or utcnow())
     lanes = QueueLaneService(session)
     dispatched = 0
     for node in select_next(ctx, plan.max_parallel):
@@ -331,10 +358,29 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
     return dispatched
 
 
+class AutopilotRefusedError(ValueError):
+    """The autopilot cannot be turned on for this plan, and why."""
+
+
+def _has_children(session: Session, root: Ticket) -> bool:
+    if root.work_item_type == WorkItemType.INITIATIVE:
+        return True  # members count too; an empty initiative just has nothing ready
+    return (
+        session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == root.id)).first()
+        is not None
+    )
+
+
 def set_autopilot(
     session: Session, initiative_id: str, update: AutopilotUpdate, *, actor: str
 ) -> InitiativePlan:
-    load_initiative(session, initiative_id)
+    root = load_plan_root(session, initiative_id)
+    if update.enabled and not _has_children(session, root):
+        # A childless parent's plan is the parent itself: "autopilot" would just
+        # run it, which the Run button already does — and says so.
+        raise AutopilotRefusedError(
+            f"{root.external_id} has no sub-items for the autopilot to run; add some first"
+        )
     plan = session.get(InitiativePlan, initiative_id) or InitiativePlan(initiative_id=initiative_id)
     if update.max_parallel is not None:
         plan.max_parallel = update.max_parallel
@@ -439,7 +485,7 @@ def start_autopilot_loop(interval_seconds: float | None = None) -> asyncio.Task 
 
 
 def _plan_nodes(session: Session, initiative_id: str) -> tuple[PlanContext, InitiativePlan]:
-    ctx = build_plan(session, load_initiative(session, initiative_id), now=utcnow())
+    ctx = build_plan(session, load_plan_root(session, initiative_id), now=utcnow())
     plan = session.get(InitiativePlan, initiative_id) or InitiativePlan(initiative_id=initiative_id)
     return ctx, plan
 

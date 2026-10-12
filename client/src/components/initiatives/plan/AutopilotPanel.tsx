@@ -2,11 +2,9 @@ import { useState } from "react";
 
 import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
-import { AUTOPILOT_ACTION_LABEL, formatWhen } from "../../../lib/scheduleFormat";
+import { AUTOPILOT_ACTION_LABEL, AUTOPILOT_PARALLEL_CHOICES, formatWhen } from "../../../lib/scheduleFormat";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
-
-const PARALLEL_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 
 function TicketLink({ node }: { node: PlanNode }) {
   return (
@@ -72,7 +70,7 @@ export function AutopilotPanel({
             disabled={busy}
             onChange={(e) => setDraftParallel(Number(e.target.value))}
           >
-            {PARALLEL_CHOICES.map((n) => (
+            {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
                 {n} at once
               </option>
