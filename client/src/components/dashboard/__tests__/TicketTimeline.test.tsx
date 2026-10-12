@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { api } from "../../../api/client";
 import type { TicketDetail } from "../../../api/client";
@@ -289,6 +289,70 @@ it("names what failed to load and retries it", async () => {
   mockApi.ticketLedger.mockResolvedValue(ledger([PLAN]));
   fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
+});
+
+function renderWithFeed(feed: Promise<{ items: TicketArtifactItem[]; total: number }>) {
+  mockApi.ticketLedger.mockResolvedValue(ledger([PLAN, IMPLEMENT]));
+  mockApi.ticketArtifacts.mockReturnValue(feed);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <TicketTimeline
+        ticket={ticket()}
+        runs={[]}
+        isActive={false}
+        pendingApprovals={0}
+        childTickets={[]}
+        onOpenRunLog={jest.fn()}
+        onOpenTicket={jest.fn()}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+it("shows the stages from the ledger while the output feed is still loading", async () => {
+  renderWithFeed(new Promise(() => {}));
+
+  expect(await screen.findByRole("button", { name: /Implementation/ })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Loading what each stage produced");
+});
+
+it("keeps the stages when the output feed fails, and retries the feed", async () => {
+  renderWithFeed(Promise.reject(new Error("feed down")));
+
+  expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("feed down");
+
+  mockApi.ticketArtifacts.mockResolvedValue({ items: [], total: 0 });
+  fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("waits for the feed before saying nothing has run", async () => {
+  mockApi.ticketLedger.mockResolvedValue(ledger([]));
+  mockApi.ticketArtifacts.mockReturnValue(new Promise(() => {}));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <TicketTimeline
+        ticket={ticket()}
+        runs={[]}
+        isActive={false}
+        pendingApprovals={0}
+        childTickets={[]}
+        onOpenRunLog={jest.fn()}
+        onOpenTicket={jest.fn()}
+      />
+    </QueryClientProvider>,
+  );
+
+  // Let the ledger settle, so the skeleton is held by the feed and not by it.
+  await act(async () => {});
+  expect(mockApi.ticketLedger).toHaveBeenCalled();
+  expect(screen.getByText("Loading timeline…")).toBeInTheDocument();
+  expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
 });
 
 it("tails one live log for a running fan-out, not one per lane", async () => {

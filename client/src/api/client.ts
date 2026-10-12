@@ -5,7 +5,7 @@ import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketPullRequestApi } from "./ticketPullRequestApi";
-import type { ApprovalHistoryItem } from "./chatTypes";
+import type { ApprovalHistoryItem, ApprovalResolutionAction } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
 import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
@@ -490,7 +490,7 @@ export const api = {
   resolveApproval: (
     id: string,
     body: {
-      action: "approve" | "recheck" | "reject";
+      action: ApprovalResolutionAction;
       answers?: Record<string, string | string[]>;
       response?: string;
       always_allow?: boolean;

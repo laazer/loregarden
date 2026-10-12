@@ -67,7 +67,7 @@ _STATE = {
 }
 
 
-class _GhCheck(BaseModel):
+class GhCheck(BaseModel):
     """One `statusCheckRollup` entry: a CheckRun or a legacy StatusContext."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -98,7 +98,7 @@ class _GhPullRequest(BaseModel):
     mergeable: str = ""
     head_sha: str = Field("", alias="headRefOid")
     merge_state: str = Field("", alias="mergeStateStatus")
-    checks: list[_GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
+    checks: list[GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
     body: str = ""
 
 
@@ -155,7 +155,7 @@ class TicketPullRequest(BaseModel):
     ships_with: str = ""
 
 
-def _check_outcome(check: _GhCheck) -> PullRequestCheckOutcome:
+def check_outcome(check: GhCheck) -> PullRequestCheckOutcome:
     # A CheckRun reports `status` then `conclusion`; a StatusContext only `state`.
     verdict = check.conclusion or check.state
     if (
@@ -188,7 +188,7 @@ def _to_status(raw: _GhPullRequest) -> PullRequestStatus:
         checks=[
             PullRequestCheck(
                 name=check.name or check.context,
-                outcome=_check_outcome(check),
+                outcome=check_outcome(check),
                 url=check.details_url or check.target_url,
             )
             for check in raw.checks

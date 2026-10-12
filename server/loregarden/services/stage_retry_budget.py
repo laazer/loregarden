@@ -771,18 +771,6 @@ def charge_fanout_dispatch(session: Session, ticket_id: str, stage_key: str) -> 
     record_stage_dispatch(session, ticket_id, stage_key)
 
 
-def stage_dispatch_would_be_refused(session: Session, ticket: Ticket, stage_key: str) -> bool:
-    """Read-only: would an unforced standalone dispatch of this stage refuse?
-
-    For a caller that must not spend anything on a dispatch that will not
-    happen — `conflict_resolution`, which otherwise burns a conflict-resolution
-    attempt and writes a rework-ledger entry for a resolver it then never sends.
-    """
-    config = resolve_stage_retry_budget(session, ticket)
-    state = stage_retry_budget_state(session, ticket, stage_key, config)
-    return state.at_budget
-
-
 # -- Gate-fix attempt counter -------------------------------------------------
 # The sibling durable counter this module's dispatch counter is modelled on: the
 # builtin orchestrator's automatic transition-gate fix retries, counted the same

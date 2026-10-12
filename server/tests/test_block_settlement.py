@@ -258,6 +258,9 @@ BLOCK_WRITERS: dict[str, str] = {
         "the decision they just made rather than a fault anything can repair"
     ),
     "services/artifact_service.py:block_ticket_for_unresolved_blocker": "settles",
+    "services/ci_autofix_dispatch.py:block_for_ci": (
+        "delegates: artifact_service.block_ticket_for_unresolved_blocker"
+    ),
     "services/builtin_orchestrator.py:execute": ("delegates: orchestration_callbacks.block_ticket"),
     "services/builtin_orchestrator.py:_run_parallel_stage_or_stop": (
         "delegates: orchestration_callbacks.block_ticket"

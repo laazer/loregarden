@@ -362,6 +362,59 @@ def test_an_agent_gone_before_tmux_names_its_pane_still_settles(run_log_dir, run
     assert _wait_for_rc(run_key) == "7"
 
 
+def _pgid_before_setsid(*, stale_reads: int | None):
+    """`os.getpgid` as seen during the window between tmux's `fork()` and the
+    pane's `setsid()`: the pane still sits in the server's group. `stale_reads`
+    reads answer with the server's pgid, then the real one; None never stops."""
+    real = os.getpgid
+    calls: list[int] = []
+
+    def reading(pid):
+        calls.append(pid)
+        if stale_reads is None or len(calls) <= stale_reads:
+            return os.getppid()  # any group that is not the pane's own
+        return real(pid)
+
+    return reading, calls
+
+
+@has_tmux
+def test_a_tmux_pid_is_handed_back_only_once_the_pane_leads_its_group(
+    run_log_dir, run_key, tmux_cleanup
+):
+    """The 2026-10-12 pre-push flake: `assert 53058 == 53045`.
+
+    `new-session -P` prints the pane pid straight after the server's `fork()`,
+    before the child's `setsid()` — so under load the pid came back still in
+    the tmux server's group. Popen(start_new_session=True) does not return
+    until its child has exec'd; the tmux spawn must give the same guarantee,
+    or a stop in that window signals the server through `getpgid`.
+    """
+    reading, calls = _pgid_before_setsid(stale_reads=3)
+
+    with mock.patch("loregarden.agents.executors.agent_spawn.os.getpgid", side_effect=reading):
+        spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
+
+    assert calls == [spawned.pid] * 4, "the spawn returned before the pane led its group"
+    assert os.getpgid(spawned.pid) == spawned.pid
+
+
+@has_tmux
+def test_a_tmux_pane_that_never_leads_its_group_is_killed_not_returned(run_log_dir, run_key):
+    """A pid no stop can reach is not a spawn; the session is not left running."""
+    reading, _ = _pgid_before_setsid(stale_reads=None)
+
+    with (
+        mock.patch("loregarden.agents.executors.agent_spawn.os.getpgid", side_effect=reading),
+        mock.patch("loregarden.agents.executors.agent_spawn._PANE_SETSID_SECONDS", 0.05),
+        pytest.raises(subprocess.SubprocessError, match="did not become a session leader"),
+    ):
+        _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
+
+    session = tmux_session_name(run_file_stem(*run_key))
+    assert subprocess.run(["tmux", "has-session", "-t", session], check=False).returncode != 0
+
+
 # --- AC1/AC3/AC18: the prompt arrives on EVERY transport ---------------------
 
 

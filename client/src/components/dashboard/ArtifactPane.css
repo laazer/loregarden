@@ -211,6 +211,15 @@
   color: var(--aml);
 }
 
+.tl-feed-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--txl);
+}
+
 /* A parent's timeline: the tickets under it, grouped by state. */
 .tl-children {
   display: flex;
