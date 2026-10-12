@@ -25,7 +25,8 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
-from loregarden.services import ci_autofix_dispatch, ci_checks, ci_poll_scheduler
+from loregarden.services import ci_autofix_dispatch, ci_checks, ci_poll_scheduler, git_automation
+from loregarden.services import publish_tree as publish_tree_module
 from loregarden.services.ci_checks import GitHubReadError, OpenPullRequest, rollup
 from loregarden.services.ci_poll_scheduler import poll_workspace
 from loregarden.services.ci_service import AutoFixRefusal, CIService
@@ -305,18 +306,162 @@ def test_a_moved_pr_head_is_refused_and_recorded(session, workspace, repo, done_
     assert done_ticket.state is TicketState.DONE, "a refusal does not reopen the ticket"
 
 
-def test_a_tree_integration_branch_is_refused_with_the_reason(
-    session, workspace, repo, done_ticket
-):
-    integration = f"integration/{done_ticket.external_id}"
-    git(repo, "branch", integration, done_ticket.branch)
+# -- A tree root: the PR is on its integration branch ---------------------------
 
-    _, outcome = _observe(
-        session, done_ticket, workspace, _pr(integration, _tip(repo, integration), FAILING)
+
+@pytest.fixture(name="tree_root")
+def tree_root_fixture(session, repo, done_ticket):
+    """``done_ticket`` as a tree root that published `integration/<id>`, with a
+    child's work landed there that its own branch never saw."""
+    integration = f"integration/{done_ticket.external_id}"
+    git(repo, "branch", integration, "main")
+    commit_on(repo, integration, "child.txt", "broken\n")
+    done_ticket.landed_branch = integration
+    done_ticket.landed_sha = _tip(repo, integration)
+    session.add(done_ticket)
+    session.commit()
+    session.refresh(done_ticket)
+    return done_ticket, integration
+
+
+def _is_ancestor(repo, ancestor: str, descendant: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=repo, check=False
+        ).returncode
+        == 0
     )
 
-    assert outcome is not None and outcome.refusal is AutoFixRefusal.TREE_BRANCH
-    assert outcome.detail
+
+def _publish(session, ticket, workspace):
+    """`publish_tree` as the root's landing runs it, with the push stubbed."""
+    pushed = git_automation.AutomationResult(steps=[git_automation.StepResult("push", True)])
+    with mock.patch.object(publish_tree_module, "publish_branch", return_value=pushed) as push:
+        session.refresh(ticket)
+        outcome = publish_tree_module.publish_tree(session, ticket, workspace)
+    return outcome, push
+
+
+def test_a_tree_root_pr_reopens_the_root_on_the_integration_work(
+    session, workspace, repo, tree_root
+):
+    root, integration = tree_root
+    failing_sha = _tip(repo, integration)
+
+    _, outcome = _observe(session, root, workspace, _pr(integration, failing_sha, FAILING))
+
+    assert outcome is not None and outcome.dispatched, outcome
+    assert _is_ancestor(repo, failing_sha, root.branch), "the turn starts from what CI ran"
+    assert _tip(repo, integration) == failing_sha, "nothing moves the PR before the fix"
+    session.refresh(root)
+    assert root.next_agent == REPAIR_AGENT_ID
+    assert integration in root.blocking_issues, "the brief names the branch CI ran on"
+
+
+def test_a_tree_root_fix_reaches_the_integration_branch_and_settles(
+    session, workspace, repo, tree_root
+):
+    root, integration = tree_root
+    _observe(session, root, workspace, _pr(integration, _tip(repo, integration), FAILING))
+    fix = commit_on(repo, root.branch, "child.txt", "fixed\n")
+    _finish_fix_turn(session, root)
+
+    published, push = _publish(session, root, workspace)
+
+    assert published.ok, published.detail
+    assert _tip(repo, integration) == fix, "the fix is fast-forwarded onto the PR branch"
+    assert push.call_args.args[1].branch == integration
+    _observe(session, root, workspace, _pr(integration, fix, PASSING))
+    (attempt,) = CIService(session).attempts(root.id)
+    assert attempt.status is AutoFixStatus.SUCCEEDED
+
+
+def test_a_tree_root_turn_with_no_commit_fails_its_attempt(session, workspace, repo, tree_root):
+    root, integration = tree_root
+    pr = _pr(integration, _tip(repo, integration), FAILING)
+    _observe(session, root, workspace, pr)
+    _finish_fix_turn(session, root)
+    _publish(session, root, workspace)
+
+    _observe(session, root, workspace, pr)
+
+    (attempt,) = CIService(session).attempts(root.id)
+    assert attempt.status is AutoFixStatus.FAILED
+    assert _tip(repo, integration) == pr.head_sha
+
+
+def test_a_tree_root_checked_out_takes_the_integration_branch_in_its_checkout(
+    session, workspace, repo, tree_root, tmp_path
+):
+    root, integration = tree_root
+    checkout = tmp_path / "root-tree"
+    git(repo, "worktree", "add", "-q", str(checkout), root.branch)
+
+    _, outcome = _observe(
+        session, root, workspace, _pr(integration, _tip(repo, integration), FAILING)
+    )
+
+    assert outcome is not None and outcome.dispatched, outcome
+    assert (checkout / "child.txt").read_text() == "broken\n", "the files moved with the ref"
+    assert git(checkout, "status", "--porcelain").stdout == ""
+
+
+def test_a_dirty_root_checkout_is_refused_and_recorded(
+    session, workspace, repo, tree_root, tmp_path
+):
+    root, integration = tree_root
+    checkout = tmp_path / "root-tree"
+    git(repo, "worktree", "add", "-q", str(checkout), root.branch)
+    (checkout / "feature.txt").write_text("half-done\n")
+    before = _tip(repo, root.branch)
+
+    _, outcome = _observe(
+        session, root, workspace, _pr(integration, _tip(repo, integration), FAILING)
+    )
+
+    assert outcome is not None and outcome.refusal is AutoFixRefusal.BRANCH_SYNC_FAILED
+    assert "uncommitted" in outcome.detail
+    (attempt,) = CIService(session).attempts(root.id)
+    assert attempt.status is AutoFixStatus.REFUSED
+    assert _tip(repo, root.branch) == before
+    assert (checkout / "feature.txt").read_text() == "half-done\n", "nothing was discarded"
+    session.refresh(root)
+    assert root.state is TicketState.DONE, "a refusal does not reopen the ticket"
+
+
+def test_a_root_branch_cut_from_the_base_is_not_folded_into_the_tree(
+    session, workspace, repo, tree_root
+):
+    """A root that never took the integration branch publishes it as it was."""
+    root, integration = tree_root
+    tree_tip = _tip(repo, integration)
+    commit_on(repo, root.branch, "root-only.txt", "x\n")
+    # A new child landing, so there is something to publish.
+    landed = commit_on(repo, integration, "child2.txt", "y\n")
+
+    published, _ = _publish(session, root, workspace)
+
+    assert published.ok, published.detail
+    assert _tip(repo, integration) == landed
+    assert not _is_ancestor(repo, root.branch, integration)
+    assert tree_tip != landed
+
+
+def test_a_pr_on_a_branch_the_ticket_cannot_reach_is_refused(session, workspace, repo, done_ticket):
+    git(repo, "branch", "someone/else", done_ticket.branch)
+    result, _ = _observe(
+        session, done_ticket, workspace, _pr(done_ticket.branch, "e" * 40, RUNNING)
+    )
+    result.status = CIStatus.FAILING
+    session.add(result)
+    session.commit()
+
+    outcome = CIService(session).trigger_auto_fix(
+        done_ticket, result, branch="someone/else", repo_root=repo, manual=False
+    )
+
+    assert outcome.refusal is AutoFixRefusal.UNREACHABLE_BRANCH
+    assert outcome.attempt is not None and outcome.attempt.status is AutoFixStatus.REFUSED
 
 
 def test_a_skipped_commit_stays_skipped(session, workspace, repo, done_ticket):

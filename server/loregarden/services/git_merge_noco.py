@@ -260,3 +260,25 @@ def merge_tips(
         detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
         return MergeOutcome(ok=False, detail=detail)
     return MergeOutcome(ok=True, sha=merge_sha)
+
+
+def advance_tips(
+    repo_root: Path, tips: BranchTips, *, target: str, source: str, subject: str
+) -> MergeOutcome:
+    """`merge_tips`, except a target ``source`` already contains is fast-forwarded.
+
+    For moving a branch onto work built on top of it, where a merge commit
+    would only record that nothing diverged. Compare-and-swap like
+    `merge_tips`: a target that moved after the reading is refused.
+    """
+    source_sha = tips.of(source)
+    target_sha = tips.of(target)
+    if not (source_sha and target_sha) or not is_ancestor(repo_root, target_sha, source_sha):
+        return merge_tips(repo_root, tips, target=target, source=source, subject=subject)
+    if source_sha == target_sha:
+        return MergeOutcome(ok=True, sha=source_sha, already_contained=True)
+    moved = _git(repo_root, "update-ref", f"refs/heads/{target}", source_sha, target_sha)
+    if moved.returncode != 0:
+        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
+        return MergeOutcome(ok=False, detail=detail)
+    return MergeOutcome(ok=True, sha=source_sha)

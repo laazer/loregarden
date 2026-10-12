@@ -13,6 +13,8 @@ when one can reach this server. Both of them call `observe`:
 3. **Fix.** A settled failure on a `done` ticket reopens it for one repair
    turn (`ci_autofix_dispatch`), at most `ci_retry_limit` times between
    passing results. When that budget is spent the ticket is blocked for a person.
+   A tree root's PR is on its integration branch: the root's own branch takes
+   that branch first, so the turn fixes what CI ran (`root_integration_sync`).
 
 Every refusal is an `AutoFixOutcome` carrying the reason. On the automatic
 path a refusal that someone must act on is also written down as a `REFUSED`
@@ -49,7 +51,8 @@ from loregarden.services.ci_checks import (
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.publish_tree import published_branch
-from loregarden.services.target_branch import TargetBranchError
+from loregarden.services.root_integration_sync import take_integration_branch
+from loregarden.services.target_branch import TargetBranchError, integration_branch_for
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
@@ -79,8 +82,10 @@ class AutoFixRefusal(StrEnum):
     #: The ticket is not done; its own workflow publishes the next commit.
     TICKET_NOT_DONE = "ticket_not_done"
     BUDGET_SPENT = "budget_spent"
-    #: The PR is a tree's integration branch, which a repair turn cannot reach.
-    TREE_BRANCH = "tree_branch"
+    #: The PR is on neither the ticket's own branch nor the integration branch it roots.
+    UNREACHABLE_BRANCH = "unreachable_branch"
+    #: A tree root's branch could not take its integration branch before the turn.
+    BRANCH_SYNC_FAILED = "branch_sync_failed"
     #: The PR's head is not the local branch tip, so a fix would be built on stale work.
     HEAD_MOVED = "head_moved"
     DISPATCH_FAILED = "dispatch_failed"
@@ -321,6 +326,19 @@ class CIService:
         refusal = self._precheck(ticket, result, manual=manual, branch=branch, repo_root=repo_root)
         if refusal is not None:
             return self._refuse(ticket, result, refusal[0], refusal[1], record=not manual)
+        own = resolve_ticket_branch(ticket)
+        if branch != own:
+            # A tree root: its turn runs on its own branch, so that branch
+            # takes what the PR holds first. `publish_tree` folds it back.
+            synced = take_integration_branch(repo_root, own=own, integration=branch)
+            if not synced.ok:
+                return self._refuse(
+                    ticket,
+                    result,
+                    AutoFixRefusal.BRANCH_SYNC_FAILED,
+                    synced.detail,
+                    record=not manual,
+                )
 
         attempt = self._new_attempt(ticket, result, AutoFixStatus.PENDING, None)
         number, limit = attempt.attempt_number, settings.ci_retry_limit
@@ -331,7 +349,7 @@ class CIService:
         dispatch = dispatch_ci_fix(
             self.session,
             ticket,
-            brief=_brief(result, branch, number, limit),
+            brief=_brief(result, branch, own, number, limit),
             reason=reason,
             evidence={
                 "pr_number": result.pr_number,
@@ -385,12 +403,12 @@ class CIService:
                 f"{settings.ci_retry_limit} fix attempt(s) ({result.failure_summary}). "
                 "Fix it on the branch and requeue.",
             )
-        if branch != resolve_ticket_branch(ticket):
+        reachable = _reachable_branches(ticket)
+        if branch not in reachable:
             return (
-                AutoFixRefusal.TREE_BRANCH,
-                f"{branch} is this tree's integration branch; a repair turn commits to "
-                f"{resolve_ticket_branch(ticket)}, which the pull request does not contain. "
-                "Fix it on the integration branch by hand.",
+                AutoFixRefusal.UNREACHABLE_BRANCH,
+                f"{branch} is not a branch a repair turn on this ticket can reach "
+                f"({' or '.join(reachable)}). Fix it on the branch by hand.",
             )
         tip = rev(repo_root, f"refs/heads/{branch}")
         if tip != result.head_sha:
@@ -459,7 +477,7 @@ class CIService:
         try:
             branch, _ = published_branch(repo_root, ticket)
         except TargetBranchError as exc:
-            return AutoFixOutcome(None, AutoFixRefusal.TREE_BRANCH, str(exc))
+            return AutoFixOutcome(None, AutoFixRefusal.UNREACHABLE_BRANCH, str(exc))
         return self.trigger_auto_fix(
             ticket, result, branch=branch, repo_root=repo_root, manual=True
         )
@@ -492,15 +510,33 @@ class CIService:
         return len(rows)
 
 
-def _brief(result: CIRunResult, branch: str, attempt: int, limit: int) -> str:
+def _reachable_branches(ticket: Ticket) -> tuple[str, ...]:
+    """The PR branches a repair turn on ``ticket`` can commit to: its own, and the
+    integration branch named after it when it roots a tree."""
+    own = resolve_ticket_branch(ticket)
+    try:
+        return own, integration_branch_for(ticket)
+    except TargetBranchError:
+        return (own,)
+
+
+def _brief(result: CIRunResult, branch: str, own: str, attempt: int, limit: int) -> str:
     logs = result.full_logs or "(no log could be read; open the checks on the pull request)"
+    tree = (
+        f"'{branch}' is this tree's integration branch: every child's work, landed. It has "
+        f"been merged into this ticket's branch '{own}', so the failing code is here. The "
+        "cause may be in any child's work or in how two of them combine. "
+        if branch != own
+        else ""
+    )
     return (
         f"This ticket was done, but CI failed on its pull request #{result.pr_number} "
         f"({result.logs_url}) at {result.head_sha[:12]} on '{branch}'. "
         f"{result.failure_summary}.\n\n"
+        f"{tree}"
         f"You are CI fix attempt {attempt} of {limit}. Reproduce the failure locally, fix "
         "its cause on this branch with the smallest change that does it, commit, and report "
-        "`pass`. Landing pushes your commit to the pull request and CI runs again. Do not "
+        f"`pass`. Landing pushes your commit to '{branch}' and CI runs again. Do not "
         "weaken, skip or delete a check to make it pass. If the failure is not something "
         "this branch caused (an outage, a flaky runner, a secret it cannot see), report "
         "`blocked` and say so.\n\n"
