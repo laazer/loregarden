@@ -9,7 +9,8 @@ import { RedraftConfirmModal } from "./RedraftConfirmModal";
 const PLANNER_LABEL = "Planner";
 
 /**
- * The planner conversation, docked beside the schedule.
+ * The planner conversation, one of the two agents in the initiative's agent
+ * panel (`InitiativeAgentPanel` owns the frame and the switch).
  *
  * Answers "what should the dates be, and what would it take to hit one?". Its
  * replies end in a proposal the schedule shows for acceptance, so the action
@@ -19,15 +20,12 @@ export function PlannerPanel({
   initiativeId,
   canPlan,
   replaces,
-  inTab = false,
 }: {
   initiativeId: string;
   /** False while the initiative has no milestones: there is nothing to schedule. */
   canPlan: boolean;
   /** What a new draft would replace; null when there is no schedule yet, and drafting goes straight through. */
   replaces: ScheduleToReplace | null;
-  /** Shown as a tab on a narrow screen rather than docked beside the plan. */
-  inTab?: boolean;
 }) {
   const planner = useInitiativePlanner(initiativeId);
   const [draft, setDraft] = useState("");
@@ -41,10 +39,9 @@ export function PlannerPanel({
   };
 
   return (
-    <aside className={`plan-planner${inTab ? " plan-planner-tab" : ""}`} aria-label="Planning agent">
+    <>
       <header className="plan-planner-head">
         <div>
-          <h2 className="plan-section-title">Planning agent</h2>
           <p className="plan-muted">
             Proposes dates you accept, marks work for a person, and can start work or run the autopilot.
           </p>
@@ -110,6 +107,6 @@ export function PlannerPanel({
           planner.draft();
         }}
       />
-    </aside>
+    </>
   );
 }

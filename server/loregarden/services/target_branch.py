@@ -36,10 +36,19 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.git_branch import validate_branch_name
-from loregarden.services.git_merge_noco import BranchTips, merge_tips, read_branch_tips
+from loregarden.services.git_merge_noco import (
+    BranchTips,
+    merge_tips,
+    read_branch_tips,
+    superseding_commit,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.hierarchy_service import validate_parent_child
-from loregarden.services.integration_conflict_card import report_integration_conflict
+from loregarden.services.integration_conflict_card import (
+    clear_integration_conflict,
+    report_integration_conflict,
+)
+from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from sqlmodel import Session
 
@@ -65,6 +74,13 @@ class IntegrationConflictError(TargetBranchError):
         self.branch = branch
         self.base = base
         self.files = files
+        #: Why the automatic merge turn did not resolve it, when one was tried.
+        self.automatic = ""
+
+    def __str__(self) -> str:
+        if not self.automatic:
+            return super().__str__()
+        return f"{super().__str__()} (automatic merge: {self.automatic})"
 
 
 def subtree_root(session: Session, ticket: Ticket) -> Ticket:
@@ -167,7 +183,7 @@ def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) ->
 
 
 def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
-    """Bring ``branch`` up to ``base_branch``. True when a merge commit was made.
+    """Bring ``branch`` up to ``base_branch``. True when ``branch`` moved.
 
     A tree lands on its integration branch for as long as it runs, while the
     base keeps moving — other trees publish, people merge by hand. A ticket
@@ -176,6 +192,10 @@ def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -
     tree's publish is invisible to it (770). Done without a checkout, so it is
     safe from any working tree; a conflict is raised, because a ticket about to
     be cut from a branch that cannot take its base is not a ticket to start.
+
+    The exception is a branch whose work the base already holds, typically
+    through a squash merge: its conflict is with its own work, rewritten. That
+    branch is moved to the base tip instead (`_fast_forward_superseded`).
     """
     return _refresh_from_tips(
         repo_root, read_branch_tips(repo_root, branch, base_branch), branch, base_branch
@@ -195,12 +215,57 @@ def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_bran
             logger.info("Refreshed %s from %s as %s", branch, base_branch, outcome.sha[:12])
         return not outcome.already_contained
     if outcome.conflicted:
+        if _fast_forward_superseded(repo_root, tips, branch, base_branch):
+            return True
         raise IntegrationConflictError(branch, base_branch, outcome.conflicted_files)
     raise TargetBranchError(f"Cannot refresh {branch!r} from {base_branch!r}: {outcome.detail}")
 
 
+def _fast_forward_superseded(
+    repo_root: Path, tips: BranchTips, branch: str, base_branch: str
+) -> bool:
+    """Move ``branch`` to the base tip when the base already holds all its work.
+
+    False, touching nothing, when the branch has anything the base lacks: a
+    branch with unique work is never reset. The move is a compare-and-swap on
+    the tip just read, so a branch that gained a commit meanwhile is refused.
+    """
+    branch_sha, base_sha = tips.of(branch), tips.of(base_branch)
+    holder = superseding_commit(repo_root, branch_sha, base_sha)
+    if not holder:
+        return False
+    moved = run_git(
+        ["update-ref", f"refs/heads/{branch}", base_sha, branch_sha],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if moved.returncode != 0:
+        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
+        raise TargetBranchError(
+            f"{branch!r} is already in {base_branch!r} (as {holder[:12]}) but could not be "
+            f"moved to it: {detail}"
+        )
+    logger.warning(
+        "Reset %s from %s to %s tip %s: its work is already in %s as %s",
+        branch,
+        branch_sha[:12],
+        base_branch,
+        base_sha[:12],
+        base_branch,
+        holder[:12],
+    )
+    return True
+
+
 def resolve_target_branch(
-    session: Session, ticket: Ticket, workspace: Workspace, *, repo_root: Path
+    session: Session,
+    ticket: Ticket,
+    workspace: Workspace,
+    *,
+    repo_root: Path,
+    merge_conflicts: bool = True,
 ) -> str:
     """The branch ``ticket`` lands on, existing and current in ``repo_root`` on return.
 
@@ -208,24 +273,63 @@ def resolve_target_branch(
     nothing, and merges nothing unless the base moved. ``base_branch`` is never
     created here — a workspace whose base is missing is misconfigured, and
     that is reported, not repaired.
+
+    A branch that cannot take its base gets an agent turn to merge it
+    (`integration_merge_agent`), which blocks this call while it runs; only
+    when that is off, spent or fails is the conflict raised and put in front of
+    a person. ``merge_conflicts=False`` skips the turn, for a caller that can
+    run on the stale branch rather than wait (a chat turn).
     """
     base = resolve_orchestration_profile(workspace).git.base_branch
     target = target_branch_name(session, ticket, workspace)
     if target != base:
-        # One reading of both refs decides creation and the refresh alike.
+        root = subtree_root(session, ticket)
         try:
-            _refresh_from_tips(
-                repo_root, ensure_integration_branch(repo_root, target, base), target, base
+            _refresh_or_merge(
+                session, workspace, root, repo_root, target, base, merge_conflicts=merge_conflicts
             )
         except IntegrationConflictError as exc:
             # Whoever hits it first files the card; raising alone left the only
             # record in one failed run or chat reply.
             report_integration_conflict(
                 session,
-                subtree_root(session, ticket),
+                root,
                 branch=exc.branch,
                 base=exc.base,
                 files=exc.files,
+                automatic=exc.automatic,
             )
             raise
+        # The branch takes its base now; a card filed earlier no longer holds.
+        clear_integration_conflict(session, root, branch=target, base=base)
     return target
+
+
+def _refresh_or_merge(
+    session: Session,
+    workspace: Workspace,
+    root: Ticket,
+    repo_root: Path,
+    target: str,
+    base: str,
+    *,
+    merge_conflicts: bool,
+) -> None:
+    try:
+        # One reading of both refs decides creation and the refresh alike.
+        _refresh_from_tips(
+            repo_root, ensure_integration_branch(repo_root, target, base), target, base
+        )
+        return
+    except IntegrationConflictError as exc:
+        if not merge_conflicts:
+            raise
+        merged = merge_base_by_agent(
+            session, workspace, root, repo_root=repo_root, branch=target, base=base, files=exc.files
+        )
+        if not merged.ok:
+            exc.automatic = merged.detail
+            raise
+    # Merged: the refresh is a no-op now, unless the base moved again meanwhile,
+    # which raises for the next dispatch rather than looping here.
+    _refresh_from_tips(repo_root, read_branch_tips(repo_root, target, base), target, base)

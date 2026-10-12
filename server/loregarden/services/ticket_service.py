@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
@@ -37,6 +36,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.initiative_coverage import initiatives_tracking
@@ -307,7 +307,7 @@ class TicketService:
                 "work_item_type": work_item_type.value,
             },
         )
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = utcnow()
         self.session.add(ticket)
         ticket_id = ticket.id
         self.session.commit()

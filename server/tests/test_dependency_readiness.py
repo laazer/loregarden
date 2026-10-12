@@ -210,3 +210,34 @@ def test_siblings_in_a_milestone_under_an_initiative_see_each_others_landed_work
     assert land_ticket(session, a, workspace).ok
 
     assert _reasons(session, b, workspace) == {}
+
+
+# --- the machine-readable surface is frozen (lg-milestone-that-779 AC8) ----------
+
+
+def test_the_mcp_blocked_by_entry_keeps_its_reason_and_target_and_gains_no_remedy(
+    session, workspace, repo
+):
+    """Agents parse `blocked_by`. 779 adds an operator remedy to the
+    orchestrator's prose hold line (`builtin_orchestrator._why`); this payload
+    is a different reader and must not pick it up.
+    """
+    from loregarden.mcp.ticket_edit_tools import blocked_by_summaries
+
+    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
+    a = _ticket(session, workspace, "a", parent=ms, state=TicketState.DONE)
+    b = _ticket(session, workspace, "b", parent=ms)
+    _depends(session, b, a)
+    target = resolve_target_branch(session, b, workspace, repo_root=repo)
+    git(repo, "branch", a.branch, target)
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
+    assert _reasons(session, b, workspace) == {"a": UnmetReason.NOT_LANDED}
+
+    entries = blocked_by_summaries(session, b)
+
+    assert [e["external_id"] for e in entries] == ["a"]
+    assert entries[0]["reason"] == "not_landed"
+    assert entries[0]["needs_landing_on"] == target
+    assert not any("loregarden_land_ticket" in str(value) for value in entries[0].values()), (
+        f"the remedy clause belongs to the prose hold line only: {entries[0]}"
+    )

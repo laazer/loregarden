@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CHAT_PRIMITIVES_VERSION = 1
 
@@ -43,7 +43,19 @@ class ParentTicketPart(BaseModel):
     title: str | None = None
 
 
-class TicketListPart(BaseModel):
+class _TicketSetPart(BaseModel):
+    """A card whose empty ``ticket_ids`` means "every ticket", not "none".
+
+    Unknown keys are rejected so a misspelled id list fails validation and the
+    parser keeps the raw fence visible. Ignoring it instead turned
+    ``"items":[{"ticket_id":…}]`` into an unfiltered tree of every workspace,
+    shown under the agent's title as if it were the answer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TicketListPart(_TicketSetPart):
     primitive: Literal["ticket_list"] = "ticket_list"
     ticket_ids: list[str] = Field(default_factory=list)
     parent_ticket_id: str | None = None
@@ -54,7 +66,7 @@ class TicketListPart(BaseModel):
     title: str | None = None
 
 
-class StatusColumnPart(BaseModel):
+class StatusColumnPart(_TicketSetPart):
     primitive: Literal["status_column"] = "status_column"
     status: str
     ticket_ids: list[str] = Field(default_factory=list)
@@ -63,7 +75,7 @@ class StatusColumnPart(BaseModel):
     title: str | None = None
 
 
-class KanbanPart(BaseModel):
+class KanbanPart(_TicketSetPart):
     primitive: Literal["kanban"] = "kanban"
     ticket_ids: list[str] = Field(default_factory=list)
     statuses: list[str] = Field(default_factory=list)
@@ -72,7 +84,7 @@ class KanbanPart(BaseModel):
     title: str | None = None
 
 
-class FilterableKanbanPart(BaseModel):
+class FilterableKanbanPart(_TicketSetPart):
     primitive: Literal["filterable_kanban"] = "filterable_kanban"
     ticket_ids: list[str] = Field(default_factory=list)
     statuses: list[str] = Field(default_factory=list)

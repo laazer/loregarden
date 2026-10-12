@@ -1,0 +1,109 @@
+/* The autopilot card in the workflow pane of a milestone or parent ticket. */
+
+.subtree-autopilot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.subtree-autopilot .state-label {
+  margin: 0;
+}
+
+.subtree-autopilot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.subtree-autopilot-head .subtree-autopilot-muted {
+  max-width: 70ch;
+  margin-top: 4px;
+}
+
+.subtree-autopilot-controls,
+.subtree-autopilot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.subtree-autopilot-select {
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.subtree-autopilot-muted {
+  margin: 0;
+  color: var(--txl);
+  font-size: 11.5px;
+}
+
+.subtree-autopilot-hint {
+  margin: 0;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.subtree-autopilot-alert {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--tx);
+  background: color-mix(in srgb, var(--red) 14%, var(--bg1));
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--bd));
+}
+
+.subtree-autopilot-subtitle {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.subtree-autopilot-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.subtree-autopilot-link {
+  padding: 0;
+  text-align: left;
+  color: var(--tx);
+}
+
+.subtree-autopilot-link:hover {
+  color: var(--ac2);
+}
+
+.subtree-autopilot-mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.subtree-autopilot-skeleton {
+  height: 14px;
+  width: min(360px, 80%);
+  border-radius: 4px;
+  background: var(--bg3);
+}
+
+.subtree-autopilot-log summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: 12px;
+}
+
+.subtree-autopilot-log .subtree-autopilot-list {
+  margin-top: 6px;
+}

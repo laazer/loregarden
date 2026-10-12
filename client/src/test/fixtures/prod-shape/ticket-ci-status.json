@@ -1,0 +1,59 @@
+{
+ "auto_fix_history": [
+  {
+   "attempt_number": 1,
+   "ci_run_result_id": "aeb499fe-7718-578e-84d5-a29f7ec754e5",
+   "completed_at": "2026-09-13T00:41:00",
+   "created_at": "2026-09-13T00:10:00",
+   "id": "7498150a-edd8-5cf5-b339-1d43fd6ff7c2",
+   "result_summary": "CI failing at 3074e3de9c97 after the fix",
+   "run_id": null,
+   "status": "failed"
+  },
+  {
+   "attempt_number": 2,
+   "ci_run_result_id": "5c287bb4-f33f-5c27-ba12-4549ecbacc78",
+   "completed_at": "2026-09-13T02:11:00",
+   "created_at": "2026-09-13T02:11:00",
+   "id": "5cb1549b-691a-5e81-b689-b62278668c2a",
+   "result_summary": "the pull request's head 3074e3de9c97 is not the local loregarden/lg-900 (cb1a2c41c69a); a fix built here would not apply to it",
+   "run_id": null,
+   "status": "refused"
+  },
+  {
+   "attempt_number": 2,
+   "ci_run_result_id": "5c287bb4-f33f-5c27-ba12-4549ecbacc78",
+   "completed_at": "2026-09-13T02:43:00",
+   "created_at": "2026-09-13T02:12:00",
+   "id": "a36ecbd8-d2da-529a-8737-9bcf2f587738",
+   "result_summary": "the fix turn finished without a new commit",
+   "run_id": null,
+   "status": "failed"
+  },
+  {
+   "attempt_number": 3,
+   "ci_run_result_id": "3bd82b42-d7c7-5554-aef8-f8ca03dffc8e",
+   "completed_at": "2026-09-13T04:44:00",
+   "created_at": "2026-09-13T04:13:00",
+   "id": "43be862a-db64-571c-b75c-80dbf9fc258f",
+   "result_summary": "CI passing at 344f0a44f523 after the fix",
+   "run_id": null,
+   "status": "succeeded"
+  }
+ ],
+ "ci_status": {
+  "created_at": "2026-09-13T06:00:00",
+  "external_run_id": null,
+  "failure_summary": null,
+  "full_logs": null,
+  "head_sha": "344f0a44f5235114ba1ccbce929a7197",
+  "id": "38ed84ee-9063-54b7-948f-b508d2ac35b8",
+  "logs_url": "https://github.com/laazer/loregarden/pull/812",
+  "pr_number": 812,
+  "provider": "github_actions",
+  "status": "passing",
+  "ticket_id": "43a96b72-129a-58bd-ab0c-df73131dacc2",
+  "updated_at": "2026-09-13T06:09:00",
+  "workspace_id": "prod-shape-workspace"
+ }
+}

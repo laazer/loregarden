@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useActiveChatSession } from "../useActiveChatSession";
+import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
+import { useTicketRefStore } from "../../state/ticketRefStore";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../api/client", () => ({
@@ -78,7 +80,7 @@ beforeEach(() => {
   useUiStore.setState({
     branchTriageWorkspaceSlug: "",
     branchTriageBranch: "",
-    chatWorkspaceSlug: "loregarden",
+    chatScope: "loregarden",
   });
 });
 
@@ -159,7 +161,7 @@ it("binds to nothing on the Baxter chat screen, which composes for itself", () =
   expect(result.current.session).toBeNull();
   expect(result.current.composedOnScreen).toBe(true);
   // The archive still rides along: the bar draws the model picker there.
-  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
+  expect(result.current.archive?.scope).toBe("loregarden");
 });
 
 it("binds to nothing on Home, whose hero is the way into the same thread", () => {
@@ -183,15 +185,55 @@ it("binds to nothing on an initiative plan page, whose planner chat composes for
 });
 
 it("binds the planner's model, not Baxter's, on an initiative plan page", async () => {
+  const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+  useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
+  try {
+    const { result } = renderHook(() => useActiveChatSession(), {
+      wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    });
+
+    await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
+    expect(result.current.model?.scopeLabel).toBe("Initiative planner");
+    // Options come from the workspace the planner runs in, not the chat workspace.
+    expect(result.current.model?.workspaceSlug).toBe("tinkercg");
+    // By the UUID the page uses: the planner endpoint 404s on the shareable ref.
+    expect(api.plannerChat).toHaveBeenCalledWith(uuid);
+    expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+  } finally {
+    useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  }
+});
+
+it("binds Baxter's model on an initiative plan page when the panel shows Baxter", async () => {
+  const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+  useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
+  useInitiativeAgentStore.setState({ agent: "baxter", baxterSessionByInitiative: { [uuid]: "bx1" } });
+  try {
+    const { result } = renderHook(() => useActiveChatSession(), {
+      wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    });
+
+    expect(result.current.composedOnScreen).toBe(true);
+    expect(result.current.session).toBeNull();
+    expect(result.current.model?.scopeLabel).toBe("Baxter · initiative");
+    // The thread the panel shows: filed under the UUID, read in the initiative's scope.
+    await waitFor(() => expect(api.baxterChatSession).toHaveBeenCalledWith(`@initiative:${uuid}`, "bx1"));
+  } finally {
+    useInitiativeAgentStore.setState({ agent: "planner", baxterSessionByInitiative: {} });
+    useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  }
+});
+
+it("asks for no planner conversation until the initiative's shareable id resolves", () => {
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  (api.plannerChat as jest.Mock).mockClear();
   const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    wrapper: wrapperFor("/initiatives/init-pre-tinkercg-3"),
   });
 
-  await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
-  expect(result.current.model?.scopeLabel).toBe("Initiative planner");
-  // Options come from the workspace the planner runs in, not the chat workspace.
-  expect(result.current.model?.workspaceSlug).toBe("tinkercg");
-  expect(api.plannerChat).toHaveBeenCalledWith("init-tinkercg-build-1");
+  // Still the planner's page: Baxter's composer stays off it.
+  expect(result.current.composedOnScreen).toBe(true);
+  expect(api.plannerChat).not.toHaveBeenCalled();
 });
 
 it("asks for no planner conversation off an initiative page", () => {
@@ -230,7 +272,7 @@ it("offers the archive on a screen bound to the Baxter thread", () => {
     wrapper: wrapperFor("/queue"),
   });
 
-  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
+  expect(result.current.archive?.scope).toBe("loregarden");
 });
 
 it("keeps the archive off a ticket conversation, which has no other thread", () => {

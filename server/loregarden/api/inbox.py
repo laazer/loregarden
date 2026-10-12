@@ -68,6 +68,9 @@ def resolve_approval(
 ) -> dict:
     svc = ApprovalService(session)
     try:
+        if body.action == ApprovalResolutionAction.IGNORE:
+            ignored = svc.ignore(approval_id, reason=body.response)
+            return {"id": ignored.id, "status": ignored.status.value}
         if body.action == ApprovalResolutionAction.RECHECK:
             # Snapshot is probed server-side — never body.answers (clients send none,
             # and a forged answers-shaped snapshot could mark credentials available).

@@ -52,10 +52,16 @@ def identify(pid: int) -> IdentityReading:
     that nothing holds the pid; UNKNOWN when it could not answer at all — a
     timeout, a `ps` that would not run. The two used to be one `None`, so a slow
     `ps` read as a dead process (lg-run-durability-862).
+
+    A zombie is GONE too. It has exited and only waits for its parent to reap
+    it, but it still holds its pid and `ps` still prints its start time, so it
+    read as a live agent forever. A tmux pane's parent is the tmux server, and
+    tmux 3.4 on Linux sometimes leaves a pane unreaped once its server has no
+    sessions left: 2/100 instant-exit panes were still zombies 2s later.
     """
     try:
         result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "lstart="],
+            ["ps", "-p", str(pid), "-o", "stat=", "-o", "lstart="],
             capture_output=True,
             text=True,
             timeout=_PS_TIMEOUT_SECONDS,
@@ -64,18 +70,23 @@ def identify(pid: int) -> IdentityReading:
     except (OSError, subprocess.SubprocessError):
         logger.warning("Could not read process identity for pid %s", pid, exc_info=True)
         return IdentityReading(ProcessState.UNKNOWN)
-    stamp = result.stdout.strip()
-    if result.returncode != 0 and not stamp:
+    printed = result.stdout.strip()
+    if result.returncode != 0 and not printed:
         # `ps -p` exits non-zero with nothing printed when no process matches.
         return IdentityReading(ProcessState.GONE)
+    # `stat` is one token (`Ss`, `Z+`); `lstart` is the rest, spaces and all.
+    stat, _, stamp = printed.partition(" ")
+    stamp = stamp.strip()
     if result.returncode != 0 or not stamp:
         logger.warning(
             "ps gave no usable identity for pid %s (exit %s): %s",
             pid,
             result.returncode,
-            (result.stderr or stamp).strip()[:200],
+            (result.stderr or printed).strip()[:200],
         )
         return IdentityReading(ProcessState.UNKNOWN)
+    if stat.startswith("Z"):
+        return IdentityReading(ProcessState.GONE)
     return IdentityReading(ProcessState.ALIVE, stamp)
 
 

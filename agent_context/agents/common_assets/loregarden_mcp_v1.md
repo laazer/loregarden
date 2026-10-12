@@ -201,6 +201,7 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 | Create an initiative / attach a milestone to one | `loregarden_create_ticket` with `work_item_type=initiative`, no `workspace_slug`; then `loregarden_update_ticket` on the milestone with `parent=<init-id>` (`""` detaches) |
 | Unrecoverable failure | `loregarden_block_ticket` |
 | A stage's exit actions need a person | `loregarden_request_approval` (refused when nothing is outstanding; a sign-off is an `operator_judgment` exit action on the stage) |
+| A person must authorize an action (force-push, publish a ref, open/close a PR) | End blocked with `blocked_kind: decision` and the exact command as an option; the pick returns as the `Decision — <stage>` artifact and is the authorization. Not `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Store a document (architecture, decision, plan) on any ticket, initiative included; same title = new version | `loregarden_write_document` |
 | Find the planning documents your ticket and its ancestors carry | `documents` in `loregarden_get_ticket`, or `loregarden_list_artifacts` |

@@ -18,9 +18,12 @@ Two behaviours here are the ones that break quietly:
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
@@ -29,6 +32,7 @@ from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors import print_mode
+from loregarden.agents.executors.agent_spawn import SpawnedAgent
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
 from loregarden.models.domain import AgentTransport, RunStatus
@@ -39,6 +43,7 @@ from loregarden.services.run_output_files import (
     RunOutputPaths,
     paths_for,
     run_file_stem,
+    tmux_argv,
     tmux_session_name,
 )
 from sqlmodel import Session
@@ -135,7 +140,7 @@ def pinned_transport_fixture(monkeypatch, run_key):
 
     yield pin
     for session in created:
-        subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, check=False)
+        subprocess.run(tmux_argv("kill-session", "-t", session), capture_output=True, check=False)
 
 
 def _invocation(script: str, *, stdin_prompt: str | None = None) -> SimpleNamespace:
@@ -380,7 +385,7 @@ def test_an_agent_gone_before_tmux_named_its_pane_is_still_reported_from_rc(
 
     def without_a_pid(argv, *args, **kwargs):
         completed = real(argv, *args, **kwargs)
-        if list(argv)[:2] == ["tmux", "new-session"]:
+        if "new-session" in argv:
             completed.stdout = "\n"
         return completed
 
@@ -391,6 +396,37 @@ def test_an_agent_gone_before_tmux_named_its_pane_is_still_reported_from_rc(
 
     assert status is RunStatus.FAILED
     assert run_key.paths.rc.read_text() == "4"
+
+
+def test_a_pane_its_tmux_server_never_reaped_is_settled_from_rc(
+    db_session: Session, run_log_dir, run_key, pinned_transport, zombie_pid
+):
+    """A finished agent whose pane pid is an unreaped zombie still settles at once.
+
+    RED in CI on Linux: tmux 3.4 sometimes leaves a pane unreaped once its
+    server has no sessions left (2/100 instant-exit panes), `kill(pid, 0)`
+    succeeds on a zombie, and a run that had recorded its exit code waited out
+    its whole budget. The agent here runs in a real pane; only the pid the
+    loop watches is swapped for a zombie, which is what that pane became.
+    """
+    pinned_transport(AgentTransport.TMUX)
+    real = subprocess.run
+
+    def watching_a_zombie(argv, *args, **kwargs):
+        completed = real(argv, *args, **kwargs)
+        if "new-session" in argv:
+            completed.stdout = f"{zombie_pid}\n"
+        return completed
+
+    started = time.monotonic()
+    with mock.patch(
+        "loregarden.agents.executors.agent_spawn.subprocess.run", side_effect=watching_a_zombie
+    ):
+        stdout, _stderr, status = _run(db_session, run_key, "print('done')", timeout=15)
+
+    assert status is RunStatus.SUCCEEDED
+    assert stdout.strip() == "done"
+    assert time.monotonic() - started < 10, "settled by its budget, not by its .rc"
 
 
 # --- AC5: which budget fired, on both transports -----------------------------
@@ -508,3 +544,39 @@ def test_the_print_mode_module_does_not_import_the_pipe_line_reader():
     """
     assert not hasattr(print_mode, "SubprocessLineReader")
     assert hasattr(subprocess_lines, "SubprocessLineReader"), "the pipe reader still exists"
+
+
+def test_the_kill_signals_the_group_the_pid_leads_never_the_one_it_sits_in(run_key):
+    """A pid that leads no group must not lead `killpg` to its neighbours.
+
+    A tmux pane read before its `setsid()` sits in the tmux server's group, and
+    `killpg(getpgid(pid))` would have killed the server and every agent's pane.
+    Here the stand-in for that server is a session leader with the pid in its
+    group; it has to survive.
+    """
+    leader = subprocess.Popen(
+        ["/bin/sh", "-c", "sleep 30 & echo $!; wait"],
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        member = int(leader.stdout.readline())
+        assert os.getpgid(member) == leader.pid != member, "precondition: member leads no group"
+
+        print_mode._kill_agent_group(
+            SpawnedAgent(
+                pid=member,
+                transport_used=AgentTransport.TMUX,
+                paths=run_key.paths,
+                handle=None,
+            )
+        )
+
+        # A SIGKILL is delivered asynchronously; give it time to land before
+        # calling the neighbour alive.
+        with pytest.raises(subprocess.TimeoutExpired):
+            leader.wait(timeout=0.5)
+    finally:
+        os.killpg(leader.pid, signal.SIGKILL)
+        leader.wait(timeout=10)

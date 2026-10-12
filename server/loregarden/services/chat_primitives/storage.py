@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 EMPTY_PARTS_JSON = "[]"
 
 
-def parts_json_for_reply(session: Session, reply: str, *, workspace_id: str) -> str:
-    """Parse, resolve, and serialize *reply* for storage on a chat message row."""
+def parts_json_for_reply(session: Session, reply: str, *, workspace_id: str | None) -> str:
+    """Parse, resolve, and serialize *reply* for storage on a chat message row.
+
+    ``workspace_id=None`` resolves refs across workspaces (see ``resolver``).
+    """
     parts = resolve_parts(session, parse_primitive_parts(reply or ""), workspace_id=workspace_id)
     return json.dumps(parts_to_jsonable(parts))
 

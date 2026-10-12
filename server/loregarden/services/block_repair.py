@@ -44,8 +44,8 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.repair_brief import arm_repair_turn
 from loregarden.services.studio_routing import repair_pin_applies
-from loregarden.services.workflow_routing import apply_stage_route
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -222,16 +222,14 @@ def offer_repair(
             "person rather than repaired again.",
         )
 
-    apply_stage_route(
+    arm_repair_turn(
+        session,
         ticket,
         instance,
         stages,
         transitions,
-        from_key=stage_key,
-        outcome="reject",
-        next_stage_key=stage_key,
-        next_agent=REPAIR_AGENT_ID,
-        blocking_issues=repair_brief(stage_key, kind, message),
+        stage_key=stage_key,
+        brief=repair_brief(stage_key, kind, message),
         orch_run=orch_run,
     )
     session.add(ticket)

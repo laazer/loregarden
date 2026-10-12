@@ -17,6 +17,7 @@ from loregarden.services.artifact_records import (
     run_log_artifact_title,
 )
 from loregarden.services.artifact_service import list_ticket_artifacts
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import make_agent_run
 
@@ -198,3 +199,47 @@ def test_feed_marks_the_platforms_bookkeeping_as_system(db_session: Session):
         "Run run_elsewhere": False,
         "Stage report — gate": False,
     }
+
+
+def test_feed_reads_one_query_and_never_the_run_output(db_session: Session):
+    """The feed joins each row's run for two short columns, not the run's output.
+
+    Selecting the whole AgentRun read every run's stdout/stderr once per
+    artifact row; on a 48-run ticket that was 274 MB and 4-16 s per request.
+    """
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws.id)
+    run = make_agent_run(
+        db_session,
+        workspace_id=ws.id,
+        ticket_id=ticket.id,
+        run_code="run_feed03",
+        stage_key="implement",
+    )
+    run.stdout = "x" * 100_000
+    run.stderr = "y" * 100_000
+    db_session.add(run)
+    db_session.add_all(
+        Artifact(ticket_id=ticket.id, run_id=run.id, kind="handoff", title=f"h{i}")
+        for i in range(5)
+    )
+    db_session.commit()
+    ticket_id = ticket.id  # the commit expired it; refresh outside the measured window
+
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args) -> None:
+        statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        body = list_ticket_artifacts(db_session, ticket_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert body["total"] == 5
+    assert {item["stage_key"] for item in body["items"]} == {"implement"}
+    assert len(statements) == 1
+    assert "agent_runs.stdout" not in statements[0]
+    assert "agent_runs.stderr" not in statements[0]

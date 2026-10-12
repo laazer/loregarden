@@ -102,6 +102,17 @@ def tmux_session_name(stem: str) -> str:
     return f"{_SESSION_PREFIX}{stem}"
 
 
+def tmux_argv(*args: str) -> list[str]:
+    """A tmux command on loregarden's own socket — the ONLY way to spell one.
+
+    Every call site has to name the same server: a liveness check asked of the
+    default socket about a session on `settings.agent_tmux_socket` reads "gone"
+    and settles a live run. One helper is what keeps the spawn, the liveness
+    check and the attach command from drifting apart.
+    """
+    return ["tmux", "-L", settings.agent_tmux_socket, *args]
+
+
 def attach_command(run: AgentRun) -> str:
     """The command an operator pastes to watch this run, or "" when there is none.
 
@@ -115,7 +126,7 @@ def attach_command(run: AgentRun) -> str:
     if run.status not in SUPERVISED:
         return ""
     session = tmux_session_name(run_file_stem(run.run_code, run.id))
-    return f"tmux attach -t {session}"
+    return shlex.join(tmux_argv("attach", "-t", session))
 
 
 def write_prompt_file(paths: RunOutputPaths, prompt: str) -> None:

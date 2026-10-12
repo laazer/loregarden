@@ -3,7 +3,7 @@ import { useId, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import type { TicketDetail } from "../../api/client";
-import type { LedgerAttempt, TicketArtifactItem, TransientRetryNotice } from "../../api/types";
+import type { LedgerAttempt, TicketArtifactItem, TicketTreeNode, TransientRetryNotice } from "../../api/types";
 import { duration } from "../../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../../lib/ledgerStatus";
 import { buildTicketTimeline, isErrorOutput, isFailedStatus, type TimelineVisit } from "../../lib/ticketTimeline";
@@ -13,6 +13,7 @@ import { describeError } from "../../state/toastStore";
 import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
 import { LaneLogView } from "../logs/LaneLogView";
 import { StageFanoutPanel } from "../StageFanoutPanel";
+import { TicketChildrenRollup } from "./TicketChildrenRollup";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { formatShortTime, openOutput, outputTitle } from "../../lib/ticketOutputs";
@@ -46,13 +47,18 @@ export function TicketTimeline({
   runs,
   isActive,
   pendingApprovals,
+  childTickets,
   onOpenRunLog,
+  onOpenTicket,
 }: {
   ticket: TicketDetail;
   runs: readonly TimelineRun[];
   isActive: boolean;
   pendingApprovals: number;
+  /** The tickets directly under this one, from the board's tree. */
+  childTickets: readonly TicketTreeNode[];
   onOpenRunLog: (runId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
 }) {
   const ledger = useQuery({
     queryKey: ["ticket-ledger", ticket.id],
@@ -71,16 +77,19 @@ export function TicketTimeline({
     [ledger.data?.visits, feed.data?.items],
   );
 
-  if (ledger.isPending || feed.isPending) {
+  // The stages come from the ledger alone; the feed only hangs outputs on them.
+  // The feed is the heavier read, so a done ticket's stages are not held behind
+  // it — except before any run, where the feed's outputs are all there is.
+  const noVisits = (ledger.data?.visits.length ?? 0) === 0;
+  if (ledger.isPending || (noVisits && feed.isPending)) {
     return <PaneSkeleton variant="list" rows={6} label="Loading timeline…" />;
   }
-  if (ledger.isError || feed.isError) {
-    const failed = ledger.isError ? "run ledger" : "artifact feed";
+  if (ledger.isError) {
     return (
       <div className="ap-state" role="alert">
-        <div className="ap-state-title">Could not load this ticket&rsquo;s {failed}</div>
-        <div className="ap-state-body">{describeError(ledger.error ?? feed.error, "The request failed.")}</div>
-        <Button variant="secondary" compact onClick={() => void (ledger.isError ? ledger.refetch() : feed.refetch())}>
+        <div className="ap-state-title">Could not load this ticket&rsquo;s run ledger</div>
+        <div className="ap-state-body">{describeError(ledger.error, "The request failed.")}</div>
+        <Button variant="secondary" compact onClick={() => void ledger.refetch()}>
           Try again
         </Button>
       </div>
@@ -89,6 +98,8 @@ export function TicketTimeline({
 
   const stageNames = new Map(ticket.stages.map((stage) => [stage.key, stage.name]));
   const nothingYet = timeline.visits.length === 0 && timeline.beforeFirstRun.length === 0;
+  // A parent that never ran a stage itself: its story is the tickets under it.
+  const onlyChildren = timeline.visits.length === 0 && ticket.child_count > 0;
   const newestFirst = [...timeline.visits].reverse();
   const current = newestFirst.find((visit) => visit.active);
   const data = ledger.data;
@@ -97,7 +108,31 @@ export function TicketTimeline({
     <div className="tl">
       <Attention ticket={ticket} runs={runs} pendingApprovals={pendingApprovals} onOpenRunLog={onOpenRunLog} />
 
-      {nothingYet ? (
+      {feed.isError ? (
+        <div className="tl-feed-note" role="alert">
+          <span>
+            Could not load what each stage produced: {describeError(feed.error, "The request failed.")}
+          </span>
+          <Button variant="secondary" compact onClick={() => void feed.refetch()} disabled={feed.isFetching}>
+            Try again
+          </Button>
+        </div>
+      ) : feed.isPending ? (
+        <div className="tl-feed-note" role="status">
+          Loading what each stage produced…
+        </div>
+      ) : null}
+
+      {onlyChildren ? (
+        <>
+          <TicketChildrenRollup tickets={childTickets} childCount={ticket.child_count} onOpenTicket={onOpenTicket} />
+          {timeline.beforeFirstRun.length > 0 ? (
+            <ol className="tl-list">
+              <BeforeFirstRun outputs={timeline.beforeFirstRun} />
+            </ol>
+          ) : null}
+        </>
+      ) : nothingYet ? (
         <div className="ap-state">
           <div className="ap-state-title">Nothing has run for this ticket yet</div>
           <div className="ap-state-body">
@@ -132,18 +167,7 @@ export function TicketTimeline({
                 onOpenRunLog={onOpenRunLog}
               />
             ))}
-            {timeline.beforeFirstRun.length > 0 ? (
-              <li className="tl-visit tl-visit--quiet">
-                <div className="tl-visit-static">
-                  <span className="tl-dot" aria-hidden />
-                  <span className="tl-stage">Before the first run</span>
-                  <span className="tl-meta">
-                    {timeline.beforeFirstRun.length} output{timeline.beforeFirstRun.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <OutputList outputs={timeline.beforeFirstRun} />
-              </li>
-            ) : null}
+            <BeforeFirstRun outputs={timeline.beforeFirstRun} />
           </ol>
         </>
       )}
@@ -158,6 +182,23 @@ export function TicketTimeline({
         </details>
       ) : null}
     </div>
+  );
+}
+
+/** Outputs attached before any stage ran: an import's context, an integration diff. */
+function BeforeFirstRun({ outputs }: { outputs: readonly TicketArtifactItem[] }) {
+  if (outputs.length === 0) return null;
+  return (
+    <li className="tl-visit tl-visit--quiet">
+      <div className="tl-visit-static">
+        <span className="tl-dot" aria-hidden />
+        <span className="tl-stage">Before the first run</span>
+        <span className="tl-meta">
+          {outputs.length} output{outputs.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <OutputList outputs={outputs} />
+    </li>
   );
 }
 
@@ -232,21 +273,25 @@ function VisitItem({
             {visit.outputs.length} output{visit.outputs.length === 1 ? "" : "s"}
           </span>
         ) : null}
-        <span className="tl-when">
-          {visit.active ? (
-            <span className="tl-live">{visit.visit.status.replace("_", " ")}</span>
-          ) : (
-            duration(visit.durationSeconds)
-          )}
-          {visit.startedAt ? (
-            <span title={formatLocalTimestamp(visit.startedAt.toISOString())}>
-              {" · "}
-              {formatShortTime(visit.startedAt.toISOString())}
-            </span>
-          ) : null}
-        </span>
-        <span className="tl-chevron" aria-hidden>
-          {open ? "▾" : "▸"}
+        <span className="tl-head-end">
+          <span className="tl-when">
+            {visit.active ? (
+              <span className="tl-live">{visit.visit.status.replace("_", " ")}</span>
+            ) : (
+              <span>{duration(visit.durationSeconds)}</span>
+            )}
+            {visit.startedAt ? (
+              <>
+                {" · "}
+                <span title={formatLocalTimestamp(visit.startedAt.toISOString())}>
+                  {formatShortTime(visit.startedAt.toISOString())}
+                </span>
+              </>
+            ) : null}
+          </span>
+          <span className="tl-chevron" aria-hidden>
+            {open ? "▾" : "▸"}
+          </span>
         </span>
       </Button>
 

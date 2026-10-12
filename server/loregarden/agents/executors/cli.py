@@ -2,7 +2,6 @@ import json
 import logging
 import subprocess
 import tempfile
-from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
@@ -55,6 +54,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
@@ -92,7 +92,7 @@ from loregarden.services.run_errors import (
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
-from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
@@ -626,7 +626,7 @@ class CliAgentExecutor:
             ticket.next_status = "Proceed"
         else:
             ticket.next_status = "Blocked"
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = utcnow()
         self.session.add(ticket)
         self.session.commit()
 
@@ -645,16 +645,24 @@ class CliAgentExecutor:
         workspace: Workspace,
         *,
         repo_root: Path,
+        workspace_root: Path,
         skip: bool,
         advance_workflow: bool,
     ) -> AgentRun | None:
-        """Put the shared checkout on the ticket's branch. Returns the failed run
+        """Put the execution tree on the ticket's branch. Returns the failed run
         when the checkout could not be made, or None to carry on.
 
-        Skipped for a worktree, which is already on its own branch, created with
-        it and refreshed onto its target there. In the shared checkout the branch
-        is cut from — and an existing one brought up to — the ticket's target
-        branch, so a sibling's landed work reaches it (lg-milestone-that-769).
+        Runs for the ticket's worktree too. Creating one cuts it from the target
+        branch, but a tree cut three stages ago has seen nothing that landed
+        since, so the refresh has to happen on every dispatch and not only on
+        creation (lg-milestone-that-779). The branch is cut from — and an
+        existing one brought up to — the ticket's target branch, so a sibling's
+        landed work reaches it (lg-milestone-that-769).
+
+        ``workspace_root`` is what the target branch is resolved against, never
+        ``repo_root``: resolution writes refs (`ensure_integration_branch`,
+        `_refresh_from_tips`), refs are shared across worktrees, and the
+        integration-branch bookkeeping belongs in the shared checkout.
         """
         if skip:
             return None
@@ -663,13 +671,13 @@ class CliAgentExecutor:
                 repo_root,
                 ticket,
                 start_point=resolve_target_branch(
-                    self.session, ticket, workspace, repo_root=repo_root
+                    self.session, ticket, workspace, repo_root=workspace_root
                 ),
                 ignoring=ticket_recorded_paths(self.session, ticket),
             )
         except DirtyPrimaryCheckoutError:
             raise  # parked by `_prepare_tree`, not failed as a checkout error
-        except (ValueError, subprocess.CalledProcessError) as exc:
+        except (ValueError, subprocess.CalledProcessError, TargetBranchError) as exc:
             return self.orchestration.complete_run(
                 run,
                 status=RunStatus.FAILED,
@@ -697,6 +705,12 @@ class CliAgentExecutor:
         cannot be cut falls back to the shared checkout, unless that holds
         someone else's uncommitted work: then the run is parked, not started
         (864).
+
+        Reused or freshly cut, the tree is put on the ticket's branch and
+        refreshed onto its target on every dispatch — the only skip left is
+        ``skip_git_branch``, which the parallel driver passes its members
+        because `services.parallel_stage` already did it once for the stage
+        (lg-milestone-that-779).
         """
         try:
             repo_root = resolve_execution_root(self.session, run, ticket, workspace)
@@ -705,12 +719,25 @@ class CliAgentExecutor:
                 ticket,
                 workspace,
                 repo_root=repo_root,
-                skip=skip_git_branch or repo_root != workspace_root,
+                workspace_root=workspace_root,
+                skip=skip_git_branch,
                 advance_workflow=advance_workflow,
             )
         except DirtyPrimaryCheckoutError as exc:
             return workspace_root, park_on_dirty_checkout(
                 self.session, self.orchestration, run=run, ticket=ticket, error=exc
+            )
+        except TargetBranchError as exc:
+            # `resolve_execution_root` cuts the worktree from the ticket's
+            # target branch, so an integration branch that cannot take its base
+            # raises here rather than from `_ensure_branch_or_fail`. Now that
+            # every dispatch resolves a target branch (779), this is the common
+            # path, and letting it escape the executor loses the run.
+            return workspace_root, self.orchestration.complete_run(
+                run,
+                status=RunStatus.FAILED,
+                stderr=f"Failed to checkout branch: {exc}",
+                advance_workflow=advance_workflow,
             )
         return repo_root, failed
 

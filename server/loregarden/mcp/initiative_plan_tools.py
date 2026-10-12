@@ -109,15 +109,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.SET_INITIATIVE_AUTOPILOT,
         "description": (
-            "Turn an initiative's autopilot on or off, or set how many of its tickets may run "
-            "at once (1-12). On, it queues ready tickets every minute — critical path first, "
-            "up to max_parallel — and never tickets that need a person. It stops itself when three "
+            "Turn the autopilot of an initiative, milestone or parent ticket (feature, "
+            "capability) on or off, or set how many of its tickets may run at once (1-12). On, "
+            "it queues ready tickets in its subtree every minute — critical path first, up to "
+            "max_parallel — and never tickets that need a person. It stops itself when three "
             "tickets it started end blocked. Turning it on queues the first batch immediately."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "initiative_id": INITIATIVE_PROP,
+                "initiative_id": {
+                    "type": "string",
+                    "description": (
+                        "The initiative, milestone or parent ticket: its uuid or external id."
+                    ),
+                },
                 "enabled": {"type": "boolean"},
                 "max_parallel": {"type": "integer", "minimum": 1, "maximum": 12},
             },
@@ -220,6 +226,17 @@ def resolve_initiative_id(session: Session, ref: str) -> str:
     return match
 
 
+def resolve_plan_root_id(session: Session, ref: str) -> str:
+    """Like `resolve_initiative_id`, for any ticket a plan can be rooted at."""
+    ref = ref.strip()
+    if session.get(Ticket, ref) is not None:
+        return ref
+    match = session.exec(select(Ticket.id).where(Ticket.external_id == ref)).first()
+    if match is None:
+        raise ValueError(f"Ticket not found: {ref}")
+    return match
+
+
 def get_initiative_plan(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_PlanRequest, McpTool.GET_INITIATIVE_PLAN, arguments)
     return plan_payload(plan_view(session, resolve_initiative_id(session, request.initiative_id)))
@@ -241,14 +258,17 @@ def propose_initiative_schedule(session: Session, arguments: dict[str, Any]) -> 
 
 def set_initiative_autopilot(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_AutopilotRequest, McpTool.SET_INITIATIVE_AUTOPILOT, arguments)
-    initiative_id = resolve_initiative_id(session, request.initiative_id)
+    initiative_id = resolve_plan_root_id(session, request.initiative_id)
     try:
         update = AutopilotUpdate(enabled=request.enabled, max_parallel=request.max_parallel)
     except ValidationError as exc:
         raise ValueError(
             f"invalid arguments for {McpTool.SET_INITIATIVE_AUTOPILOT.value}: {exc}"
         ) from exc
-    plan = set_autopilot(session, initiative_id, update, actor="planner")
+    try:
+        plan = set_autopilot(session, initiative_id, update, actor="planner")
+    except LookupError as exc:
+        raise ValueError(str(exc)) from exc
     queued = run_autopilot(session, initiative_id) if plan.autopilot else 0
     return json.dumps(
         {"enabled": plan.autopilot, "max_parallel": plan.max_parallel, "queued_now": queued}

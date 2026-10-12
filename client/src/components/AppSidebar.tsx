@@ -187,8 +187,14 @@ function PinTabMenu({
  * The expanded panel is clipped out of both bands (see `.app-sidebar-panel`),
  * so the bars beside the rail stay whole instead of being half-covered by — or
  * half-covering — the panel. The bottom band is not a constant: the dock moves
- * between edges and grows with the terminal, so it is measured off the screen
- * area the same way `ToastHost` finds its corner.
+ * between edges and the action bar wraps, so it is measured at runtime.
+ *
+ * The bottom band is the action bar alone, not everything below the screen
+ * area: an open omnibar (the chat or terminal above the bar) is page content
+ * the rail expands over, like the screen itself. Clipping at the screen area's
+ * bottom cut the expanded rail off short of its footer whenever the omnibar
+ * was open. Docked right, the bar is nowhere near the rail, so the screen
+ * area's bottom (the frame's) stands.
  */
 function useRailInsets(navRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -199,11 +205,12 @@ function useRailInsets(navRef: RefObject<HTMLElement | null>) {
     const measure = () => {
       const rect = area.getBoundingClientRect();
       const frame = nav.getBoundingClientRect();
+      // Queried per measure: the bar swaps its root element between modes.
+      const bar = document.querySelector(".app-action-bar")?.getBoundingClientRect();
+      const barBesideRail = bar !== undefined && bar.left <= frame.right + 1;
+      const bottom = barBesideRail ? bar.top : rect.bottom;
       nav.style.setProperty("--rail-inset-top", `${Math.max(0, rect.top - frame.top)}px`);
-      nav.style.setProperty(
-        "--rail-inset-bottom",
-        `${Math.max(0, frame.bottom - rect.bottom)}px`,
-      );
+      nav.style.setProperty("--rail-inset-bottom", `${Math.max(0, frame.bottom - bottom)}px`);
     };
     measure();
 

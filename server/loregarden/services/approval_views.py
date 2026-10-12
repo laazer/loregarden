@@ -10,10 +10,12 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    IgnoreEffect,
     Ticket,
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.approval_ignore import ignore_effect
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.prepared_action import PreparedAction
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -169,6 +171,12 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "resolved_answers": resolved_answers,
         "created_at": approval.created_at.isoformat() if approval.created_at else "",
         "resolved_at": approval.resolved_at.isoformat() if approval.resolved_at else "",
+        "ticket_state": ticket.state.value if ticket else "",
+        "ignore_effect": (
+            ignore_effect(session, approval).value
+            if approval.status == ApprovalStatus.PENDING
+            else IgnoreEffect.NONE.value
+        ),
     }
 
 

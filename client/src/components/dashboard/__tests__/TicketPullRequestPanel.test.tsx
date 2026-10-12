@@ -45,6 +45,7 @@ function lookup(overrides: Partial<TicketPullRequest>): TicketPullRequest {
 
 function renderPanel(data: TicketPullRequest, handlers: { onOpenPr?: () => void; onCommitPush?: () => void } = {}) {
   mockApi.ticketPullRequest.mockResolvedValue(data);
+  mockApi.ciStatus.mockResolvedValue({ ci_status: null, auto_fix_history: [] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -184,5 +185,27 @@ describe("TicketPullRequestPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Bad credentials");
     expect(screen.queryByText(/No pull request/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "#9 older" })).toHaveAttribute("href", "https://github.com/o/r/pull/9");
+  });
+
+  it("keeps the recorded auto-fix attempts visible when GitHub cannot be asked", async () => {
+    renderPanel(lookup({ lookup: "failed", pull_request: null, error: "HTTP 401: Bad credentials" }));
+    mockApi.ciStatus.mockResolvedValue({
+      ci_status: null,
+      auto_fix_history: [
+        {
+          id: "a1",
+          ci_run_result_id: "r1",
+          attempt_number: 1,
+          run_id: null,
+          status: "refused",
+          result_summary: "the pull request's head moved",
+          created_at: "2026-10-12T10:00:00",
+          completed_at: "2026-10-12T10:00:00",
+        },
+      ],
+    });
+
+    expect(await screen.findByText("the pull request's head moved")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry auto-fix" })).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,9 @@ DEBUGGER_AGENT_ID = "debugger"
 #: Reruns a blocked stage the orchestrator judged fixable without a person
 #: (lg-workflow-integrity-750). One turn, never a second; see services.block_repair.
 REPAIR_AGENT_ID = "repair"
+#: Writes a ticket's acceptance criteria; its passing run is where operation
+#: criteria are caught before an implementer is handed them (782).
+SPEC_AGENT_ID = "spec"
 
 AGENTS: dict[str, dict] = {
     "planner": {

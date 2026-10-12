@@ -88,8 +88,12 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "approved_design_plan" ||
     decision === "approved_legacy_sign_off" ||
     decision === "requeued_after_decision" ||
+    decision === "parked_after_decision" ||
+    decision === "advanced_after_decision" ||
     decision === "dispatched_repair" ||
     decision === "dispatched_landing_resolver" ||
+    decision === "dispatched_ci_fix" ||
+    decision === "finished_cleared_landing" ||
     decision === "repaired"
     ? "normal"
     : "failed";

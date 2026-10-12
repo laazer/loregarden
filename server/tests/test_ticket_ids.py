@@ -7,6 +7,7 @@ import re
 import pytest
 from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.ticket_ids import (
     NO_MILESTONE_SEGMENT,
     derive_milestone_code,
@@ -280,6 +281,96 @@ class TestReparentAndMove:
         assert feature.ticket_number == number
         found = resolve(db_session, shared_link)
         assert found is not None and found.id == feature.id
+
+    def test_reparenting_into_a_milestone_respells_the_subtree(self, db_session: Session):
+        service = TicketService(db_session)
+        initiative = service.create_ticket(
+            title="App security", work_item_type=WorkItemType.INITIATIVE
+        )
+        milestone = service.create_ticket(
+            workspace_slug="loregarden",
+            title="App security",
+            work_item_type=WorkItemType.MILESTONE,
+            parent_ticket_id=initiative.id,
+        )
+        feature = service.create_ticket(
+            workspace_slug="loregarden",
+            title="Scan dependencies",
+            work_item_type=WorkItemType.FEATURE,
+            parent_ticket_id=initiative.id,
+        )
+        capability = service.create_ticket(
+            workspace_slug="loregarden",
+            title="Audit the lockfile",
+            work_item_type=WorkItemType.CAPABILITY,
+            parent_ticket_id=feature.id,
+        )
+        shared_link = feature.external_id
+        assert shared_link == f"lg-{NO_MILESTONE_SEGMENT}-{feature.ticket_number}"
+
+        reparent_ticket(db_session, feature, milestone.id)
+        db_session.commit()
+
+        assert feature.external_id == f"lg-app-security-{feature.ticket_number}"
+        assert capability.external_id == f"lg-app-security-{capability.ticket_number}"
+        found = resolve(db_session, shared_link)
+        assert found is not None and found.id == feature.id
+
+    def test_reparenting_out_of_a_milestone_states_none(self, db_session: Session):
+        service = TicketService(db_session)
+        initiative = service.create_ticket(title="Sprint", work_item_type=WorkItemType.INITIATIVE)
+        milestone = service.create_ticket(
+            workspace_slug="loregarden",
+            title="Workflow integrity",
+            work_item_type=WorkItemType.MILESTONE,
+        )
+        feature = service.create_ticket(
+            workspace_slug="loregarden",
+            title="Claim the lane",
+            work_item_type=WorkItemType.FEATURE,
+            parent_ticket_id=milestone.id,
+        )
+
+        reparent_ticket(db_session, feature, initiative.id)
+        db_session.commit()
+
+        assert feature.external_id == f"lg-{NO_MILESTONE_SEGMENT}-{feature.ticket_number}"
+
+    def test_reparenting_a_milestone_keeps_its_id(self, db_session: Session):
+        service = TicketService(db_session)
+        initiative = service.create_ticket(title="Roadmap", work_item_type=WorkItemType.INITIATIVE)
+        milestone = service.create_ticket(
+            workspace_slug="loregarden",
+            title="Workflow integrity",
+            work_item_type=WorkItemType.MILESTONE,
+        )
+        before = milestone.external_id
+
+        reparent_ticket(db_session, milestone, initiative.id)
+        db_session.commit()
+
+        assert milestone.external_id == before
+
+    def test_reparenting_an_unnumbered_row_leaves_its_id_alone(self, db_session: Session):
+        # Rows that predate ticket_number carry 0; spelling them would mint "-0".
+        workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        milestone = TicketService(db_session).create_ticket(
+            workspace_slug="loregarden",
+            title="Workflow integrity",
+            work_item_type=WorkItemType.MILESTONE,
+        )
+        legacy = make_ticket(
+            db_session,
+            workspace_id=workspace.id,
+            external_id="legacy-feature",
+            work_item_type=WorkItemType.FEATURE,
+        )
+        assert legacy.ticket_number == 0
+
+        reparent_ticket(db_session, legacy, milestone.id)
+        db_session.commit()
+
+        assert legacy.external_id == "legacy-feature"
 
     def test_a_cross_workspace_move_reissues_the_number(self, db_session: Session):
         source = make_workspace(db_session, slug="source")

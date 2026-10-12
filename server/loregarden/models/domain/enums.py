@@ -37,6 +37,15 @@ def str_enum_column(
 
 
 def utcnow() -> datetime:
+    """The clock every stored timestamp is stamped from: aware UTC.
+
+    SQLAlchemy's SQLite ``DateTime`` drops the tzinfo on write, so the column
+    holds naive UTC text (``2026-10-12 18:24:30.375613``) and reads back naive.
+    ``datetime.now()`` is naive *local* time and lands in the same column
+    looking identical, hours off; a raw ``sqlite3`` bind of an aware value
+    stores ``+00:00``, which no ORM write produces. Stamp through this, and
+    write through the ORM.
+    """
     return datetime.now(timezone.utc)
 
 
@@ -573,8 +582,6 @@ class DispatchSurface(StrEnum):
     QUEUE = "queue"
     #: `POST /stage-fanout` — one deliberate decision, N attempts.
     FANOUT = "fanout"
-    #: The automatic conflict-resolution re-dispatch.
-    CONFLICT = "conflict"
 
 
 class StageFanoutGroupStatus(str, Enum):
@@ -755,6 +762,9 @@ class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    #: A person dismissed the card with a reason (stale, duplicate, a test).
+    #: Anything still waiting on it is answered as a rejection would be.
+    IGNORED = "ignored"
 
 
 class EventType(str, Enum):
@@ -854,6 +864,8 @@ class AutoFixStatus(str, Enum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    #: Not dispatched, and why is in `result_summary`. Not charged to the budget.
+    REFUSED = "refused"
 
 
 class WorktreeState(str, Enum):

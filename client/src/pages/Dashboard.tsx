@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
 import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
@@ -35,12 +35,12 @@ import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal
 import { RunLogModal } from "../components/RunLogModal";
 import { canHaveChildren } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
-import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
+import { SubtreeAutopilotCard } from "../components/SubtreeAutopilotCard";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
 import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { DEFAULT_ARTIFACT_TAB, navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
@@ -187,7 +187,7 @@ export function Dashboard() {
     if (!routeTicketId || !rawArtifactTab) return;
     if (!isArtifactTab(rawArtifactTab)) {
       // A retired tab (/logs, /errors, /artifacts…) lands on the view that holds it now.
-      navigateToTicket(routeTicketId, { tab: canonicalArtifactTab(rawArtifactTab) ?? "diff", replace: true });
+      navigateToTicket(routeTicketId, { tab: canonicalArtifactTab(rawArtifactTab) ?? DEFAULT_ARTIFACT_TAB, replace: true });
     }
   }, [routeTicketId, rawArtifactTab]);
 
@@ -241,7 +241,10 @@ export function Dashboard() {
     enabled: !!selectedId,
     refetchInterval: 5000,
   });
-  const humanApprovalCount = (ticketApprovals.data ?? []).filter(hasHumanCriteria).length;
+  // Every pending approval waits on a person, not only the ones with criteria:
+  // counting just those hid a pending human_action (a merge to resolve by hand)
+  // from the timeline, though the Review button it leads to lists them all.
+  const pendingApprovalCount = ticketApprovals.data?.length ?? 0;
 
   const orchestrate = useMutation({
     meta: { errorTitle: "Start orchestration" },
@@ -622,21 +625,6 @@ export function Dashboard() {
       (latestRun?.status === "failed" && latestRun.stderr),
   );
 
-  const lastAutoTabTicketId = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!sel?.id) return;
-    if (lastAutoTabTicketId.current === sel.id) return;
-    lastAutoTabTicketId.current = sel.id;
-
-    // Respect explicit artifact tabs in the URL (e.g. /tickets/:id/logs).
-    if (artifactTab !== "diff") return;
-
-    if (sel.blocking_issues || sel.artifacts?.error) {
-      navigateToTicketTab(sel.id, "timeline", true);
-    }
-  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, artifactTab]);
-
   const counts = flatTickets.reduce(
     (acc, t) => {
       acc.all += 1;
@@ -805,6 +793,14 @@ export function Dashboard() {
                 </button>
                 {sel.child_count > 0 || selChildren.length > 0 ? (
                   <div>
+                    {canHaveChildren(sel.work_item_type) && sel.work_item_type !== "initiative" ? (
+                      // An initiative's autopilot lives on its plan page, beside the schedule.
+                      <SubtreeAutopilotCard
+                        ticketId={sel.id}
+                        workItemType={sel.work_item_type}
+                        onOpenTicket={selectTicket}
+                      />
+                    ) : null}
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets
                     </div>
@@ -970,7 +966,7 @@ export function Dashboard() {
               selectedId={selectedId}
               hasRunErrors={hasRunErrors}
               outputCount={artifactsFeed.data?.items.filter((item) => !item.system).length ?? 0}
-              approvalCount={humanApprovalCount}
+              approvalCount={pendingApprovalCount}
               hasPr={!!sel?.artifacts?.pr}
             />
             <div className="tab-bar-actions">
@@ -987,12 +983,14 @@ export function Dashboard() {
               ticket={sel}
               runs={ticketRuns.data ?? []}
               hasActiveRun={hasActiveRun}
-              pendingApprovals={humanApprovalCount}
+              pendingApprovals={pendingApprovalCount}
+              childTickets={selChildren}
               selectedId={selectedId}
               activeWorkspaceSlug={activeWorkspaceSlug}
               isOpeningPr={openPr.isPending}
               isCommittingPush={commitPush.isPending}
               onOpenRunLog={setLogRunId}
+              onOpenTicket={selectTicket}
               onOpenEditorFile={openEditorFile}
               onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
               onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}

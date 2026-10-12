@@ -23,6 +23,7 @@ jest.mock("../../api/client", () => {
       ticketTree: jest.fn(),
       tickets: jest.fn(),
       workspaces: jest.fn(),
+      initiatives: jest.fn(),
       runtimeOptions: jest.fn(),
       baxterChatSessions: jest.fn(),
       baxterChatSession: jest.fn(),
@@ -80,6 +81,9 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
     const created: BaxterChatSnapshot = {
       id: `s${nextId++}`,
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: title || "New chat",
       messages: [],
       pending_approvals: [],
@@ -227,13 +231,21 @@ describe("BaxterChatPage", () => {
       { id: "w1", slug: "loregarden", name: "Loregarden", repo_path: "/tmp" } as never,
       { id: "w2", slug: "blobert", name: "Blobert", repo_path: "/tmp/b" } as never,
     ]);
+    mockedApi.initiatives.mockResolvedValue([
+      {
+        id: "i1",
+        external_id: "INI-1",
+        title: "Cross-repo launch",
+        state: "in_progress",
+      } as never,
+    ]);
     fakeChatServer();
     // Both the slug and the bound thread are persisted, so leaving them set
     // would leak across tests.
     useUiStore.setState({
       baxterHistoryOpen: false,
       baxterWorkbenchOpen: null,
-      chatWorkspaceSlug: "",
+      chatScope: "",
       workspace: "all",
       baxterChatSessionId: "",
     });
@@ -284,6 +296,9 @@ describe("BaxterChatPage", () => {
     threads.set("s9", {
       id: "s9",
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: "Yesterday's triage",
       messages: [
         { id: "m1", role: "user", content: "Where did we stop?", created_at: "2026-07-29T09:00:00Z" },
@@ -334,7 +349,7 @@ describe("BaxterChatPage", () => {
   });
 
   it("sends to the picked chat workspace, not the Console filter", async () => {
-    useUiStore.setState({ chatWorkspaceSlug: "blobert", workspace: "loregarden" });
+    useUiStore.setState({ chatScope: "blobert", workspace: "loregarden" });
     await renderChatReady();
 
     fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
@@ -354,7 +369,7 @@ describe("BaxterChatPage", () => {
   });
 
   it("scopes its ticket queries to one workspace instead of every workspace", async () => {
-    useUiStore.setState({ chatWorkspaceSlug: "blobert" });
+    useUiStore.setState({ chatScope: "blobert" });
     await renderChatReady();
 
     await waitFor(() => expect(mockedApi.tickets).toHaveBeenCalled());
@@ -363,8 +378,58 @@ describe("BaxterChatPage", () => {
     }
   });
 
+  it("sends a global chat to the global archive and reads every workspace", async () => {
+    useUiStore.setState({ chatScope: "@global", workspace: "loregarden" });
+    mockedApi.approvals.mockResolvedValue([
+      { ...APPROVAL_FIXTURE, id: "a1", workspace_slug: "loregarden" },
+      { ...APPROVAL_FIXTURE, id: "a2", workspace_slug: "blobert" },
+    ] as never);
+    await renderChatReady();
+
+    // Both workspaces' approvals count: a global chat answers about all of them.
+    await screen.findByText(/2 approvals waiting/);
+    expect(screen.getByText(/Answering across every workspace/)).toBeInTheDocument();
+    await waitFor(() => expect(mockedApi.tickets).toHaveBeenCalled());
+    for (const call of mockedApi.tickets.mock.calls) {
+      expect(call[0]?.workspace).toBeUndefined();
+    }
+
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "Where are we?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.createBaxterChatSession).toHaveBeenCalledWith("@global");
+      expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith(
+        "@global",
+        "s1",
+        "Where are we?",
+        "",
+        [],
+      );
+    });
+  });
+
+  it("names the focused initiative and links to its plan", async () => {
+    useUiStore.setState({ chatScope: "@initiative:i1" });
+    await renderChatReady();
+
+    expect(
+      await screen.findByText(/Working on INI-1 · Cross-repo launch/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open plan" })).toBeInTheDocument();
+  });
+
+  it("widens to the global archive when the focused initiative is gone", async () => {
+    useUiStore.setState({ chatScope: "@initiative:deleted" });
+    await renderChatReady();
+
+    await waitFor(() => expect(useUiStore.getState().chatScope).toBe("@global"));
+  });
+
   it("drops approvals belonging to another workspace", async () => {
-    useUiStore.setState({ chatWorkspaceSlug: "loregarden" });
+    useUiStore.setState({ chatScope: "loregarden" });
     mockedApi.approvals.mockResolvedValue([
       { ...APPROVAL_FIXTURE, id: "a1", title: "Mine", workspace_slug: "loregarden" },
       { ...APPROVAL_FIXTURE, id: "a2", title: "Theirs", workspace_slug: "blobert" },
@@ -398,6 +463,9 @@ describe("BaxterChatPage", () => {
     threads.set("s-ask", {
       id: "s-ask",
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: "Queue history",
       messages: [
         {
@@ -552,6 +620,9 @@ describe("BaxterChatPage", () => {
     const settled: BaxterChatSnapshot = {
       id: "s1",
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: "Hello",
       messages: [
         { id: "m1", role: "user", content: "Hello", created_at: "2026-07-30T09:00:00Z" },
@@ -576,6 +647,9 @@ describe("BaxterChatPage", () => {
     threads.set("s7", {
       id: "s7",
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: "In flight",
       messages: [
         { id: "m1", role: "user", content: "Still working?", created_at: "2026-07-30T09:00:00Z" },
@@ -604,6 +678,9 @@ describe("BaxterChatPage", () => {
     threads.set("s8", {
       id: "s8",
       workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
       title: "Stop me",
       messages: [
         { id: "m1", role: "user", content: "Go forever", created_at: "2026-07-30T09:00:00Z" },

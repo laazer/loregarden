@@ -224,7 +224,7 @@ describe("the chat archive", () => {
       label: "Baxter · loregarden",
       ticketId: null,
       archive: {
-        workspaceSlug: "loregarden",
+        scope: "loregarden",
         sessionId: "s1",
         openSession: jest.fn(),
         startNewChat: jest.fn(),
@@ -282,7 +282,7 @@ describe("the chat archive", () => {
         label: "Baxter · loregarden",
         ticketId: null,
         archive: {
-          workspaceSlug: "loregarden",
+          scope: "loregarden",
           sessionId: "s1",
           openSession: jest.fn(),
           startNewChat: jest.fn(),

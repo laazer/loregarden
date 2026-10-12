@@ -376,7 +376,7 @@ Invoke an `engine-integration` subagent:
 
 ## Stage 7 — Learning
 
-**Lean mode (autopilot only):** If `skip_learning` is true, skip this stage. Log `- Learning: skipped (lean mode)` in CHECKPOINTS.md. Proceed to Stage 8.
+**Lean mode (autopilot only):** If `skip_learning` is true, skip this stage. Record `Learning: skipped (lean mode)` with `loregarden_append_checkpoint`. Proceed to Stage 8.
 
 **Background behavior (autopilot only):** Fire this stage in the background after the per-ticket completion report is output. Do not wait for it before starting the next ticket.
 
@@ -388,7 +388,7 @@ Invoke a `learning` subagent:
 >
 > Extract reusable engineering insights from the completed ticket at `<TICKET_PATH>`.
 >
-> Read the scoped checkpoint files for `<TICKET_ID>` under `project_board/checkpoints/<ticket-id>/` directly. Do not read `project_board/CHECKPOINTS.md`.
+> Read the scoped checkpoint files for `<TICKET_ID>` under `project_board/checkpoints/<ticket-id>/` directly.
 >
 > Focus on: bugs or regressions that occurred, rework cycles (GDScript/Architecture review fix iterations), test failures that revealed implementation gaps, incorrect spec assumptions, and workflow inefficiencies.
 >

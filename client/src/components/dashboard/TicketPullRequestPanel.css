@@ -9,6 +9,11 @@
   min-width: 0;
 }
 
+/* The auto-fix history under a failed lookup renders nothing when there is none. */
+.prp:empty {
+  display: none;
+}
+
 .prp-head {
   display: flex;
   flex-direction: column;
@@ -361,4 +366,48 @@ a.prp-check-name:focus-visible {
   font-size: 12px;
   color: var(--rdl);
   overflow-wrap: anywhere;
+}
+
+/* Auto-fix attempts reuse the check rows; a refusal needs a person, so it is
+ * tinted like a failure but in the warning tone. */
+.prp-attempt {
+  align-items: flex-start;
+}
+
+.prp-attempt--succeeded {
+  --prp-tone: var(--grl);
+}
+
+.prp-attempt--pending,
+.prp-attempt--running {
+  --prp-tone: var(--aml);
+}
+
+.prp-attempt--failed {
+  --prp-tone: var(--rdl);
+}
+
+.prp-attempt--refused {
+  --prp-tone: var(--aml);
+  background: color-mix(in srgb, var(--amb) 8%, transparent);
+}
+
+.prp-attempt-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prp-attempt-reason {
+  font-size: 12px;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.prp-attempt-when {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
 }
