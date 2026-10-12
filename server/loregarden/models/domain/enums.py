@@ -573,8 +573,6 @@ class DispatchSurface(StrEnum):
     QUEUE = "queue"
     #: `POST /stage-fanout` — one deliberate decision, N attempts.
     FANOUT = "fanout"
-    #: The automatic conflict-resolution re-dispatch.
-    CONFLICT = "conflict"
 
 
 class StageFanoutGroupStatus(str, Enum):

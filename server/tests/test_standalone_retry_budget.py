@@ -81,7 +81,7 @@ from loregarden.models.domain import (
     Workspace,
     Worktree,
 )
-from loregarden.services import conflict_resolution, queue_admission
+from loregarden.services import queue_admission
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import RetryBudgetConfig
@@ -743,75 +743,6 @@ def test_a_single_agent_orchestrated_dispatch_is_still_counted_once(db_session: 
     assert count_stage_dispatches(db_session, ticket.id, "review") == 1
 
 
-# -- the guard must not escape into paths that cannot absorb a refusal ---------
-
-
-def _conflicted_worktree(db_session: Session, ticket: Ticket) -> tuple[AgentRun, Worktree]:
-    """A finished run whose worktree git has left mid-merge."""
-    run = make_agent_run(
-        db_session,
-        workspace_id=ticket.workspace_id,
-        ticket_id=ticket.id,
-        stage_key="review",
-        agent_id="backend_implementer",
-    )
-    worktree = Worktree(
-        workspace_id=ticket.workspace_id,
-        agent_run_id=run.id,
-        parent_branch="main",
-        worktree_path="/nonexistent/standalone-retry-budget-repo/wt",
-        branch="loregarden/standalone-budget",
-        has_conflicts=True,
-    )
-    worktree.conflict_files = ["answer.py"]
-    db_session.add(worktree)
-    db_session.commit()
-    run.worktree_id = worktree.id
-    db_session.add(run)
-    db_session.commit()
-    return run, worktree
-
-
-def _no_real_git():
-    """conflict_resolution reaches git twice; neither repo exists in a test."""
-    return (
-        mock.patch.object(conflict_resolution, "conflicted_files", return_value=["answer.py"]),
-        mock.patch.object(conflict_resolution, "_conflict_excerpt", return_value="diff"),
-        mock.patch("loregarden.services.run_service.schedule_agent_run"),
-    )
-
-
-def test_an_exhausted_budget_does_not_raise_out_of_conflict_resolution(db_session: Session):
-    """DEFECT 1. `_dispatch_resolver` calls `start_run` with no
-    `orchestration_run_id`, so it now falls inside the standalone guard. Its
-    caller — the landing at a ticket's terminal stage — turns a refusal into a
-    block naming the files, so a refusal escaping here as an exception would
-    leave the ticket neither done, blocked, nor resolving.
-
-    The refusal must therefore be caught and reported, not raised."""
-    ticket = _build_ticket(db_session)
-    run, worktree = _conflicted_worktree(db_session, ticket)
-    _seed_exhausted_budget(db_session, ticket.id)
-    runs_before = len(_agent_runs(db_session, ticket.id))
-
-    files_patch, excerpt_patch, schedule_patch = _no_real_git()
-    with files_patch, excerpt_patch, schedule_patch as schedule:
-        report = conflict_resolution.request_agent_resolution(
-            db_session,
-            run,
-            ticket,
-            worktree,
-            Path("/nonexistent/standalone-retry-budget-repo/wt"),
-            max_attempts=2,
-        )
-
-    # Reported, not raised: the report exists and says no resolver ran.
-    assert report is not None
-    assert report.resolution_attempted is False
-    assert len(_agent_runs(db_session, ticket.id)) == runs_before
-    schedule.assert_not_called()
-
-
 # -- DEFECT 2: a deliberate fan-out costs exactly one attempt ------------------
 
 
@@ -1441,39 +1372,6 @@ def test_the_orchestrated_path_still_resets_after_the_breakers_own_block(
     )
 
     assert count_stage_dispatches(db_session, ticket.id, "review") == 0
-
-
-# -- MEDIUM: a refused resolver spends nothing --------------------------------
-
-
-def test_a_refused_resolver_spends_no_conflict_attempt_and_no_rework_entry(
-    db_session: Session,
-):
-    """MEDIUM. The ConflictReport and the rework-ledger entry were both written
-    before the refusal was discovered, so a resolver that never went out still
-    burned one of the two conflict-resolution attempts and left feedback
-    addressed to an agent that was never dispatched. The conflict report itself
-    stays — the conflict really happened, and the caller reads it — but it no
-    longer counts as an attempt at resolving it."""
-    ticket = _build_ticket(db_session)
-    run, worktree = _conflicted_worktree(db_session, ticket)
-    _seed_exhausted_budget(db_session, ticket.id)
-
-    files_patch, excerpt_patch, schedule_patch = _no_real_git()
-    with (
-        files_patch,
-        excerpt_patch,
-        schedule_patch,
-        mock.patch.object(conflict_resolution, "record_rework_feedback") as ledger,
-    ):
-        report = conflict_resolution.request_agent_resolution(
-            db_session, run, ticket, worktree, Path("/nonexistent/wt"), max_attempts=2
-        )
-
-    assert report is not None
-    assert report.resolution_attempted is False
-    ledger.assert_not_called()
-    assert conflict_resolution.attempts_so_far(db_session, worktree) == 0
 
 
 # -- MEDIUM: the fan-out policy is a stated decision, not an accident ---------
