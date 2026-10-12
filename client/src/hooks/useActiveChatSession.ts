@@ -7,11 +7,13 @@ import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatSession } from "../lib/chatSession";
+import { useInitiativeAgentStore } from "../state/initiativeAgentStore";
 import { useTicketRefStore } from "../state/ticketRefStore";
 import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
 import { chatScopeLabel, useChatScopeKey } from "./useChatScope";
+import { useInitiativeBaxterSession } from "./useInitiativeBaxterSession";
 import { useInitiativePlanner } from "./useInitiativePlanner";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
@@ -150,17 +152,13 @@ export function useActiveChatSession(): ActiveChatSession {
   // the dock on top of the page already showing it.
   const composedOnScreen =
     pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
-  // An initiative's plan page docks its planner chat beside the schedule. That
-  // is a different conversation from Baxter's, so the bar does not bind Baxter
-  // there either: a second composer under the planner's would be asking someone
-  // else.
-  const initiativeRef = initiativeIdFromPath(pathname);
-  const plannerOnScreen = initiativeRef !== null;
-  // The path carries the shareable id (`init-always-on-2`); the planner API
-  // takes the UUID, which the plan route's resolver records once it is known.
-  const initiativeId = useTicketRefStore((s) =>
-    initiativeRef ? ticketUuidForRef(initiativeRef, s.uuidByRef) : null,
-  );
+  // An initiative's plan page docks its own agent panel — the planner, or
+  // Baxter focused on the initiative — beside the schedule. Neither is the
+  // workspace Baxter thread, so the bar does not bind that one there: a second
+  // composer under the panel's would be asking someone else.
+  const initiativeId = initiativeIdFromPath(pathname);
+  const plannerOnScreen = initiativeId !== null;
+  const initiativeAgent = useInitiativeAgentStore((s) => s.agent);
   const chatScope = useChatScopeKey();
   // Only a focused chat's label needs the list; the key is the picker's, so it is cached.
   const focusedInitiative = chatScopeInitiativeId(chatScope);
@@ -198,9 +196,15 @@ export function useActiveChatSession(): ActiveChatSession {
         isBusy: baxterSession.isBusy,
       }
     : null;
+  // The path carries the shareable ref; the plan page and its panels key
+  // everything by the UUID, so resolve it the way the route does (null until
+  // the route learns it). Asking by the ref 404s.
+  const initiativeUuid = useTicketRefStore((s) =>
+    initiativeId ? ticketUuidForRef(initiativeId, s.uuidByRef) : null,
+  );
   // Same query key as the plan page's planner panel, so binding it here costs
   // no request of its own; an empty id issues none off the plan page.
-  const planner = useInitiativePlanner(initiativeId ?? "");
+  const planner = useInitiativePlanner(initiativeUuid ?? "");
   const plannerModel: ChatModelBinding = {
     assistant: "the initiative planner",
     scopeLabel: "Initiative planner",
@@ -209,6 +213,20 @@ export function useActiveChatSession(): ActiveChatSession {
     setRuntime: planner.setRuntime,
     isSavingRuntime: planner.isSavingRuntime,
     isBusy: planner.isBusy,
+  };
+  // Same query key as the panel's Baxter tab; bound only while it is the one shown.
+  const initiativeBaxter = useInitiativeBaxterSession(
+    initiativeAgent === "baxter" ? initiativeUuid ?? "" : "",
+  );
+  const initiativeBaxterModel: ChatModelBinding = {
+    assistant: "Baxter",
+    scopeLabel: "Baxter · initiative",
+    // A global thread runs on its host's runtime, known once the thread exists.
+    workspaceSlug: initiativeBaxter.snapshot?.host_workspace_slug || "",
+    runtime: initiativeBaxter.runtime,
+    setRuntime: initiativeBaxter.setRuntime,
+    isSavingRuntime: initiativeBaxter.isSavingRuntime,
+    isBusy: initiativeBaxter.isBusy,
   };
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
@@ -252,9 +270,16 @@ export function useActiveChatSession(): ActiveChatSession {
       screenSession: chatScope ? baxterSession : null,
     };
   }
-  // No archive — the planner keeps one conversation per initiative — but the
-  // bar's model picker is the planner's here, not Baxter's.
-  if (plannerOnScreen) return { ...none, composedOnScreen: true, model: plannerModel };
+  // The bar's model picker is whichever agent the panel is showing. No archive:
+  // the planner keeps one conversation per initiative, and the panel's Baxter
+  // tab owns its own "New chat".
+  if (plannerOnScreen) {
+    return {
+      ...none,
+      composedOnScreen: true,
+      model: initiativeAgent === "baxter" ? initiativeBaxterModel : plannerModel,
+    };
+  }
   if (onBranchTriage) {
     return branch
       ? {

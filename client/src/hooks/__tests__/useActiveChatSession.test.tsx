@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useActiveChatSession } from "../useActiveChatSession";
+import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
 import { useTicketRefStore } from "../../state/ticketRefStore";
 import { useUiStore } from "../../state/uiStore";
 
@@ -185,19 +186,42 @@ it("binds to nothing on an initiative plan page, whose planner chat composes for
 
 it("binds the planner's model, not Baxter's, on an initiative plan page", async () => {
   const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
-  useTicketRefStore.getState().remember({ id: uuid, external_id: "init-tinkercg-build-1" });
-  (api.plannerChat as jest.Mock).mockClear();
-  const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
-  });
+  useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
+  try {
+    const { result } = renderHook(() => useActiveChatSession(), {
+      wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    });
 
-  await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
-  expect(result.current.model?.scopeLabel).toBe("Initiative planner");
-  // Options come from the workspace the planner runs in, not the chat workspace.
-  expect(result.current.model?.workspaceSlug).toBe("tinkercg");
-  // The API is keyed by UUID; the shareable id in the path would 404.
-  expect(api.plannerChat).toHaveBeenCalledWith(uuid);
-  expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+    await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
+    expect(result.current.model?.scopeLabel).toBe("Initiative planner");
+    // Options come from the workspace the planner runs in, not the chat workspace.
+    expect(result.current.model?.workspaceSlug).toBe("tinkercg");
+    // By the UUID the page uses: the planner endpoint 404s on the shareable ref.
+    expect(api.plannerChat).toHaveBeenCalledWith(uuid);
+    expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+  } finally {
+    useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  }
+});
+
+it("binds Baxter's model on an initiative plan page when the panel shows Baxter", async () => {
+  const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+  useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
+  useInitiativeAgentStore.setState({ agent: "baxter", baxterSessionByInitiative: { [uuid]: "bx1" } });
+  try {
+    const { result } = renderHook(() => useActiveChatSession(), {
+      wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    });
+
+    expect(result.current.composedOnScreen).toBe(true);
+    expect(result.current.session).toBeNull();
+    expect(result.current.model?.scopeLabel).toBe("Baxter · initiative");
+    // The thread the panel shows: filed under the UUID, read in the initiative's scope.
+    await waitFor(() => expect(api.baxterChatSession).toHaveBeenCalledWith(`@initiative:${uuid}`, "bx1"));
+  } finally {
+    useInitiativeAgentStore.setState({ agent: "planner", baxterSessionByInitiative: {} });
+    useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  }
 });
 
 it("asks for no planner conversation until the initiative's shareable id resolves", () => {
