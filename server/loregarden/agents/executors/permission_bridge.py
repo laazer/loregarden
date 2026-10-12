@@ -59,6 +59,7 @@ from loregarden.services.agent_scope import (
     owning_scoped_agent,
     relative_to_root,
 )
+from loregarden.services.approval_ignore import denial_message
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.rate_limit import rate_limit_denial
@@ -296,11 +297,10 @@ def poll_approval_resolution(approval_id: str) -> ApprovalResolution | None:
                 approved=True,
                 updated_input=updated_input if isinstance(updated_input, dict) else None,
             )
-        if approval.status == ApprovalStatus.REJECTED:
-            return ApprovalResolution(
-                approved=False,
-                message="Rejected in Loregarden approval inbox",
-            )
+        if approval.status in (ApprovalStatus.REJECTED, ApprovalStatus.IGNORED):
+            # Ignored is a denial too: left as "pending", the agent would poll
+            # out its timeout for an answer nobody can give any more.
+            return ApprovalResolution(approved=False, message=denial_message(approval))
     return None
 
 

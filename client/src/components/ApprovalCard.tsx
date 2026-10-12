@@ -1,10 +1,12 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
 import { exitActionCategoryLabel } from "./exitActionCategories";
+import { IgnoreApprovalModal } from "./IgnoreApprovalModal";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
 import { Button } from "./ui/Button";
@@ -119,6 +121,8 @@ export function ApprovalCard({
   onReject,
   onRecheck,
   onInspect,
+  onIgnore,
+  hasDuplicate = false,
   isSubmitting,
   compact = false,
   collapsible = false,
@@ -133,6 +137,10 @@ export function ApprovalCard({
   /** Prefer this for recheck-only exit-action gates; falls back to onApprove when omitted. */
   onRecheck?: (payload?: ApprovalResolvePayload) => void;
   onInspect?: () => void;
+  /** Close the card with a reason instead of deciding it. Omitted, no button. */
+  onIgnore?: (reason: string) => void;
+  /** Another pending card on the same ticket has this title; feeds the suggested reason. */
+  hasDuplicate?: boolean;
   isSubmitting?: boolean;
   compact?: boolean;
   /** Clamp an over-tall body and offer `onExpand` instead of scrolling the rail. */
@@ -172,6 +180,7 @@ export function ApprovalCard({
   const [reworkStageKey, setReworkStageKey] = useState("");
   const [reworkNote, setReworkNote] = useState("");
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [ignoreModalOpen, setIgnoreModalOpen] = useState(false);
 
   const routeOptions = isGate ? approval.route_options ?? [] : [];
   // On a human action the checklist carries the handover findings, which the
@@ -701,23 +710,55 @@ export function ApprovalCard({
         >
           {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? "Leave parked" : "Reject"}
         </button>
+        {onIgnore && (
+          <Button
+            variant="secondary"
+            style={{ flex: 1, borderRadius: 0 }}
+            disabled={isSubmitting}
+            aria-haspopup="dialog"
+            aria-expanded={ignoreModalOpen}
+            onClick={() => setIgnoreModalOpen(true)}
+          >
+            Ignore
+          </Button>
+        )}
         {!compact && onInspect && (
           <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
             {inspectLabel}
           </button>
         )}
       </div>
-      {isGate && (
-        <RejectApprovalModal
-          open={rejectModalOpen}
-          approval={approval}
-          isSubmitting={isSubmitting}
-          onClose={() => setRejectModalOpen(false)}
-          onConfirm={(payload) => {
-            setRejectModalOpen(false);
-            onReject(payload);
-          }}
-        />
+      {/* Portaled: a card lives inside the inbox drawer, whose z-index is a
+          stacking context the dialog cannot paint above, so it drew beneath
+          the drawer's own cards. */}
+      {createPortal(
+        <>
+          {onIgnore && (
+            <IgnoreApprovalModal
+              open={ignoreModalOpen}
+              approval={approval}
+              hasDuplicate={hasDuplicate}
+              isSubmitting={isSubmitting}
+              onClose={() => setIgnoreModalOpen(false)}
+              // Left open while it submits: success removes the card (and this with
+              // it); a refusal keeps the reason typed, beside the error toast.
+              onConfirm={onIgnore}
+            />
+          )}
+          {isGate && (
+            <RejectApprovalModal
+              open={rejectModalOpen}
+              approval={approval}
+              isSubmitting={isSubmitting}
+              onClose={() => setRejectModalOpen(false)}
+              onConfirm={(payload) => {
+                setRejectModalOpen(false);
+                onReject(payload);
+              }}
+            />
+          )}
+        </>,
+        document.body,
       )}
     </div>
   );

@@ -755,6 +755,9 @@ class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    #: A person dismissed the card with a reason (stale, duplicate, a test).
+    #: Anything still waiting on it is answered as a rejection would be.
+    IGNORED = "ignored"
 
 
 class EventType(str, Enum):
