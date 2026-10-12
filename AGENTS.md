@@ -54,7 +54,7 @@ loregarden/
 | Prompt assembly | `agents/executors/cli.py` | Builds the full agent prompt; embeds MCP + memory modules |
 | Injected run context | `agents/stage_context.py`, `agents/mcp_context.py` | Text every agent sees, before its role file |
 | Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
-| MCP tools | `mcp/tools.py` | Tool names and schemas |
+| MCP tools | `mcp/tools.py`, `mcp/tool_ids.py` | `McpTool` names every tool; `TOOL_DEFINITIONS` holds the schemas, some appended from a tool's own `mcp/*_tool.py` module |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the workspace's `agent_context/` |
 | Migrations | `db/versions/` | One module per migration: `@migration("YYYYMMDD_name", after="<newest id on main>")`. There is no shared list. `FROZEN_MIGRATIONS` and `SHIPPED_MIGRATION_IDS` are closed at 0151. If another branch merged with the same `after`, the suite reports a fork: repoint yours, never rename an id |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
@@ -130,11 +130,13 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 ```
 
 > **External callers** (another service, a cron job, an MCP client that only launches
-> commands) get one console script: `loregarden`, with `mcp` and `db` subcommands. Do not
-> depend on `python -m loregarden.cli.*`, because the module layout is internal. The CLI finds the
+> commands) get one console script: `loregarden`, with `mcp`, `db`, `git`, `capacity` and a
+> few more subcommand groups (`loregarden --help` lists them). Do not depend on
+> `python -m loregarden.cli.*`, because the module layout is internal. The CLI finds the
 > database through the installed package's location, so it works from any cwd; set
 > `LOREGARDEN_REPO_ROOT` (or `LOREGARDEN_DATABASE_URL`) to point it at a different checkout.
-> Exit codes: `0` ok, `1` the operation failed, `2` bad invocation.
+> Exit codes: `0` ok, `1` the operation failed, `2` bad invocation. `capacity run` instead
+> passes through its command's exit code, or `75` when the queue stalls.
 
 > **Pushing from a git worktree** used to explode the pre-push suite with `git add .` exit-128
 > errors. Git exports an absolute `GIT_DIR` into hooks, and it overrides the `cwd` of the
@@ -163,9 +165,9 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | Editing `agent_context/workflows/*.yaml` to change a workflow | v1-era; live templates are in `workflow_templates.stages_json` | `services/studio_service.py` |
 | Hand-editing files while an orchestration runs | It commits the whole working tree into whatever ticket is open | commit `49096a5` re-added 13 deleted files |
 | Renaming a migration id (renumbering, or to fix a fork) | The live database records the id; a new name runs the body again. Fix a fork by changing `after`, not the id | `migration_ledger.py` (`prune_renumbered`); `0138` left out of order in `FROZEN_MIGRATIONS` |
-| Ticket IDs in test/doc filenames | Produces the `TICKET_39_*` sprawl that was just deleted | `docs/AUDIT.md` L-3 |
+| Ticket IDs in test/doc filenames | Produces the `TICKET_39_*` sprawl that was just deleted | `docs/AUDIT.md` → *Stray test-doc files* |
 | `str(...).strip().lower()` defensively | Redundant normalization; normalize at the source | `.lefthook/scripts/detect-defensive-normalization.sh` |
-| `run.status == "failed"`, `kind: str`, inline literal sets | Stringly-typed vocabularies. ~100 enum members already exist in `models/domain/enums.py` and `mcp/tool_ids.py`; use them, or add one | `.lefthook/scripts/py_string_vocab.py` |
+| `run.status == "failed"`, `kind: str`, inline literal sets | Stringly-typed vocabularies. ~430 enum members already exist in `models/domain/enums.py` and `mcp/tool_ids.py`; use them, or add one | `.lefthook/scripts/py_string_vocab.py` |
 | `isinstance(payload, dict)` | A schema check by hand. Model it with Pydantic at the boundary; `isinstance` on a class wants polymorphism | 220 of 238 target builtins; `py_organization_check.py` → `isinstance_errors` |
 | `err instanceof Error ? err.message : "…"` | Copy-pasted 46× and drops the `ApiError` status; use `describeError(error, fallback)` | `.lefthook/scripts/ts_organization_check.cjs` |
 | Swallowing an exception (`except: pass`, `catch {}`, `.catch(() => {})`, a handler that only logs at `debug`) | A failure nobody sees. Log at warning+, return a failure-carrying result, rethrow, or waive with `# silent-ok: <reason>` / `// silent-ok: <reason>` | `.lefthook/scripts/py_silent_except_check.py` |
@@ -178,26 +180,30 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 
 - **A synthetic CPU-load harness must clean up on its own, not at the end of the script.** Wrap it
   as `timeout 300 bash -c 'trap "kill $(jobs -p) 2>/dev/null" EXIT; for i in $(seq 1 12); do
-  (while :; do :; done) & done; <the actual command under load>'`. `trap ... EXIT` fires on a hang,
-  a signal, or the shell being torn down, not just the happy path, and `timeout` is the backstop
+  (while :; do :; done) & done; <the actual command under load>'`. `trap ... EXIT` fires on a normal
+  exit and also on a hang, a signal, or the shell being torn down, and `timeout` is the backstop
   if even that doesn't fire. See the anti-pattern above for what skipping this costs.
 - **`agent_context/` is per-workspace.** `resolve_agent_context_dir` reads it from the ticket's
   workspace `repo_path`, so a run against another workspace loads that workspace's prompts, not
   these. Do not "fix" a loregarden prompt to satisfy another workspace's ticket.
 - **The prompt embed is truncated**: the MCP module is cut at 12000 chars and the memory module
   at 8000 (`agents/executors/cli.py`). Content added near the end of those files can drop out
-  of the prompt with no warning. Check the size after editing them.
-- **Complexity hotspots** (>900 lines): `studio_service.py` (1452), `orchestration.py` (1277),
-  `usage_service.py` (1167), `permission_bridge.py` (1088), `artifact_service.py` (1049),
-  `mcp/tools.py` (1039), `ticket_studio_service.py` (980), `api/tickets.py` (928),
-  `builtin_orchestrator.py` (921). These are refactoring candidates.
+  of the prompt. The run logs the cut and attaches an error artifact to the ticket, but the agent
+  still never sees the dropped sections, so check the size after editing them.
+- **Complexity hotspots** (>1000 lines, measured 2026-10-12, migrations and model definitions
+  left out): `permission_bridge.py` (1499), `mcp/tools.py` (1489), `memory_store.py` (1474),
+  `studio_service.py` (1460), `orchestration.py` (1460), `usage_service.py` (1428),
+  `api/tickets.py` (1421), `ticket_studio_service.py` (1419), `artifact_service.py` (1261),
+  `parallel_queue.py` (1240), `queue_lanes.py` (1133), `cli_adapters.py` (1101),
+  `builtin_orchestrator.py` (1076), `agents/executors/cli.py` (1063), `docker_leases.py` (1036).
+  These are refactoring candidates.
 - **Known weaknesses** are catalogued in `docs/AUDIT.md`. Read it before proposing a rewrite.
 - **Claude usage meters need a `user:profile` credential, and `claude setup-token` is not one.**
   That token is inference-scoped; `api.anthropic.com/api/oauth/usage` answers
-  `403 does not meet scope requirement user:profile`. The Keychain item can also be readable
-  yet hold empty `accessToken`/`refreshToken` strings. That is a logged-out session, fixed only by
-  `claude /login` and not by regenerating a token. When neither works, the fallback is the
-  claude.ai session cookie: copy the `sessionKey` cookie value from a logged-in browser into
+  `403 OAuth token does not meet scope requirement user:profile`. The Keychain item can also be
+  readable yet hold empty `accessToken`/`refreshToken` strings. That is a logged-out session,
+  fixed only by `claude /login` and not by regenerating a token. When neither works, the fallback
+  is the claude.ai session cookie: copy the `sessionKey` cookie value from a logged-in browser into
   `data/.claude-session-key` (bare value, no `sessionKey=` prefix; the file is gitignored), or
   export `CLAUDE_SESSION_KEY`. Set `CLAUDE_ORG_UUID` to pin the organization when the account
   has more than one. See `services/claude_session_usage.py`.

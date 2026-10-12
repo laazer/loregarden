@@ -1,6 +1,8 @@
 # CI Integration Setup Guide
 
-Loregarden can automatically detect CI failures and trigger agent-driven fixes. This guide shows how to set up CI webhooks for GitHub Actions.
+Loregarden can receive CI results from GitHub Actions and record them against tickets. This guide shows how to set up the webhook.
+
+> **Status (2026-10-12).** Only the first part of the flow below is wired. `POST /api/ci/webhook/{workspace_id}` records a `CIRunResult` for a GitHub `workflow_run` delivery, and a `failure` conclusion creates an `AutoFixAttempt`. No agent runs after that. `CIService._trigger_implementer_agent` logs the context it would pass and marks the attempt `running`. Nothing fetches the CI logs (`full_logs` is never filled), and nothing is committed. GitLab and generic payloads are not processed; the endpoint answers them with an error. `CIStatusWidget` is not mounted on any page, and no approval gate reads CI status. Of the settings under *Configuration Reference*, only `LOREGARDEN_CI_WEBHOOK_SECRET` is read. Steps 3 to 7 of the overview are the intended design.
 
 ## Overview
 
@@ -16,7 +18,7 @@ When a test fails in CI:
 ## Prerequisites
 
 - GitHub Actions workflows configured (standard setup)
-- Loregarden running with CI integration enabled (`LOREGARDEN_CI_ENABLED=true`)
+- Loregarden running and reachable from GitHub. The server binds to `127.0.0.1` by default. With `LOREGARDEN_API_TOKEN` set, the webhook path is not exempt from the token check, so a GitHub delivery (which carries no token) gets a 401.
 - Repository with feature branches linked to tickets
 
 ## GitHub Actions Setup
@@ -48,13 +50,14 @@ LOREGARDEN_CI_WEBHOOK_SECRET=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z
 
 ### 3. Link Tickets to Git Branches
 
-Loregarden extracts ticket IDs from your git branch names. Use this format:
+Loregarden extracts ticket IDs from your git branch names. A `ticket-` prefix followed by the ticket's number works:
 
 ```
-feature/ticket-TICKET_ID
-feature/ticket-auth-123
-bugfix/ticket-payment-456
+feature/ticket-142
+bugfix/ticket-456
 ```
+
+The part after `ticket-` is read up to the first hyphen, so `ticket-auth-123` looks for a ticket called `auth` and finds nothing.
 
 Or simpler (uses the last component of the branch), which is what the ticket's own
 default branch does:
@@ -76,7 +79,7 @@ git checkout -b feature/lor-queue-execution-142
 
 ### 4. Configure Workflow to Trigger Webhook
 
-Add a step at the END of your workflow to trigger the webhook:
+Add a step at the END of your workflow to trigger the webhook. A delivery sent this way has no signature, so the server accepts it only while `LOREGARDEN_CI_WEBHOOK_SECRET` is empty. With a secret set, use the repository webhook from step 2 instead (see the alternative below).
 
 ```yaml
 # .github/workflows/test.yml
@@ -106,14 +109,13 @@ jobs:
         run: |
           curl -X POST \
             -H "X-Github-Event: workflow_run" \
-            -H "X-Hub-Signature-256: ${{ secrets.WEBHOOK_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{
               "workflow_run": {
                 "id": ${{ github.run_id }},
-                "conclusion": "${{ job.status }}",
+                "conclusion": "${{ needs.test.result }}",
                 "logs_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/logs",
-                "head_branch": "${{ github.head_ref }}"
+                "head_branch": "${{ github.head_ref || github.ref_name }}"
               }
             }' \
             https://your-loregarden-domain/api/ci/webhook/your-workspace-id
@@ -125,7 +127,7 @@ jobs:
 
 ### Alternative: Use GitHub Actions App (Simpler)
 
-If you prefer, GitHub can automatically send workflow_run events when you configure the webhook. Just ensure:
+If you prefer, GitHub can send `workflow_run` events itself once the webhook is configured. Just make sure:
 1. Webhook is configured (step 2)
 2. Event type is set to "Workflow runs"
 3. GitHub will automatically send `workflow_run` event on completion
@@ -134,22 +136,22 @@ You don't need the manual curl step in that case.
 
 ## Configuration Reference
 
-Set these environment variables to customize CI integration:
+These settings are declared in `server/loregarden/config.py`. Only the webhook secret is read by any code today; the other four are listed with their declared defaults.
 
 ```bash
-# Enable/disable CI integration (default: true)
+# Enable/disable CI integration (default: true; not read yet)
 LOREGARDEN_CI_ENABLED=true
 
 # GitHub webhook secret (for signature verification)
 LOREGARDEN_CI_WEBHOOK_SECRET=your-secret-here
 
-# Max auto-fix retry attempts (default: 3)
+# Max auto-fix retry attempts (default: 3; not read yet, trigger_auto_fix has its own default of 3)
 LOREGARDEN_CI_RETRY_LIMIT=3
 
-# Timeout for fix agent (seconds, default: 600 = 10 min)
+# Timeout for fix agent (seconds, default: 600 = 10 min; not read yet)
 LOREGARDEN_CI_AUTO_FIX_TIMEOUT=600
 
-# How long to keep CI logs (days, default: 30)
+# How long to keep CI logs (days, default: 30; not read yet)
 LOREGARDEN_CI_LOG_RETENTION_DAYS=30
 ```
 
@@ -159,28 +161,22 @@ LOREGARDEN_CI_LOG_RETENTION_DAYS=30
 
 1. GitHub webhook → Loregarden
 2. Status recorded as `passing`
-3. Dashboard shows ✓ (green checkmark)
-4. Approval gate unblocks (no longer waits for CI)
+3. `GET /api/ci/status/{ticket_id}` returns it. No dashboard page shows it yet.
 
 ### When CI Fails
 
-1. GitHub webhook → Loregarden detects `failing`
-2. Dashboard shows ✗ (red X) + failure summary
-3. **Auto-fix triggered** (if enabled):
-   - Error logs extracted (test names, error messages)
-   - Child "fix-it" work item created
-   - Implementer agent runs with error context in prompt
-   - Agent analyzes logs and attempts fix
-4. Fixed code committed
-5. CI re-runs automatically
-6. If passing, approval gate unblocks
-7. If still failing, approval gate blocks + shows error + offers manual retry
+1. GitHub webhook → Loregarden records `failing`
+2. An `AutoFixAttempt` is created, up to 3 per CI result
+3. The service builds error context from the logs (empty, since none are fetched), logs it, and marks the attempt `running`
+4. No implementer run starts, so nothing is committed and the attempt stays `running`
 
 ### Manual Overrides
 
-**Retry Auto-Fix**: If auto-fix failed, click "Retry Auto-Fix" to trigger another attempt
+**Retry Auto-Fix**: `POST /api/ci/trigger-auto-fix/{ticket_id}` creates another attempt for the latest CI result, with the same limits as above
 
-**Skip CI Check**: Admin can click "Skip CI Check" to bypass CI gate (not recommended)
+**Skip CI Check**: `POST /api/ci/manual-override/{ticket_id}` marks the latest CI result `skipped`
+
+`CIStatusWidget` has buttons for both, but it is not mounted anywhere.
 
 ## Troubleshooting
 
@@ -193,7 +189,7 @@ LOREGARDEN_CI_LOG_RETENTION_DAYS=30
 
 ### Ticket Not Found
 
-Error: "Could not extract ticket ID from branch"
+The server logs a warning, "Could not extract ticket ID from branch", and the webhook answers `{"status": "error", "reason": "Failed to process webhook"}`.
 
 **Solution**: End the branch with the ticket's id:
 - Branch: `feature/lor-queue-execution-142`
@@ -210,10 +206,11 @@ Error: "Invalid webhook signature"
 
 ### CI Status Not Showing in Dashboard
 
-1. Check logs for errors: `docker logs loregarden-api | grep CI`
+No page renders CI status yet (see the status note at the top). To check that a delivery was recorded:
+
+1. Read the server's console output (the terminal running `task dev` or `task server`) for warnings from the CI service
 2. Verify webhook was received: check GitHub webhook delivery history
-3. Verify ticket was found (check browser console for errors)
-4. Refresh dashboard (hard refresh: Ctrl+Shift+R)
+3. Query `GET /api/ci/status/{ticket_id}` for the ticket
 
 ## Examples
 
@@ -267,28 +264,28 @@ jobs:
             -d '{
               "workflow_run": {
                 "id": "${{ github.run_id }}",
-                "conclusion": "${{ job.status }}",
+                "conclusion": "${{ needs.test.result }}",
                 "logs_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/logs",
                 "head_branch": "${{ github.head_ref || github.ref_name }}"
               }
             }' \
-            "${{ secrets.LOREGARDEN_CI_WEBHOOK_URL }}"
+            "$LOREGARDEN_CI_WEBHOOK_URL"
         env:
           LOREGARDEN_CI_WEBHOOK_URL: https://your-loregarden.com/api/ci/webhook/your-workspace-id
 ```
 
 ## Next Steps
 
-1. ✅ Configure webhook in GitHub
-2. ✅ Set `LOREGARDEN_CI_WEBHOOK_SECRET` in your `.env`
-3. ✅ Link a test feature to a ticket with matching branch
-4. ✅ Push a commit that breaks a test
-5. ✅ Verify webhook fires and auto-fix triggers
-6. ✅ Check dashboard for CI status + auto-fix attempt
+1. Configure webhook in GitHub
+2. Set `LOREGARDEN_CI_WEBHOOK_SECRET` in your `.env`
+3. Link a test feature to a ticket with matching branch
+4. Push a commit that breaks a test
+5. Verify the webhook fires and a `failing` result is recorded
+6. Check `GET /api/ci/status/{ticket_id}` for the result and the auto-fix attempt
 
 ## Support
 
 - Check Loregarden logs for CI service errors
-- Enable debug logging: `LOG_LEVEL=DEBUG`
+- Loregarden's own loggers print at `WARNING` and above (`server/loregarden/console_logging.py`), and no setting lowers that. `LOREGARDEN_LOG_LEVEL` sets uvicorn's level only, and only under `python -m loregarden`.
 - Review webhook deliveries in GitHub repository settings
 - Report issues with detailed logs and webhook payload

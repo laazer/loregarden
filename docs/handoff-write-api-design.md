@@ -2,20 +2,34 @@
 
 Status: proposal · Author: (drafted with Claude) · Date: 2026-07-15
 
+> **Status (2026-10-12).** The proposal below is kept as written.
+> `loregarden_write_handoff` shipped on 2026-07-16 (`McpTool.WRITE_HANDOFF`,
+> `server/loregarden/services/handoff_writer.py`). It validates by running the
+> workspace gate's `run()` in a subprocess and skips `gate_runner.py`, so an
+> authoring attempt writes no audit-log or gate-results files. On 2026-08-09
+> (#137) the database became authoritative for handoffs: each one is an artifact
+> row (`kind='handoff'`), and the YAML the gate reads is exported to a gitignored
+> `.loregarden/handoffs/` scratch tree. That reverses the first non-goal; the
+> module docstring of `server/loregarden/services/handoff_store.py` gives the
+> reasoning. `loregarden_write_todos` and the `--dump-catalog` subcommand were
+> never built. The memory-tool dispatcher cited below is now `execute_memory_tool`
+> in `server/loregarden/mcp/memory_tools.py`.
+
 ## Problem
 
 Ticket `13-dash-hit-detection-and-damage-application` was stuck on
 `handoff_validation_check FAIL` at the `test_design_to_test_break` transition. The
 Test Designer had produced a complete, correct test suite **and** written a
-`handoff-latest.yaml` — but with invented `item_key`s (`td_spec_traceability`,
+`handoff-latest.yaml`, but with invented `item_key`s (`td_spec_traceability`,
 `td_tests_red_before_implementation`, …) instead of the gate's frozen catalog keys
 (`test_suite_complete`, `test_coverage_threshold`, `test_all_runnable`). The gate
 rejected every item as `handoff_unknown_item` / `handoff_item_missing`, counters
 `computed 0/3`. The evidence was good; only the vocabulary was wrong.
 
-This is not a one-off. It is the predictable failure mode of the current design:
-**the artifact is authored by free-hand YAML with no schema and no catalog at
-write time, and only validated much later when the orchestrator runs the CI gate.**
+This will keep happening, because it is the predictable failure mode of the
+current design: **the artifact is authored by free-hand YAML with no schema and
+no catalog at write time, and only validated much later when the orchestrator
+runs the CI gate.**
 The Test Breaker happened to get its keys right on the same ticket; the Test
 Designer did not. Correctness is left to each agent's memory of a catalog it is
 never actually given.
@@ -31,8 +45,8 @@ never actually given.
 The checkpoint-log migration deliberately did **not** move the gate artifacts:
 their reader runs *inside the target repo's CI* with loregarden dead, so a
 git-committed file is the correct, portable substrate (cf. commit-tracked build
-provenance). Moving them into a DB would couple the target repo's CI to
-loregarden's runtime — a regression.
+provenance). Moving them into a DB would be a regression, because it couples
+the target repo's CI to loregarden's runtime.
 
 **So "files" is not the disease.** The disease is: no validated write path, a
 catalog that lives only in the gate + spec (never handed to the author), and a
@@ -53,7 +67,7 @@ established memory-tool pattern (`server/loregarden/mcp/tools.py`
 - On PASS: keep the file, return success.
 - On FAIL: do **not** leave a broken file (write to a temp path / restore prior
   `handoff-latest.yaml`), and return the gate's `violations[]` to the agent so it
-  self-corrects **in the same turn** — instead of discovering the failure later
+  self-corrects **in the same turn**, instead of discovering the failure later
   when the orchestrator gate blocks the pipeline.
 
 ### Single source of truth for the catalog (the key decision)
@@ -62,7 +76,7 @@ The frozen catalog lives in each workspace's gate
 (`ci/scripts/gates/handoff_validation_check.py::PAIR_CATALOGS`). The write tool
 must not duplicate it (drift). Options:
 
-- **A. Duplicate catalog in loregarden** — rejected: two catalogs drift; the gate
+- **A. Duplicate catalog in loregarden.** Rejected: two catalogs drift; the gate
   is still the real judge, so loregarden's copy would give false confidence.
 - **B. Shell out to the workspace gate to validate (recommended).** loregarden
   resolves the workspace repo via `resolve_workspace_root(workspace)` (already
@@ -72,9 +86,9 @@ must not duplicate it (drift). Options:
   authority; loregarden adds only the *validated-write + self-correct loop*.
   Zero duplication, CI hermeticity preserved.
 - **C. Gate emits its catalog as JSON** that loregarden reads and validates
-  against natively — more plumbing (new gate subcommand `--dump-catalog`), but
-  gives loregarden fast local validation without a subprocess per write. Viable as
-  a v2 optimization on top of B.
+  against natively. It is more plumbing (new gate subcommand `--dump-catalog`),
+  but it gives loregarden fast local validation without a subprocess per write.
+  Viable as a v2 optimization on top of B.
 
 Recommend **B now, C later** if subprocess latency matters.
 
@@ -100,13 +114,13 @@ loregarden_write_handoff:
 
 Auto-filling `item`/`required` and the counters from the catalog eliminates three
 of the observed failure rules (`label mismatch`, `required flag mismatch`,
-`counter mismatch`) structurally — the agent supplies only key + status +
+`counter mismatch`) structurally, since the agent supplies only key + status +
 evidence.
 
 ## Rollout
 
 1. Land the doc band-aid (frozen catalog table in
-   `mandatory_workflow_gates_v1.md`) — **done** — so free-hand authors stop
+   `mandatory_workflow_gates_v1.md`, **done**) so free-hand authors stop
    inventing keys immediately.
 2. Implement `loregarden_write_handoff` (option B). Update the workflow protocol
    docs to tell finishing agents to call the tool instead of writing YAML by hand.
@@ -115,9 +129,9 @@ evidence.
 
 ## Non-goals
 
-- Moving gate artifacts into a DB / object store — breaks CI hermeticity; the
-  files-in-target-git substrate is correct.
-- Rewriting the gate — it stays the single authority; we wrap authoring only.
+- Moving gate artifacts into a DB / object store. It breaks CI hermeticity, and
+  the files-in-target-git substrate is correct.
+- Rewriting the gate. It stays the single authority; we wrap authoring only.
 
 ## Open questions
 

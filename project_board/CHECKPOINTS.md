@@ -1,5 +1,6 @@
 # Checkpoint Index
 
+This file is frozen and nothing writes to it. The `Export:` entries came from the SQLite-to-project_board export, removed in `e8b7bb0a0` (2026-07-13). Agents now record checkpoints with `loregarden_append_checkpoint`; see `agent_context/agents/common_assets/checkpoint_protocol_v1.md`.
 
 ## Export: 2026-07-09T21:53:27Z
 - Exported 13 tickets from SQLite
