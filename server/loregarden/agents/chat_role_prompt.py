@@ -162,6 +162,11 @@ def chat_ui_primitives_blocks() -> list[str]:
         "  snapshot or resolved references above, or ids returned by MCP after",
         "  you create/look them up.",
         "- `ticket` / `ticket_list` / `kanban` cards are for existing tickets only.",
+        "- `ticket_list` takes `ticket_ids` (a flat list of id strings) or",
+        "  `parent_ticket_id`; it has no `items` or per-row notes. With neither,",
+        "  it shows every ticket, so name the rows. Put notes in prose.",
+        '  Example: ```loregarden\\n{"primitive":"ticket_list","title":"Blocked",'
+        '"ticket_ids":["lg-example-12","lg-example-14"]}\\n```',
         '- Agent execution plan (`todo_list`, owner "agent"): only when you are',
         "  about to do multi-step work in this workspace and the operator has",
         "  not started it yet. Never for a question, an explanation, a status",
