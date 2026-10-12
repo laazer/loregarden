@@ -4,10 +4,19 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    Ticket,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.hierarchy_service import reparent_ticket
+from loregarden.services.integration_conflict_card import report_integration_conflict
 from loregarden.services.target_branch import (
+    IntegrationConflictError,
     TargetBranchError,
     ensure_integration_branch,
     integration_branch_for,
@@ -15,7 +24,7 @@ from loregarden.services.target_branch import (
     subtree_root,
     target_branch_name,
 )
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 
 def _git(args: list[str], *, cwd: Path) -> str:
@@ -331,3 +340,115 @@ def test_no_ticket_under_an_initiative_resolves_a_branch_named_after_it(
         "integration/ms-71",
         "integration/ft-7d",
     }
+
+
+# --- a branch whose work reached the base through a squash merge ----------------------
+#
+# lg-durable-remote-335: e93c2c19 was squash-merged to main as 71eb856b, then
+# main edited the file it added (#570). Both sides "added" it, so the refresh
+# saw an add/add conflict and every stage in the tree refused to start.
+
+SQUASHED = "integration/ms-sq"
+
+
+def _commit(repo: Path, branch: str, files: dict[str, str], message: str) -> str:
+    """Commit ``files`` on ``branch``: in ``repo`` when it holds ``branch`` (git
+    refuses a second checkout), otherwise through a throwaway worktree."""
+    checked_out = _git(["branch", "--show-current"], cwd=repo) == branch
+    tree = repo if checked_out else repo.parent / f"wt-{message.replace(' ', '-')}"
+    if not checked_out:
+        _git(["worktree", "add", "-q", str(tree), branch], cwd=repo)
+    for name, content in files.items():
+        (tree / name).write_text(content, encoding="utf-8")
+    _git(["add", "."], cwd=tree)
+    _git(["commit", "-q", "-m", message], cwd=tree)
+    if not checked_out:
+        _git(["worktree", "remove", "--force", str(tree)], cwd=repo)
+    return _git(["rev-parse", branch], cwd=repo)
+
+
+def _pending_cards(db_session: Session, root: Ticket) -> list[Approval]:
+    return list(
+        db_session.exec(
+            select(Approval).where(
+                Approval.ticket_id == root.id,
+                Approval.kind == ApprovalKind.HUMAN_ACTION,
+                Approval.status == ApprovalStatus.PENDING,
+            )
+        ).all()
+    )
+
+
+COVERAGE = "".join(f"line {n}\n" for n in range(1, 21))
+
+
+@pytest.fixture
+def squashed_tree(db_session: Session, workspace: Workspace, repo: Path):
+    """Milestone ``ms-sq`` and child ``tk-sq`` in lg-durable-remote-335's shape.
+
+    The branch's work is two commits; main holds it as one squash, after an
+    unrelated edit to a file the branch also touched (#568's writeCoverage.ts
+    line), and then edits the file the branch added (#570). Two commits squashed
+    into one share no patch-id, so `git cherry` alone would miss this.
+    """
+    _commit(repo, "main", {"coverage.ts": COVERAGE}, "coverage")
+    milestone = _ticket(db_session, workspace, "ms-sq", work_item_type=WorkItemType.MILESTONE)
+    child = _ticket(db_session, workspace, "tk-sq", parent=milestone)
+    assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == SQUASHED
+    detached = COVERAGE.replace("line 2\n", "line 2\ndetach\n")
+    _commit(repo, SQUASHED, {"transport.py": "def detach():\n    pass\n"}, "feat detach")
+    _commit(repo, SQUASHED, {"coverage.ts": detached}, "feat coverage")
+    _commit(repo, "main", {"coverage.ts": COVERAGE + "merge\n"}, "unrelated coverage")
+    _commit(
+        repo,
+        "main",
+        {"transport.py": "def detach():\n    pass\n", "coverage.ts": detached + "merge\n"},
+        "squash detach",
+    )
+    _commit(repo, "main", {"transport.py": "def detach():\n    return 1\n"}, "main edits")
+    return milestone, child
+
+
+def test_a_squash_merged_branch_moves_to_the_base_tip_without_a_card(
+    db_session: Session, workspace: Workspace, repo: Path, squashed_tree
+):
+    milestone, child = squashed_tree
+    stale = _git(["rev-parse", SQUASHED], cwd=repo)
+    report_integration_conflict(
+        db_session, milestone, branch=SQUASHED, base="main", files=("transport.py",)
+    )
+
+    assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == SQUASHED
+
+    assert _git(["rev-parse", SQUASHED], cwd=repo) == _git(["rev-parse", "main"], cwd=repo)
+    assert _git(["rev-parse", SQUASHED], cwd=repo) != stale
+    assert _pending_cards(db_session, milestone) == [], "the stale card closes"
+
+
+def test_a_unique_conflicting_commit_still_raises_and_files_the_card(
+    db_session: Session, workspace: Workspace, repo: Path
+):
+    milestone = _ticket(db_session, workspace, "ms-uq", work_item_type=WorkItemType.MILESTONE)
+    child = _ticket(db_session, workspace, "tk-uq", parent=milestone)
+    branch = resolve_target_branch(db_session, child, workspace, repo_root=repo)
+    tip = _commit(repo, branch, {"shared.txt": "branch side\n"}, "branch side")
+    _commit(repo, "main", {"shared.txt": "main side\n"}, "main side")
+
+    with pytest.raises(IntegrationConflictError, match="shared.txt"):
+        resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", branch], cwd=repo) == tip, "a branch with unique work is never reset"
+    assert len(_pending_cards(db_session, milestone)) == 1
+
+
+def test_a_squash_merged_branch_with_one_more_commit_is_not_reset(
+    db_session: Session, workspace: Workspace, repo: Path, squashed_tree
+):
+    milestone, child = squashed_tree
+    tip = _commit(repo, SQUASHED, {"extra.txt": "only on the branch\n"}, "unique work")
+
+    with pytest.raises(IntegrationConflictError, match="transport.py"):
+        resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", SQUASHED], cwd=repo) == tip
+    assert len(_pending_cards(db_session, milestone)) == 1

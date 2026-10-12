@@ -142,6 +142,69 @@ def merge_preview(repo_root: Path, target_sha: str, source_sha: str) -> MergeOut
     return MergeOutcome(ok=True)
 
 
+#: How many base commits `superseding_commit` tries before giving up. Each try
+#: is one `merge-tree`; past this the conflict is reported as it always was.
+SUPERSEDE_SCAN_LIMIT = 200
+
+
+def superseding_commit(repo_root: Path, branch_sha: str, base_sha: str) -> str:
+    """A commit on ``base_sha``'s history that already holds everything
+    ``branch_sha`` adds, or "" when there is none.
+
+    A branch whose work reached the base through a squash merge shares no
+    commit with it, so ancestry and `git cherry` both miss it the moment the
+    squash differs by a line, and a later base edit to the same files then
+    conflicts (lg-durable-remote-335: e93c2c19, squash-merged as 71eb856b,
+    then #570 edited the test it added). The question asked instead is the
+    one that matters: is there a base commit that merging the branch into
+    would leave unchanged? Then nothing on the branch is missing from the
+    base, whatever its commits look like.
+
+    Only base commits the branch lacks and that touch a path the branch
+    changed can answer yes, so those are the ones tried, oldest first.
+    """
+    merge_base = _git(repo_root, "merge-base", base_sha, branch_sha)
+    if merge_base.returncode == 1:
+        return ""  # unrelated histories: nothing shared, so nothing superseded
+    if merge_base.returncode != 0:
+        raise RuntimeError(
+            f"git merge-base failed: {(merge_base.stderr or merge_base.stdout).strip()}"
+        )
+    changed = _git(
+        repo_root, "diff", "--name-only", "--no-renames", merge_base.stdout.strip(), branch_sha
+    )
+    if changed.returncode != 0:
+        raise RuntimeError(f"git diff failed: {(changed.stderr or changed.stdout).strip()}")
+    paths = [line for line in changed.stdout.splitlines() if line]
+    if not paths:
+        return ""
+    candidates = _git(
+        repo_root,
+        "rev-list",
+        f"--max-count={SUPERSEDE_SCAN_LIMIT}",
+        base_sha,
+        f"^{branch_sha}",
+        "--",
+        *paths,
+    )
+    if candidates.returncode != 0:
+        raise RuntimeError(
+            f"git rev-list failed: {(candidates.stderr or candidates.stdout).strip()}"
+        )
+    for candidate in reversed(candidates.stdout.split()):
+        tree, conflicts, _ = _merge_tree(repo_root, candidate, branch_sha)
+        if tree and not conflicts and tree == _tree_of(repo_root, candidate):
+            return candidate
+    return ""
+
+
+def _tree_of(repo_root: Path, commit: str) -> str:
+    result = _git(repo_root, "rev-parse", f"{commit}^{{tree}}")
+    if result.returncode != 0:
+        raise RuntimeError(f"git rev-parse failed for {commit}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def merge_without_checkout(
     repo_root: Path, *, target: str, source: str, subject: str
 ) -> MergeOutcome:

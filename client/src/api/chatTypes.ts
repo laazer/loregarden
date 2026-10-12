@@ -5,7 +5,7 @@
 // field. Re-exported from `types.ts`, so importers are unaffected.
 
 import type { ChatPart } from "../components/chat/primitives/types";
-import type { WorkspaceRuntimeSettings } from "./types";
+import type { TicketState, WorkspaceRuntimeSettings } from "./types";
 
 export interface AgentQuestionOption {
   label: string;
@@ -40,7 +40,14 @@ export interface PreparedAction {
 export type ExitActionResolutionMode = "approve" | "recheck";
 
 /** Server ApprovalResolutionAction — what the operator may click on a gate. */
-export type ApprovalResolutionAction = "approve" | "recheck" | "reject";
+/** How a gate can be answered — what `allowed_actions` lists. */
+export type GateResolutionAction = "approve" | "recheck" | "reject";
+
+/** Every resolve action; `ignore` closes any card with a reason, deciding nothing. */
+export type ApprovalResolutionAction = GateResolutionAction | "ignore";
+
+/** What ignoring a pending approval does to whatever waits on it (server-decided). */
+export type IgnoreEffect = "none" | "denies_agent" | "declines_stage";
 
 export type ExitActionRequirement =
   | { kind: "runtime_capability"; capability_id: string }
@@ -94,7 +101,10 @@ export interface Approval {
   /** Unresolved exit actions only — agent-executable actions never appear here. */
   human_required_actions?: HumanRequiredExitAction[];
   /** Server-enforced resolution affordances for this gate. */
-  allowed_actions?: ApprovalResolutionAction[];
+  allowed_actions?: GateResolutionAction[];
+  /** The state of the ticket the card sits on; "" for a workspace-scoped card. */
+  ticket_state?: TicketState | "";
+  ignore_effect?: IgnoreEffect;
 }
 
 /** One decided approval, from `/api/inbox/approvals/history` — newest first. */
@@ -104,7 +114,7 @@ export interface ApprovalHistoryItem {
   kind: Approval["kind"];
   stage_key: string;
   stage_name: string;
-  status: "approved" | "rejected";
+  status: "approved" | "rejected" | "ignored";
   /** "automation" for an auto_approve run's own sign-off; "" for a person. */
   resolved_by: string;
   resolved_at: string;

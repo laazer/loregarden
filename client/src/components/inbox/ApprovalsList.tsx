@@ -40,6 +40,7 @@ import { useMemo, useState } from "react";
 
 import type { ApprovalResolutionAction } from "../../api/chatTypes";
 import { api, type Approval } from "../../api/client";
+import { duplicateApprovalIds } from "../../lib/ignoreReason";
 import { hasHumanCriteria } from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
@@ -127,6 +128,9 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
     );
     return scoped.sort((a, b) => Number(hasHumanCriteria(b)) - Number(hasHumanCriteria(a)));
   }, [approvals.data, workspaceSlug]);
+  // Across every workspace, not just the filtered ones: a duplicate is the same
+  // card twice, wherever the second one is listed.
+  const duplicates = useMemo(() => duplicateApprovalIds(approvals.data ?? []), [approvals.data]);
 
   const inspect = (approval: Approval) => {
     if (onInspect === undefined) return;
@@ -163,7 +167,8 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
           }
           onReject={(payload) => resolveApproval.mutate({ id: a.id, action: "reject", ...payload })}
           onInspect={onInspect !== undefined && a.ticket_id ? () => inspect(a) : undefined}
-          inspectLabel={hasHumanCriteria(a) ? "Approvals tab" : "Inspect"}
+          onIgnore={(reason) => resolveApproval.mutate({ id: a.id, action: "ignore", response: reason })}
+          hasDuplicate={duplicates.has(a.id)}
           collapsible
           onExpand={() => setExpandedApproval(a)}
           isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
@@ -198,6 +203,11 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
           if (!expandedApproval) return;
           resolveApproval.mutate({ id: expandedApproval.id, action: "reject", ...payload });
         }}
+        onIgnore={(reason) => {
+          if (!expandedApproval) return;
+          resolveApproval.mutate({ id: expandedApproval.id, action: "ignore", response: reason });
+        }}
+        hasDuplicate={expandedApproval ? duplicates.has(expandedApproval.id) : false}
         onOpenApprovalsTab={
           onInspect !== undefined && expandedApproval?.ticket_id
             ? () => inspect(expandedApproval)

@@ -573,8 +573,6 @@ class DispatchSurface(StrEnum):
     QUEUE = "queue"
     #: `POST /stage-fanout` — one deliberate decision, N attempts.
     FANOUT = "fanout"
-    #: The automatic conflict-resolution re-dispatch.
-    CONFLICT = "conflict"
 
 
 class StageFanoutGroupStatus(str, Enum):
@@ -755,6 +753,9 @@ class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    #: A person dismissed the card with a reason (stale, duplicate, a test).
+    #: Anything still waiting on it is answered as a rejection would be.
+    IGNORED = "ignored"
 
 
 class EventType(str, Enum):

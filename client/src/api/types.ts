@@ -690,6 +690,7 @@ export type {
   AgentQuestionOption,
   Approval,
   BaxterChatSessionSummary,
+  IgnoreEffect,
   BaxterChatSnapshot,
   ChatAdvisoryCause,
   ChatAttachment,
