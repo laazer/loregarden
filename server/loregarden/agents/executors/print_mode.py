@@ -178,11 +178,20 @@ def _wrapper_exited(spawned: SpawnedAgent) -> bool:
     last pane, so a session that is still there is an agent still working.
     Reading "no pid" as "finished" outright would settle a live run and have
     the orchestrator commit the tree while the agent was still writing to it.
+
+    A recorded `.rc` is also finished, on tmux. The wrapper's last act after
+    writing it is `exit "$rc"`, but the pane is the tmux server's child, and
+    tmux 3.4 on Linux sometimes never reaps one once its server has no sessions
+    left. `os.kill(pid, 0)` succeeds on that zombie forever, so a finished agent
+    read as a working one until its hard cap. A file read, not a `ps` per poll:
+    this runs once per line the agent prints.
     """
     if spawned.handle is not None:
         return spawned.handle.poll() is not None
     if spawned.pid is None:
         return spawned.session is None or tmux_session_gone(spawned.session)
+    if _exit_code_recorded(spawned.paths):
+        return True
     try:
         os.kill(spawned.pid, 0)
     except ProcessLookupError:
@@ -199,6 +208,15 @@ def _wrapper_exited(spawned: SpawnedAgent) -> bool:
         )
         return False
     return False
+
+
+def _exit_code_recorded(paths: RunOutputPaths) -> bool:
+    """Whether the wrapper has written `.rc`. Non-empty, not merely present:
+    `printf %s "$rc" > rc` creates the file before it writes the code."""
+    try:
+        return paths.rc.stat().st_size > 0
+    except FileNotFoundError:  # silent-ok: no `.rc` yet is the normal state of a run in flight
+        return False
 
 
 def _kill_agent_group(spawned: SpawnedAgent) -> None:

@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import time
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -114,6 +115,35 @@ def _private_tmux_server():
         # No `check`: a worker that never spawned a tmux agent has no server to kill.
         subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
     settings.agent_tmux_socket = previous
+
+
+@pytest.fixture(name="zombie_pid")
+def zombie_pid_fixture():
+    """The pid of a process that has exited and that nothing has reaped yet.
+
+    What a tmux pane is when its server misses the reap: `kill(pid, 0)` still
+    succeeds and `ps` still prints its start time. Made by never waiting on a
+    child that exits at once. `os.waitid(WNOWAIT)` would wait without reaping
+    but does not exist on macOS, so this asks `ps` until it reads `Z`. The
+    child holds the pid until teardown waits on it.
+
+    A session leader, like the agent wrapper: a timeout `killpg`s the watched
+    pid's group, and in pytest's own group that would be the test runner.
+    """
+    child = subprocess.Popen(["/bin/sh", "-c", "exit 0"], start_new_session=True)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        stat = subprocess.run(
+            ["ps", "-p", str(child.pid), "-o", "stat="], capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if stat.startswith("Z"):
+            break
+        time.sleep(0.02)
+    else:
+        child.wait()
+        raise AssertionError(f"pid {child.pid} never became a zombie")
+    yield child.pid
+    child.wait()
 
 
 @pytest.fixture(autouse=True, scope="session")

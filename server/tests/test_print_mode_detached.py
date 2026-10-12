@@ -21,6 +21,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
@@ -392,6 +393,37 @@ def test_an_agent_gone_before_tmux_named_its_pane_is_still_reported_from_rc(
 
     assert status is RunStatus.FAILED
     assert run_key.paths.rc.read_text() == "4"
+
+
+def test_a_pane_its_tmux_server_never_reaped_is_settled_from_rc(
+    db_session: Session, run_log_dir, run_key, pinned_transport, zombie_pid
+):
+    """A finished agent whose pane pid is an unreaped zombie still settles at once.
+
+    RED in CI on Linux: tmux 3.4 sometimes leaves a pane unreaped once its
+    server has no sessions left (2/100 instant-exit panes), `kill(pid, 0)`
+    succeeds on a zombie, and a run that had recorded its exit code waited out
+    its whole budget. The agent here runs in a real pane; only the pid the
+    loop watches is swapped for a zombie, which is what that pane became.
+    """
+    pinned_transport(AgentTransport.TMUX)
+    real = subprocess.run
+
+    def watching_a_zombie(argv, *args, **kwargs):
+        completed = real(argv, *args, **kwargs)
+        if "new-session" in argv:
+            completed.stdout = f"{zombie_pid}\n"
+        return completed
+
+    started = time.monotonic()
+    with mock.patch(
+        "loregarden.agents.executors.agent_spawn.subprocess.run", side_effect=watching_a_zombie
+    ):
+        stdout, _stderr, status = _run(db_session, run_key, "print('done')", timeout=15)
+
+    assert status is RunStatus.SUCCEEDED
+    assert stdout.strip() == "done"
+    assert time.monotonic() - started < 10, "settled by its budget, not by its .rc"
 
 
 # --- AC5: which budget fired, on both transports -----------------------------
