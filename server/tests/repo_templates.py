@@ -49,9 +49,17 @@ def from_template(destination: Path, key: str, build: Callable[[Path], None]) ->
     return destination
 
 
+#: Lock files a git process is holding in the template, never part of the copy.
+#: `git commit` ends by running `git maintenance run --auto --detach`, whose
+#: child takes `objects/maintenance.lock` after the commit has returned. On a
+#: loaded runner it is still alive when the next test copies the template, and
+#: copytree lists the lock, then fails to open it once the child has removed it.
+_TRANSIENT_GIT_FILES = shutil.ignore_patterns("*.lock")
+
+
 def copy_repo(source: Path, destination: Path) -> None:
     """Copy a repository and refresh its index's stat data for the new files."""
-    shutil.copytree(source, destination, symlinks=True)
+    shutil.copytree(source, destination, symlinks=True, ignore=_TRANSIENT_GIT_FILES)
     subprocess.run(
         ["git", "update-index", "-q", "--refresh"],
         cwd=destination,

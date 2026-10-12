@@ -224,6 +224,18 @@ it("binds Baxter's model on an initiative plan page when the panel shows Baxter"
   }
 });
 
+it("asks for no planner conversation until the initiative's shareable id resolves", () => {
+  useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  (api.plannerChat as jest.Mock).mockClear();
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/initiatives/init-pre-tinkercg-3"),
+  });
+
+  // Still the planner's page: Baxter's composer stays off it.
+  expect(result.current.composedOnScreen).toBe(true);
+  expect(api.plannerChat).not.toHaveBeenCalled();
+});
+
 it("asks for no planner conversation off an initiative page", () => {
   (api.plannerChat as jest.Mock).mockClear();
   const { result } = renderHook(() => useActiveChatSession(), {

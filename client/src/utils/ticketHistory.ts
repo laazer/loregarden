@@ -92,6 +92,7 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "advanced_after_decision" ||
     decision === "dispatched_repair" ||
     decision === "dispatched_landing_resolver" ||
+    decision === "dispatched_ci_fix" ||
     decision === "finished_cleared_landing" ||
     decision === "repaired"
     ? "normal"

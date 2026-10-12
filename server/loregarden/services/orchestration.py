@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import ticket_manual_edit
+from loregarden.services.approval_ignore import ignore_approval
 from loregarden.services.approval_resolution import (
     apply_gate_resolution,
     apply_park_resolution,
@@ -1166,6 +1167,17 @@ class ApprovalService(ExitActionApprovalMixin):
             payload={"approval_id": approval.id, "approved": approved},
         )
         return approval
+
+    def ignore(self, approval_id: str, *, reason: str) -> Approval:
+        """Close a pending approval without deciding it; see `approval_ignore`."""
+        return ignore_approval(
+            self.session,
+            approval_id,
+            reason=reason,
+            decline_stage=lambda ticket, approval, text: self._apply_ticket_resolution(
+                ticket, approval, approved=False, rework_route_key="", response_text=text
+            ),
+        )
 
     def _record_question_or_permission_response(
         self,
