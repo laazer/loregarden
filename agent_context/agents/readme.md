@@ -2,30 +2,32 @@ Agents are not allowed to edit files within this folder.
 
 # Multi-Agent Test-Driven Development Workflow
 
+This document describes the v1 pipeline, and nothing in `server/loregarden` reads it. The live pipeline is in the database. Stage definitions are in `workflow_templates.stages_json`, and agents are in `studio_agents`, which `seed_builtin_agents` seeds from `server/loregarden/agents/registry.py`, loading each agent's role body from its `role_file` under this folder.
+
+Some roles below have no registered agent and no role file: the Infra Implementer, the Generalist Implementer, the Integrator, and the per-domain Backend, Frontend, Generalist and Infra Review agents. Registered agents this document does not describe include `ticket_scoper`, `retriever`, `ui-design-decision`, `verifier`, `architecture_reviewer`, `security_reviewer`, `visual_qa`, `debugger` and `repair`, with role files under `misc_agents/`.
+
 ## Core Rules (Applies to All Agents)
 - **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to each agent's role definition. Read that module before acting on any ticket.
 - **Loregarden MCP:** When Loregarden orchestrates runs, use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
-- **Memory protocol:** When persisting or searching learnings, memory, or blog posts, follow `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
+- **Memory protocol:** When persisting or searching learnings, memory, or blog posts, follow `agent_context/agents/common_assets/memory_protocol_v1.md`: use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 - **Ticket Template:** All tickets must be written using the Ticket Template (`agent_context/agents/common_assets/ticket_template_v1.md`). Read that template before writing any ticket.
 - **Project context:** When working a ticket under `agent_context/projects/<project>/`, read that project's README (and any "Existing codebase" or "Integrate with" section) so implementation extends existing code and does not duplicate or ignore it. Grep the codebase for related names before implementing.
 - Any unclear or ambiguous instructions **must be questioned** before proceeding.
 - No agent may make silent assumptions about requirements.
 - Agents may only modify files within their assigned ownership.
 - Failing tests are the primary feedback mechanism for implementation.
-- **Git / VCS:** Commit between handoffs (before updating the ticket for the next agent). On ticket completion (Stage → COMPLETE, move to 02_complete/), commit on the **feature branch** and **push that branch** to the remote (`git push -u origin <feature-branch>`). **Do not** push `master` (or the default integration branch) from autonomous runs unless the human explicitly requests it. Work uses a **feature branch** named in the Planner output; **merge into `master`** is via **PR / human / CI** per Workflow Enforcement Module.
+- **Git / VCS:** The orchestrator owns branching, committing and pushing, per the Workflow Enforcement Module § GIT / VCS. Agents do not run `git commit`, `git push`, `git merge` or `git checkout` to finish a stage; they leave their work in the tree.
 
 ### Git checkpoints
-- **Feature branch (per ticket):** The **Planner** names a dedicated branch in the plan using the format `<project>-<ticket>/<title>` (e.g. `stratos-STRATOS-45/aws-credentials`, `terminus-issue-6.2/frontend-test-suite`). The first agent that performs implementation ensures that branch exists, is checked out from up-to-date **`master`** (or the project’s default integration branch if documented elsewhere), and that all subsequent handoff commits land on that branch until merge.
-- **Between handoffs:** Before updating the ticket with the new stage and NEXT ACTION for the next agent, commit all changes (code, tests, ticket file) with a message that references the ticket.
-- **Merge into `master` (default policy):** After **Gatekeeper** approval, the **merge milestone** means: feature branch is green, **PR opened or updated** (or equivalent), and a **human or CI merges** into **`master`**. The orchestrator does **not** locally merge into `master` and push `master` unless the human explicitly asks for that. If the ticket defers merge, document that in the ticket.
-- **Push to remote:** After meaningful commits and especially at **COMPLETE**, run `git push -u origin <feature-branch>`. Never treat “push to remote” as “push `master`” by default.
-- **After ticket completion:** When setting Stage to COMPLETE and moving the ticket to 02_complete/, final commits stay on the **feature branch**; push **that branch**. Post-merge `master` updates happen on the human’s machine or via the hosting provider after the PR merges—not by pushing `master` from the agent unless explicitly instructed.
+- **Branch (per ticket):** Every ticket runs on its own branch, which the orchestrator checks out before a stage runs. A top-level ticket lands on the workspace's `base_branch`; a ticket inside an orchestrated tree lands on an integration branch named after the tree's root (`server/loregarden/services/target_branch.py`).
+- **Between stages:** The orchestrator commits the working tree when a stage finishes, and opens or updates the pull request according to the workspace's git automation settings.
+- **If a git operation seems required:** Say so in the stage report instead of running it.
 
 ### Orchestrator, autopilot, and ap-continue (single source of truth)
-**Git push, merge, and completion steps** for any orchestrator (including Cursor autopilot or `ap-continue`) are defined **only** here (**Git checkpoints** above) and in **`agent_context/agents/common_assets/workflow_enforcement_v1.md` § GIT / VCS**. IDE or Claude **skills must not copy or extend** those rules; they should **reference** these two locations so policy stays maintainable in one place.
+**Git push, merge, and completion steps** for any orchestrator (including Cursor autopilot or `ap-continue`) are defined in **`agent_context/agents/common_assets/workflow_enforcement_v1.md` § GIT / VCS**, and **Git checkpoints** above summarizes them. IDE or Claude **skills must not copy or extend** those rules; they should **reference** that section so policy stays maintainable in one place.
 
 ### Markdown audit checkpoints (not Git)
-**Git checkpoints** (above) are VCS policy. **Markdown audit checkpoints** record autonomous assumptions and “would have asked” items: full entries live only under `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md`; `project_board/CHECKPOINTS.md` is **index-only** (pointers and short metadata). Consumers (**Learning Agent**, reviews, humans): read scoped logs first, then the index, then any `project_board/checkpoints/frozen/` archive if migrating from a monolith. See `AGENTS.md` and `.cursor/skills/autopilot/SKILL.md` → **Hard rules — checkpoint audit trail**.
+**Git checkpoints** (above) are VCS policy. **Audit checkpoints** record autonomous assumptions and "would have asked" items. Agents write them with the `loregarden_append_checkpoint` MCP tool, never as a file; each ticket and run gets one log, `<ticket-id>/<run-id>.md`, under the workspace's checkpoints directory in the Obsidian vault. See `agent_context/agents/common_assets/checkpoint_protocol_v1.md`.
 
 ## Mermaid Diagram
 
@@ -175,7 +177,7 @@ flowchart TD
 ```
 
 ### Branch and merge (summary)
-- The **Planner** records a **feature branch** name and a **merge into `master`** milestone (see **Git checkpoints** above). In practice that milestone is satisfied by **PR + human/CI merge**, not by the agent pushing `master`. The main workflow diagram shows **Merge feature branch → master** after **Gatekeeper** approval and before the **Learning** agent. The ticket diagram keeps the same stage enum; merge is an explicit VCS step tied to Gatekeeper approval, not a separate `Stage` value.
+- The diagrams above are the v1 design. The **Merge feature branch → master** step and the Planner's branch plan no longer match how the orchestrator handles git; branching, committing, pushing and merging now follow **Git checkpoints** above. Merge is a VCS step, not a separate `Stage` value.
 
 ---
 
@@ -189,7 +191,6 @@ flowchart TD
 - Agent assignment
 - Dependency ordering
 - Milestone sequencing
-- **Git strategy per ticket:** a single **feature branch** name and an explicit **merge-back** milestone into **`master`** (or the repo’s documented default integration branch)
 
 **Restrictions:**
 - Cannot write implementation code
@@ -197,12 +198,10 @@ flowchart TD
 - Cannot modify infrastructure
 
 **Outputs:**
-- Numbered tasks (include **early task:** ensure feature branch exists from up-to-date **`master`** before implementation commits)
+- Numbered tasks
 - Responsible agent assignment
 - Inputs, outputs, and dependencies
 - Risk and clarification flags
-- **Feature branch name** (convention: `<project>-<ticket>/<title>`; e.g. `stratos-STRATOS-45/aws-credentials`; must be unique and readable)
-- **Final milestone:** after Gatekeeper approval, **PR (or equivalent) + merge by human or CI** into **`master`** by default; call out who opens the PR and who merges. Only use local merge + push `master` if project policy or the human explicitly requires it.
 
 ---
 
@@ -389,8 +388,8 @@ flowchart TD
 
 ## 11–15. Review & Gatekeeper Agents
 
-These review-oriented agents and the final gatekeeper are defined **only under** `agent_context/agents/**` and are orchestrated via the workflow there.
-Use `agent_context/agents/readme.md` as the source of truth for their responsibilities and prompts.
+There are no role files for the per-domain review agents. The final gatekeeper's role file is `agent_context/agents/15_gatekeeper_review/gatekeeper_review_v1.md`.
+In the live templates, review runs through `architecture_reviewer`, `static_qa`, `security_reviewer` and `visual_qa`, and the gate through `gatekeeper` or `ac_gatekeeper`; see `workflow_templates.stages_json` for each template's stages.
 
 ---
 
@@ -403,7 +402,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 - Ticket learnings, persisted via `loregarden_append_learning` (per ticket)
 - Memory graph nodes and relations (via Loregarden MCP memory tools)
 
-**Inputs (checkpoints):** Prefer `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md` for assumption audit detail; use `project_board/CHECKPOINTS.md` only as a pointer index; use `project_board/checkpoints/frozen/` only when reading legacy history.
+**Inputs (checkpoints):** The ticket's checkpoint entries, read with `loregarden_search_memory` scoped to the run's `workspace_slug` (see `checkpoint_protocol_v1.md`).
 
 **Responsibilities:**
 - Extract reusable insights from completed task outputs, test results, bugs, and agent artifacts
@@ -416,7 +415,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 - Cannot write code
 - Cannot modify tests, implementation, or infrastructure
 - Cannot modify other agents' artifacts
-- May NOT fabricate insights — if input is insufficient, asks clarifying questions
+- May NOT fabricate insights; if input is insufficient, asks clarifying questions
 
 **Outputs:**
 - `loregarden_append_learning` with structured sections: Learnings, Anti-Patterns, Prompt Patches, Workflow Improvements. Never write a learning file to the repo.
@@ -427,7 +426,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 ## 17. Blog Post Agent
 **Purpose:** Writes human-readable ticket retrospectives for operators and stakeholders.
 
-**Runs:** After Learning (Stage 8 in autopilot), before final human report.
+**Runs:** After Learning (Stage 8 in `common_assets/pipeline_stages_v1.md`), before final human report.
 
 **Owns:**
 - Blog post markdown in Obsidian via `loregarden_upsert_blog_post` (workspace-scoped `Loregarden/BlogPosts/{workspace}/`)
@@ -437,7 +436,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 **Responsibilities:**
 - Call `loregarden_memory_status` with `workspace_slug` to confirm `obsidian_blogposts_dir`
 - Draft an engaging, factual retrospective from the capsule
-- Persist via `loregarden_upsert_blog_post` — never write vault files directly
+- Persist via `loregarden_upsert_blog_post`, never by writing vault files directly
 
 **Restrictions:**
 - Cannot write code or modify workflow state

@@ -1,7 +1,7 @@
 ## Summary
 
 ## User-facing surfaces
-<!-- Required when the PR touches client/src/pages or client/src/components — the
+<!-- Required when the PR touches client/src/pages or client/src/components. The
      "PR UX section" check fails without it. See CLAUDE.md "What it is for".
      Look at the change on real data first: `task sandbox`, or `task sandbox -- --seeded`
      where the live database is out of reach. -->
