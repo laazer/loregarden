@@ -1,0 +1,32 @@
+.ignore-approval-warning {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--aml) 40%, transparent);
+  background: color-mix(in srgb, var(--aml) 10%, transparent);
+  color: var(--tx);
+  font-size: 12px;
+}
+
+.ignore-approval-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ignore-approval-presets [aria-pressed="true"] {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+
+.ignore-approval-reason {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--bg2);
+  color: var(--tx);
+  font-size: 12px;
+  resize: vertical;
+  box-sizing: border-box;
+}

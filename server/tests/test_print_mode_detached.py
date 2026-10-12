@@ -18,7 +18,9 @@ Two behaviours here are the ones that break quietly:
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +31,7 @@ from uuid import uuid4
 
 import pytest
 from loregarden.agents.executors import print_mode
+from loregarden.agents.executors.agent_spawn import SpawnedAgent
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
 from loregarden.models.domain import AgentTransport, RunStatus
@@ -508,3 +511,39 @@ def test_the_print_mode_module_does_not_import_the_pipe_line_reader():
     """
     assert not hasattr(print_mode, "SubprocessLineReader")
     assert hasattr(subprocess_lines, "SubprocessLineReader"), "the pipe reader still exists"
+
+
+def test_the_kill_signals_the_group_the_pid_leads_never_the_one_it_sits_in(run_key):
+    """A pid that leads no group must not lead `killpg` to its neighbours.
+
+    A tmux pane read before its `setsid()` sits in the tmux server's group, and
+    `killpg(getpgid(pid))` would have killed the server and every agent's pane.
+    Here the stand-in for that server is a session leader with the pid in its
+    group; it has to survive.
+    """
+    leader = subprocess.Popen(
+        ["/bin/sh", "-c", "sleep 30 & echo $!; wait"],
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        member = int(leader.stdout.readline())
+        assert os.getpgid(member) == leader.pid != member, "precondition: member leads no group"
+
+        print_mode._kill_agent_group(
+            SpawnedAgent(
+                pid=member,
+                transport_used=AgentTransport.TMUX,
+                paths=run_key.paths,
+                handle=None,
+            )
+        )
+
+        # A SIGKILL is delivered asynchronously; give it time to land before
+        # calling the neighbour alive.
+        with pytest.raises(subprocess.TimeoutExpired):
+            leader.wait(timeout=0.5)
+    finally:
+        os.killpg(leader.pid, signal.SIGKILL)
+        leader.wait(timeout=10)
