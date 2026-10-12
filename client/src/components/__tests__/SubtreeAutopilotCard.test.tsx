@@ -63,31 +63,36 @@ test("turning it on sends the switch and shows what it starts next", async () =>
   );
   const onOpen = renderCard();
 
-  const toggle = await screen.findByRole("button", { name: "Turn on" });
-  expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await userEvent.click(toggle);
+  expect(await screen.findByRole("button", { name: "Turn off" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Turn on" }));
 
-  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { enabled: true });
-  expect(await screen.findByRole("button", { name: "Turn off" })).toHaveAttribute("aria-pressed", "true");
+  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { enabled: true, max_parallel: 3 });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Turn on" })).toBeDisabled());
+  expect(screen.getByRole("button", { name: "Turn off" })).toBeEnabled();
   await userEvent.click(screen.getByRole("button", { name: /lg-f-2/ }));
   expect(onOpen).toHaveBeenCalledWith("t2");
 });
 
-test("picking a parallel cap saves it, so turning on cannot drop it", async () => {
+test("while off, the picked cap is sent with Turn on; while on, a pick saves at once", async () => {
   mockApi.ticketAutopilot.mockResolvedValue(view());
   mockApi.setTicketAutopilot
-    .mockResolvedValueOnce(view({}, { max_parallel: 1 }))
-    .mockResolvedValueOnce(view({}, { max_parallel: 1, enabled: true }));
+    .mockResolvedValueOnce(view({}, { max_parallel: 1, enabled: true }))
+    .mockResolvedValueOnce(view({}, { max_parallel: 4, enabled: true }));
   renderCard();
 
   const select = await screen.findByRole("combobox", { name: "Most items the autopilot runs at once" });
   await userEvent.selectOptions(select, "1");
-  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { max_parallel: 1 });
-  await waitFor(() => expect(select).toHaveValue("1"));
+  expect(mockApi.setTicketAutopilot).not.toHaveBeenCalled();
+  expect(select).toHaveValue("1");
 
   await userEvent.click(screen.getByRole("button", { name: "Turn on" }));
-  await screen.findByRole("button", { name: "Turn off" });
+  expect(mockApi.setTicketAutopilot).toHaveBeenCalledWith("m1", { enabled: true, max_parallel: 1 });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Turn on" })).toBeDisabled());
   expect(select).toHaveValue("1");
+
+  await userEvent.selectOptions(select, "4");
+  expect(mockApi.setTicketAutopilot).toHaveBeenLastCalledWith("m1", { max_parallel: 4 });
+  await waitFor(() => expect(select).toHaveValue("4"));
 });
 
 test("a long waiting list is cut short and points at the child tickets", async () => {

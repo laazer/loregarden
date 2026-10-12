@@ -1,3 +1,4 @@
+import { useState } from "react";
 
 import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { navigateToTicket } from "../../../lib/useAppNavigation";
@@ -44,6 +45,12 @@ export function AutopilotPanel({
   const nextUp = autopilot.next_up.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const critical = plan.critical_path.map((id) => byId.get(id)).filter((n): n is PlanNode => Boolean(n));
   const criticalStartsOutside = critical[0]?.external ?? false;
+  // Off, a picked number waits for "Turn on", which sends it with the switch.
+  // Running, a pick saves at once. A draft kept while off and dropped by "Turn
+  // on" is what showed 1 while the autopilot ran 2.
+  const [draftParallel, setDraftParallel] = useState<number | null>(null);
+  const parallel = autopilot.enabled ? autopilot.max_parallel : (draftParallel ?? autopilot.max_parallel);
+  const unavailable = autopilot.available ? undefined : "The autopilot does not run on a sandbox server";
 
   return (
     <section className="plan-autopilot" aria-labelledby="plan-autopilot-title">
@@ -62,11 +69,13 @@ export function AutopilotPanel({
           <Select
             aria-label="Most tickets the autopilot runs at once"
             className="plan-parallel-select"
-            value={String(autopilot.max_parallel)}
+            value={String(parallel)}
             disabled={busy}
-            // Saved on pick: a draft held until "Update" was dropped by "Turn on",
-            // so the select showed 1 while the autopilot ran 2.
-            onChange={(e) => onAutopilot({ max_parallel: Number(e.target.value) })}
+            onChange={(e) => {
+              const picked = Number(e.target.value);
+              if (autopilot.enabled) onAutopilot({ max_parallel: picked });
+              else setDraftParallel(picked);
+            }}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -75,14 +84,25 @@ export function AutopilotPanel({
             ))}
           </Select>
           <Button
-            variant={autopilot.enabled ? "secondary" : "primary"}
+            variant="primary"
             compact
-            aria-pressed={autopilot.enabled}
-            disabled={busy || !autopilot.available}
-            title={autopilot.available ? undefined : "The autopilot does not run on a sandbox server"}
-            onClick={() => onAutopilot({ enabled: !autopilot.enabled })}
+            disabled={busy || !autopilot.available || autopilot.enabled}
+            title={unavailable ?? (autopilot.enabled ? "Already on" : `Start ready work, up to ${parallel} at once`)}
+            onClick={() => onAutopilot({ enabled: true, max_parallel: parallel })}
           >
-            {autopilot.enabled ? "Turn off" : "Turn on"}
+            Turn on
+          </Button>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || !autopilot.enabled}
+            title={autopilot.enabled ? "Stop starting new work; what is running carries on" : "Already off"}
+            onClick={() => {
+              setDraftParallel(null);
+              onAutopilot({ enabled: false });
+            }}
+          >
+            Turn off
           </Button>
         </div>
       </header>

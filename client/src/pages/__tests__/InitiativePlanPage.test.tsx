@@ -407,27 +407,28 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.markNeedsPerson).toHaveBeenCalledWith("init1", ["t0-0"], false));
 
   await user.click(within(panel).getByRole("button", { name: "Turn on" }));
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 3 }));
 });
 
-test("picking a parallel cap saves it, so turning on cannot drop it", async () => {
-  const capped = plan({ autopilot: { ...plan().autopilot, max_parallel: 1 } });
-  mockApi.setAutopilot
-    .mockResolvedValueOnce(capped)
-    .mockResolvedValueOnce(plan({ autopilot: { ...capped.autopilot, enabled: true } }));
+test("while off, the picked cap is sent with Turn on; while on, Turn on is disabled", async () => {
+  const on = plan({ autopilot: { ...plan().autopilot, max_parallel: 1, enabled: true } });
+  mockApi.setAutopilot.mockResolvedValueOnce(on).mockResolvedValueOnce(plan());
   const user = userEvent.setup();
   renderPage();
 
   const panel = await screen.findByRole("region", { name: "Autopilot" });
   const select = within(panel).getByRole("combobox", { name: /Most tickets/ });
+  expect(within(panel).getByRole("button", { name: "Turn off" })).toBeDisabled();
   await user.selectOptions(select, "1");
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 1 }));
-  await waitFor(() => expect(select).toHaveValue("1"));
+  expect(mockApi.setAutopilot).not.toHaveBeenCalled();
 
   await user.click(within(panel).getByRole("button", { name: "Turn on" }));
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenLastCalledWith("init1", { enabled: true }));
-  await within(panel).findByRole("button", { name: "Turn off" });
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 1 }));
+  await waitFor(() => expect(within(panel).getByRole("button", { name: "Turn on" })).toBeDisabled());
   expect(select).toHaveValue("1");
+
+  await user.click(within(panel).getByRole("button", { name: "Turn off" }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenLastCalledWith("init1", { enabled: false }));
 });
 
 test("a paused autopilot says why", async () => {

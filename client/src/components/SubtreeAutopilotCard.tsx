@@ -1,4 +1,5 @@
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
@@ -84,6 +85,10 @@ export function SubtreeAutopilotCard({
 }) {
   const qc = useQueryClient();
   const kind = workItemTypeLabel(workItemType).toLowerCase();
+  // Off, a picked number waits for "Turn on", which sends it with the switch.
+  // Running, a pick saves at once. Keyed by ticket so a draft never follows
+  // the card to another one.
+  const [draft, setDraft] = useState<{ ticketId: string; parallel: number } | null>(null);
 
   const query = useQuery({
     queryKey: subtreeAutopilotKey(ticketId),
@@ -126,11 +131,13 @@ export function SubtreeAutopilotCard({
   }
 
   const { autopilot, running_above: runningAbove } = view;
-  const toggleTitle = !autopilot.available
+  const drafted = draft?.ticketId === ticketId ? draft.parallel : null;
+  const parallel = autopilot.enabled ? autopilot.max_parallel : (drafted ?? autopilot.max_parallel);
+  const onTitle = !autopilot.available
     ? "The autopilot does not run on a sandbox server"
     : autopilot.enabled
-      ? "Stop starting new work; what is running carries on"
-      : `Start this ${kind}'s ready items, up to ${autopilot.max_parallel} at once`;
+      ? "Already on"
+      : `Start this ${kind}'s ready items, up to ${parallel} at once`;
 
   return (
     <section className="state-card subtree-autopilot" aria-labelledby="subtree-autopilot-title" aria-busy={busy}>
@@ -145,11 +152,13 @@ export function SubtreeAutopilotCard({
           <Select
             aria-label="Most items the autopilot runs at once"
             className="subtree-autopilot-select"
-            value={String(autopilot.max_parallel)}
+            value={String(parallel)}
             disabled={busy}
-            // Saved on pick: a draft held until "Update" was dropped by "Turn on",
-            // so the select showed 1 while the autopilot ran 2.
-            onChange={(e) => change.mutate({ max_parallel: Number(e.target.value) })}
+            onChange={(e) => {
+              const picked = Number(e.target.value);
+              if (autopilot.enabled) change.mutate({ max_parallel: picked });
+              else setDraft({ ticketId, parallel: picked });
+            }}
           >
             {AUTOPILOT_PARALLEL_CHOICES.map((n) => (
               <option key={n} value={n}>
@@ -158,14 +167,25 @@ export function SubtreeAutopilotCard({
             ))}
           </Select>
           <Button
-            variant={autopilot.enabled ? "secondary" : "primary"}
+            variant="primary"
             compact
-            aria-pressed={autopilot.enabled}
-            disabled={busy || !autopilot.available}
-            title={toggleTitle}
-            onClick={() => change.mutate({ enabled: !autopilot.enabled })}
+            disabled={busy || !autopilot.available || autopilot.enabled}
+            title={onTitle}
+            onClick={() => change.mutate({ enabled: true, max_parallel: parallel })}
           >
-            {busy ? "Saving…" : autopilot.enabled ? "Turn off" : "Turn on"}
+            Turn on
+          </Button>
+          <Button
+            variant="secondary"
+            compact
+            disabled={busy || !autopilot.enabled}
+            title={autopilot.enabled ? "Stop starting new work; what is running carries on" : "Already off"}
+            onClick={() => {
+              setDraft(null);
+              change.mutate({ enabled: false });
+            }}
+          >
+            Turn off
           </Button>
         </div>
       </div>
