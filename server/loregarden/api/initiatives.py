@@ -64,6 +64,7 @@ from loregarden.services.initiative_service import (
     attachable_milestones,
     get_initiative,
     list_initiatives,
+    load_initiative,
 )
 from loregarden.services.initiative_suggestion_agent import regroup_with_agent
 from loregarden.services.initiative_suggestions import (
@@ -258,6 +259,8 @@ def update_autopilot_endpoint(
 ) -> InitiativePlanView:
     """Turning it on queues the first batch now rather than at the next tick."""
     try:
+        # The engine takes any parent (`api.ticket_autopilot`); this page is initiatives'.
+        load_initiative(session, initiative_id)
         plan = set_autopilot(session, initiative_id, body, actor=_OPERATOR)
         if plan.autopilot:
             run_autopilot(session, initiative_id)
@@ -272,6 +275,7 @@ def start_work_endpoint(
 ) -> dict[str, str]:
     """Queue named tickets if the plan says they are ready; returns id -> outcome."""
     try:
+        load_initiative(session, initiative_id)
         return start_ready_work(session, initiative_id, body.ticket_ids, actor=_OPERATOR)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -282,6 +286,7 @@ def needs_person_endpoint(
     initiative_id: str, body: NeedsPersonUpdate, session: Session = Depends(get_session)
 ) -> InitiativePlanView:
     try:
+        load_initiative(session, initiative_id)
         mark_needs_person(session, initiative_id, body.ticket_ids, needs_person=body.needs_person)
         return plan_view(session, initiative_id)
     except LookupError as exc:

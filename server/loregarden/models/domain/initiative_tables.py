@@ -45,7 +45,12 @@ class InitiativeNumberPool(SQLModel, table=True):
 
 class InitiativePlan(SQLModel, table=True):
     """How one initiative's schedule behaves. At most one row per initiative;
-    an initiative with no row is a FIXED plan with no notes."""
+    an initiative with no row is a FIXED plan with no notes.
+
+    A milestone or parent ticket has a row too once its autopilot is set
+    (`api.ticket_autopilot`): ``initiative_id`` is then that ticket's id, and only
+    the autopilot columns mean anything.
+    """
 
     __tablename__ = "initiative_plans"
 

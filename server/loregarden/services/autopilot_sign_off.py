@@ -142,7 +142,7 @@ def record_autopilot_sign_off(
         decision=OrchestratorDecision.APPROVED_LEGACY_SIGN_OFF,
         stage_key=approval.stage_key,
         reason=(
-            f"The initiative autopilot approved the '{approval.stage_key}' stage gate on work "
+            f"The autopilot approved the '{approval.stage_key}' stage gate on work "
             "it started. Turn the autopilot off to approve these gates yourself."
         ),
         evidence={"initiative_id": plan.initiative_id, "approval_id": approval.id},

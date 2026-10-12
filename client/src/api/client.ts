@@ -24,6 +24,8 @@ export type {
   MilestoneSchedule,
   PlannerSnapshot,
   ScheduleProposal,
+  AutopilotTicketRef,
+  SubtreeAutopilot,
 } from "./initiativeApi";
 export type * from "./memoryApi";
 import type {
