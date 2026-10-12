@@ -46,27 +46,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
-from typing import NamedTuple
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
-from loregarden.models.domain import (
-    AgentRun,
-    BlockKind,
-    RunStatus,
-    Ticket,
-    TicketState,
-    Workspace,
-)
+from loregarden.models.domain import BlockKind, Workspace
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
-from loregarden.services.ticket_worktree import resolve_execution_root
-from loregarden.services.worktree_lifecycle import release_ticket_worktree
 from sqlmodel import Session
-from tests.worktree_helpers import git, make_repo
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -269,95 +257,3 @@ _LOCKED_COMPLETION = (
 )
 def test_a_locked_database_in_run_completion_is_not_a_work_block() -> None:
     assert classify_block_message(_LOCKED_COMPLETION) is BlockKind.HARNESS
-
-
-class _DetachedTree(NamedTuple):
-    """A finished ticket's checkout whose last commit no branch can reach."""
-
-    session: Session
-    ticket: Ticket
-    path: Path
-    stranded: str
-
-
-@pytest.fixture
-def worktree_with_a_detached_commit(isolated_db, tmp_path: Path) -> Iterator[_DetachedTree]:
-    """The shape an interrupted `git rebase` or a `git bisect` leaves behind.
-
-    The branch holds a commit of its own, so the retirement guard's second
-    premise is genuinely satisfied; the tree is clean, so its first one is too.
-    What neither premise sees is that the checkout's HEAD has moved off the
-    branch and taken a commit with it.
-
-    A fixture, not a test body, so a broken setup ERRORs instead of XFAILing.
-    """
-    repo = make_repo(tmp_path)
-    with Session(isolated_db) as session:
-        workspace = Workspace(slug="proj", name="proj", repo_path=str(repo))
-        session.add(workspace)
-        session.commit()
-        session.refresh(workspace)
-
-        ticket = Ticket(
-            external_id="LG-DETACHED",
-            workspace_id=workspace.id,
-            title="Rebase interrupted mid-run",
-            branch="loregarden/lg-detached",
-        )
-        session.add(ticket)
-        session.commit()
-        session.refresh(ticket)
-
-        run = AgentRun(
-            run_code="run-LG-DETACHED",
-            ticket_id=ticket.id,
-            workspace_id=workspace.id,
-            agent_id="backend_implementer",
-            status=RunStatus.RUNNING,
-        )
-        session.add(run)
-        session.commit()
-        session.refresh(run)
-        path = resolve_execution_root(session, run, ticket, workspace)
-
-        (path / "work.txt").write_text("committed on the branch\n")
-        git(path, "add", "-A")
-        git(path, "commit", "-q", "-m", "work")
-
-        git(path, "checkout", "-q", "--detach")
-        (path / "more.txt").write_text("committed off the branch\n")
-        git(path, "add", "-A")
-        git(path, "commit", "-q", "-m", "more work, nowhere to land")
-        stranded = git(path, "rev-parse", "HEAD").stdout.strip()
-
-        ticket.state = TicketState.DONE
-        session.add(ticket)
-        session.commit()
-
-        yield _DetachedTree(session, ticket, path, stranded)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "lg-external-harness-951 — open: surfaced by lg-external-harness-489's test-break "
-        "stage. `_has_preserved_commits` asks the *branch* whether "
-        "anything survives removing the checkout, which is right for refusing to count a "
-        "detached commit and silent about destroying one: both premises hold, the checkout "
-        "goes, and the detached commit is reachable from no ref at all."
-    ),
-)
-def test_a_commit_only_the_checkout_can_reach_is_never_deleted(
-    worktree_with_a_detached_commit: _DetachedTree,
-) -> None:
-    """Exercised on 2026-10-10 in a scratch repo before being written here:
-    `git status --porcelain --untracked-files=all` empty and
-    `git rev-list --count main..feat` = 1, with the second commit reachable only
-    from HEAD. Removing the checkout loses it exactly as deleting the tree
-    uncommitted would, which is the loss 489 closed by another route.
-    """
-    tree = worktree_with_a_detached_commit
-
-    assert release_ticket_worktree(tree.session, tree.ticket) is False
-    assert (tree.path / "more.txt").exists()
-    assert tree.stranded in git(tree.path, "rev-parse", "HEAD").stdout

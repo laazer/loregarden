@@ -26,6 +26,7 @@ from loregarden.services.chat_branch_sweep import sweep_all_chat_branches, sweep
 from loregarden.services.chat_worktree import resolve_chat_execution_root
 from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
+from loregarden.services.worktree_lifecycle import KeepReason
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -190,7 +191,8 @@ def test_a_tree_holding_uncommitted_work_keeps_its_branch(
     result = sweep_chat_branches(session, workspace)
 
     assert result.removed == []
-    assert result.kept == [(branch, "its worktree holds uncommitted work")]
+    assert [name for name, _ in result.kept] == [branch]
+    assert KeepReason.UNCOMMITTED.value in result.kept[0][1]
     assert branch in _remote_branches(remote)
     assert (root / "not_yet_committed.txt").exists()
 
@@ -308,3 +310,33 @@ def test_an_unreachable_remote_does_not_hold_the_boot_open(
     assert len(result.remote_failures) == 1
     assert "did not answer" in result.remote_failures[0][1]
     assert branch not in git(repo, "branch", "--format=%(refname:short)").stdout
+
+
+def test_a_stranded_commit_is_not_reported_as_uncommitted_work(
+    session, workspace, repo, remote, pruning
+):
+    """The sweep keeps this tree for the right reason, and says so.
+
+    Landed by content, tree clean, branch carrying its own commit — and HEAD
+    moved off the branch with a commit of its own, which no ref can reach. The
+    sweep inherits the refusal from `retire_worktree`, and what it then shows
+    the operator has to be the reason that actually fired: reporting
+    "uncommitted work" here would send them to look for edits that are not
+    there, and tell them nothing about the commit that is.
+    """
+    _, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
+    git(root, "checkout", "-q", "--detach")
+    (root / "off_the_branch.txt").write_text("committed where no ref reaches\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "interrupted rebase")
+    stranded = git(root, "rev-parse", "HEAD").stdout.strip()
+
+    result = sweep_chat_branches(session, workspace)
+
+    assert result.removed == []
+    assert [name for name, _ in result.kept] == [branch]
+    assert KeepReason.STRANDED_HEAD.value in result.kept[0][1]
+    assert KeepReason.UNCOMMITTED.value not in result.kept[0][1]
+    assert branch in _remote_branches(remote)
+    assert root.is_dir()
+    assert git(root, "rev-parse", "HEAD").stdout.strip() == stranded

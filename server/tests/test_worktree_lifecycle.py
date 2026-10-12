@@ -414,3 +414,144 @@ def test_a_row_whose_directory_already_went_is_still_settled(session, workspace)
 
     assert release_ticket_worktree(session, ticket) is True
     assert _row(session, ticket).state == WorktreeState.CLEANUP.value
+
+
+# --------------------------------------------------------------------------
+# HEAD against every ref — "does anything die when we remove this checkout?"
+#
+# The premises above ask whether anything *survives* removing a checkout, and
+# that question is correctly asked of the branch. These ask the other one, of
+# HEAD: an interrupted rebase, a bisect, or a bare `checkout --detach` followed
+# by a commit leaves a commit that no branch, tag or remote ref can reach, and
+# both of the branch-shaped premises hold while it sits there.
+# --------------------------------------------------------------------------
+
+
+def _detach_and_commit(path: Path, name: str) -> str:
+    """Move HEAD off the branch and commit there. Returns the stranded commit."""
+    git(path, "checkout", "-q", "--detach")
+    (path / name).write_text("committed off the branch\n")
+    git(path, "add", "-A")
+    git(path, "commit", "-q", "-m", f"{name}, nowhere to land")
+    return git(path, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_a_commit_only_the_checkout_can_reach_is_never_deleted(session, workspace):
+    """The shape an interrupted `git rebase` or a `git bisect` leaves behind.
+
+    Both branch-shaped premises are genuinely satisfied — the tree is clean and
+    the branch holds a commit its base does not — so the checkout looks finished
+    from outside. What neither premise sees is that HEAD has moved off the branch
+    and taken a commit with it, which removing the checkout would strand exactly
+    as deleting uncommitted work would.
+
+    Moved here from `test_open_defect_repros.py`, where it was the open repro for
+    this ticket; the fix makes it a permanent regression test for this surface.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    stranded = _detach_and_commit(path, "more.txt")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is False
+    assert path.is_dir()
+    assert (path / "more.txt").exists()
+    assert git(path, "rev-parse", "HEAD").stdout.strip() == stranded
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+
+
+def test_a_stranded_head_is_reported_ahead_of_an_empty_branch(session, workspace, caplog):
+    """The one shape both the new premise and the empty-branch premise claim, so
+    it is the only place the cascade's order is observable: HEAD carries a commit
+    *and* the branch carries none beyond its base.
+
+    The reason an operator is given has to be the one they can act on. "a commit
+    no branch or tag reaches" tells them to put a branch on it; "no commits
+    beyond its base" is true, and sends them to inspect a branch whose emptiness
+    is a consequence rather than the cause — the same call this module already
+    made for a tree that is both dirty and empty.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _detach_and_commit(path, "stranded.txt")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        assert reconcile_worktrees(session) == 0
+
+    assert path.is_dir()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+    summary = caplog.records[0].getMessage().splitlines()
+    stranded = summary.index(f"  {KeepReason.STRANDED_HEAD.value} (1):")
+    assert str(path) in summary[stranded + 1]
+    assert f"  {KeepReason.NOTHING_COMMITTED.value} (1):" not in summary
+
+
+def test_a_checkout_detached_at_a_branch_tip_is_still_retired(session, workspace):
+    """The `git bisect` / `git checkout --detach` shape, with no commit of its own.
+
+    This is what separates asking HEAD *against every ref* from asking the much
+    easier question "is HEAD detached". Nothing here is unreachable: HEAD is the
+    branch tip. Refusing this shape would keep every bisected checkout forever,
+    which is the leak this module exists to stop.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    git(path, "checkout", "-q", "--detach")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is True
+    assert not path.exists()
+    assert _row(session, ticket).state == WorktreeState.CLEANUP.value
+
+
+def test_a_detached_commit_a_tag_can_reach_is_retired(session, workspace):
+    """A tag is a ref, and a ref is what keeps a commit reachable once the
+    checkout is gone. The question is reachability, not attachment, so a tagged
+    detached commit is retired and the commit survives in the object store —
+    which is the whole argument for removing any checkout."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    stranded = _detach_and_commit(path, "more.txt")
+    git(path, "tag", "keep-the-rebase")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is True
+    assert not path.exists()
+    repo_path = session.get(Workspace, workspace.id).repo_path
+    assert git(repo_path, "cat-file", "-t", stranded).stdout.strip() == "commit"
+
+
+def test_a_checkout_whose_refs_git_cannot_list_is_never_retired(session, workspace):
+    """The new premise fails closed, like the two beside it.
+
+    A ref pointing at an object the repository does not have is the shape a
+    crash mid-write leaves, and it is the case where everything else still looks
+    retirable: `git status` reports a clean tree and the branch's own commit
+    count is readable, while enumerating refs exits non-zero. An unprovable
+    premise is not a satisfied one, so the checkout stays.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    common = git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    admin = Path(common.stdout.strip())
+    (admin / "refs" / "heads" / "broken").write_text("deadbeef" * 5 + "\n")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is False
+    assert (path / "work.txt").exists()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
