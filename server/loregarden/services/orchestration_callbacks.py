@@ -48,7 +48,10 @@ from loregarden.services.process_identity import liveness
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
-from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
+from loregarden.services.run_interruption import (
+    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+    blocked_by_interruption,
+)
 from loregarden.services.run_lease import SUPERVISED
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
@@ -904,6 +907,23 @@ class OrchestrationCallbackService:
             if instance and stages:
                 self.orch.reconcile_ticket(ticket)
                 self.session.refresh(ticket)
+        if (
+            status == OrchestrationRunStatus.SUCCEEDED
+            and ticket.state == TicketState.BLOCKED
+            and not blocked_by_interruption(ticket)
+        ):
+            # A run cannot succeed over a ticket it leaves blocked. Several loop
+            # exits ask for SUCCEEDED (a pause, a finished pass) without
+            # re-reading the ticket; 782's landing resolver blocked for a person
+            # and its run still reported success (lg-milestone-that-929).
+            logger.warning(
+                "orchestration %s asked to finish succeeded over blocked ticket %s; "
+                "recording blocked",
+                orch_run.run_code,
+                ticket.external_id,
+            )
+            status = OrchestrationRunStatus.BLOCKED
+            message = message or ticket.blocking_issues
         self.session.add(ticket)
         self._finish_orchestration_run(orch_run, status=status, message=message)
         # A finished ticket's tree has nothing left to run in it, and leaving

@@ -42,6 +42,13 @@ class OrchestratorDecision(StrEnum):
     #: A person answered a decision block's question; the choice is on the
     #: ticket and the stage was requeued without anyone asking (749).
     REQUEUED_AFTER_DECISION = "requeued_after_decision"
+    #: A person answered a repeated decision block by parking the ticket rather
+    #: than buying another round on the same stage.
+    PARKED_AFTER_DECISION = "parked_after_decision"
+    #: A person answered a decision the control plane can carry out itself
+    #: (a spec's operation criteria split or kept), so it did, and the stage
+    #: moved on rather than running its agent again.
+    ADVANCED_AFTER_DECISION = "advanced_after_decision"
     #: A harness/work block got its one repair turn: the stage was re-armed
     #: under the repair agent instead of waiting for a person (750).
     DISPATCHED_REPAIR = "dispatched_repair"
@@ -57,6 +64,10 @@ class OrchestratorDecision(StrEnum):
     #: finish it was handed back to `finalize_workflow` (801). A landing that
     #: blocked and was then fixed by hand leaves exactly that residue.
     FINISHED_PARKED_TERMINAL_STAGE = "finished_parked_terminal_stage"
+    #: A ticket blocked on its terminal stage by its landing was finished
+    #: because the landing now succeeds: the conflict was resolved, or the work
+    #: was landed by hand (928). Selected only when git says so, read-only.
+    FINISHED_CLEARED_LANDING = "finished_cleared_landing"
     #: A landing conflicted on a ticket whose every stage passed, so one
     #: resolution turn was armed on the terminal stage rather than blocking
     #: for a person (801).

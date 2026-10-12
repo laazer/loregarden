@@ -53,7 +53,10 @@ from loregarden.services.run_service import (
     settle_orphaned_agent_runs,
     settle_stranded_stages,
 )
-from loregarden.services.terminal_stage_sweep import finish_parked_terminal_tickets
+from loregarden.services.terminal_stage_sweep import (
+    finish_parked_terminal_tickets,
+    finish_tickets_whose_landing_cleared,
+)
 from loregarden.services.ticket_rollup import reconcile_all_parents
 from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
@@ -100,6 +103,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # just settled is read at its new status, and before `reconcile_all_parents`
     # so a ticket this finishes is summarised by its parent in the same pass.
     SweepStep("finish_parked_terminal_tickets", finish_parked_terminal_tickets),
+    # Same selection rule (nothing live behind the ticket), for the BLOCKED
+    # terminal stage the step above leaves alone. It acts only when a read-only
+    # merge preview says the landing would now succeed, so a conflict that is
+    # still there is never retried (928).
+    SweepStep("finish_tickets_whose_landing_cleared", finish_tickets_whose_landing_cleared),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
     # Periodic by the same rule as the steps above: it consults liveness
     # predicates — a pid, the run behind the lease, and docker itself — rather

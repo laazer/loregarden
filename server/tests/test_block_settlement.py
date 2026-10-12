@@ -277,6 +277,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:_block_for_usage_limit": "settles",
     "services/run_completion.py:_parked_for_network": "settles",
     "services/run_completion.py:_advance_clean_exit": "settles",
+    "services/run_completion.py:_held_for_operation_criteria": "settles",
     "services/run_completion.py:_rearmed_for_transient_retry": "settles",
     "services/run_completion.py:advance_stage_after_run": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",

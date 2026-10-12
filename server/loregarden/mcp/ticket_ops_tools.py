@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.land_ticket import LandSkip, land_ticket
+from loregarden.services.landing import parked_on_failed_landing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.pull_request_merge import MergeFailed, merge_and_clean_up
@@ -224,6 +225,7 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     workspace = session.get(Workspace, ticket.workspace_id)
     if workspace is None:
         raise ValueError(f"Ticket {ticket.external_id} has no workspace to land in")
+    parked = parked_on_failed_landing(session, ticket)
     result = land_ticket(session, ticket, workspace)
     payload: dict[str, Any] = {
         "ok": result.ok,
@@ -234,6 +236,12 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         "conflicted_files": list(result.conflicted_files),
         "detail": result.detail,
     }
+    if result.ok and parked:
+        # The landing was all that stood between this ticket and done. Finish
+        # through the workflow's own path, which re-lands (a no-op now) and
+        # derives done, rather than leaving a landed ticket blocked (928).
+        svc.orch.finalize_workflow(ticket)
+        payload["ticket_state"] = ticket.state.value
     if result.ok and result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
         outcome = publish_tree(session, ticket, workspace)
         payload["published"] = {

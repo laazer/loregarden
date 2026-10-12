@@ -111,6 +111,19 @@ Field rules:
   `Decision — <stage>` artifact, and **that pick is the authorization**: on the rerun, carry it
   out; do not ask again. `loregarden_request_approval` cannot grant it (it only opens stage
   gates), so a spec must not name it as the channel for one.
+  **A spec does not put such an operation in a code ticket's acceptance criteria.** Criteria
+  that require changing shared state rather than code (force-pushing or republishing a ref,
+  opening or closing a pull request by hand, re-cutting another ticket's branch, rewriting other
+  tickets' rows) go in a separate ticket: create it under the same parent with
+  `loregarden_create_ticket`, set it `parked` with `loregarden_update_ticket` (a person owes it),
+  link the two with `loregarden_link_relation`, and leave only code criteria here. Code that
+  *implements* such an operation (a feature that opens PRs) is ordinary code and stays. An
+  implementer cannot finish an operation criterion without stopping for a person every round;
+  lg-milestone-that-782 ran four implement rounds on one before it was split out. This is
+  checked: a passing spec whose criteria name such an operation (a force-push or
+  force-update, an admin bypass, re-signing history, re-cutting worktrees onto a rebuilt
+  branch, editing `landed_sha` through the tools) does not advance until a person chooses to
+  split them out or keep them.
 - `options`: only with `blocked_kind: decision`. Each is the answer itself ("Relax the bar to
   0.5", "Try approach B", "Accept and continue"), not a question.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.

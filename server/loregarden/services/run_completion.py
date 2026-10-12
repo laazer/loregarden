@@ -16,7 +16,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from loregarden.agents.registry import REPAIR_AGENT_ID
+from loregarden.agents.registry import REPAIR_AGENT_ID, SPEC_AGENT_ID
 from loregarden.config import settings
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import stage_display_name
@@ -67,6 +67,11 @@ from loregarden.services.network_wait import (
     network_waits_enabled,
     provider_reachable,
     record_network_wait,
+)
+from loregarden.services.operation_criteria import (
+    OPERATION_DECISION_OPTIONS,
+    operation_criteria_message,
+    pending_operation_criteria,
 )
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.rework_feedback import (
@@ -632,6 +637,44 @@ def _advance_clean_exit(
     return gate_approval
 
 
+def _held_for_operation_criteria(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+) -> bool:
+    """A passing spec whose criteria include operations becomes a decision (782).
+
+    See `operation_criteria`. Not repairable: the question is a person's, and
+    either answer moves the stage on without running the spec again.
+    """
+    if report is None or report.status != "pass" or run.agent_id != SPEC_AGENT_ID:
+        return False
+    pending = pending_operation_criteria(orch.session, ticket)
+    if not pending:
+        return False
+    clear_transient_retries(orch.session, ticket.id, run.stage_key)
+    attest_assigned_actions(run, report_status=report.status)
+    orch.session.add(run)
+    message = operation_criteria_message(pending)
+    ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+    _settle_block(
+        orch,
+        ticket,
+        run,
+        instance,
+        stages,
+        message=message,
+        declared=BlockKind.DECISION,
+        options=list(OPERATION_DECISION_OPTIONS),
+        repairable=False,
+    )
+    return True
+
+
 def _rearmed_for_transient_retry(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -828,6 +871,10 @@ def advance_stage_after_run(
         # docstring — it falls to `_advance_clean_exit` below and keeps its
         # fail-closed block. One that exited part-way through its turn does come
         # through here: there is no prose verdict on it to fail closed over.
+        pass
+    elif status == RunStatus.SUCCEEDED and _held_for_operation_criteria(
+        orch, ticket, run, report, instance, stages
+    ):
         pass
     elif status == RunStatus.SUCCEEDED:
         gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)
