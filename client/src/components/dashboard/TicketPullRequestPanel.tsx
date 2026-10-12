@@ -16,6 +16,7 @@ import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { MergeAndCleanUpButton } from "./MergeAndCleanUpButton";
+import { TicketCIAutoFix } from "./TicketCIAutoFix";
 import "./ArtifactPane.css";
 import "./TicketPullRequestPanel.css";
 
@@ -150,42 +151,62 @@ export function TicketPullRequestPanel({
     </Button>
   );
 
-  if (data.lookup === "failed") return <LookupFailed data={data} refresh={refresh} />;
+  // With no PR on screen (GitHub unreachable, or none for this branch), the
+  // auto-fix attempts Loregarden itself recorded still show, read-only.
+  const recorded = (
+    <div className="prp">
+      <TicketCIAutoFix ticketId={ticketId} isOpen={false} />
+    </div>
+  );
+  if (data.lookup === "failed") {
+    return (
+      <>
+        <LookupFailed data={data} refresh={refresh} />
+        {recorded}
+      </>
+    );
+  }
   if ((data.lookup === "none" || !data.pull_request) && data.ships_with) {
     return (
-      <div className="ap-state">
-        <div className="ap-state-title">Ships in its tree&rsquo;s pull request</div>
-        <div className="ap-state-body">
-          This ticket&rsquo;s work lands on <code className="prp-branch">{data.ships_with}</code>, which goes to the
-          base as one PR when the tree&rsquo;s root completes. A PR for its own branch would carry the same commits
-          twice.
+      <>
+        <div className="ap-state">
+          <div className="ap-state-title">Ships in its tree&rsquo;s pull request</div>
+          <div className="ap-state-body">
+            This ticket&rsquo;s work lands on <code className="prp-branch">{data.ships_with}</code>, which goes to the
+            base as one PR when the tree&rsquo;s root completes. A PR for its own branch would carry the same commits
+            twice.
+          </div>
+          <div className="prp-actions">{refresh}</div>
         </div>
-        <div className="prp-actions">{refresh}</div>
-      </div>
+        {recorded}
+      </>
     );
   }
   if (data.lookup === "none" || !data.pull_request) {
     return (
-      <div className="ap-state">
-        <div className="ap-state-title">No pull request for this branch yet</div>
-        <div className="ap-state-body">
-          GitHub has no PR for <code className="prp-branch">{data.branch}</code>. Push the ticket&rsquo;s work and open
-          one to get it reviewed and merged.
+      <>
+        <div className="ap-state">
+          <div className="ap-state-title">No pull request for this branch yet</div>
+          <div className="ap-state-body">
+            GitHub has no PR for <code className="prp-branch">{data.branch}</code>. Push the ticket&rsquo;s work and open
+            one to get it reviewed and merged.
+          </div>
+          <div className="prp-actions">
+            {onCommitPush && (
+              <Button variant="secondary" disabled={isCommittingPush} onClick={onCommitPush}>
+                {isCommittingPush ? "Committing…" : "Commit & push"}
+              </Button>
+            )}
+            {onOpenPr && (
+              <Button variant="primary" disabled={isOpeningPr} onClick={onOpenPr}>
+                {isOpeningPr ? "Opening PR…" : "Open PR"}
+              </Button>
+            )}
+            {refresh}
+          </div>
         </div>
-        <div className="prp-actions">
-          {onCommitPush && (
-            <Button variant="secondary" disabled={isCommittingPush} onClick={onCommitPush}>
-              {isCommittingPush ? "Committing…" : "Commit & push"}
-            </Button>
-          )}
-          {onOpenPr && (
-            <Button variant="primary" disabled={isOpeningPr} onClick={onOpenPr}>
-              {isOpeningPr ? "Opening PR…" : "Open PR"}
-            </Button>
-          )}
-          {refresh}
-        </div>
-      </div>
+        {recorded}
+      </>
     );
   }
   return <PullRequestSummary ticketId={ticketId} pr={data.pull_request} refresh={refresh} />;
@@ -343,6 +364,8 @@ function PullRequestSummary({
           </dl>
         </section>
       )}
+
+      <TicketCIAutoFix ticketId={ticketId} isOpen={isOpen} />
 
       {pr.body.trim() && (
         <details className="prp-section prp-body" open>

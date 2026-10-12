@@ -65,6 +65,10 @@ These are expected and record nothing:
 
 ## Operator actions
 
+The ticket's **PR** tab lists every attempt, newest first, with the reason for
+each refused or failed one. While CI is failing on an open PR, it also offers
+**Retry auto-fix** and **Skip CI gate**, which call the two endpoints below.
+
 | Endpoint | Does |
 |---|---|
 | `GET /api/ci/status/{ticket_id}` | Latest result, and every attempt on the ticket |
