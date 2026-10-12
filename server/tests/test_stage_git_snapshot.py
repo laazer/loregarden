@@ -51,8 +51,28 @@ from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
 from tests.worktree_helpers import git, make_repo
 
-#: AC1. Measured on this path: 20.9 per stage before the snapshot, 9.0 after.
-GIT_CALLS_PER_STAGE = 10
+#: AC1. Measured on this path: 20.9 per stage before the snapshot, 9.0 after,
+#: 15.0 after lg-milestone-that-779 unskipped the worktree refresh.
+#:
+#: The 779 rise is not the duplication 847 removed coming back. It is six new
+#: *distinct* questions, each asked once per dispatch, because a ticket's
+#: worktree is now put on its branch and refreshed onto its target at every
+#: stage rather than only when it is cut: `rev-parse --verify` (does the branch
+#: exist), `checkout` (put the tree on it), `status --porcelain` (the clean gate
+#: `_refresh_onto` applies before merging), `merge --no-edit` (the refresh),
+#: `for-each-ref` (resolving the target branch) and one `status --porcelain=v2`
+#: around them. The alternative is the defect 779 fixes: a worktree cut three
+#: stages ago, dispatched against a base that cannot see a prerequisite that
+#: landed since.
+#:
+#: Deliberately raised rather than waived, and kept one call above the measured
+#: figure so it is still a ceiling. A cheaper shape exists — ask
+#: `merge-base --is-ancestor` once and skip checkout/status/merge when the
+#: target is already reachable — but it would have to duplicate the
+#: put-the-tree-back-on-its-branch fix-up that lives inside
+#: `ensure_ticket_branch` (lg-milestone-that-772), so it belongs in its own
+#: ticket under lg-milestone-that-493 and not in a bug fix.
+GIT_CALLS_PER_STAGE = 16
 
 _CORE_BARE = ["git", "config", "--local", "--get", "core.bare"]
 _GIT_DIR = ["git", "rev-parse", "--git-dir"]
@@ -122,7 +142,7 @@ def _stage_runs(engine, ticket_ids: tuple[str, ...]) -> list[AgentRun]:
         )
 
 
-def test_a_stage_starts_at_most_ten_git_processes(
+def test_a_stage_starts_no_more_git_processes_than_its_ceiling(
     client: TestClient, isolated_db, tmp_path: Path, git_argvs: list[list[str]]
 ):
     """AC1, counted over the orchestration request alone — the fixture's own git
