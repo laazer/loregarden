@@ -1,4 +1,5 @@
 import type { TicketDetail } from "../../api/client";
+import type { TicketTreeNode } from "../../api/types";
 import type { ArtifactTab } from "../../lib/appNavigation";
 import { ApprovalsView } from "./ApprovalsView";
 import { ArtifactView } from "./ArtifactView";
@@ -26,11 +27,13 @@ export function ArtifactPaneBody({
   runs,
   hasActiveRun,
   pendingApprovals,
+  childTickets,
   selectedId,
   activeWorkspaceSlug,
   isOpeningPr,
   isCommittingPush,
   onOpenRunLog,
+  onOpenTicket,
   onOpenEditorFile,
   onOpenPr,
   onCommitPush,
@@ -40,11 +43,13 @@ export function ArtifactPaneBody({
   runs: readonly TimelineRun[];
   hasActiveRun: boolean;
   pendingApprovals: number;
+  childTickets: readonly TicketTreeNode[];
   selectedId: string | null;
   activeWorkspaceSlug: string;
   isOpeningPr: boolean;
   isCommittingPush: boolean;
   onOpenRunLog: (runId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
   onOpenEditorFile: (workspaceSlug: string, filePath: string) => void;
   onOpenPr?: () => void;
   onCommitPush?: () => void;
@@ -62,7 +67,9 @@ export function ArtifactPaneBody({
         runs={runs}
         isActive={isActive}
         pendingApprovals={pendingApprovals}
+        childTickets={childTickets}
         onOpenRunLog={onOpenRunLog}
+        onOpenTicket={onOpenTicket}
       />
     );
   }

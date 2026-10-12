@@ -173,7 +173,15 @@ describe("A worked ticket's history at the live p90 (33 runs, 172 rows)", () => 
     const ticket = { id: ticketId, stages: [], blocking_issues: "", artifacts: {} } as unknown as TicketDetail;
     const { container } = render(
       withProviders(
-        <TicketTimeline ticket={ticket} runs={[]} isActive={false} pendingApprovals={0} onOpenRunLog={() => {}} />,
+        <TicketTimeline
+            ticket={ticket}
+            runs={[]}
+            isActive={false}
+            pendingApprovals={0}
+            childTickets={[]}
+            onOpenRunLog={() => {}}
+            onOpenTicket={() => {}}
+          />,
       ),
     );
 
