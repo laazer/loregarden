@@ -9,13 +9,16 @@ live database when this was written) keep an empty sha.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import add_columns_if_missing, index_exists
+from loregarden.db.migration_utils import add_columns_if_missing, index_exists, table_exists
 from loregarden.db.versions import migration
 from sqlalchemy import Connection, text
 
 
 @migration("20261012_ci_run_head_sha", after="20261010_baxter_chat_global_scope")
 def m_ci_run_head_sha(conn: Connection) -> None:
+    if not table_exists(conn, "ci_run_results"):
+        # A partial schema (the migration suite builds them); create_all adds it whole.
+        return
     add_columns_if_missing(
         conn,
         "ci_run_results",
