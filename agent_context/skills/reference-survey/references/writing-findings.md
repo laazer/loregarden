@@ -49,10 +49,14 @@ Every write is checked by reading it back:
 The second assertion is the one that matters — it proves nothing was replaced.
 Report the before and after lengths.
 
-If the MCP tools are unavailable, the HTTP API is the next path; the CLI is a
-last resort and **runs migrations against the live database from a worktree**,
-which has locked this repository out of writes before. Prefer waiting for the
-server over reaching around it.
+If the MCP tools are unavailable (the server is down), the same tool runs
+in-process with no server: `./scripts/loregarden-cli.sh mcp call
+loregarden_update_ticket ticket_id=<external_id> description=@<file>`. Name the
+ticket by its `external_id`; a bare `ticket_number` exists once per workspace and
+is refused. A build behind the database's migrations is refused too — update the
+checkout rather than reaching around it. **Never write the ticket with raw
+SQLite**: a hand-written `WHERE ticket_number = 137` once rewrote a ticket in a
+workspace nobody meant to touch, stamped in local time.
 
 ## After the survey
 

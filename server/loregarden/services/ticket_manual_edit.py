@@ -15,7 +15,6 @@ unchanged.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from loregarden.core.event_bus import EventType, event_bus
@@ -27,6 +26,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.acceptance_criteria import (
     load_checked,
     load_criteria,
@@ -240,7 +240,7 @@ def update_ticket_manual(
 
     _apply_manual_stage_edits(orch, ticket, instance, stages, body)
 
-    ticket.updated_at = datetime.now(timezone.utc)
+    ticket.updated_at = utcnow()
     if instance:
         orch.session.add(instance)
     orch.session.add(ticket)
