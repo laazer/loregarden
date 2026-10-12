@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     RunStatus,
     Ticket,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.artifact_records import run_log_artifact_title
 from loregarden.services.log_storage import (
     LOG_STORAGE_ROWS,
@@ -838,7 +839,7 @@ class RunLogStreamer:
                 ticket = session.get(Ticket, self.ticket_id)
                 if ticket:
                     ticket.revision += 1
-                    ticket.updated_at = datetime.now(timezone.utc)
+                    ticket.updated_at = utcnow()
                     session.add(ticket)
                 session.commit()
                 self._persisted_seq = seq

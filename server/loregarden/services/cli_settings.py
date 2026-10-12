@@ -18,7 +18,6 @@ import json
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from loregarden.config import settings
 from loregarden.models.domain import (
@@ -28,6 +27,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.models.domain.enums import utcnow
 from sqlmodel import Session
 
 CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
@@ -747,7 +747,7 @@ def set_ticket_orchestration_runtime(
     body: WorkspaceRuntimeUpdate,
 ) -> WorkspaceRuntimeSettings:
     ticket.orchestration_runtime_json = runtime_override_json(body)
-    ticket.updated_at = datetime.now(timezone.utc)
+    ticket.updated_at = utcnow()
     session.add(ticket)
     session.commit()
     session.refresh(ticket)

@@ -117,13 +117,13 @@ task workspace:hooks:pr [-- --gh-user <account>]                 # refresh every
 ./scripts/loregarden-cli.sh git change-pr --repo <path> --branch B --title T -- <command> {worktree}
 ./scripts/loregarden-cli.sh capacity run --footprint heavy --label L -- <command>  # wait for host capacity, run, release
 
-# DB
-sqlite3 data/loregarden.db
+# DB (read-only: writes go through `mcp call` below, never raw SQL; see CLAUDE.md)
+sqlite3 -readonly data/loregarden.db
 
 # The `loregarden` CLI — works against the DB with no server running
 task cli -- mcp list                                        # every MCP tool + description
 task cli -- mcp describe loregarden_get_ticket              # its JSON Schema
-task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed by the schema
+task cli -- mcp call loregarden_get_ticket ticket_id=lg-verdict-outcome-137  # external id: a bare 137 is per-workspace and refused
 ./scripts/loregarden-cli.sh mcp call loregarden_append_learning content=@notes.md ...  # @file / @- for long values
 ./scripts/loregarden-cli.sh mcp serve                       # stdio MCP proxy
 ./scripts/loregarden-cli.sh db init                         # fresh database (DELETES the current one)

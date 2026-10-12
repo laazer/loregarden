@@ -62,6 +62,18 @@ Concretely, and these are the mistakes agents actually make here:
   against the database in-process: `./scripts/loregarden-cli.sh mcp call <tool> key=value…`
   (`mcp list` / `mcp describe <tool>` to find the arguments). Use it instead of curling `/mcp`
   or abandoning the write; see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
+  The write path is MCP tools, then that CLI. **Never raw SQLite**: an `UPDATE` you write by
+  hand once matched two tickets and stamped four rows in local time. If you think you need
+  one, what you need is a tool; the CLI path already guarantees what a hand-written one gets
+  wrong:
+  - `ticket_number` is unique only **within a workspace**. Name a ticket by its
+    `external_id` (`lg-verdict-outcome-137`), never by `137` or a `ticket_number` predicate.
+    Resolution goes through `services/ticket_ids.resolve_one`, which refuses a bare number
+    or a shared legacy id and names the candidates.
+  - Timestamps are UTC from `models.domain.enums.utcnow`, written through the ORM (stored
+    naive UTC). `datetime.now()` is local time and ruff's `DTZ` rules reject it.
+  - The ORM updates by primary key and raises `StaleDataError` unless exactly one row
+    matched; the tool's reply re-reads the ticket by its id.
 
 Writing real source code and real test files is, of course, still the job. The rule is about
 *reports about* the work.

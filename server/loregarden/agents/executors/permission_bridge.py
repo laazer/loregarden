@@ -7,7 +7,6 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session
@@ -53,6 +52,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.agent_scope import (
     check_agent_scope,
     extract_target_path,
@@ -1474,7 +1474,7 @@ class PermissionBridgeRunner:
             return
         ticket.revision += 1
         ticket.last_updated_by = "permission_bridge"
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = utcnow()
         self.session.add(ticket)
 
     def _set_stage_status(self, scope: ApprovalScope, status: StageStatus) -> bool:

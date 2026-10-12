@@ -123,7 +123,15 @@ src = ["loregarden"]
 # BLE/TRY/S11x were added after the silent-failure audit found 23 `# noqa: BLE001`
 # comments in the tree suppressing a rule that had never been enabled — the
 # codebase believed blind-except was gated for years while nothing checked it.
-select = ["E", "W", "F", "I", "UP", "B", "C4", "BLE", "TRY", "S110", "S112"]
+#
+# DTZ002-006/011: a naive clock read (`datetime.now()`, `utcnow()`, `today()`).
+# Stored timestamps are UTC (`models.domain.enums.utcnow`); a naive local read
+# lands in the same column looking identical, hours off. Zero hits when enabled;
+# DTZ001/DTZ901 (constructors, min/max) are left out as unrelated.
+select = [
+    "E", "W", "F", "I", "UP", "B", "C4", "BLE", "TRY", "S110", "S112",
+    "DTZ002", "DTZ003", "DTZ004", "DTZ005", "DTZ006", "DTZ011",
+]
 ignore = [
     "E501",  # line length handled by the formatter, not enforced as a lint error
     "B008",  # FastAPI dependency-injection idiom relies on calls in defaults

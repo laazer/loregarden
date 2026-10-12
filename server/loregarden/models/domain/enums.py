@@ -37,6 +37,15 @@ def str_enum_column(
 
 
 def utcnow() -> datetime:
+    """The clock every stored timestamp is stamped from: aware UTC.
+
+    SQLAlchemy's SQLite ``DateTime`` drops the tzinfo on write, so the column
+    holds naive UTC text (``2026-10-12 18:24:30.375613``) and reads back naive.
+    ``datetime.now()`` is naive *local* time and lands in the same column
+    looking identical, hours off; a raw ``sqlite3`` bind of an aware value
+    stores ``+00:00``, which no ORM write produces. Stamp through this, and
+    write through the ORM.
+    """
     return datetime.now(timezone.utc)
 
 

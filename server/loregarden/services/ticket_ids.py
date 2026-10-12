@@ -404,6 +404,26 @@ def next_ticket_number(session: Session, workspace: Workspace) -> int:
     return issued
 
 
+#: Tried in this order by :func:`resolve`; the first column with a match wins.
+_SPELLING_COLUMNS = (col(Ticket.external_id), col(Ticket.legacy_external_id))
+
+
+def _tickets_spelled(
+    session: Session,
+    column: InstrumentedAttribute[str],
+    ref: str,
+    *,
+    workspace_id: str | None,
+) -> list[Ticket]:
+    """Every ticket whose ``column`` is ``ref``, in the scope :func:`resolve` searches."""
+    query = select(Ticket).where(column.in_([ref, ref.lower()]))
+    if workspace_id:
+        # INCLUDE null-workspace rows (initiatives) alongside the filtered
+        # workspace. Number fallback in `resolve` stays workspace-scoped only.
+        query = query.where(or_(Ticket.workspace_id == workspace_id, Ticket.workspace_id.is_(None)))
+    return list(session.exec(query.order_by(col(Ticket.external_id))).all())
+
+
 def resolve(session: Session, value: str, *, workspace_id: str | None = None) -> Ticket | None:
     """Find a ticket by any spelling of its external id.
 
@@ -421,19 +441,10 @@ def resolve(session: Session, value: str, *, workspace_id: str | None = None) ->
     if not ref:
         return None
 
-    def by_spelling(column: InstrumentedAttribute[str]) -> Ticket | None:
-        query = select(Ticket).where(column.in_([ref, ref.lower()]))
-        if workspace_id:
-            # INCLUDE null-workspace rows (initiatives) alongside the filtered
-            # workspace. Number fallback below stays workspace-scoped only.
-            query = query.where(
-                or_(Ticket.workspace_id == workspace_id, Ticket.workspace_id.is_(None))
-            )
-        return session.exec(query).first()
-
-    ticket = by_spelling(col(Ticket.external_id)) or by_spelling(col(Ticket.legacy_external_id))
-    if ticket:
-        return ticket
+    for column in _SPELLING_COLUMNS:
+        matches = _tickets_spelled(session, column, ref, workspace_id=workspace_id)
+        if matches:
+            return matches[0]
 
     lowered = ref.lower()
     workspace = session.get(Workspace, workspace_id) if workspace_id else None
@@ -530,3 +541,67 @@ def respell_external_id(session: Session, ticket: Ticket, workspace: Workspace) 
         number=ticket.ticket_number,
     )
     return ticket.external_id
+
+
+class TicketNotFound(ValueError):
+    """No ticket answers to the reference. A ``ValueError`` for the MCP error path."""
+
+    def __init__(self, ref: str) -> None:
+        super().__init__(f"Ticket not found: {ref!r}")
+        self.ref = ref
+
+
+class AmbiguousTicketReference(ValueError):
+    """More than one ticket answers to the reference, so none may be picked."""
+
+    def __init__(self, ref: str, candidates: list[Ticket], *, why: str) -> None:
+        names = ", ".join(ticket.external_id for ticket in candidates)
+        super().__init__(
+            f"Ambiguous ticket reference {ref!r}: {why}. It matches {names}. "
+            "Name one by its external id, or pass its workspace."
+        )
+        self.ref = ref
+        self.candidates = [ticket.external_id for ticket in candidates]
+
+
+def resolve_one(session: Session, value: str, *, workspace_id: str | None = None) -> Ticket:
+    """:func:`resolve`, for a caller about to write: exactly one ticket, or an error.
+
+    :func:`resolve` answers "which ticket did they most likely mean", and is
+    right to return ``None`` for a reference it cannot pin down. A write needs
+    more than that. It must not land on the first of two rows that share a
+    spelling (``legacy_external_id`` is free text and does repeat across
+    workspaces), and when it refuses it must say why, naming the candidates, so
+    the caller is not left to guess with a hand-written ``ticket_number``
+    predicate — that predicate matches one row per workspace and once rewrote
+    ``updated_at`` on a ticket in a workspace nobody meant to touch.
+    """
+    ref = value.strip()
+    for column in _SPELLING_COLUMNS:
+        matches = _tickets_spelled(session, column, ref, workspace_id=workspace_id)
+        if len(matches) > 1:
+            raise AmbiguousTicketReference(
+                ref, matches, why=f"{len(matches)} tickets carry it as {column.key}"
+            )
+        if matches:
+            break
+
+    ticket = resolve(session, ref, workspace_id=workspace_id) if ref else None
+    if ticket is not None:
+        return ticket
+
+    if workspace_id is None and ref.isdigit():
+        numbered = list(
+            session.exec(
+                select(Ticket)
+                .where(Ticket.ticket_number == int(ref))
+                .order_by(col(Ticket.external_id))
+            ).all()
+        )
+        if numbered:
+            # Refused even when only one workspace holds the number today: the
+            # next workspace to reach it would silently change the answer.
+            raise AmbiguousTicketReference(
+                ref, numbered, why="ticket numbers are unique only within a workspace"
+            )
+    raise TicketNotFound(ref)

@@ -2,7 +2,6 @@ import json
 import logging
 import subprocess
 import tempfile
-from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
@@ -55,6 +54,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
@@ -626,7 +626,7 @@ class CliAgentExecutor:
             ticket.next_status = "Proceed"
         else:
             ticket.next_status = "Blocked"
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = utcnow()
         self.session.add(ticket)
         self.session.commit()
 
