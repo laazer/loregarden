@@ -35,7 +35,6 @@ import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal
 import { RunLogModal } from "../components/RunLogModal";
 import { canHaveChildren } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
-import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
 import { SubtreeAutopilotCard } from "../components/SubtreeAutopilotCard";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
@@ -242,7 +241,10 @@ export function Dashboard() {
     enabled: !!selectedId,
     refetchInterval: 5000,
   });
-  const humanApprovalCount = (ticketApprovals.data ?? []).filter(hasHumanCriteria).length;
+  // Every pending approval waits on a person, not only the ones with criteria:
+  // counting just those hid a pending human_action (a merge to resolve by hand)
+  // from the timeline, though the Review button it leads to lists them all.
+  const pendingApprovalCount = ticketApprovals.data?.length ?? 0;
 
   const orchestrate = useMutation({
     meta: { errorTitle: "Start orchestration" },
@@ -964,7 +966,7 @@ export function Dashboard() {
               selectedId={selectedId}
               hasRunErrors={hasRunErrors}
               outputCount={artifactsFeed.data?.items.filter((item) => !item.system).length ?? 0}
-              approvalCount={humanApprovalCount}
+              approvalCount={pendingApprovalCount}
               hasPr={!!sel?.artifacts?.pr}
             />
             <div className="tab-bar-actions">
@@ -981,12 +983,14 @@ export function Dashboard() {
               ticket={sel}
               runs={ticketRuns.data ?? []}
               hasActiveRun={hasActiveRun}
-              pendingApprovals={humanApprovalCount}
+              pendingApprovals={pendingApprovalCount}
+              childTickets={selChildren}
               selectedId={selectedId}
               activeWorkspaceSlug={activeWorkspaceSlug}
               isOpeningPr={openPr.isPending}
               isCommittingPush={commitPush.isPending}
               onOpenRunLog={setLogRunId}
+              onOpenTicket={selectTicket}
               onOpenEditorFile={openEditorFile}
               onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
               onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}

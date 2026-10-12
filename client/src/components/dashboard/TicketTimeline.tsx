@@ -3,7 +3,7 @@ import { useId, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import type { TicketDetail } from "../../api/client";
-import type { LedgerAttempt, TicketArtifactItem, TransientRetryNotice } from "../../api/types";
+import type { LedgerAttempt, TicketArtifactItem, TicketTreeNode, TransientRetryNotice } from "../../api/types";
 import { duration } from "../../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../../lib/ledgerStatus";
 import { buildTicketTimeline, isErrorOutput, isFailedStatus, type TimelineVisit } from "../../lib/ticketTimeline";
@@ -13,6 +13,7 @@ import { describeError } from "../../state/toastStore";
 import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
 import { LaneLogView } from "../logs/LaneLogView";
 import { StageFanoutPanel } from "../StageFanoutPanel";
+import { TicketChildrenRollup } from "./TicketChildrenRollup";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { formatShortTime, openOutput, outputTitle } from "../../lib/ticketOutputs";
@@ -46,13 +47,18 @@ export function TicketTimeline({
   runs,
   isActive,
   pendingApprovals,
+  childTickets,
   onOpenRunLog,
+  onOpenTicket,
 }: {
   ticket: TicketDetail;
   runs: readonly TimelineRun[];
   isActive: boolean;
   pendingApprovals: number;
+  /** The tickets directly under this one, from the board's tree. */
+  childTickets: readonly TicketTreeNode[];
   onOpenRunLog: (runId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
 }) {
   const ledger = useQuery({
     queryKey: ["ticket-ledger", ticket.id],
@@ -92,6 +98,8 @@ export function TicketTimeline({
 
   const stageNames = new Map(ticket.stages.map((stage) => [stage.key, stage.name]));
   const nothingYet = timeline.visits.length === 0 && timeline.beforeFirstRun.length === 0;
+  // A parent that never ran a stage itself: its story is the tickets under it.
+  const onlyChildren = timeline.visits.length === 0 && ticket.child_count > 0;
   const newestFirst = [...timeline.visits].reverse();
   const current = newestFirst.find((visit) => visit.active);
   const data = ledger.data;
@@ -115,7 +123,16 @@ export function TicketTimeline({
         </div>
       ) : null}
 
-      {nothingYet ? (
+      {onlyChildren ? (
+        <>
+          <TicketChildrenRollup tickets={childTickets} childCount={ticket.child_count} onOpenTicket={onOpenTicket} />
+          {timeline.beforeFirstRun.length > 0 ? (
+            <ol className="tl-list">
+              <BeforeFirstRun outputs={timeline.beforeFirstRun} />
+            </ol>
+          ) : null}
+        </>
+      ) : nothingYet ? (
         <div className="ap-state">
           <div className="ap-state-title">Nothing has run for this ticket yet</div>
           <div className="ap-state-body">
@@ -150,18 +167,7 @@ export function TicketTimeline({
                 onOpenRunLog={onOpenRunLog}
               />
             ))}
-            {timeline.beforeFirstRun.length > 0 ? (
-              <li className="tl-visit tl-visit--quiet">
-                <div className="tl-visit-static">
-                  <span className="tl-dot" aria-hidden />
-                  <span className="tl-stage">Before the first run</span>
-                  <span className="tl-meta">
-                    {timeline.beforeFirstRun.length} output{timeline.beforeFirstRun.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <OutputList outputs={timeline.beforeFirstRun} />
-              </li>
-            ) : null}
+            <BeforeFirstRun outputs={timeline.beforeFirstRun} />
           </ol>
         </>
       )}
@@ -176,6 +182,23 @@ export function TicketTimeline({
         </details>
       ) : null}
     </div>
+  );
+}
+
+/** Outputs attached before any stage ran: an import's context, an integration diff. */
+function BeforeFirstRun({ outputs }: { outputs: readonly TicketArtifactItem[] }) {
+  if (outputs.length === 0) return null;
+  return (
+    <li className="tl-visit tl-visit--quiet">
+      <div className="tl-visit-static">
+        <span className="tl-dot" aria-hidden />
+        <span className="tl-stage">Before the first run</span>
+        <span className="tl-meta">
+          {outputs.length} output{outputs.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <OutputList outputs={outputs} />
+    </li>
   );
 }
 
