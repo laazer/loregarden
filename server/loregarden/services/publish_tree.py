@@ -57,7 +57,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     repo_root = resolve_workspace_root(workspace)
     if subtree_root(session, ticket).id != ticket.id or not (repo_root / ".git").exists():
         return PublishOutcome(ok=True, branch="", skipped=True)
-    branch, tip = _published_branch(repo_root, ticket)
+    branch, tip = published_branch(repo_root, ticket)
     if not tip:
         return PublishOutcome(ok=True, branch=branch, skipped=True)
     if ticket.landed_branch == branch and ticket.landed_sha == tip:
@@ -102,7 +102,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     return outcome
 
 
-def _published_branch(repo_root: Path, root: Ticket) -> tuple[str, str]:
+def published_branch(repo_root: Path, root: Ticket) -> tuple[str, str]:
     """The branch a root publishes, and its tip ("" when it has none).
 
     The integration branch when the root has a tree on one, else its own.

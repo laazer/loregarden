@@ -1,17 +1,44 @@
-"""CI integration API endpoints."""
+"""CI integration endpoints: status, operator actions, and the GitHub webhook.
 
-import json
+The poller (`services.ci_poll_scheduler`) is the CI loop's input. The webhook
+is an optional nudge for a server GitHub can reach: a signed `workflow_run`
+delivery polls that workspace now instead of at the next tick, through the
+same `CIService.observe`. Only GitHub is supported. Any other delivery is
+refused with a 400 rather than accepted and dropped.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from loregarden.api.github_signature import verify_github_signature
-from loregarden.db.session import get_session
+from loregarden.config import settings
+from loregarden.db.session import engine, get_session
+from loregarden.models.domain import Ticket, Workspace
+from loregarden.services.ci_poll_scheduler import WorkspacePoll, poll_workspace
 from loregarden.services.ci_service import CIService
-from sqlmodel import Session
+from sqlmodel import Session, or_, select
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ci", tags=["ci"])
+
+#: The one GitHub event that reports a CI run finishing.
+_WORKFLOW_RUN_EVENT = "workflow_run"  # py-org: allow-string
+
+
+def _poll_now(workspace_ref: str) -> WorkspacePoll | None:
+    with Session(engine) as session:
+        workspace = session.exec(
+            select(Workspace).where(
+                or_(Workspace.id == workspace_ref, Workspace.slug == workspace_ref)
+            )
+        ).first()
+        if workspace is None:
+            return None
+        return poll_workspace(session, workspace)
 
 
 @router.post("/webhook/{workspace_id}")
@@ -20,205 +47,71 @@ async def receive_ci_webhook(
     request: Request,
     x_github_event: str | None = Header(None),
     x_hub_signature_256: str | None = Header(None),
-    x_gitlab_event: str | None = Header(None),
-    session: Session = Depends(get_session),
 ):
-    """
-    Receive CI results from GitHub Actions, GitLab CI, or generic webhook.
-
-    Endpoints:
-    - GitHub Actions: POST /ci/webhook/{workspace_id}
-      Headers: X-GitHub-Event, X-Hub-Signature-256
-      Body: workflow_run event
-
-    - GitLab CI: POST /ci/webhook/{workspace_id}
-      Headers: X-Gitlab-Event
-      Body: pipeline event
-
-    - Generic: POST /ci/webhook/{workspace_id}
-      Body: JSON with status, ticket_id, logs, etc
-    """
-    try:
-        # Read request body
-        body = await request.body()
-
-        # Detect provider and verify signature
-        if x_github_event:
-            # Verify GitHub signature
-            if not verify_github_signature(body, x_hub_signature_256):
-                logger.warning("GitHub webhook signature verification failed")
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid webhook signature",
-                )
-
-            # Only process workflow_run events
-            if x_github_event != "workflow_run":
-                logger.debug(f"Ignoring GitHub event type: {x_github_event}")
-                return {
-                    "status": "ignored",
-                    "reason": f"Event type not supported: {x_github_event}",
-                }
-
-            provider = "github_actions"
-            payload = json.loads(body)
-
-        elif x_gitlab_event:
-            provider = "gitlab_ci"
-            payload = json.loads(body)
-
-        else:
-            provider = "generic_webhook"
-            payload = json.loads(body)
-
-        # Process webhook
-        ci_service = CIService(session)
-        ci_result = await ci_service.process_webhook(workspace_id, provider, payload)
-
-        if ci_result:
-            return {
-                "status": "ok",
-                "ci_result_id": ci_result.id,
-                "ticket_id": ci_result.ticket_id,
-                "ci_status": ci_result.status.value,
-            }
-        else:
-            logger.warning(f"Failed to process {provider} webhook for workspace {workspace_id}")
-            return {
-                "status": "error",
-                "reason": "Failed to process webhook",
-            }
-
-    except HTTPException:
-        raise
-    except json.JSONDecodeError as e:
-        logger.exception("Invalid JSON in webhook body")
+    """A GitHub `workflow_run` delivery: poll ``workspace_id`` (id or slug) now."""
+    body = await request.body()
+    if not x_github_event:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON payload",
-        ) from e
-    except Exception as e:
-        logger.exception("Error processing CI webhook")
+            detail="Unsupported CI provider: only GitHub webhook deliveries are accepted",
+        )
+    if not verify_github_signature(body, x_hub_signature_256):
+        logger.warning("GitHub webhook signature verification failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error processing webhook",
-        ) from e
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook signature"
+        )
+    if x_github_event != _WORKFLOW_RUN_EVENT:
+        return {"status": "ignored", "reason": f"Event type not supported: {x_github_event}"}
+    if not settings.ci_enabled:
+        return {"status": "disabled", "reason": "CI integration is off (ci_enabled)"}
+
+    poll = await asyncio.to_thread(_poll_now, workspace_id)
+    if poll is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return {
+        "status": "error" if poll.errors else "ok",
+        "observed": poll.observed,
+        "dispatched": poll.dispatched,
+        "errors": poll.errors,
+    }
 
 
 @router.get("/status/{ticket_id}")
-async def get_ci_status(
-    ticket_id: str,
-    session: Session = Depends(get_session),
-):
-    """
-    Get latest CI status and auto-fix history for a ticket.
-
-    Returns:
-    {
-        "ci_status": {
-            "id": "...",
-            "status": "passing|failing|pending|partial|skipped",
-            "provider": "github_actions|gitlab_ci|...",
-            "logs_url": "...",
-            "failure_summary": "...",
-            "created_at": "...",
-        },
+def get_ci_status(ticket_id: str, session: Session = Depends(get_session)):
+    """The ticket's latest CI result and every auto-fix attempt on it, oldest first."""
+    service = CIService(session)
+    result = service.latest_result(ticket_id)
+    return {
+        "ci_status": result.model_dump(mode="json") if result else None,
         "auto_fix_history": [
-            {
-                "id": "...",
-                "attempt_number": 1,
-                "status": "pending|running|succeeded|failed",
-                "created_at": "...",
-            },
-            ...
-        ]
+            attempt.model_dump(mode="json") for attempt in service.attempts(ticket_id)
+        ],
     }
-    """
-    try:
-        ci_service = CIService(session)
-        ci_result = await ci_service.get_latest_ci_status(ticket_id)
-        auto_fix_history = await ci_service.get_auto_fix_history(ticket_id)
-
-        return {
-            "ci_status": ci_result.dict() if ci_result else None,
-            "auto_fix_history": [attempt.dict() for attempt in auto_fix_history],
-        }
-
-    except Exception as e:
-        logger.exception("Error fetching CI status")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error fetching CI status",
-        ) from e
 
 
 @router.post("/manual-override/{ticket_id}")
-async def skip_ci_check(
-    ticket_id: str,
-    session: Session = Depends(get_session),
-):
-    """
-    Admin: Skip CI gate and proceed to approval.
-
-    Marks the latest CI result as SKIPPED.
-    """
-    try:
-        ci_service = CIService(session)
-        await ci_service.skip_ci_check(ticket_id)
-
-        return {
-            "status": "ok",
-            "message": f"CI check skipped for ticket {ticket_id}",
-        }
-
-    except Exception as e:
-        logger.exception("Error skipping CI check")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error skipping CI check",
-        ) from e
+def skip_ci_check(ticket_id: str, session: Session = Depends(get_session)):
+    """Mark the latest CI result skipped: a person decided it does not gate this commit."""
+    result = CIService(session).skip_ci_check(ticket_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No CI result for ticket")
+    return {"status": "ok", "message": f"CI check skipped for ticket {ticket_id}"}
 
 
 @router.post("/trigger-auto-fix/{ticket_id}")
-async def trigger_manual_auto_fix(
-    ticket_id: str,
-    session: Session = Depends(get_session),
-):
-    """
-    Manually trigger auto-fix for a failing CI.
-
-    Useful if auto-fix didn't trigger automatically.
-    """
-    try:
-        ci_service = CIService(session)
-        ci_result = await ci_service.get_latest_ci_status(ticket_id)
-
-        if not ci_result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No CI result found for ticket",
-            )
-
-        attempt = await ci_service.trigger_auto_fix(ci_result)
-
-        if attempt:
-            return {
-                "status": "ok",
-                "attempt_id": attempt.id,
-                "attempt_number": attempt.attempt_number,
-                "message": f"Auto-fix attempt {attempt.attempt_number} triggered",
-            }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Max auto-fix attempts reached",
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Error triggering auto-fix")
+def trigger_manual_auto_fix(ticket_id: str, session: Session = Depends(get_session)):
+    """Reopen the ticket for a CI fix turn now, or say why it cannot be."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+    outcome = CIService(session).trigger_latest(ticket)
+    if not outcome.dispatched or outcome.attempt is None:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error triggering auto-fix",
-        ) from e
+            status_code=status.HTTP_409_CONFLICT, detail=f"Auto-fix not started: {outcome.detail}"
+        )
+    return {
+        "status": "ok",
+        "attempt_id": outcome.attempt.id,
+        "attempt_number": outcome.attempt.attempt_number,
+        "message": f"Reopened for CI fix attempt {outcome.attempt.attempt_number}",
+    }

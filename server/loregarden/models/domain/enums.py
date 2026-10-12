@@ -854,6 +854,8 @@ class AutoFixStatus(str, Enum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    #: Not dispatched, and why is in `result_summary`. Not charged to the budget.
+    REFUSED = "refused"
 
 
 class WorktreeState(str, Enum):

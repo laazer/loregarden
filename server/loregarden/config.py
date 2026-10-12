@@ -154,12 +154,13 @@ class Settings(BaseSettings):
     obsidian_checkpoints_subdir: str = "Loregarden/Checkpoints"
     # Structured memory graph SQLite (optional; defaults under iCloud when vault is set)
     memory_sqlite_url: str = ""
-    # CI Integration settings
+    # CI integration: `services.ci_service` (the loop), `ci_poll_scheduler` (its input).
     ci_webhook_secret: str = ""  # GitHub webhook secret (empty disables signature verification)
-    ci_retry_limit: int = 3  # Max auto-fix attempts per CI failure
-    ci_enabled: bool = True  # Feature flag
-    ci_log_retention_days: int = 30  # How long to keep CI logs
-    ci_auto_fix_timeout: int = 600  # 10 min timeout for fix agent
+    ci_enabled: bool = True  # Off: no poll, the webhook records nothing, no fix turns
+    ci_poll_tick_seconds: float = 120.0  # How often open PRs' checks are read; 0 disables
+    ci_retry_limit: int = 3  # Fix turns per ticket between passing CI results
+    ci_auto_fix_timeout: int = 600  # Agent run timeout for a fix turn, in seconds
+    ci_log_retention_days: int = 30  # Failed-job logs kept on a CI result this long
     # Parallel Execution settings
     max_parallel_agents: int = 3  # Max concurrent agent runs (2-5)
     worktree_cleanup_delay_hours: int = 1  # Auto-cleanup after merge

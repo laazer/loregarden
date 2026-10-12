@@ -1113,7 +1113,7 @@ export interface TicketStudioCommitResult {
 }
 
 export type CIStatusValue = "pending" | "passing" | "failing" | "partial" | "skipped";
-export type AutoFixStatusValue = "pending" | "running" | "succeeded" | "failed";
+export type AutoFixStatusValue = "pending" | "running" | "succeeded" | "failed" | "refused";
 
 export interface CIRunResult {
   id: string;
@@ -1121,6 +1121,8 @@ export interface CIRunResult {
   ticket_id: string;
   status: CIStatusValue;
   provider: string;
+  head_sha: string;
+  pr_number: number | null;
   external_run_id: string | null;
   logs_url: string | null;
   failure_summary: string | null;
