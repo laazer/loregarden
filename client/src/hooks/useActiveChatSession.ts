@@ -3,10 +3,11 @@ import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
 import type { WorkspaceRuntimeSettings } from "../api/client";
-import { initiativeIdFromPath } from "../lib/appNavigation";
+import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatSession } from "../lib/chatSession";
+import { useTicketRefStore } from "../state/ticketRefStore";
 import { useUiStore } from "../state/uiStore";
 import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
@@ -153,8 +154,13 @@ export function useActiveChatSession(): ActiveChatSession {
   // is a different conversation from Baxter's, so the bar does not bind Baxter
   // there either: a second composer under the planner's would be asking someone
   // else.
-  const initiativeId = initiativeIdFromPath(pathname);
-  const plannerOnScreen = initiativeId !== null;
+  const initiativeRef = initiativeIdFromPath(pathname);
+  const plannerOnScreen = initiativeRef !== null;
+  // The path carries the shareable id (`init-always-on-2`); the planner API
+  // takes the UUID, which the plan route's resolver records once it is known.
+  const initiativeId = useTicketRefStore((s) =>
+    initiativeRef ? ticketUuidForRef(initiativeRef, s.uuidByRef) : null,
+  );
   const chatScope = useChatScopeKey();
   // Only a focused chat's label needs the list; the key is the picker's, so it is cached.
   const focusedInitiative = chatScopeInitiativeId(chatScope);
