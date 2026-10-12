@@ -23,7 +23,10 @@ from loregarden.models.domain import (
 from loregarden.services import integration_branch_health
 from loregarden.services.github_pr_service import create_ticket_pull_request
 from loregarden.services.integration_branch_health import check_integration_branches
-from loregarden.services.integration_conflict_card import conflict_card_title
+from loregarden.services.integration_conflict_card import (
+    conflict_card_title,
+    report_integration_conflict,
+)
 from loregarden.services.target_branch import IntegrationConflictError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from sqlmodel import Session, select
@@ -148,6 +151,23 @@ def test_a_clean_tree_and_a_finished_tree_raise_nothing(session, repo, tree):
     session.commit()
     assert check_integration_branches(session) == []
     assert _cards(session, ms) == []
+
+
+def test_the_sweep_closes_the_card_once_main_holds_the_branch_squashed(session, repo, tree):
+    """lg-durable-remote-335: the branch's commit reached main as a squash, then
+    main edited the file it added. Nothing is missing from main, so the card the
+    add/add conflict filed closes without anyone touching git."""
+    ms, _ = tree
+    commit_on(repo, BRANCH, "transport.py", "def detach():\n    pass\n")
+    commit_on(repo, "main", "transport.py", "def detach():\n    pass\n")
+    commit_on(repo, "main", "transport.py", "def detach():\n    return 1\n")
+    report_integration_conflict(session, ms, branch=BRANCH, base="main", files=("transport.py",))
+    before = git(repo, "rev-parse", BRANCH).stdout.strip()
+
+    assert [r.conflicted_files for r in check_integration_branches(session)] == [()]
+
+    assert _cards(session, ms) == []
+    assert git(repo, "rev-parse", BRANCH).stdout.strip() == before, "the sweep writes nothing"
 
 
 # --- 2 & 3. a cut that hits it files the card; chat survives, stages refuse -----------

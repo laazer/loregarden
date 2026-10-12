@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import type { ApprovalResolutionAction } from "../../api/chatTypes";
 import { api, type Approval, type TicketDetail } from "../../api/client";
 import {
   checklistCoversCriteria,
@@ -46,7 +47,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
       payload,
     }: {
       id: string;
-      action: "approve" | "recheck" | "reject";
+      action: ApprovalResolutionAction;
       payload?: ApprovalResolvePayload;
     }) => api.resolveApproval(id, { action, ...payload }),
     onSuccess: () => {
@@ -200,7 +201,7 @@ function ApprovalRow({
   /** Listed above the cards — what the brief and the checklist need not restate. */
   criteria: string[];
   isSubmitting: boolean;
-  onResolve: (action: "approve" | "recheck" | "reject", payload?: ApprovalResolvePayload) => void;
+  onResolve: (action: ApprovalResolutionAction, payload?: ApprovalResolvePayload) => void;
 }) {
   const deduped = criteria.length > 0;
   return (
@@ -218,6 +219,7 @@ function ApprovalRow({
         onApprove={(payload) => onResolve("approve", payload)}
         onRecheck={(payload) => onResolve("recheck", payload)}
         onReject={(payload) => onResolve("reject", payload)}
+        onIgnore={(reason) => onResolve("ignore", { response: reason })}
       />
     </div>
   );

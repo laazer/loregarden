@@ -3,7 +3,6 @@ import { type Approval } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
-import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { IconCloseButton } from "./IconCloseButton";
 import { ApprovalsList, usePendingApprovalCount } from "./inbox/ApprovalsList";
 
@@ -47,12 +46,15 @@ export function ApprovalInboxPanel() {
   // sidebar is pointed elsewhere is how a run sits parked for an afternoon.
   const approvalCount = usePendingApprovalCount("", inboxOpen);
 
-  /** Inspect lands on the criteria for a human gate, on the diff otherwise. */
+  /**
+   * Inspect opens the ticket's Approvals tab, which lists this card with the
+   * rest of the tree's. It used to send any card without human criteria to
+   * the Diff tab, so a merge-conflict or permission card landed on "No diff
+   * captured yet" with the card itself nowhere on screen.
+   */
   const inspectApproval = (approval: Approval) => {
     if (!approval.ticket_id) return;
-    navigateToTicket(approval.ticket_id, {
-      tab: hasHumanCriteria(approval) ? "approvals" : "diff",
-    });
+    navigateToTicket(approval.ticket_id, { tab: "approvals" });
     setInboxOpen(false);
   };
 
