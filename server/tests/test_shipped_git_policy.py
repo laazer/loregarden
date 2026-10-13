@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 from loregarden.models.domain import Workspace
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
+from loregarden.services.publish_tree import tree_chain
 
 
 def _workspace(slug: str) -> Workspace:
@@ -51,11 +52,28 @@ def test_loregarden_stops_at_push_and_opens_no_pull_request():
     assert config.auto_merge is False
 
 
-@pytest.mark.parametrize(
-    "slug", ["blobert", "lore-eden", "loremaker", "a-workspace-with-no-profile"]
-)
+def test_loregarden_publishes_a_tree_with_a_pr_that_merges_on_green():
+    """958: a tree's PR opens with its first landing and merges when the ruleset's
+    required checks pass. Chat turns stay push-only (above)."""
+    config = resolve_git_automation(_workspace("loregarden"))
+
+    assert enabled_steps(tree_chain(config)) == ["commit", "push", "open_pr", "auto_merge"]
+
+
+def test_blobert_publishes_its_trees_and_opens_but_never_auto_merges_their_prs():
+    """Asked for on 2026-10-13, after two blobert trees held 31 and 22 commits that
+    existed only locally. Auto-merge stays off: blobert's `main` cannot require
+    checks on its GitHub plan, so `gh pr merge --auto` would merge at once."""
+    config = resolve_git_automation(_workspace("blobert"))
+
+    assert enabled_steps(config) == ["commit", "push"]
+    assert enabled_steps(tree_chain(config)) == ["commit", "push", "open_pr"]
+    assert config.tree_auto_merge is False and config.auto_merge is False
+
+
+@pytest.mark.parametrize("slug", ["lore-eden", "loremaker", "a-workspace-with-no-profile"])
 def test_every_other_workspace_still_publishes_nothing(slug: str):
-    """The change was scoped to loregarden, and stays that way until asked.
+    """The change was scoped to loregarden and blobert, and stays that way until asked.
 
     A workspace falling through to `default.yaml` writes into another repository
     on this machine. Turning commit on there is a separate decision, and this is

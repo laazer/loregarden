@@ -19,3 +19,19 @@ subagents:
 callbacks:
   mode: api
 max_stages_per_run: 0
+git:
+  # Commit and push finished work, and open a tree's PR to `main` (958). With
+  # every switch off, nothing ever published a blobert tree: blob-procedural-sdf-14
+  # held 31 commits and blob-rust-terrain-108 22 that existed only locally when
+  # they began conflicting with `main` (2026-10-13). A tree now publishes after
+  # every landing on its integration branch, so it never drifts that far again.
+  #
+  # `commit`/`push` also publish an acting chat turn's branch, as loregarden's do.
+  commit: true
+  push: true
+  tree_open_pr: true
+  # Off on purpose. blobert is private on a GitHub plan with no rulesets and no
+  # branch protection, so `gh pr merge --auto` has no required checks to wait
+  # behind and would merge at once, untested (loregarden PR #150, 2026-08-12, is
+  # that failure). Turn this on only once `main` requires CI checks.
+  tree_auto_merge: false
