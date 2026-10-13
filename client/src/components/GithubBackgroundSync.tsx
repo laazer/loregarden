@@ -7,6 +7,7 @@ import {
   type GithubSyncSettingsUpdate,
 } from "../api/githubIssueApi";
 import { describeError } from "../state/toastStore";
+import { Select } from "./ui/Select";
 
 const INTERVALS = [5, 15, 30, 60, 180, 720, 1440];
 
@@ -89,7 +90,7 @@ export function GithubBackgroundSync({
           <label className="field-label" htmlFor={intervalId}>
             How often
           </label>
-          <select
+          <Select
             id={intervalId}
             className="input"
             value={interval}
@@ -101,7 +102,7 @@ export function GithubBackgroundSync({
                 {intervalLabel(minutes)}
               </option>
             ))}
-          </select>
+          </Select>
           <p className="modal-hint" style={{ marginTop: 4 }}>
             {importParentTicketId
               ? "Each run also imports new issues under the parent chosen above."

@@ -136,14 +136,39 @@ it("lists every stage visit by its workflow name, most recent first", async () =
   ]);
 });
 
-it("opens the stage that failed and the latest one, and leaves clean history closed", async () => {
-  renderTimeline();
+function visitRow(name: RegExp) {
+  return stageButton(name).closest("li.tl-visit");
+}
+
+it("opens a stage whose latest run failed and the latest stage, and leaves green history closed", async () => {
+  const failing = visit("implement", [
+    attempt({ run_id: "i1", status: "succeeded", started_at: "2026-09-20T10:20:00+00:00" }),
+    attempt({ run_id: "i2", status: "failed", started_at: "2026-09-20T10:26:00+00:00" }),
+  ]);
+  renderTimeline({ visits: [PLAN, failing, GATE] });
 
   await screen.findByRole("button", { name: /Planning/ });
   expect(stageButton(/Planning/)).toHaveAttribute("aria-expanded", "false");
   expect(stageButton(/Implementation/)).toHaveAttribute("aria-expanded", "true");
   expect(stageButton(/Quality Gate/)).toHaveAttribute("aria-expanded", "true");
+  expect(visitRow(/Implementation/)).toHaveClass("tl-visit--bad");
+});
+
+it("paints a stage green once its latest run succeeds, keeping the failure as a tag", async () => {
+  renderTimeline();
+
+  await screen.findByRole("button", { name: /Planning/ });
+  expect(visitRow(/Implementation/)).toHaveClass("tl-visit--good");
   expect(stageButton(/Implementation/)).toHaveTextContent("1 failed");
+  expect(stageButton(/Implementation/)).toHaveAttribute("aria-expanded", "false");
+});
+
+it("paints a second pass green when its latest run succeeds", async () => {
+  renderTimeline({ visits: [PLAN, visit("implement", [attempt({ run_id: "i3" })], { visit_number: 2 }), GATE] });
+
+  await screen.findByRole("button", { name: /Planning/ });
+  expect(visitRow(/Implementation/)).toHaveClass("tl-visit--good");
+  expect(stageButton(/Implementation/)).toHaveTextContent("2nd pass");
 });
 
 it("toggles a stage open and closed", async () => {
@@ -163,6 +188,7 @@ it("shows a failed run's stderr under it and opens its log", async () => {
     runs: [{ id: "i1", run_code: "run_a", status: "failed", stderr: "line one\nAssertionError: boom" }],
   });
 
+  fireEvent.click(await screen.findByRole("button", { name: /Implementation/ }));
   expect(await screen.findByText(/AssertionError: boom/)).toBeInTheDocument();
   const implementBody = document.getElementById(stageButton(/Implementation/).getAttribute("aria-controls")!)!;
   fireEvent.click(within(implementBody).getAllByRole("button", { name: /Open the log/ })[0]);

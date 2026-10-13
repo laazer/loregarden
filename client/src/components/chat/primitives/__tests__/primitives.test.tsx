@@ -10,7 +10,7 @@ import { StudioChatMessages } from "../../../studio/StudioChat";
 import { CalendarPrimitive } from "../CalendarPrimitive";
 import { EditPrimitive } from "../EditPrimitive";
 import { GatePrimitive } from "../GatePrimitive";
-import { KanbanPrimitive } from "../KanbanPrimitive";
+import { KanbanColumns, KanbanPrimitive } from "../KanbanPrimitive";
 import { ParentTicketPrimitive } from "../ParentTicketPrimitive";
 import { PrimitiveCard } from "../PrimitiveCard";
 import { PrimitiveParts } from "../PrimitiveParts";
@@ -706,6 +706,48 @@ describe("Board tiles", () => {
       container.querySelectorAll(".lg-primitive-kanban-col-title"),
     ).map((el) => el.textContent);
     expect(titles).toEqual(["In Progress1", "Won't do0"]);
+  });
+});
+
+describe("Board hierarchy", () => {
+  const milestone = gateTicket({ id: "m1", title: "Milestone", state: "backlog", parent_ticket_id: null });
+  const child = (id: string, parent = "m1") =>
+    gateTicket({ id, title: `Child ${id}`, state: "backlog", parent_ticket_id: parent });
+
+  it("hangs a child under its parent when both share a column", () => {
+    wrap(<KanbanColumns columns={[{ status: "backlog", tickets: [milestone, child("c1"), child("c2")] }]} />);
+
+    const under = screen.getByRole("list", { name: "Under Milestone" });
+    expect(under).toHaveTextContent("Child c1");
+    expect(under).toHaveTextContent("Child c2");
+    expect(screen.getByRole("button", { name: /2 sub-tickets/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("folds a parent with many children behind a count, and opens it on request", () => {
+    const children = ["c1", "c2", "c3", "c4"].map((id) => child(id));
+    wrap(<KanbanColumns columns={[{ status: "backlog", tickets: [milestone, ...children] }]} />);
+
+    const toggle = screen.getByRole("button", { name: /4 sub-tickets/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Child c1")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("list", { name: "Under Milestone" })).toHaveTextContent("Child c4");
+  });
+
+  it("keeps a child at the top of its column when its parent is in another", () => {
+    wrap(
+      <KanbanColumns
+        columns={[
+          { status: "backlog", tickets: [milestone] },
+          { status: "in_progress", tickets: [{ ...child("c1"), state: "in_progress" }] },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole("list", { name: "Under Milestone" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sub-ticket/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Child c1")).toBeInTheDocument();
   });
 });
 

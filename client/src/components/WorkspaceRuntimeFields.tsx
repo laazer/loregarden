@@ -163,7 +163,7 @@ export function WorkspaceRuntimeFields({
 
   if (adapter === "claude") {
     modelStep = (
-      <select
+      <Select
         className="btn-secondary filter-select"
         style={selectStyle}
         aria-label="Claude model"
@@ -181,11 +181,11 @@ export function WorkspaceRuntimeFields({
             {opt.label}
           </option>
         ))}
-      </select>
+      </Select>
     );
   } else if (adapter === "cursor") {
     modelStep = (
-      <select
+      <Select
         className="btn-secondary filter-select"
         style={selectStyle}
         aria-label="Cursor model"
@@ -203,11 +203,11 @@ export function WorkspaceRuntimeFields({
             {opt.label}
           </option>
         ))}
-      </select>
+      </Select>
     );
   } else if (adapter === "codex") {
     modelStep = (
-      <select
+      <Select
         className="btn-secondary filter-select"
         style={selectStyle}
         aria-label="Codex model"
@@ -225,7 +225,7 @@ export function WorkspaceRuntimeFields({
             {opt.label}
           </option>
         ))}
-      </select>
+      </Select>
     );
   } else if (adapter === "lmstudio") {
     const lmOptions = options.lmstudio_models ?? [];
@@ -300,7 +300,7 @@ export function WorkspaceRuntimeFields({
     modelStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {ocOptions.length > 1 ? (
-          <select
+          <Select
             className="btn-secondary filter-select"
             style={selectStyle}
             aria-label="OpenCode model"
@@ -322,7 +322,7 @@ export function WorkspaceRuntimeFields({
                 {opt.label}
               </option>
             ))}
-          </select>
+          </Select>
         ) : null}
         {/* The catalogue depends on which providers OpenCode is authenticated
             to, so a model the picker has not discovered is still valid to pin. */}
@@ -369,7 +369,7 @@ export function WorkspaceRuntimeFields({
   if (effortKey && efforts.length > 0) {
     effortStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <select
+        <Select
           className="btn-secondary filter-select"
           aria-label="Reasoning effort"
           style={selectStyle}
@@ -382,7 +382,7 @@ export function WorkspaceRuntimeFields({
               {opt.label}
             </option>
           ))}
-        </select>
+        </Select>
         {cursorEffortInert ? (
           <p className="modal-hint" style={{ margin: 0 }}>
             Cursor takes effort only on a parameterized model
@@ -400,7 +400,7 @@ export function WorkspaceRuntimeFields({
     <div style={{ display: "flex", flexDirection: "column", gap }}>
       <div className="modal-field">
         <div className="modal-field-label">1 · Provider</div>
-        <select
+        <Select
           className="btn-secondary filter-select"
           aria-label="Provider"
           style={selectStyle}
@@ -416,7 +416,7 @@ export function WorkspaceRuntimeFields({
               </option>
             );
           })}
-        </select>
+        </Select>
       </div>
 
       <div className="modal-field">

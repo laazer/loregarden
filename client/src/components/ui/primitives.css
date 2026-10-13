@@ -29,3 +29,58 @@
 :where(.ui-check) {
   accent-color: var(--ac);
 }
+
+/* Select's themed list (Select.tsx), in place of the menu the OS draws. The
+   popover UA defaults (centred, inset 0, Canvas colours) are reset here; the
+   anchoring hook supplies top/left. */
+:where(.ui-select-list) {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  max-width: min(480px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg1);
+  color: var(--tx);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--shadow) 45%, transparent);
+  font-size: 13px;
+  overflow-y: auto;
+}
+
+:where(.ui-select-group) {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+:where(.ui-select-option) {
+  padding: 6px 10px 6px 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+
+:where(.ui-select-option[data-active]) {
+  background: var(--bg3);
+}
+
+:where(.ui-select-option[aria-selected="true"]) {
+  color: var(--ac2);
+}
+
+:where(.ui-select-option[aria-selected="true"])::before {
+  content: "✓";
+  position: absolute;
+  left: 9px;
+}
+
+:where(.ui-select-option[aria-disabled="true"]) {
+  color: var(--txl);
+  cursor: default;
+}

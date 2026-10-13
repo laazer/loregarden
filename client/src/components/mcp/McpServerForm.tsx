@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { McpServerInput, McpServerView } from "../../api/client";
+import { Select } from "../ui/Select";
 
 const TRANSPORTS = ["http", "stdio"] as const;
 
@@ -104,7 +105,7 @@ export function McpServerForm({
         <label className="modal-field-label" htmlFor="mcp-transport">
           Transport
         </label>
-        <select
+        <Select
           id="mcp-transport"
           className="btn-secondary filter-select"
           value={draft.transport}
@@ -115,7 +116,7 @@ export function McpServerForm({
               {value}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {draft.transport === "http" ? (
@@ -167,7 +168,7 @@ export function McpServerForm({
         <label className="modal-field-label" htmlFor="mcp-policy">
           When an agent calls this server
         </label>
-        <select
+        <Select
           id="mcp-policy"
           className="btn-secondary filter-select"
           value={draft.tool_policy ?? "prompt"}
@@ -175,7 +176,7 @@ export function McpServerForm({
         >
           <option value="prompt">Ask me every time</option>
           <option value="auto">Run without asking</option>
-        </select>
+        </Select>
         <p className="modal-subtitle mcp-form-hint">
           Trust applies to the whole server. An unattended run stops on every call
           while this is set to ask.

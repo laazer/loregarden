@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 
 import type { LocalInstanceKind, TemplateParamSpec, TemplateSpec } from "../../api/localInstancesTypes";
+import { Select } from "../ui/Select";
 
 /**
  * A stored instance template, as a form.
@@ -140,10 +141,10 @@ export function TemplateEditor({ initial, saving, error, onSave, onCancel }: Tem
         </Field>
         <Field label="Kind">
           {(id) => (
-            <select id={id} className="input" value={kind} onChange={(e) => setKind(e.target.value as LocalInstanceKind)}>
+            <Select id={id} className="input" value={kind} onChange={(e) => setKind(e.target.value as LocalInstanceKind)}>
               <option value="server">server</option>
               <option value="client">client</option>
-            </select>
+            </Select>
           )}
         </Field>
         <Field label="Description">

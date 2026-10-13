@@ -19,6 +19,11 @@ describe("tabular-list", () => {
     expect(kinds(`<ul>${repeat(10, record)}</ul>`)).toContain("tabular-list");
   });
 
+  it("lets a board lane hold same-shaped cards, nested lists included", () => {
+    const lane = `<div data-board-lane><ul>${repeat(10, record)}<li><ul>${repeat(10, record)}</ul></li></ul></div>`;
+    expect(kinds(lane)).not.toContain("tabular-list");
+  });
+
   it("passes a name with three short tags", () => {
     const item = (i: number) =>
       `<li><a href="/t/${i}">Ticket ${i}</a><span class="state">open</span>` +

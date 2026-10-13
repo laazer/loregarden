@@ -74,9 +74,16 @@
   flex-direction: column;
   gap: 3px;
   font-size: 12.5px;
+  min-width: 0;
+  /* Ticket ids are long unbroken tokens; break them rather than run past the card. */
+  overflow-wrap: anywhere;
 }
 
 .subtree-autopilot-link {
+  /* Block, not inline-block: an inline-block's baseline is its last line, which
+     dropped the list number beside the second line of a wrapped title. */
+  display: block;
+  max-width: 100%;
   padding: 0;
   text-align: left;
   color: var(--tx);

@@ -821,7 +821,7 @@ function ExitActionEditorRow({
               {requirementLabel(kind)}
             </div>
           ) : (
-            <select
+            <Select
               id={`exit-action-kind-${index}`}
               className="studio-stage-select"
               value={kind}
@@ -832,7 +832,7 @@ function ExitActionEditorRow({
                   {requirementLabel(requirementKind)}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
       </div>
@@ -845,7 +845,7 @@ function ExitActionEditorRow({
           {readOnly ? (
             <div style={{ fontSize: 12 }}>{action.requirement.capability_id}</div>
           ) : (
-            <select
+            <Select
               id={`exit-action-cap-${index}`}
               className="studio-stage-select mono"
               value={action.requirement.capability_id}
@@ -861,7 +861,7 @@ function ExitActionEditorRow({
                   {id}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
       )}
@@ -873,7 +873,7 @@ function ExitActionEditorRow({
           {readOnly ? (
             <div style={{ fontSize: 12 }}>{action.requirement.credential_key}</div>
           ) : (
-            <select
+            <Select
               id={`exit-action-cred-${index}`}
               className="studio-stage-select mono"
               value={action.requirement.credential_key}
@@ -889,7 +889,7 @@ function ExitActionEditorRow({
                   {id}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
       )}
@@ -901,7 +901,7 @@ function ExitActionEditorRow({
           {readOnly ? (
             <div style={{ fontSize: 12 }}>{action.requirement.authority_scope}</div>
           ) : (
-            <select
+            <Select
               id={`exit-action-auth-${index}`}
               className="studio-stage-select mono"
               value={action.requirement.authority_scope}
@@ -917,7 +917,7 @@ function ExitActionEditorRow({
                   {id}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
       )}
