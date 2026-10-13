@@ -5,6 +5,7 @@ import { api, type WorkflowTemplateSummary, type WorkspaceSummary } from "../../
 import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { workspacesPath } from "../../lib/appNavigation";
 import { PaneHideButton } from "./PaneHideButton";
+import { Select } from "../ui/Select";
 
 interface DashboardWorkspacesPaneProps {
   /** Active workspaces only; archived ones are counted, not listed. */
@@ -134,7 +135,7 @@ export function DashboardWorkspacesPane({
             <div className="state-label" style={{ marginBottom: 6 }}>
               Workflow template
             </div>
-            <select
+            <Select
               className="btn-secondary"
               style={{ width: "100%", fontSize: 12 }}
               aria-label="Workspace workflow template"
@@ -146,7 +147,7 @@ export function DashboardWorkspacesPane({
                   {t.name} ({t.stage_count} stages)
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
       </div>

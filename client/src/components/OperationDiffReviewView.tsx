@@ -14,6 +14,7 @@ import { describeError } from "../state/toastStore";
 import { QueueDiffViewer } from "./QueueDiffViewer";
 import { QueueOperationReview } from "./QueueOperationReview";
 import { RunOutputReview } from "./RunOutputReview";
+import { Select } from "./ui/Select";
 import "./OperationDiffReviewView.css";
 
 export interface OperationDiffReviewViewProps {
@@ -187,7 +188,7 @@ export function OperationDiffReviewView({
           <div className="operation-diff-review-output-toolbar">
             <label className="operation-diff-review-output-label">
               Run
-              <select
+              <Select
                 className="btn-secondary filter-select"
                 value={selectedRunId}
                 onChange={(e) => setSelectedRunId(e.target.value)}
@@ -197,7 +198,7 @@ export function OperationDiffReviewView({
                     {runOutputById[runId]?.run_code ?? runId}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <div className="operation-diff-review-output-types">
               <button

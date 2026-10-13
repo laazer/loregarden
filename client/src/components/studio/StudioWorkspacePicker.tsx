@@ -1,4 +1,5 @@
 import type { WorkspaceSummary } from "../../api/client";
+import { Select } from "../ui/Select";
 
 /**
  * The studio rail's workspace switcher — one card whose whole surface is the
@@ -21,7 +22,7 @@ export function StudioWorkspacePicker({
   return (
     <div className="studio-workspace-card">
       <span className="studio-workspace-mark">{initial}</span>
-      <select
+      <Select
         className="studio-workspace-select"
         aria-label={label}
         value={value}
@@ -32,7 +33,7 @@ export function StudioWorkspacePicker({
             {ws.name}
           </option>
         ))}
-      </select>
+      </Select>
       <svg
         className="studio-workspace-chevron"
         width="13"

@@ -16,6 +16,7 @@ import {
   type MemoryTab,
 } from "../lib/appNavigation";
 import { describeError } from "../state/toastStore";
+import { Select } from "../components/ui/Select";
 import "./MemoryPage.css";
 
 const TAB_LABELS: Record<MemoryTab, string> = {
@@ -93,13 +94,13 @@ export function MemoryPage() {
         {workspaces.data && slug && workspaces.data.length > 1 && (
           <label className="kb-workspace">
             <span>Workspace</span>
-            <select value={slug} onChange={(event) => setChosen(event.target.value)}>
+            <Select value={slug} onChange={(event) => setChosen(event.target.value)}>
               {workspaces.data.map((ws) => (
                 <option key={ws.id} value={ws.slug}>
                   {ws.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
         {workspaces.data && slug && workspaces.data.length === 1 && (
