@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from loregarden.config import settings
-from loregarden.models.domain.enums import DockerCeilingSource
+from loregarden.models.domain.enums_capacity import DockerCeilingSource
 from loregarden.services.docker_capacity import Ceiling
 
 logger = logging.getLogger(__name__)

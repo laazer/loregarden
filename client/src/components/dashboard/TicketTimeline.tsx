@@ -435,7 +435,7 @@ function Attention({
           {blocked && ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
           {blockMessage ? (
             <pre className="tl-callout-body">{blockMessage}</pre>
-          ) : (
+          ) : ticket.block_kind === "tickets" ? null : (
             <div className="tl-callout-sub">
               {ticket.child_count > 0
                 ? "Blocked because work under it is blocked. Open its child tickets to see which."

@@ -38,7 +38,8 @@ from __future__ import annotations
 
 import logging
 
-from loregarden.models.domain import Ticket, TicketState, WorkItemType
+from loregarden.core.event_bus import event_bus
+from loregarden.models.domain import BlockKind, EventType, Ticket, TicketState, WorkItemType
 from loregarden.services.initiative_coverage import (
     initiative_roots,
     initiatives_tracking,
@@ -105,7 +106,42 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
         return False
     # `derive` owns the state_locked / wont_do guards and the bookkeeping; a
     # parent's state is a function of its children, not a move anyone chose.
-    return derive(parent, target, actor="rollup")
+    moved = derive(parent, target, actor="rollup")
+    return _stamp_tickets_kind(parent, target) or moved
+
+
+def _stamp_tickets_kind(parent: Ticket, target: TicketState) -> bool:
+    """Say *why* a rolled-up parent is blocked: its children. True when it changed.
+
+    Without it a parent blocked by a child carried no kind, and read exactly
+    like a ticket a person had to look at. Only a kind the rollup owns is ever
+    replaced: a parent whose own run recorded a block keeps that kind.
+    """
+    rolled_up = parent.state == TicketState.BLOCKED and target == TicketState.BLOCKED
+    if rolled_up and parent.block_kind is None:
+        parent.block_kind = BlockKind.TICKETS
+        return True
+    if not rolled_up and parent.block_kind is BlockKind.TICKETS:
+        parent.block_kind = None
+        return True
+    return False
+
+
+def _announce_rollup(session: Session, changed: list[Ticket]) -> None:
+    """One TicketStateChanged per parent the walk just committed.
+
+    Called only after that commit. ``publish`` commits on its own, so doing it
+    inside the ancestor walk would persist a partial chain. The boot sweep
+    never enters ``reconcile_ancestors``, so it stays silent.
+    """
+    for parent in changed:
+        event_bus.publish(
+            session,
+            EventType.TICKET_STATE_CHANGED,
+            workspace_id=parent.workspace_id,
+            ticket_id=parent.id,
+            payload={"state": parent.state.value, "actor": "rollup"},
+        )
 
 
 def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
@@ -132,6 +168,7 @@ def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
     changed += _reconcile_tracking(session, [ticket.id, *(t.id for t in changed)], seen)
     if changed:
         session.commit()
+        _announce_rollup(session, changed)
     return changed
 
 

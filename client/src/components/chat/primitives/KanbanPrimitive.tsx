@@ -3,7 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { TicketState, TicketSummary } from "../../../api/types";
-import { ticketStateColor, ticketStateLabel } from "../../../lib/ticketStates";
+import {
+  boardColumnColor,
+  boardColumnLabel,
+  ticketStateLabel,
+  type BoardColumnKey,
+} from "../../../lib/ticketStates";
+import { waitingOnSummary } from "../../../utils/blockKinds";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
 import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
@@ -62,12 +68,18 @@ export function TicketMini({ ticket, action }: { ticket: TicketSummary; action?:
         title={ticket.title}
         priority={ticket.priority}
         state={ticket.state}
+        blockedOn={ticket.blocked_on}
         workspaceSlug={ticket.workspace_slug}
         stageName={ticket.workflow_stage_name || undefined}
         stageStatus={ticket.workflow_stage_status}
         segments={progress.segments}
         progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
       />
+      {ticket.waiting_on?.length ? (
+        <p className="lg-primitive-ticket-tile-waiting" title={ticket.waiting_on.map((r) => r.title).join("\n")}>
+          {waitingOnSummary(ticket.waiting_on)}
+        </p>
+      ) : null}
       <div className="lg-primitive-ticket-tile-action">
         <OpenTicketButton ticketId={ticket.id} compact label={`Open ${ticket.title}`} />
       </div>
@@ -77,7 +89,7 @@ export function TicketMini({ ticket, action }: { ticket: TicketSummary; action?:
 }
 
 export interface KanbanColumn {
-  status: TicketState;
+  status: BoardColumnKey;
   tickets: TicketSummary[];
   /**
    * How many tickets the column really holds, when that is more than it drew.
@@ -97,7 +109,7 @@ export function KanbanColumns({
   columns: KanbanColumn[];
   tileAction?: (ticket: TicketSummary) => ReactNode;
   /** Offered on a truncated column; absent, the column just says how many are hidden. */
-  onShowAll?: (status: TicketState) => void;
+  onShowAll?: (status: BoardColumnKey) => void;
 }) {
   return (
     <div className="lg-primitive-kanban">
@@ -109,10 +121,10 @@ export function KanbanColumns({
             <p className="lg-primitive-kanban-col-title">
               <span
                 className="lg-primitive-ticket-state-dot"
-                style={{ background: ticketStateColor(col.status) }}
+                style={{ background: boardColumnColor(col.status) }}
                 aria-hidden
               />
-              {ticketStateLabel(col.status)}
+              {boardColumnLabel(col.status)}
               <span className="lg-primitive-kanban-col-count">{total}</span>
             </p>
             {col.tickets.length === 0 ? (

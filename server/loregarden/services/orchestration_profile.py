@@ -80,6 +80,13 @@ class GitAutomationConfig(BaseModel):
     open_pr: bool = False
     #: `gh pr merge --auto`, so the PR lands when its checks pass.
     auto_merge: bool = False
+    #: `open_pr` and `auto_merge` for `publish_tree` alone: a root's work (a
+    #: tree's integration branch, after every landing on it, or a standalone
+    #: ticket's own branch) gets a PR and merges on green, while chat turns,
+    #: which use the two above, stay push-only. Either switch being on is
+    #: enough; the chain still stops at the first earlier step that is off.
+    tree_open_pr: bool = False
+    tree_auto_merge: bool = False
     #: On a merge conflict, hand the conflicted files to an implementer agent
     #: rather than blocking. Independent of auto_merge: a conflict can surface
     #: from the pre-merge check even when nothing is auto-merging.

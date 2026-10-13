@@ -465,6 +465,15 @@ class AgentRun(SQLModel, table=True):
         default=None,
         sa_column=str_enum_column(AgentTransport, nullable=True),
     )
+    #: Why a failed run failed, in the block vocabulary: `HARNESS` when it never
+    #: got to do the work (a CLI usage limit, auth, a spawn failure, loregarden's
+    #: own crash), `WORK` when it did and the result was refused. Written by the
+    #: integration merge turn, whose attempt budget counts only `WORK`
+    #: (lg-milestone-that-959). Null on success and on runs that do not record it.
+    failure_kind: BlockKind | None = Field(
+        default=None,
+        sa_column=str_enum_column(BlockKind, nullable=True),
+    )
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None

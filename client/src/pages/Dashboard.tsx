@@ -108,12 +108,15 @@ export function Dashboard() {
   const artifactTab = useArtifactTabFromRoute();
   const {
     stateFilters,
+    blockedOnFilters,
     typeFilters,
     search,
     expandedTicketIds,
     workspace,
     toggleStateFilter,
     clearStateFilters,
+    toggleBlockedOnFilter,
+    clearBlockedOnFilters,
     toggleTypeFilter,
     clearTypeFilters,
     toggleExpanded,
@@ -134,11 +137,12 @@ export function Dashboard() {
   const wsParam = workspace === "all" ? undefined : workspace;
 
   const ticketTree = useQuery({
-    queryKey: ["ticket-tree", workspace, stateFilters, typeFilters, search],
+    queryKey: ["ticket-tree", workspace, stateFilters, blockedOnFilters, typeFilters, search],
     queryFn: () =>
       api.ticketTree({
         workspace: wsParam,
         state: stateFilters.length ? stateFilters : undefined,
+        blocked_on: blockedOnFilters.length ? blockedOnFilters : undefined,
         work_item_type: typeFilters.length ? typeFilters : undefined,
         search: search.trim() || undefined,
         include_members: true,
@@ -519,7 +523,10 @@ export function Dashboard() {
   // child that survived the filter. When nothing is filtered the sidebar tree is already
   // complete, so reuse it rather than fetching a second copy.
   const filtersNarrowTree =
-    stateFilters.length > 0 || typeFilters.length > 0 || Boolean(search.trim());
+    stateFilters.length > 0 ||
+    blockedOnFilters.length > 0 ||
+    typeFilters.length > 0 ||
+    Boolean(search.trim());
 
   const unfilteredTree = useQuery({
     queryKey: ["ticket-tree", workspace, "unfiltered"],
@@ -633,6 +640,10 @@ export function Dashboard() {
     },
     { all: 0, backlog: 0, in_progress: 0, blocked: 0, done: 0, wont_do: 0 } as Record<string, number>,
   );
+  const blockedOnCounts = flatTickets.reduce<Record<string, number>>((acc, t) => {
+    if (t.blocked_on) acc[t.blocked_on] = (acc[t.blocked_on] ?? 0) + 1;
+    return acc;
+  }, {});
 
   const expandedSet = useMemo(() => new Set(expandedTicketIds), [expandedTicketIds]);
 
@@ -719,10 +730,14 @@ export function Dashboard() {
                     typeFilters={typeFilters}
                     stateFilters={stateFilters}
                     stateCounts={counts}
+                    blockedOnFilters={blockedOnFilters}
+                    blockedOnCounts={blockedOnCounts}
                     onToggleType={toggleTypeFilter}
                     onToggleState={toggleStateFilter}
+                    onToggleBlockedOn={toggleBlockedOnFilter}
                     onClearTypes={clearTypeFilters}
                     onClearStates={clearStateFilters}
+                    onClearBlockedOn={clearBlockedOnFilters}
                   />
                 </div>
                 <div className="scroll-list lg-primitive-ticket-list--v6">

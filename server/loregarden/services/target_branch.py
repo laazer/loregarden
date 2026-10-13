@@ -38,6 +38,7 @@ from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.git_branch import validate_branch_name
 from loregarden.services.git_merge_noco import (
     BranchTips,
+    describe_signing,
     merge_tips,
     read_branch_tips,
     superseding_commit,
@@ -212,7 +213,13 @@ def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_bran
     )
     if outcome.ok:
         if not outcome.already_contained:
-            logger.info("Refreshed %s from %s as %s", branch, base_branch, outcome.sha[:12])
+            logger.info(
+                "Refreshed %s from %s as %s (%s)",
+                branch,
+                base_branch,
+                outcome.sha[:12],
+                describe_signing(outcome.signed),
+            )
         return not outcome.already_contained
     if outcome.conflicted:
         if _fast_forward_superseded(repo_root, tips, branch, base_branch):

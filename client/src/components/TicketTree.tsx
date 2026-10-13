@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import type { TicketTreeNode } from "../api/client";
 import {
   TICKET_STATE_COLORS,
-  TICKET_STATE_LABELS,
   stageStatusColor,
 } from "../lib/ticketStates";
+import { blockedOnStateLabel } from "../utils/blockKinds";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
@@ -145,6 +145,7 @@ function TreeRow({
                 externalId={showExternalId ? node.external_id : undefined}
                 priority={node.priority}
                 state={node.state}
+                blockedOn={node.blocked_on}
                 workspaceSlug={node.workspace_slug}
                 stageName={node.workflow_stage_name || undefined}
                 stageStatus={node.workflow_stage_status}
@@ -223,7 +224,7 @@ function TreeRow({
                   }}
                 >
                   <span className="tree-state-dot" style={{ background: stateColor }} />
-                  {TICKET_STATE_LABELS[node.state]}
+                  {blockedOnStateLabel(node.state, node.blocked_on)}
                 </span>
                 {node.workspace_slug ? (
                   <>
