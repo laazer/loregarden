@@ -297,7 +297,7 @@ def _note_repair_if_it_was_one(
 ) -> None:
     """The repair turn passed: the block is gone; say so in the history (750)."""
     if run.agent_id == REPAIR_AGENT_ID and report is not None:
-        record_repair_outcome(orch.session, ticket, run)
+        record_repair_outcome(orch.session, ticket, run, summary=report.reroute_context)
 
 
 def _classify_raw_failure(

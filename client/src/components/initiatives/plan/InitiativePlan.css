@@ -542,7 +542,12 @@
 
 /* Board selection */
 
+/* Stays at the top of the pane while the lanes scroll beneath it, so a ticket
+   ticked far down a column can be moved without scrolling back up. */
 .plan-board-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -552,6 +557,14 @@
   border-radius: 8px;
   background: var(--bg2);
   font-size: 12.5px;
+}
+
+/* Stacked, the page scrolls instead of .plan-main, and its top padding would
+   leave a strip of scrolled tiles above the stuck toolbar; pull it over that. */
+@media (max-width: 1100px) {
+  .plan-board-toolbar {
+    top: -16px;
+  }
 }
 
 /* Every control in the toolbar at one height, the select boxed like a field. */
@@ -715,6 +728,10 @@
 }
 
 @media (max-width: 640px) {
+  .plan-board-toolbar {
+    top: -12px;
+  }
+
   .plan-page {
     padding: 12px 16px 20px;
   }

@@ -5,6 +5,7 @@ import type {
   LocalInstanceTemplate,
   LocalInstanceTemplateParam,
 } from "../api/localInstancesTypes";
+import { Select } from "./ui/Select";
 
 interface LocalInstanceLaunchFormProps {
   templates: LocalInstanceTemplate[];
@@ -33,7 +34,7 @@ function ParamField({
         {param.required ? " (required)" : ""}
       </label>
       {param.choices ? (
-        <select
+        <Select
           id={id}
           className="input"
           value={value}
@@ -45,7 +46,7 @@ function ParamField({
               {choice}
             </option>
           ))}
-        </select>
+        </Select>
       ) : (
         <input
           id={id}
@@ -99,7 +100,7 @@ export function LocalInstanceLaunchForm({ templates, launching, onLaunch }: Loca
         <label className="field-label" htmlFor={templateFieldId}>
           Launch
         </label>
-        <select
+        <Select
           id={templateFieldId}
           className="input"
           value={template.name}
@@ -110,7 +111,7 @@ export function LocalInstanceLaunchForm({ templates, launching, onLaunch }: Loca
               {t.name} — {t.description}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       {template.params.map((param) => (
         <ParamField

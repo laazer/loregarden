@@ -13,6 +13,7 @@ import {
 import { describeError } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { RunOutputReview } from "./RunOutputReview";
+import { Select } from "./ui/Select";
 import "./TicketDiffReviewPanel.css";
 
 interface TicketRun {
@@ -186,7 +187,7 @@ export function TicketDiffReviewPanel({
           <div className="ticket-diff-review-toolbar">
             <label className="ticket-diff-review-label">
               Run
-              <select
+              <Select
                 className="btn-secondary filter-select"
                 value={selectedRunId ?? ""}
                 onChange={(e) => setSelectedRunId(e.target.value)}
@@ -196,7 +197,7 @@ export function TicketDiffReviewPanel({
                     {run.run_code} · {run.status}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <div className="ticket-diff-review-output-types">
               <button

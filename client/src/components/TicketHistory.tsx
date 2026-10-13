@@ -43,6 +43,14 @@ export function TicketHistory({ ticketId }: TicketHistoryProps) {
                 {new Date(line.at).toLocaleString()}
               </span>{" "}
               {line.text}
+              {line.detail && (
+                // A native <details>: reachable by Tab, toggled by Enter/Space,
+                // and announced as expandable without any state of our own.
+                <details className="ticket-history-detail">
+                  <summary>Details</summary>
+                  <p className="ticket-history-detail-body">{line.detail}</p>
+                </details>
+              )}
             </li>
           ))}
         </ol>

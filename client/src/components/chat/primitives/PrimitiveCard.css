@@ -376,10 +376,13 @@
   border-radius: inherit;
 }
 
+/* Lanes wide enough for a title to wrap in two or three lines rather than five,
+   and for a nested sub-ticket to keep a readable width beside its rail. Shared
+   by the chat card and the initiative board. */
 .lg-primitive-kanban {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(196px, 1fr);
+  grid-auto-columns: minmax(272px, 1fr);
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -389,7 +392,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 196px;
+  min-width: 272px;
   padding: 8px;
   border-radius: 12px;
   background: var(--bg0);
@@ -416,6 +419,55 @@
   font-size: 11px;
   color: var(--txl);
   text-align: center;
+}
+
+/* A column is a tree: a ticket's children in the same column hang beneath it
+   on a rail, so a milestone and its sub-tickets read as one group. */
+.lg-primitive-kanban-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lg-primitive-kanban-tree-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lg-primitive-kanban-tree--nested {
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--bd2);
+}
+
+/* Columns are about 200px wide: past two levels the rail keeps marking depth
+   but stops indenting, so a deep tile keeps a readable width. */
+.lg-primitive-kanban-tree--nested .lg-primitive-kanban-tree--nested .lg-primitive-kanban-tree--nested {
+  margin-left: 0;
+}
+
+.lg-primitive-kanban-tree-toggle {
+  align-self: flex-start;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.lg-primitive-kanban-tree-toggle:hover {
+  color: var(--tx);
+  background: var(--bg2);
+}
+
+.lg-primitive-kanban-tree-toggle:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
 }
 
 .lg-primitive-kanban-col-count {

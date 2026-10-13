@@ -17,6 +17,7 @@ import { useState } from "react";
 import { StageFanoutReview } from "./StageFanoutReview";
 import { describeError } from "../state/toastStore";
 import { stageFanoutApi, type FanoutGroup } from "../lib/stageFanoutApi";
+import { Select } from "./ui/Select";
 import "./StageFanoutPanel.css";
 
 interface StageOption {
@@ -90,17 +91,17 @@ export function StageFanoutPanel({ ticketId, stages }: Props) {
         <div className="fanout-panel__launcher">
           <label>
             Stage
-            <select value={stageKey} onChange={(event) => setStageKey(event.target.value)}>
+            <Select value={stageKey} onChange={(event) => setStageKey(event.target.value)}>
               {stages.map((stage) => (
                 <option key={stage.key} value={stage.key}>
                   {stage.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Attempts
-            <select
+            <Select
               value={attempts}
               onChange={(event) => setAttempts(Number(event.target.value))}
               aria-label="Attempts"
@@ -110,7 +111,7 @@ export function StageFanoutPanel({ ticketId, stages }: Props) {
                   {count}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             type="button"

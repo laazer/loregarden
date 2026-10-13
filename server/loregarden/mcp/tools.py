@@ -16,6 +16,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
 from loregarden.mcp.docker_capacity_tool import (
@@ -82,13 +83,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
-from loregarden.services.evidence import (
-    ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
-)
-from loregarden.services.evidence import (
-    EVIDENCE_KINDS,
-    resolve_head_sha,
-)
+from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
@@ -1216,48 +1211,6 @@ def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> st
     return json.dumps(_run_view(run), indent=2)
 
 
-def _attach_artifact(svc, ticket, arguments: dict[str, Any], *, run_id: str | None) -> str:
-    content = {}
-    if arguments.get("content_json"):
-        content = json.loads(arguments["content_json"])
-    artifact = svc.attach_artifact(
-        ticket,
-        kind=arguments.get("kind", "log"),
-        title=arguments.get("title", ""),
-        content=content,
-        run_id=run_id,
-    )
-    return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
-
-
-def _attach_evidence(
-    session: Session, svc, ticket, arguments: dict[str, Any], *, run_id: str | None
-) -> str:
-    """Record proof of behaviour, stamped with the commit it proves."""
-    evidence_kind = arguments["evidence_kind"]
-    if evidence_kind not in EVIDENCE_KINDS:
-        raise ValueError(
-            f"Unknown evidence_kind '{evidence_kind}'. Valid kinds: {', '.join(EVIDENCE_KINDS)}"
-        )
-    content = {}
-    if arguments.get("content_json"):
-        content = json.loads(arguments["content_json"])
-    # Stamped here, not taken from the agent: an agent choosing its own sha can
-    # claim proof against a commit its work predates.
-    artifact = svc.attach_artifact(
-        ticket,
-        kind=EVIDENCE_ARTIFACT_KIND,
-        title=arguments.get("title", ""),
-        content=content,
-        evidence_kind=evidence_kind,
-        commit_sha=resolve_head_sha(session, ticket),
-        run_id=run_id,
-    )
-    return json.dumps(
-        {"ok": True, "artifact_id": artifact.id, "commit_sha": artifact.commit_sha}, indent=2
-    )
-
-
 def execute_tool(
     session: Session,
     name: str,
@@ -1373,10 +1326,10 @@ def execute_tool(
 
     # Ticket-scoped: a standalone stage run, with no orchestration, may use these.
     if name == McpTool.ATTACH_ARTIFACT:
-        return _attach_artifact(svc, ticket, arguments, run_id=source_run_id)
+        return attach_artifact(svc, ticket, arguments, run_id=source_run_id)
 
     if name == McpTool.ATTACH_EVIDENCE:
-        return _attach_evidence(session, svc, ticket, arguments, run_id=source_run_id)
+        return attach_evidence(session, svc, ticket, arguments, run_id=source_run_id)
 
     if name == McpTool.REQUEST_APPROVAL:
         approval = svc.request_approval(

@@ -2,6 +2,7 @@
 
 import type { TicketSummary } from "../api/types";
 import type { KanbanColumn } from "../components/chat/primitives/KanbanPrimitive";
+import { flattenTree, nestByParent } from "./kanbanTree";
 import type { BoardColumnKey } from "./ticketStates";
 
 /**
@@ -21,7 +22,7 @@ export function columnFor(ticket: TicketSummary): BoardColumnKey {
   return ticket.state;
 }
 
-/** Tickets drawn per column before "Show all". */
+/** Ticket families (a ticket and everything under it in the column) drawn per column before "Show all". */
 export const COLUMN_SHOWN = 12;
 
 export function boardQueryKey(initiativeId: string) {
@@ -48,6 +49,10 @@ export function milestoneOf(tickets: TicketSummary[], milestoneIds: Set<string>)
  * Columns for the board. Every column is capped, not only done: a phase can
  * hold eighty backlog tickets, and a column that long hides the others. The
  * header counts them all; `expanded` lifts the cap for the columns asked for.
+ *
+ * The cap counts families, not tickets: a column draws its children under their
+ * parent, and a flat cut could keep a child while dropping the parent it hangs
+ * from. A family's children start folded when there are many of them.
  */
 export function buildColumns(
   tickets: TicketSummary[],
@@ -63,7 +68,8 @@ export function buildColumns(
   const states = [...BASE_COLUMNS, ...OPTIONAL_COLUMNS.filter((s) => byState.get(s)?.length)];
   return states.map((status) => {
     const all = byState.get(status) ?? [];
-    if (expanded.has(status) || all.length <= COLUMN_SHOWN) return { status, tickets: all };
-    return { status, tickets: all.slice(0, COLUMN_SHOWN), total: all.length };
+    const families = nestByParent(all, tickets);
+    if (expanded.has(status) || families.length <= COLUMN_SHOWN) return { status, tickets: flattenTree(families) };
+    return { status, tickets: flattenTree(families.slice(0, COLUMN_SHOWN)), total: all.length };
   });
 }

@@ -7,6 +7,7 @@ import { Button } from "../ui/Button";
 import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
 import { progressFillStyle } from "../../lib/progressFill";
+import { Select } from "../ui/Select";
 
 interface InitiativeCardProps {
   initiative: InitiativeView;
@@ -63,7 +64,7 @@ function AttachControl({
   }
   return (
     <div className="initiative-attach">
-      <select
+      <Select
         className="btn-secondary filter-select"
         aria-label={`Milestone to attach to ${initiative.title}`}
         value={choice}
@@ -76,7 +77,7 @@ function AttachControl({
             {milestoneOptionLabel(m)}
           </option>
         ))}
-      </select>
+      </Select>
       <button
         type="button"
         className="btn-secondary"
