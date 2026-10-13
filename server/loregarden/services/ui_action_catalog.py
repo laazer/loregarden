@@ -17,6 +17,7 @@ from typing import Any
 
 from loregarden.models.domain.enums import TicketState
 from loregarden.models.domain.schemas import WorkspaceRuntimeUpdate
+from loregarden.models.domain.view_layout import ViewLayout
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
@@ -45,6 +46,8 @@ class UiAction(StrEnum):
     QUEUE_CANCEL = "queue.cancel"
     CAPACITY_RELEASE = "capacity.release"
     APPROVAL_RESOLVE = "approval.resolve"
+    VIEW_CREATE = "view.create"
+    VIEW_OPEN = "view.open"
 
     @classmethod
     def try_parse(cls, name: str) -> UiAction | None:
@@ -178,6 +181,27 @@ class WorkspaceCreateArgs(_Args):
 
 class RunArgs(_Args):
     run_id: str = Field(min_length=1)
+
+
+class ViewCreateArgs(_Args):
+    workspace_slug: str = Field(
+        min_length=1, description="The workspace whose sidebar gets the tab."
+    )
+    title: str = Field(min_length=1)
+    #: The same typed layout `POST /workspaces/{slug}/views` takes, so a
+    #: malformed one is refused here, before any tab is asked to write it.
+    layout: ViewLayout = Field(
+        description=(
+            "A flex_grid or canvas layout. A panel container names its content in "
+            "settings.primitive_id, from the client's primitive registry "
+            "(client/src/components/views/primitives/)."
+        )
+    )
+
+
+class ViewOpenArgs(_Args):
+    workspace_slug: str = Field(min_length=1)
+    view_id: str = Field(min_length=1)
 
 
 class RunSendMessageArgs(_Args):
@@ -389,6 +413,22 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "work, so no agent may resolve one — this is refused, always.",
             ApprovalResolveArgs,
             offered="never to an agent",
+        ),
+        UiActionSpec(
+            UiAction.VIEW_CREATE,
+            UiActionEffect.WRITE,
+            "Add a tab to the sidebar: a new flex-grid or canvas view with the given panes, "
+            "then show it. Switches the sidebar to that workspace if it shows another.",
+            ViewCreateArgs,
+            offered="in every open tab",
+        ),
+        UiActionSpec(
+            UiAction.VIEW_OPEN,
+            UiActionEffect.VIEW,
+            "Show an existing sidebar tab (view). Switches the sidebar to that workspace "
+            "if it shows another.",
+            ViewOpenArgs,
+            offered="in every open tab",
         ),
     )
 }
