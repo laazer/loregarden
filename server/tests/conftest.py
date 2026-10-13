@@ -57,6 +57,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.builtin_orchestrator.engine",
     "loregarden.services.stage_fanout_service.engine",
     "loregarden.services.drain.engine",
+    "loregarden.services.integration_branch_health.engine",
     "loregarden.services.process_identity.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.services.run_lease.engine",
@@ -188,6 +189,12 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+    # The integration-branch sweep hands any conflict it finds to a merge turn,
+    # which spawns the agent's own CLI whatever the adapter above says. A test
+    # that wants a resolving turn patches `integration_merge_agent._run_agent`.
+    monkeypatch.setenv(
+        "LOREGARDEN_INTEGRATION_MERGE_STUB_RESPONSE", "Stubbed merge turn: resolved nothing."
+    )
 
 
 @pytest.fixture(autouse=True)
