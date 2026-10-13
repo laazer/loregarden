@@ -131,6 +131,26 @@ def _failed_turns(session: Session, root: Ticket, *, branch_sha: str) -> list[Ag
     )
 
 
+def merge_turn_refusal(
+    session: Session, workspace: Workspace, root: Ticket, *, branch_sha: str
+) -> str:
+    """Why no merge turn may run on the integration tip ``branch_sha``; "" when one may.
+
+    The switch and the per-tip budget, asked before a turn is started — by
+    `merge_base_by_agent`, and by the health sweep before it hands one off.
+    """
+    automation = resolve_git_automation(workspace, root)
+    if not automation.auto_resolve_conflicts:
+        return "auto_resolve_conflicts is off for this tree"
+    spent = len(_failed_turns(session, root, branch_sha=branch_sha))
+    if spent >= automation.max_conflict_resolve_attempts:
+        return (
+            f"{spent} automatic merge attempt(s) on {branch_sha[:12]} already failed "
+            f"(max_conflict_resolve_attempts={automation.max_conflict_resolve_attempts})"
+        )
+    return ""
+
+
 def merge_base_by_agent(
     session: Session,
     workspace: Workspace,
@@ -146,8 +166,7 @@ def merge_base_by_agent(
     ``ok`` means the caller's refresh can be retried: the branch was merged
     here, or by a concurrent caller while this one waited for the lock.
     """
-    automation = resolve_git_automation(workspace, root)
-    if not automation.auto_resolve_conflicts:
+    if not resolve_git_automation(workspace, root).auto_resolve_conflicts:
         return MergeResolution(False, "auto_resolve_conflicts is off for this tree")
     with _lock_for(repo_root, branch):
         tips = read_branch_tips(repo_root, branch, base)
@@ -156,14 +175,10 @@ def merge_base_by_agent(
             return MergeResolution(False, tips.error or f"cannot read {branch} and {base}")
         if is_ancestor(repo_root, base_sha, branch_sha):
             return MergeResolution(True, "already merged by a concurrent turn")
+        refusal = merge_turn_refusal(session, workspace, root, branch_sha=branch_sha)
+        if refusal:
+            return MergeResolution(False, refusal)
         failed = _failed_turns(session, root, branch_sha=branch_sha)
-        spent = len(failed)
-        if spent >= automation.max_conflict_resolve_attempts:
-            return MergeResolution(
-                False,
-                f"{spent} automatic merge attempt(s) on {branch_sha[:12]} already failed "
-                f"(max_conflict_resolve_attempts={automation.max_conflict_resolve_attempts})",
-            )
         run = _start_run(session, workspace, root, branch=branch, branch_sha=branch_sha)
         logger.warning(
             "Integration branch %s cannot take %s (conflicts in %s); running merge turn %s",

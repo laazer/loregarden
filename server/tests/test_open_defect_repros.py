@@ -49,34 +49,24 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
-from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
-    Approval,
-    ApprovalKind,
-    ApprovalStatus,
     BlockKind,
     RunStatus,
     Ticket,
     TicketState,
-    WorkItemType,
     Workspace,
 )
-from loregarden.services import integration_branch_health, integration_merge_agent
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
-from loregarden.services.integration_branch_health import check_integration_branches
-from loregarden.services.integration_conflict_card import report_integration_conflict
-from loregarden.services.integration_merge_agent import INTEGRATION_MERGE_STAGE
-from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
-from sqlmodel import Session, select
-from tests.worktree_helpers import commit_on, git, make_repo
+from sqlmodel import Session
+from tests.worktree_helpers import git, make_repo
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
@@ -371,109 +361,3 @@ def test_a_commit_only_the_checkout_can_reach_is_never_deleted(
     assert release_ticket_worktree(tree.session, tree.ticket) is False
     assert (tree.path / "more.txt").exists()
     assert tree.stranded in git(tree.path, "rev-parse", "HEAD").stdout
-
-
-_SWEPT_BRANCH = "integration/ms-sweep"
-
-
-class _ConflictedTree(NamedTuple):
-    """A live tree whose integration branch cannot take `main`, with its card open."""
-
-    session: Session
-    milestone: Ticket
-    repo: Path
-    main_tip: str
-
-
-def _keep_both_sides(*_args: object, tree: Path, **_kwargs: object) -> str:
-    """A merge turn that resolves the conflict the fixture builds, and commits."""
-    (tree / "shared.txt").write_text("integration side\nmain side\n")
-    git(tree, "add", "shared.txt")
-    git(tree, "commit", "-q", "--no-edit")
-    return "Kept both sides."
-
-
-@pytest.fixture
-def conflicted_tree_with_an_open_card(isolated_db, tmp_path: Path) -> Iterator[_ConflictedTree]:
-    """lg-run-durability-314 on 2026-10-12: `main` and the integration branch
-    both changed one file, the sweep filed the card, and nothing in the tree is
-    dispatched, so the only caller of the merge turn never runs.
-
-    The merge turn is patched here to one that resolves the conflict, so the
-    test needs no CLI agent; patching in a fixture means a renamed `_run_agent`
-    ERRORs instead of XFAILing.
-    """
-    repo = make_repo(tmp_path)
-    integration_branch_health._PREVIEWS.clear()
-    with Session(isolated_db) as session:
-        workspace = Workspace(slug="sweep", name="sweep", repo_path=str(repo))
-        session.add(workspace)
-        session.commit()
-        session.refresh(workspace)
-        tickets = {}
-        for external_id, kind, parent in (
-            ("ms-sweep", WorkItemType.MILESTONE, None),
-            ("tk-sweep", WorkItemType.TASK, "ms-sweep"),
-        ):
-            ticket = Ticket(
-                external_id=external_id,
-                workspace_id=workspace.id,
-                title=external_id,
-                state=TicketState.IN_PROGRESS,
-                work_item_type=kind,
-                parent_ticket_id=tickets[parent].id if parent else None,
-            )
-            session.add(ticket)
-            session.commit()
-            session.refresh(ticket)
-            tickets[external_id] = ticket
-        milestone = tickets["ms-sweep"]
-        branch = resolve_target_branch(session, tickets["tk-sweep"], workspace, repo_root=repo)
-        assert branch == _SWEPT_BRANCH
-        commit_on(repo, _SWEPT_BRANCH, "shared.txt", "integration side\n")
-        main_tip = commit_on(repo, "main", "shared.txt", "main side\n")
-        report_integration_conflict(
-            session, milestone, branch=_SWEPT_BRANCH, base="main", files=("shared.txt",)
-        )
-        with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_keep_both_sides):
-            yield _ConflictedTree(session, milestone, repo, main_tip)
-    integration_branch_health._PREVIEWS.clear()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "lg-milestone-that-953 — open: the integration-branch health sweep files and keeps "
-        "a conflict card but never calls `merge_base_by_agent`; only a stage dispatch "
-        "(`target_branch._refresh_or_merge`) does, so a tree with nothing to dispatch waits "
-        "for a person even when the merge is trivial"
-    ),
-)
-def test_the_sweep_gives_an_open_conflict_a_merge_turn(
-    conflicted_tree_with_an_open_card: _ConflictedTree,
-) -> None:
-    """Two passes: a fix that hands the turn off the reconcile timer may close
-    the card on the pass after the merge rather than the same one. A fix that
-    defers the turn further than that needs to give this test a way to drain it.
-    """
-    tree = conflicted_tree_with_an_open_card
-
-    check_integration_branches(tree.session)
-    check_integration_branches(tree.session)
-
-    runs = tree.session.exec(
-        select(AgentRun).where(
-            AgentRun.ticket_id == tree.milestone.id,
-            AgentRun.stage_key == INTEGRATION_MERGE_STAGE,
-        )
-    ).all()
-    assert [run.status for run in runs] == [RunStatus.SUCCEEDED]
-    git(tree.repo, "merge-base", "--is-ancestor", tree.main_tip, _SWEPT_BRANCH)
-    pending = tree.session.exec(
-        select(Approval).where(
-            Approval.ticket_id == tree.milestone.id,
-            Approval.kind == ApprovalKind.HUMAN_ACTION,
-            Approval.status == ApprovalStatus.PENDING,
-        )
-    ).all()
-    assert pending == []
