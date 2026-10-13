@@ -20,6 +20,7 @@ the landing in reverse. That leg is the publish chain's (771).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -27,11 +28,13 @@ from pathlib import Path
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
+    describe_signing,
     is_ancestor,
     merge_preview,
     merge_without_checkout,
     rev,
 )
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
@@ -95,6 +98,11 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
 
     ensure_integration_branch(repo_root, target, base)
+
+    failed = _refresh_branch(repo_root, branch, target)
+    if failed is not None:
+        return failed
+
     subject = f"Land {ticket.external_id or ticket.id[:8]}: {ticket.title}".strip()
     outcome = merge_without_checkout(repo_root, target=target, source=branch, subject=subject)
     if not outcome.ok:
@@ -118,7 +126,14 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
             landed_sha=outcome.sha,
             skipped=LandSkip.ALREADY_LANDED,
         )
-    logger.info("Landed %s (%s) on %s as %s", ticket.external_id, branch, target, outcome.sha[:12])
+    logger.info(
+        "Landed %s (%s) on %s as %s (%s)",
+        ticket.external_id,
+        branch,
+        target,
+        outcome.sha[:12],
+        describe_signing(outcome.signed),
+    )
     return LandResult(ok=True, branch=branch, target=target, landed_sha=outcome.sha)
 
 
@@ -157,6 +172,120 @@ def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha:
         and is_ancestor(repo_root, branch_sha, ticket.landed_sha)
         and is_ancestor(repo_root, ticket.landed_sha, f"refs/heads/{target}")
     )
+
+
+def _refresh_branch(repo_root: Path, branch: str, target: str) -> LandResult | None:
+    """Bring `branch` up to `target` before it is merged back into it.
+
+    Note the inversion against the land merge below: the target is merged
+    *into* the ticket branch, with the same no-checkout plumbing, so a conflict
+    with a target that moved after the gate passed is materialised on the
+    branch the resolver is told to work on, and the tree that lands is the tree
+    the ticket's own gate ran against (lg-milestone-that-801).
+
+    `None` when the branch is ready to land; a failing `LandResult` otherwise —
+    carrying the conflicted files when it was a conflict, so the caller's
+    resolver leg takes it, and an empty tuple with git's words when it was
+    anything else, so the caller blocks on it instead.
+    """
+    if is_ancestor(repo_root, branch, target):
+        # Nothing to land is nothing to refresh. A branch the target already
+        # contains must not take a merge commit here: that would leave it
+        # un-landed again and the landing no longer idempotent.
+        return None
+    refresh = merge_without_checkout(
+        repo_root,
+        target=branch,
+        source=target,
+        subject=f"Refresh {branch} from {target} before landing",
+    )
+    if not refresh.ok:
+        return LandResult(
+            ok=False,
+            branch=branch,
+            target=target,
+            detail=f"refreshing {branch} from {target} failed: {refresh.detail}",
+            conflicted_files=refresh.conflicted_files,
+        )
+    if refresh.already_contained:
+        return None
+    stale = _align_worktrees(repo_root, branch)
+    if stale:
+        return LandResult(ok=False, branch=branch, target=target, detail=stale)
+    return None
+
+
+def _align_worktrees(repo_root: Path, branch: str) -> str:
+    """Bring every worktree holding `branch` into line with the ref just moved.
+
+    `update-ref` moves a ref that is checked out in a worktree without refusing
+    or warning, which leaves that worktree staged-dirty in reverse — the files
+    the refresh brought in read as staged deletions, and the orchestrator
+    commits the whole working tree when a stage finishes. `read-tree -m -u`
+    applies the move, keeps unrelated local work, and refuses rather than
+    overwriting an untracked file at an incoming path.
+
+    Returns git's own words when it could not be done, "" when it was. git is
+    asked which worktrees hold the branch rather than the `Worktree` table,
+    because git also sees the ones the table has lost track of.
+    """
+    listed = _git(repo_root, "worktree", "list", "--porcelain", "-z")
+    if listed.returncode != 0:
+        return f"refreshing {branch} could not list the worktrees holding it: {_words(listed)}"
+    for path, attributes in _worktrees(listed.stdout):
+        if f"branch refs/heads/{branch}" not in attributes:
+            continue
+        if any(attribute.split(" ", 1)[0] == "prunable" for attribute in attributes):
+            # git keeps listing a worktree whose directory is gone, with its
+            # branch. Running in it raises before git is reached, and pruning
+            # it is not this step's to do, so it is left to `worktree prune`.
+            continue
+        try:
+            done = _git(Path(path), "read-tree", "-m", "-u", "HEAD")
+        except OSError as exc:
+            return _stale(branch, path, str(exc))
+        if done.returncode != 0:
+            return _stale(branch, path, _words(done))
+    return ""
+
+
+def _worktrees(listed: str) -> Iterator[tuple[str, list[str]]]:
+    """Each `worktree list --porcelain -z` record, as its path and attributes.
+
+    `-z`, not newlines: `--porcelain` emits a worktree's path raw and escapes
+    nothing, so a path containing a newline forges whatever attribute line it
+    likes — including the `branch` line that decides which working tree is
+    written to. Under `-z` every attribute is one NUL-terminated field and a
+    record ends on an empty one, so such a newline stays inside the path.
+    """
+    path = ""
+    attributes: list[str] = []
+    for entry in listed.split("\0"):
+        if not entry:
+            if path:
+                yield path, attributes
+            path, attributes = "", []
+        elif entry.startswith("worktree "):
+            path = entry.removeprefix("worktree ")
+        else:
+            attributes.append(entry)
+    if path:
+        yield path, attributes
+
+
+def _stale(branch: str, path: str, words: str) -> str:
+    return (
+        f"refreshing {branch} left the worktree at {path} stale "
+        f"and it could not be brought into line: {words}"
+    )
+
+
+def _git(cwd: Path, *args: str):
+    return run_git(list(args), cwd=str(cwd), check=False, capture_output=True, text=True)
+
+
+def _words(done) -> str:
+    return (done.stderr or done.stdout or "git failed with no output").strip()
 
 
 def _record(session: Session, ticket: Ticket, sha: str, target: str) -> None:
