@@ -1,11 +1,25 @@
 /** The initiative board's data shaping, apart from its component. */
 
-import type { TicketState, TicketSummary } from "../api/types";
+import type { TicketSummary } from "../api/types";
 import type { KanbanColumn } from "../components/chat/primitives/KanbanPrimitive";
+import type { BoardColumnKey } from "./ticketStates";
 
-/** Always drawn, in flow order. Parked and won't-do appear only when they hold something. */
-const BASE_COLUMNS: TicketState[] = ["backlog", "in_progress", "blocked", "done"];
-const OPTIONAL_COLUMNS: TicketState[] = ["parked", "wont_do"];
+/**
+ * Always drawn, in flow order. Blocked is split three ways by who has to act:
+ * a person (`needs_you`), another ticket (`waiting`), or an agent (`blocked`).
+ * Parked and won't-do appear only when they hold something.
+ */
+const BASE_COLUMNS: BoardColumnKey[] = ["backlog", "waiting", "in_progress", "needs_you", "blocked", "done"];
+const OPTIONAL_COLUMNS: BoardColumnKey[] = ["parked", "wont_do"];
+
+/** Which column a ticket sits in. A server that predates `blocked_on` leaves it in its state's. */
+export function columnFor(ticket: TicketSummary): BoardColumnKey {
+  if (ticket.state === "blocked" && ticket.blocked_on === "person") return "needs_you";
+  if (ticket.blocked_on === "tickets" && (ticket.state === "blocked" || ticket.state === "backlog")) {
+    return "waiting";
+  }
+  return ticket.state;
+}
 
 /** Tickets drawn per column before "Show all". */
 export const COLUMN_SHOWN = 12;
@@ -37,13 +51,14 @@ export function milestoneOf(tickets: TicketSummary[], milestoneIds: Set<string>)
  */
 export function buildColumns(
   tickets: TicketSummary[],
-  expanded: ReadonlySet<TicketState> = new Set(),
+  expanded: ReadonlySet<BoardColumnKey> = new Set(),
 ): KanbanColumn[] {
-  const byState = new Map<TicketState, TicketSummary[]>();
+  const byState = new Map<BoardColumnKey, TicketSummary[]>();
   for (const ticket of tickets) {
-    const list = byState.get(ticket.state) ?? [];
+    const key = columnFor(ticket);
+    const list = byState.get(key) ?? [];
     list.push(ticket);
-    byState.set(ticket.state, list);
+    byState.set(key, list);
   }
   const states = [...BASE_COLUMNS, ...OPTIONAL_COLUMNS.filter((s) => byState.get(s)?.length)];
   return states.map((status) => {

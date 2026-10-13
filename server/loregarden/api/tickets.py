@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ from loregarden.models.domain import (
     AdvanceStageRequest,
     AgentRun,
     Artifact,
+    BlockedOn,
     BtwExchange,
     BtwQuestionCreate,
     ExternalHarnessPromptRequest,
@@ -41,6 +43,7 @@ from loregarden.models.domain import (
     TicketTreeNode,
     TriageMessageCreate,
     UpdateTicketRequest,
+    WaitingOnRef,
     WorkflowTransitionView,
     WorkItemType,
     Workspace,
@@ -51,6 +54,7 @@ from loregarden.models.domain import (
 from loregarden.services import btw_service
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
+from loregarden.services.blocked_on import blocked_on_clause, blocked_on_map, waiting_on_map
 from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
@@ -147,15 +151,29 @@ def _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]
     return codes
 
 
+@dataclass(frozen=True)
+class _Stuck:
+    """What each ticket of a page waits for (`services.blocked_on`), resolved once."""
+
+    blocked_on: dict[str, BlockedOn]
+    waiting_on: dict[str, list[WaitingOnRef]]
+
+    @classmethod
+    def of(cls, session: Session, tickets: list[Ticket]) -> "_Stuck":
+        return cls(blocked_on_map(session, tickets), waiting_on_map(session, tickets))
+
+
 def _ticket_summary(
     session: Session,
     ticket: Ticket,
     activity: TicketActivity | None = None,
     run_code: str | None = None,
+    stuck: _Stuck | None = None,
 ) -> TicketSummary:
-    """``activity`` and ``run_code`` are passed in by list endpoints, which resolve
-    the whole page in one batch each; single-ticket callers let them resolve
-    themselves."""
+    """``activity``, ``run_code`` and ``stuck`` are passed in by list endpoints,
+    which resolve the whole page in one batch each; single-ticket callers let
+    them resolve themselves."""
+    stuck = stuck or _Stuck.of(session, [ticket])
     ws = workspace_for(session, ticket.workspace_id)
     orch = OrchestrationService(session)
     template = orch.get_template_for_ticket(ticket)
@@ -188,6 +206,9 @@ def _ticket_summary(
         current_stage_agent=ticket_stage_agent(session, ticket),
         activity=activity if activity is not None else activity_for(session, ticket.id),
         stages=stages,
+        block_kind=ticket.block_kind,
+        blocked_on=stuck.blocked_on.get(ticket.id),
+        waiting_on=stuck.waiting_on.get(ticket.id, []),
     )
 
 
@@ -427,9 +448,12 @@ def _apply_ticket_query_filters(
     work_item_types: list[WorkItemType] | None,
     milestone: str | None,
     search: str | None,
+    blocked_on: list[BlockedOn] | None = None,
 ):
     if states:
         query = query.where(col(Ticket.state).in_(states))
+    if blocked_on:
+        query = query.where(blocked_on_clause(blocked_on))
     if work_item_types:
         query = query.where(col(Ticket.work_item_type).in_(work_item_types))
     if milestone:
@@ -478,6 +502,7 @@ def ticket_tree(
     workspace: str | None = None,
     state: list[TicketState] | None = Query(default=None),
     work_item_type: list[WorkItemType] | None = Query(default=None),
+    blocked_on: list[BlockedOn] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
     include_members: bool = False,
@@ -502,6 +527,7 @@ def ticket_tree(
         work_item_types=work_item_type,
         milestone=milestone,
         search=search,
+        blocked_on=blocked_on,
     )
 
     tickets = list(session.exec(query).all())
@@ -520,7 +546,13 @@ def ticket_tree(
     with stage_resolution_memo():
         prime_workflow_instances(session, [t.id for t in all_tickets])
         stage_names = _build_stage_names(session, all_tickets)
-    return build_tree(session, all_tickets, stage_names=stage_names, members=members)
+    return build_tree(
+        session,
+        all_tickets,
+        stage_names=stage_names,
+        members=members,
+        blocked_on=blocked_on_map(session, all_tickets),
+    )
 
 
 @router.get("", response_model=list[TicketSummary])
@@ -532,6 +564,7 @@ def list_tickets(
     parent_ticket_id: str | None = None,
     ancestor_ticket_id: str | None = None,
     roots_only: bool = False,
+    blocked_on: list[BlockedOn] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
     limit: int | None = Query(default=None, ge=1, le=500),
@@ -562,6 +595,7 @@ def list_tickets(
         work_item_types=work_item_type,
         milestone=milestone,
         search=search,
+        blocked_on=blocked_on,
     )
     if parent_ticket_id:
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
@@ -582,6 +616,7 @@ def list_tickets(
     ticket_ids = [t.id for t in tickets]
     activity = classify_ticket_activity(session, ticket_ids)
     run_codes = _latest_run_codes(session, ticket_ids)
+    stuck = _Stuck.of(session, list(tickets))
     with stage_resolution_memo():
         prime_workflow_instances(session, ticket_ids)
         return [
@@ -590,6 +625,7 @@ def list_tickets(
                 t,
                 activity.get(t.id, TicketActivity.IDLE),
                 run_code=run_codes.get(t.id, ""),
+                stuck=stuck,
             )
             for t in tickets
         ]
@@ -872,7 +908,6 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         last_updated_by=ticket.last_updated_by,
         next_status=ticket.next_status,
         blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
-        block_kind=ticket.block_kind,
         state_locked=ticket.state_locked,
         workflow_template_slug=template.slug if template else "",
         workflow_template_name=template.name if template else "",

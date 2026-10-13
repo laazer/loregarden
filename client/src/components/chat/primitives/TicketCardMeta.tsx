@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 
-import type { StageStatus, TicketState, WorkflowStageView } from "../../../api/types";
+import type { BlockedOn, StageStatus, TicketState, WorkflowStageView } from "../../../api/types";
 import {
   priorityStyle,
   stageStatusColor,
   stageStatusLabel,
   ticketStateColor,
-  ticketStateLabel,
 } from "../../../lib/ticketStates";
+import { blockedOnStateLabel } from "../../../utils/blockKinds";
 
 export type ProgressSegment = {
   color: string;
@@ -73,6 +73,7 @@ export function TicketCardBody({
   progressLabel,
   compact = false,
   underPriority,
+  blockedOn,
 }: {
   title: string;
   /** Optional id shown ahead of the title (ticket lists). */
@@ -89,6 +90,8 @@ export function TicketCardBody({
   compact?: boolean;
   /** Stacked under the P-badge — expand chevron on parent tree rows. */
   underPriority?: ReactNode;
+  /** What a stuck ticket waits for; named beside the state so "Blocked" says whose move it is. */
+  blockedOn?: BlockedOn | null;
 }) {
   const prio = priorityStyle(priority);
   const stateColor = ticketStateColor(state);
@@ -137,7 +140,7 @@ export function TicketCardBody({
             style={{ background: stateColor }}
             aria-hidden
           />
-          {ticketStateLabel(state)}
+          {blockedOnStateLabel(state, blockedOn)}
         </span>
         {workspaceSlug ? (
           <>

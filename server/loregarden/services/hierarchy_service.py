@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from loregarden.models.domain import (
     VALID_HIERARCHY,
+    BlockedOn,
     Ticket,
     TicketTreeNode,
     WorkItemType,
@@ -62,6 +63,7 @@ def build_tree(
     *,
     stage_names: dict[str, str] | None = None,
     members: dict[str, list[str]] | None = None,
+    blocked_on: dict[str, BlockedOn] | None = None,
 ) -> list[TicketTreeNode]:
     """Assemble a forest from a flat ticket list (roots = no parent).
 
@@ -71,6 +73,7 @@ def build_tree(
     """
     stage_names = stage_names or {}
     members = members or {}
+    blocked_on = blocked_on or {}
     by_id = {t.id: t for t in tickets}
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
@@ -108,6 +111,7 @@ def build_tree(
             workspace_slug=workspace_slugs.get(ticket.workspace_id, ""),
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
+            blocked_on=blocked_on.get(ticket.id),
         )
 
     def member_node(ticket: Ticket) -> TicketTreeNode:

@@ -3,10 +3,10 @@ import { useMemo, useState } from "react";
 
 import { api } from "../../../api/client";
 import type { MilestoneSchedule, PlanNode } from "../../../api/initiativeApi";
-import type { TicketState } from "../../../api/types";
+import type { TicketState, TicketSummary } from "../../../api/types";
 import { planQueryKey } from "../../../hooks/useInitiativePlanner";
 import { boardQueryKey, buildColumns, milestoneOf } from "../../../lib/initiativeBoard";
-import { TICKET_STATE_LABELS } from "../../../lib/ticketStates";
+import { TICKET_STATE_LABELS, type BoardColumnKey } from "../../../lib/ticketStates";
 import { describeError, pushToast } from "../../../state/toastStore";
 import { KanbanColumns } from "../../chat/primitives/KanbanPrimitive";
 import { Button } from "../../ui/Button";
@@ -16,11 +16,13 @@ import { Select } from "../../ui/Select";
 /** Where an operator may move cards. The server's state machine has the last word. */
 const MOVE_TARGETS: TicketState[] = ["backlog", "in_progress", "blocked", "parked", "done", "wont_do"];
 
-function tileHint(node: PlanNode | undefined): string {
+function tileHint(node: PlanNode | undefined, ticket: TicketSummary): string {
   if (!node) return "";
   if (node.status === "needs_person") return "For a person";
   if (node.status === "ready") return "Ready";
-  if (node.status === "waiting") return `Waiting on ${node.waiting_on.length}`;
+  // The tile already names what it waits on; the count is for the graph's
+  // git-judged holds (a done prerequisite not landed) the list cannot see.
+  if (node.status === "waiting" && !ticket.waiting_on?.length) return `Waiting on ${node.waiting_on.length}`;
   return "";
 }
 
@@ -49,7 +51,7 @@ export function InitiativeBoard({
   const [milestoneFilter, setMilestoneFilter] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [expanded, setExpanded] = useState<Set<TicketState>>(() => new Set());
+  const [expanded, setExpanded] = useState<Set<BoardColumnKey>>(() => new Set());
 
   const board = useQuery({
     queryKey: boardQueryKey(initiativeId),
@@ -240,7 +242,7 @@ export function InitiativeBoard({
           columns={buildColumns(workItems, expanded)}
           onShowAll={(status) => setExpanded((current) => new Set(current).add(status))}
           tileAction={(ticket) => {
-            const hint = tileHint(nodeById.get(ticket.id));
+            const hint = tileHint(nodeById.get(ticket.id), ticket);
             return (
               <div className="plan-tile-foot">
                 <label className="plan-tile-select">

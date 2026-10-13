@@ -155,3 +155,28 @@ export function stageStatusLabel(status: string | undefined): string {
 export function priorityStyle(priority: number | undefined): PriorityStyle {
   return PRIORITY_STYLES[priority ?? 3] ?? PRIORITY_STYLES[3];
 }
+
+/**
+ * A board column: a state, or one of the two the Blocked column splits off.
+ * `needs_you` is a block only a person can clear; `waiting` is a ticket held by
+ * another one — a blocked child, or an unmet prerequisite while in backlog.
+ */
+export type BoardColumnKey = TicketState | "needs_you" | "waiting";
+
+const BOARD_SPLIT_COLORS: Record<"needs_you" | "waiting", string> = {
+  needs_you: "var(--rdl)",
+  waiting: "var(--txl)",
+};
+
+const BOARD_SPLIT_LABELS: Record<"needs_you" | "waiting", string> = {
+  needs_you: "Needs you",
+  waiting: "Waiting on tickets",
+};
+
+export function boardColumnColor(key: BoardColumnKey): string {
+  return fromMap(BOARD_SPLIT_COLORS, key, ticketStateColor(key));
+}
+
+export function boardColumnLabel(key: BoardColumnKey): string {
+  return fromMap(BOARD_SPLIT_LABELS, key, ticketStateLabel(key));
+}

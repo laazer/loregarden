@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { TicketState, WorkItemType } from "../api/client";
+import type { BlockedOn, TicketState, WorkItemType } from "../api/client";
 import {
   clampHiveSpeedIndex,
   DEFAULT_HIVE_SPEED_MULTIPLIER,
@@ -52,6 +52,8 @@ export function normalizeUtilityDockEdge(value: unknown): UtilityDockEdge {
 
 interface UiState {
   stateFilters: TicketState[];
+  /** What a stuck ticket waits for: a person, other tickets, or an agent. */
+  blockedOnFilters: BlockedOn[];
   typeFilters: WorkItemType[];
   search: string;
   expandedTicketIds: string[];
@@ -139,6 +141,8 @@ interface UiState {
   setAutoFollow: (runId: string, value: boolean) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
+  toggleBlockedOnFilter: (answer: BlockedOn) => void;
+  clearBlockedOnFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
   clearTypeFilters: () => void;
   setSearch: (s: string) => void;
@@ -182,6 +186,7 @@ type PersistedUiState = Pick<
   | "workspace"
   | "typeFilters"
   | "stateFilters"
+  | "blockedOnFilters"
   | "paneVisibility"
   | "editorWorkspace"
   | "editorContextRoot"
@@ -201,6 +206,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       stateFilters: [],
+      blockedOnFilters: [],
       typeFilters: [],
       search: "",
       expandedTicketIds: [],
@@ -246,6 +252,15 @@ export const useUiStore = create<UiState>()(
         });
       },
       clearStateFilters: () => set({ stateFilters: [] }),
+      toggleBlockedOnFilter: (answer) => {
+        const current = get().blockedOnFilters;
+        set({
+          blockedOnFilters: current.includes(answer)
+            ? current.filter((value) => value !== answer)
+            : [...current, answer],
+        });
+      },
+      clearBlockedOnFilters: () => set({ blockedOnFilters: [] }),
       toggleTypeFilter: (type) => {
         const current = get().typeFilters;
         set({
@@ -418,6 +433,7 @@ export const useUiStore = create<UiState>()(
         workspace: s.workspace,
         typeFilters: s.typeFilters,
         stateFilters: s.stateFilters,
+        blockedOnFilters: s.blockedOnFilters,
         paneVisibility: s.paneVisibility,
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,

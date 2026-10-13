@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from loregarden.models.domain.block_kinds import BlockKind
+from loregarden.models.domain.block_kinds import BlockedOn, BlockKind, WaitingReason
 from loregarden.models.domain.enums import (
     CliTool,
     DoctorCheck,
@@ -181,6 +181,17 @@ class WorkspaceRuntimeSettings(SQLModel):
     opencode_effort: str = ""
 
 
+class WaitingOnRef(SQLModel):
+    """A ticket another one waits on, with what *it* waits on in turn."""
+
+    id: str
+    external_id: str
+    title: str
+    state: TicketState
+    reason: WaitingReason
+    blocked_on: BlockedOn | None = None
+
+
 class TicketSummary(SQLModel):
     id: str
     external_id: str
@@ -212,6 +223,12 @@ class TicketSummary(SQLModel):
     #: Whether anything is executing on this ticket — orthogonal to ``state``.
     activity: TicketActivity = TicketActivity.IDLE
     stages: list[WorkflowStageView] = []
+    #: Who can unblock it, when blocked — see `models.domain.block_kinds` (749).
+    block_kind: BlockKind | None = None
+    #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
+    blocked_on: BlockedOn | None = None
+    #: The tickets it waits for: its blocked descendants, or unmet prerequisites.
+    waiting_on: list[WaitingOnRef] = []
 
 
 class TicketStatusSummary(SQLModel):
@@ -252,6 +269,8 @@ class TicketTreeNode(SQLModel):
     workflow_stage_name: str = ""
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
+    #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
+    blocked_on: BlockedOn | None = None
     children: list["TicketTreeNode"] = []
     #: A copy of a ticket listed under an initiative that tracks it as a member
     #: (`initiative_members`). The ticket also sits under its real parent; the
@@ -303,8 +322,6 @@ class TicketDetail(TicketSummary):
     last_updated_by: str
     next_status: str
     blocking_issues: str
-    #: Who can unblock it, when blocked — see `models.domain.block_kinds` (749).
-    block_kind: BlockKind | None = None
     state_locked: bool = False
     workflow_template_slug: str = ""
     workflow_template_name: str = ""
