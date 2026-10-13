@@ -5,7 +5,12 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
-import { useActiveChatSession, type ChatModelBinding } from "../../hooks/useActiveChatSession";
+import {
+  useActiveChatSession,
+  type ChatModelBinding,
+  type ScreenPrompts,
+} from "../../hooks/useActiveChatSession";
+import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE, TRY_ASKING } from "../../lib/dockChatPrompts";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
@@ -38,7 +43,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     branch: null,
     archive: null,
     composedOnScreen: false,
-    screenSession: null,
+    screenPrompts: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }
@@ -722,6 +727,18 @@ describe("advisory rails", () => {
 });
 
 describe("suggestions on a screen that composes for its own thread", () => {
+  function prompts(overrides: Partial<ScreenPrompts> = {}): ScreenPrompts {
+    return {
+      kind: "baxter-home",
+      messages: [],
+      isBusy: false,
+      unavailable: false,
+      replyPath: "/chat",
+      send: jest.fn(),
+      ...overrides,
+    };
+  }
+
   function renderAt(pathname: string) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
@@ -741,7 +758,7 @@ describe("suggestions on a screen that composes for its own thread", () => {
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenSession: session({ kind: "baxter-home", id: "s1" }),
+        screenPrompts: prompts(),
       }),
     );
 
@@ -753,12 +770,12 @@ describe("suggestions on a screen that composes for its own thread", () => {
   });
 
   it("takes a pick made on Home to the chat page, where the reply is drawn", () => {
-    const send = jest.fn().mockResolvedValue({});
+    const send = jest.fn();
     mockResolver.mockReturnValue(
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenSession: session({ kind: "baxter-home", id: "s1", send }),
+        screenPrompts: prompts({ send }),
       }),
     );
 
@@ -774,13 +791,69 @@ describe("suggestions on a screen that composes for its own thread", () => {
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenSession: session({ kind: "baxter-home", id: "s1", isBusy: true }),
+        screenPrompts: prompts({ isBusy: true }),
       }),
     );
 
     renderAt("/");
 
     expect(screen.getByRole("button", { name: "What should I work on next?" })).toBeDisabled();
+  });
+
+  it("offers the planner's questions on an initiative plan page, and stays there", () => {
+    const send = jest.fn();
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, send }),
+      }),
+    );
+
+    renderAt("/initiatives/init-x-1");
+    const [first] = TRY_ASKING[INITIATIVE_PLANNING];
+    fireEvent.click(screen.getByRole("button", { name: first }));
+
+    expect(send).toHaveBeenCalledWith(first);
+    expect(screen.getByTestId("location")).toHaveTextContent("/initiatives/init-x-1");
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers triage questions instead when the panel shows Baxter", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenPrompts: prompts({ kind: INITIATIVE_TRIAGE, replyPath: null }),
+      }),
+    );
+
+    renderAt("/initiatives/init-x-1");
+
+    expect(screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables them when the conversation cannot take a message", () => {
+    const send = jest.fn();
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, unavailable: true, send }),
+      }),
+    );
+
+    renderAt("/initiatives/init-x-1");
+    const button = screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] });
+    fireEvent.click(button);
+
+    expect(button).toBeDisabled();
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

@@ -43,7 +43,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     branch: null,
     archive: null,
     composedOnScreen: false,
-    screenSession: null,
+    screenPrompts: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }

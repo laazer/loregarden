@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
-import { useActiveChatSession } from "../hooks/useActiveChatSession";
+import { useActiveChatSession, type ScreenPrompts } from "../hooks/useActiveChatSession";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
@@ -14,8 +14,6 @@ import {
   DOCK_QUICK_PROMPT_LIMIT,
   followUpPrompts,
 } from "../lib/dockChatPrompts";
-import { chatPath } from "../lib/homeBaxter";
-import type { ChatSession } from "../lib/chatSession";
 import { useAgentPresence } from "../state/QueueStatusContext";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
@@ -51,7 +49,7 @@ export function AppActionBar() {
     archive,
     model,
     composedOnScreen,
-    screenSession,
+    screenPrompts,
   } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
@@ -285,7 +283,7 @@ export function AppActionBar() {
     return (
       <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
         <span className="app-action-bar-spacer" aria-hidden />
-        {screenSession ? <ScreenSessionQuickPrompts session={screenSession} /> : null}
+        {screenPrompts ? <ScreenQuickPrompts target={screenPrompts} /> : null}
         {modelControl}
         {screenControls}
       </footer>
@@ -569,31 +567,28 @@ function ActionBarQuickPrompts({
 }
 
 /**
- * Suggestions for the thread Home composes for.
+ * Suggestions for the thread a page composes for: Home's Baxter thread, or the
+ * planner or Baxter in an initiative's agent panel.
  *
- * The page owns the composer, so the bar offers only the one-click replies. A
- * pick sends into that thread and lands on `/chat`, where the reply is drawn:
- * from Home, the answer would otherwise arrive somewhere nothing shows it.
- * `/chat` draws its own row under its composer.
+ * The page owns the composer, so the bar offers only the one-click replies.
+ * Where another page draws the reply, a pick sends and lands there: from Home,
+ * the answer would otherwise arrive somewhere nothing shows it. That page
+ * draws its own row under its composer, so the bar draws none on it.
  */
-function ScreenSessionQuickPrompts({ session }: { session: ChatSession }) {
+function ScreenQuickPrompts({ target }: { target: ScreenPrompts }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  // The chat page offers them under its own composer; a second row down here
-  // was the same choice in a different place, with different words.
-  if (pathname === chatPath()) return null;
+  if (target.replyPath !== null && pathname === target.replyPath) return null;
+  const disabled = target.isBusy || target.unavailable;
   const pick = (prompt: string) => {
-    if (session.isBusy || session.loadError) return;
-    if (pathname !== chatPath()) navigate(chatPath());
-    void session.send(prompt).catch(() => {
-      // silent-ok: send is a mutation carrying meta.errorTitle, so the global
-      // MutationCache toast fires and the chat page renders session.error.
-    });
+    if (disabled) return;
+    if (target.replyPath !== null) navigate(target.replyPath);
+    target.send(prompt);
   };
   return (
     <ActionBarQuickPrompts
-      prompts={followUpPrompts(session.kind, null, session.messages)}
-      disabled={session.isBusy || session.loadError}
+      prompts={followUpPrompts(target.kind, null, target.messages)}
+      disabled={disabled}
       onPick={pick}
     />
   );
