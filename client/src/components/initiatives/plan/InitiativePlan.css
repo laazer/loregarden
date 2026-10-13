@@ -388,16 +388,6 @@
   padding-top: 8px;
 }
 
-/* Lanes wide enough for a title to wrap in two or three lines rather than five,
-   and for a nested sub-ticket to keep a readable width beside its rail. */
-.plan-board .lg-primitive-kanban {
-  grid-auto-columns: minmax(272px, 1fr);
-}
-
-.plan-board .lg-primitive-kanban-col {
-  min-width: 272px;
-}
-
 .plan-board-filters {
   display: flex;
   flex-wrap: wrap;
