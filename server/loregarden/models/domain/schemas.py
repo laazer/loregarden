@@ -6,7 +6,6 @@ from typing import Any
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.enums import (
     CliTool,
-    DockerFootprint,
     DoctorCheck,
     DoctorStatus,
     EventType,
@@ -22,6 +21,7 @@ from loregarden.models.domain.enums import (
     ToolGrantWarningCode,
     ToolPosture,
 )
+from loregarden.models.domain.enums_capacity import DockerFootprint
 from loregarden.models.domain.enums_exit_actions import (
     ApprovalResolutionAction,
     ExitActionResolutionMode,

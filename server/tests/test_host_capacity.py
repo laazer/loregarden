@@ -18,7 +18,7 @@ from unittest import mock
 
 import pytest
 from loregarden.config import settings
-from loregarden.models.domain.enums import DockerCeilingSource
+from loregarden.models.domain.enums_capacity import DockerCeilingSource
 from loregarden.services import host_capacity
 from loregarden.services.docker_capacity import Ceiling
 

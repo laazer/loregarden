@@ -40,15 +40,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from loregarden.models.domain.enums import (
+from loregarden.models.domain.enums import str_enum_column, utcnow
+from loregarden.models.domain.enums_capacity import (
     CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
     DockerHolderKind,
     DockerLeaseEndReason,
     DockerLeaseStatus,
-    str_enum_column,
-    utcnow,
 )
 from sqlmodel import Field, SQLModel
 
