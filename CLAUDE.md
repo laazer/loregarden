@@ -10,6 +10,7 @@ Repository-level operating manual for Claude Code and other coding agents workin
 3. **Don't touch unrelated code**, but do surface smells you find as a separate issue.
 4. **Flag uncertainty explicitly.** Confidence without certainty causes more damage than admitting a gap. A small, low-risk experiment beats a confident guess.
 5. **Verify before reporting.** This repo will happily let you conclude something false from a plausible-looking query. See *Verify, don't infer* below.
+6. **Take a worked answer over an invented one.** Where a well-run system has already solved a problem we have, adopt its answer unless you can say why ours differs, and record a rejected answer with that reason the way `lg-run-durability-314` records why LangGraph is not its answer. A borrowed answer is a claim until you read it at source: append a `## Prior art` section to the ticket it answers (`loregarden_update_ticket`, or `loregarden_attach_artifact` when long) naming `owner/repo`, the file and the commit you actually read, never the README's summary of it, and never a new document.
 
 ## Output economy
 
