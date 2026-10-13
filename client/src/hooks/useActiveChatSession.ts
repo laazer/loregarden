@@ -6,7 +6,10 @@ import type { WorkspaceRuntimeSettings } from "../api/client";
 import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
+import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatSession } from "../lib/chatSession";
+import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../lib/dockChatPrompts";
+import { chatPath } from "../lib/homeBaxter";
 import { useInitiativeAgentStore } from "../state/initiativeAgentStore";
 import { useTicketRefStore } from "../state/ticketRefStore";
 import { useUiStore } from "../state/uiStore";
@@ -14,7 +17,7 @@ import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
 import { chatScopeLabel, useChatScopeKey } from "./useChatScope";
 import { useInitiativeBaxterSession } from "./useInitiativeBaxterSession";
-import { useInitiativePlanner } from "./useInitiativePlanner";
+import { planQueryKey, useInitiativePlanner } from "./useInitiativePlanner";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
 
@@ -110,13 +113,38 @@ export interface ActiveChatSession {
    */
   composedOnScreen: boolean;
   /**
-   * The conversation a `composedOnScreen` page composes for, or null.
+   * The suggestions for the conversation a `composedOnScreen` page composes
+   * for, or null.
    *
    * `session` stays null there so nothing draws a second composer or thread
    * for it; this is read only for what the bar still offers on those screens —
    * its suggestions, which are one click rather than a composer.
    */
-  screenSession: ChatSession | null;
+  screenPrompts: ScreenPrompts | null;
+}
+
+/**
+ * What the bar needs to offer one-click prompts into a conversation the page
+ * composes for itself.
+ *
+ * Narrower than `ChatSession` because the initiative planner is not one — it
+ * has no approvals, no chat mode — yet its page wants suggestions as much as
+ * Home does.
+ */
+export interface ScreenPrompts {
+  /** Which openers apply: a `TRY_ASKING` key in `lib/dockChatPrompts`. */
+  kind: string;
+  messages: ChatMessageView[];
+  isBusy: boolean;
+  /** A send would fail or go nowhere: the thread did not load, or there is nothing to plan. */
+  unavailable: boolean;
+  /**
+   * The page that draws the reply, when it is not the one composing: a pick
+   * there is taken to it. Null when the reply lands on the page itself.
+   */
+  replyPath: string | null;
+  /** Failures toast through the send mutation's `meta.errorTitle`. */
+  send: (prompt: string) => void;
 }
 
 /**
@@ -214,6 +242,23 @@ export function useActiveChatSession(): ActiveChatSession {
     isSavingRuntime: planner.isSavingRuntime,
     isBusy: planner.isBusy,
   };
+  // Same query as the plan page's, so it costs no request of its own: the
+  // planner has nothing to schedule until a milestone is attached, and its
+  // panel disables its composer until then.
+  const plan = useQuery({
+    queryKey: planQueryKey(initiativeUuid ?? ""),
+    queryFn: () => api.initiativePlan(initiativeUuid as string),
+    enabled: Boolean(initiativeUuid) && initiativeAgent === "planner",
+  });
+  const plannerPrompts: ScreenPrompts = {
+    kind: INITIATIVE_PLANNING,
+    messages: planner.messages,
+    isBusy: planner.isBusy,
+    unavailable:
+      !initiativeUuid || Boolean(planner.loadError) || !plan.data?.milestones.length,
+    replyPath: null,
+    send: (prompt) => planner.send(prompt),
+  };
   // Same query key as the panel's Baxter tab; bound only while it is the one shown.
   const initiativeBaxter = useInitiativeBaxterSession(
     initiativeAgent === "baxter" ? initiativeUuid ?? "" : "",
@@ -227,6 +272,19 @@ export function useActiveChatSession(): ActiveChatSession {
     setRuntime: initiativeBaxter.setRuntime,
     isSavingRuntime: initiativeBaxter.isSavingRuntime,
     isBusy: initiativeBaxter.isBusy,
+  };
+  const initiativeBaxterPrompts: ScreenPrompts = {
+    kind: INITIATIVE_TRIAGE,
+    messages: initiativeBaxter.messages,
+    isBusy: initiativeBaxter.isBusy,
+    unavailable: !initiativeUuid || initiativeBaxter.loadError,
+    replyPath: null,
+    send: (prompt) => {
+      initiativeBaxter.send(prompt).catch(() => {
+        // silent-ok: send is a mutation carrying meta.errorTitle, so the global
+        // MutationCache toast fires and the panel renders chat.error.
+      });
+    },
   };
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
@@ -253,7 +311,7 @@ export function useActiveChatSession(): ActiveChatSession {
     archive: null,
     model: null,
     composedOnScreen: false,
-    screenSession: null,
+    screenPrompts: null,
   };
   // Home and `/chat` are the same conversation's own surfaces. Binding nothing
   // there is not enough on its own: the bar would still offer a dead composer
@@ -267,7 +325,21 @@ export function useActiveChatSession(): ActiveChatSession {
       composedOnScreen: true,
       archive: baxterArchive,
       model: baxterModel,
-      screenSession: chatScope ? baxterSession : null,
+      screenPrompts: chatScope
+        ? {
+            kind: baxterSession.kind,
+            messages: baxterSession.messages,
+            isBusy: baxterSession.isBusy,
+            unavailable: baxterSession.loadError,
+            replyPath: chatPath(),
+            send: (prompt) => {
+              baxterSession.send(prompt).catch(() => {
+                // silent-ok: send is a mutation carrying meta.errorTitle, so the global
+                // MutationCache toast fires and the chat page renders session.error.
+              });
+            },
+          }
+        : null,
     };
   }
   // The bar's model picker is whichever agent the panel is showing. No archive:
@@ -278,6 +350,7 @@ export function useActiveChatSession(): ActiveChatSession {
       ...none,
       composedOnScreen: true,
       model: initiativeAgent === "baxter" ? initiativeBaxterModel : plannerModel,
+      screenPrompts: initiativeAgent === "baxter" ? initiativeBaxterPrompts : plannerPrompts,
     };
   }
   if (onBranchTriage) {
@@ -291,7 +364,7 @@ export function useActiveChatSession(): ActiveChatSession {
           archive: null,
           model: null,
           composedOnScreen: false,
-          screenSession: null,
+          screenPrompts: null,
         }
       : none;
   }
@@ -305,7 +378,7 @@ export function useActiveChatSession(): ActiveChatSession {
       archive: null,
       model: null,
       composedOnScreen: false,
-      screenSession: null,
+      screenPrompts: null,
     };
   }
   if (!chatScope) return none;
@@ -316,7 +389,7 @@ export function useActiveChatSession(): ActiveChatSession {
     pendingApprovals: baxterSession.pendingApprovals,
     branch: null,
     composedOnScreen: false,
-    screenSession: null,
+    screenPrompts: null,
     archive: baxterArchive,
     model: baxterModel,
   };

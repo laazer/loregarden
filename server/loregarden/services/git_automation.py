@@ -155,10 +155,32 @@ def _gh(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _existing_pr_url(repo_root: Path, branch: str) -> str:
-    view = _gh(["pr", "view", branch, "--json", "url", "--jq", ".url"], repo_root)
-    if view.returncode != 0:
+    """The branch's *open* PR, or "".
+
+    `gh pr view <branch>` answers with the branch's latest PR whatever its
+    state. A tree's branch outlives each PR it publishes, so that answer was a
+    merged one: lg-initiatives-cross-724's publish read #411 (merged 2026-09-25)
+    as "already open", skipped opening a PR for 16 newer commits, and recorded
+    the tip as published.
+    """
+    listed = _gh(
+        [
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--json",
+            "url",
+            "--jq",
+            '.[0].url // ""',
+        ],
+        repo_root,
+    )
+    if listed.returncode != 0:
         return ""
-    url = view.stdout.strip()
+    url = listed.stdout.strip()
     return url if url.startswith("http") else ""
 
 

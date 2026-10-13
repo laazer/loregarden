@@ -33,3 +33,35 @@ class BlockKind(StrEnum):
     #: A person's hands are needed: credentials, hardware, an external
     #: account. The existing human-action ladder (460) handles it.
     HUMAN_ACTION = "human_action"
+    #: Another ticket has to move first; nothing is owed on this one. Written
+    #: only by the rollup (`services.ticket_rollup`), on a parent that is
+    #: blocked because a child is. Never a stage report's word: an agent that
+    #: names it names no ticket, and the badge would point nowhere.
+    TICKETS = "tickets"
+
+
+class BlockedOn(StrEnum):
+    """What a stuck ticket is waiting for, as the operator sorts it — derived.
+
+    `BlockKind` is the stored, fine-grained cause on a blocked ticket. This is
+    the coarser question the board and the filter ask, and it also covers a
+    backlog ticket held by an unmet prerequisite, which is never `blocked`
+    (`services.blocked_on`).
+    """
+
+    #: A person must act: a decision, a human action, or a block nothing has
+    #: classified yet.
+    PERSON = "person"
+    #: Another ticket must move first: a blocked child, or an unmet prerequisite.
+    TICKETS = "tickets"
+    #: The control plane or a repair run can clear it (`harness`, `work`).
+    AGENT = "agent"
+
+
+class WaitingReason(StrEnum):
+    """Why a ticket waits on another one, for the "Waiting on" line."""
+
+    #: A blocked descendant, which rolled this parent up to blocked.
+    BLOCKED_CHILD = "blocked_child"
+    #: A prerequisite (`ticket_dependencies`) that has not finished.
+    PREREQUISITE = "prerequisite"

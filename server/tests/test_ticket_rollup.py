@@ -8,12 +8,23 @@ running, and a feature whose every child is done stayed "in progress" forever.
 from __future__ import annotations
 
 import inspect
+import json
 import typing
 from unittest.mock import patch
 
 import pytest
-from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from loregarden.core.event_bus import event_bus
+from loregarden.models.domain import (
+    DomainEvent,
+    EventType,
+    Ticket,
+    TicketState,
+    UpdateTicketRequest,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services import ticket_rollup
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_rollup import (
     derive_parent_state,
     has_children,
@@ -704,3 +715,368 @@ def test_cross_workspace_done_and_wont_do_still_resolves_initiative(
     session.refresh(initiative)
     assert initiative.state == TicketState.DONE
     assert initiative.workspace_id is None
+
+
+def _ticket_state_changed(session: Session, ticket_id: str) -> list[DomainEvent]:
+    """TicketStateChanged rows for one ticket, newest first. Not filtered by workspace."""
+    return event_bus.list_recent(
+        session,
+        ticket_id=ticket_id,
+        types=(EventType.TICKET_STATE_CHANGED,),
+    )
+
+
+def test_manual_blocked_task_announces_initiative_and_feature(session, workspace, workspace_b):
+    """R4.1 / R1.1 / R2.1 / R2.2 / R2.3: a workspace-B manual edit announces both ancestors.
+
+    Tree, all unlocked: initiative (workspace_id None, IN_PROGRESS) with a feature
+    in workspace B and a milestone in workspace A, both IN_PROGRESS. The edited
+    ticket is a task under the feature, IN_PROGRESS. BLOCKED is not terminal, so
+    the manual path reaches reconcile_ancestors without a git lookup. The feature
+    and the initiative both leave IN_PROGRESS. The milestone does not move.
+    The leaf row stays {state, manual: true} and is not either ancestor row.
+    """
+    initiative = _ticket(
+        session,
+        None,
+        "I-evt",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=_initiative_type(),
+    )
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-evt",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.FEATURE,
+    )
+    milestone = _ticket(
+        session,
+        workspace,
+        "M-evt",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    task = _ticket(
+        session,
+        workspace_b,
+        "T-evt",
+        state=TicketState.IN_PROGRESS,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+
+    OrchestrationService(session).update_ticket_manual(
+        task, UpdateTicketRequest(state=TicketState.BLOCKED)
+    )
+
+    session.refresh(task)
+    session.refresh(feature)
+    session.refresh(initiative)
+    session.refresh(milestone)
+    assert task.state == TicketState.BLOCKED
+    assert feature.state == TicketState.BLOCKED
+    assert initiative.state == TicketState.BLOCKED
+    assert milestone.state == TicketState.IN_PROGRESS
+
+    initiative_rows = _ticket_state_changed(session, initiative.id)
+    feature_rows = _ticket_state_changed(session, feature.id)
+    missing = [
+        name
+        for name, rows in (("initiative", initiative_rows), ("feature", feature_rows))
+        if not rows
+    ]
+    assert not missing, f"missing TicketStateChanged for {missing}"
+    assert len(initiative_rows) == 1
+    assert len(feature_rows) == 1
+
+    initiative_event = initiative_rows[0]
+    assert initiative_event.type == EventType.TICKET_STATE_CHANGED
+    assert initiative_event.ticket_id == initiative.id
+    assert initiative_event.workspace_id is None
+    assert json.loads(initiative_event.payload_json) == {
+        "state": TicketState.BLOCKED.value,
+        "actor": "rollup",
+    }
+
+    feature_event = feature_rows[0]
+    assert feature_event.type == EventType.TICKET_STATE_CHANGED
+    assert feature_event.ticket_id == feature.id
+    assert feature_event.workspace_id == workspace_b.id
+    assert json.loads(feature_event.payload_json) == {
+        "state": TicketState.BLOCKED.value,
+        "actor": "rollup",
+    }
+
+    # SQL equality: a NULL workspace_id does not match workspace B.
+    watched = event_bus.list_recent(session, workspace_id=workspace_b.id)
+    assert initiative.id not in {row.ticket_id for row in watched}
+    assert feature.id in {row.ticket_id for row in watched}
+
+    assert _ticket_state_changed(session, milestone.id) == []
+
+    leaf_rows = _ticket_state_changed(session, task.id)
+    assert len(leaf_rows) == 1
+    assert leaf_rows[0].workspace_id == workspace_b.id
+    assert json.loads(leaf_rows[0].payload_json) == {
+        "state": TicketState.BLOCKED.value,
+        "manual": True,
+    }
+
+
+def test_reconcile_all_parents_writes_no_ticket_state_changed(session, workspace, workspace_b):
+    """R3.1 / R4.2 / R2.4: the boot sweep corrects parents and publishes nothing.
+
+    Deepest first: a DONE task pulls its feature to DONE, then that feature plus
+    a DONE milestone in the other workspace pull the initiative to DONE. Neither
+    parent gets a TicketStateChanged row. ticket_rollup does not call event_hub.
+    """
+    initiative = _ticket(
+        session,
+        None,
+        "I-sweep",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=_initiative_type(),
+    )
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-sweep",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.FEATURE,
+    )
+    _ticket(
+        session,
+        workspace_b,
+        "T-sweep",
+        state=TicketState.DONE,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+    _ticket(
+        session,
+        workspace,
+        "M-sweep",
+        state=TicketState.DONE,
+        parent=initiative,
+        work_item_type=WorkItemType.MILESTONE,
+    )
+
+    changed = reconcile_all_parents(session)
+
+    changed_ids = {parent.id for parent in changed}
+    assert feature.id in changed_ids
+    assert initiative.id in changed_ids
+    session.refresh(feature)
+    session.refresh(initiative)
+    assert feature.state == TicketState.DONE
+    assert initiative.state == TicketState.DONE
+    assert _ticket_state_changed(session, feature.id) == []
+    assert _ticket_state_changed(session, initiative.id) == []
+    assert event_bus.list_recent(session, types=(EventType.TICKET_STATE_CHANGED,)) == []
+    assert "event_hub" not in inspect.getsource(ticket_rollup)
+
+
+def _assert_one_rollup(session: Session, ticket: Ticket, workspace_id: str | None) -> None:
+    """Exactly one TicketStateChanged, payload `{state, actor: rollup}`, workspace passed through."""
+    rows = _ticket_state_changed(session, ticket.id)
+    assert len(rows) == 1, f"{ticket.external_id} has {len(rows)} TicketStateChanged rows"
+    event = rows[0]
+    assert event.type == EventType.TICKET_STATE_CHANGED
+    assert event.ticket_id == ticket.id
+    assert event.workspace_id == workspace_id
+    assert json.loads(event.payload_json) == {
+        "state": ticket.state.value,
+        "actor": "rollup",
+    }
+
+
+def test_reconcile_ancestors_announces_each_changed_parent_once(session, workspace, workspace_b):
+    """R1.1 / R1.2 / R2.1 / R2.2 on the function itself, not only the manual caller.
+
+    Publishing from ticket_manual_edit would turn the manual-path test green and
+    leave this red. A second walk returns an empty changed list and must not
+    write a second row. The milestone is not on the walk and stays silent.
+    """
+    initiative = _ticket(
+        session,
+        None,
+        "I-direct",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=_initiative_type(),
+    )
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-direct",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.FEATURE,
+    )
+    milestone = _ticket(
+        session,
+        workspace,
+        "M-direct",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    task = _ticket(
+        session,
+        workspace_b,
+        "T-direct",
+        state=TicketState.BLOCKED,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+
+    changed = reconcile_ancestors(session, task)
+
+    assert [node.external_id for node in changed] == ["F-direct", "I-direct"]
+    session.refresh(feature)
+    session.refresh(initiative)
+    session.refresh(milestone)
+    assert feature.state == TicketState.BLOCKED
+    assert initiative.state == TicketState.BLOCKED
+    assert milestone.state == TicketState.IN_PROGRESS
+    _assert_one_rollup(session, initiative, None)
+    _assert_one_rollup(session, feature, workspace_b.id)
+    assert _ticket_state_changed(session, milestone.id) == []
+    assert _ticket_state_changed(session, task.id) == []
+
+    watched = event_bus.list_recent(session, workspace_id=workspace_b.id)
+    watched_ids = {row.ticket_id for row in watched}
+    assert initiative.id not in watched_ids
+    assert feature.id in watched_ids
+
+    assert reconcile_ancestors(session, task) == []
+    _assert_one_rollup(session, initiative, None)
+    _assert_one_rollup(session, feature, workspace_b.id)
+
+
+def test_a_locked_ancestor_is_not_announced(session, workspace_b):
+    """R1.1: a parent that does not move is not in changed and gets no row.
+
+    The feature moves. The initiative is locked, so the walk stops there.
+    An implementation that announces every ancestor it visits writes an
+    initiative row this assertion rejects.
+    """
+    initiative = _ticket(
+        session,
+        None,
+        "I-locked",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=_initiative_type(),
+        locked=True,
+    )
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-locked",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.FEATURE,
+    )
+    task = _ticket(
+        session,
+        workspace_b,
+        "T-locked",
+        state=TicketState.BLOCKED,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+
+    changed = reconcile_ancestors(session, task)
+
+    assert [node.external_id for node in changed] == ["F-locked"]
+    session.refresh(feature)
+    session.refresh(initiative)
+    assert feature.state == TicketState.BLOCKED
+    assert initiative.state == TicketState.IN_PROGRESS
+    assert initiative.state_locked is True
+    _assert_one_rollup(session, feature, workspace_b.id)
+    assert _ticket_state_changed(session, initiative.id) == []
+    assert _ticket_state_changed(session, task.id) == []
+
+
+def test_an_empty_ancestor_walk_writes_no_rollup_event(session, workspace_b):
+    """R1.2: changed is empty, so nothing is announced — including the parent that blocked the walk."""
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-still",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.FEATURE,
+        locked=True,
+    )
+    task = _ticket(
+        session,
+        workspace_b,
+        "T-still",
+        state=TicketState.BLOCKED,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+
+    assert reconcile_ancestors(session, task) == []
+    session.refresh(feature)
+    assert feature.state == TicketState.IN_PROGRESS
+    assert _ticket_state_changed(session, feature.id) == []
+    assert _ticket_state_changed(session, task.id) == []
+    assert event_bus.list_recent(session, types=(EventType.TICKET_STATE_CHANGED,)) == []
+
+
+def test_a_later_ancestor_failure_does_not_commit_the_earlier_rollup(session, workspace_b):
+    """R1: the chain commits once, after the walk.
+
+    EventBus.publish commits. A helper call inside the loop would leave the
+    feature BLOCKED after rollback. The commit and the announce both belong
+    after the loop, so this failure leaves the feature IN_PROGRESS and silent.
+    """
+    initiative = _ticket(
+        session,
+        None,
+        "I-split",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=_initiative_type(),
+    )
+    feature = _ticket(
+        session,
+        workspace_b,
+        "F-split",
+        state=TicketState.IN_PROGRESS,
+        parent=initiative,
+        work_item_type=WorkItemType.FEATURE,
+    )
+    task = _ticket(
+        session,
+        workspace_b,
+        "T-split",
+        state=TicketState.BLOCKED,
+        parent=feature,
+        work_item_type=WorkItemType.TASK,
+    )
+    real = ticket_rollup.reconcile_parent
+    calls = {"n": 0}
+
+    def fail_on_the_second(db: Session, parent: Ticket) -> bool:
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("second ancestor")
+        return real(db, parent)
+
+    # CHECKPOINT: a raise on the second ancestor stands in for a mid-walk publish.
+    with patch.object(ticket_rollup, "reconcile_parent", fail_on_the_second):
+        with pytest.raises(RuntimeError, match="second ancestor"):
+            reconcile_ancestors(session, task)
+
+    session.rollback()
+    session.refresh(feature)
+    session.refresh(initiative)
+    assert feature.state == TicketState.IN_PROGRESS
+    assert initiative.state == TicketState.IN_PROGRESS
+    assert calls["n"] == 2
+    assert event_bus.list_recent(session, types=(EventType.TICKET_STATE_CHANGED,)) == []

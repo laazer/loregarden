@@ -36,6 +36,20 @@
   --attn-tone: var(--amb);
 }
 
+/* Waiting on another ticket: nothing to fix here, so the quiet tone. */
+.attn-row--wait {
+  --attn-tone: var(--txl);
+}
+
+.attn-links {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
 .attn-label {
   flex: none;
   font-weight: 600;

@@ -189,9 +189,17 @@ def list_gates() -> list[str]:
 
 
 def check_workspace(workspace: Workspace, scope: OrganizationScope) -> list[CheckerResult]:
-    root = resolve_workspace_root(workspace)
+    return check_repo(resolve_workspace_root(workspace), scope)
+
+
+def check_repo(root: Path, scope: OrganizationScope, *, base: str = "") -> list[CheckerResult]:
+    """Every gate against the checkout at ``root``, diff-scoped by ``scope``.
+
+    ``base`` is the gates' ``--base``: what ``worktree`` and ``branch`` diff
+    from. Empty leaves each gate's own default (the repository's trunk).
+    """
     scripts = _scripts_dir()
-    common = ["--repo", str(root), "--scope", scope.value]
+    common = ["--repo", str(root), "--scope", scope.value, *(["--base", base] if base else [])]
     try:
         gates = list_gates()
     except (GateListError, OSError, subprocess.TimeoutExpired) as exc:

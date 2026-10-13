@@ -8,6 +8,10 @@ card, no block, and nothing else on record.
 
 from __future__ import annotations
 
+import subprocess
+import threading
+from unittest import mock
+
 import pytest
 from loregarden.models.domain import (
     AgentRun,
@@ -20,13 +24,14 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services import integration_branch_health
+from loregarden.services import integration_branch_health, integration_merge_agent
 from loregarden.services.github_pr_service import create_ticket_pull_request
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.integration_conflict_card import (
     conflict_card_title,
     report_integration_conflict,
 )
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import IntegrationConflictError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from sqlmodel import Session, select
@@ -58,8 +63,10 @@ def workspace_fixture(session, repo):
 @pytest.fixture(autouse=True)
 def _fresh_preview_cache():
     integration_branch_health._PREVIEWS.clear()
+    integration_branch_health._IN_FLIGHT.clear()
     yield
     integration_branch_health._PREVIEWS.clear()
+    integration_branch_health._IN_FLIGHT.clear()
 
 
 def _ticket(session, workspace, external_id, *, parent=None, kind=WorkItemType.TASK):
@@ -221,3 +228,138 @@ def test_open_pr_refuses_a_ticket_that_ships_in_its_trees_pr(session, workspace,
     _, child = tree
     with pytest.raises(ValueError, match="integration/ms"):
         create_ticket_pull_request(session, child)
+
+
+# --- 5. the sweep gives a conflict the agent's merge turn ---------------------------
+#
+# lg-run-durability-314, 2026-10-12: two import lines on each side of one file,
+# and the card waited for a person. Only a stage dispatch ran the merge turn, and
+# the conflict had already stopped every dispatch in the tree.
+
+
+def _keep_both_sides(*_args, tree, **_kwargs) -> str:
+    (tree / "shared.txt").write_text("integration side\nmain side\n")
+    git(tree, "add", "shared.txt")
+    return "Kept both sides."
+
+
+def _merge_runs(session, root):
+    session.expire_all()
+    return list(
+        session.exec(
+            select(AgentRun).where(
+                AgentRun.ticket_id == root.id, AgentRun.stage_key == INTEGRATION_MERGE_STAGE
+            )
+        ).all()
+    )
+
+
+def _is_ancestor(repo, ancestor, descendant) -> bool:
+    try:
+        git(repo, "merge-base", "--is-ancestor", ancestor, descendant)
+    except subprocess.CalledProcessError as exc:
+        # Exit 1 is git's "no"; anything else is a broken fixture, not an answer.
+        if exc.returncode != 1:
+            raise
+        return False
+    return True
+
+
+def test_an_open_conflict_card_gets_a_merge_turn_and_closes(session, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+    report_integration_conflict(session, ms, branch=BRANCH, base="main", files=("shared.txt",))
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_keep_both_sides):
+        check_integration_branches(session)
+
+    assert [run.status for run in _merge_runs(session, ms)] == [RunStatus.SUCCEEDED]
+    assert _is_ancestor(repo, "main", BRANCH)
+    assert _cards(session, ms) == []
+
+
+def test_a_turn_that_does_not_resolve_it_leaves_the_card_saying_why(session, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+
+    check_integration_branches(session)  # conftest's stub turn resolves nothing
+
+    [run] = _merge_runs(session, ms)
+    assert run.status == RunStatus.FAILED
+    [card] = _cards(session, ms)
+    assert "left conflicts unresolved in: shared.txt" in card.impact
+
+
+def test_with_the_switch_off_no_turn_runs_and_the_card_says_so(session, repo, tree):
+    ms, _ = tree
+    ms.git_automation_json = '{"auto_resolve_conflicts": false}'
+    session.add(ms)
+    session.commit()
+    _conflict(repo)
+
+    check_integration_branches(session)
+
+    assert _merge_runs(session, ms) == []
+    [card] = _cards(session, ms)
+    assert "auto_resolve_conflicts is off" in card.impact
+
+
+def test_the_sweep_stops_at_the_attempt_budget_for_the_tip(session, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+
+    for _ in range(4):
+        check_integration_branches(session)
+
+    # The default `max_conflict_resolve_attempts` is 2, per integration tip.
+    assert len(_merge_runs(session, ms)) == 2
+    [card] = _cards(session, ms)
+    assert "2 automatic merge attempt(s)" in card.impact
+
+
+def test_the_turn_runs_off_the_sweep_and_only_once_per_branch(session, repo, tree, monkeypatch):
+    ms, _ = tree
+    _conflict(repo)
+    monkeypatch.delenv("LOREGARDEN_SYNC_RUNS")
+    started, release = threading.Event(), threading.Event()
+
+    def held_turn(*args, tree, **kwargs) -> str:
+        started.set()
+        assert release.wait(30), "the test never released the turn"
+        return _keep_both_sides(*args, tree=tree, **kwargs)
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=held_turn) as turn:
+        check_integration_branches(session)  # returns while the turn is held
+        assert started.wait(30), "the turn never started"
+        check_integration_branches(session)  # the branch's turn is still in flight
+        [running] = _merge_runs(session, ms)
+        assert running.status == RunStatus.RUNNING
+        # Not a second thread queued behind the first on the merge lock, one per tick.
+        merging = [
+            thread
+            for thread in threading.enumerate()
+            if thread.name == f"loregarden-integration-merge-{BRANCH}"
+        ]
+        assert len(merging) == 1
+
+        release.set()
+        merging[0].join(30)
+
+    assert turn.call_count == 1
+    assert [run.status for run in _merge_runs(session, ms)] == [RunStatus.SUCCEEDED]
+    assert _is_ancestor(repo, "main", BRANCH)
+    assert integration_branch_health._IN_FLIGHT == set()
+
+
+def test_a_turn_that_crashes_is_recorded_on_the_card(session, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+
+    with mock.patch.object(
+        integration_branch_health, "merge_base_by_agent", side_effect=RuntimeError("boom")
+    ):
+        check_integration_branches(session)
+
+    [card] = _cards(session, ms)
+    assert "the merge turn crashed: boom" in card.impact
+    assert integration_branch_health._IN_FLIGHT == set()

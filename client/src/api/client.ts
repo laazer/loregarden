@@ -30,6 +30,7 @@ export type {
 export type * from "./memoryApi";
 import type {
   WorkflowReassignmentPreview,
+  BlockedOn,
   TicketState,
   StageStatus,
   WorkItemType,
@@ -116,6 +117,7 @@ function ticketQuery(params?: {
   milestone?: string;
   search?: string;
   include_members?: boolean;
+  blocked_on?: BlockedOn[];
   limit?: number;
   offset?: number;
 }) {
@@ -127,6 +129,7 @@ function ticketQuery(params?: {
       : [params.state]
     : [];
   for (const state of states) q.append("state", state);
+  for (const answer of params?.blocked_on ?? []) q.append("blocked_on", answer);
   const workItemTypes = params?.work_item_type
     ? Array.isArray(params.work_item_type)
       ? params.work_item_type
@@ -302,6 +305,7 @@ export const api = {
     search?: string;
     /** List initiative members under their initiative too (`member_link` copies). */
     include_members?: boolean;
+    blocked_on?: BlockedOn[];
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
   stopTicket: (id: string) =>

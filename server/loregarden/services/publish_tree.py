@@ -1,9 +1,20 @@
 """Publish a finished root's work to the base (lg-milestone-that-771).
 
-The last leg. Tickets in a tree land on its integration branch (768); when the
-tree's root completes, the branch goes to the base through the workspace's
-publish chain — push, and then a PR and auto-merge only if the workspace says
-so. One PR per tree rather than one per ticket.
+The last leg. Tickets in a tree land on its integration branch (768), and the
+branch goes to the base through the workspace's publish chain — push, and then
+a PR and auto-merge only if the workspace says so (`tree_open_pr`,
+`tree_auto_merge`). One PR per tree rather than one per ticket.
+
+It publishes after every landing on the branch (`tree_publish_scheduler`, 958),
+and again when the root completes. Publishing only at completion kept a branch
+alive as long as its milestone, weeks against a base taking ~96 commits a week,
+and every integration conflict filed was on such a branch (491: 29 commits
+unpublished since 09-21).
+
+A branch carrying an unsigned commit is not pushed in a repository that signs:
+its PR could never merge under a signed-commits rule (PR #400, superseded by
+#402 for exactly that), so the failure is reported here, naming the commits,
+instead of as a PR that waits forever.
 
 A top-level ticket with no tree is its own root. Nothing lands on an
 integration branch for it, because its target is the base, so what it
@@ -33,9 +44,11 @@ from pathlib import Path
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import EventType, Ticket, Workspace
 from loregarden.services.git_automation import AutomationResult, PublishSubject, publish_branch
-from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import is_ancestor, rev
+from loregarden.services.git_merge_noco import adds_nothing, rev, signs_commits
+from loregarden.services.git_subprocess import run_git
+from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -78,11 +91,28 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
 
     config = resolve_git_automation(workspace, ticket)
-    if is_ancestor(repo_root, tip, f"refs/heads/{config.base_branch}"):
-        # A ticket that committed nothing, or work already merged by hand. A
-        # push would publish a branch with nothing on it, and a PR would fail.
+    try:
+        already_there = adds_nothing(
+            repo_root, rev(repo_root, f"refs/heads/{config.base_branch}"), tip
+        )
+    except RuntimeError as exc:
+        failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
+        _emit(session, ticket, config.base_branch, failed)
+        return failed
+    if already_there:
+        # A ticket that committed nothing, or work that reached the base by
+        # another route: merged by hand, or squash-merged from this branch's
+        # own PR, which ancestry cannot see. A push would publish a branch with
+        # nothing on it, and its PR would be empty.
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
-    result = publish_branch(repo_root, _subject(ticket, branch), config)
+    chain = tree_chain(config)
+    if "push" in enabled_steps(chain) and signs_commits(repo_root):
+        refusal = _signature_refusal(repo_root, config.base_branch, branch, tip)
+        if refusal:
+            refused = PublishOutcome(ok=False, branch=branch, tip=tip, detail=refusal)
+            _emit(session, ticket, config.base_branch, refused)
+            return refused
+    result = publish_branch(repo_root, _subject(ticket, branch), chain)
     outcome = PublishOutcome(
         ok=result.ok,
         branch=branch,
@@ -133,6 +163,63 @@ def published_branch(repo_root: Path, root: Ticket) -> tuple[str, str]:
     return own, rev(repo_root, f"refs/heads/{own}")
 
 
+def tree_chain(config: GitAutomationConfig) -> GitAutomationConfig:
+    """``config`` with the tree switches folded into the PR and merge steps."""
+    return config.model_copy(
+        update={
+            "open_pr": config.open_pr or config.tree_open_pr,
+            "auto_merge": config.auto_merge or config.tree_auto_merge,
+        }
+    )
+
+
+def _signature_refusal(repo_root: Path, base: str, branch: str, tip: str) -> str:
+    """Why ``branch`` must not be pushed for a PR; "" when every commit is signed."""
+    try:
+        unsigned = unsigned_commits(repo_root, base, tip)
+    except RuntimeError as exc:
+        return f"could not check {branch}'s commit signatures: {exc}"
+    if not unsigned:
+        return ""
+    return (
+        f"{len(unsigned)} commit(s) on {branch} carry no signature, and this repository "
+        "signs its commits, so a pull request with them cannot merge: "
+        f"{', '.join(sha[:12] for sha in unsigned[:10])}. Rebuild the branch as signed "
+        "commits before it is published."
+    )
+
+
+def unsigned_commits(repo_root: Path, base: str, tip: str) -> list[str]:
+    """Commits in ``base..tip`` with no signature header, oldest first.
+
+    Read from the raw header: `%G?` verifies, and answers N for every commit on
+    a host without `gpg.ssh.allowedSignersFile`, signed or not.
+    """
+    listed = run_git(
+        ["log", "--reverse", "--format=raw", f"refs/heads/{base}..{tip}"],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if listed.returncode != 0:
+        raise RuntimeError(
+            f"git log failed for {base}..{tip[:12]}: {(listed.stderr or listed.stdout).strip()}"
+        )
+    unsigned: list[str] = []
+    current, signed = "", False
+    for line in listed.stdout.splitlines():
+        if line.startswith("commit "):
+            if current and not signed:
+                unsigned.append(current)
+            current, signed = line.split()[1], False
+        elif line.startswith("gpgsig"):
+            signed = True
+    if current and not signed:
+        unsigned.append(current)
+    return unsigned
+
+
 def _subject(ticket: Ticket, branch: str) -> PublishSubject:
     title = f"{ticket.external_id}: {ticket.title}"
     return PublishSubject(
@@ -146,7 +233,8 @@ def _subject(ticket: Ticket, branch: str) -> PublishSubject:
                 f"- Ticket: `{ticket.external_id}`",
                 f"- Branch: `{branch}`",
                 "",
-                "_Opened automatically by the Loregarden orchestrator when the ticket completed._",
+                "_Opened by the Loregarden orchestrator, and updated each time work lands on "
+                "the branch._",
             ]
         ),
     )

@@ -19,7 +19,7 @@ from loregarden.services import integration_merge_agent
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.integration_conflict_card import report_integration_conflict
-from loregarden.services.integration_merge_agent import INTEGRATION_MERGE_STAGE
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import (
     IntegrationConflictError,
     TargetBranchError,
@@ -364,6 +364,7 @@ def _commit(repo: Path, branch: str, files: dict[str, str], message: str) -> str
     if not checked_out:
         _git(["worktree", "add", "-q", str(tree), branch], cwd=repo)
     for name, content in files.items():
+        (tree / name).parent.mkdir(parents=True, exist_ok=True)
         (tree / name).write_text(content, encoding="utf-8")
     _git(["add", "."], cwd=tree)
     _git(["commit", "-q", "-m", message], cwd=tree)
@@ -535,7 +536,9 @@ def test_a_turn_that_leaves_the_merge_unfinished_moves_nothing_and_asks_a_person
     milestone, child, tip = conflicted
 
     with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_giving_up):
-        with pytest.raises(IntegrationConflictError, match="without committing the merge"):
+        with pytest.raises(
+            IntegrationConflictError, match="left conflicts unresolved in: shared.txt"
+        ):
             resolve_target_branch(db_session, child, workspace, repo_root=repo)
 
     assert _git(["rev-parse", MERGED], cwd=repo) == tip
@@ -636,3 +639,127 @@ def test_a_sibling_landing_during_the_turn_is_kept(
 
     assert _git(["rev-parse", MERGED], cwd=repo) == landed[0]
     assert _merge_runs(db_session, milestone)[0].status == RunStatus.FAILED
+
+
+# --- the merge commit is written by loregarden, and graded on what it adds ------------
+#
+# lg-milestone-that-491: the merge turn resolved three conflicts with 214 tests
+# green, and `git commit` refused it: pre-commit graded every file `main` had
+# changed, and `main` carried `enums.py` at 1501 lines against a 1500 cap.
+
+
+def _staging(files: dict[str, str]):
+    """A merge turn that resolves with ``files`` and stages them, without committing."""
+
+    def turn(*_args, tree: Path, **_kwargs) -> str:
+        for name, content in files.items():
+            (tree / name).parent.mkdir(parents=True, exist_ok=True)
+            (tree / name).write_text(content, encoding="utf-8")
+        _git(["add", *files], cwd=tree)
+        return "Staged both sides."
+
+    return turn
+
+
+def _refusing_hook(repo: Path) -> None:
+    """A pre-commit hook that refuses everything, as an inherited finding would."""
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text("#!/bin/sh\necho refused by pre-commit >&2\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+
+#: One line past `py_organization_check.MAX_FILE_LINES`.
+OVER_THE_CAP = "".join(f"value_{n} = {n}\n" for n in range(1501))
+
+#: A finding `py-organization` reports on any line it grades.
+ISINSTANCE_FINDING = "def read(payload):\n    return isinstance(payload, dict)\n"
+
+
+def test_a_staged_resolution_is_committed_without_pre_commit_and_lands(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    milestone, child, tip = conflicted
+    main_tip = _commit(repo, "main", {"src/pkg/big.py": OVER_THE_CAP}, "main over the cap")
+    _refusing_hook(repo)
+    turn = _staging({"shared.txt": "branch side\nmain side\n"})
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=turn):
+        assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == MERGED
+
+    merged = _git(["rev-parse", MERGED], cwd=repo)
+    assert _git(["rev-list", "--parents", "-n1", merged], cwd=repo).split()[1:] == [tip, main_tip]
+    assert _git(["log", "-1", "--format=%s", merged], cwd=repo) == f"Merge main into {MERGED}"
+    assert _git(["show", f"{MERGED}:shared.txt"], cwd=repo) == "branch side\nmain side"
+    assert _pending_cards(db_session, milestone) == []
+    [run] = _merge_runs(db_session, milestone)
+    assert run.status == RunStatus.SUCCEEDED
+
+
+def test_a_finding_the_resolution_writes_is_refused_by_the_gates(
+    db_session: Session, workspace: Workspace, repo: Path
+):
+    milestone = _ticket(db_session, workspace, "ms-gt", work_item_type=WorkItemType.MILESTONE)
+    child = _ticket(db_session, workspace, "tk-gt", parent=milestone)
+    branch = resolve_target_branch(db_session, child, workspace, repo_root=repo)
+    tip = _commit(repo, branch, {"src/pkg/mod.py": "x = 'branch'\n"}, "branch side")
+    _commit(repo, "main", {"src/pkg/mod.py": "x = 'main'\n"}, "main side")
+    turn = _staging({"src/pkg/mod.py": "x = 'both'\n" + ISINSTANCE_FINDING})
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=turn):
+        with pytest.raises(IntegrationConflictError, match="fails the workspace gates"):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", branch], cwd=repo) == tip
+    [run] = _merge_runs(db_session, milestone)
+    assert run.status == RunStatus.FAILED
+    assert "src/pkg/mod.py" in run.stderr
+    assert "isinstance" in run.stderr
+
+
+def test_a_retry_on_the_same_tip_is_told_why_the_last_turn_was_refused(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_giving_up) as turn:
+        for _ in range(2):
+            with pytest.raises(IntegrationConflictError):
+                resolve_target_branch(db_session, conflicted[1], workspace, repo_root=repo)
+
+    first, second = (call.kwargs["refused"] for call in turn.call_args_list)
+    assert first == ""
+    assert "left conflicts unresolved in: shared.txt" in second
+    brief = integration_merge_agent.merge_brief(
+        conflicted[0],
+        branch=MERGED,
+        base="main",
+        tips=("a" * 40, "b" * 40),
+        files=(),
+        refused=second,
+    )
+    assert "left conflicts unresolved in: shared.txt" in brief
+
+
+@pytest.mark.parametrize(
+    ("leftover", "problem"),
+    [
+        ({"notes.txt": "scratch\n"}, "left untracked files: notes.txt"),
+        ({"README.md": "# edited, not staged\n"}, "left changes it did not stage in: README.md"),
+    ],
+)
+def test_a_turn_that_leaves_work_out_of_the_index_is_refused(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted, leftover, problem
+):
+    _, child, tip = conflicted
+    stage = _staging({"shared.txt": "branch side\nmain side\n"})
+
+    def turn(*args, tree: Path, **kwargs) -> str:
+        reply = stage(*args, tree=tree, **kwargs)
+        for name, content in leftover.items():
+            (tree / name).write_text(content, encoding="utf-8")
+        return reply
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=turn):
+        with pytest.raises(IntegrationConflictError, match=problem):
+            resolve_target_branch(db_session, child, workspace, repo_root=repo)
+
+    assert _git(["rev-parse", MERGED], cwd=repo) == tip
