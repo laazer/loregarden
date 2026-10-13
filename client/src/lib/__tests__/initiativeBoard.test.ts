@@ -46,6 +46,24 @@ test("every column is capped with its real total; optional columns appear only w
   expect(first?.total).toBe(30);
 });
 
+test("the cap keeps a family whole: a parent is never cut from the children drawn under it", () => {
+  const loose = Array.from({ length: 11 }, (_, i) => ticket(`b${i}`, "m1", "backlog"));
+  const family = [ticket("feature", "m1", "backlog"), ...Array.from({ length: 5 }, (_, i) => ticket(`t${i}`, "feature", "backlog"))];
+  const extra = ticket("late", "m1", "backlog");
+  // The family's children are listed last, past where a flat cut of 12 would stop.
+  const backlog = buildColumns([family[0], ...loose, extra, ...family.slice(1)])[0];
+  expect(backlog.tickets.map((t) => t.id)).toEqual([
+    "feature",
+    "t0",
+    "t1",
+    "t2",
+    "t3",
+    "t4",
+    ...loose.map((t) => t.id),
+  ]);
+  expect(backlog.total).toBe(18);
+});
+
 test("an expanded column draws everything", () => {
   const backlog = Array.from({ length: 30 }, (_, i) => ticket(`b${i}`, "m1", "backlog"));
   const column = buildColumns(backlog, new Set(["backlog"]))[0];
