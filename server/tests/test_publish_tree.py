@@ -159,8 +159,8 @@ def test_with_open_pr_on_a_single_pr_is_opened_from_the_integration_branch(
 
     def fake_gh(args, cwd):
         calls.append(args)
-        if args[:2] == ["pr", "view"]:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr="no pull requests found")
+        if args[:2] == ["pr", "list"]:
+            return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
         return subprocess.CompletedProcess(
             args, 0, stdout="https://github.com/example/repo/pull/1\n", stderr=""
         )
@@ -299,8 +299,8 @@ def test_tree_switches_open_and_auto_merge_the_trees_pr_and_leave_chat_push_only
 
     def fake_gh(args, cwd):
         calls.append(args)
-        if args[:2] == ["pr", "view"]:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr="no pull requests found")
+        if args[:2] == ["pr", "list"]:
+            return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
         return subprocess.CompletedProcess(
             args, 0, stdout="https://github.com/example/repo/pull/7\n", stderr=""
         )
@@ -416,3 +416,30 @@ def test_a_branch_whose_work_reached_the_base_by_a_squash_publishes_nothing(
 
     assert outcome.ok and outcome.skipped
     assert _remote_sha(repo, target) == ""
+
+
+def test_a_merged_pr_on_the_branch_is_not_taken_for_an_open_one(session, workspace, repo):
+    """lg-initiatives-cross-724: #411 merged weeks earlier from the same branch."""
+    ms, target = _landed_tree(
+        session, workspace, repo, {"commit": True, "push": True, "tree_open_pr": True}
+    )
+    calls: list[list[str]] = []
+
+    def fake_gh(args, cwd):
+        calls.append(args)
+        if args[:2] == ["pr", "list"]:
+            assert "--state" in args and args[args.index("--state") + 1] == "open"
+            return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
+        if args[:2] == ["pr", "view"]:  # what the merged PR would have answered
+            return subprocess.CompletedProcess(
+                args, 0, stdout="https://github.com/example/repo/pull/411\n", stderr=""
+            )
+        return subprocess.CompletedProcess(
+            args, 0, stdout="https://github.com/example/repo/pull/412\n", stderr=""
+        )
+
+    with mock.patch.object(git_automation, "_gh", side_effect=fake_gh):
+        outcome = publish_tree(session, ms, workspace)
+
+    assert outcome.ok and outcome.pr_url.endswith("/pull/412")
+    assert any(call[:2] == ["pr", "create"] for call in calls)
