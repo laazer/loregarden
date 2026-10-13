@@ -31,7 +31,7 @@ from loregarden.services.integration_conflict_card import (
     conflict_card_title,
     report_integration_conflict,
 )
-from loregarden.services.integration_merge_agent import INTEGRATION_MERGE_STAGE
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import IntegrationConflictError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from sqlmodel import Session, select
