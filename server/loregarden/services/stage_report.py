@@ -191,6 +191,10 @@ def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str], str]:
         except ValueError:
             unknown = parsed.blocked_kind.strip()
             logger.warning("stage report named an unknown blocked_kind %r", unknown)
+        if kind is BlockKind.TICKETS:
+            # The rollup's word, not an agent's: it names no ticket to wait on.
+            kind, unknown = None, parsed.blocked_kind.strip()
+            logger.warning("stage report named rollup-only blocked_kind %r", unknown)
     options = [item.strip() for item in (parsed.options or []) if item.strip()]
     return kind, options, unknown
 

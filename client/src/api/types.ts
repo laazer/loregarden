@@ -54,6 +54,25 @@ export interface TicketSummary {
   current_stage_agent?: string;
   activity?: TicketActivity;
   stages?: WorkflowStageView[];
+  /** Who can unblock it, when blocked (749). Null while nothing is blocked. */
+  block_kind?: BlockKind | null;
+  /** What it waits for, derived server-side; null when it is not stuck. */
+  blocked_on?: BlockedOn | null;
+  /** The tickets it waits for: blocked descendants, or unmet prerequisites. */
+  waiting_on?: WaitingOnRef[];
+}
+
+/** What a stuck ticket waits for — mirrors `BlockedOn` in `models.domain.block_kinds`. */
+export type BlockedOn = "person" | "tickets" | "agent";
+
+/** A ticket another one waits on, and what it waits on in turn. */
+export interface WaitingOnRef {
+  id: string;
+  external_id: string;
+  title: string;
+  state: TicketState;
+  reason: "blocked_child" | "prerequisite";
+  blocked_on: BlockedOn | null;
 }
 
 /** Board-wide counts: tickets per state, and how many are actually moving. */
@@ -91,6 +110,8 @@ export interface TicketTreeNode {
   workflow_stage_name: string;
   workflow_stage_status: StageStatus;
   child_count: number;
+  /** What it waits for, derived server-side; absent or null when it is not stuck. */
+  blocked_on?: BlockedOn | null;
   children: TicketTreeNode[];
   /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
   member_link?: boolean;
@@ -132,7 +153,7 @@ export interface ExternalHarnessPrompt {
 }
 
 /** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
-export type BlockKind = "harness" | "work" | "decision" | "human_action";
+export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets";
 
 export interface TicketDetail extends TicketSummary {
   /**
@@ -161,8 +182,6 @@ export interface TicketDetail extends TicketSummary {
   current_stage_agent: string;
   next_status: string;
   blocking_issues: string;
-  /** Who can unblock it, when blocked (749). Null while nothing is blocked. */
-  block_kind?: BlockKind | null;
   state_locked: boolean;
   workflow_template_slug: string;
   workflow_template_name: string;

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import type { TicketState, WorkItemType } from "../api/client";
+import type { BlockedOn, TicketState, WorkItemType } from "../api/client";
 import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import { STATE_LABELS } from "./UpdateStateModal";
@@ -127,27 +127,47 @@ const STATE_OPTIONS: TicketState[] = [
   "wont_do",
 ];
 
+/** A person first: that is the question the filter exists to answer. */
+const BLOCKED_ON_FILTERS: { id: BlockedOn; label: string }[] = [
+  { id: "person", label: "You" },
+  { id: "tickets", label: "Other tickets" },
+  { id: "agent", label: "An agent" },
+];
+
 export function TicketPaneFilters({
   typeFilters,
   stateFilters,
   stateCounts,
+  blockedOnFilters,
+  blockedOnCounts,
   onToggleType,
   onToggleState,
+  onToggleBlockedOn,
   onClearTypes,
   onClearStates,
+  onClearBlockedOn,
 }: {
   typeFilters: WorkItemType[];
   stateFilters: TicketState[];
   stateCounts: Record<string, number>;
+  blockedOnFilters: BlockedOn[];
+  blockedOnCounts: Record<string, number>;
   onToggleType: (type: WorkItemType) => void;
   onToggleState: (state: TicketState) => void;
+  onToggleBlockedOn: (answer: BlockedOn) => void;
   onClearTypes: () => void;
   onClearStates: () => void;
+  onClearBlockedOn: () => void;
 }) {
   const stateOptions = STATE_OPTIONS.map((state) => ({
     id: state,
     label: STATE_LABELS[state],
     count: stateCounts[state],
+  }));
+
+  const blockedOnOptions = BLOCKED_ON_FILTERS.map((option) => ({
+    ...option,
+    count: blockedOnCounts[option.id] ?? 0,
   }));
 
   return (
@@ -159,6 +179,14 @@ export function TicketPaneFilters({
         selected={stateFilters}
         onToggle={onToggleState}
         onClear={onClearStates}
+      />
+      <FilterDropdown
+        title="Blocked on"
+        allLabel="Anything"
+        options={blockedOnOptions}
+        selected={blockedOnFilters}
+        onToggle={onToggleBlockedOn}
+        onClear={onClearBlockedOn}
       />
       <FilterDropdown
         title="Type"
