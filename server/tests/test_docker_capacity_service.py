@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
-from loregarden.models.domain.enums import (
+from loregarden.models.domain.enums_capacity import (
     DockerCeilingSource,
     DockerFootprint,
     DockerProbeOutcome,

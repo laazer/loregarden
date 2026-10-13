@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from loregarden.config import settings
-from loregarden.models.domain.enums import (
+from loregarden.models.domain.enums_capacity import (
     DockerCeilingSource,
     DockerFootprint,
     DockerProbeOutcome,
