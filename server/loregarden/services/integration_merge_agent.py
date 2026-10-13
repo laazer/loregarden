@@ -41,16 +41,18 @@ import logging
 import shutil
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.agents.registry import REPAIR_AGENT_ID
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace, utcnow
+from loregarden.models.domain import AgentRun, BlockKind, RunStatus, Ticket, Workspace, utcnow
+from loregarden.services.block_classification import classify_block_message
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
     stub_response,
 )
+from loregarden.services.cli_auth_errors import format_cli_auth_hint, format_cli_missing_hint
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_merge_noco import (
     is_ancestor,
@@ -59,14 +61,17 @@ from loregarden.services.git_merge_noco import (
     signs_commits,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.integration_merge_budget import (
+    INTEGRATION_MERGE_STAGE,
+    harness_retry_at,
+    merge_turn_refusal,
+    refused_turns,
+)
 from loregarden.services.organization_gate_service import OrganizationScope, check_repo
 from loregarden.services.run_concurrency import new_run_code
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
-
-#: `AgentRun.stage_key` for these turns. Not a workflow stage: nothing advances on it.
-INTEGRATION_MERGE_STAGE = "integration-merge"
 
 INTEGRATION_MERGE_CLI_PROFILE = CliAgentProfile(
     agent_id=REPAIR_AGENT_ID,
@@ -88,10 +93,27 @@ _LOCKS_GUARD = threading.Lock()
 
 @dataclass(frozen=True)
 class MergeResolution:
-    """Whether ``branch`` now holds the base; ``detail`` says why not."""
+    """Whether ``branch`` now holds the base; ``detail`` says why not.
+
+    ``kind`` is why a turn failed, recorded on its run: `WORK` when it tried
+    and was refused (it spends an attempt), `HARNESS` when it never got to try
+    (it does not; `integration_merge_budget`). None on success, and when no
+    turn was started.
+    """
 
     ok: bool
     detail: str = ""
+    kind: BlockKind | None = None
+
+
+def _refused(detail: str) -> MergeResolution:
+    """The turn tried, and what it produced was not accepted."""
+    return MergeResolution(False, detail, BlockKind.WORK)
+
+
+def _unable(detail: str) -> MergeResolution:
+    """The turn never got to try, or loregarden failed around it."""
+    return MergeResolution(False, detail, BlockKind.HARNESS)
 
 
 def _lock_for(repo_root: Path, branch: str) -> threading.Lock:
@@ -108,47 +130,6 @@ def _git(cwd: Path, *args: str):
 
 def _words(result, fallback: str) -> str:
     return (result.stderr or result.stdout or fallback).strip()
-
-
-def _failed_turns(session: Session, root: Ticket, *, branch_sha: str) -> list[AgentRun]:
-    """Failed merge turns on this exact integration tip, oldest first.
-
-    Keyed by the tip so a new landing on the branch, or a person's own merge,
-    starts a fresh budget, while a base that keeps moving does not buy the same
-    unmergeable tip endless turns.
-    """
-    return list(
-        session.exec(
-            select(AgentRun)
-            .where(
-                AgentRun.ticket_id == root.id,
-                AgentRun.stage_key == INTEGRATION_MERGE_STAGE,
-                AgentRun.start_head_sha == branch_sha,
-                AgentRun.status == RunStatus.FAILED,
-            )
-            .order_by(AgentRun.started_at)
-        ).all()
-    )
-
-
-def merge_turn_refusal(
-    session: Session, workspace: Workspace, root: Ticket, *, branch_sha: str
-) -> str:
-    """Why no merge turn may run on the integration tip ``branch_sha``; "" when one may.
-
-    The switch and the per-tip budget, asked before a turn is started — by
-    `merge_base_by_agent`, and by the health sweep before it hands one off.
-    """
-    automation = resolve_git_automation(workspace, root)
-    if not automation.auto_resolve_conflicts:
-        return "auto_resolve_conflicts is off for this tree"
-    spent = len(_failed_turns(session, root, branch_sha=branch_sha))
-    if spent >= automation.max_conflict_resolve_attempts:
-        return (
-            f"{spent} automatic merge attempt(s) on {branch_sha[:12]} already failed "
-            f"(max_conflict_resolve_attempts={automation.max_conflict_resolve_attempts})"
-        )
-    return ""
 
 
 def merge_base_by_agent(
@@ -178,7 +159,7 @@ def merge_base_by_agent(
         refusal = merge_turn_refusal(session, workspace, root, branch_sha=branch_sha)
         if refusal:
             return MergeResolution(False, refusal)
-        failed = _failed_turns(session, root, branch_sha=branch_sha)
+        refused = refused_turns(session, root, branch_sha=branch_sha)
         run = _start_run(session, workspace, root, branch=branch, branch_sha=branch_sha)
         logger.warning(
             "Integration branch %s cannot take %s (conflicts in %s); running merge turn %s",
@@ -187,20 +168,37 @@ def merge_base_by_agent(
             ", ".join(files),
             run.run_code,
         )
-        resolution, reply = _merge_in_worktree(
-            workspace,
-            root,
-            run,
-            repo_root=repo_root,
-            branch=branch,
-            base=base,
-            tips=(branch_sha, base_sha),
-            files=files,
-            # A retry on the same tip is told why the last one was refused, so
-            # it is not the same turn again.
-            refused=failed[-1].stderr if failed else "",
-        )
+        try:
+            resolution, reply = _merge_in_worktree(
+                workspace,
+                root,
+                run,
+                repo_root=repo_root,
+                branch=branch,
+                base=base,
+                tips=(branch_sha, base_sha),
+                files=files,
+                # A retry on the same tip is told why the last one was refused,
+                # so it is not the same turn again.
+                refused=refused[-1].stderr if refused else "",
+            )
+        except Exception as exc:
+            # Loregarden's own failure, not the agent's: settle the run so it
+            # neither stays RUNNING nor spends an attempt, then let it surface.
+            _finish_run(session, run, _unable(f"the merge turn crashed: {exc}"), "")
+            raise
         _finish_run(session, run, resolution, reply)
+        if resolution.kind is BlockKind.HARNESS:
+            retry_at = harness_retry_at(session, root, branch_sha=branch_sha)
+            when = f"after {retry_at:%Y-%m-%d %H:%M} UTC" if retry_at else "on the next sweep"
+            return replace(
+                resolution,
+                detail=(
+                    f"the merge turn could not attempt the merge (harness failure, not "
+                    f"counted against the attempt budget; the next turn runs {when}): "
+                    f"{resolution.detail}"
+                ),
+            )
         return resolution
 
 
@@ -227,6 +225,12 @@ def _start_run(
 
 def _finish_run(session: Session, run: AgentRun, resolution: MergeResolution, reply: str) -> None:
     run.status = RunStatus.SUCCEEDED if resolution.ok else RunStatus.FAILED
+    if not resolution.ok:
+        if resolution.kind is None:
+            # Every failure path below names its kind; one that does not is
+            # counted, so a missed path costs a retry rather than buying endless ones.
+            logger.warning("Merge turn %s failed without a kind; counting it", run.run_code)
+        run.failure_kind = resolution.kind or BlockKind.WORK
     run.stdout = reply
     run.stderr = "" if resolution.ok else resolution.detail[:4000]
     run.finished_at = utcnow()
@@ -261,46 +265,104 @@ def _merge_in_worktree(
     added = _git(repo_root, "worktree", "add", "--detach", str(tree), branch_sha)
     if added.returncode != 0:
         shutil.rmtree(holder, ignore_errors=True)
-        return MergeResolution(
-            False, f"cannot cut a worktree: {_words(added, 'git worktree add')}"
-        ), ""
+        return _unable(f"cannot cut a worktree: {_words(added, 'git worktree add')}"), ""
     try:
         # `--no-commit` either way: the commit is written below, never by a hook-run `git commit`.
         merged = _git(tree, "merge", "--no-ff", "--no-commit", base_sha)
-        agent_error = ""
-        if merged.returncode == 0:
-            reply = "git merged cleanly in a checkout; no agent turn was needed."
-        else:
+        turn = AgentTurn(reply="git merged cleanly in a checkout; no agent turn was needed.")
+        if merged.returncode != 0:
             # Exit 1 with conflicts is the expected start; the agent finishes it.
-            try:
-                reply = _run_agent(
-                    workspace,
-                    root,
-                    run,
-                    tree=tree,
-                    branch=branch,
-                    base=base,
-                    tips=tips,
-                    files=files,
-                    refused=refused,
-                )
-            except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
-                # Not final on its own: a turn that staged the resolution and then
-                # timed out or replied with nothing still did the work, and the
-                # tree, not the reply, is what is checked below.
-                logger.warning("Merge turn %s for %s did not finish: %s", run.run_code, branch, exc)
-                agent_error, reply = str(exc), ""
+            turn = _attempt(
+                workspace,
+                root,
+                run,
+                tree=tree,
+                branch=branch,
+                base=base,
+                tips=tips,
+                files=files,
+                refused=refused,
+            )
         verdict = _settle(repo_root, tree, branch=branch, base=base, tips=tips, files=files)
         if not verdict.ok:
-            if agent_error:
+            if turn.error:
+                # An agent that never got to try leaves the conflicts as git left
+                # them; that is the harness's failure, not a refused resolution.
+                kind = BlockKind.HARNESS if turn.never_ran else verdict.kind
                 return MergeResolution(
-                    False, f"the merge turn failed ({agent_error}); {verdict.detail}"
-                ), reply
-            return verdict, reply
-        return _move_branch(repo_root, tree, branch=branch, expected=branch_sha), reply
+                    False, f"the merge turn failed ({turn.error}); {verdict.detail}", kind
+                ), turn.reply
+            return verdict, turn.reply
+        return _move_branch(repo_root, tree, branch=branch, expected=branch_sha), turn.reply
     finally:
         _remove_worktree(repo_root, tree)
         shutil.rmtree(holder, ignore_errors=True)
+
+
+@dataclass(frozen=True)
+class AgentTurn:
+    """What the agent's turn returned, or why it did not finish."""
+
+    reply: str = ""
+    #: The error the turn ended on; "" when it returned.
+    error: str = ""
+    #: True when the error left the agent no chance at the merge: the CLI could
+    #: not start, the agent is not configured, or the CLI refused the turn.
+    never_ran: bool = False
+
+
+def _cli_refused(detail: str) -> bool:
+    """Whether a CLI's failure is a refusal to run at all: a usage limit, auth."""
+    return (
+        format_cli_auth_hint(detail) is not None
+        or classify_block_message(detail) is BlockKind.HARNESS
+    )
+
+
+def _attempt(
+    workspace: Workspace,
+    root: Ticket,
+    run: AgentRun,
+    *,
+    tree: Path,
+    branch: str,
+    base: str,
+    tips: tuple[str, str],
+    files: tuple[str, ...],
+    refused: str,
+) -> AgentTurn:
+    """Run the agent. Its failure is not final on its own: a turn that staged the
+    resolution and then timed out still did the work, and the tree, not the
+    reply, is what `_settle` checks."""
+    try:
+        return AgentTurn(
+            reply=_run_agent(
+                workspace,
+                root,
+                run,
+                tree=tree,
+                branch=branch,
+                base=base,
+                tips=tips,
+                files=files,
+                refused=refused,
+            )
+        )
+    except TimeoutError as exc:
+        # First: TimeoutError is an OSError. The agent ran out of time on the merge.
+        logger.warning("Merge turn %s for %s timed out: %s", run.run_code, branch, exc)
+        return AgentTurn(error=str(exc))
+    except (OSError, ValueError) as exc:
+        # The CLI could not be started, or the agent is not configured.
+        detail = format_cli_missing_hint(str(exc), exc) or str(exc)
+        logger.warning("Merge turn %s for %s could not start: %s", run.run_code, branch, detail)
+        return AgentTurn(error=detail, never_ran=True)
+    except RuntimeError as exc:
+        # The CLI exited non-zero: a usage limit or auth refusal never reached the merge.
+        detail = str(exc)
+        logger.warning("Merge turn %s for %s did not finish: %s", run.run_code, branch, detail)
+        # The CLI's own words, not a hint: `harness_retry_at` reads a reset time from them.
+        return AgentTurn(error=detail, never_ran=_cli_refused(detail))
 
 
 def _settle(
@@ -345,7 +407,7 @@ def _commit_staged_merge(
     if not rev(tree, "MERGE_HEAD"):
         return MergeResolution(True)
     if rev(tree, "HEAD") != branch_sha:
-        return MergeResolution(False, "HEAD moved during the merge; nothing was committed")
+        return _refused("HEAD moved during the merge; nothing was committed")
     for args, problem in (
         (("diff", "--name-only", "--diff-filter=U"), "left conflicts unresolved in"),
         (("diff", "--name-only"), "left changes it did not stage in"),
@@ -353,10 +415,10 @@ def _commit_staged_merge(
     ):
         named, error = _paths(tree, *args)
         if error or named:
-            return MergeResolution(False, error or f"the merge turn {problem}: {named}")
+            return _unable(error) if error else _refused(f"the merge turn {problem}: {named}")
     written = _git(tree, "write-tree")
     if written.returncode != 0:
-        return MergeResolution(False, f"cannot write the merge: {_words(written, 'write-tree')}")
+        return _unable(f"cannot write the merge: {_words(written, 'write-tree')}")
     sign = ["-S"] if signs_commits(repo_root) else []
     commit = _git(
         tree,
@@ -371,13 +433,13 @@ def _commit_staged_merge(
         subject,
     )
     if commit.returncode != 0:
-        return MergeResolution(False, f"cannot commit the merge: {_words(commit, 'commit-tree')}")
+        return _unable(f"cannot commit the merge: {_words(commit, 'commit-tree')}")
     # Leave the merge (index and files stay) and stand on the commit, so the
     # gates' diff from the base tip reads this commit and nothing else.
     for args in (("merge", "--quit"), ("reset", "--soft", commit.stdout.strip())):
         moved = _git(tree, *args)
         if moved.returncode != 0:
-            return MergeResolution(False, f"cannot check out the merge: {_words(moved, args[0])}")
+            return _unable(f"cannot check out the merge: {_words(moved, args[0])}")
     return MergeResolution(True)
 
 
@@ -458,27 +520,20 @@ def _verify(
     """HEAD is a finished merge of both tips, with nothing left half-resolved."""
     status = _git(tree, "status", "--porcelain")
     if status.returncode != 0:
-        return MergeResolution(False, f"cannot read the merge tree: {_words(status, 'git status')}")
+        return _unable(f"cannot read the merge tree: {_words(status, 'git status')}")
     if status.stdout.strip():
-        return MergeResolution(
-            False, f"the merge turn left uncommitted changes:\n{status.stdout.strip()[:1500]}"
-        )
+        return _refused(f"the merge turn left uncommitted changes:\n{status.stdout.strip()[:1500]}")
     head = rev(tree, "HEAD")
     if not (is_ancestor(tree, branch_sha, head) and is_ancestor(tree, base_sha, head)):
-        return MergeResolution(
-            False,
-            f"HEAD {head[:12] or '?'} does not contain both {branch_sha[:12]} and {base_sha[:12]}",
+        return _refused(
+            f"HEAD {head[:12] or '?'} does not contain both {branch_sha[:12]} and {base_sha[:12]}"
         )
     if files:
         markers = _git(tree, "grep", "-n", "-E", _MARKER_PATTERN, "HEAD", "--", *files)
         if markers.returncode == 0:
-            return MergeResolution(
-                False, f"conflict markers were committed:\n{markers.stdout.strip()[:1500]}"
-            )
+            return _refused(f"conflict markers were committed:\n{markers.stdout.strip()[:1500]}")
         if markers.returncode != 1:
-            return MergeResolution(
-                False, f"cannot check for markers: {_words(markers, 'git grep')}"
-            )
+            return _unable(f"cannot check for markers: {_words(markers, 'git grep')}")
     return MergeResolution(True)
 
 
@@ -499,11 +554,14 @@ def _grade(tree: Path, *, base: str, base_sha: str) -> MergeResolution:
         lines += [f"{result.checker}: {finding}" for finding in result.findings] or [
             f"{result.checker}: {result.message}"
         ]
-    return MergeResolution(
-        False,
+    detail = (
         f"the merge fails the workspace gates on what it adds over {base}:\n"
-        + "\n".join(lines)[:3000],
+        + "\n".join(lines)[:3000]
     )
+    # A finding is the resolution's to fix; a gate that could not run is not.
+    if any(result.findings for result in failing):
+        return _refused(detail)
+    return _unable(detail)
 
 
 def _move_branch(repo_root: Path, tree: Path, *, branch: str, expected: str) -> MergeResolution:
@@ -512,10 +570,9 @@ def _move_branch(repo_root: Path, tree: Path, *, branch: str, expected: str) -> 
     if moved.returncode != 0:
         # A sibling landed while the turn ran. Its work is kept; the next
         # dispatch finds the branch still behind the base and merges again.
-        return MergeResolution(
-            False,
+        return _unable(
             f"{branch} moved while the merge ran, so {head[:12]} was not applied: "
-            f"{_words(moved, 'git update-ref refused')}",
+            f"{_words(moved, 'git update-ref refused')}"
         )
     logger.warning("Merged the base into %s as %s (was %s)", branch, head[:12], expected[:12])
     return MergeResolution(True)

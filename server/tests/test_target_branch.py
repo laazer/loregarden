@@ -19,7 +19,7 @@ from loregarden.services import integration_merge_agent
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.integration_conflict_card import report_integration_conflict
-from loregarden.services.integration_merge_agent import INTEGRATION_MERGE_STAGE
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import (
     IntegrationConflictError,
     TargetBranchError,
