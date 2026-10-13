@@ -24,7 +24,7 @@ import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from loregarden.models.domain.enums import DockerLivenessState, DockerProbeOutcome
+from loregarden.models.domain.enums_capacity import DockerLivenessState, DockerProbeOutcome
 from loregarden.services.docker_capacity import DockerInvoke
 from loregarden.services.docker_subprocess import DockerVerbRefused, run_docker
 

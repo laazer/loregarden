@@ -6,7 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import { api } from "../../api/client";
 import type { KnowledgeGraph } from "../../api/memoryApi";
 import type { InitiativeMilestone, InitiativeSuggestionSet, InitiativeView, TicketDetail } from "../../api/client";
-import type { MonitorFinding, TicketArtifactsFeed, TicketLedger } from "../../api/types";
+import type { CIStatusResponse, MonitorFinding, TicketArtifactsFeed, TicketLedger } from "../../api/types";
+import { TicketCIAutoFix } from "../../components/dashboard/TicketCIAutoFix";
 import { TicketOutputs } from "../../components/dashboard/TicketOutputs";
 import { TicketTimeline } from "../../components/dashboard/TicketTimeline";
 import { WorkflowMonitorView } from "../../components/dashboard/WorkflowMonitorView";
@@ -25,6 +26,7 @@ import memoryGraph from "../fixtures/prod-shape/memory-graph-loregarden.json";
 import monitorFindings from "../fixtures/prod-shape/monitor-findings.json";
 import historyArtifacts from "../fixtures/prod-shape/ticket-history-artifacts.json";
 import historyLedger from "../fixtures/prod-shape/ticket-history-ledger.json";
+import ciStatus from "../fixtures/prod-shape/ticket-ci-status.json";
 
 /**
  * The surfaces that shipped unusable, rendered over the API's own responses on
@@ -173,7 +175,15 @@ describe("A worked ticket's history at the live p90 (33 runs, 172 rows)", () => 
     const ticket = { id: ticketId, stages: [], blocking_issues: "", artifacts: {} } as unknown as TicketDetail;
     const { container } = render(
       withProviders(
-        <TicketTimeline ticket={ticket} runs={[]} isActive={false} pendingApprovals={0} onOpenRunLog={() => {}} />,
+        <TicketTimeline
+            ticket={ticket}
+            runs={[]}
+            isActive={false}
+            pendingApprovals={0}
+            childTickets={[]}
+            onOpenRunLog={() => {}}
+            onOpenTicket={() => {}}
+          />,
       ),
     );
 
@@ -186,6 +196,23 @@ describe("A worked ticket's history at the live p90 (33 runs, 172 rows)", () => 
 
     await screen.findByRole("table");
     expect(screen.getByRole("checkbox", { name: /Show 69 system records/ })).not.toBeChecked();
+    expect(findUsabilityProblems(container)).toEqual([]);
+  });
+});
+
+describe("CI auto-fix history at its retry limit", () => {
+  it("reads newest first, shows the refusal's reason, and offers nothing once CI passes", async () => {
+    const data = ciStatus as unknown as CIStatusResponse;
+    mockApi.ciStatus.mockResolvedValue(data);
+    const { container } = render(withProviders(<TicketCIAutoFix ticketId={data.ci_status!.ticket_id} isOpen />));
+
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(data.auto_fix_history.length);
+    expect(rows[0]).toHaveTextContent("Attempt 3: Fixed");
+    const refused = data.auto_fix_history.find((attempt) => attempt.status === "refused")!;
+    expect(screen.getByText(refused.result_summary!)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry auto-fix" })).not.toBeInTheDocument();
+
     expect(findUsabilityProblems(container)).toEqual([]);
   });
 });

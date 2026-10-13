@@ -22,7 +22,7 @@ disabled to preserve the zero-config local flow:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `LOREGARDEN_API_TOKEN` | *(empty: auth off)* | When set, every `/api` and `/mcp` request must present the token as `Authorization: Bearer <token>` or `X-Loregarden-Token`. Constant-time compare (`hmac.compare_digest`); only `/health` and CORS preflight are exempt. All three websocket endpoints check it too. |
+| `LOREGARDEN_API_TOKEN` | *(empty: auth off)* | When set, every `/api` and `/mcp` request must present the token as `Authorization: Bearer <token>` or `X-Loregarden-Token`. Constant-time compare (`hmac.compare_digest`); only `/health` and CORS preflight are exempt. Every websocket endpoint checks it too. |
 | `LOREGARDEN_BROWSE_ROOT` | *(empty: your home directory)* | Ceiling for the path browser and importer. Point it at your projects folder to shrink what the browse/import endpoints can read. |
 
 **Set both if anyone else can run processes on the machine.** With `LOREGARDEN_API_TOKEN` empty,
@@ -56,7 +56,7 @@ were cross-cutting infrastructure and a broad local attack surface rather than s
 | 1 | No authentication on any endpoint, over an API that writes files and executes local agent processes | High | **Mitigated, opt-in**: `LOREGARDEN_API_TOKEN` now enforces a bearer token across `/api`, `/mcp` and all websockets (`core/auth.py`). Still off by default; see §0 |
 | 2 | Browse/import ceiling is the entire home directory (`~`), far wider than the "workspace" framing implies | High | **Mitigated, opt-in**: `LOREGARDEN_BROWSE_ROOT` narrows the ceiling; `browse_ceiling()` still falls back to `Path.home()` when unset |
 | 3 | No CI/CD at all; no Python lint/type gates; TypeScript strict mode off | Medium | **Fixed**: `.github/workflows/ci.yml`; Ruff + diff-scoped Pylint in `server/pyproject.toml`; `"strict": true` in `tsconfig.app.json`; lefthook gates on every commit |
-| 4 | God files (`Dashboard.tsx` 2100 lines, `StudioPage.tsx`, `client.ts`, `domain.py`) and hand-rolled unversioned DB migrations | Medium | **Partly fixed**: migrations are now 126 ordered, id-guarded entries, and `models/domain.py` has been split into a package. The god files remain: `Dashboard.tsx` is 1750 lines (down from 2100, still over the 1200-line gate cap), `StudioPage.tsx` 1134, `client.ts` 767 |
+| 4 | God files (`Dashboard.tsx` 2100 lines, `StudioPage.tsx`, `client.ts`, `domain.py`) and hand-rolled unversioned DB migrations | Medium | **Partly fixed**: migrations are now 126 ordered, id-guarded entries, and `models/domain.py` has been split into a package. The god files remain: `Dashboard.tsx` is 1750 lines (down from 2100, still over the 1200-line gate cap), `StudioPage.tsx` 1134, `client.ts` 767. *(2026-10-12: `Dashboard.tsx` is 1113 lines, under the cap; `StudioPage.tsx` 1161, `client.ts` 850.)* |
 | 5 | No committed backend lockfile (`uv.lock` gitignored) → non-reproducible installs | Medium | **Fixed**: `server/uv.lock` is tracked |
 
 Of the medium findings in §3, **M-3 (OAuth token reachable through the unauthenticated usage API)**
@@ -79,7 +79,7 @@ Ratings as-audited in July, with the September re-read in the right-hand column.
 | Tooling (lint/types) | ⚠️ Needs work | No Python linter/formatter/type-checker; TS strict off; oxlint minimal. | ✅ Fixed: Ruff, Pylint, TS strict, oxlint |
 | Dependencies | 🟡 Adequate | Client lockfile committed; backend lockfile gitignored; unbounded `>=` floors. | 🟡 Improved: `uv.lock` committed |
 | Documentation | 🟡 Adequate | Strong README + agent docs; no CONTRIBUTING/ARCHITECTURE/CHANGELOG. | 🟡 Adequate |
-| Error handling | 🟡 Adequate | Consistent API error mapping; several silently-swallowed errors in security-sensitive paths. | ✅ Improved: `py-silent-except` / `ts-no-silent-failures` gates now enforce this |
+| Error handling | 🟡 Adequate | Consistent API error mapping; several silently-swallowed errors in security-sensitive paths. | ✅ Improved: `py-silent-except` / `ts-silent-failures` gates now enforce this |
 
 ---
 
@@ -214,4 +214,4 @@ Advisory only — nothing here was implemented by this audit.
 
 ---
 
-*Ratings key — severity: High (fix soon) / Medium (plan for) / Low (cleanup). Effort: XS (<1h) / S (hours) / M (a day-ish) / L (multi-day).*
+*Ratings key. Severity: High (fix soon) / Medium (plan for) / Low (cleanup). Effort: XS (<1h) / S (hours) / M (a day-ish) / L (multi-day).*

@@ -133,7 +133,7 @@ def test_attach_command_names_the_session_of_a_live_tmux_run():
     """AC27. Composed server-side: the client cannot know the session name."""
     command = attach_command(_run(AgentTransport.TMUX, RunStatus.RUNNING))
 
-    assert command == f"tmux attach -t lg-{RUN_CODE}-{RUN_ID[:8]}"
+    assert command == f"tmux -L {settings.agent_tmux_socket} attach -t lg-{RUN_CODE}-{RUN_ID[:8]}"
 
 
 def test_attach_command_is_empty_for_a_file_transport_run():
@@ -166,7 +166,7 @@ def test_attach_command_is_offered_while_a_run_waits_for_a_permission_answer():
     """
     command = attach_command(_run(AgentTransport.TMUX, RunStatus.AWAITING_PERMISSION))
 
-    assert command == f"tmux attach -t lg-{RUN_CODE}-{RUN_ID[:8]}"
+    assert command == f"tmux -L {settings.agent_tmux_socket} attach -t lg-{RUN_CODE}-{RUN_ID[:8]}"
 
 
 # --- S2: the wrapper --------------------------------------------------------

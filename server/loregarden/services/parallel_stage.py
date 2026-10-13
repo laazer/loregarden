@@ -49,7 +49,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
-from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -184,8 +184,15 @@ def prepare_tree_for_parallel_stage(
 
     Resolved once, here, rather than by each member: the workers run
     concurrently and would otherwise race to create the ticket's worktree and
-    end up in three different trees. Only when the worktree policy is off does
-    this fall back to checking the branch out in the shared tree.
+    end up in three different trees. One resolution is also one refresh, which
+    is why the members are dispatched with ``skip_git_branch=True``.
+
+    The tree is prepared wherever it is — the ticket's own worktree included.
+    This used to return early for anything that was not the shared checkout,
+    which is every worktree run, so a prerequisite that landed after the tree
+    was cut stayed invisible to it (lg-milestone-that-779). The target branch is
+    still resolved against the shared checkout (S3): resolution writes refs, and
+    refs are shared across worktrees.
 
     Returns an error message (and finalizes the stage as BLOCKED) on failure,
     else an empty string.
@@ -199,10 +206,9 @@ def prepare_tree_for_parallel_stage(
         return ""
 
     try:
-        if resolve_execution_root(session, runs[0], ticket, workspace) != workspace_root:
-            return ""
+        execution_root = resolve_execution_root(session, runs[0], ticket, workspace)
         ensure_ticket_branch(
-            workspace_root,
+            execution_root,
             ticket,
             start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
             ignoring=ticket_recorded_paths(session, ticket),
@@ -217,7 +223,11 @@ def prepare_tree_for_parallel_stage(
             content=exc.artifact_content(stage_key=stage_key),
         )
         return _block_on_checkout_failure(session, ticket, stage_key, exc)
-    except (ValueError, subprocess.CalledProcessError) as exc:
+    except (ValueError, subprocess.CalledProcessError, TargetBranchError) as exc:
+        # `TargetBranchError` reaches here from `resolve_execution_root` as well
+        # as from the resolution below: cutting the worktree resolves the same
+        # target branch, and an integration branch that cannot take its base
+        # must block the stage rather than escape the dispatcher (779).
         return _block_on_checkout_failure(session, ticket, stage_key, exc)
     return ""
 

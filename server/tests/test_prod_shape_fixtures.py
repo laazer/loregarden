@@ -29,7 +29,12 @@ from loregarden.main import app
 from loregarden.models.domain import AgentRun, Artifact
 from loregarden.services import initiative_suggestions
 from loregarden.services.memory_store import AgentMemoryService
-from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape, prod_shape_id
+from loregarden.testing.prod_shape import (
+    CALIBRATION,
+    build_prod_shape,
+    ci_history_ticket,
+    prod_shape_id,
+)
 from sqlmodel import Session
 
 FIXTURES = (
@@ -41,6 +46,11 @@ RECORD = os.environ.get("LOREGARDEN_RECORD_FIXTURES") == "1"
 #: comparison is about shape and content, not the clock.
 _VOLATILE = {"checked_at", "created_at", "updated_at"}
 _PINNED = "2026-09-28T00:00:00Z"
+
+#: Ids the scenario does not fix (`make_workspace` mints a fresh one per build),
+#: pinned in every fixture, stamped ones included: no page reads them.
+_RANDOM_IDS = {"workspace_id"}
+_PINNED_ID = "prod-shape-workspace"
 
 #: fixture file -> the request a page makes.
 ENDPOINTS = {
@@ -54,17 +64,29 @@ ENDPOINTS = {
     # The scenario's worked ticket, at the live p90 of runs and artifact rows.
     "ticket-history-artifacts.json": ("/api/tickets/{worked_ticket}/artifacts", {}),
     "ticket-history-ledger.json": ("/api/tickets/{worked_ticket}/ledger", {}),
+    # The ticket whose CI auto-fix loop ran to its retry limit.
+    "ticket-ci-status.json": ("/api/ci/status/{ci_ticket}", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
 #: as recorded — and must stay unpinned, because where a row sits on the ticket's
 #: timeline is read from them.
-_STAMPED = {"ticket-history-artifacts.json", "ticket-history-ledger.json"}
+_STAMPED = {"ticket-history-artifacts.json", "ticket-history-ledger.json", "ticket-ci-status.json"}
 
 #: Fixtures whose response is computed from "now" (the sprint's dates), recorded
 #: with the clock pinned. The scenario's own timestamps are stamped at build
 #: time, after the pin, so pace still measures every completion in the window.
 _CLOCKED = {"initiative-suggestions.json"}
+
+
+def _pin_ids(value):
+    if isinstance(value, dict):  # py-org: allow-isinstance
+        return {
+            k: (_PINNED_ID if k in _RANDOM_IDS and v else _pin_ids(v)) for k, v in value.items()
+        }
+    if isinstance(value, list):  # py-org: allow-isinstance
+        return [_pin_ids(v) for v in value]
+    return value
 
 
 def _pin(value):
@@ -98,6 +120,7 @@ def test_fixture_matches_the_api(api, isolated_db, name):
     with Session(isolated_db) as session:
         plan_ticket = session.get(Artifact, prod_shape_id("plan", 0)).ticket_id
         worked_ticket = session.get(AgentRun, prod_shape_id("worked-run", 0)).ticket_id
+        ci_ticket = ci_history_ticket(session)
     with ExitStack() as stack:
         if name in _CLOCKED:
             pinned = datetime.fromisoformat(_PINNED.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -105,10 +128,12 @@ def test_fixture_matches_the_api(api, isolated_db, name):
                 mock.patch.object(initiative_suggestions, "clock", return_value=pinned)
             )
         response = api.get(
-            path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket), params=params
+            path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket, ci_ticket=ci_ticket),
+            params=params,
         )
     assert response.status_code == 200, response.text
-    payload = response.json() if name in _STAMPED else _pin(response.json())
+    payload = _pin_ids(response.json())
+    payload = payload if name in _STAMPED else _pin(payload)
     body = json.dumps(payload, indent=1, sort_keys=True) + "\n"
 
     target = FIXTURES / name

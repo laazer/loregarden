@@ -4,7 +4,8 @@ import { useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
-import { useChatWorkspaceSlug } from "./useChatWorkspace";
+import { chatScopeWorkspaceSlug } from "../lib/chatScope";
+import { useChatScopeKey } from "./useChatScope";
 
 export interface TerminalTarget {
   /** Empty when the current screen names no single workspace. */
@@ -38,7 +39,8 @@ export function useTerminalTarget(): TerminalTarget {
   const pathTicketId = useTicketIdFromPath();
   const ticketId = onBranchTriage ? null : pathTicketId;
   const onChat = pathname === "/chat" || pathname.startsWith("/chat/");
-  const chatWorkspaceSlug = useChatWorkspaceSlug();
+  // "" for a global chat, which spans workspaces and so names none of its own.
+  const chatWorkspaceSlug = chatScopeWorkspaceSlug(useChatScopeKey());
 
   // Same key the dashboard uses, so being on a ticket costs no extra request.
   const { data: ticket } = useQuery({

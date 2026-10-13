@@ -115,6 +115,22 @@ def initiative_coverage(session: Session, initiative_id: str) -> InitiativeCover
     )
 
 
+def plan_coverage(session: Session, root: Ticket) -> InitiativeCoverage:
+    """What a plan rooted at ``root`` covers.
+
+    An initiative's plan is its roots (`initiative_coverage`). Any other parent
+    — a milestone, a feature — is its own single phase: the plan works through
+    its subtree the way an initiative's works through one milestone.
+    """
+    if root.work_item_type == WorkItemType.INITIATIVE:
+        return initiative_coverage(session, root.id)
+    return InitiativeCoverage(
+        roots=[root],
+        member_ids=frozenset(),
+        trees=descendants_by_root(session, [root.id]),
+    )
+
+
 def covered_ticket_ids(session: Session, ticket_id: str) -> list[str]:
     """The ids a board scoped to ``ticket_id`` shows, below it.
 

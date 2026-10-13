@@ -1211,29 +1211,31 @@ def list_ticket_artifacts(
     own bookkeeping (`system`), so the reader can put outputs on the timeline and
     hide machinery without guessing from titles.
     """
+    # Only the two run columns the feed reads. Joining the whole AgentRun pulled
+    # every run's stdout/stderr once per artifact row: 274 MB for one 48-run
+    # ticket's 200 rows, and 4-16 s per request on a feed polled every 2 s.
     rows = session.exec(
-        select(Artifact, AgentRun)
+        select(Artifact, AgentRun.run_code, AgentRun.stage_key)
         .join(AgentRun, Artifact.run_id == AgentRun.id, isouter=True)
         .where(Artifact.ticket_id == ticket_id)
         .order_by(Artifact.created_at.desc())
         .limit(limit)
     ).all()
     items: list[dict[str, Any]] = []
-    for art, run in rows:
+    for art, run_code, run_stage_key in rows:
         raw = art.content_json or "{}"
         try:
             content = json.loads(raw)
         except json.JSONDecodeError:
             # silent-ok: unparseable content is handed to the caller verbatim under _raw
             content = {"_raw": raw}
-        run_code = run.run_code if run else None
         items.append(
             {
                 "id": art.id,
                 "kind": art.kind,
                 "title": art.title,
                 "run_id": art.run_id,
-                "stage_key": (run.stage_key if run else None) or _content_stage_key(content),
+                "stage_key": run_stage_key or _content_stage_key(content),
                 "system": is_system_record(kind=art.kind, title=art.title, run_code=run_code),
                 "evidence_kind": art.evidence_kind,
                 "commit_sha": art.commit_sha,

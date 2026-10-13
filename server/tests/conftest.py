@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import time
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -24,6 +25,7 @@ from loregarden.services import (
 from loregarden.services.cli_settings import ADAPTER_BINARIES
 from loregarden.services.git_subprocess import GH_BINARY_ENV, GH_USER_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
+from loregarden.services.run_output_files import tmux_argv
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
@@ -55,6 +57,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.builtin_orchestrator.engine",
     "loregarden.services.stage_fanout_service.engine",
     "loregarden.services.drain.engine",
+    "loregarden.services.integration_branch_health.engine",
     "loregarden.services.process_identity.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.services.run_lease.engine",
@@ -71,6 +74,9 @@ _ENGINE_BINDINGS = (
     "loregarden.services.btw_run_service.engine",
     "loregarden.services.github_sync_scheduler.engine",
     "loregarden.services.github_push_on_edit.engine",
+    # The CI poll loop and the webhook's poll-now open their own sessions.
+    "loregarden.services.ci_poll_scheduler.engine",
+    "loregarden.api.ci.engine",
 )
 
 
@@ -94,6 +100,54 @@ def _no_shutdown_drain_in_tests():
     settings.drain_timeout_seconds = 0
     yield
     settings.drain_timeout_seconds = previous
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _private_tmux_server():
+    """Every tmux test runs on a socket of this worker's own, never `loregarden`'s.
+
+    The production socket is where this machine's real agents run, and its
+    server never exits on empty — so a test sharing it would leave sessions
+    beside live agents, and a test that killed its server would kill them. One
+    socket per process keeps `pytest -n` workers off each other's server too,
+    and lets teardown `kill-server` without reaching anything that is not ours.
+    """
+    previous = settings.agent_tmux_socket
+    settings.agent_tmux_socket = f"lg-pytest-{os.getpid()}"
+    yield
+    if shutil.which("tmux"):
+        # No `check`: a worker that never spawned a tmux agent has no server to kill.
+        subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    settings.agent_tmux_socket = previous
+
+
+@pytest.fixture(name="zombie_pid")
+def zombie_pid_fixture():
+    """The pid of a process that has exited and that nothing has reaped yet.
+
+    What a tmux pane is when its server misses the reap: `kill(pid, 0)` still
+    succeeds and `ps` still prints its start time. Made by never waiting on a
+    child that exits at once. `os.waitid(WNOWAIT)` would wait without reaping
+    but does not exist on macOS, so this asks `ps` until it reads `Z`. The
+    child holds the pid until teardown waits on it.
+
+    A session leader, like the agent wrapper: a timeout `killpg`s the watched
+    pid's group, and in pytest's own group that would be the test runner.
+    """
+    child = subprocess.Popen(["/bin/sh", "-c", "exit 0"], start_new_session=True)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        stat = subprocess.run(
+            ["ps", "-p", str(child.pid), "-o", "stat="], capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if stat.startswith("Z"):
+            break
+        time.sleep(0.02)
+    else:
+        child.wait()
+        raise AssertionError(f"pid {child.pid} never became a zombie")
+    yield child.pid
+    child.wait()
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -135,6 +189,12 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+    # The integration-branch sweep hands any conflict it finds to a merge turn,
+    # which spawns the agent's own CLI whatever the adapter above says. A test
+    # that wants a resolving turn patches `integration_merge_agent._run_agent`.
+    monkeypatch.setenv(
+        "LOREGARDEN_INTEGRATION_MERGE_STUB_RESPONSE", "Stubbed merge turn: resolved nothing."
+    )
 
 
 @pytest.fixture(autouse=True)

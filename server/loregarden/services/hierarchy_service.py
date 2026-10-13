@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from loregarden.models.domain import (
     VALID_HIERARCHY,
+    BlockedOn,
     Ticket,
     TicketTreeNode,
     WorkItemType,
     Workspace,
 )
+from loregarden.services.ticket_ids import respell_external_id
 from sqlmodel import Session, col, select
 
 
@@ -61,6 +63,7 @@ def build_tree(
     *,
     stage_names: dict[str, str] | None = None,
     members: dict[str, list[str]] | None = None,
+    blocked_on: dict[str, BlockedOn] | None = None,
 ) -> list[TicketTreeNode]:
     """Assemble a forest from a flat ticket list (roots = no parent).
 
@@ -70,6 +73,7 @@ def build_tree(
     """
     stage_names = stage_names or {}
     members = members or {}
+    blocked_on = blocked_on or {}
     by_id = {t.id: t for t in tickets}
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
@@ -107,6 +111,7 @@ def build_tree(
             workspace_slug=workspace_slugs.get(ticket.workspace_id, ""),
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
+            blocked_on=blocked_on.get(ticket.id),
         )
 
     def member_node(ticket: Ticket) -> TicketTreeNode:
@@ -199,7 +204,28 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
     ticket.revision += 1
     ticket.last_updated_by = "human"
     session.add(ticket)
+    _respell_subtree(session, ticket)
     return ticket
+
+
+def _respell_subtree(session: Session, ticket: Ticket) -> None:
+    """Re-derive the milestone segment of ``ticket`` and everything under it.
+
+    A move can put the subtree under a different milestone, or under none, and
+    every descendant's id carries that segment too. The number is unchanged, so
+    the old spelling still resolves. Initiatives keep their global ``init-*``
+    id, and rows that predate ``ticket_number`` keep theirs rather than being
+    spelled ``-0``.
+    """
+    if ticket.workspace_id is None:
+        return
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace is None:
+        return
+    for item in [ticket, *descendants_by_root(session, [ticket.id])[ticket.id]]:
+        if item.ticket_number:
+            respell_external_id(session, item, workspace)
+            session.add(item)
 
 
 def descendants_by_root(session: Session, root_ids: list[str]) -> dict[str, list[Ticket]]:

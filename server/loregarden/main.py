@@ -46,6 +46,7 @@ from loregarden.api import (
     studio,
     system,
     terminal,
+    ticket_autopilot,
     ticket_pull_request,
     ticket_studio,
     tickets,
@@ -66,6 +67,7 @@ from loregarden.services.branch_triage_run_service import fail_interrupted_branc
 from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
+from loregarden.services.ci_poll_scheduler import start_ci_poll_loop
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
@@ -161,6 +163,28 @@ def _start_sandbox_endpoint_check() -> asyncio.Task[None]:
     return asyncio.create_task(check(), name="sandbox-endpoint-check")
 
 
+def _start_background_loops() -> list[asyncio.Task]:
+    """The clocks this server runs on. None of them in a sandbox.
+
+    A sandbox runs on a snapshot of main's database: reconciling it would act on
+    main's runs, syncing it would push its stale tickets to GitHub over real
+    edits, the autopilot would queue real agent runs for its tickets, and the CI
+    poll would reopen its done tickets for fixes against work that has moved on.
+    """
+    if settings.sandbox:
+        return []
+    # Repair on a clock from here, not only at the next boot and not only while
+    # someone has the dashboard open.
+    started = [
+        start_reconcile_loop(),
+        start_github_sync_loop(),
+        start_push_worker(),
+        start_autopilot_loop(),
+        start_ci_poll_loop(),
+    ]
+    return [task for task in started if task is not None]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_console_logging()
@@ -188,15 +212,7 @@ async def lifespan(app: FastAPI):
         else:
             _recover_previous_boot(session)
 
-    # Repair on a clock from here, not only at the next boot and not only while
-    # someone has the dashboard open.
-    reconcile_task = None if settings.sandbox else start_reconcile_loop()
-    # Never in a sandbox: it runs on a snapshot of main's database, and pushing
-    # that snapshot's tickets to GitHub would overwrite real edits.
-    github_sync_task = None if settings.sandbox else start_github_sync_loop()
-    github_push_task = None if settings.sandbox else start_push_worker()
-    # Never in a sandbox: it would queue real agent runs for a snapshot's tickets.
-    autopilot_task = None if settings.sandbox else start_autopilot_loop()
+    background_loops = _start_background_loops()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
     endpoint_check = _start_sandbox_endpoint_check() if settings.sandbox else None
@@ -217,14 +233,8 @@ async def lifespan(app: FastAPI):
             await asyncio.to_thread(
                 wait_for_quiescence, timeout_seconds=settings.drain_timeout_seconds
             )
-        if reconcile_task is not None:
-            reconcile_task.cancel()
-        if github_sync_task is not None:
-            github_sync_task.cancel()
-        if github_push_task is not None:
-            github_push_task.cancel()
-        if autopilot_task is not None:
-            autopilot_task.cancel()
+        for task in background_loops:
+            task.cancel()
         # The drain is over, so stop advertising it. A real process exits here
         # and nobody reads the flag again; a test process keeps going, and a
         # flag left set refuses work in every test that follows — which is
@@ -280,6 +290,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 
 app.include_router(tickets.router, prefix="/api")
 app.include_router(ticket_pull_request.router, prefix="/api")
+app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
@@ -287,6 +298,7 @@ app.include_router(calendar_events.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(branch_triage.router, prefix="/api")
 app.include_router(baxter_chat.router, prefix="/api")
+app.include_router(baxter_chat.global_router, prefix="/api")
 app.include_router(composer_notes.router, prefix="/api")
 app.include_router(views.router, prefix="/api")
 app.include_router(system.router, prefix="/api")

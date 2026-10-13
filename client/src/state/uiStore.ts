@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { TicketState, WorkItemType } from "../api/client";
+import type { BlockedOn, TicketState, WorkItemType } from "../api/client";
 import {
   clampHiveSpeedIndex,
   DEFAULT_HIVE_SPEED_MULTIPLIER,
@@ -52,6 +52,8 @@ export function normalizeUtilityDockEdge(value: unknown): UtilityDockEdge {
 
 interface UiState {
   stateFilters: TicketState[];
+  /** What a stuck ticket waits for: a person, other tickets, or an agent. */
+  blockedOnFilters: BlockedOn[];
   typeFilters: WorkItemType[];
   search: string;
   expandedTicketIds: string[];
@@ -64,13 +66,14 @@ interface UiState {
   queueWorkspaceSlug: string;
   branchTriageWorkspaceSlug: string;
   /**
-   * Which workspace Baxter chat is confined to.
+   * Which archive Baxter chat is on: a workspace slug, or a global scope
+   * (`lib/chatScope`), for working across workspaces on an initiative.
    *
-   * Separate from `workspace` (the Console/Home filter, which may be "all")
-   * because a chat turn is answered by one workspace's agent and its ticket
-   * refs only resolve there.
+   * Separate from `workspace` (the Console/Home filter, whose "all" only
+   * filters) because a chat turn is answered by one agent, and the scope
+   * decides what that agent's snapshot and ticket refs cover.
    */
-  chatWorkspaceSlug: string;
+  chatScope: string;
   hiveSkin: HiveSkinId;
   hiveSpeedIndex: number;
   copilotOpen: boolean;
@@ -138,6 +141,8 @@ interface UiState {
   setAutoFollow: (runId: string, value: boolean) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
+  toggleBlockedOnFilter: (answer: BlockedOn) => void;
+  clearBlockedOnFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
   clearTypeFilters: () => void;
   setSearch: (s: string) => void;
@@ -153,7 +158,7 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
-  setChatWorkspaceSlug: (slug: string) => void;
+  setChatScope: (scope: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
   requestBaxterChatReset: () => void;
@@ -181,12 +186,13 @@ type PersistedUiState = Pick<
   | "workspace"
   | "typeFilters"
   | "stateFilters"
+  | "blockedOnFilters"
   | "paneVisibility"
   | "editorWorkspace"
   | "editorContextRoot"
   | "queueWorkspaceSlug"
   | "branchTriageWorkspaceSlug"
-  | "chatWorkspaceSlug"
+  | "chatScope"
   | "hiveSkin"
   | "hiveSpeedIndex"
   | "copilotOpen"
@@ -200,6 +206,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       stateFilters: [],
+      blockedOnFilters: [],
       typeFilters: [],
       search: "",
       expandedTicketIds: [],
@@ -216,7 +223,7 @@ export const useUiStore = create<UiState>()(
       editorFilePath: null,
       queueWorkspaceSlug: "",
       branchTriageWorkspaceSlug: "",
-      chatWorkspaceSlug: "",
+      chatScope: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       copilotOpen: false,
@@ -245,6 +252,15 @@ export const useUiStore = create<UiState>()(
         });
       },
       clearStateFilters: () => set({ stateFilters: [] }),
+      toggleBlockedOnFilter: (answer) => {
+        const current = get().blockedOnFilters;
+        set({
+          blockedOnFilters: current.includes(answer)
+            ? current.filter((value) => value !== answer)
+            : [...current, answer],
+        });
+      },
+      clearBlockedOnFilters: () => set({ blockedOnFilters: [] }),
       toggleTypeFilter: (type) => {
         const current = get().typeFilters;
         set({
@@ -290,7 +306,15 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
-      setChatWorkspaceSlug: (chatWorkspaceSlug) => set({ chatWorkspaceSlug }),
+      // Each scope is its own archive, and a global thread reads by id under any
+      // focus, so a thread left open across a switch would show under the wrong
+      // name. Leave it open only when the scope is first pinned.
+      setChatScope: (chatScope) =>
+        set((state) =>
+          !state.chatScope || state.chatScope === chatScope
+            ? { chatScope }
+            : { chatScope, baxterChatSessionId: "" },
+        ),
       setBranchTriageWorkspaceSlug: (branchTriageWorkspaceSlug) =>
         set({ branchTriageWorkspaceSlug }),
       setBranchTriageBranch: (branchTriageBranch) => set({ branchTriageBranch }),
@@ -336,15 +360,19 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 12,
+      version: 13,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 13) {
+          // A workspace's chat scope key is its slug, so the value carries over.
+          state.chatScope = typeof state.chatWorkspaceSlug === "string" ? state.chatWorkspaceSlug : "";
+          delete state.chatWorkspaceSlug;
+        }
         if (version < 12 && typeof state.baxterChatSessionId !== "string") {
           state.baxterChatSessionId = "";
         }
-        if (version < 11 && typeof state.chatWorkspaceSlug !== "string") {
-          state.chatWorkspaceSlug = "";
-        }
+        // Version 11 added `chatWorkspaceSlug`; the version 13 step above reads
+        // it whether or not it was ever written, so nothing is left to do here.
         if (version < 10) {
           state.utilityDockEdge = normalizeUtilityDockEdge(state.utilityDockEdge);
           state.copilotWidth = clampCopilotWidth(state.copilotWidth);
@@ -405,12 +433,13 @@ export const useUiStore = create<UiState>()(
         workspace: s.workspace,
         typeFilters: s.typeFilters,
         stateFilters: s.stateFilters,
+        blockedOnFilters: s.blockedOnFilters,
         paneVisibility: s.paneVisibility,
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
-        chatWorkspaceSlug: s.chatWorkspaceSlug,
+        chatScope: s.chatScope,
         baxterChatSessionId: s.baxterChatSessionId,
         copilotOpen: s.copilotOpen,
         copilotHeight: s.copilotHeight,

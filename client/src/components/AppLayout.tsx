@@ -13,6 +13,7 @@ import { QueueNotificationsHost } from "./QueueNotificationsHost";
 import { ToastHost } from "./ToastHost";
 import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
+import { ViewAgentActions } from "./ViewAgentActions";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -146,6 +147,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         />
 
         <ReaderHost />
+        <ViewAgentActions />
         <ToastHost />
         <QueueNotificationsHost />
       </div>

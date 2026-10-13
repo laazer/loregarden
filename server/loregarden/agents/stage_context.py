@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
+from loregarden.services.repair_brief import repair_brief_for
 from loregarden.services.rework_feedback import render_rework_feedback
 from loregarden.services.studio_routing import is_agentless_stage, is_prunable_stage
 from sqlmodel import Session
@@ -156,7 +158,10 @@ def build_orchestration_context(
     # ledger exists (older tickets, or non-reroute blocks).
     feedback = render_rework_feedback(session, ticket, stage_key) if session else ""
     feedback = feedback or ticket.blocking_issues
-    if feedback:
+    brief = _repair_brief(session, ticket, run, stage_key)
+    if brief:
+        lines += ["", "## Why you're here — your repair brief", brief]
+    if feedback and feedback != brief:
         lines += [
             "",
             "## Why you're here — prior stage feedback",
@@ -168,6 +173,13 @@ def build_orchestration_context(
         ]
 
     return "\n".join(lines)
+
+
+def _repair_brief(session: Session | None, ticket: Ticket, run: AgentRun, stage_key: str) -> str:
+    """A repair turn's brief, read from where dispatch cannot have blanked it (929)."""
+    if session is None or run.agent_id != REPAIR_AGENT_ID or run.created_at is None:
+        return ""
+    return repair_brief_for(session, ticket, stage_key=stage_key, before=run.created_at)
 
 
 def _assigned_exit_action_lines(assigned_exit_actions: list[dict] | list[object]) -> list[str]:

@@ -211,11 +211,101 @@
   color: var(--aml);
 }
 
+.tl-feed-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--txl);
+}
+
+/* A parent's timeline: the tickets under it, grouped by state. */
+.tl-children {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tl-children-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tl-children-count {
+  color: var(--txl);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-children-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tl-children-list > li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tl-children-link {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.tl-children-link:hover,
+.tl-children-link:focus-visible {
+  background: var(--bg2);
+}
+
+.tl-children-id {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.tl-children-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-children-stage {
+  flex: none;
+  font-size: 11px;
+  color: var(--txl);
+}
+
 /* One rail down the left; each visit hangs a dot on it. The rail's x is
    derived from the dot's, so the two cannot drift apart: head padding + dot
-   margin + half the dot, minus half the rail. */
+   margin + half the dot, minus half the rail. The head's right gutter
+   (padding, chevron, gap) is shared the same way, so an attempt row's right
+   edge lines up with the head's text rather than running under the chevron. */
 .tl-list {
   --tl-head-pad: 6px;
+  --tl-head-pad-right: 8px;
+  --tl-head-gap: 8px;
+  --tl-chevron-width: 12px;
   --tl-dot-margin: 4px;
   --tl-dot-size: 11px;
   --tl-rail-width: 1px;
@@ -261,11 +351,18 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 8px 7px var(--tl-head-pad);
+  gap: var(--tl-head-gap);
+  padding: 7px var(--tl-head-pad-right) 7px var(--tl-head-pad);
   border-radius: 6px;
   text-align: left;
   min-width: 0;
+}
+
+.tl-visit-head {
+  /* A narrow pane wraps the tags onto a second line rather than pushing the
+     time and chevron out of the pane. */
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 
 .tl-visit-head:hover {
@@ -299,6 +396,9 @@
   font-size: 12.5px;
   color: var(--tx);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tl-meta {
@@ -325,12 +425,25 @@
   background: color-mix(in srgb, var(--red) 14%, transparent);
 }
 
-.tl-when {
+.tl-head-end {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tl-head-gap);
+  min-width: 0;
+}
+
+/* The status and the start time may split across two lines at the separator;
+   each piece stays whole. */
+.tl-when {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--txl);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tl-when > span {
   white-space: nowrap;
 }
 
@@ -340,7 +453,7 @@
 
 .tl-chevron {
   flex: none;
-  width: 12px;
+  width: var(--tl-chevron-width);
   font-size: 10px;
   color: var(--txl);
 }
@@ -364,7 +477,7 @@
   grid-template-columns: minmax(0, 1fr) auto 64px auto;
   align-items: center;
   gap: 10px;
-  padding: 3px 0;
+  padding: 3px calc(var(--tl-head-pad-right) + var(--tl-chevron-width) + var(--tl-head-gap)) 3px 0;
   font-family: var(--mono);
   font-size: 11px;
 }

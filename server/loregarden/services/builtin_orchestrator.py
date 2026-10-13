@@ -72,6 +72,13 @@ from loregarden.services.workflow_state import (
 )
 from sqlmodel import Session, select
 
+#: How many held children the parent's waiting line names before it switches to
+#: a count. Measured on the live database 2026-10-10: one parent has 93 children
+#: and 2 runs have already hit the 2000-character cut `_finish_orchestration_run`
+#: applies, which discards the tail — so the names, not the count, are what
+#: gives way (779).
+_WAITING_NAMES = 5
+
 #: Per-stage floors, calibrated 2026-09-11 against the 95th percentile of every
 #: SUCCEEDED run's wall clock, per stage, with the sample size beside each. The
 #: first version of this map (686) was sized by judgement; these are measured.
@@ -914,7 +921,14 @@ def _orchestrate_incomplete_children(
         # subtree keeps moving, and the parent stays incomplete because the work
         # is still owed. Distinct from parked, which is owed by a person — this
         # is owed by another ticket, and naming it is the whole value.
-        return f"Child ticket waiting on a prerequisite: {'; '.join(waiting)}"
+        # The count leads because `_finish_orchestration_run` stores
+        # `error_message[:2000]`, and one live parent has 93 children: a line
+        # that leads with names loses both the count and the first child to
+        # that cut. Five names, then the remainder as a number (779).
+        named = "; ".join(waiting[:_WAITING_NAMES])
+        if len(waiting) > _WAITING_NAMES:
+            named += f"; +{len(waiting) - _WAITING_NAMES} more"
+        return f"Child ticket waiting on a prerequisite ({len(waiting)}): {named}"
     if parked:
         # Every runnable sibling has now had its turn — this is reported after
         # the loop, not on encountering the first parked child, because the
@@ -935,14 +949,23 @@ def _partition_children(
 
     - ``parked`` is owed by a person, and deliberately does not stop the rest of
       the subtree (lg-workflow-integrity-449);
-    - ``waiting`` is owed by another ticket *outside this sibling set*.
+    - ``waiting`` is owed by another ticket, whose work this run cannot reach.
 
-    That last qualifier is the whole seam, and getting it wrong is a regression
-    the integration-review test catches: a prerequisite that is itself a sibling
-    is ordering's job, and `order_children_for_subtree` has already put it
-    earlier in this list. Blocking on it as well would hold a child whose
-    prerequisite is about to run — an integration review depends on every
-    sibling, so it would never start at all.
+    That last qualifier is narrower than it looks, and reading it too widely is
+    what produced lg-milestone-that-779. A sibling exemption is right for one
+    reason only: `order_children_for_subtree` has already put a sibling that
+    has *not run* earlier in this list, so blocking on it would hold a child
+    whose prerequisite is about to run — an integration review depends on every
+    sibling, so it would never start at all. That is `UnmetReason.NOT_DONE`,
+    and it stays exempt.
+
+    Ordering cannot do the other half. A sibling in `done` whose branch never
+    landed has already had its turn, and no reordering makes work the
+    dependent's base cannot see appear in it (`UnmetReason.NOT_LANDED`). 779
+    observed exactly that: 715 reached `done` unlanded, 716 was dispatched
+    immediately, and 716's worktree was cut from an integration branch holding
+    none of 715's commits. So the exemption is keyed on the *reason*, per
+    entry, and never on being a sibling alone.
 
     What ordering cannot express is a prerequisite it never saw. It drops edges
     pointing outside the set, which is every cross-workspace edge and every edge
@@ -965,7 +988,7 @@ def _partition_children(
         unmet = [
             entry
             for entry in _unmet_for(session, child, workspace)
-            if entry.ticket.id not in sibling_ids
+            if not (entry.ticket.id in sibling_ids and entry.reason is UnmetReason.NOT_DONE)
         ]
         if unmet:
             waiting.append(f"{child.title} (waits for {_name_prerequisites(session, unmet)})")
@@ -1011,7 +1034,14 @@ def _name_prerequisites(session: Session, unmet: list[UnmetPrerequisite]) -> str
 
 def _why(entry: UnmetPrerequisite) -> str:
     if entry.reason is UnmetReason.NOT_LANDED:
-        return f"{entry.ticket.state.value}, not landed on {entry.target}"
+        # The remedy rides along because this hold does not clear itself:
+        # landing runs only on a terminal-stage transition, so a prerequisite
+        # already `done` never re-lands on its own (779). Named on the
+        # prerequisite — landing the held child delivers nothing.
+        return (
+            f"{entry.ticket.state.value}, not landed on {entry.target}; "
+            f"land it: loregarden_land_ticket {entry.ticket.external_id}"
+        )
     return entry.ticket.state.value
 
 

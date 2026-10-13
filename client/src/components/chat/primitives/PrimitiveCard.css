@@ -1464,6 +1464,14 @@
   right: 7px;
 }
 
+/* Which tickets this one waits on; the detail pane links them. */
+.lg-primitive-ticket-tile-waiting {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
 /* A host's extra control under the tile body — the initiative board's state menu. */
 .lg-primitive-ticket-tile-foot {
   margin-top: 8px;

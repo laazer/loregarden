@@ -82,7 +82,7 @@ beforeEach(() => {
     branch: null,
     archive: null,
     composedOnScreen: false,
-    screenSession: null,
+    screenPrompts: null,
   } as unknown as ReturnType<typeof useActiveChatSession>);
   mockQueue.mockReturnValue(queueStatus());
 });

@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalStatus,
     BaxterChatMessage,
+    BaxterChatScope,
     BaxterChatSession,
     ChatSurface,
     CliAdapter,
@@ -58,6 +59,13 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.baxter_chat_scope import (
+    ChatOwner,
+    GlobalChatContext,
+    global_chat_agent,
+    load_global_context,
+    resolve_global_host,
+)
 from loregarden.services.chat_attachments import (
     ChatAttachment,
     copy_session_attachments,
@@ -175,30 +183,26 @@ def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
     return value[: limit - 1].rstrip() + "…"
 
 
-def _pending_approvals(session: Session, workspace_id: str) -> list[Approval]:
+def _pending_approvals(session: Session, workspace_id: str | None) -> list[Approval]:
+    """The newest pending approvals in one workspace, or in all of them when ``None``."""
+    query = select(Approval).where(Approval.status == ApprovalStatus.PENDING)
+    if workspace_id is not None:
+        query = query.where(Approval.workspace_id == workspace_id)
     return list(
-        session.exec(
-            select(Approval)
-            .where(
-                Approval.workspace_id == workspace_id,
-                Approval.status == ApprovalStatus.PENDING,
-            )
-            .order_by(col(Approval.created_at).desc())
-            .limit(MAX_SNAPSHOT_ROWS)
-        ).all()
+        session.exec(query.order_by(col(Approval.created_at).desc()).limit(MAX_SNAPSHOT_ROWS)).all()
     )
 
 
-def _active_tickets(session: Session, workspace_id: str) -> list[Ticket]:
+def _active_tickets(session: Session, workspace_id: str | None) -> list[Ticket]:
+    """In-progress and blocked tickets in one workspace, or in all of them when ``None``."""
+    query = select(Ticket).where(
+        col(Ticket.state).in_([TicketState.IN_PROGRESS, TicketState.BLOCKED])
+    )
+    if workspace_id is not None:
+        query = query.where(Ticket.workspace_id == workspace_id)
     return list(
         session.exec(
-            select(Ticket)
-            .where(
-                Ticket.workspace_id == workspace_id,
-                col(Ticket.state).in_([TicketState.IN_PROGRESS, TicketState.BLOCKED]),
-            )
-            .order_by(Ticket.priority.asc(), Ticket.updated_at.desc())
-            .limit(MAX_SNAPSHOT_ROWS)
+            query.order_by(Ticket.priority.asc(), Ticket.updated_at.desc()).limit(MAX_SNAPSHOT_ROWS)
         ).all()
     )
 
@@ -322,12 +326,12 @@ def derive_session_title(text: str) -> str:
 
 
 def list_chat_sessions(
-    session: Session, workspace_id: str, *, limit: int = 50
+    session: Session, owner: ChatOwner, *, limit: int = 50
 ) -> list[BaxterChatSession]:
     return list(
         session.exec(
             select(BaxterChatSession)
-            .where(BaxterChatSession.workspace_id == workspace_id)
+            .where(*owner.listing_filter())
             .order_by(col(BaxterChatSession.updated_at).desc())
             .limit(limit)
         ).all()
@@ -335,10 +339,21 @@ def list_chat_sessions(
 
 
 def create_chat_session(
-    session: Session, workspace_id: str, *, title: str = ""
+    session: Session, owner: ChatOwner, *, title: str = ""
 ) -> BaxterChatSession:
+    """Open a thread in ``owner``'s archive.
+
+    A global thread borrows its host workspace here, once, so every later turn
+    runs in the same checkout and the thread's worktree stays in one repository.
+    """
+    if owner.scope == BaxterChatScope.WORKSPACE:
+        workspace_id = owner.workspace_id
+    else:
+        workspace_id = resolve_global_host(session, owner.initiative_id).id
     row = BaxterChatSession(
         workspace_id=workspace_id,
+        scope=owner.scope,
+        initiative_id=owner.initiative_id,
         title=(title or "").strip() or UNTITLED_SESSION_TITLE,
     )
     session.add(row)
@@ -369,6 +384,8 @@ def fork_chat_session(
     fork_title = _clip(f"Fork of {source_title}", MAX_TITLE_CHARS)
     row = BaxterChatSession(
         workspace_id=source.workspace_id,
+        scope=source.scope,
+        initiative_id=source.initiative_id,
         title=fork_title,
         runtime_json=source.runtime_json or "{}",
     )
@@ -405,11 +422,12 @@ def fork_chat_session(
 
 
 def get_chat_session(
-    session: Session, workspace_id: str, session_id: str
+    session: Session, owner: ChatOwner, session_id: str
 ) -> BaxterChatSession | None:
-    """Scoped by workspace on purpose: an id from another workspace is a 404, not a read."""
+    """Scoped on purpose: an id from another workspace, or a global thread read
+    through a workspace's routes, is a 404, not a read."""
     row = session.get(BaxterChatSession, session_id)
-    if not row or row.workspace_id != workspace_id:
+    if not row or not owner.owns(row):
         return None
     return row
 
@@ -572,6 +590,10 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
     return {
         "id": chat_session.id,
         "workspace_id": chat_session.workspace_id,
+        "scope": chat_session.scope.value,
+        "initiative_id": chat_session.initiative_id,
+        # Where a global thread runs; the same workspace's slug on a scoped one.
+        "host_workspace_slug": workspace.slug if workspace else None,
         "title": chat_session.title or UNTITLED_SESSION_TITLE,
         "messages": [_message_view(message) for message in messages],
         "pending_approvals": list_home_chat_pending_approvals(session, chat_session),
@@ -658,6 +680,46 @@ def _reference_section(references: ResolvedReferences | None) -> list[str]:
     return lines
 
 
+def _scope_lines(workspace: Workspace, context: GlobalChatContext | None) -> list[str]:
+    if context is None:
+        return [f"Workspace: {workspace.slug}"]
+    return [
+        "Scope: every workspace (global chat). This turn runs in the "
+        f"`{context.host_slug}` checkout, which is only where file tools read; it does "
+        "not limit what you answer about.",
+        "Tickets here come from different workspaces. Pass each ticket's own "
+        "`workspace_slug` to Loregarden tools, and put ticket UUIDs (not external ids, "
+        "which repeat across workspaces) in ticket refs.",
+    ]
+
+
+def _workspace_label(workspace_id: str | None, context: GlobalChatContext | None) -> str:
+    if context is None:
+        return ""
+    if workspace_id is None:
+        return " workspace=— (cross-workspace)"
+    return f" workspace={context.workspace_slugs.get(workspace_id, workspace_id)}"
+
+
+def _initiative_section(context: GlobalChatContext | None) -> list[str]:
+    if context is None or context.initiative is None:
+        return []
+    initiative = context.initiative
+    return [
+        "",
+        "## Focused initiative",
+        "The operator opened this chat to work on this initiative. Its milestones can "
+        "live in any workspace.",
+        f"id: `{initiative.id}`",
+        f"external id: {initiative.external_id}",
+        f"title: {initiative.title}",
+        _clip(initiative.description) or "(no description)",
+        "",
+        "### Current plan (computed now; re-read with loregarden_get_initiative_plan after acting)",
+        context.plan,
+    ]
+
+
 def build_baxter_chat_prompt(
     *,
     workspace: Workspace,
@@ -670,6 +732,7 @@ def build_baxter_chat_prompt(
     interactive: bool = False,
     approval_bridge: bool = False,
     skill_name: str = "",
+    global_context: GlobalChatContext | None = None,
 ) -> str:
     """Assemble one Home chat turn's system prompt.
 
@@ -677,11 +740,15 @@ def build_baxter_chat_prompt(
     edits in Studio, and rendering it here is what makes that editor mean
     something on this rail. The caller passes it rather than the builder looking
     it up, so the builder stays pure and testable.
+
+    ``global_context`` makes this a global thread's prompt: the snapshot spans
+    every workspace, rows are labelled with theirs, and a focused initiative's
+    plan is included.
     """
     sections = [
         "# Baxter — Home chat",
         "",
-        f"Workspace: {workspace.slug}",
+        *_scope_lines(workspace, global_context),
         "",
     ]
     # The operator picked this skill from the composer's `/` menu for this turn.
@@ -709,7 +776,8 @@ def build_baxter_chat_prompt(
         sections.append(f"Pending approvals ({len(approvals)}):")
         for approval in approvals:
             title = approval.title or approval.tool_name or "Approval"
-            sections.append(f"- {title} [{approval.kind.value}] ticket={approval.ticket_id}")
+            where = _workspace_label(approval.workspace_id, global_context)
+            sections.append(f"- {title} [{approval.kind.value}] ticket={approval.ticket_id}{where}")
     else:
         sections.append("Pending approvals: none")
 
@@ -719,9 +787,14 @@ def build_baxter_chat_prompt(
             # Both ids, always. Rendering only ``external_id`` left an operator who
             # pasted a ticket UUID unmatchable against a row that was right there.
             label = f"{ticket.external_id} (id {ticket.id})" if ticket.external_id else ticket.id
-            sections.append(f"- [{ticket.state.value}] p{ticket.priority} {label}: {ticket.title}")
+            where = _workspace_label(ticket.workspace_id, global_context)
+            sections.append(
+                f"- [{ticket.state.value}] p{ticket.priority} {label}: {ticket.title}{where}"
+            )
     else:
         sections.append("Active tickets: none")
+
+    sections.extend(_initiative_section(global_context))
 
     sections.extend(_reference_section(references))
 
@@ -768,6 +841,22 @@ def home_chat_adapter(workspace: Workspace, chat_session: BaxterChatSession) -> 
         agent_adapter=agent.get("adapter", "claude"),
         workspace=apply_runtime_overrides(workspace, chat_session.runtime_json),
     )
+
+
+def _scope_turn(
+    session: Session,
+    workspace: Workspace,
+    chat_session: BaxterChatSession | None,
+    agent: dict,
+) -> tuple[dict, GlobalChatContext | None]:
+    """The agent and cross-workspace context for this thread's scope.
+
+    A workspace thread gets both back unchanged. A global one gets the planner's
+    tools added and the context its prompt needs.
+    """
+    if chat_session is None or chat_session.scope != BaxterChatScope.GLOBAL:
+        return agent, None
+    return global_chat_agent(agent), load_global_context(session, chat_session, workspace)
 
 
 def invoke_baxter_chat_model(
@@ -828,12 +917,16 @@ def invoke_baxter_chat_model(
 
     if has_image(list(attachments)) and selected != CliAdapter.CLAUDE:
         raise ValueError(image_adapter_refusal(selected))
+    agent, global_context = _scope_turn(session, workspace, chat_session, agent)
+    # A global thread's snapshot spans every workspace; its host is only where it runs.
+    snapshot_workspace_id = None if global_context is not None else workspace.id
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
         history=list(history or []),
         latest_user_message=message + render_attachments_for_prompt(session_id, list(attachments)),
-        approvals=_pending_approvals(session, workspace.id),
-        tickets=_active_tickets(session, workspace.id),
+        approvals=_pending_approvals(session, snapshot_workspace_id),
+        tickets=_active_tickets(session, snapshot_workspace_id),
+        global_context=global_context,
         agent=agent,
         references=resolve_references(session, message),
         interactive=interactive,

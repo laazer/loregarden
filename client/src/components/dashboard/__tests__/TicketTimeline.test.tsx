@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { api } from "../../../api/client";
 import type { TicketDetail } from "../../../api/client";
-import type { LedgerAttempt, LedgerVisit, TicketArtifactItem, TicketLedger } from "../../../api/types";
+import type { LedgerAttempt, LedgerVisit, TicketArtifactItem, TicketLedger, TicketTreeNode } from "../../../api/types";
 import { stageFanoutApi } from "../../../lib/stageFanoutApi";
 import { navigateToTicketTab } from "../../../lib/useAppNavigation";
 import { useReaderStore } from "../../../state/readerStore";
@@ -91,7 +91,9 @@ function renderTimeline({
   detail = ticket(),
   runs = [] as TimelineRun[],
   pendingApprovals = 0,
+  childTickets = [] as TicketTreeNode[],
   onOpenRunLog = jest.fn(),
+  onOpenTicket = jest.fn(),
 } = {}) {
   mockApi.ticketLedger.mockResolvedValue(ledger(visits));
   mockApi.ticketArtifacts.mockResolvedValue({ items, total: items.length });
@@ -103,11 +105,13 @@ function renderTimeline({
         runs={runs}
         isActive={false}
         pendingApprovals={pendingApprovals}
+        childTickets={childTickets}
         onOpenRunLog={onOpenRunLog}
+        onOpenTicket={onOpenTicket}
       />
     </QueryClientProvider>,
   );
-  return { onOpenRunLog };
+  return { onOpenRunLog, onOpenTicket };
 }
 
 function stageButton(name: RegExp) {
@@ -268,7 +272,15 @@ it("names what failed to load and retries it", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <TicketTimeline ticket={ticket()} runs={[]} isActive={false} pendingApprovals={0} onOpenRunLog={jest.fn()} />
+      <TicketTimeline
+        ticket={ticket()}
+        runs={[]}
+        isActive={false}
+        pendingApprovals={0}
+        childTickets={[]}
+        onOpenRunLog={jest.fn()}
+        onOpenTicket={jest.fn()}
+      />
     </QueryClientProvider>,
   );
 
@@ -277,6 +289,70 @@ it("names what failed to load and retries it", async () => {
   mockApi.ticketLedger.mockResolvedValue(ledger([PLAN]));
   fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
+});
+
+function renderWithFeed(feed: Promise<{ items: TicketArtifactItem[]; total: number }>) {
+  mockApi.ticketLedger.mockResolvedValue(ledger([PLAN, IMPLEMENT]));
+  mockApi.ticketArtifacts.mockReturnValue(feed);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <TicketTimeline
+        ticket={ticket()}
+        runs={[]}
+        isActive={false}
+        pendingApprovals={0}
+        childTickets={[]}
+        onOpenRunLog={jest.fn()}
+        onOpenTicket={jest.fn()}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+it("shows the stages from the ledger while the output feed is still loading", async () => {
+  renderWithFeed(new Promise(() => {}));
+
+  expect(await screen.findByRole("button", { name: /Implementation/ })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Loading what each stage produced");
+});
+
+it("keeps the stages when the output feed fails, and retries the feed", async () => {
+  renderWithFeed(Promise.reject(new Error("feed down")));
+
+  expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("feed down");
+
+  mockApi.ticketArtifacts.mockResolvedValue({ items: [], total: 0 });
+  fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("waits for the feed before saying nothing has run", async () => {
+  mockApi.ticketLedger.mockResolvedValue(ledger([]));
+  mockApi.ticketArtifacts.mockReturnValue(new Promise(() => {}));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <TicketTimeline
+        ticket={ticket()}
+        runs={[]}
+        isActive={false}
+        pendingApprovals={0}
+        childTickets={[]}
+        onOpenRunLog={jest.fn()}
+        onOpenTicket={jest.fn()}
+      />
+    </QueryClientProvider>,
+  );
+
+  // Let the ledger settle, so the skeleton is held by the feed and not by it.
+  await act(async () => {});
+  expect(mockApi.ticketLedger).toHaveBeenCalled();
+  expect(screen.getByText("Loading timeline…")).toBeInTheDocument();
+  expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
 });
 
 it("tails one live log for a running fan-out, not one per lane", async () => {
@@ -294,4 +370,64 @@ it("tails one live log for a running fan-out, not one per lane", async () => {
   expect(await screen.findByRole("button", { name: /Planning/ })).toHaveAttribute("aria-expanded", "true");
   expect(screen.getAllByText("Loading log…")).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: /Open the log of planner/ })).toHaveLength(2);
+});
+
+function child(id: string, state: TicketTreeNode["state"], stage = "Triage"): TicketTreeNode {
+  return {
+    id,
+    external_id: `lg-${id}`,
+    title: `Child ${id}`,
+    state,
+    priority: 1,
+    work_item_type: "feature",
+    workflow_stage_name: stage,
+    workflow_stage_status: "pending",
+    child_count: 0,
+    children: [],
+  };
+}
+
+describe("a parent that runs nothing itself", () => {
+  const parent = ticket({ child_count: 4 } as Partial<TicketDetail>);
+  const kids = [child("a", "done", "Done"), child("b", "in_progress", "Implement"), child("c", "backlog"), child("d", "blocked", "Verify")];
+
+  it("lists the work under it by state instead of saying nothing has run", async () => {
+    renderTimeline({ visits: [], detail: parent, childTickets: kids });
+
+    expect(await screen.findByText(/1 of 4 done/)).toBeInTheDocument();
+    expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
+    const groups = within(screen.getByRole("region", { name: "Work under this ticket" })).getAllByRole("group");
+    expect(groups.map((g) => g.querySelector("summary")?.textContent)).toEqual(["Blocked1", "In Progress1", "Done1", "Backlog1"]);
+    // What needs the operator is open; the bulk (done, not started) waits behind its count.
+    expect(groups.map((g) => g.hasAttribute("open"))).toEqual([true, true, false, false]);
+  });
+
+  it("opens a child from the list", async () => {
+    const { onOpenTicket } = renderTimeline({ visits: [], detail: parent, childTickets: kids });
+
+    fireEvent.click(await screen.findByRole("button", { name: /lg-b/ }));
+    expect(onOpenTicket).toHaveBeenCalledWith("b");
+  });
+
+  it("waits for the board's tree rather than claiming the parent is empty", async () => {
+    renderTimeline({ visits: [], detail: parent, childTickets: [] });
+
+    expect(await screen.findByText("Loading the 4 tickets under this one…")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
+  });
+
+  it("still lists the work under it when it holds an output from before any run", async () => {
+    renderTimeline({ visits: [], detail: parent, childTickets: kids, items: [item({ title: "Integration diff", kind: "diff" })] });
+
+    expect(await screen.findByText(/1 of 4 done/)).toBeInTheDocument();
+    expect(screen.getByText("Before the first run")).toBeInTheDocument();
+    expect(screen.queryByText(/0 runs/)).not.toBeInTheDocument();
+  });
+
+  it("keeps its own visits when it has run something", async () => {
+    renderTimeline({ visits: [PLAN], detail: parent, childTickets: kids });
+
+    expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
+    expect(screen.queryByText(/of 4 done/)).not.toBeInTheDocument();
+  });
 });

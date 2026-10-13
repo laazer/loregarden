@@ -716,7 +716,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "(no agent — a person is the stage), or a sign-off after this stage's own agent "
             "run succeeded. Never a substitute for running a stage (start_stage / "
             "begin_external_stage) or waiving one (skip_stage with a reason): a stage with "
-            "agents and no succeeded run is refused."
+            "agents and no succeeded run is refused. Not a way to authorize an action: "
+            "for a person's go-ahead on a force-push, a publish or a pull request, block "
+            "with blocked_kind 'decision' and the exact command as an option."
         ),
         "inputSchema": _tool_schema(
             properties={

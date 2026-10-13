@@ -62,8 +62,20 @@ Concretely, and these are the mistakes agents actually make here:
   against the database in-process: `./scripts/loregarden-cli.sh mcp call <tool> key=value…`
   (`mcp list` / `mcp describe <tool>` to find the arguments). Use it instead of curling `/mcp`
   or abandoning the write; see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
+  The write path is MCP tools, then that CLI. **Never raw SQLite**: an `UPDATE` you write by
+  hand once matched two tickets and stamped four rows in local time. If you think you need
+  one, what you need is a tool; the CLI path already guarantees what a hand-written one gets
+  wrong:
+  - `ticket_number` is unique only **within a workspace**. Name a ticket by its
+    `external_id` (`lg-verdict-outcome-137`), never by `137` or a `ticket_number` predicate.
+    Resolution goes through `services/ticket_ids.resolve_one`, which refuses a bare number
+    or a shared legacy id and names the candidates.
+  - Timestamps are UTC from `models.domain.enums.utcnow`, written through the ORM (stored
+    naive UTC). `datetime.now()` is local time and ruff's `DTZ` rules reject it.
+  - The ORM updates by primary key and raises `StaleDataError` unless exactly one row
+    matched; the tool's reply re-reads the ticket by its id.
 
-Writing real source code and real test files is, of course, still the job. The rule is about
+Writing real source code and real test files is still the job. The rule is about
 *reports about* the work.
 
 ### Setting up another workspace
@@ -103,9 +115,9 @@ general form is `loregarden git change-pr (--repo <path>… | --all-workspaces) 
 ## No silent failures
 
 A failure nobody sees is worse than a crash. This control plane runs agents unattended, so
-its characteristic bug is not an exception, it is a run that dies unnoticed and keeps
-*looking* alive. A conflict check once returned `has_conflicts: False` because the check
-itself threw, and it reported "Ready to merge" to the UI.
+its characteristic bug is a run that dies unnoticed and keeps *looking* alive. A conflict
+check once returned `has_conflicts: False` because the check itself threw, and it reported
+"Ready to merge" to the UI.
 
 **The rule.** An error may only be suppressed when it is transient, auto-repairable, or
 retryable. It may also be suppressed when it is expected *and* there is a real alternate way
@@ -150,7 +162,7 @@ A failure nobody sees is the section above, and this section is about its siblin
 are green, and what reaches the operator is a blank pane, a control no keyboard can reach, or a
 spinner that never resolves into an explanation.
 
-It is not a matter of anyone caring less. It is that nothing asked. Every row of `agent_runs` showed
+Nobody here cared less about it; nothing in the process asked. Every row of `agent_runs` showed
 that `ui-design-decision` and `visual_qa` (the two agents built for exactly this) had **never
 run**, and they appeared in no workflow template. The `ui-design` stage dispatched the
 *planner*, and was `optional`. A ticket could cross plan → spec → test → implement → verify →
@@ -163,7 +175,7 @@ three reviewers → gate without one agent looking at what a person would see. M
 The five states below are shape, and shape is not enough. The old Monitor tab handled all five
 and printed 138 findings as a wall of "Stage 'review' ran 4 times…" with no ticket named and no
 link (85 of the 94 on tickets finished weeks earlier). The Memory map drew a force graph over 33
-records and 0 links. Initiatives was one centred sentence while 74 milestones waited for one.
+records and 0 links. Initiatives was one centered sentence while 74 milestones waited for one.
 Every gate passed; nobody could use any of them.
 
 So a change to a user-facing surface first states three things, as acceptance criteria:
@@ -235,8 +247,7 @@ Whatever the layout:
 ### The five states
 
 A change to a user-facing surface is not specified until all five are decided. A ticket that
-names none of them is not vague; it is going to ship the default, and the default is a blank
-pane.
+names none of them is going to ship the default, and the default is a blank pane.
 
 1. **Loading**: what is on screen between the action and the data. Show a skeleton where the
    shape is known, and nothing at all where the wait is under ~200ms. A spinner is a last
@@ -302,7 +313,7 @@ Three traps here have produced confidently wrong conclusions:
   finding zero does **not** mean it was never called, only that it was never called on an
   `auto_approve=0` run.
 - **`alwaysApply: true`** in prompt frontmatter does nothing. It is a Cursor convention. A common
-  asset reaches an agent only if its `role_file` says to read it, or `executors/cli.py` embeds it.
+  asset reaches an agent only if its `role_file` says to read it, or `agents/executors/cli.py` embeds it.
 - **The YAML workflows are a decoy.** Read `workflow_templates` from the DB.
 
 When a query result would change your recommendation, exercise the real code path against the
@@ -322,7 +333,7 @@ Work it in this order:
    first timeout corrupting that file's harness state. Counting symptoms picked the wrong
    suspect. Read the first `●` in each failing file.
 2. **Read the failure's own words.** `Exceeded timeout of 5000 ms` names its cause. Do not
-   theorise past a message that is already specific.
+   theorize past a message that is already specific.
 3. **Look for a quantity that separates pass from fail.** Wall-clock, worker count, ordering,
    `--changedSince` base. Here `client-tests` passed at 310s and failed at 323s / 369s / 442s.
    That correlation *is* the evidence, and it arrived faster than any of the retries.
@@ -382,7 +393,7 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
   payload with Pydantic at the boundary and pass the model. `isinstance(x, SomeClass)` is a
   type switch; dispatch polymorphically or through a `typing.Protocol`. Same gate, same
   scoping; `# py-org: allow-isinstance` waives a line for genuinely foreign objects
-  (`__eq__`, a `TypeDecorator`, a third-party payload not yet modelled).
+  (`__eq__`, a `TypeDecorator`, a third-party payload not yet modeled).
 - Migrations append-only, each guarding its own changes; never rewrite an applied id.
 - Test isolation via `unittest.mock` over `monkeypatch`, unless mocking handles the case poorly.
 - No ticket IDs in filenames.
@@ -461,14 +472,14 @@ A waiver asserting a control is decorative, or that a parent renders the empty s
 Beyond the gate, review what it cannot see: does the empty state say something useful, does the
 error name the thing that failed, does the loading state match the length of the wait.
 
-The `ts-theme` gate (`ts_theme_check.cjs`, loregarden only) keeps surfaces on the theme. Colours
+The `ts-theme` gate (`ts_theme_check.cjs`, loregarden only) keeps surfaces on the theme. Colors
 are defined once, as tokens on `:root` in `index.css`, and a light theme will arrive as a second
-token set under `[data-theme]`. A hardcoded colour is a place it will not reach. On changed lines
+token set under `[data-theme]`. A hardcoded color is a place it will not reach. On changed lines
 in `.ts`/`.tsx`/`.css` the gate rejects:
 
 - raw `<button>`/`<input>`/`<select>`/`<textarea>`. Use `Button`/`Input`/`Select`/`Textarea`
   from `components/ui`.
-- colour literals (hex, `rgb()`/`hsl()`/…, CSS colour names) outside a `:root`/`[data-theme]`
+- color literals (hex, `rgb()`/`hsl()`/…, CSS color names) outside a `:root`/`[data-theme]`
   block, including in JSX `style` objects and SVG `fill`/`stroke`. Use `var(--…)`, or
   `color-mix(in srgb, var(--ac) 30%, transparent)` for a tint.
 - `prefers-color-scheme`, as a CSS media query or a `matchMedia` call.
@@ -500,7 +511,7 @@ rounds.
   criterion is false. A reviewer who finds a genuine defect that no criterion covers should
   **file a ticket and pass**, saying what it filed. If `unmet_criteria` comes back empty on a
   reject, that is the signal the ticket is finished and the finding is new scope.
-- **Honour the loop cap.** `MAX_REWORK_REROUTES = 3` in `services/rework_feedback.py` blocks a
+- **Honor the loop cap.** `MAX_REWORK_REROUTES = 3` in `services/rework_feedback.py` blocks a
   ticket that has bounced to the same stage three times. It is a durable, deliberate safeguard.
   `loregarden_requeue_ticket` can clear it, and the reason string should name the unmet
   criterion that justifies another round. "The reviewers found more real defects" is not that
@@ -535,7 +546,7 @@ five days on.
 So when you file a defect that can be reproduced, put the reproduction in
 `server/tests/test_open_defect_repros.py`:
 
-- The test asserts the behaviour the code **should** have, marked
+- The test asserts the behavior the code **should** have, marked
   `@pytest.mark.xfail(strict=True, reason="<ticket-id> — open: …")`.
 - While the defect is open the test fails, `xfail` absorbs it, and the suite is green.
 - When anyone fixes it (including the branch you are reviewing, on its next

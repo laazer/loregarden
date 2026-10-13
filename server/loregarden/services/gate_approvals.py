@@ -141,6 +141,17 @@ def create_workflow_gate_approval(
     return approval
 
 
+#: Where an agent goes for what this tool is not: a person's go-ahead on an
+#: irreversible or outward action. Four implement rounds on 782 asked here for a
+#: force-push, were refused, and blocked again on a spec that named this tool.
+OPERATION_AUTHORIZATION_ROUTE = (
+    "To ask a person to authorize an action (a force-push, publishing a ref, opening "
+    "or closing a pull request), end the run blocked with blocked_kind 'decision' and "
+    "put the exact command in an option; the person's pick comes back as the "
+    "'Decision — <stage>' artifact and is the authorization."
+)
+
+
 def gate_would_skip_work(session: Session, ticket: Ticket, stage: WorkflowStageDef) -> str:
     """Why approving a gate on `stage` would complete work nothing did, or "".
 
@@ -164,7 +175,8 @@ def gate_would_skip_work(session: Session, ticket: Ticket, stage: WorkflowStageD
         f"Stage '{stage.key}' has agents and none has succeeded on this ticket; "
         "approving a gate here would mark the stage done with no work behind it. "
         "Run it (start_stage; begin_external_stage from an external driver, which "
-        "fans out a parallel stage's members) or waive it with a reason (skip_stage)."
+        "fans out a parallel stage's members) or waive it with a reason (skip_stage). "
+        + OPERATION_AUTHORIZATION_ROUTE
     )
 
 
@@ -262,7 +274,7 @@ def request_exit_action_gate(
         raise ValueError(
             f"Stage '{stage.key}' has no unresolved exit actions, so there is nothing for a "
             "person to approve. Finish it with complete_stage; a gate lists the exit actions "
-            "a person must resolve."
+            "a person must resolve. " + OPERATION_AUTHORIZATION_ROUTE
         )
     approval = create_workflow_gate_approval(
         session,

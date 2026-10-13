@@ -12,10 +12,12 @@ export interface TicketCriteriaViewProps {
   /** Absent when the ticket cannot be written: the boxes are shown, read-only. */
   onToggle?: (criterion: string, checked: boolean) => void;
   disabled?: boolean;
+  /** Why the criteria cannot change, shown under the heading; absent when they can. */
+  lockedHint?: string;
 }
 
 /** Read mode: a checklist whose boxes can be ticked but whose text cannot be edited. */
-export function TicketCriteriaView({ criteria, checked, onToggle, disabled = false }: TicketCriteriaViewProps) {
+export function TicketCriteriaView({ criteria, checked, onToggle, disabled = false, lockedHint }: TicketCriteriaViewProps) {
   const done = new Set(checked);
   const doneCount = criteria.filter((c) => done.has(c)).length;
 
@@ -27,8 +29,9 @@ export function TicketCriteriaView({ criteria, checked, onToggle, disabled = fal
           <span className="ticket-ac-progress">{progressLabel(doneCount, criteria.length)}</span>
         )}
       </div>
+      {lockedHint && <p className="modal-hint">{lockedHint}</p>}
       {criteria.length === 0 ? (
-        <p className="modal-hint ticket-empty-hint">No acceptance criteria yet. Edit the ticket to add some.</p>
+        !lockedHint && <p className="modal-hint ticket-empty-hint">No acceptance criteria yet. Edit the ticket to add some.</p>
       ) : (
         <ul className="ticket-ac-list" aria-label="Acceptance criteria">
           {criteria.map((criterion, index) => {
@@ -59,10 +62,12 @@ export interface TicketCriteriaEditorProps {
   rows: CriterionDraft[];
   onChange: (rows: CriterionDraft[]) => void;
   disabled?: boolean;
+  /** Why the criteria cannot change, shown under the heading; absent when they can. */
+  lockedHint?: string;
 }
 
 /** Edit mode: every criterion is a text field, and still a checkbox. */
-export function TicketCriteriaEditor({ rows, onChange, disabled = false }: TicketCriteriaEditorProps) {
+export function TicketCriteriaEditor({ rows, onChange, disabled = false, lockedHint }: TicketCriteriaEditorProps) {
   const inputs = useRef(new Map<number, HTMLTextAreaElement>());
   const criteriaCount = draftCriteria(rows).length;
 
@@ -112,6 +117,7 @@ export function TicketCriteriaEditor({ rows, onChange, disabled = false }: Ticke
           {criteriaCount === 1 ? '1 criterion' : `${criteriaCount} criteria`}
         </span>
       </div>
+      {lockedHint && <p className="modal-hint">{lockedHint}</p>}
       {rows.length === 0 ? (
         <p className="modal-hint ticket-empty-hint">No acceptance criteria yet.</p>
       ) : (
@@ -171,7 +177,9 @@ export function TicketCriteriaEditor({ rows, onChange, disabled = false }: Ticke
       >
         + Add criterion
       </button>
-      <p className="modal-hint" style={{ marginTop: 4 }}>Enter adds a criterion below; Backspace on an empty one removes it.</p>
+      {!lockedHint && (
+        <p className="modal-hint" style={{ marginTop: 4 }}>Enter adds a criterion below; Backspace on an empty one removes it.</p>
+      )}
     </div>
   );
 }

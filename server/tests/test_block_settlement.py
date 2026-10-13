@@ -258,6 +258,9 @@ BLOCK_WRITERS: dict[str, str] = {
         "the decision they just made rather than a fault anything can repair"
     ),
     "services/artifact_service.py:block_ticket_for_unresolved_blocker": "settles",
+    "services/ci_autofix_dispatch.py:block_for_ci": (
+        "delegates: artifact_service.block_ticket_for_unresolved_blocker"
+    ),
     "services/builtin_orchestrator.py:execute": ("delegates: orchestration_callbacks.block_ticket"),
     "services/builtin_orchestrator.py:_run_parallel_stage_or_stop": (
         "delegates: orchestration_callbacks.block_ticket"
@@ -277,6 +280,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:_block_for_usage_limit": "settles",
     "services/run_completion.py:_parked_for_network": "settles",
     "services/run_completion.py:_advance_clean_exit": "settles",
+    "services/run_completion.py:_held_for_operation_criteria": "settles",
     "services/run_completion.py:_rearmed_for_transient_retry": "settles",
     "services/run_completion.py:advance_stage_after_run": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",

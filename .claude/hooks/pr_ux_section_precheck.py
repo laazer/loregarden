@@ -190,7 +190,7 @@ def decide(payload: dict) -> tuple[str | None, str] | None:
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError:  # py-silent: allow - _emit() reports this to the user
         _emit(
             None, "The PR UX section precheck could not read its hook input; CI will still check."
         )

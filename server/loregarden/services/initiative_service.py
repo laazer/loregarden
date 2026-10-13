@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.models.domain.work_item_types import VALID_HIERARCHY
 from loregarden.services.initiative_coverage import (
     InitiativeRoots,
     initiative_roots,
@@ -166,6 +167,15 @@ def load_initiative(session: Session, initiative_id: str) -> Ticket:
     if initiative is None or initiative.work_item_type != WorkItemType.INITIATIVE:
         raise LookupError(f"Initiative not found: {initiative_id}")
     return initiative
+
+
+def load_plan_root(session: Session, ticket_id: str) -> Ticket:
+    """A ticket a plan (and its autopilot) can be rooted at: an initiative, or any
+    type that can have children — a milestone, feature or capability."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None or not VALID_HIERARCHY[ticket.work_item_type]:
+        raise LookupError(f"No initiative, milestone or parent ticket: {ticket_id}")
+    return ticket
 
 
 def load_targets(session: Session, ticket_ids: list[str]) -> dict[str, ScheduleTarget]:

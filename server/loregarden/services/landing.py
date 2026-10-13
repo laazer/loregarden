@@ -40,6 +40,7 @@ import logging
 from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
+from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.models.domain import (
     EventType,
     OrchestratorDecision,
@@ -55,9 +56,9 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.publish_tree import publish_tree
-from loregarden.services.workflow_routing import apply_stage_route
-from loregarden.services.workflow_service import resolve_ticket_stages
-from loregarden.services.workflow_state import set_stage_status
+from loregarden.services.repair_brief import arm_repair_turn
+from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,24 @@ def land_before_done(
     return False
 
 
+def parked_on_failed_landing(session: Session, ticket: Ticket) -> bool:
+    """Whether `ticket` is waiting at its terminal stage on a landing that failed.
+
+    Every stage before it passed; the block is the landing's (or the resolver's
+    that followed it). A landing that succeeds by any other route clears exactly
+    this, so the caller can finish the workflow instead of leaving a landed
+    ticket blocked until someone requeues it (lg-milestone-that-928).
+    """
+    if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
+        return False
+    instance = workflow_instance_for(session, ticket.id)
+    _, stages = resolve_ticket_stages(session, ticket)
+    terminal = find_terminal_stage(stages)
+    if instance is None or terminal is None or ticket.workflow_stage_key != terminal.key:
+        return False
+    return parse_stage_map(instance, stages).get(terminal.key) is StageStatus.BLOCKED
+
+
 def _offer_conflict_resolution(
     session: Session,
     ticket: Ticket,
@@ -147,16 +166,14 @@ def _offer_conflict_resolution(
         )
         return False
 
-    apply_stage_route(
+    arm_repair_turn(
+        session,
         ticket,
         instance,
         stages,
         _transitions(session, ticket),
-        from_key=stage_key,
-        outcome="reject",
-        next_stage_key=stage_key,
-        next_agent=REPAIR_AGENT_ID,
-        blocking_issues=_resolution_brief(result),
+        stage_key=stage_key,
+        brief=_resolution_brief(result),
     )
     session.add(ticket)
     session.add(instance)

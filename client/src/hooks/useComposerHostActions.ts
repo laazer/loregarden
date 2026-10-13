@@ -57,7 +57,7 @@ export function useComposerHostActions({
       if (ticketId) qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       if (archive?.sessionId) {
         qc.invalidateQueries({
-          queryKey: ["baxter-chat-session", archive.workspaceSlug, archive.sessionId],
+          queryKey: ["baxter-chat-session", archive.scope, archive.sessionId],
         });
       }
     },

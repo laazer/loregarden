@@ -40,7 +40,10 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    Workspace,
 )
+from loregarden.services.land_ticket import landing_would_succeed
+from loregarden.services.landing import parked_on_failed_landing
 from loregarden.services.orchestration import (
     LIVE_ORCHESTRATION_STATUSES,
     OrchestrationService,
@@ -158,6 +161,83 @@ def finish_parked_terminal_tickets(
     if finished:
         logger.warning(
             "Finished %d ticket(s) parked on a terminal stage: %s",
+            len(finished),
+            ", ".join(t.external_id for t in finished),
+        )
+    return finished
+
+
+def finish_tickets_whose_landing_cleared(
+    session: Session, *, ticket_id: str | None = None
+) -> list[Ticket]:
+    """Finish tickets blocked on their terminal stage whose landing would now succeed.
+
+    The sweep above leaves a BLOCKED terminal stage alone on purpose: a
+    landing that conflicts would conflict again every pass. But the block
+    outlives its cause. 782's conflict was resolved and landed by hand, and the
+    ticket stayed blocked until someone requeued it and started an
+    orchestration with nothing to do but notice (lg-milestone-that-928).
+
+    So this asks git, read-only, whether the landing would succeed now: the
+    branch already contained in its target, or merging cleanly into it. Only
+    then is the ticket handed to `finalize_workflow`, which lands and derives
+    done. A landing that would still conflict is not selected again, so this
+    retries nothing that has not changed.
+    """
+    live_run_tickets = select(AgentRun.ticket_id).where(
+        col(AgentRun.status).in_(_LIVE_RUN_STATUSES)
+    )
+    live_orch_tickets = select(OrchestrationRun.ticket_id).where(
+        col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES)
+    )
+    query = select(Ticket).where(
+        Ticket.state == TicketState.BLOCKED,
+        # An initiative has no workspace (ck_tickets_workspace_binding), so nothing to land.
+        col(Ticket.workspace_id).is_not(None),
+        col(Ticket.state_locked).is_(False),
+        col(Ticket.id).not_in(live_run_tickets),
+        col(Ticket.id).not_in(live_orch_tickets),
+    )
+    if ticket_id:
+        query = query.where(Ticket.id == ticket_id)
+
+    orch = OrchestrationService(session)
+    finished: list[Ticket] = []
+    for ticket in session.exec(query).all():
+        workspace = session.get(Workspace, ticket.workspace_id)
+        if (
+            workspace is None
+            or not parked_on_failed_landing(session, ticket)
+            or _has_children(session, ticket)
+            or not landing_would_succeed(session, ticket, workspace)
+        ):
+            continue
+        stage_key = ticket.workflow_stage_key
+        try:
+            orch.finalize_workflow(ticket)
+        except ValueError:
+            logger.warning(
+                "Could not finish ticket %s whose landing cleared",
+                ticket.external_id,
+                exc_info=True,
+            )
+            session.rollback()
+            continue
+        record_orchestrator_decision(
+            session,
+            ticket,
+            decision=OrchestratorDecision.FINISHED_CLEARED_LANDING,
+            stage_key=stage_key,
+            reason=(
+                f"Ticket was blocked on terminal stage '{stage_key}' by its landing, and the "
+                f"landing now succeeds; finished it, which ended {ticket.state.value}."
+            ),
+            evidence={"state": ticket.state.value, "landed_sha": ticket.landed_sha},
+        )
+        finished.append(ticket)
+    if finished:
+        logger.warning(
+            "Finished %d ticket(s) whose landing block had cleared: %s",
             len(finished),
             ", ".join(t.external_id for t in finished),
         )

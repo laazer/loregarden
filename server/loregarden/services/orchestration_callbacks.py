@@ -48,7 +48,10 @@ from loregarden.services.process_identity import liveness
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
-from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
+from loregarden.services.run_interruption import (
+    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+    blocked_by_interruption,
+)
 from loregarden.services.run_lease import SUPERVISED
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
@@ -59,7 +62,7 @@ from loregarden.services.studio_routing import (
     prunable_stage_keys,
 )
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
-from loregarden.services.ticket_ids import resolve as resolve_external_id
+from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -88,26 +91,25 @@ class OrchestrationCallbackService:
             if ticket:
                 return ticket
             if looks_like_ticket_uuid(ticket_id):
-                raise ValueError("Ticket not found")
+                raise TicketNotFound(ticket_id)
             external_id = external_id or ticket_id
 
-        if external_id:
-            if workspace_slug:
-                ws = self.session.exec(
-                    select(Workspace).where(Workspace.slug == workspace_slug)
-                ).first()
-                if ws:
-                    ticket = resolve_external_id(self.session, external_id, workspace_id=ws.id)
-                    if ticket:
-                        return ticket
-            # Unscoped: the workspace prefix in a structured id names the workspace,
-            # so this is only ambiguous for the pre-restructure ids, which is what
-            # it was before.
-            ticket = resolve_external_id(self.session, external_id)
-            if ticket:
-                return ticket
-
-        raise ValueError("Ticket not found")
+        if not external_id:
+            raise TicketNotFound("")
+        if workspace_slug:
+            ws = self.session.exec(
+                select(Workspace).where(Workspace.slug == workspace_slug)
+            ).first()
+            if ws:
+                try:
+                    return resolve_one(self.session, external_id, workspace_id=ws.id)
+                except TicketNotFound:
+                    # silent-ok: the scoped miss falls through to the unscoped lookup
+                    # below, which raises its own TicketNotFound if that misses too
+                    pass
+        # Unscoped: the workspace prefix in a structured id names the workspace. A
+        # bare number or a repeated legacy id does not, and is refused by name.
+        return resolve_one(self.session, external_id)
 
     def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:
         """The run in flight for this ticket. Delegates to `run_concurrency`."""
@@ -904,6 +906,23 @@ class OrchestrationCallbackService:
             if instance and stages:
                 self.orch.reconcile_ticket(ticket)
                 self.session.refresh(ticket)
+        if (
+            status == OrchestrationRunStatus.SUCCEEDED
+            and ticket.state == TicketState.BLOCKED
+            and not blocked_by_interruption(ticket)
+        ):
+            # A run cannot succeed over a ticket it leaves blocked. Several loop
+            # exits ask for SUCCEEDED (a pause, a finished pass) without
+            # re-reading the ticket; 782's landing resolver blocked for a person
+            # and its run still reported success (lg-milestone-that-929).
+            logger.warning(
+                "orchestration %s asked to finish succeeded over blocked ticket %s; "
+                "recording blocked",
+                orch_run.run_code,
+                ticket.external_id,
+            )
+            status = OrchestrationRunStatus.BLOCKED
+            message = message or ticket.blocking_issues
         self.session.add(ticket)
         self._finish_orchestration_run(orch_run, status=status, message=message)
         # A finished ticket's tree has nothing left to run in it, and leaving

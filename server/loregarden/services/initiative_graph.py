@@ -50,7 +50,7 @@ from loregarden.models.domain import (
     WorkItemType,
     comparable_utc,
 )
-from loregarden.services.initiative_coverage import InitiativeCoverage, initiative_coverage
+from loregarden.services.initiative_coverage import InitiativeCoverage, plan_coverage
 from loregarden.services.initiative_forecast import (
     Pace,
     duration_stats,
@@ -501,7 +501,9 @@ class PlanContext:
 
 
 def build_plan(session: Session, initiative: Ticket, *, now: datetime) -> PlanContext:
-    coverage = initiative_coverage(session, initiative.id)
+    """The plan rooted at ``initiative`` — an initiative, or any parent ticket
+    (`plan_coverage`), which plans as a single phase."""
+    coverage = plan_coverage(session, initiative)
     milestones = coverage.roots
     targets = load_targets(session, [initiative.id, *(m.id for m in milestones)])
     # Outside prerequisites need their workspace's slug too; resolve after the

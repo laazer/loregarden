@@ -22,10 +22,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import merge_without_checkout, rev
+from loregarden.services.git_merge_noco import (
+    is_ancestor,
+    merge_preview,
+    merge_without_checkout,
+    rev,
+)
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
@@ -100,7 +106,10 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
             conflicted_files=outcome.conflicted_files,
         )
 
-    _record(session, ticket, outcome.sha, target)
+    if not (
+        outcome.already_contained and _landing_on_record(repo_root, ticket, target, outcome.sha)
+    ):
+        _record(session, ticket, outcome.sha, target)
     if outcome.already_contained:
         return LandResult(
             ok=True,
@@ -111,6 +120,43 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         )
     logger.info("Landed %s (%s) on %s as %s", ticket.external_id, branch, target, outcome.sha[:12])
     return LandResult(ok=True, branch=branch, target=target, landed_sha=outcome.sha)
+
+
+def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace) -> bool:
+    """Whether landing this ticket on its integration branch would now succeed.
+
+    Read-only: the same preview `merge_tips` makes, with no commit and no ref
+    move. Only an integration-branch landing answers True; the skips (no
+    repository, no branch, a base target) are not landings this can vouch for,
+    and a missing target is a landing that has not been set up.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    if not (repo_root / ".git").exists():
+        return False
+    target = target_branch_name(session, ticket, workspace)
+    if target == resolve_orchestration_profile(workspace).git.base_branch:
+        return False
+    source_sha = rev(repo_root, f"refs/heads/{resolve_ticket_branch(ticket)}")
+    target_sha = rev(repo_root, f"refs/heads/{target}")
+    if not source_sha or not target_sha:
+        return False
+    return merge_preview(repo_root, target_sha, source_sha).ok
+
+
+def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> bool:
+    """Whether the ticket already records the commit that landed this branch.
+
+    `landed_sha` is the commit on the target that first contained the branch:
+    the merge commit when a landing merged it. Re-landing an already-contained
+    branch used to overwrite that with the branch tip, so the same ticket
+    named two different commits depending on how often it was landed (928).
+    """
+    return (
+        bool(ticket.landed_sha)
+        and ticket.landed_branch == target
+        and is_ancestor(repo_root, branch_sha, ticket.landed_sha)
+        and is_ancestor(repo_root, ticket.landed_sha, f"refs/heads/{target}")
+    )
 
 
 def _record(session: Session, ticket: Ticket, sha: str, target: str) -> None:

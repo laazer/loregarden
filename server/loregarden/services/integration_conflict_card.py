@@ -49,9 +49,14 @@ def conflict_card_title(branch: str, base: str) -> str:
     return f"Merge conflict: {branch} cannot take {base}"
 
 
-def _message(branch: str, base: str, files: tuple[str, ...]) -> str:
+def _message(branch: str, base: str, files: tuple[str, ...], automatic: str) -> str:
     listed = "\n".join(f"- {path}" for path in files) or "- (git named no paths)"
-    return (
+    tried = (
+        f"An agent tried the merge first and could not finish it: {automatic}\n\n"
+        if automatic
+        else ""
+    )
+    return tried + (
         f"`{base}` moved and no longer merges into `{branch}`. Conflicting files:\n"
         f"{listed}\n\n"
         f"Until this is resolved, every stage run in this tree refuses to start, and chat "
@@ -81,15 +86,27 @@ def _pending(session: Session, root: Ticket, title: str) -> list[Approval]:
 
 
 def report_integration_conflict(
-    session: Session, root: Ticket, *, branch: str, base: str, files: tuple[str, ...]
+    session: Session,
+    root: Ticket,
+    *,
+    branch: str,
+    base: str,
+    files: tuple[str, ...],
+    automatic: str = "",
 ) -> Approval:
-    """File the card, or refresh the one already pending. Returns it."""
+    """File the card, or refresh the one already pending. Returns it.
+
+    ``automatic`` is why the agent's merge turn (`integration_merge_agent`) did
+    not resolve it — off, out of attempts, or failed — when one was considered.
+    """
     title = conflict_card_title(branch, base)
-    message = _message(branch, base, files)
+    message = _message(branch, base, files, automatic)
     existing = _pending(session, root, title)
     if existing:
         card = existing[0]
-        if card.impact != message:
+        # The periodic sweep reports without `automatic`; it must not erase the
+        # note a dispatch left on the same conflict about the agent's attempt.
+        if card.impact != message and (automatic or not card.impact.endswith(message)):
             card.impact = message
             session.add(card)
             session.commit()

@@ -93,6 +93,9 @@ export function forecastExplanation(m: MilestoneSchedule): string {
   return `When the last of its ${m.remaining} open item${m.remaining === 1 ? "" : "s"} lands, following their prerequisites, as many at once as the autopilot runs, at ${BASIS_LABEL[m.basis]}.${assumed}`;
 }
 
+/** The parallel caps the autopilot's dropdown offers; the server allows 1-12. */
+export const AUTOPILOT_PARALLEL_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+
 export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   enabled: "Turned on",
   disabled: "Turned off",

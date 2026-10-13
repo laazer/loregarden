@@ -35,6 +35,7 @@ function groupDecisions(items: ApprovalHistoryItem[]): DecisionGroup[] {
 
 function outcomeLabel(item: ApprovalHistoryItem): string {
   if (item.status === "rejected") return "Rejected";
+  if (item.status === "ignored") return "Ignored";
   return item.resolved_by === "automation" ? "Auto-approved" : "Approved";
 }
 

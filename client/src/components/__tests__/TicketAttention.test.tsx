@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { TicketDetail } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
 import { formatRelativeAge } from "../../lib/timestamps";
-import { navigateToTicketTab } from "../../lib/useAppNavigation";
+import { navigateToTicket, navigateToTicketTab } from "../../lib/useAppNavigation";
 import { useReaderStore } from "../../state/readerStore";
 import { TicketAttention } from "../TicketAttention";
 
@@ -16,6 +16,7 @@ jest.mock("../../api/client", () => ({
 jest.mock("../../lib/useAppNavigation", () => ({
   ...jest.requireActual("../../lib/useAppNavigation"),
   navigateToTicketTab: jest.fn(),
+  navigateToTicket: jest.fn(),
 }));
 
 /** Far enough in the past that formatRelativeAge is day-stable across a test. */
@@ -149,5 +150,43 @@ describe("when nothing needs attention", () => {
 
     await waitFor(() => expect(monitorFindings).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("waiting on other tickets", () => {
+  it("names the blockers as links on a parent with nothing of its own to fix", async () => {
+    renderStrip(
+      ticket({
+        state: "blocked",
+        block_kind: "tickets",
+        blocked_on: "tickets",
+        waiting_on: [
+          { id: "c1", external_id: "lg-x-22", title: "Pick a schema", state: "blocked", reason: "blocked_child", blocked_on: "person" },
+          { id: "c2", external_id: "lg-x-23", title: "Retry the build", state: "blocked", reason: "blocked_child", blocked_on: "agent" },
+        ],
+      }),
+    );
+
+    const strip = await screen.findByRole("region", { name: "Needs attention" });
+    expect(strip).toHaveTextContent("Waiting on");
+    fireEvent.click(within(strip).getByRole("button", { name: "lg-x-22 · needs you" }));
+    expect(navigateToTicket).toHaveBeenCalledWith("c1");
+    expect(within(strip).getByRole("button", { name: "lg-x-23" })).toBeInTheDocument();
+  });
+
+  it("counts the blockers past the first five instead of listing them all", async () => {
+    const refs = Array.from({ length: 7 }, (_, i) => ({
+      id: `p${i}`,
+      external_id: `lg-p-${i}`,
+      title: `Prereq ${i}`,
+      state: "in_progress" as const,
+      reason: "prerequisite" as const,
+      blocked_on: null,
+    }));
+    renderStrip(ticket({ state: "backlog", blocked_on: "tickets", waiting_on: refs }));
+
+    const strip = await screen.findByRole("region", { name: "Needs attention" });
+    expect(within(strip).getAllByRole("button")).toHaveLength(5);
+    expect(strip).toHaveTextContent("+2 more");
   });
 });

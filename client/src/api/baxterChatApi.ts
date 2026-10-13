@@ -1,3 +1,4 @@
+import { baxterChatSessionsPath } from "../lib/chatScope";
 import { request } from "./http";
 import type { BaxterChatSnapshot } from "./types";
 
@@ -13,9 +14,9 @@ export const baxterChatApi = {
    * — the per-turn Fork action. Omitted, the whole conversation copies, which
    * is what `/fork` and the history rail ask for.
    */
-  forkSession: (slug: string, sessionId: string, throughMessageId = "") =>
-    request<BaxterChatSnapshot>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/fork`,
-      { method: "POST", body: JSON.stringify({ through_message_id: throughMessageId }) },
-    ),
+  forkSession: (scope: string, sessionId: string, throughMessageId = "") =>
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ through_message_id: throughMessageId }),
+    }),
 };

@@ -12,9 +12,11 @@ import type {
   PlanNode,
   PlannerSnapshot,
 } from "../../api/initiativeApi";
+import type { BaxterChatSnapshot } from "../../api/chatTypes";
 import type { TicketState, TicketSummary } from "../../api/types";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
+import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
 import { useTicketRefStore } from "../../state/ticketRefStore";
 import { InitiativePlanPage, InitiativePlanRoute } from "../InitiativePlanPage";
 
@@ -178,6 +180,25 @@ const emptyChat: PlannerSnapshot = {
   workspace_slug: "loregarden",
 };
 
+function baxterThread(overrides: Partial<BaxterChatSnapshot> = {}): BaxterChatSnapshot {
+  return {
+    id: "bx1",
+    workspace_id: "w1",
+    scope: "global",
+    initiative_id: "init1",
+    host_workspace_slug: "tinkercg",
+    title: "",
+    messages: [],
+    pending_approvals: [],
+    runtime: DEFAULT_RUNTIME,
+    run_status: "idle",
+    active_turn_id: null,
+    created_at: "2026-10-12T00:00:00Z",
+    updated_at: "2026-10-12T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function setNarrow(narrow: boolean) {
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: narrow && query.includes("max-width"),
@@ -225,6 +246,7 @@ const INIT_REF = "init-tinkercg-build-1";
 beforeEach(() => {
   jest.clearAllMocks();
   useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  useInitiativeAgentStore.setState({ agent: "planner", baxterSessionByInitiative: {} });
   setNarrow(false);
   mockApi.initiativePlan.mockResolvedValue(plan());
   mockApi.initiative.mockResolvedValue({
@@ -385,24 +407,28 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.markNeedsPerson).toHaveBeenCalledWith("init1", ["t0-0"], false));
 
   await user.click(within(panel).getByRole("button", { name: "Turn on" }));
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 3 }));
 });
 
-test("the parallel cap changes only on Update", async () => {
-  mockApi.setAutopilot.mockResolvedValue(plan({ autopilot: { ...plan().autopilot, max_parallel: 8 } }));
+test("while off, the picked cap is sent with Turn on; while on, Turn on is disabled", async () => {
+  const on = plan({ autopilot: { ...plan().autopilot, max_parallel: 1, enabled: true } });
+  mockApi.setAutopilot.mockResolvedValueOnce(on).mockResolvedValueOnce(plan());
   const user = userEvent.setup();
   renderPage();
 
   const panel = await screen.findByRole("region", { name: "Autopilot" });
-  const update = within(panel).getByRole("button", { name: "Update" });
-  expect(update).toBeDisabled();
-
-  await user.selectOptions(within(panel).getByRole("combobox", { name: /Most tickets/ }), "8");
+  const select = within(panel).getByRole("combobox", { name: /Most tickets/ });
+  expect(within(panel).getByRole("button", { name: "Turn off" })).toBeDisabled();
+  await user.selectOptions(select, "1");
   expect(mockApi.setAutopilot).not.toHaveBeenCalled();
 
-  await user.click(update);
-  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { max_parallel: 8 }));
-  await waitFor(() => expect(within(panel).getByRole("button", { name: "Update" })).toBeDisabled());
+  await user.click(within(panel).getByRole("button", { name: "Turn on" }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 1 }));
+  await waitFor(() => expect(within(panel).getByRole("button", { name: "Turn on" })).toBeDisabled());
+  expect(select).toHaveValue("1");
+
+  await user.click(within(panel).getByRole("button", { name: "Turn off" }));
+  await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenLastCalledWith("init1", { enabled: false }));
 });
 
 test("a paused autopilot says why", async () => {
@@ -492,15 +518,101 @@ test("pace mode drops targets and shows where the work will likely land", async 
   expect(screen.getByText("Projected")).toBeInTheDocument();
 });
 
-test("on a narrow screen the planner is a tab, not a panel below everything", async () => {
+test("on a narrow screen the agents are a tab, not a panel below everything", async () => {
   setNarrow(true);
   const user = userEvent.setup();
   renderPage();
 
-  expect(await screen.findByRole("tab", { name: "Planner" })).toBeInTheDocument();
-  expect(screen.queryByRole("complementary", { name: "Planning agent" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("tab", { name: "Planner" }));
-  expect(screen.getByRole("complementary", { name: "Planning agent" })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: "Agents" })).toBeInTheDocument();
+  expect(screen.queryByRole("complementary", { name: "Initiative agents" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "Agents" }));
+  expect(screen.getByRole("complementary", { name: "Initiative agents" })).toBeInTheDocument();
+});
+
+test("the agent panel switches to Baxter, who answers on a thread focused on this initiative", async () => {
+  mockApi.createBaxterChatSession.mockResolvedValue(baxterThread());
+  mockApi.sendBaxterChatMessage.mockResolvedValue(baxterThread({ run_status: "running", active_turn_id: "bt1" }));
+  mockApi.baxterChatSession.mockResolvedValue(baxterThread());
+  const user = userEvent.setup();
+  renderPage();
+
+  const panel = await screen.findByRole("complementary", { name: "Initiative agents" });
+  expect(within(panel).getByRole("tab", { name: "Planner" })).toHaveAttribute("aria-selected", "true");
+  expect(within(panel).getByRole("button", { name: "Draft schedule" })).toBeInTheDocument();
+
+  await user.click(within(panel).getByRole("tab", { name: "Baxter" }));
+  expect(within(panel).getByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
+  expect(within(panel).queryByRole("button", { name: "Draft schedule" })).not.toBeInTheDocument();
+  // A fresh thread: nothing to start over from yet, and it says what to ask.
+  expect(within(panel).getByRole("button", { name: "New chat" })).toBeDisabled();
+  expect(within(panel).getByText(/which tickets under this initiative are blocked/)).toBeInTheDocument();
+
+  await user.type(within(panel).getByRole("textbox"), "What is blocked?");
+  await user.keyboard("{Enter}");
+
+  await waitFor(() => expect(mockApi.createBaxterChatSession).toHaveBeenCalledWith("@initiative:init1"));
+  await waitFor(() =>
+    expect(mockApi.sendBaxterChatMessage).toHaveBeenCalledWith("@initiative:init1", "bx1", "What is blocked?", "", []),
+  );
+  // The thread is this initiative's, not the chat page's.
+  expect(useInitiativeAgentStore.getState().baxterSessionByInitiative).toEqual({ init1: "bx1" });
+  expect(mockApi.sendPlannerMessage).not.toHaveBeenCalled();
+});
+
+test("the agent tabs are reachable by arrow keys, and the choice is remembered", async () => {
+  const user = userEvent.setup();
+  const { unmount } = renderPage();
+
+  const planner = await screen.findByRole("tab", { name: "Planner" });
+  planner.focus();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByRole("tab", { name: "Baxter" })).toHaveFocus();
+  expect(screen.getByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
+  unmount();
+
+  renderPage();
+  expect(await screen.findByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("Baxter's questions end the thread as an ask to answer in place", async () => {
+  useInitiativeAgentStore.setState({ agent: "baxter", baxterSessionByInitiative: { init1: "bx1" } });
+  mockApi.baxterChatSession.mockResolvedValue(
+    baxterThread({
+      run_status: "awaiting_input",
+      pending_approvals: [
+        {
+          id: "ap1",
+          title: "Which milestone first?",
+          level: "low",
+          workspace_slug: "tinkercg",
+          stage_key: "home-chat",
+          stage_name: "Home chat",
+          impact: "",
+          ticket_id: "",
+          ticket_external_id: "",
+          kind: "cli_question",
+          status: "pending",
+          run_id: "r1",
+          tool_name: "AskUserQuestion",
+          tool_input_json: "{}",
+          cli_adapter: "claude",
+          questions: [
+            {
+              question: "Which milestone first?",
+              header: "Order",
+              options: [{ label: "Card slice" }, { label: "Private alpha" }],
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  renderPage();
+
+  const panel = await screen.findByRole("complementary", { name: "Initiative agents" });
+  expect((await within(panel).findAllByText("Which milestone first?")).length).toBeGreaterThan(0);
+  expect(within(panel).getByRole("button", { name: "Submit answers" })).toBeInTheDocument();
+  expect(mockApi.baxterChatSession).toHaveBeenCalledWith("@initiative:init1", "bx1");
 });
 
 test("with no milestones there is nothing to plan, and the page says how to get one", async () => {

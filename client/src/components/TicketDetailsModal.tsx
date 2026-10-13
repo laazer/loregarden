@@ -240,6 +240,9 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   const ticketNumber = asDisplayString(ticket?.external_id) || asDisplayString(ticket?.id);
   const ticketTitle = asDisplayString(ticket?.title);
   const busy = isSaving || isSavingChecks;
+  // The server refuses criteria edits on a done ticket unless the same save reopens it.
+  const viewLocked = ticket?.state === 'done';
+  const editLocked = viewLocked && draft?.state === 'done';
 
   return (
     <>
@@ -328,6 +331,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               draft={draft}
               tags={draftTags}
               disabled={isSaving}
+              criteriaLocked={editLocked}
               onChange={patchDraft}
             />
           )}
@@ -363,8 +367,9 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               <TicketCriteriaView
                 criteria={criteria}
                 checked={shownChecks}
-                onToggle={onSaveChecks ? (c, checked) => void handleToggle(c, checked) : undefined}
+                onToggle={onSaveChecks && !viewLocked ? (c, checked) => void handleToggle(c, checked) : undefined}
                 disabled={busy}
+                lockedHint={viewLocked ? DONE_CRITERIA_HINT : undefined}
               />
 
               {asStringArray(ticket.tags).length > 0 && (
@@ -415,14 +420,19 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   );
 };
 
+const DONE_CRITERIA_HINT =
+  'Locked: this ticket is done, so its criteria record what was delivered. Link follow-up work as a related ticket, or reopen it to change them.';
+
 interface TicketEditFormProps {
   draft: EditDraft;
   tags: string[];
   disabled: boolean;
+  /** Done and staying done: the criteria and their checks are read-only. */
+  criteriaLocked: boolean;
   onChange: (patch: Partial<EditDraft>) => void;
 }
 
-function TicketEditForm({ draft, tags, disabled, onChange }: TicketEditFormProps) {
+function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: TicketEditFormProps) {
   return (
     <>
       <div className="state-card">
@@ -473,7 +483,12 @@ function TicketEditForm({ draft, tags, disabled, onChange }: TicketEditFormProps
         />
       </div>
 
-      <TicketCriteriaEditor rows={draft.criteria} onChange={(criteria) => onChange({ criteria })} disabled={disabled} />
+      <TicketCriteriaEditor
+        rows={draft.criteria}
+        onChange={(criteria) => onChange({ criteria })}
+        disabled={disabled || criteriaLocked}
+        lockedHint={criteriaLocked ? DONE_CRITERIA_HINT : undefined}
+      />
 
       <div className="state-card">
         <div className="state-label">Tags</div>

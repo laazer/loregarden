@@ -12,6 +12,7 @@ from loregarden.models.domain.chat_primitives import (
     QAPart,
     TextPart,
     ThinkingPart,
+    TicketListPart,
     TicketPart,
     TodoListPart,
     WorkspacePart,
@@ -75,6 +76,36 @@ def test_invalid_schema_degrades_to_text():
     parts = parse_primitive_parts(fence)
     assert len(parts) == 1
     assert isinstance(parts[0], TextPart)
+
+
+@pytest.mark.parametrize("kind", ["ticket_list", "status_column", "kanban", "filterable_kanban"])
+def test_ticket_set_card_with_unknown_keys_stays_visible_text(kind: str):
+    """A misspelled id list must not parse into the "every ticket" card.
+
+    Baxter sent ``items`` instead of ``ticket_ids``; the key was dropped, and an
+    empty ``ticket_ids`` renders every ticket in every workspace under the
+    agent's title ("Blocking init-pre-tinkercg-3").
+    """
+    extra = ',"status":"blocked"' if kind == "status_column" else ""
+    raw = (
+        f'```loregarden\n{{"primitive":"{kind}","title":"Blocked"{extra},'
+        '"items":[{"ticket_id":"6e954acb","note":"917"}]}\n```'
+    )
+
+    parts = parse_primitive_parts(raw)
+
+    assert len(parts) == 1
+    assert isinstance(parts[0], TextPart)
+    assert parts[0].content == raw
+
+
+def test_ticket_list_with_ticket_ids_parses():
+    raw = '```loregarden\n{"primitive":"ticket_list","ticket_ids":["a","b"]}\n```'
+
+    (part,) = parse_primitive_parts(raw)
+
+    assert isinstance(part, TicketListPart)
+    assert part.ticket_ids == ["a", "b"]
 
 
 def test_parts_to_jsonable_round_trips():

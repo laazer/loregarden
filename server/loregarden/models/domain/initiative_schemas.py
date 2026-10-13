@@ -226,6 +226,35 @@ class AutopilotUpdate(BaseModel):
     max_parallel: int | None = Field(default=None, ge=1, le=12)
 
 
+class AutopilotTicketRef(BaseModel):
+    id: str
+    external_id: str
+    title: str
+
+
+class SubtreeAutopilotView(BaseModel):
+    """The autopilot of a plan rooted at a milestone or parent ticket.
+
+    The initiative page reads `AutopilotView` beside the whole plan graph; a
+    parent's card has no graph to look ids up in, so the tickets come resolved.
+    """
+
+    root_id: str
+    autopilot: AutopilotView
+    #: Work items under the parent the autopilot plans over, and how many are open.
+    total_items: int
+    open_items: int
+    next_up: list[AutopilotTicketRef]
+    waiting_on_person: list[AutopilotTicketRef]
+    blocked: list[AutopilotTicketRef]
+    #: The parent itself, or an ancestor, with its own orchestration running:
+    #: that run works through these items, so the autopilot waits for it.
+    running_above: AutopilotTicketRef | None
+    #: Initiatives and parents above this one whose autopilot is on, and so
+    #: already starts work here; each one's cap holds.
+    also_driven_by: list[AutopilotTicketRef]
+
+
 __all__ = [
     "InitiativeMilestoneView",
     "InitiativeMemberAdd",
@@ -242,4 +271,6 @@ __all__ = [
     "AutopilotEventView",
     "AutopilotView",
     "AutopilotUpdate",
+    "AutopilotTicketRef",
+    "SubtreeAutopilotView",
 ]

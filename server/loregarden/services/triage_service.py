@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 from loregarden.agents.chat_role_prompt import (
     chat_posture_blocks,
@@ -25,6 +24,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.agent_turn_runner import (
     AdapterCapabilities,
     TurnIntent,
@@ -91,7 +91,7 @@ def set_triage_runtime(
         "lmstudio_model": body.lmstudio_model.strip(),
     }
     ticket.triage_runtime_json = json.dumps(payload)
-    ticket.updated_at = datetime.now(timezone.utc)
+    ticket.updated_at = utcnow()
     session.add(ticket)
     session.commit()
     session.refresh(ticket)
@@ -203,7 +203,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     user_message = TriageMessage(ticket_id=ticket.id, role="user", content=text)
     session.add(user_message)
     ticket.revision += 1
-    ticket.updated_at = datetime.now(timezone.utc)
+    ticket.updated_at = utcnow()
     session.add(ticket)
     session.commit()
     session.refresh(user_message)
