@@ -38,6 +38,7 @@ tasks:
     env:
       LOREGARDEN_REPO_ROOT: "{{.ROOT_DIR}}"
       LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "{{.LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK}}"
+      LOREGARDEN_DEV_HOST: "{{.LOREGARDEN_DEV_HOST}}"
     cmds:
       - ./scripts/dev-server.sh
     interactive: true
@@ -87,6 +88,8 @@ tasks:
   client:
     desc: Start React IDE dev server (http://localhost:5173)
     dir: "{{.ROOT_DIR}}"
+    env:
+      LOREGARDEN_DEV_HOST: "{{.LOREGARDEN_DEV_HOST}}"
     cmds:
       - ./scripts/dev-client.sh
     interactive: true
@@ -101,12 +104,30 @@ tasks:
       - task: dev:run
     interactive: true
 
+  dev:lan:
+    desc: >-
+      Start client and server on 0.0.0.0 so a phone or another laptop can use
+      the IDE; prints the URL to open. Unauthenticated, so it refuses without
+      LOREGARDEN_DEV_LAN_ACK=1
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/dev-lan.sh
+      - ./scripts/check-claude-login.sh
+      - task: dev:run
+        vars: { LOREGARDEN_DEV_HOST: "0.0.0.0" }
+    interactive: true
+
   dev:run:
     internal: true
+    # A var handed to this task does not reach its deps unless forwarded; the
+    # shell's own LOREGARDEN_DEV_HOST still does, as before.
     deps:
       - task: server
-        vars: { LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "1" }
-      - client
+        vars:
+          LOREGARDEN_SKIP_CLAUDE_LOGIN_CHECK: "1"
+          LOREGARDEN_DEV_HOST: "{{.LOREGARDEN_DEV_HOST}}"
+      - task: client
+        vars: { LOREGARDEN_DEV_HOST: "{{.LOREGARDEN_DEV_HOST}}" }
 
   sandbox:
     desc: >-
