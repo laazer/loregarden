@@ -58,6 +58,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.stage_fanout_service.engine",
     "loregarden.services.drain.engine",
     "loregarden.services.integration_branch_health.engine",
+    "loregarden.services.tree_publish_scheduler.engine",
     "loregarden.services.process_identity.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.services.run_lease.engine",

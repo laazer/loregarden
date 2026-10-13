@@ -81,11 +81,20 @@ git:
   # only exist in a working tree. A commit is what makes it survivable.
   #
   # Reaches two callers, and only two: `chat_publish.publish_chat_turn` after an
-  # acting chat turn, and `publish_tree` when a root ticket finishes its
-  # workflow (a tree's root pushes its integration branch, a ticket with no tree
-  # its own branch). Individual ticket stages never publish.
+  # acting chat turn, and `publish_tree` for a root's work (a tree's integration
+  # branch after every landing on it and when the root finishes, a ticket with
+  # no tree its own branch). Individual ticket stages never publish.
   commit: true
   push: true
+  # For `publish_tree` only (958): a tree's PR opens with its first landing and
+  # merges when the ruleset's required checks pass. Publishing only when a
+  # milestone finished kept its integration branch alive for weeks against a
+  # base taking ~96 commits a week, and every integration conflict was on such a
+  # branch. Chat turns keep `open_pr`/`auto_merge` off and stay push-only.
+  # `tree_auto_merge` needs "Allow auto-merge" on in the repository's GitHub
+  # settings; until it is, the merge step fails and says so on a card.
+  tree_open_pr: true
+  tree_auto_merge: true
   # A branch per acting turn, pushed, is a branch per conversation accumulating
   # forever. The sweep removes one only once its content is in the base branch —
   # the bar at which the ref was keeping nothing reachable — and leaves anything
