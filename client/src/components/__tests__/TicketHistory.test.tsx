@@ -50,6 +50,28 @@ describe("TicketHistory", () => {
     expect(screen.getByText(/Stage skipped ui-design/)).toBeInTheDocument();
   });
 
+  it("puts a line's detail behind a disclosure a keyboard can open", async () => {
+    ticketHistory.mockResolvedValue([
+      event({
+        type: "OrchestratorDecision",
+        payload: {
+          decision: "requeued",
+          stage_key: "triage",
+          reason: "491 landed on main.",
+          actor: "mcp",
+        },
+      }),
+    ]);
+    renderHistory();
+
+    fireEvent.click(await screen.findByRole("button", { name: /History/ }));
+    const reason = screen.getByText("491 landed on main.");
+    const disclosure = reason.closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(disclosure?.querySelector("summary")).not.toBeNull();
+  });
+
   it("renders nothing for a ticket with no recorded transitions", async () => {
     // Tickets predating the log having a reader are the common case, and an
     // empty disclosure button on every one of them is noise.

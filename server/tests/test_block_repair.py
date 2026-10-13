@@ -39,7 +39,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
-from tests.history_helpers import decision_kinds
+from tests.history_helpers import decision_kinds, decision_payloads
 
 IMPLEMENT = "implement"
 REVIEW = "review"
@@ -165,6 +165,56 @@ def test_a_work_block_gets_one_repair_turn_and_the_rerun_passing_is_the_fix(
     # The repair run saw the block in its brief.
     repair_run = [r for r in _runs(db_session, ticket) if r.agent_id == REPAIR_AGENT_ID][0]
     assert repair_run.stage_key == IMPLEMENT
+
+
+def test_the_history_says_what_blocked_and_what_the_repair_changed(db_session, ticket, monkeypatch):
+    """A repair that worked used to read "the repair turn cleared the block" and
+    nothing else: neither the block nor the fix reached the history rail."""
+    fix = "Cause: stale lockfile. Evidence: npm ci failed. Fix: regenerated it in abc123."
+    _script(
+        monkeypatch,
+        {
+            WORKER: (RunStatus.SUCCEEDED, _report("blocked", kind="work"), ""),
+            REPAIR_AGENT_ID: (
+                RunStatus.SUCCEEDED,
+                "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+                + json.dumps({"status": "pass", "confidence": 0.9, "reroute_context": fix})
+                + "\n<<<END_STAGE_REPORT>>>\n",
+                "",
+            ),
+        },
+    )
+
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="repair-test"), max_stages=10
+    )
+
+    payloads = {p["decision"]: p for p in decision_payloads(db_session, ticket.id)}
+    assert "the block text" in payloads["dispatched_repair"]["block_message"]
+    repaired = payloads["repaired"]
+    assert repaired["repair_summary"] == fix
+    repair_run = [r for r in _runs(db_session, ticket) if r.agent_id == REPAIR_AGENT_ID][0]
+    assert repaired["run_code"] == repair_run.run_code
+
+
+def test_an_escalation_carries_the_block_it_escalates(db_session, ticket, monkeypatch):
+    _script(
+        monkeypatch,
+        {
+            WORKER: (RunStatus.SUCCEEDED, _report("blocked", kind="work"), ""),
+            REPAIR_AGENT_ID: (RunStatus.SUCCEEDED, _report("blocked", kind="work"), ""),
+        },
+    )
+
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="repair-test"), max_stages=10
+    )
+
+    escalations = [
+        p for p in decision_payloads(db_session, ticket.id) if p["decision"] == "repair_escalated"
+    ]
+    assert escalations
+    assert all("the block text" in p["block_message"] for p in escalations)
 
 
 def test_a_harness_failure_gets_the_environment_retries_first_then_one_repair_turn(
