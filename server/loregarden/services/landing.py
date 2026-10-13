@@ -22,6 +22,16 @@ Outcomes:
   control plane's own words. The orchestration that drove the stage sees a
   blocked ticket and finishes blocked, as it does for any other block.
 
+Before the merge, the ticket branch is brought up to its target, by merging
+the target *into* the branch with the same no-checkout plumbing the land uses
+(801). A target that moved after the terminal gate passed is then met on the
+ticket branch, which is where a resolver is told to work, and the tree that
+lands is the tree the ticket's own gate ran against. A refresh conflict
+reaches this module as a `LandResult` with conflicted files, exactly as a land
+conflict does, and takes the same resolver path bounded by the same cap. Any
+other refresh failure carries git's reason with no conflicted files, so it
+blocks on the leg below and spends no resolution attempt.
+
 `auto_resolve_conflicts` is honoured as of 801. A conflict on a ticket whose
 every stage passed arms a resolution turn on the terminal stage — the same
 pin the repair turn uses — and the workflow comes back through here to retry

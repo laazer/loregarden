@@ -29,6 +29,13 @@ class MergeOutcome:
     already_contained: bool = False
     detail: str = ""
     conflicted_files: tuple[str, ...] = field(default_factory=tuple)
+    #: Whether the commit *this call wrote* carries a signature. ``None`` means
+    #: no commit was written — a failure, an ``already_contained`` short-circuit,
+    #: or a preview. Tri-state on purpose: collapsing "nothing was written" into
+    #: "what was written is unsigned" is the same answer for two different
+    #: states, which is what let eight unsigned landings read as successes
+    #: (lg-milestone-that-782).
+    signed: bool | None = None
 
     @property
     def conflicted(self) -> bool:
@@ -102,6 +109,20 @@ def signs_commits(repo_root: Path) -> bool:
     """
     result = _git(repo_root, "config", "--get", "--type=bool", "commit.gpgsign")
     return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def describe_signing(signed: bool | None) -> str:
+    """How ``MergeOutcome.signed`` reads in a log line about a written commit.
+
+    Branches on the three states rather than on truthiness: ``None`` is not
+    "unsigned", and a caller that read it as one would describe a landing it
+    did not make.
+    """
+    if signed is True:
+        return "signed"
+    if signed is False:
+        return "unsigned"
+    return "no commit written"
 
 
 def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[str, ...], str]:
@@ -244,7 +265,12 @@ def merge_tips(
     if not tree:
         return MergeOutcome(ok=False, detail=words)
 
-    sign = ["-S"] if signs_commits(repo_root) else []
+    # One reading of `commit.gpgsign` decides the flag git gets and the answer
+    # the caller is given; re-reading the commit back to check would be a second
+    # git call on every landing, and would answer `N` on any checkout without
+    # `gpg.ssh.allowedSignersFile`.
+    signing = signs_commits(repo_root)
+    sign = ["-S"] if signing else []
     committed = _git(
         repo_root, "commit-tree", tree, *sign, "-p", target_sha, "-p", source_sha, "-m", subject
     )
@@ -259,7 +285,8 @@ def merge_tips(
         # we read it. Nothing was written; the caller re-reads and retries.
         detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
         return MergeOutcome(ok=False, detail=detail)
-    return MergeOutcome(ok=True, sha=merge_sha)
+    # Only here, past the ref move: before it, no landing exists to describe.
+    return MergeOutcome(ok=True, sha=merge_sha, signed=signing)
 
 
 def advance_tips(

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging, trying]
   pull_request:
 
 # Cancel superseded runs on the same ref to save CI minutes.
@@ -109,3 +109,15 @@ jobs:
 
       - name: Test
         run: npm test
+
+  ci:
+    name: CI
+    needs: [server, client]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        run: |
+          if [ "${{ needs.server.result }}" != "success" ] || [ "${{ needs.client.result }}" != "success" ]; then
+            exit 1
+          fi

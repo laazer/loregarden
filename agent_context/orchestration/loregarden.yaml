@@ -84,6 +84,16 @@ git:
   # acting chat turn, and `publish_tree` for a root's work (a tree's integration
   # branch after every landing on it and when the root finishes, a ticket with
   # no tree its own branch). Individual ticket stages never publish.
+  #
+  # Bors try-merge gate (root `bors.toml` status = ["CI"] — the job-level
+  # aggregator `name: CI` in `.github/workflows/ci.yml`, not Server/Client):
+  # Reviewers enqueue with `bors r+` (land) or `bors try` (dry-run). CI builds
+  # `main`, `staging`, and `trying` (plus PRs). The gate is try-merge of the
+  # merged tree on `staging`/`trying` — not PR-head CI alone. Public bors.tech
+  # is deprecated; this repo uses self-hosted bors-ng (sibling
+  # lg-milestone-that-795 owns hosting / GitHub App install). Until it is
+  # hosted, nothing waits on bors: a tree's PR (`tree_open_pr` /
+  # `tree_auto_merge` below, 958) merges on the ruleset's required checks.
   commit: true
   push: true
   # For `publish_tree` only (958): a tree's PR opens with its first landing and
