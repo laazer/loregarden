@@ -157,6 +157,9 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # Normal, like requeued_after_decision: a person's answer, acted on.
         "parked_after_decision",
         "advanced_after_decision",
+        # Normal: a block cleared by a requeue, shown with its reason and actor
+        # rather than as a block that cleared itself (lg-milestone-that-916).
+        "requeued",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

@@ -22,6 +22,7 @@ from loregarden.services.stage_retry_budget import (
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
+from tests.history_helpers import decision_payloads
 
 
 def _call(session, name: str, args: dict) -> dict:
@@ -270,6 +271,22 @@ def test_requeue_records_why_the_budget_was_reset(db_session):
         )
     ).all()
     assert any("Dependency landed on main." in (note.content_json or "") for note in notes)
+
+
+def test_requeue_puts_its_reason_and_actor_on_the_history_rail(db_session):
+    """The reason was an artifact the history rail never read, so a block that a
+    requeue cleared looked like it had cleared itself (lg-milestone-that-916)."""
+    ticket = _task(db_session)
+    _call(
+        db_session,
+        "loregarden_requeue_ticket",
+        {"ticket_id": ticket.id, "reason": "Dependency landed on main."},
+    )
+
+    requeues = [p for p in decision_payloads(db_session, ticket.id) if p["decision"] == "requeued"]
+    assert len(requeues) == 1
+    assert requeues[0]["reason"] == "Dependency landed on main."
+    assert requeues[0]["actor"] == "mcp"
 
 
 def test_requeue_does_not_pin_the_ticket_state(db_session):

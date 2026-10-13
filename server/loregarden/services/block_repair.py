@@ -243,14 +243,23 @@ def offer_repair(
             f"Block on '{stage_key}' is {kind.value}; re-armed the stage for one repair turn "
             f"under the '{REPAIR_AGENT_ID}' agent instead of waiting for a person."
         ),
-        evidence={"block_kind": kind.value, "failed_agent": failed_agent},
+        evidence={
+            "block_kind": kind.value,
+            "failed_agent": failed_agent,
+            "block_message": message,
+        },
     )
     session.commit()
     return RepairOffer(True)
 
 
-def record_repair_outcome(session: Session, ticket: Ticket, run: AgentRun) -> None:
-    """The repair turn passed: the block is gone, in every place it was recorded."""
+def record_repair_outcome(session: Session, ticket: Ticket, run: AgentRun, *, summary: str) -> None:
+    """The repair turn passed: the block is gone, in every place it was recorded.
+
+    `summary` is the repair agent's own account (cause, evidence, fix) from its
+    report. Without it the history said only that a repair worked, never what
+    it was.
+    """
     ticket.block_kind = None
     session.add(ticket)
     record_orchestrator_decision(
@@ -260,5 +269,6 @@ def record_repair_outcome(session: Session, ticket: Ticket, run: AgentRun) -> No
         stage_key=run.stage_key,
         reason=f"The repair turn cleared the block on '{run.stage_key}' and the stage passed.",
         run_id=run.id,
+        evidence={"run_code": run.run_code, "repair_summary": summary},
     )
     session.commit()

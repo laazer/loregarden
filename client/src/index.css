@@ -1000,6 +1000,25 @@ textarea::placeholder {
   color: var(--warn, #f0b429);
 }
 
+/* The block a repair was sent to, what it changed, why a stage was requeued.
+   Plain text color even under a failed line: the detail is the explanation,
+   not more of the alarm. */
+.ticket-history-detail {
+  margin: 2px 0 4px;
+}
+
+.ticket-history-detail > summary {
+  cursor: pointer;
+  color: var(--txl);
+}
+
+.ticket-history-detail-body {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--tx);
+}
+
 .studio-drift-notice {
   border: 1px solid rgba(240, 180, 41, 0.45);
   background: rgba(240, 180, 41, 0.08);

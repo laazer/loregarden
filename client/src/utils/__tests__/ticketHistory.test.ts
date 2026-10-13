@@ -170,3 +170,47 @@ describe("orchestrator decisions", () => {
     expect(line.text).toContain("settled orphaned run");
   });
 });
+
+// lg-milestone-that-916: a block that cleared looked like it cleared itself.
+// The block, the repair's own account and the requeue reason were recorded,
+// but on nothing the rail read.
+describe("what a repair or requeue was", () => {
+  const block = "'integration/x' cannot take 'main': merge conflicts in land_ticket.py";
+
+  it("carries the block a repair was sent to", () => {
+    const sent = decision("dispatched_repair", "Re-armed 'triage' for one repair turn.", "triage");
+    sent.payload.block_message = block;
+    const escalated = decision("repair_escalated", "The repair turn blocked too.", "triage");
+    escalated.payload.block_message = block;
+
+    const lines = historyLines([sent, escalated]);
+
+    expect(lines.map((line) => line.detail)).toEqual([block, block]);
+  });
+
+  it("carries the repair agent's account of what it fixed", () => {
+    const repaired = decision("repaired", "The repair turn cleared the block.");
+    repaired.payload.repair_summary = "Cause: stale lockfile. Fix: regenerated it.";
+
+    const [line] = historyLines([repaired]);
+
+    expect(line.detail).toBe("Cause: stale lockfile. Fix: regenerated it.");
+  });
+
+  it("shows a requeue's stage and actor on the line and its reason as the detail", () => {
+    const requeued = decision("requeued", "491 landed on main, so the conflict is gone.", "triage");
+    requeued.payload.actor = "mcp";
+
+    const [line] = historyLines([requeued]);
+
+    expect(line.text).toContain("triage");
+    expect(line.text).toContain("loregarden_requeue_ticket");
+    expect(line.detail).toBe("491 landed on main, so the conflict is gone.");
+    expect(line.tone).toBe("normal");
+  });
+
+  it("has no detail when the event recorded nothing more", () => {
+    const [line] = historyLines([decision("classified_block", "Block classified as work.")]);
+    expect(line.detail).toBeUndefined();
+  });
+});
