@@ -402,3 +402,17 @@ def test_a_landing_during_a_publish_publishes_again_after_it(session, workspace,
 
     assert publishes == [ms.id, ms.id]
     assert tree_publish_scheduler._IN_FLIGHT == set()
+
+
+def test_a_branch_whose_work_reached_the_base_by_a_squash_publishes_nothing(
+    session, workspace, repo
+):
+    """Right after a tree's PR squash-merges, the branch is not an ancestor of the
+    base, but it adds nothing to it; a push would open an empty PR."""
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    commit_on(repo, "main", "c1.txt", "child work\n")  # the squash of the tree's PR
+
+    outcome = publish_tree(session, ms, workspace)
+
+    assert outcome.ok and outcome.skipped
+    assert _remote_sha(repo, target) == ""

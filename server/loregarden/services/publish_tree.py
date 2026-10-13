@@ -46,7 +46,7 @@ from loregarden.models.domain import EventType, Ticket, Workspace
 from loregarden.services.git_automation import AutomationResult, PublishSubject, publish_branch
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import is_ancestor, rev, signs_commits
+from loregarden.services.git_merge_noco import adds_nothing, rev, signs_commits
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.root_integration_sync import fold_root_branch
@@ -91,9 +91,19 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
 
     config = resolve_git_automation(workspace, ticket)
-    if is_ancestor(repo_root, tip, f"refs/heads/{config.base_branch}"):
-        # A ticket that committed nothing, or work already merged by hand. A
-        # push would publish a branch with nothing on it, and a PR would fail.
+    try:
+        already_there = adds_nothing(
+            repo_root, rev(repo_root, f"refs/heads/{config.base_branch}"), tip
+        )
+    except RuntimeError as exc:
+        failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
+        _emit(session, ticket, config.base_branch, failed)
+        return failed
+    if already_there:
+        # A ticket that committed nothing, or work that reached the base by
+        # another route: merged by hand, or squash-merged from this branch's
+        # own PR, which ancestry cannot see. A push would publish a branch with
+        # nothing on it, and its PR would be empty.
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
     chain = tree_chain(config)
     if "push" in enabled_steps(chain) and signs_commits(repo_root):

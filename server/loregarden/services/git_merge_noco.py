@@ -163,6 +163,23 @@ def merge_preview(repo_root: Path, target_sha: str, source_sha: str) -> MergeOut
     return MergeOutcome(ok=True)
 
 
+def adds_nothing(repo_root: Path, base_sha: str, branch_sha: str) -> bool:
+    """Whether merging ``branch_sha`` into ``base_sha`` would leave the base unchanged.
+
+    True when everything the branch adds is already in the base by any route:
+    ancestry, or a squash merge whose commit the branch never sees. Raises when
+    git cannot compute the merge at all, which is not an answer either way.
+    """
+    if branch_sha == base_sha or is_ancestor(repo_root, branch_sha, base_sha):
+        return True
+    tree, conflicts, words = _merge_tree(repo_root, base_sha, branch_sha)
+    if conflicts:
+        return False
+    if not tree:
+        raise RuntimeError(f"git merge-tree failed for {branch_sha[:12]}: {words}")
+    return tree == _tree_of(repo_root, base_sha)
+
+
 #: How many base commits `superseding_commit` tries before giving up. Each try
 #: is one `merge-tree`; past this the conflict is reported as it always was.
 SUPERSEDE_SCAN_LIMIT = 200
