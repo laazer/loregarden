@@ -38,7 +38,7 @@
  *     that point can only see the PATCH the server already applied.
  */
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -89,8 +89,43 @@ interface WriteResult {
  * options, so a scope that changed under an in-flight write would leave it
  * queued behind nothing.
  */
-function scopeFor(slug: string, viewId: string): string {
+export function viewWriteScope(slug: string, viewId: string): string {
   return `view-layout:${slug}:${viewId}`;
+}
+
+/**
+ * Put a PATCH's record in the cache the way every layout write must: reads of
+ * the view still in flight are cancelled first, and the cached viewport is kept.
+ *
+ * Exported for writers outside this hook — an agent's `view.update` — whose
+ * write has to land exactly as the page's own do, or the page's next edit
+ * composes from a stale layout and PATCHes the agent's change away.
+ */
+export function storeWrittenView(qc: QueryClient, slug: string, viewId: string, record: ViewSummary): void {
+  const key = viewsKeys.view(slug, viewId);
+  // Every read of this view still in flight is discarded first, because all
+  // of them were issued before the server applied this PATCH and any of them
+  // may resolve after this line — react-query orders a landing fetch against
+  // a `setQueryData` not at all. Here rather than at the start of the write,
+  // because this is the moment that divides the reads that cannot be trusted
+  // from the ones that can: a GET issued after the PATCH has come back is
+  // asking a server that has already applied it. Not awaited — the
+  // cancellation is synchronous, and awaiting would hand a read that never
+  // settles the power to hold the record out of the cache.
+  void qc.cancelQueries({ queryKey: key });
+  // The server's record, not a refetch: the write already returned it. Under
+  // the key this write's own variables name — not the one the page happens
+  // to be showing now.
+  //
+  // Every field of it *except* the viewport, which this write did not set
+  // and is not authoritative about: a pan that committed between this
+  // PATCH's commit and its response landing is already in the cache, and
+  // the record in hand still carries the position from before it.
+  // `cancelQueries` above cancels reads, not the sibling mutation.
+  qc.setQueryData<ViewSummary>(key, (previous) =>
+    previous === undefined ? record : { ...record, viewport: previous.viewport },
+  );
+  qc.invalidateQueries({ queryKey: viewsKeys.views(slug) });
 }
 
 /**
@@ -109,7 +144,7 @@ export function useViewLayoutEdit(
 
   const write = useMutation({
     meta: { errorTitle: "Update view" },
-    scope: { id: scopeFor(slug, viewId) },
+    scope: { id: viewWriteScope(slug, viewId) },
     mutationFn: async (vars: LayoutWrite): Promise<WriteResult> => {
       const key = viewsKeys.view(vars.slug, vars.viewId);
       const current = qc.getQueryData<ViewSummary>(key);
@@ -141,30 +176,7 @@ export function useViewLayoutEdit(
     onSuccess: ({ record, written }, vars) => {
       // Nothing was sent, so nothing about the cache is stale.
       if (!written) return;
-      const key = viewsKeys.view(vars.slug, vars.viewId);
-      // Every read of this view still in flight is discarded first, because all
-      // of them were issued before the server applied this PATCH and any of them
-      // may resolve after this line — react-query orders a landing fetch against
-      // a `setQueryData` not at all. Here rather than at the start of the write,
-      // because this is the moment that divides the reads that cannot be trusted
-      // from the ones that can: a GET issued after the PATCH has come back is
-      // asking a server that has already applied it. Not awaited — the
-      // cancellation is synchronous, and awaiting would hand a read that never
-      // settles the power to hold the record out of the cache.
-      void qc.cancelQueries({ queryKey: key });
-      // The server's record, not a refetch: the write already returned it. Under
-      // the key this write's own variables name — not the one the page happens
-      // to be showing now.
-      //
-      // Every field of it *except* the viewport, which this write did not set
-      // and is not authoritative about: a pan that committed between this
-      // PATCH's commit and its response landing is already in the cache, and
-      // the record in hand still carries the position from before it.
-      // `cancelQueries` above cancels reads, not the sibling mutation.
-      qc.setQueryData<ViewSummary>(key, (previous) =>
-        previous === undefined ? record : { ...record, viewport: previous.viewport },
-      );
-      qc.invalidateQueries({ queryKey: viewsKeys.views(vars.slug) });
+      storeWrittenView(qc, vars.slug, vars.viewId, record);
     },
   });
 

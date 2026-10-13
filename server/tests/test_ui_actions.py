@@ -92,6 +92,65 @@ def test_arguments_are_validated_against_the_catalog():
     assert outcome["failure"] == UiActionFailure.INVALID_ARGUMENTS
 
 
+def _view_create(layout: dict[str, Any]) -> dict[str, Any]:
+    return _invoke(
+        {
+            "action": UiAction.VIEW_CREATE.value,
+            "arguments": {"workspace_slug": "loregarden", "title": "Logs", "layout": layout},
+        }
+    )
+
+
+def test_a_view_layout_is_validated_before_any_tab_is_asked():
+    """The same `ViewLayout` the REST route takes: a leaf naming a container the
+    layout does not register is refused here, not by the tab's POST."""
+    broken = {
+        "kind": "flex_grid",
+        "containers": {},
+        "root": {"node": "leaf", "id": "n1", "container_id": "missing"},
+    }
+    assert _view_create(broken)["failure"] == UiActionFailure.INVALID_ARGUMENTS
+
+    sound = {
+        "kind": "canvas",
+        "containers": {"c1": {"kind": "panel", "settings": {"primitive_id": "ticket_logs"}}},
+        "items": [{"id": "n1", "container_id": "c1", "x": 0, "y": 0, "width": 400, "height": 300}],
+    }
+    # Past validation, it fails only for want of a tab to ask.
+    assert _view_create(sound)["failure"] == UiActionFailure.NO_TAB
+
+
+@pytest.mark.parametrize(
+    ("change", "failure"),
+    [
+        # Nothing to change.
+        ({}, UiActionFailure.INVALID_ARGUMENTS),
+        # A whole-layout replace with no base to compare against could erase an
+        # edit the operator made after the agent read the view.
+        (
+            {"layout": {"kind": "canvas", "containers": {}, "items": []}},
+            UiActionFailure.INVALID_ARGUMENTS,
+        ),
+        ({"title": "Renamed"}, UiActionFailure.NO_TAB),
+        (
+            {
+                "layout": {"kind": "canvas", "containers": {}, "items": []},
+                "base_revision": "0a1b2c3d",
+            },
+            UiActionFailure.NO_TAB,
+        ),
+    ],
+)
+def test_a_view_update_names_a_change_and_the_layout_it_was_made_from(change, failure):
+    outcome = _invoke(
+        {
+            "action": UiAction.VIEW_UPDATE.value,
+            "arguments": {"workspace_slug": "loregarden", "view_id": "v-1", **change},
+        }
+    )
+    assert outcome["failure"] == failure
+
+
 def test_no_tab_is_a_named_failure_not_a_hang():
     outcome = _invoke({"action": UiAction.NAVIGATE_PAGE.value, "arguments": {"page": "queue"}})
     assert outcome["failure"] == UiActionFailure.NO_TAB

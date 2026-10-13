@@ -41,7 +41,7 @@ const CREATE_RETRY_LIMIT = 3;
  * the ranking it lost to — so the same request goes back out. A 400 or 422 is
  * the caller's mistake and is thrown on the first attempt.
  */
-async function createViewContending(slug: string, body: ViewCreate): Promise<ViewSummary> {
+export async function createViewContending(slug: string, body: ViewCreate): Promise<ViewSummary> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await createView(slug, body);
