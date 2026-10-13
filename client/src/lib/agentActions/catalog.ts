@@ -54,6 +54,13 @@ export interface UiActionArgs {
   "approval.resolve": { approval_id: string };
   "view.create": { workspace_slug: string; title: string; layout: ViewLayout };
   "view.open": { workspace_slug: string; view_id: string };
+  "view.update": {
+    workspace_slug: string;
+    view_id: string;
+    title?: string;
+    layout?: ViewLayout;
+    base_revision?: string;
+  };
 }
 
 export type UiActionName = keyof UiActionArgs;
@@ -89,4 +96,5 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "approval.resolve": "Resolved an approval",
   "view.create": "Added a tab",
   "view.open": "Opened a tab",
+  "view.update": "Edited a tab",
 };

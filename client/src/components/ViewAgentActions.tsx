@@ -1,16 +1,35 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { MutationObserver, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import { createViewContending } from "../hooks/useSidebarTabs";
+import { storeWrittenView, viewWriteScope } from "../hooks/useViewLayoutEdit";
 import { useAgentAction } from "../lib/agentActions/useAgentAction";
 import { viewPath } from "../lib/appNavigation";
-import { fetchView, viewsKeys } from "../lib/viewsApi";
+import { fetchView, updateView, viewsKeys, type ViewLayout, type ViewPatch } from "../lib/viewsApi";
 import { useSidebarWorkspaceSlug } from "../state/SidebarWorkspaceContext";
 import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 
 /**
- * Lets agents add a sidebar tab (a flex-grid or canvas view) and show one.
+ * A short content hash of a layout, which an agent hands back to `view.update`
+ * to say which layout its edit was made from.
+ *
+ * The server serializes a layout in one key order, so equal layouts read back
+ * as equal strings. `updated_at` cannot do this job: every pan moves it.
+ * FNV-1a, 32-bit: this tells an agent its read is stale; it is not a
+ * security boundary.
+ */
+export function layoutRevision(layout: ViewLayout): string {
+  let hash = 0x811c9dc5;
+  for (const char of JSON.stringify(layout)) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/**
+ * Lets agents add a sidebar tab (a flex-grid or canvas view), show one, and edit one.
  *
  * Mounted inside `AppLayout`'s `SidebarWorkspaceProvider`, because a view route
  * resolves its view against the sidebar's workspace: a view in any other
@@ -39,7 +58,13 @@ export function ViewAgentActions() {
     // The view and its sidebar entry are one transaction read back as two queries.
     void queryClient.invalidateQueries({ queryKey: viewsKeys.views(workspace_slug) });
     void queryClient.invalidateQueries({ queryKey: viewsKeys.sidebarEntries(workspace_slug) });
-    return { view_id: view.id, title: view.title, kind: view.kind, path: show(workspace_slug, view.id) };
+    return {
+      view_id: view.id,
+      title: view.title,
+      kind: view.kind,
+      revision: layoutRevision(view.layout),
+      path: show(workspace_slug, view.id),
+    };
   });
 
   useAgentAction("view.open", async ({ workspace_slug, view_id }) => {
@@ -50,7 +75,47 @@ export function ViewAgentActions() {
         `view ${view_id} in workspace ${workspace_slug}: ${describeError(error, "could not be read")}`,
       );
     });
-    return { view_id: view.id, title: view.title, path: show(workspace_slug, view.id) };
+    return {
+      view_id: view.id,
+      title: view.title,
+      layout: view.layout,
+      revision: layoutRevision(view.layout),
+      path: show(workspace_slug, view.id),
+    };
+  });
+
+  useAgentAction("view.update", async ({ workspace_slug, view_id, title, layout, base_revision }) => {
+    const patch: ViewPatch = {};
+    if (title !== undefined) patch.title = title;
+    if (layout !== undefined) patch.layout = layout;
+    // Queued in the same scope as the page's own layout writes, so an edit the
+    // operator has in flight lands first and this one is compared against it.
+    const record = await new MutationObserver(queryClient, {
+      scope: { id: viewWriteScope(workspace_slug, view_id) },
+      // AgentActionHost already tells the operator; a second toast says it twice.
+      meta: { suppressErrorToast: true },
+      mutationFn: async () => {
+        if (layout !== undefined) {
+          // The server's layout, not the cache's: the edit may have come from another tab.
+          const current = await fetchView(workspace_slug, view_id);
+          const revision = layoutRevision(current.layout);
+          if (revision !== base_revision) {
+            throw new Error(
+              `view ${view_id} changed since revision ${base_revision} (now ${revision}); ` +
+                "read it again with view.open and re-apply the edit",
+            );
+          }
+        }
+        return updateView(workspace_slug, view_id, patch);
+      },
+    }).mutate();
+    storeWrittenView(queryClient, workspace_slug, view_id, record);
+    return {
+      view_id: record.id,
+      title: record.title,
+      revision: layoutRevision(record.layout),
+      path: show(workspace_slug, record.id),
+    };
   });
 
   return null;

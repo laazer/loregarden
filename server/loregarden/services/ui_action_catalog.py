@@ -18,7 +18,7 @@ from typing import Any
 from loregarden.models.domain.enums import TicketState
 from loregarden.models.domain.schemas import WorkspaceRuntimeUpdate
 from loregarden.models.domain.view_layout import ViewLayout
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 
 class UiAction(StrEnum):
@@ -48,6 +48,7 @@ class UiAction(StrEnum):
     APPROVAL_RESOLVE = "approval.resolve"
     VIEW_CREATE = "view.create"
     VIEW_OPEN = "view.open"
+    VIEW_UPDATE = "view.update"
 
     @classmethod
     def try_parse(cls, name: str) -> UiAction | None:
@@ -202,6 +203,32 @@ class ViewCreateArgs(_Args):
 class ViewOpenArgs(_Args):
     workspace_slug: str = Field(min_length=1)
     view_id: str = Field(min_length=1)
+
+
+class ViewUpdateArgs(_Args):
+    """PATCH semantics, as on the REST route: an omitted field is left alone."""
+
+    workspace_slug: str = Field(min_length=1)
+    view_id: str = Field(min_length=1)
+    title: str | None = Field(default=None, min_length=1)
+    layout: ViewLayout | None = Field(default=None, description="Replaces the stored layout whole.")
+    #: The layout is replaced whole, so an edit the operator made after the agent
+    #: read it would be lost without a word. The tab compares this against the
+    #: stored layout and refuses on a mismatch. A content hash rather than
+    #: `updated_at`, which every pan of the canvas moves.
+    base_revision: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Required with layout: the revision view.open (or view.create) returned.",
+    )
+
+    @model_validator(mode="after")
+    def _changes_something(self) -> ViewUpdateArgs:
+        if self.title is None and self.layout is None:
+            raise ValueError("view.update needs a title, a layout, or both")
+        if self.layout is not None and self.base_revision is None:
+            raise ValueError("a layout needs the base_revision it was edited from")
+        return self
 
 
 class RunSendMessageArgs(_Args):
@@ -425,9 +452,17 @@ CATALOG: dict[UiAction, UiActionSpec] = {
         UiActionSpec(
             UiAction.VIEW_OPEN,
             UiActionEffect.VIEW,
-            "Show an existing sidebar tab (view). Switches the sidebar to that workspace "
-            "if it shows another.",
+            "Show an existing sidebar tab (view), and return its title, layout and layout "
+            "revision. Switches the sidebar to that workspace if it shows another.",
             ViewOpenArgs,
+            offered="in every open tab",
+        ),
+        UiActionSpec(
+            UiAction.VIEW_UPDATE,
+            UiActionEffect.WRITE,
+            "Rename a sidebar tab (view) or replace its layout, then show it. A layout is "
+            "refused if the view changed since base_revision; read it again with view.open.",
+            ViewUpdateArgs,
             offered="in every open tab",
         ),
     )
