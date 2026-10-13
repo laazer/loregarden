@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useActiveChatSession } from "../useActiveChatSession";
+import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../../lib/dockChatPrompts";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
 import { useTicketRefStore } from "../../state/ticketRefStore";
 import { useUiStore } from "../../state/uiStore";
@@ -50,6 +51,7 @@ jest.mock("../../api/client", () => ({
       },
       workspace_slug: "tinkercg",
     }),
+    initiativePlan: jest.fn().mockResolvedValue({ milestones: [{ id: "m1" }] }),
   },
 }));
 jest.mock("../../lib/branchTriageApi", () => ({
@@ -198,7 +200,27 @@ it("binds the planner's model, not Baxter's, on an initiative plan page", async 
     expect(result.current.model?.workspaceSlug).toBe("tinkercg");
     // By the UUID the page uses: the planner endpoint 404s on the shareable ref.
     expect(api.plannerChat).toHaveBeenCalledWith(uuid);
+    // The bar suggests planning questions, sendable once the plan has a milestone.
+    expect(result.current.screenPrompts?.kind).toBe(INITIATIVE_PLANNING);
+    await waitFor(() => expect(result.current.screenPrompts?.unavailable).toBe(false));
     expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+  } finally {
+    useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
+  }
+});
+
+it("holds the planner's suggestions while the initiative has no milestone to schedule", async () => {
+  const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
+  useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
+  (api.initiativePlan as jest.Mock).mockResolvedValueOnce({ milestones: [] });
+  try {
+    const { result } = renderHook(() => useActiveChatSession(), {
+      wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
+    });
+
+    await waitFor(() => expect(api.initiativePlan).toHaveBeenCalledWith(uuid));
+    await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
+    expect(result.current.screenPrompts?.unavailable).toBe(true);
   } finally {
     useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
   }
@@ -216,6 +238,7 @@ it("binds Baxter's model on an initiative plan page when the panel shows Baxter"
     expect(result.current.composedOnScreen).toBe(true);
     expect(result.current.session).toBeNull();
     expect(result.current.model?.scopeLabel).toBe("Baxter · initiative");
+    expect(result.current.screenPrompts?.kind).toBe(INITIATIVE_TRIAGE);
     // The thread the panel shows: filed under the UUID, read in the initiative's scope.
     await waitFor(() => expect(api.baxterChatSession).toHaveBeenCalledWith(`@initiative:${uuid}`, "bx1"));
   } finally {
@@ -233,6 +256,8 @@ it("asks for no planner conversation until the initiative's shareable id resolve
 
   // Still the planner's page: Baxter's composer stays off it.
   expect(result.current.composedOnScreen).toBe(true);
+  // Nothing to send to until the id resolves.
+  expect(result.current.screenPrompts?.unavailable).toBe(true);
   expect(api.plannerChat).not.toHaveBeenCalled();
 });
 

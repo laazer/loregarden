@@ -12,6 +12,11 @@ export const COMPOSER_PLACEHOLDER: Record<string, string> = {
   "baxter-home": "Ask Baxter anything about this workspace…",
 };
 
+/** Openers for the planner on an initiative's plan page. */
+export const INITIATIVE_PLANNING = "initiative-planning";
+/** Openers for Baxter, triaging the work under an initiative. */
+export const INITIATIVE_TRIAGE = "initiative-triage";
+
 /**
  * Openers for the questions this dock is usually opened to ask.
  *
@@ -32,6 +37,18 @@ export const TRY_ASKING: Record<string, string[]> = {
     "What should I work on next?",
     "What is blocked right now?",
     "Summarise today's runs",
+  ],
+  // An initiative's plan page: the planner answers about dates and pace,
+  // Baxter about the tickets under it — so each gets the questions it takes.
+  [INITIATIVE_PLANNING]: [
+    "Which milestones are at risk of slipping?",
+    "What would it take to hit the target date?",
+    "What should start next?",
+  ],
+  [INITIATIVE_TRIAGE]: [
+    "Which tickets under this initiative are blocked, and why?",
+    "What needs a person right now?",
+    "Which failed runs should be retried?",
   ],
 };
 
