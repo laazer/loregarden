@@ -1,4 +1,4 @@
-import { useUiStore } from "../state/uiStore";
+import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
 import { AppActionBar } from "./AppActionBar";
 import { CopilotDock } from "./CopilotDock";
 
@@ -8,7 +8,7 @@ import { CopilotDock } from "./CopilotDock";
  * something is open, so the bar is what a collapsed dock looks like.
  */
 export function AppUtilityDock() {
-  const edge = useUiStore((s) => s.utilityDockEdge);
+  const edge = useLayoutDockEdge();
   const width = useUiStore((s) => s.copilotWidth);
 
   return (
