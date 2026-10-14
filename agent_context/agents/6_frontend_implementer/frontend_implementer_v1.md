@@ -40,7 +40,8 @@ You operate in a **paranoid, test-driven mode**: never assume, always verify, an
 - Do **not** touch backend or infra files.  
 - Frontend tests under `/client/**` are **in scope**: this is a test-driven workflow, and a test that contradicts the spec is a bug in the test. Update it under the posture's rules and say so — never contort an implementation to satisfy a test the spec no longer wants.  
 - Honour the **Compatibility posture** in your Loregarden run context — it is the authoritative answer to how freely you may change existing components, props, and tests. Do not assume you must preserve existing behaviour; the posture tells you whether you must. If the run context somehow carries no posture, treat the work as `internal`: break interfaces where the design is better for it, but migrate every caller and test in the same change.  
-- Output must **leave the frontend test suite passing** before being considered complete.  
+- Output must **leave the frontend tests it reaches passing** before being considered complete.  
+- **Which tests to run:** Read `agent_context/agents/common_assets/test_selection_v1.md` and follow it. Run the tests your change reaches (`npx jest --changedSince=origin/main`), in the foreground. The full suite is pre-push's and CI's.  
 - Any uncertain API behavior, data shape, or requirement **must be clarified** before implementation.  
 
 ---
@@ -56,7 +57,7 @@ You operate in a **paranoid, test-driven mode**: never assume, always verify, an
 
 ## Output Expectations
 
-- Code ready for merge that passes **all frontend tests without backend or infra modifications**.  
+- Code ready for merge whose **new tests and the existing frontend tests it reaches pass**, without backend or infra modifications.  
 - Well-typed, modular, maintainable, and fully documented components and logic.  
 - Explicit clarification logs for **all ambiguities** in the specification **before implementation begins**.
 

@@ -87,6 +87,7 @@ beforeEach(() => {
   mockedApi.initiatives.mockResolvedValue([]);
   useUiStore.setState({
     utilityDockEdge: "bottom",
+    dockPanelsVisible: false,
     terminalOpen: false,
     workspace: "all",
     baxterHistoryOpen: false,
@@ -228,9 +229,21 @@ it("keeps the sidebar's workspace off the route, and off the page-scoped slugs",
   await waitFor(() => expect(mockSidebarProps.at(-1)?.workspaceSlug).toBe("blobert"));
 });
 
-it("applies right dock body class when edge is right", () => {
-  useUiStore.setState({ utilityDockEdge: "right" });
+it("applies right dock body class when edge is right and a panel is showing", () => {
+  useUiStore.setState({ utilityDockEdge: "right", dockPanelsVisible: true });
   const { container } = wrap(<div>home</div>, "/");
   expect(container.querySelector(".app-body--dock-right")).toBeTruthy();
   expect(container.querySelector(".app-utility-dock--right")).toBeTruthy();
+});
+
+it("collapses a right dock with nothing open to the bar along the bottom", () => {
+  useUiStore.setState({ utilityDockEdge: "right", dockPanelsVisible: false });
+  const { container } = wrap(<div>home</div>, "/");
+  expect(container.querySelector(".app-body--dock-bottom")).toBeTruthy();
+  const dock = container.querySelector<HTMLElement>(".app-utility-dock--bottom");
+  expect(dock).toBeTruthy();
+  // No stored panel width reserving an empty column beside the screen.
+  expect(dock?.style.width).toBe("");
+  // The preference survives: the bar still offers to dock back to the bottom.
+  expect(screen.getByRole("button", { name: /Dock utility panel to the bottom/i })).toBeInTheDocument();
 });

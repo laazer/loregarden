@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.workflow_state import initial_stages_json
@@ -136,6 +137,7 @@ def test_block_ticket_with_long_message_files_error_artifact(db_session: Session
         orch_run,
         ticket,
         origin=BlockOrigin.AGENT,
+        repair=AGENT_ASKED_FOR_A_PERSON,
         stage_key="implement",
         message=_RAW_DUMP,
     )

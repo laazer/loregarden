@@ -15,7 +15,7 @@ cannot drift between them.
 from __future__ import annotations
 
 from loregarden.core.workflow_terminal import is_terminal_stage
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef
+from loregarden.models.domain import AgentRun, ClassifyRoute, RunStatus, Ticket, WorkflowStageDef
 from loregarden.services.studio_routing import (
     PARALLEL_STAGE_TYPE,
     VERIFY_STAGE_TYPE,
@@ -50,6 +50,21 @@ def _history(succeeded: int, running: int) -> str:
     return "none has run"
 
 
+def _route_label(route: ClassifyRoute) -> str:
+    """One classify route as a reader can tell it apart from its neighbours.
+
+    The agent alone is not a route: `implement` sends `backend_implementer` with
+    and without the `refactor` skill, and triage sends `ticket_scoper` down two
+    branches, so a bare agent list read as the same agent listed twice.
+    """
+    label = route.agent_id
+    if route.skill_name:
+        label += f" with skill {route.skill_name}"
+    if route.to_stage:
+        label += f" then {route.to_stage}"
+    return label
+
+
 def describe_stage_shape(session: Session, ticket: Ticket, stage: WorkflowStageDef) -> str:
     """One line: what kind of stage this is, what has run, and the next primitive."""
     if is_terminal_stage(stage):
@@ -73,7 +88,8 @@ def describe_stage_shape(session: Session, ticket: Ticket, stage: WorkflowStageD
             f"({members}); {history}. {_RUN_IT} fans them out; it is not a human gate."
         )
     if stage.stage_type == _CLASSIFY_STAGE_TYPE:
-        routes = ", ".join(r.agent_id for r in stage.classify_routes) or stage.agent_id
+        labels = dict.fromkeys(_route_label(route) for route in stage.classify_routes)
+        routes = ", ".join(labels) or stage.agent_id
         return (
             f"{stage.key}: classify — routes to one of ({routes}) by ticket; {history}. "
             f"{_RUN_IT} picks the route."

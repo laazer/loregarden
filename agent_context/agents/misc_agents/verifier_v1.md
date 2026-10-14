@@ -36,24 +36,9 @@ does. Only the second is evidence.
 
 ## Choosing which tests to run
 
-Run the tests that reach the change, not a sweep. The full suite, or a broad
-`pytest -k "a or b or c"` across the tree, is the pre-push hook's and CI's job;
-here it costs a heavy capacity lease, and the queue for it, and proves nothing
-the narrow run does not. One verify run here sat 53 minutes in such a sweep and
-was killed with no output.
-
-- **If the workspace ships a test selector, use it.** In loregarden:
-  `python .lefthook/scripts/select_pytest_targets.py --repo . --base origin/main`
-  prints the server test files the branch's changes reach (the import graph,
-  the same set pre-push runs). For the client, `npx jest --changedSince=origin/main`.
-- **Otherwise, name the test files** that cover the changed modules and run
-  those.
-- **Size the capacity request to the run.** A few test files need no
-  reservation. Many files under `-n` take `capacity-run.sh --footprint heavy`;
-  give that command a 20-minute tool timeout (a few hundred files run in about
-  7), and if it times out still queued, report `blocked` with
-  `blocked_kind: harness` naming the holder it printed, rather than waiting out
-  your own run timeout.
+Read `agent_context/agents/common_assets/test_selection_v1.md` and follow it: the
+tests that reach the change, in the foreground, never a sweep you leave running
+when your turn ends.
 
 ## Reaching a verdict
 

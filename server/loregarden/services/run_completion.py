@@ -82,6 +82,7 @@ from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_log_stream import finalize_run_log_artifact
 from loregarden.services.stage_report import (
     StageReport,
+    final_agent_message,
     parse_stage_report,
     stage_report_artifact_content,
 )
@@ -94,6 +95,7 @@ from loregarden.services.stage_transient_retry import (
     transient_failure_reason,
 )
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.usage_limit_wait import record_usage_limit_wait, resume_note
 from loregarden.services.usage_limits import (
     UsageLimit,
     detect_usage_limit,
@@ -264,6 +266,7 @@ def _settle_block(
     options: list[str] | None = None,
     kind_as_written: str = "",
     repairable: bool = True,
+    no_repair_reason: str = "",
 ) -> BlockSettlement:
     """Classify this block and spend its one repair turn (749 + 750, paired by 802).
 
@@ -289,6 +292,7 @@ def _settle_block(
         options=options,
         kind_as_written=kind_as_written,
         repairable=repairable,
+        no_repair_reason=no_repair_reason,
     )
 
 
@@ -504,11 +508,37 @@ def settle_stage_after_failed_completion(
         )
 
 
+#: How much of the run's final message the repair turn is shown.
+_LAST_MESSAGE_CHARS = 800
+
 _MISSING_STAGE_REPORT = (
     "Agent run exited successfully but emitted no parseable "
     "<<<LOREGARDEN_STAGE_REPORT>>> block. Stage outcome is unknown — "
     "re-run and emit pass|fail|needs_rework|blocked before this stage can advance."
 )
+
+
+def _missing_report_evidence(run: AgentRun) -> str:
+    """The missing-report block as its repair turn needs it: what the run said last.
+
+    The constant alone told the repair agent nothing it could act on, so it
+    redid the stage the way the failed run had and ended the same way, waiting
+    on a backgrounded full suite (lg-external-harness-951 and -954, 2026-10-13).
+    The run's last words name what it was doing when the turn ended.
+    """
+    last = final_agent_message(run.stdout or "").strip()
+    said = (
+        f"its final message was:\n\n> {last[-_LAST_MESSAGE_CHARS:]}"
+        if last
+        else "it left no final message."
+    )
+    return (
+        f"{_MISSING_STAGE_REPORT}\n\nRun {run.run_code} ended its turn without one; {said}\n\n"
+        "If it says it is waiting on something it started (a test suite, a background "
+        "command), that is the cause: a stage turn ending ends the process, and nothing "
+        "reports back. Run only the tests the change reaches, in the foreground "
+        "(agent_context/agents/common_assets/test_selection_v1.md), then report."
+    )
 
 
 def run_usage_limit(status: RunStatus, stdout: str, stderr: str) -> UsageLimit | None:
@@ -555,7 +585,14 @@ def _block_for_usage_limit(
     if status == RunStatus.SUCCEEDED:
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
     # Harness, but not one a repair turn can clear — the fix is the quota
-    # window passing. Classified so the person sees it needs no action from them.
+    # window passing. With the reset time known, the stage is parked and the
+    # reconcile pass resumes it then; without one, a person decides when.
+    no_repair_reason = ""
+    if limit.reset_at is not None:
+        record_usage_limit_wait(
+            orch.session, ticket.id, run.stage_key, run_id=run.id, reset_at=limit.reset_at
+        )
+        no_repair_reason = resume_note(run.stage_key, limit)
     _settle_block(
         orch,
         ticket,
@@ -565,6 +602,7 @@ def _block_for_usage_limit(
         message=ticket.blocking_issues,
         declared=BlockKind.HARNESS,
         repairable=False,
+        no_repair_reason=no_repair_reason,
     )
 
 
@@ -591,7 +629,7 @@ def _advance_clean_exit(
         # The repair turn does not weaken the rule above: the stage is re-armed
         # to run AGAIN under the repair agent, which must emit its own report
         # like anyone else. Nothing here advances a missing report as a pass.
-        _settle_block(orch, ticket, run, instance, stages, message=_MISSING_STAGE_REPORT)
+        _settle_block(orch, ticket, run, instance, stages, message=_missing_report_evidence(run))
         return None
 
     # The stage produced a verdict, so whatever infrastructure trouble it had on

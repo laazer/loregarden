@@ -34,7 +34,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
-from loregarden.services.block_settlement import BlockSettlement, settle_block
+from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
 from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
@@ -650,6 +650,7 @@ class OrchestrationCallbackService:
         ticket: Ticket,
         *,
         origin: BlockOrigin,
+        repair: RepairPolicy,
         stage_key: str = "",
         message: str,
         prepared_action: PreparedAction | None = None,
@@ -663,13 +664,17 @@ class OrchestrationCallbackService:
         answer silently.
 
         ``settlement`` is the caller's own, when it already classified this block
-        and decided about its repair turn (`parallel_stage` does). Left None,
-        this settles it here — with no orchestration run, which is the truth of
-        this function: it is the one that *ends* the run, so there is nothing
-        left to spend a repair turn on. A path that can still repair settles
-        before it reaches here. Either way the block leaves with a kind and a
-        recorded disposition, so nothing arrives on the board looking handled
-        when nothing handled it (802).
+        and decided about its repair turn (`parallel_stage` does). A block whose
+        kind is already recorded was settled by the run's own completion, which
+        had this orchestration in hand; settling it again here recorded a second,
+        false escalation on top of the true one. Otherwise it is settled here,
+        once, with this orchestration and ``repair``: `RepairPolicy.offer()` lets
+        the block take its repair turn, and when one is armed the stage is
+        re-armed under the repair agent and the orchestration is NOT ended — the
+        caller sees `repair_pinned` and carries on. `RepairPolicy.withheld(...)`
+        records the caller's own reason. Either way the block leaves with a kind
+        and a recorded disposition, so nothing arrives on the board looking
+        handled when nothing handled it (802).
         """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -690,13 +695,23 @@ class OrchestrationCallbackService:
         if key:
             orch_run.current_stage_key = key
         self.session.add(ticket)
-        if settlement is None:
-            settle_block(
+        if settlement is None and ticket.block_kind is None:
+            settlement = settle_block(
                 self.session,
                 ticket,
+                orch_run,
+                instance=instance,
+                stages=stages,
+                transitions=self.orch._resolve_transitions(ticket),
                 stage_key=key or "",
                 message=message,
+                repairable=repair.may_repair,
+                no_repair_reason=repair.withheld_reason,
             )
+        if settlement is not None and settlement.repair_armed:
+            # The stage is re-armed under the repair agent; the drive goes on.
+            self.session.commit()
+            return ticket
         self._finish_orchestration_run(
             orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
         )
@@ -801,6 +816,10 @@ class OrchestrationCallbackService:
             orch_run,
             ticket,
             origin=BlockOrigin.CONTROL_PLANE,
+            repair=RepairPolicy.withheld(
+                f"'{stage_key}' reached the rework loop cap; a rework-pause decision is "
+                "filed for a person, which is what the cap exists for."
+            ),
             stage_key=stage_key,
             message=message,
         )

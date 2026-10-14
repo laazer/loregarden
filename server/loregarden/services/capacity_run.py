@@ -100,6 +100,16 @@ WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
 #: run its own command where the outer caller stood.
 CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
 
+#: The repo root this process resolves its database through. The CLI defaults it
+#: to the primary checkout, which is right for the ledger and wrong for the held
+#: command: tests run from a worktree would read the primary's `agent_context/`.
+REPO_ROOT_ENV = "LOREGARDEN_REPO_ROOT"
+
+#: The caller's own `LOREGARDEN_REPO_ROOT` as `scripts/loregarden-cli.sh` found
+#: it, "" when it had none. The held command gets that back. Absent when the CLI
+#: was started some other way, and then the environment is left as it is.
+CALLER_REPO_ROOT_ENV = "LOREGARDEN_CALLER_REPO_ROOT"
+
 #: How often a waiting process runs a reap pass of its own. The server's timer
 #: does this every 30s when it is up; this is the floor when it is not.
 _REAP_INTERVAL_SECONDS = 60.0
@@ -161,6 +171,12 @@ def worker_count(cpus: float) -> int:
 def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
     env = dict(base)
     env.pop(CALLER_CWD_ENV, None)
+    if CALLER_REPO_ROOT_ENV in env:
+        caller_root = env.pop(CALLER_REPO_ROOT_ENV)
+        if caller_root:
+            env[REPO_ROOT_ENV] = caller_root
+        else:
+            env.pop(REPO_ROOT_ENV, None)
     env[LEASE_ENV] = reservation.lease_id
     env[CPUS_ENV] = f"{reservation.cpus:g}"
     env[WORKERS_ENV] = str(worker_count(reservation.cpus))

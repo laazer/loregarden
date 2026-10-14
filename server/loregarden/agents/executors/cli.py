@@ -15,6 +15,7 @@ from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
+from loregarden.agents.executors.report_resume import resume_for_missing_report
 from loregarden.agents.executors.run_evidence import (
     record_run_evidence,
     run_context_artifacts,
@@ -307,6 +308,17 @@ class CliAgentExecutor:
                         streamer=streamer,
                         run_id=run.id,
                         run_code=run.run_code,
+                    )
+                    # One resume when the turn ended with no report (848).
+                    stdout, stderr, status = resume_for_missing_report(
+                        invocation=invocation,
+                        run=run,
+                        stdout=stdout,
+                        stderr=stderr,
+                        status=status,
+                        repo_root=repo_root,
+                        timeout=timeout,
+                        streamer=streamer,
                     )
 
                 streamer.finalize(status=status, stderr=stderr)

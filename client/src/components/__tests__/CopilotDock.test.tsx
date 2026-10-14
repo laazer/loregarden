@@ -99,6 +99,20 @@ it("draws nothing while collapsed — the action bar is the collapsed state", ()
   expect(container).toBeEmptyDOMElement();
 });
 
+it("tells the layout whether a panel is showing, so a right dock can collapse", () => {
+  // Docked right, the layout reserves a column only while this is true; a
+  // closed omnibar used to leave that column standing empty.
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+  useUiStore.setState({ copilotOpen: true, dockPanelsVisible: false });
+
+  const { rerender } = render(<CopilotDock />);
+  expect(useUiStore.getState().dockPanelsVisible).toBe(true);
+
+  act(() => useUiStore.setState({ copilotOpen: false }));
+  rerender(<CopilotDock />);
+  expect(useUiStore.getState().dockPanelsVisible).toBe(false);
+});
+
 it("shows the bound conversation's turns once opened", () => {
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });

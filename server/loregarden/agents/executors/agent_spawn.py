@@ -142,8 +142,8 @@ def spawn_agent(
     prompt = invocation.stdin_prompt
     if prompt:
         write_prompt_file(paths, prompt)
-    wrapped = wrap_for_files(invocation.argv, paths, stdin_from_prompt=bool(prompt))
     cwd = invocation.cwd or str(repo_root)
+    wrapped = wrap_for_files(invocation.argv, paths, stdin_from_prompt=bool(prompt), cwd=cwd)
     env = invocation_env(invocation)
     if transport is AgentTransport.TMUX:
         # Only this transport needs the environment on disk: `Popen(env=...)`
@@ -289,9 +289,9 @@ def _spawn_in_tmux(
     a working agent. `-f` applies only to the client that starts the server.
 
     The pane command sources its own environment (`_under_env`) because `env=`
-    below reaches only the tmux client. `cwd` does NOT need the same treatment:
-    the client resolves it and hands the server the result as the session's
-    start directory.
+    below reaches only the tmux client. `cwd` needs the same treatment, and the
+    wrapper does it (`wrap_for_files(cwd=...)`): the client's directory reaches
+    the pane only while the directory the server started in still exists.
     """
     session = tmux_session_name(stem)
     argv = [

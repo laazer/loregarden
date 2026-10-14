@@ -120,8 +120,10 @@ def test_startup_resume_includes_a_stranded_stage(isolated_db):
         agent_run.status = RunStatus.FAILED
         session.add(agent_run)
         session.commit()
-        assert settle_stranded_stages(session, ticket_id=ticket.id) == [ticket]
+        # Boot order (main.py): the dead drive is failed first, so the stranded
+        # sweep, which leaves a stage alone while a live drive owns it, sees it.
         fail_interrupted_orchestration_runs(session, ticket_id=ticket.id)
+        assert settle_stranded_stages(session, ticket_id=ticket.id) == [ticket]
 
         with patch(
             "loregarden.services.orchestration_recovery.schedule_interrupted_resumes"
