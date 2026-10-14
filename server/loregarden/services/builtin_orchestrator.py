@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.dependency_readiness import (
     UnmetPrerequisite,
     UnmetReason,
@@ -322,6 +323,10 @@ class BuiltinOrchestrator:
                 ticket,
                 # An exception this driver caught at the run boundary.
                 origin=BlockOrigin.CONTROL_PLANE,
+                repair=RepairPolicy.withheld(
+                    f"The orchestrator itself stopped with {type(exc).__name__}; a repair "
+                    "turn runs inside the orchestrator, so this one is for a person."
+                ),
                 message=str(exc),
             )
         self.session.refresh(orch_run)
@@ -667,9 +672,14 @@ class BuiltinOrchestrator:
             # The members' own failure text, joined — a reviewer asking for a
             # person is an agent asking, so the handover check still applies.
             origin=BlockOrigin.AGENT,
+            repair=RepairPolicy.offer(),
             stage_key=target_key,
             message=message or "Parallel stage failed",
         )
+        # Settled here with this orchestration, so the block may have armed its
+        # repair turn instead of ending the drive: re-run the stage under it.
+        if repair_pinned(ticket, target_key):
+            return False
         return True
 
     def _run_sequential_stage(
@@ -737,6 +747,12 @@ class BuiltinOrchestrator:
                 ticket,
                 # The stage sub-agent's own stderr.
                 origin=BlockOrigin.AGENT,
+                # `run_completion` settled this block with the orchestration in
+                # hand and armed no repair, so its recorded reason stands; this is
+                # only reached unsettled if completion itself broke.
+                repair=RepairPolicy.withheld(
+                    f"The run on '{target_key}' failed and its completion re-armed nothing."
+                ),
                 stage_key=target_key,
                 message=completed.stderr or "Stage sub-agent failed",
             )

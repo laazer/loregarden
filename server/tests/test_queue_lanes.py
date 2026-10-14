@@ -20,6 +20,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
@@ -365,7 +366,11 @@ def test_blocking_a_ticket_releases_the_lane(session, workspace):
     orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
 
     OrchestrationCallbackService(session).block_ticket(
-        orch_run, blocked, origin=BlockOrigin.AGENT, message="Tests failed after 3 attempts"
+        orch_run,
+        blocked,
+        origin=BlockOrigin.AGENT,
+        repair=AGENT_ASKED_FOR_A_PERSON,
+        message="Tests failed after 3 attempts",
     )
 
     entry = session.exec(

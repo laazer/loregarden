@@ -65,6 +65,7 @@ from loregarden.models.domain import AgentTransport
 from loregarden.services.run_output_files import (
     RunOutputTail,
     paths_for,
+    read_output_text,
     recorded_exit_status,
     run_file_stem,
     tmux_argv,
@@ -154,6 +155,16 @@ def _wait_for_rc(run_code: str, run_id: str, timeout: float = 20.0) -> str:
             return recorded
         time.sleep(0.05)
     raise AssertionError(f"{run_code} never recorded an exit code")
+
+
+def _pane_output(run_code: str, run_id: str, workdir: Path) -> str:
+    """What a pane wrote, for an assertion message: its stdout, its stderr, and
+    whether the directory it was started in still exists."""
+    paths = paths_for(run_code, run_id)
+    return (
+        f"pane exited non-zero; workdir exists={workdir.exists()}\n"
+        f"stdout: {read_output_text(paths.out)!r}\nstderr: {read_output_text(paths.err)!r}"
+    )
 
 
 #: Print this run's identity as the agent itself sees it, which is the only
@@ -276,10 +287,55 @@ def test_a_tmux_pane_runs_in_this_runs_cwd(stale_tmux_server, tmp_path):
         spawn_agent(
             invocation, Path.cwd(), run_id=run_id, run_code=run_code, transport=AgentTransport.TMUX
         )
-        assert _wait_for_rc(run_code, run_id) == "0"
+        rc = _wait_for_rc(run_code, run_id)
+        # Failed twice under the full pre-push run (2026-10-14) with only
+        # "'1' == '0'" to go on; the pane's own words are the diagnosis.
+        assert rc == "0", _pane_output(run_code, run_id, workdir)
         seen = paths_for(run_code, run_id).out.read_text(encoding="utf-8").strip()
     finally:
         _kill_session(stem)
+
+    assert Path(seen).resolve() == workdir.resolve()
+
+
+@has_tmux
+def test_a_pane_runs_in_its_cwd_after_the_servers_own_directory_is_gone(tmp_path, monkeypatch):
+    """The loregarden tmux server outlives its sessions and was started from
+    whichever worktree spawned first; worktrees are retired when their tickets
+    finish. After that, tmux started every new pane in the deleted directory —
+    even under `new-session -c` — and the agent's `getcwd` raised. This failed
+    the pre-push suite twice on 2026-10-14 (a worker's server started from an
+    earlier test's temp dir); the live server was then sitting in an active
+    ticket's worktree.
+    """
+    monkeypatch.setattr(settings, "agent_tmux_socket", f"lg-pytest-cwd-{uuid4().hex[:8]}")
+    doomed = tmp_path / "server-started-here"
+    doomed.mkdir()
+    subprocess.run(
+        tmux_argv("-f", "/dev/null", "new-session", "-d", "-s", "keeper", "sleep 300"),
+        cwd=doomed,
+        check=True,
+        capture_output=True,
+    )
+    doomed.rmdir()
+    run_id = str(uuid4())
+    workdir = tmp_path / "agent-cwd"
+    workdir.mkdir()
+    invocation = _invocation("import os;print(os.getcwd())", run_id=run_id)
+    invocation.cwd = str(workdir)
+    try:
+        spawn_agent(
+            invocation,
+            Path.cwd(),
+            run_id=run_id,
+            run_code="run_cwd002",
+            transport=AgentTransport.TMUX,
+        )
+        rc = _wait_for_rc("run_cwd002", run_id)
+        assert rc == "0", _pane_output("run_cwd002", run_id, workdir)
+        seen = paths_for("run_cwd002", run_id).out.read_text(encoding="utf-8").strip()
+    finally:
+        subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
 
     assert Path(seen).resolve() == workdir.resolve()
 

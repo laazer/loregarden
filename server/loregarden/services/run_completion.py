@@ -95,6 +95,7 @@ from loregarden.services.stage_transient_retry import (
     transient_failure_reason,
 )
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.usage_limit_wait import record_usage_limit_wait, resume_note
 from loregarden.services.usage_limits import (
     UsageLimit,
     detect_usage_limit,
@@ -265,6 +266,7 @@ def _settle_block(
     options: list[str] | None = None,
     kind_as_written: str = "",
     repairable: bool = True,
+    no_repair_reason: str = "",
 ) -> BlockSettlement:
     """Classify this block and spend its one repair turn (749 + 750, paired by 802).
 
@@ -290,6 +292,7 @@ def _settle_block(
         options=options,
         kind_as_written=kind_as_written,
         repairable=repairable,
+        no_repair_reason=no_repair_reason,
     )
 
 
@@ -582,7 +585,14 @@ def _block_for_usage_limit(
     if status == RunStatus.SUCCEEDED:
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
     # Harness, but not one a repair turn can clear — the fix is the quota
-    # window passing. Classified so the person sees it needs no action from them.
+    # window passing. With the reset time known, the stage is parked and the
+    # reconcile pass resumes it then; without one, a person decides when.
+    no_repair_reason = ""
+    if limit.reset_at is not None:
+        record_usage_limit_wait(
+            orch.session, ticket.id, run.stage_key, run_id=run.id, reset_at=limit.reset_at
+        )
+        no_repair_reason = resume_note(run.stage_key, limit)
     _settle_block(
         orch,
         ticket,
@@ -592,6 +602,7 @@ def _block_for_usage_limit(
         message=ticket.blocking_issues,
         declared=BlockKind.HARNESS,
         repairable=False,
+        no_repair_reason=no_repair_reason,
     )
 
 

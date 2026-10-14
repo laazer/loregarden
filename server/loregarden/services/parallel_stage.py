@@ -33,7 +33,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
-from loregarden.services.block_settlement import settle_block
+from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -405,6 +405,7 @@ def _route_parallel_stage_failures(
             orch_run,
             ticket,
             origin=BlockOrigin.CONTROL_PLANE,
+            repair=RepairPolicy.withheld(settlement.reason or "settled by the parallel stage"),
             stage_key=stage_key,
             message=f"{block_message} Paused — resume to retry once it clears.",
             settlement=settlement,

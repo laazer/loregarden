@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     StartStageRequest,
     Workspace,
 )
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.gate_runner import (
     dry_run_gate_commands,
@@ -400,7 +401,12 @@ def callback_block(
     # Relayed from an agent over the callback API, so it carries the agent's
     # words and may describe work for a person.
     svc.block_ticket(
-        run, ticket, origin=BlockOrigin.AGENT, stage_key=body.stage_key, message=body.message
+        run,
+        ticket,
+        origin=BlockOrigin.AGENT,
+        repair=AGENT_ASKED_FOR_A_PERSON,
+        stage_key=body.stage_key,
+        message=body.message,
     )
     return {"ok": True, "ticket_state": ticket.state.value}
 

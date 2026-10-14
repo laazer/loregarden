@@ -83,6 +83,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -1407,6 +1408,7 @@ def execute_tool(
             # The agent's own words, via `loregarden_block_ticket` — the one
             # path where a block may legitimately be a handover of human work.
             origin=BlockOrigin.AGENT,
+            repair=AGENT_ASKED_FOR_A_PERSON,
             stage_key=arguments.get("stage_key", ""),
             message=arguments["message"],
             prepared_action=action,
