@@ -241,8 +241,9 @@ def test_the_migration_inserts_the_lanes_last_before_the_fallback(tmp_path):
     apply_migrations(engine)
 
     routes = _routes(engine, template_id)
+    # The full chain runs, so the later 20261014_loregarden_implement_no_gdscript
+    # also drops the seeded gdscript_reviewer route from this template.
     assert [(r["agent_id"], r.get("skill_name", "")) for r in routes] == [
-        ("gdscript_reviewer", ""),
         ("frontend_implementer", ""),
         ("backend_implementer", _SKILL),
         ("frontend_implementer", _SKILL),

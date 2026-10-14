@@ -94,6 +94,30 @@ _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
 }
 
 
+#: The source root a specialty's code lives under. A path the ticket names there
+#: is direct evidence of where the work lands, and better evidence than any word:
+#: a synonym counts once however often it appears, so a server-only ticket whose
+#: criteria name eleven `server/` files but describe the toast they produce ("a
+#: button", "rendered", "the client") was sent to the frontend implementer.
+_SPECIALTY_PATH_ROOTS: dict[str, str] = {"backend": "server", "frontend": "client"}
+
+
+def _source_paths(root: str, haystack: str) -> set[str]:
+    """Distinct paths under `root/` that name source, not tooling.
+
+    The segment after the root must start like a name: a dotfile
+    (`server/.self-improve-restart`), `node_modules` or a glob (`client/**`, as
+    in "no client/** change") says nothing about which specialist does the work.
+    """
+    pattern = r"(?<![\w/.-])" + re.escape(root) + r"/(?!node_modules\b)[a-z0-9_](?:[\w./-]*[\w/])?"
+    return set(re.findall(pattern, haystack))
+
+
+def _path_hits(route: ClassifyRoute, haystack: str) -> int:
+    roots = {_SPECIALTY_PATH_ROOTS.get(spec.lower(), "") for spec in route.specialties} - {""}
+    return sum(len(_source_paths(root, haystack)) for root in roots)
+
+
 def _word_in_haystack(word: str, haystack: str) -> bool:
     pattern = r"\b" + re.escape(word.lower()) + r"\b"
     return re.search(pattern, haystack) is not None
@@ -144,7 +168,8 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> _RouteMatch | Non
     "typescript"/"python"/etc. could never match any language-scoped route.
 
     Direct and synonym hits are counted separately because they are not equally
-    good evidence — see `_DIRECT_HIT` and `ClassifyBasis`.
+    good evidence — see `_DIRECT_HIT` and `ClassifyBasis`. Each distinct source
+    path under the specialty's root (`_SPECIALTY_PATH_ROOTS`) is a direct hit.
     """
     direct_specs = [spec for spec in route.specialties if _word_in_haystack(spec, haystack)]
     precise_specs = [
@@ -161,11 +186,12 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> _RouteMatch | Non
         for word in _SPECIALTY_SYNONYMS.get(spec.lower(), [])
         if _word_in_haystack(word, haystack)
     ]
-    if route.specialties and not (direct_specs or precise_specs or broad_specs):
+    path_hits = _path_hits(route, haystack)
+    if route.specialties and not (direct_specs or precise_specs or broad_specs or path_hits):
         return None
 
     lang_hits = [lang for lang in route.languages if _word_in_haystack(lang, haystack)]
-    direct = len(direct_specs) + len(precise_specs) + len(lang_hits)
+    direct = len(direct_specs) + len(precise_specs) + len(lang_hits) + path_hits
     return _RouteMatch(
         score=_DIRECT_HIT * direct + _SYNONYM_HIT * len(broad_specs),
         direct=direct,
