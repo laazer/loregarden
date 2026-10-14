@@ -15,6 +15,7 @@ told where the work is.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
@@ -400,6 +401,64 @@ def test_deleting_a_thread_with_uncommitted_work_refuses_and_says_where(
     assert chat_session_branch(chat_session) in str(caught.value)
     assert str(root) in str(caught.value)
     # And the thread survives, so the operator can still open it and publish.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+
+
+def test_deleting_a_thread_whose_head_strands_a_commit_refuses_too(
+    session, workspace, chat_session
+):
+    """The refusal a thread's operator meets, for the other kind of unseen work.
+
+    The branch holds its commit, so the published-work path above would drop
+    this thread's row and remove the checkout — and the commit HEAD moved off
+    the branch to make would go with it, reachable from nothing. The thread is
+    what owns that directory, so the refusal has to reach this far: a row
+    deleted here leaves a checkout on disk belonging to nobody.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed on the branch\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    git(root, "checkout", "-q", "--detach")
+    (root / "interrupted.txt").write_text("committed where no ref reaches\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "interrupted rebase")
+    stranded = git(root, "rev-parse", "HEAD").stdout.strip()
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    assert str(root) in str(caught.value)
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+    assert (root / "interrupted.txt").exists()
+    assert git(root, "rev-parse", "HEAD").stdout.strip() == stranded
+
+
+def test_deleting_a_thread_whose_worktree_would_not_go_refuses_too(
+    session, workspace, chat_session
+):
+    """A removal that failed is not a removal, all the way out to the caller.
+
+    Every premise holds, so the destructive step runs and `cleanup_worktree`
+    answers False — which it does for a path outside the worktree base, or any
+    exception out of `worktree remove`/`rmtree`. Dropping the row here is the
+    outcome this function's docstring forbids: a checkout on disk that nothing
+    owns and no sweeper reaps.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed on the branch\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+
+    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+            delete_chat_session(session, chat_session)
+
+    assert str(root) in str(caught.value)
     assert session.get(BaxterChatSession, chat_session.id) is not None
     assert root.is_dir()
 

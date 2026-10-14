@@ -8,12 +8,17 @@ and directories before, and a server restart mid-run leaves a row saying
 
 Uncommitted work is never destroyed. Removing a checkout is only safe because
 the branch's commits outlive it in the shared object store, and that argument
-has two premises the destructive step now checks instead of assuming: the tree
-holds no changes (tracked *or* untracked), and the branch holds commits its base
-does not. The external-harness path never commits at stage transitions, so a
-ticket driven that way reaches its terminal state with both premises false — an
+has three premises the destructive step now checks instead of assuming: the tree
+holds no changes (tracked *or* untracked), HEAD reaches no commit that no ref
+reaches, and the branch holds commits its base does not. The first and the last
+ask whether anything *survives* removing the checkout; the middle one asks the
+other question, of HEAD, because an interrupted rebase or a `git bisect` leaves
+a commit no branch, tag or remote ref can reach while both branch-shaped
+premises still hold. The external-harness path never commits at stage
+transitions, so a ticket driven that way reaches its terminal state with the
+first and last premises both false — an
 observed case had 1164 uncommitted lines across seven files and an empty
-`git log base..HEAD`. Either premise failing keeps the tree on disk, with a log
+`git log base..HEAD`. Any premise failing keeps the tree on disk, with a log
 line naming which one.
 """
 
@@ -107,6 +112,41 @@ def _has_preserved_commits(path: Path, worktree: Worktree) -> bool:
     return total.isdigit() and int(total) > 0
 
 
+def _has_stranded_commits(path: Path) -> bool:
+    """True when HEAD reaches a commit that no ref reaches.
+
+    The counterpart of :func:`_has_preserved_commits`, and a different question:
+    that one asks whether anything survives removing the checkout, which is a
+    property of the *branch*. This one asks whether anything dies, which is a
+    property of HEAD measured against every ref there is. Both must hold.
+
+    `HEAD --not --branches --tags --remotes` is the only spelling that answers
+    it. `--not --all` includes HEAD itself and so answers 0 for the very shape
+    this is guarding against; dropping any of the three ref classes over-refuses
+    a commit something still reaches. A remote-tracking ref counts as a ref:
+    a commit reachable only from `origin/x` is published and genuinely outlives
+    the checkout.
+
+    Fails closed, like the premises beside it. A non-zero exit (an unborn HEAD
+    answers 128, so does a ref pointing at a missing object) or a count that is
+    not a number keeps the checkout: an unprovable premise is not a satisfied
+    one.
+    """
+    counted = run_git(
+        ["rev-list", "--count", "HEAD", "--not", "--branches", "--tags", "--remotes"],
+        cwd=str(path),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if counted.returncode != 0:
+        return True
+    total = counted.stdout.strip()
+    if not total.isdigit():
+        return True
+    return int(total) > 0
+
+
 def _service_for(session: Session, workspace_id: str) -> WorktreeService | None:
     workspace = session.get(Workspace, workspace_id)
     if not workspace:
@@ -118,50 +158,118 @@ class KeepReason(StrEnum):
     """Why a finished worktree's checkout stays on disk."""
 
     UNCOMMITTED = "uncommitted changes"
+    STRANDED_HEAD = "a commit no branch or tag reaches"
     NOTHING_COMMITTED = "no commits beyond its base"
 
 
+class RemovalFailure(StrEnum):
+    """Why a checkout every premise cleared is nonetheless still on disk.
+
+    Separate from :class:`KeepReason`, which is a closed vocabulary of
+    *premises*: nothing here is a premise that failed, and `_kept_summary`
+    groups by premise. It exists so that "the removal was attempted and did not
+    work" cannot be answered with the same value as "the removal happened".
+    `WorktreeService.cleanup_worktree` returns False for a path outside the
+    worktree base and for any exception out of `worktree remove`/`rmtree`, and
+    a caller told None in that case would drop the row that owns a checkout
+    still sitting on disk.
+    """
+
+    CLEANUP_FAILED = "its checkout could not be removed"
+
+
+#: What `retire_worktree` answers when the checkout is still there: the premise
+#: that refused, or the removal having failed. `None` means, and only means,
+#: that the checkout is gone.
+RetirementRefusal = KeepReason | RemovalFailure
+
+
 def _keep_reason(worktree: Worktree) -> KeepReason | None:
-    """The premise that fails for removing this checkout, or None when both hold."""
+    """The premise that fails for removing this checkout, or None when all hold.
+
+    Ordered by what the operator can act on. Uncommitted work is destroyed
+    outright, so it is said first; a stranded commit survives in the object
+    store and only loses its last reference, and its reason names the recovery;
+    an empty branch is last, because when a tree also holds one of the other
+    two, its emptiness is a consequence rather than the cause.
+    """
     path = Path(worktree.worktree_path) if worktree.worktree_path else None
     if path is None or not path.is_dir():
         return None
     if _is_dirty(path):
         return KeepReason.UNCOMMITTED
+    if _has_stranded_commits(path):
+        return KeepReason.STRANDED_HEAD
     if not _has_preserved_commits(path, worktree):
         return KeepReason.NOTHING_COMMITTED
     return None
 
 
-def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> bool:
+def _reason_detail(reason: KeepReason, worktree: Worktree) -> str:
+    """What this refusal is about, for one tree, in the words it is reported in.
+
+    One home for the per-reason wording, read by both `retire_worktree`'s
+    warning and `_kept_summary`'s grouped lines. A member with no detail of its
+    own repeats its own value, never a neighbour's sentence.
+    """
+    if reason is KeepReason.UNCOMMITTED:
+        return "the changes exist in this tree and nowhere else"
+    if reason is KeepReason.STRANDED_HEAD:
+        return (
+            f"HEAD has moved off {worktree.branch or 'the branch'}; put a branch "
+            "or a tag on the commit to keep it"
+        )
+    if reason is KeepReason.NOTHING_COMMITTED:
+        return f"{worktree.branch or 'HEAD'} = {worktree.parent_branch}"
+    return reason.value
+
+
+def retire_worktree(
+    session: Session, service: WorktreeService, worktree: Worktree
+) -> RetirementRefusal | None:
     """Remove a worktree's checkout, unless doing so would lose something.
 
+    Returns the premise that refused — or `RemovalFailure.CLEANUP_FAILED` when
+    every premise held and the removal itself did not work — and None once the
+    checkout is gone, which is the one thing None means. A failed removal
+    answering None would tell three callers a checkout is gone while it is
+    still on disk: the sweep would delete the published remote ref it had just
+    kept, and `delete_chat_session` would drop the row that owns the
+    directory.
+
+    The answer is carried rather than collapsed into a bool because
+    `chat_branch_sweep` reports to an operator *which* premise fired, and a
+    sweep that says "uncommitted work" about a stranded commit sends them
+    looking for edits that are not there.
+
     Public because `chat_branch_sweep` deletes on the strength of it unattended,
-    and the two refusals below are the whole safety argument for that: a tree
-    with uncommitted changes, or a branch carrying no commits of its own, keeps
-    its checkout no matter how finished it looks from outside. A sweep reaching
-    in through an underscore is how a safety bar gets relaxed by someone who
-    never saw the caller relying on it.
+    and the refusals in `_keep_reason` are the whole safety argument for that. A
+    sweep reaching in through an underscore is how a safety bar gets relaxed by
+    someone who never saw the caller relying on it.
+
+    The refusal is on `reason is not None`, never a branch per member: the
+    fallthrough here is the destructive step, so a `KeepReason` this function
+    has no case for would delete the checkout it was added to protect.
     """
     reason = _keep_reason(worktree)
-    if reason is KeepReason.UNCOMMITTED:
+    if reason is not None:
         logger.warning(
-            "Worktree %s at %s has uncommitted changes; leaving it on disk",
+            "Worktree %s at %s kept on disk: %s (%s)",
+            worktree.id,
+            worktree.worktree_path,
+            reason.value,
+            _reason_detail(reason, worktree),
+        )
+        return reason
+    if not service.cleanup_worktree(worktree):
+        logger.warning(
+            "Worktree %s at %s satisfied every premise but its removal failed; "
+            "the checkout is still on disk and still owned",
             worktree.id,
             worktree.worktree_path,
         )
-        return False
-    if reason is KeepReason.NOTHING_COMMITTED:
-        logger.warning(
-            "Worktree %s at %s: branch %s has no commits beyond %s, so removing "
-            "it would preserve nothing; leaving it on disk",
-            worktree.id,
-            worktree.worktree_path,
-            worktree.branch or "HEAD",
-            worktree.parent_branch,
-        )
-        return False
-    return service.cleanup_worktree(worktree)
+        return RemovalFailure.CLEANUP_FAILED
+    return None
 
 
 def _kept_summary(kept: dict[KeepReason, list[Worktree]]) -> str:
@@ -179,10 +287,7 @@ def _kept_summary(kept: dict[KeepReason, list[Worktree]]) -> str:
             continue
         lines.append(f"  {reason.value} ({len(trees)}):")
         for tree in sorted(trees, key=lambda t: t.worktree_path or ""):
-            detail = tree.worktree_path or tree.id
-            if reason is KeepReason.NOTHING_COMMITTED:
-                detail += f"  [{tree.branch or 'HEAD'} = {tree.parent_branch}]"
-            lines.append(f"    {detail}")
+            lines.append(f"    {tree.worktree_path or tree.id}  [{_reason_detail(reason, tree)}]")
     return "\n".join(lines)
 
 
@@ -191,8 +296,11 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
 
     The ticket's branch survives — its commits live in the shared repository's
     object store, so a PR opened later still has them. Only the checkout goes.
-    That holds exactly as far as `retire_worktree` proves it does: a tree with local
-    changes, or a branch carrying no commits of its own, is kept instead.
+    That holds exactly as far as `retire_worktree` proves it does: a tree with
+    local changes, a HEAD carrying a commit no ref reaches, or a branch carrying
+    no commits of its own, is kept instead. So is one whose removal was tried
+    and failed, which answers False here rather than claiming a checkout that
+    is still on disk is gone.
     """
     if ticket.state not in StateMachine.TERMINAL_TICKET_STATES:
         return False
@@ -204,7 +312,7 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
     worktree = service.active_worktree_for_ticket(ticket.id)
     if not worktree:
         return False
-    return retire_worktree(session, service, worktree)
+    return retire_worktree(session, service, worktree) is None
 
 
 def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> Worktree | None:
@@ -215,9 +323,11 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
     caller can say which branch and which directory rather than "no".
 
     The conversational counterpart of :func:`release_ticket_worktree`, and
-    subject to the same refusal: `retire_worktree` keeps a tree with uncommitted changes
-    or a branch carrying no commits of its own, because removing either
-    preserves nothing.
+    subject to the same refusals: `retire_worktree` keeps a tree with
+    uncommitted changes, a HEAD holding a commit no ref reaches, or a branch
+    carrying no commits of its own, because removing any of them loses work. A
+    removal that failed is returned here too — the thread still has a checkout,
+    so the caller must not drop the row that owns it.
     """
     # Read the row before the service, so a workspace that cannot be resolved
     # still reports the tree it is leaving behind. Deriving it from the service
@@ -239,7 +349,7 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
             worktree.worktree_path,
         )
         return worktree
-    return None if retire_worktree(session, service, worktree) else worktree
+    return None if retire_worktree(session, service, worktree) is None else worktree
 
 
 def reconcile_worktrees(session: Session) -> int:
