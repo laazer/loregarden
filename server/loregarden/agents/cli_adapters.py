@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shlex
@@ -152,6 +153,18 @@ def _claude_permission_mode() -> str:
     return os.environ.get("LOREGARDEN_CLAUDE_PERMISSION_MODE", settings.claude_permission_mode)
 
 
+def stage_report_hook_settings() -> str:
+    """``--settings`` JSON installing the stage-report ``Stop`` hook.
+
+    A stage run is one headless turn; this refuses the turn's end until the stage
+    report is out (see ``agents/stage_report_stop_hook``). Run by this server's own
+    interpreter, so the hook parses reports with the same code completion does.
+    """
+    command = f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook"
+    hook = {"type": "command", "command": command}
+    return json.dumps({"hooks": {"Stop": [{"hooks": [hook]}]}})
+
+
 def _append_model_flag(argv: list[str], model: str) -> None:
     if model:
         argv.extend(["--model", model])
@@ -236,6 +249,7 @@ def build_interactive_invocation(
     surface: ChatSurface = ChatSurface.HOME,
     agent_slug: str = "",
     extra_dirs: Sequence[Path | str] = (),
+    require_stage_report: bool = False,
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -258,6 +272,9 @@ def build_interactive_invocation(
 
     ``extra_dirs`` are granted read access beside the workspace root — the
     files a chat turn attached, for instance.
+
+    ``require_stage_report`` installs the stage-report ``Stop`` hook; stage runs
+    pass it, chat turns (which report nothing) do not.
     """
     cwd = str(workspace_root)
 
@@ -286,6 +303,8 @@ def build_interactive_invocation(
             argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
+        if require_stage_report:
+            argv.extend(["--settings", stage_report_hook_settings()])
         argv.extend(
             claude_tool_flags(
                 tool_grants,
@@ -516,6 +535,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
+    argv.extend(["--settings", stage_report_hook_settings()])
     append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
@@ -805,6 +825,7 @@ def resolve_cli_invocation(
             claude_model=model,
             claude_effort=effort,
             run_id=run_id,
+            require_stage_report=True,
         )
     elif selected == CliAdapter.CLAUDE:
         invocation = _claude_print_invocation(

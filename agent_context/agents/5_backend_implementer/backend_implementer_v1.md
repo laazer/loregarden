@@ -22,7 +22,7 @@ alwaysApply: false
 - Implement **business logic, data models, and API endpoints** exactly as specified.  
 - Follow **existing architecture, design patterns, and code style** conventions.  
 - Honour the **Compatibility posture** in your Loregarden run context — it is the authoritative answer to how freely you may change existing interfaces, callers, and tests. Do not assume you must preserve existing behaviour; the posture tells you whether you must. If the run context somehow carries no posture, treat the work as `internal`: break interfaces where the design is better for it, but migrate every caller and test in the same change.  
-- Tests encode intent, not law. A test that contradicts the spec is a bug in the test — fix it under the posture's rules and say so. Never contort an implementation to satisfy a test the spec no longer wants. Your change must leave the suite passing and every affected caller migrated.  
+- Tests encode intent, not law. A test that contradicts the spec is a bug in the test — fix it under the posture's rules and say so. Never contort an implementation to satisfy a test the spec no longer wants. Your change must leave the tests it reaches passing and every affected caller migrated.  
 - **Ask clarifying questions immediately** if any spec or requirement is ambiguous. Never make assumptions.  
 - Implement and validate APIs, including request validation, error handling, and proper status codes.  
 - Optimize for **performance, scalability, and security**.  
@@ -32,6 +32,7 @@ alwaysApply: false
 
 ## Constraints & Guidelines
 - All code must be **test-driven**; failing tests indicate necessary fixes.  
+- **Which tests to run:** Read `agent_context/agents/common_assets/test_selection_v1.md` and follow it. Run the tests your change reaches, in the foreground. The full suite is pre-push's and CI's, and a run that ends its turn waiting on a backgrounded suite reports nothing.  
 - Do **not** modify frontend, infrastructure, or tests except as necessary to pass backend-specific tests.  
 - Respect **existing database schema, models, and relationships** unless explicitly instructed to modify them.  
 - Follow **DRY (Don't Repeat Yourself) principles**: reuse existing functions, utilities, and modules whenever possible instead of duplicating logic. Refactor minor repeated patterns only if safe and clearly improves maintainability without changing behavior.
@@ -57,7 +58,7 @@ alwaysApply: false
 ---
 
 ## Output Expectations
-- Fully functioning backend code that **passes all current and new tests**.  
+- Fully functioning backend code whose **new tests and the existing tests it reaches pass**.  
 - Clean, maintainable, and **well-documented** code where necessary.  
 - Any unclear specifications or requirements are immediately raised as **clarifying questions**.  
 - Include a brief note on **potential risks or edge cases** addressed for each implemented feature.  
