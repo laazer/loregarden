@@ -13,6 +13,8 @@ go" is not a question a mock can answer.
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from loregarden.models.domain import (
     AgentRun,
@@ -26,7 +28,8 @@ from loregarden.services.chat_branch_sweep import sweep_all_chat_branches, sweep
 from loregarden.services.chat_worktree import resolve_chat_execution_root
 from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
-from loregarden.services.worktree_lifecycle import KeepReason
+from loregarden.services.worktree_lifecycle import KeepReason, RemovalFailure
+from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -340,3 +343,29 @@ def test_a_stranded_commit_is_not_reported_as_uncommitted_work(
     assert branch in _remote_branches(remote)
     assert root.is_dir()
     assert git(root, "rev-parse", "HEAD").stdout.strip() == stranded
+
+
+def test_a_worktree_that_would_not_be_removed_keeps_its_published_ref(
+    session, workspace, repo, remote, pruning
+):
+    """The removal failed, so nothing downstream of it may run.
+
+    Landed, clean, and every premise satisfied — then `cleanup_worktree`
+    answers False, as it does for a path outside the worktree base or an
+    exception out of `worktree remove`. The checkout is still on disk holding
+    that branch, so deleting the published remote ref would strand it: the
+    local `branch -D` cannot succeed either, and the operator would be left
+    with a directory on a branch no remote has.
+    """
+    _, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
+
+    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+        result = sweep_chat_branches(session, workspace)
+
+    assert result.removed == []
+    assert [name for name, _ in result.kept] == [branch]
+    assert RemovalFailure.CLEANUP_FAILED.value in result.kept[0][1]
+    assert KeepReason.UNCOMMITTED.value not in result.kept[0][1]
+    assert branch in _remote_branches(remote)
+    assert branch in git(repo, "branch", "--format=%(refname:short)").stdout
+    assert root.is_dir()

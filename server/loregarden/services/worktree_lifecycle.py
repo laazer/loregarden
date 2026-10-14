@@ -162,6 +162,28 @@ class KeepReason(StrEnum):
     NOTHING_COMMITTED = "no commits beyond its base"
 
 
+class RemovalFailure(StrEnum):
+    """Why a checkout every premise cleared is nonetheless still on disk.
+
+    Separate from :class:`KeepReason`, which is a closed vocabulary of
+    *premises*: nothing here is a premise that failed, and `_kept_summary`
+    groups by premise. It exists so that "the removal was attempted and did not
+    work" cannot be answered with the same value as "the removal happened".
+    `WorktreeService.cleanup_worktree` returns False for a path outside the
+    worktree base and for any exception out of `worktree remove`/`rmtree`, and
+    a caller told None in that case would drop the row that owns a checkout
+    still sitting on disk.
+    """
+
+    CLEANUP_FAILED = "its checkout could not be removed"
+
+
+#: What `retire_worktree` answers when the checkout is still there: the premise
+#: that refused, or the removal having failed. `None` means, and only means,
+#: that the checkout is gone.
+RetirementRefusal = KeepReason | RemovalFailure
+
+
 def _keep_reason(worktree: Worktree) -> KeepReason | None:
     """The premise that fails for removing this checkout, or None when all hold.
 
@@ -204,11 +226,18 @@ def _reason_detail(reason: KeepReason, worktree: Worktree) -> str:
 
 def retire_worktree(
     session: Session, service: WorktreeService, worktree: Worktree
-) -> KeepReason | None:
+) -> RetirementRefusal | None:
     """Remove a worktree's checkout, unless doing so would lose something.
 
-    Returns the premise that refused, or None once the checkout is gone. The
-    reason is carried rather than collapsed into a bool because
+    Returns the premise that refused — or `RemovalFailure.CLEANUP_FAILED` when
+    every premise held and the removal itself did not work — and None once the
+    checkout is gone, which is the one thing None means. A failed removal
+    answering None would tell three callers a checkout is gone while it is
+    still on disk: the sweep would delete the published remote ref it had just
+    kept, and `delete_chat_session` would drop the row that owns the
+    directory.
+
+    The answer is carried rather than collapsed into a bool because
     `chat_branch_sweep` reports to an operator *which* premise fired, and a
     sweep that says "uncommitted work" about a stranded commit sends them
     looking for edits that are not there.
@@ -234,10 +263,12 @@ def retire_worktree(
         return reason
     if not service.cleanup_worktree(worktree):
         logger.warning(
-            "Worktree %s at %s satisfied every premise but its removal failed",
+            "Worktree %s at %s satisfied every premise but its removal failed; "
+            "the checkout is still on disk and still owned",
             worktree.id,
             worktree.worktree_path,
         )
+        return RemovalFailure.CLEANUP_FAILED
     return None
 
 
@@ -267,7 +298,9 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
     object store, so a PR opened later still has them. Only the checkout goes.
     That holds exactly as far as `retire_worktree` proves it does: a tree with
     local changes, a HEAD carrying a commit no ref reaches, or a branch carrying
-    no commits of its own, is kept instead.
+    no commits of its own, is kept instead. So is one whose removal was tried
+    and failed, which answers False here rather than claiming a checkout that
+    is still on disk is gone.
     """
     if ticket.state not in StateMachine.TERMINAL_TICKET_STATES:
         return False
@@ -292,7 +325,9 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
     The conversational counterpart of :func:`release_ticket_worktree`, and
     subject to the same refusals: `retire_worktree` keeps a tree with
     uncommitted changes, a HEAD holding a commit no ref reaches, or a branch
-    carrying no commits of its own, because removing any of them loses work.
+    carrying no commits of its own, because removing any of them loses work. A
+    removal that failed is returned here too — the thread still has a checkout,
+    so the caller must not drop the row that owns it.
     """
     # Read the row before the service, so a workspace that cannot be resolved
     # still reports the tree it is leaving behind. Deriving it from the service

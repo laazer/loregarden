@@ -27,6 +27,7 @@ from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import (
     KeepReason,
+    RemovalFailure,
     reconcile_worktrees,
     release_ticket_worktree,
     retire_worktree,
@@ -751,17 +752,56 @@ def test_every_keep_reason_refuses_the_removal_and_says_so(session, workspace, r
     assert str(path) in refusals[0].getMessage()
 
 
-def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace):
+def test_a_removal_that_failed_is_not_reported_as_a_release(session, workspace, caplog):
+    """`release_ticket_worktree` answers False when the removal did not happen.
+
+    Every premise holds, so the destructive step runs — and `cleanup_worktree`
+    returns False, which it does for real when the path falls outside the
+    worktree base or `worktree remove`/`rmtree` raises. The directory is still
+    there and the row still owns it, so "removed" is the one answer this cannot
+    give: a caller told True stops looking at a checkout nothing will ever reap.
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    with (
+        mock.patch.object(
+            worktree_lifecycle.WorktreeService, "cleanup_worktree", return_value=False
+        ),
+        caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
+    ):
+        assert release_ticket_worktree(session, ticket) is False
+
+    assert path.is_dir()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+    assert str(path) in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("removed", "expected"),
+    [(True, None), (False, RemovalFailure.CLEANUP_FAILED)],
+    ids=["cleanup_succeeded", "cleanup_failed"],
+)
+def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace, removed, expected):
     """The other half of the inversion: refusing on `reason is not None` must not
-    turn into refusing everything. With every premise satisfied the removal goes
-    through, and `None` — not the service's own answer — is what says so."""
+    turn into refusing everything. With every premise satisfied the removal is
+    attempted — and then the service's own answer decides. `None` means the
+    checkout is gone; a removal that failed says so with a value of its own,
+    because a caller told `None` would drop the row that still owns a directory
+    on disk. `cleanup_worktree` returns False for real: for a path outside the
+    worktree base, and for any exception out of `worktree remove`/`rmtree`."""
     ticket = _ticket(session, workspace)
     path = _tree_for(session, workspace, ticket)
     row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
     service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
+    service.cleanup_worktree.return_value = removed
 
     with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
-        assert retire_worktree(session, service, row) is None
+        assert retire_worktree(session, service, row) is expected
 
     service.cleanup_worktree.assert_called_once_with(row)
     # The stub did not actually remove it; the call is the assertion.
