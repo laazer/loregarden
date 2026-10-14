@@ -56,6 +56,7 @@ from loregarden.models.domain import (
     Workspace,
     utcnow,
 )
+from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.orchestration_profile import (
     RetryBudgetConfig,
     resolve_orchestration_profile,
@@ -485,6 +486,11 @@ def enforce_stage_retry_budget(
             ticket,
             # The breaker's own message about a budget it enforced.
             origin=BlockOrigin.CONTROL_PLANE,
+            repair=RepairPolicy.withheld(
+                f"'{stage_key}' reached its dispatch budget ({state.attempts} of "
+                f"{config.max_attempts_per_stage}); another agent turn is what the budget "
+                "exists to stop."
+            ),
             stage_key=stage_key,
             message=stage_retry_block_message(
                 stage_key, state.attempts, config.max_attempts_per_stage

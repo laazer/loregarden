@@ -82,6 +82,7 @@ from loregarden.models.domain import (
     Worktree,
 )
 from loregarden.services import queue_admission
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import RetryBudgetConfig
@@ -1324,6 +1325,7 @@ def test_an_agent_blocking_itself_cannot_clear_the_counter_by_restarting(
         # the handover approval it always did. That is the behaviour under test:
         # an agent blocking itself must not clear the breaker bounding it.
         origin=BlockOrigin.AGENT,
+        repair=AGENT_ASKED_FOR_A_PERSON,
         stage_key="review",
         message="I need a human to look at this.",
     )

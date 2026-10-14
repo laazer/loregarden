@@ -37,7 +37,46 @@ from loregarden.models.domain import (
 from loregarden.services.block_classification import block_message_for, record_block
 from loregarden.services.block_repair import RepairOffer, offer_repair
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.run_concurrency import find_active_run
 from sqlmodel import Session, select
+
+
+@dataclass(frozen=True)
+class RepairPolicy:
+    """Whether a block may take its repair turn, and when not, the true reason.
+
+    Required wherever a block is recorded outside a run's own completion, so a
+    new blocking path cannot fall back to a reason that is not its own. Before
+    this, every such path was settled with no orchestration and recorded "the
+    block was recorded outside an orchestration run" — 56 of 93 escalations over
+    the 30 days to 2026-10-14, most of them inside a live orchestration, blocked
+    at a rework cap or a dispatch budget for reasons that sentence did not name.
+    """
+
+    withheld_reason: str = ""
+
+    @classmethod
+    def offer(cls) -> RepairPolicy:
+        return cls()
+
+    @classmethod
+    def withheld(cls, reason: str) -> RepairPolicy:
+        if not reason:
+            raise ValueError("a withheld repair needs the reason a person will read")
+        return cls(reason)
+
+    @property
+    def may_repair(self) -> bool:
+        return not self.withheld_reason
+
+
+#: An agent blocking its own ticket (`loregarden_block_ticket`, or the callback
+#: API) while its run is still going: it asked for a person, and a repair turn
+#: armed now would race the run that is asking.
+AGENT_ASKED_FOR_A_PERSON = RepairPolicy.withheld(
+    "An agent blocked this ticket itself while its run was still going; it asked for a "
+    "person, and a repair turn would race that run."
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +103,7 @@ def settle_block(
     options: list[str] | None = None,
     kind_as_written: str = "",
     repairable: bool = True,
+    no_repair_reason: str = "",
 ) -> BlockSettlement:
     """Classify this block and spend its repair turn, or record why it got none.
 
@@ -75,6 +115,8 @@ def settle_block(
     `repairable=False` is for a block whose cause no agent turn can touch — a
     provider quota window is the live case. It still gets its kind and its
     recorded reason; it just does not burn a turn proving the obvious.
+    `no_repair_reason` is that reason in the caller's words; the default is the
+    quota-window sentence.
     """
     kind = record_block(
         session,
@@ -101,8 +143,11 @@ def settle_block(
     else:
         offer = RepairOffer(
             False,
-            f"The block on '{stage_key}' is one no agent turn can clear — waiting it out is "
-            "the fix — so no repair was offered.",
+            no_repair_reason
+            or (
+                f"The block on '{stage_key}' is one no agent turn can clear — waiting it out "
+                "is the fix — so no repair was offered."
+            ),
         )
     if offer.armed:
         return BlockSettlement(kind, True)
@@ -134,11 +179,17 @@ def sweep_unclassified_blocks(session: Session) -> int:
     stale = session.exec(
         select(Ticket).where(Ticket.blocking_issues != "", Ticket.block_kind.is_(None))
     ).all()
+    settled = 0
     for ticket in stale:
+        if find_active_run(session, ticket.id) is not None:
+            # Its run is still going; that run's completion settles the block,
+            # with its orchestration, and may yet repair it.
+            continue
         settle_block(
             session,
             ticket,
             stage_key=ticket.workflow_stage_key or "",
             message=block_message_for(session, ticket),
         )
-    return len(stale)
+        settled += 1
+    return settled

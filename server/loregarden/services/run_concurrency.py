@@ -16,6 +16,9 @@ from sqlmodel import Session, col, select
 
 IN_FLIGHT_STATUSES = [RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
 
+#: An orchestration that owns its ticket: claimed (QUEUED) or driving (RUNNING).
+ACTIVE_ORCHESTRATION_STATUSES = (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
+
 #: Stage key recorded on a ticket triage turn. Not a workflow stage: Baxter is
 #: the operator's conversation about a ticket, and no gate waits on it. It is
 #: the only conversational channel whose runs carry a ticket_id — Home chat and
@@ -115,11 +118,7 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
     return session.exec(
         select(OrchestrationRun)
         .where(OrchestrationRun.ticket_id == ticket_id)
-        .where(
-            col(OrchestrationRun.status).in_(
-                (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
-            )
-        )
+        .where(col(OrchestrationRun.status).in_(ACTIVE_ORCHESTRATION_STATUSES))
         .order_by(col(OrchestrationRun.created_at).desc())
     ).first()
 

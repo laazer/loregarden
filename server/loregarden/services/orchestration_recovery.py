@@ -8,12 +8,16 @@ from dataclasses import dataclass
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRun,
+    OrchestrationRunStatus,
     StageStatus,
     Ticket,
+    TicketState,
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.queue_admission import QueueAdmissionService
+from loregarden.services.requeue import requeue_stage
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_service import execute_orchestration_background
 from loregarden.services.workflow_state import parse_stage_map
@@ -152,6 +156,40 @@ def resume_plan(
         stop_at_stage_key=stage_key,
         timeout_seconds=previous.timeout_override_seconds if previous else None,
     )
+
+
+def requeue_and_plan_resume(
+    session: Session, ticket: Ticket, stage_key: str, *, reason: str
+) -> InterruptionResume | None:
+    """Requeue a parked `stage_key` and plan the drive that carries it on.
+
+    None when a drive already owns the ticket (it is not this caller's to touch),
+    when a person cancelled the last drive (nothing is touched), or when
+    `resume_plan` says no drive should start here — an external harness, whose
+    stage is still requeued for that harness to pick up.
+    Shared by every reconcile step that parks a stage on a cause that clears by
+    itself: the network coming back, a usage limit resetting, a stranded stage.
+    """
+    if find_active_orchestration_run(session, ticket.id) is not None:
+        return None
+    previous = latest_orchestration_run(session, ticket)
+    if previous is not None and (
+        previous.cancel_requested_at is not None
+        or previous.status is OrchestrationRunStatus.CANCELLED
+    ):
+        # A person stopped this drive. Requeueing its stage would undo the stop
+        # as surely as restarting it; leave the ticket as they left it.
+        return None
+    requeue_stage(
+        session,
+        OrchestrationService(session),
+        ticket,
+        stage_key=stage_key,
+        reason=reason,
+        actor="orchestrator",
+        state=TicketState.IN_PROGRESS,
+    )
+    return resume_plan(session, ticket, previous, stage_key=stage_key)
 
 
 def resume_interrupted_orchestrations(session: Session) -> list[str]:

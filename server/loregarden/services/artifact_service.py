@@ -25,6 +25,7 @@ from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
+from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -1041,9 +1042,13 @@ def block_ticket_for_unresolved_blocker(
     session.add(ticket)
     session.commit()
     # Ticket-level, so there is no run to spend a repair turn on — the same
-    # reason this function does not end one. Settled regardless, so the block
-    # leaves with a kind and a recorded reason it got no repair (802).
-    settle_block(session, ticket, stage_key=stage_key, message=entry)
+    # reason this function does not end one. While the agent's run is still
+    # going, its own completion settles this block with its orchestration in
+    # hand, and may offer a repair; settling here first recorded "outside an
+    # orchestration run" for a block that had one. With no run in flight it is
+    # settled now, so the block leaves with a kind and a recorded reason (802).
+    if find_active_run(session, ticket.id) is None:
+        settle_block(session, ticket, stage_key=stage_key, message=entry)
     return ticket.blocking_issues
 
 

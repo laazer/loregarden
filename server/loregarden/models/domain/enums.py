@@ -444,6 +444,9 @@ class StageBudgetArtifactKind(StrEnum):
     #: The ticket is parked until the provider is reachable again, and the
     #: reconcile pass resumes it then. See `services.network_wait`.
     NETWORK_WAIT = "stage_network_wait"
+    #: The ticket is parked until a provider's usage limit resets, and the
+    #: reconcile pass resumes it then. See `services.usage_limit_wait`.
+    USAGE_LIMIT_WAIT = "stage_usage_limit_wait"
 
 
 class GateFaultAttribution(StrEnum):
