@@ -14,6 +14,7 @@ import stat
 
 import pytest
 from loregarden.models.domain import HumanActionTier
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
@@ -248,6 +249,7 @@ def _blocked_with(db_session, tmp_path, action: PreparedAction | None, message: 
         # These all model an agent blocking with its own words, which is the only
         # origin whose message may describe a handover of human work.
         origin=BlockOrigin.AGENT,
+        repair=AGENT_ASKED_FOR_A_PERSON,
         stage_key="implement",
         message=message,
         prepared_action=action,

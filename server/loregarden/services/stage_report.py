@@ -20,8 +20,11 @@ from loregarden.services.interruption_messages import (
 from loregarden.services.usage_limits import detect_usage_limit
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+#: The closer is `<<<END_STAGE_REPORT>>>`. Agents also write the symmetric
+#: `<<<END_LOREGARDEN_STAGE_REPORT>>>`: 12 runs did, every one a complete report
+#: that failed closed as "no report". Nothing else could mean that.
 _SENTINEL_RE = re.compile(
-    r"<<<LOREGARDEN_STAGE_REPORT>>>\s*(\{.*?\})\s*<<<END_STAGE_REPORT>>>",
+    r"<<<LOREGARDEN_STAGE_REPORT>>>\s*(\{.*?\})\s*<<<END_(?:LOREGARDEN_)?STAGE_REPORT>>>",
     re.DOTALL,
 )
 
@@ -294,6 +297,60 @@ class _CliResultLine(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     terminal_reason: str = ""
+
+
+#: The report block as an agent is asked for it after its turn ended without one:
+#: by the Stop hook on a Claude run, and by the resumed turn on a cursor run.
+REPORT_BLOCK_REMINDER = (
+    "end with the stage report: <<<LOREGARDEN_STAGE_REPORT>>>, one JSON object such as "
+    '{"status": "pass", "confidence": 0.9, "reroute_to_stage": null, "reroute_context": ""} '
+    "with status one of pass|fail|needs_rework|blocked, then <<<END_STAGE_REPORT>>>. If you "
+    "cannot establish the outcome, report `blocked` with `blocked_kind: harness` and say what "
+    "you could not finish."
+)
+
+
+class CliResultEnvelope(BaseModel):
+    """A CLI stream's closing envelope: `{"type": "result", "result": "<final text>"}`.
+
+    Its own model, not a field on `_CliResultLine`: a `result` that is not a
+    string would then fail that line's validation and hide its `terminal_reason`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: str = ""
+    result: str = ""
+    #: The session the run's turn belonged to; what a resume continues.
+    session_id: str = ""
+
+
+def result_envelope(stdout: str) -> CliResultEnvelope | None:
+    """The last `result` envelope in a stream-json transcript, or None."""
+    for raw in reversed(stdout.splitlines()):
+        line = raw.strip()
+        if not line.startswith("{") or '"result"' not in line:
+            continue
+        try:
+            parsed = CliResultEnvelope.model_validate_json(line)
+        except (
+            ValidationError
+        ):  # silent-ok: interleaved non-envelope JSON; the next line up is tried
+            continue
+        if parsed.type == "result":  # py-org: allow-string - the CLI's own envelope type
+            return parsed
+    return None
+
+
+def final_agent_message(stdout: str) -> str:
+    """The run's final assistant text as the CLI reported it, or "" when it reported none.
+
+    Claude and cursor-agent both close a stream-json run with a `result`
+    envelope carrying it. What a run said last is the best evidence of why it
+    stopped: a run that ended "waiting for the suite to finish" says so there.
+    """
+    envelope = result_envelope(stdout)
+    return envelope.result if envelope is not None else ""
 
 
 def structured_terminal_reason(stdout: str) -> str | None:

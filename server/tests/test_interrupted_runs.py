@@ -10,6 +10,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -371,6 +372,7 @@ def test_recover_interrupted_stage_ignores_genuine_block(isolated_db):
             orch_run,
             ticket,
             origin=BlockOrigin.AGENT,
+            repair=AGENT_ASKED_FOR_A_PERSON,
             stage_key="testing",
             message="Real test failure: assertion error",
         )

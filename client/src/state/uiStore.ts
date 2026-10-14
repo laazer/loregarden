@@ -93,6 +93,14 @@ interface UiState {
    */
   terminalOpen: boolean;
   /**
+   * Whether the dock is drawing a chat or shell panel right now. Not the same
+   * as `copilotOpen || terminalOpen`: chat needs a bound session and the shell a
+   * workspace, which only CopilotDock resolves, so it is the one writer. The
+   * layout reads it to collapse a right-docked column down to the bar.
+   * Not persisted: it is derived on every mount.
+   */
+  dockPanelsVisible: boolean;
+  /**
    * Which branch the branch-triage screen is reviewing. Lifted out of that
    * page so the dock can bind to its conversation — the dock mounts above the
    * routes and cannot see a page's local state.
@@ -170,6 +178,7 @@ interface UiState {
   toggleCopilotHistory: () => void;
   setCopilotOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
+  setDockPanelsVisible: (visible: boolean) => void;
   toggleCopilot: () => void;
   setCopilotHeight: (height: number) => void;
   setCopilotWidth: (width: number) => void;
@@ -231,6 +240,7 @@ export const useUiStore = create<UiState>()(
       copilotWidth: DEFAULT_COPILOT_WIDTH,
       utilityDockEdge: "bottom",
       terminalOpen: false,
+      dockPanelsVisible: false,
       // Not persisted: which branch is under review is a property of this
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
@@ -337,6 +347,7 @@ export const useUiStore = create<UiState>()(
       setCopilotOpen: (copilotOpen) => set({ copilotOpen }),
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
       setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
+      setDockPanelsVisible: (dockPanelsVisible) => set({ dockPanelsVisible }),
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
       setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
@@ -452,3 +463,17 @@ export const useUiStore = create<UiState>()(
     },
   ),
 );
+
+/**
+ * The edge the dock is laid out against, as opposed to the one preferred.
+ *
+ * Docked right with nothing open, the column would be a full-height strip of
+ * empty panel with the bar at its foot, and closing the omnibar would appear
+ * to do nothing. So a collapsed dock is the bar along the bottom at either
+ * edge, and the preference takes effect when a panel opens.
+ */
+export function useLayoutDockEdge(): UtilityDockEdge {
+  return useUiStore((s) =>
+    s.utilityDockEdge === "right" && s.dockPanelsVisible ? "right" : "bottom",
+  );
+}

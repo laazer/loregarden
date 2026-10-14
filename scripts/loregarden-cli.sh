@@ -17,6 +17,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/primary-checkout.sh
 source "$ROOT/scripts/lib/primary-checkout.sh"
 
+# The caller's own root, before it is defaulted below ("" when it had none). A
+# command the CLI runs on the caller's behalf (`capacity run -- …`) gets that back
+# instead of the primary checkout: a worktree's tests would otherwise read the
+# primary's agent_context/ and pass or fail on code they never saw.
+export LOREGARDEN_CALLER_REPO_ROOT="${LOREGARDEN_REPO_ROOT:-}"
+
 if [ -z "${LOREGARDEN_REPO_ROOT:-}" ]; then
   if primary="$(resolve_primary_checkout)"; then
     LOREGARDEN_REPO_ROOT="$primary"

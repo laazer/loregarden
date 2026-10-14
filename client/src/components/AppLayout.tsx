@@ -4,7 +4,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
 import { SidebarWorkspaceProvider } from "../state/SidebarWorkspaceContext";
-import { useUiStore } from "../state/uiStore";
+import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
@@ -22,7 +22,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
   const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
   const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
-  const utilityDockEdge = useUiStore((s) => s.utilityDockEdge);
+  const utilityDockEdge = useLayoutDockEdge();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");

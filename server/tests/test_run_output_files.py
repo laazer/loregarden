@@ -520,3 +520,25 @@ def test_the_tail_tolerates_a_file_whose_directory_is_gone(run_log_dir):
     os.remove(path)
 
     assert tail.readline(timeout=0) is None
+
+
+def test_a_run_whose_directory_is_gone_records_exit_1_and_says_why(tmp_path, run_log_dir):
+    """The wrapper enters the run's directory itself; when it cannot, the run
+    must still settle (an `.rc`) and name the reason, not hang on no exit code."""
+    ensure_dir()
+    paths = paths_for("run_nodir1", "00000000-0000-0000-0000-000000000000")
+    missing = tmp_path / "gone"
+    done = _sh(wrap_for_files(["/bin/sh", "-c", "echo ran"], paths, cwd=str(missing)))
+    assert done.returncode == 1
+    assert paths.rc.read_text(encoding="utf-8") == "1"
+    assert str(missing) in paths.err.read_text(encoding="utf-8")
+    assert not paths.out.exists() or "ran" not in paths.out.read_text(encoding="utf-8")
+
+
+def test_a_run_starts_in_the_directory_it_names(tmp_path, run_log_dir):
+    ensure_dir()
+    paths = paths_for("run_indir1", "00000000-0000-0000-0000-000000000001")
+    here = tmp_path / "here"
+    here.mkdir()
+    _sh(wrap_for_files(["/bin/sh", "-c", "pwd -P"], paths, cwd=str(here)))
+    assert paths.out.read_text(encoding="utf-8").strip() == str(here.resolve())

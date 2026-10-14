@@ -56,6 +56,10 @@ JSON block reporting your outcome for this stage. Loregarden's orchestrator pars
 decide whether to advance, and where to route on failure — do not rely on the human/orchestrator
 inferring your outcome from prose or exit code alone.
 
+Your run is one headless turn: when the turn ends, the process ends. A background command
+never notifies you afterwards, so never end your turn "waiting for" one. Run tests in the
+foreground and only the ones your change reaches (`common_assets/test_selection_v1.md`).
+
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
 {"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "blocked_kind": "harness|work|decision|human_action|null", "options": ["<choice a person can pick, when blocked_kind is decision>"]}

@@ -170,7 +170,11 @@ def write_env_file(paths: RunOutputPaths, env: dict[str, str]) -> None:
 
 
 def wrap_for_files(
-    argv: list[str], paths: RunOutputPaths, *, stdin_from_prompt: bool = False
+    argv: list[str],
+    paths: RunOutputPaths,
+    *,
+    stdin_from_prompt: bool = False,
+    cwd: str | None = None,
 ) -> list[str]:
     """`argv`, redirected into `paths` by the child itself.
 
@@ -185,11 +189,22 @@ def wrap_for_files(
 
     The trailing `exit "$rc"` is the whole reason this is three commands rather
     than two — see this module's docstring.
+
+    `cwd` makes the wrapper enter the run's directory itself. A tmux pane does
+    not reliably start where its client asked: once the directory the tmux
+    server was started from is deleted, a new pane starts there — in nothing —
+    even under `new-session -c` (tmux 3.8, macOS; reproduced 2026-10-14). The
+    server is long-lived on purpose and was started from whichever worktree
+    spawned first, and worktrees are retired when their tickets finish, so every
+    pane after that retirement would have run its agent in a deleted directory.
+    A `cd` that fails records exit 1 with the reason in the run's stderr, so the
+    run settles rather than waiting on an `.rc` nothing writes.
     """
     joined = " ".join(shlex.quote(element) for element in argv)
     out, err, rc = (shlex.quote(str(path)) for path in (paths.out, paths.err, paths.rc))
     stdin = f" < {shlex.quote(str(paths.prompt))}" if stdin_from_prompt else ""
-    script = f'{joined}{stdin} > {out} 2> {err}; rc=$?; printf %s "$rc" > {rc}; exit "$rc"'
+    enter = f"cd {shlex.quote(cwd)} 2> {err} || {{ printf %s 1 > {rc}; exit 1; }}; " if cwd else ""
+    script = f'{enter}{joined}{stdin} > {out} 2> {err}; rc=$?; printf %s "$rc" > {rc}; exit "$rc"'
     return ["sh", "-c", script]
 
 

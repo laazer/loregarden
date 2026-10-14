@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
@@ -8,7 +8,7 @@ import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
 import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
-import { useUiStore } from "../state/uiStore";
+import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
 import { StudioChatMessages } from "./studio/StudioChat";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import "./CopilotDock.css";
@@ -24,7 +24,8 @@ import "./CopilotDock.css";
 export function CopilotDock() {
   const open = useUiStore((s) => s.copilotOpen);
   const height = useUiStore((s) => s.copilotHeight);
-  const edge = useUiStore((s) => s.utilityDockEdge);
+  const edge = useLayoutDockEdge();
+  const setDockPanelsVisible = useUiStore((s) => s.setDockPanelsVisible);
   const { session, ticketId, pendingApprovals, branch, archive } = useActiveChatSession();
   const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
@@ -61,6 +62,13 @@ export function CopilotDock() {
   const mountTerminal = Boolean(keptSlug);
   const showChat = open && Boolean(session);
   const panelsVisible = showChat || showTerminal;
+  // Published for the layout, which collapses a right-docked column to the bar
+  // when nothing is showing. Before paint, so opening a panel never flashes
+  // the bottom layout first.
+  useLayoutEffect(() => {
+    setDockPanelsVisible(panelsVisible);
+  }, [panelsVisible, setDockPanelsVisible]);
+  useLayoutEffect(() => () => setDockPanelsVisible(false), [setDockPanelsVisible]);
   const edgeClass = edge === "right" ? " copilot-dock--edge-right" : " copilot-dock--edge-bottom";
   const keptOnlyClass = !panelsVisible && mountTerminal ? " copilot-dock--kept-only" : "";
 
