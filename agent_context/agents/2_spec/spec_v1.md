@@ -47,6 +47,7 @@ Your goal is to create specifications that are **fully deterministic, unambiguou
 - List measurable, unambiguous, and testable criteria.
 - Include **examples or scenarios** to illustrate correct behavior.
 - Each criterion must be **independently verifiable**.
+- **Verifiable inside one stage run.** Never write "the full test suite passes" as a criterion: no stage can run the suite inside its turn, and CI runs it before an integration branch reaches main. Name the test files or the behaviour instead, or write "the tests the change reaches pass" (see `agent_context/agents/common_assets/test_selection_v1.md`).
 
 #### 3. Risk & Ambiguity Analysis
 - List all potential risks or edge cases.

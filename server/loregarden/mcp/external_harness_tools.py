@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.run_resolution import resolve_run_ref
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
     boolean_prop,
@@ -27,7 +28,7 @@ from loregarden.mcp.tool_schemas import (
     string_prop,
     tool_schema,
 )
-from loregarden.models.domain import AgentRun, OrchestrationRun, RunUsage
+from loregarden.models.domain import AgentRun, RunUsage
 from loregarden.services.external_harness import begin_external_stage, finish_external_stage
 
 #: Fields of ``RunUsage`` a harness may report on finish_external_stage. Flat
@@ -55,8 +56,9 @@ EXTERNAL_HARNESS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": tool_schema(
             properties={
                 "run_id": string_prop(
-                    "Orchestration run UUID from loregarden_start_orchestration "
-                    "(started with external_harness set)."
+                    "The orchestration run from loregarden_start_orchestration (started "
+                    "with external_harness set): its UUID, or the code (run_…) or UUID "
+                    "of a stage run inside it."
                 ),
                 "stage_key": string_prop(
                     "Optional stage to run. Defaults to the ticket's current stage; pass "
@@ -159,9 +161,12 @@ def normalize_external_harness_args(
 
 
 def begin_external_stage_tool(session: Session, arguments: dict[str, Any]) -> str:
-    orch_run = session.get(OrchestrationRun, arguments["run_id"])
-    if not orch_run:
-        raise ValueError(f"Orchestration run not found: {arguments['run_id']}")
+    # The same resolver every other run-scoped tool uses (815): this was the last
+    # one still answering "Orchestration run not found" to a run code or an agent
+    # run UUID that names the same orchestration.
+    orch_run = resolve_run_ref(session, arguments["run_id"]).require_orchestration(
+        McpTool.BEGIN_EXTERNAL_STAGE.value
+    )
     view = begin_external_stage(session, orch_run, stage_key=arguments.get("stage_key"))
     return json.dumps(view.model_dump(mode="json"), indent=2)
 

@@ -1,7 +1,11 @@
 import json
 
 import pytest
-from loregarden.services.stage_report import parse_stage_report, stage_report_artifact_content
+from loregarden.services.stage_report import (
+    final_agent_message,
+    parse_stage_report,
+    stage_report_artifact_content,
+)
 
 
 def _wrap(payload: str) -> str:
@@ -313,3 +317,32 @@ def test_a_null_confidence_keeps_a_rejection_routable():
     assert report.confidence == 0.0
     assert report.reroute_to_stage == "implement"
     assert report.unmet_criteria == ["The endpoint returns 404."]
+
+
+# ---- what a run said last ----------------------------------------------------
+
+
+def test_the_final_message_is_read_from_the_result_envelope():
+    stdout = "\n".join(
+        [
+            '{"type": "assistant", "message": {"content": [{"type": "text", "text": "x"}]}}',
+            "plain text a CLI interleaved",
+            '{"type": "result", "subtype": "success", "result": "Waiting on the suite."}',
+        ]
+    )
+    assert final_agent_message(stdout) == "Waiting on the suite."
+
+
+def test_a_run_with_no_envelope_has_no_final_message():
+    assert final_agent_message('plain output\n{"result": [1, 2]}') == ""
+
+
+def test_the_symmetric_closer_agents_write_is_accepted():
+    stdout = (
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "needs_rework", "confidence": 0.8, "reroute_to_stage": "implement"}\n'
+        "<<<END_LOREGARDEN_STAGE_REPORT>>>\n"
+    )
+    report = parse_stage_report(stdout)
+    assert report is not None
+    assert report.status == "needs_rework"

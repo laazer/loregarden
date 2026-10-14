@@ -34,17 +34,21 @@ from loregarden.models.domain import (
     CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
+    DockerGrantState,
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
 )
 from loregarden.services import docker_leases, host_capacity
 from loregarden.services.capacity_run import (
+    CALLER_REPO_ROOT_ENV,
+    REPO_ROOT_ENV,
     WORKERS_ENV,
     CapacityNotGranted,
     CapacityQueueStalled,
     CapacityRequest,
     acquire,
+    child_environment,
     run_holding,
 )
 from loregarden.services.docker_ledger import load_pool
@@ -693,3 +697,71 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
     finally:
         engine.dispose()
     assert [label.split(" · ")[0] for label in labels] == ["cwd"]
+
+
+# ---- the held command's repo root ------------------------------------------
+#
+# scripts/loregarden-cli.sh defaults LOREGARDEN_REPO_ROOT to the primary checkout
+# so the CLI books against the one live ledger. The held command must not inherit
+# that: tests run from a worktree read `agent_context/` through it, and once read
+# the primary's seeds, failing 11 tests on a branch that was correct.
+
+_GRANTED = docker_leases.DockerReservation(
+    state=DockerGrantState.GRANTED, lease_id="lease-1", cpus=2.0
+)
+
+
+def test_the_held_command_gets_the_callers_own_repo_root_back():
+    base = {REPO_ROOT_ENV: "/primary", CALLER_REPO_ROOT_ENV: "/worktree"}
+    env = child_environment(_GRANTED, base)
+    assert env[REPO_ROOT_ENV] == "/worktree"
+    assert CALLER_REPO_ROOT_ENV not in env
+
+
+def test_a_caller_with_no_repo_root_hands_the_command_none():
+    base = {REPO_ROOT_ENV: "/primary", CALLER_REPO_ROOT_ENV: ""}
+    env = child_environment(_GRANTED, base)
+    assert REPO_ROOT_ENV not in env
+    assert CALLER_REPO_ROOT_ENV not in env
+
+
+def test_a_cli_started_another_way_leaves_the_repo_root_alone():
+    env = child_environment(_GRANTED, {REPO_ROOT_ENV: "/set-by-caller"})
+    assert env[REPO_ROOT_ENV] == "/set-by-caller"
+
+
+@pytest.fixture
+def stub_uv(tmp_path: Path) -> Path:
+    """A `uv` that writes the environment it was started with, in place of the CLI."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "uv"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n%s\\n" "${LOREGARDEN_CALLER_REPO_ROOT-unset}" '
+        '"${LOREGARDEN_REPO_ROOT-unset}" > "$STUB_OUT"\n'
+    )
+    stub.chmod(0o755)
+    return bin_dir
+
+
+@pytest.mark.parametrize("caller_root", ["/a/worktree", None], ids=["set", "unset"])
+def test_the_cli_script_records_the_callers_repo_root_before_defaulting_it(
+    tmp_path, stub_uv, caller_root
+):
+    out = tmp_path / "out"
+    env = {key: value for key, value in os.environ.items() if not key.startswith("LOREGARDEN_")}
+    env.update({"PATH": f"{stub_uv}:{env['PATH']}", "STUB_OUT": str(out)})
+    if caller_root is not None:
+        env[REPO_ROOT_ENV] = caller_root
+    subprocess.run(
+        ["bash", str(SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"), "capacity"],
+        env=env,
+        check=True,
+        timeout=60,
+    )
+    recorded, resolved = out.read_text().splitlines()
+    assert recorded == (caller_root or "")
+    # The CLI itself still resolves a root for its own database.
+    assert resolved != "unset"
+    assert resolved == (caller_root or resolved)
