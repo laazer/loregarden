@@ -299,7 +299,18 @@ class _CliResultLine(BaseModel):
     terminal_reason: str = ""
 
 
-class _CliFinalMessage(BaseModel):
+#: The report block as an agent is asked for it after its turn ended without one:
+#: by the Stop hook on a Claude run, and by the resumed turn on a cursor run.
+REPORT_BLOCK_REMINDER = (
+    "end with the stage report: <<<LOREGARDEN_STAGE_REPORT>>>, one JSON object such as "
+    '{"status": "pass", "confidence": 0.9, "reroute_to_stage": null, "reroute_context": ""} '
+    "with status one of pass|fail|needs_rework|blocked, then <<<END_STAGE_REPORT>>>. If you "
+    "cannot establish the outcome, report `blocked` with `blocked_kind: harness` and say what "
+    "you could not finish."
+)
+
+
+class CliResultEnvelope(BaseModel):
     """A CLI stream's closing envelope: `{"type": "result", "result": "<final text>"}`.
 
     Its own model, not a field on `_CliResultLine`: a `result` that is not a
@@ -310,6 +321,25 @@ class _CliFinalMessage(BaseModel):
 
     type: str = ""
     result: str = ""
+    #: The session the run's turn belonged to; what a resume continues.
+    session_id: str = ""
+
+
+def result_envelope(stdout: str) -> CliResultEnvelope | None:
+    """The last `result` envelope in a stream-json transcript, or None."""
+    for raw in reversed(stdout.splitlines()):
+        line = raw.strip()
+        if not line.startswith("{") or '"result"' not in line:
+            continue
+        try:
+            parsed = CliResultEnvelope.model_validate_json(line)
+        except (
+            ValidationError
+        ):  # silent-ok: interleaved non-envelope JSON; the next line up is tried
+            continue
+        if parsed.type == "result":  # py-org: allow-string - the CLI's own envelope type
+            return parsed
+    return None
 
 
 def final_agent_message(stdout: str) -> str:
@@ -319,19 +349,8 @@ def final_agent_message(stdout: str) -> str:
     envelope carrying it. What a run said last is the best evidence of why it
     stopped: a run that ended "waiting for the suite to finish" says so there.
     """
-    for raw in reversed(stdout.splitlines()):
-        line = raw.strip()
-        if not line.startswith("{") or '"result"' not in line:
-            continue
-        try:
-            parsed = _CliFinalMessage.model_validate_json(line)
-        except (
-            ValidationError
-        ):  # silent-ok: interleaved non-envelope JSON; the next line up is tried
-            continue
-        if parsed.type == "result":  # py-org: allow-string - the CLI's own envelope type
-            return parsed.result
-    return ""
+    envelope = result_envelope(stdout)
+    return envelope.result if envelope is not None else ""
 
 
 def structured_terminal_reason(stdout: str) -> str | None:

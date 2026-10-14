@@ -584,6 +584,23 @@ def _cursor_print_invocation(
     return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
 
+def cursor_resume_invocation(
+    invocation: CliInvocation, *, session_id: str, prompt: str
+) -> CliInvocation:
+    """`invocation` again, continuing cursor session `session_id` with `prompt`.
+
+    Every flag of the original stage run is kept (workspace, model, permission,
+    MCP), so the resumed turn runs under the same terms. Only the prompt — the
+    positional argument after `--workspace <root>` — changes, and `--resume`
+    names the session.
+    """
+    argv = list(invocation.argv)
+    argv[argv.index("--workspace") + 2] = prompt
+    after_print = argv.index("-p") + 1
+    argv[after_print:after_print] = ["--resume", session_id]
+    return replace(invocation, argv=argv, resume_session_id=session_id)
+
+
 DEFAULT_OPENCODE_USER_PROMPT = (
     "Execute the Loregarden stage task in the attached prompt file. "
     "Work in the workspace directory and complete the stage deliverables."

@@ -31,7 +31,7 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from loregarden.services.stage_report import parse_stage_report
+from loregarden.services.stage_report import REPORT_BLOCK_REMINDER, parse_stage_report
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 #: Refusals per session before the stop is let through. Each one lets the agent
@@ -169,14 +169,7 @@ def refusal_reason(hook_input: StopHookInput) -> str:
             "and run only the tests your change reaches "
             "(agent_context/agents/common_assets/test_selection_v1.md)."
         )
-    return (
-        f"{lead} Then end with the stage report: <<<LOREGARDEN_STAGE_REPORT>>>, one "
-        'JSON object such as {"status": "pass", "confidence": 0.9, '
-        '"reroute_to_stage": null, "reroute_context": ""} with status one of '
-        "pass|fail|needs_rework|blocked, then <<<END_STAGE_REPORT>>>. If you cannot "
-        "establish the outcome, report `blocked` with `blocked_kind: harness` and say "
-        "what you could not finish."
-    )
+    return f"{lead} Then {REPORT_BLOCK_REMINDER}"
 
 
 def _counter_path(session_id: str) -> Path:

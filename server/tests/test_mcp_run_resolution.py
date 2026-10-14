@@ -122,6 +122,19 @@ def test_an_unknown_run_names_the_forms_it_accepts(db_session, runs):
     )
 
 
+def test_begin_external_stage_names_the_forms_it_accepts(db_session, runs):
+    """The last run-scoped tool that still answered "Orchestration run not found"."""
+    with pytest.raises(ValueError, match="orchestration_run_id"):
+        execute_tool(db_session, "loregarden_begin_external_stage", {"run_id": "run_ffffff"})
+
+
+def test_begin_external_stage_on_a_standalone_run_says_why_it_cannot(db_session, runs):
+    with pytest.raises(ValueError, match="no orchestration run"):
+        execute_tool(
+            db_session, "loregarden_begin_external_stage", {"run_id": runs["standalone_code"]}
+        )
+
+
 def test_an_ambiguous_run_code_is_refused_rather_than_guessed(db_session, runs):
     ticket = runs["ticket"]
     make_agent_run(
