@@ -50,6 +50,7 @@ import { useId } from "react";
 
 import { useChoiceOptions } from "../../hooks/usePaneSettingsChoices";
 import type { SettingsField } from "./primitives/types";
+import { Select } from "../ui/Select";
 
 type ChoiceField = Extract<SettingsField, { kind: "choice" }>;
 
@@ -128,7 +129,7 @@ export function PaneSettingsChoiceInput({
 
   return (
     <>
-      <select
+      <Select
         id={inputId}
         className="input"
         value={value}
@@ -146,7 +147,7 @@ export function PaneSettingsChoiceInput({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
       {renderHelp(field.help)}
     </>
   );

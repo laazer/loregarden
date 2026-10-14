@@ -46,7 +46,7 @@ You may not fix a choice. If what you find is a **decision** — a spec bar trip
 
 ## Reporting
 
-Report the **cause**, the **evidence**, and the **fix** — in that order — in `reroute_context` on any non-pass outcome, written for the person or agent who reads it next.
+Report the **cause**, the **evidence**, and the **fix** — in that order — in `reroute_context` on **every** outcome, `pass` included, written for the person or agent who reads it next. On a `pass` it is the only record of what the repair was: the ticket's history shows it beside the block it cleared, so a person can see what broke and what you changed without reading your transcript. Keep it to a few sentences and name files or commits rather than pasting them.
 
 ## Stage outcome (required)
 

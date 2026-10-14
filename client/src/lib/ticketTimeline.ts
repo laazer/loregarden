@@ -21,6 +21,7 @@ import { parseTimestamp } from "./timestamps";
 
 // `cancelled` is a person or the platform stopping a run, not the work failing.
 const FAILED_STATUSES = new Set(["failed"]);
+const SUCCEEDED_STATUS = "succeeded";
 
 export interface TimelineVisit {
   /** Stable across polls: a stage plus which time the pipeline entered it. */
@@ -33,6 +34,8 @@ export interface TimelineVisit {
   durationSeconds: number | null;
   active: boolean;
   failedAttempts: LedgerAttempt[];
+  /** The stage's latest run succeeded (each lane's, for a parallel stage), whatever failed before it. */
+  latestRunSucceeded: boolean;
   /** Oldest first, system records excluded. */
   outputs: TicketArtifactItem[];
   errorCount: number;
@@ -143,6 +146,7 @@ export function buildTicketTimeline(
           startedAt && endedAt ? Math.max(0, (endedAt.getTime() - startedAt.getTime()) / 1000) : null,
         active: ACTIVE_LEDGER_STATUSES.has(visit.status),
         failedAttempts: visit.attempts.filter((attempt) => FAILED_STATUSES.has(attempt.status)),
+        latestRunSucceeded: latestRunSucceeded(visit),
         outputs: bucket,
         errorCount: bucket.filter(isErrorOutput).length,
       };
@@ -164,6 +168,21 @@ export function reportVerdict(content: unknown): ReportVerdict | null {
     status: record.status,
     confidence: typeof record.confidence === "number" ? record.confidence : null,
   };
+}
+
+/**
+ * Whether the run that decides the stage's outcome succeeded. Attempts arrive in
+ * the order they were created, so the last one is the latest. A parallel stage
+ * has one latest run per lane (agent and skill, as the ledger groups them), and
+ * every lane's must have succeeded.
+ */
+function latestRunSucceeded(visit: LedgerVisit): boolean {
+  if (visit.attempts.length === 0) return false;
+  const latest = new Map<string, LedgerAttempt>();
+  for (const attempt of visit.attempts) {
+    latest.set(visit.is_parallel ? `${attempt.agent_id}\u0000${attempt.skill_name}` : "", attempt);
+  }
+  return [...latest.values()].every((attempt) => attempt.status === SUCCEEDED_STATUS);
 }
 
 export function isFailedStatus(status: string): boolean {

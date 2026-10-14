@@ -11,6 +11,7 @@ import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { useUiStore } from "../state/uiStore";
 import "../components/BranchTriagePanel.css";
 import { AddToTabMenu } from "../components/AddToTabMenu";
+import { Select } from "../components/ui/Select";
 
 type BranchTriageTab = "triage" | "diff";
 
@@ -123,7 +124,7 @@ export function BranchTriagePage() {
         </button>
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
-          <select
+          <Select
             className="btn-secondary topbar-workspace-picker-select"
             value={activeSlug}
             disabled={!workspaces.data?.length}
@@ -135,7 +136,7 @@ export function BranchTriagePage() {
                 {ws.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </PageTopbar>
 

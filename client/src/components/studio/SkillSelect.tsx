@@ -1,4 +1,5 @@
 import { SKILL_SELECT_TITLE, skillOptions } from "./skillOptions";
+import { Select } from "../ui/Select";
 
 interface SkillSelectProps {
   className: string;
@@ -10,7 +11,7 @@ interface SkillSelectProps {
 
 export function SkillSelect({ className, disabled, skills, value, onChange }: SkillSelectProps) {
   return (
-    <select
+    <Select
       className={className}
       value={value}
       disabled={disabled}
@@ -22,6 +23,6 @@ export function SkillSelect({ className, disabled, skills, value, onChange }: Sk
           {option.label}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

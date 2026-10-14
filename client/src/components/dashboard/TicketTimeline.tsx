@@ -206,8 +206,13 @@ function BeforeFirstRun({ outputs }: { outputs: readonly TicketArtifactItem[] })
 // failure of it: on lg-initiatives-cross-755 every stage carried the same
 // "handoff not validated" row, and painting them all as failed hid the one
 // signal that matters — a run that actually failed.
+//
+// The colour is where the stage stands now: a stage whose latest run succeeded
+// is green even after failed attempts or a second pass. The "N failed" and
+// "2nd pass" tags keep that history on the row.
 function visitTone(visit: TimelineVisit): string {
   if (visit.active) return "active";
+  if (visit.latestRunSucceeded) return "good";
   if (isFailedStatus(visit.visit.status) || visit.failedAttempts.length > 0) return "bad";
   if (visit.visit.visit_number > 1 || visit.errorCount > 0) return "warn";
   return "good";

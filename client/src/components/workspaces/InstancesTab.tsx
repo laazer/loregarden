@@ -8,6 +8,7 @@ import { useLocalInstances, WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocal
 import { workspacesPath } from "../../lib/appNavigation";
 import { LocalInstanceLaunchForm } from "../LocalInstanceLaunchForm";
 import { LocalInstanceRow } from "../LocalInstanceRow";
+import { Select } from "../ui/Select";
 
 const ALL = "";
 const STATES: LocalInstanceState[] = ["starting", "ready", "stalled", "exited"];
@@ -58,18 +59,18 @@ export function InstancesTab() {
             <label className="visually-hidden" htmlFor={workspaceFilterId}>
               Workspace
             </label>
-            <select id={workspaceFilterId} className="input" value={workspace} onChange={(e) => setWorkspace(e.target.value)}>
+            <Select id={workspaceFilterId} className="input" value={workspace} onChange={(e) => setWorkspace(e.target.value)}>
               <option value={ALL}>All workspaces</option>
               {(workspaces.data ?? []).map((w) => (
                 <option key={w.slug} value={w.slug}>
                   {w.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <label className="visually-hidden" htmlFor={stateFilterId}>
               State
             </label>
-            <select
+            <Select
               id={stateFilterId}
               className="input"
               value={state}
@@ -81,7 +82,7 @@ export function InstancesTab() {
                   {s}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </header>
         {instances.error && (

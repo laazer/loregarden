@@ -184,7 +184,9 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         ticket,
         stage_key=stage_key,
         reason=reason,
-        actor="triage",
+        # Not "triage": this tool is called by operators' sessions and agents
+        # alike, and the history rail prints the actor beside the reason.
+        actor="mcp",
         state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
     )
     payload = ticket_state_payload(session, ticket.id)

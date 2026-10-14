@@ -112,7 +112,11 @@ def settle_block(
         decision=OrchestratorDecision.REPAIR_ESCALATED,
         stage_key=stage_key,
         reason=offer.reason,
-        evidence={"block_kind": kind.value, "failed_agent": failed_agent},
+        evidence={
+            "block_kind": kind.value,
+            "failed_agent": failed_agent,
+            "block_message": message,
+        },
     )
     session.commit()
     return BlockSettlement(kind, False, offer.reason)

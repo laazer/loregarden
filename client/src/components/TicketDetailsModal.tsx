@@ -15,6 +15,7 @@ import { CopyValueButton } from './CopyValueButton';
 import { TicketCriteriaEditor, TicketCriteriaView } from './TicketCriteriaChecklist';
 import { criteriaDrafts, draftChecked, draftCriteria, type CriterionDraft } from '../lib/criterionDrafts';
 import './TicketDetailsModal.css';
+import { Select } from "./ui/Select";
 
 const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
@@ -440,7 +441,7 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <div style={{ fontSize: 11, color: 'var(--txm)' }}>State</div>
-            <select
+            <Select
               aria-label="State"
               className="btn-secondary filter-select"
               style={{ width: '100%', fontSize: 13, marginTop: 4 }}
@@ -451,11 +452,11 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
               {STATE_OPTIONS.map((s) => (
                 <option key={s} value={s}>{STATE_LABELS[s]}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             <div style={{ fontSize: 11, color: 'var(--txm)' }}>Priority</div>
-            <select
+            <Select
               aria-label="Priority"
               className="btn-secondary filter-select"
               style={{ width: '100%', fontSize: 13, marginTop: 4 }}
@@ -466,7 +467,7 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
               {PRIORITY_OPTIONS.map((p) => (
                 <option key={p} value={p}>{priorityLabel(p)}</option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
       </div>

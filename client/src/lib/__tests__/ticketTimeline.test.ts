@@ -121,6 +121,48 @@ describe("buildTicketTimeline", () => {
     expect(timeline.visits[0].errorCount).toBe(1);
   });
 
+  it("calls a stage green by its latest run, not by what failed before it", () => {
+    const [recovered, regressed, cancelled] = buildTicketTimeline(
+      [
+        visit("implement", [attempt({ run_id: "i1", status: "failed" }), attempt({ run_id: "i2" })]),
+        visit("gate", [attempt({ run_id: "g1" }), attempt({ run_id: "g2", status: "failed" })]),
+        visit("verify", [attempt({ run_id: "v1", status: "cancelled" })]),
+      ],
+      [],
+    ).visits;
+    expect(recovered.latestRunSucceeded).toBe(true);
+    expect(regressed.latestRunSucceeded).toBe(false);
+    expect(cancelled.latestRunSucceeded).toBe(false);
+  });
+
+  it("needs every lane's latest run to have succeeded on a fan-out", () => {
+    const lanes = (securityRetry: string) =>
+      visit(
+        "review",
+        [
+          attempt({ run_id: "l1", agent_id: "static_qa" }),
+          attempt({ run_id: "l2", agent_id: "security_reviewer", status: "failed" }),
+          attempt({ run_id: "l3", agent_id: "security_reviewer", status: securityRetry }),
+        ],
+        { is_parallel: true },
+      );
+    const [green, red] = buildTicketTimeline([lanes("succeeded"), lanes("failed")], []).visits;
+    expect(green.latestRunSucceeded).toBe(true);
+    expect(red.latestRunSucceeded).toBe(false);
+  });
+
+  it("does not call a fan-out green on its last lane alone", () => {
+    const lanes = visit(
+      "review",
+      [
+        attempt({ run_id: "l1", agent_id: "static_qa", status: "failed" }),
+        attempt({ run_id: "l2", agent_id: "security_reviewer" }),
+      ],
+      { is_parallel: true },
+    );
+    expect(buildTicketTimeline([lanes], []).visits[0].latestRunSucceeded).toBe(false);
+  });
+
   it("times a fan-out by its wall clock, not the sum of its lanes", () => {
     const lanes = visit(
       "review",

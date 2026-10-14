@@ -12,6 +12,7 @@ import { agentStatusSnapshot, buildHiveWorld } from "../../lib/hive/worldModel";
 import { useUiStore } from "../../state/uiStore";
 import { HiveCssFloor } from "./hive/HiveCssFloor";
 import { HiveErrorBoundary } from "./hive/HiveErrorBoundary";
+import { Select } from "../ui/Select";
 import "./HiveSimulationPanel.css";
 
 function FloorIcon() {
@@ -139,7 +140,7 @@ export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
         <label className="hive-panel__skin">
           <span className="hive-panel__skin-label">Skin</span>
           {HIVE_ENABLED_SKIN_IDS.length > 1 ? (
-            <select
+            <Select
               className="hive-panel__skin-select"
               value={hiveSkin || DEFAULT_HIVE_SKIN}
               onChange={(e) => setHiveSkin(e.target.value as HiveSkinId)}
@@ -150,7 +151,7 @@ export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
                   {HIVE_SKINS[id].label}
                 </option>
               ))}
-            </select>
+            </Select>
           ) : (
             <span className="hive-panel__skin-value">{HIVE_SKINS[hiveSkin].label}</span>
           )}

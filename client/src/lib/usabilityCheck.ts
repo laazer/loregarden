@@ -101,7 +101,13 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   // A list item's shape is the sequence of elements that hold its text. When
   // most items share one shape of several fields, the reader is comparing the
   // same attributes down the page — that is a table without its columns.
+  //
+  // A board lane (`data-board-lane`) is the one exception: its cards share a
+  // shape by design, and the board, which answers "what stage is each item
+  // in?", is the layout CLAUDE.md prescribes for them. The other list checks
+  // still apply to it.
   for (const list of Array.from(root.querySelectorAll("ul, ol"))) {
+    if (list.closest("[data-board-lane]")) continue;
     const items = Array.from(list.children).filter((c) => c.tagName === "LI");
     if (items.length < TABULAR_ITEMS) continue;
     const shapes = new Map<string, number>();

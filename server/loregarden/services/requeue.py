@@ -18,11 +18,13 @@ import json
 from loregarden.models.domain import (
     Artifact,
     ArtifactKind,
+    OrchestratorDecision,
     StageStatus,
     Ticket,
     TicketState,
     UpdateTicketRequest,
 )
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.ticket_stage_control import StageControl
 from sqlmodel import Session
 
@@ -75,9 +77,23 @@ def requeue_stage(
             content_json=json.dumps(
                 {
                     "title": f"Requeued — {stage_key}",
-                    "rows": [{"k": "Stage", "v": stage_key}, {"k": "Reason", "v": reason}],
+                    "rows": [
+                        {"k": "Stage", "v": stage_key},
+                        {"k": "Reason", "v": reason},
+                        {"k": "Actor", "v": actor},
+                    ],
                 }
             ),
         )
+    )
+    # The artifact is the durable record; the decision is what puts the reason
+    # on the history rail, beside the block it cleared.
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.REQUEUED,
+        stage_key=stage_key,
+        reason=reason,
+        evidence={"actor": actor},
     )
     session.commit()

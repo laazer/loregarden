@@ -23,6 +23,10 @@ export interface HistoryLine {
   at: string;
   text: string;
   tone: "normal" | "failed" | "unavailable";
+  /** What the line is about, when it is longer than a line: the block a repair
+   *  was sent to, what the repair agent says it changed, why a stage was
+   *  requeued. Absent when the event recorded nothing more. */
+  detail?: string;
 }
 
 function str(value: unknown): string {
@@ -49,7 +53,38 @@ function gateText(event: TicketHistoryEvent): string {
   return `Gate${where} ${outcome}${afterFix(tier)}`;
 }
 
+/** Who requeued, in words. `actor` is whatever the caller of `requeue_stage`
+ *  passed; an actor not listed here is shown as written. */
+const REQUEUE_ACTORS: Record<string, string> = {
+  mcp: "through loregarden_requeue_ticket",
+  workflow: "after a decision was answered",
+  orchestrator: "by the orchestrator",
+  "ci-autofix": "to fix failing CI",
+};
+
+function requeueText(event: TicketHistoryEvent): string {
+  const stage = str(event.payload.stage_key);
+  const actor = str(event.payload.actor);
+  const who = REQUEUE_ACTORS[actor] ?? (actor ? `by ${actor}` : "");
+  return [`Requeued${stage ? ` ${stage}` : ""}`, who].filter(Boolean).join(" ");
+}
+
+/**
+ * The longer text behind a decision line. A requeue's reason is the detail
+ * (its line says who); a repair carries the block it was sent to or, once it
+ * passed, the repair agent's account of what it fixed.
+ */
+function decisionDetail(event: TicketHistoryEvent): string | undefined {
+  const decision = str(event.payload.decision);
+  const detail =
+    decision === "requeued"
+      ? str(event.payload.reason)
+      : str(event.payload.repair_summary) || str(event.payload.block_message);
+  return detail || undefined;
+}
+
 function decisionText(event: TicketHistoryEvent): string {
+  if (str(event.payload.decision) === "requeued") return requeueText(event);
   // The reason is already a sentence written for a person; the rail shows it
   // verbatim rather than reassembling it from the payload's parts. Falls back
   // to the decision kind so an event with no reason still says what it was
@@ -94,7 +129,8 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "dispatched_landing_resolver" ||
     decision === "dispatched_ci_fix" ||
     decision === "finished_cleared_landing" ||
-    decision === "repaired"
+    decision === "repaired" ||
+    decision === "requeued"
     ? "normal"
     : "failed";
   }
@@ -147,7 +183,14 @@ export function historyLines(events: TicketHistoryEvent[]): HistoryLine[] {
       i += 1;
       continue;
     }
-    lines.push({ id: event.id, at: event.created_at, text: describe(event), tone: tone(event) });
+    const detail = event.type === "OrchestratorDecision" ? decisionDetail(event) : undefined;
+    lines.push({
+      id: event.id,
+      at: event.created_at,
+      text: describe(event),
+      tone: tone(event),
+      ...(detail ? { detail } : {}),
+    });
   }
   return lines;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
@@ -9,6 +9,7 @@ import {
   ticketStateLabel,
   type BoardColumnKey,
 } from "../../../lib/ticketStates";
+import { descendantCount, nestByParent, type KanbanNode } from "../../../lib/kanbanTree";
 import { waitingOnSummary } from "../../../utils/blockKinds";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
 import { Button } from "../../ui/Button";
@@ -99,6 +100,68 @@ export interface KanbanColumn {
   total?: number;
 }
 
+/** A parent with more children than this starts folded, so one milestone cannot fill a column. */
+const OPEN_CHILDREN_LIMIT = 3;
+
+/** One ticket and, beneath it on a rail, the tickets under it in the same column. */
+function KanbanTreeItem({
+  node,
+  tileAction,
+}: {
+  node: KanbanNode;
+  tileAction?: (ticket: TicketSummary) => ReactNode;
+}) {
+  const childListId = useId();
+  const [open, setOpen] = useState(node.children.length <= OPEN_CHILDREN_LIMIT);
+  const count = descendantCount(node);
+  return (
+    <li className="lg-primitive-kanban-tree-item">
+      <TicketMini ticket={node.ticket} action={tileAction?.(node.ticket)} />
+      {node.children.length > 0 ? (
+        <>
+          <Button
+            variant="plain"
+            className="lg-primitive-kanban-tree-toggle"
+            aria-expanded={open}
+            aria-controls={childListId}
+            onClick={() => setOpen(!open)}
+          >
+            <span aria-hidden>{open ? "▾" : "▸"}</span> {count} sub-ticket{count === 1 ? "" : "s"}
+          </Button>
+          {open ? (
+            <KanbanTree
+              id={childListId}
+              nodes={node.children}
+              tileAction={tileAction}
+              label={`Under ${node.ticket.title}`}
+            />
+          ) : null}
+        </>
+      ) : null}
+    </li>
+  );
+}
+
+function KanbanTree({
+  nodes,
+  tileAction,
+  id,
+  label,
+}: {
+  nodes: KanbanNode[];
+  tileAction?: (ticket: TicketSummary) => ReactNode;
+  id?: string;
+  label?: string;
+}) {
+  return (
+    <ul id={id} aria-label={label} className={`lg-primitive-kanban-tree${id ? " lg-primitive-kanban-tree--nested" : ""}`}>
+      {nodes.map((node) => (
+        <KanbanTreeItem key={node.ticket.id} node={node} tileAction={tileAction} />
+      ))}
+    </ul>
+  );
+}
+
 /** The columns themselves, shared by the chat primitive and the initiative board.
  *  `tileAction` adds a control to each tile — the board's "move to" menu. */
 export function KanbanColumns({
@@ -111,13 +174,15 @@ export function KanbanColumns({
   /** Offered on a truncated column; absent, the column just says how many are hidden. */
   onShowAll?: (status: BoardColumnKey) => void;
 }) {
+  const board = useMemo(() => columns.flatMap((col) => col.tickets), [columns]);
   return (
     <div className="lg-primitive-kanban">
       {columns.map((col) => {
         const total = col.total ?? col.tickets.length;
         const hidden = Math.max(0, total - col.tickets.length);
         return (
-          <div key={col.status} className="lg-primitive-kanban-col">
+          // A lane of cards, which the usability check must not read as a table written as a list.
+          <div key={col.status} className="lg-primitive-kanban-col" data-board-lane>
             <p className="lg-primitive-kanban-col-title">
               <span
                 className="lg-primitive-ticket-state-dot"
@@ -130,7 +195,7 @@ export function KanbanColumns({
             {col.tickets.length === 0 ? (
               <p className="lg-primitive-kanban-col-empty">Nothing here</p>
             ) : (
-              col.tickets.map((t) => <TicketMini key={t.id} ticket={t} action={tileAction?.(t)} />)
+              <KanbanTree nodes={nestByParent(col.tickets, board)} tileAction={tileAction} />
             )}
             {hidden > 0 && onShowAll ? (
               <Button

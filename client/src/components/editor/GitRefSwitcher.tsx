@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api, type EditorRefsResponse } from "../../api/client";
+import { Select } from "../ui/Select";
 
 interface GitRefSwitcherProps {
   workspaceSlug: string;
@@ -41,7 +42,7 @@ export function GitRefSwitcher({
     <div className="git-ref-switcher">
       <label className="git-ref-switcher-label">
         <span>Branch</span>
-        <select
+        <Select
           className="btn-secondary git-ref-select"
           value={refs?.current_branch ?? ""}
           disabled={busy || !refs?.branches.length}
@@ -58,12 +59,12 @@ export function GitRefSwitcher({
               {branch.current ? " (current)" : ""}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <label className="git-ref-switcher-label">
         <span>Worktree</span>
-        <select
+        <Select
           className="btn-secondary git-ref-select"
           value={refs?.context_path ?? ""}
           disabled={busy || !refs?.worktrees.length}
@@ -80,7 +81,7 @@ export function GitRefSwitcher({
               {worktree.current ? " (active)" : ""}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <span className="git-ref-current" title={refs?.context_path}>

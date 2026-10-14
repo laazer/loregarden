@@ -9,6 +9,7 @@ import { PageTopbar } from "../components/TopbarPageSlot";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
+import { Select } from "../components/ui/Select";
 
 export function EditorPage() {
   const qc = useQueryClient();
@@ -96,7 +97,7 @@ export function EditorPage() {
       <PageTopbar title="File Editor">
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
-          <select
+          <Select
             className="btn-secondary topbar-workspace-picker-select"
             value={workspaceSlug}
             disabled={!workspaces.data?.length}
@@ -112,7 +113,7 @@ export function EditorPage() {
                 {ws.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
 
         <GitRefSwitcher

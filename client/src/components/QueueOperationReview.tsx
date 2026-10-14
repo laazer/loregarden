@@ -7,6 +7,7 @@ import { useState } from 'react';
 import './QueueOperationReview.css';
 import { useDialogDismiss } from '../hooks/useDialogDismiss';
 import { Textarea } from './ui/Textarea';
+import { Select } from "./ui/Select";
 
 export interface OperationComment {
   id: string;
@@ -205,7 +206,7 @@ export function QueueOperationReview({
 
             <div className="form-group">
               <label htmlFor="agent-id">Agent ID</label>
-              <select
+              <Select
                 id="agent-id"
                 className="form-select"
                 value={agentId}
@@ -216,7 +217,7 @@ export function QueueOperationReview({
                 </option>
                 <option value="code-reviewer">Code Reviewer</option>
                 <option value="general">General Purpose</option>
-              </select>
+              </Select>
             </div>
 
             <div className="form-group">

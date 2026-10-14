@@ -75,3 +75,8 @@ class OrchestratorDecision(StrEnum):
     #: CI failed on a done ticket's pull request, so the ticket was reopened at
     #: its terminal stage with a repair turn briefed on the failing checks.
     DISPATCHED_CI_FIX = "dispatched_ci_fix"
+    #: A blocked stage was put back to PENDING with a fresh budget, by whoever
+    #: the evidence's `actor` names. Not the orchestrator's own choice, but the
+    #: requeue reason was an artifact nothing on the history rail read, so a
+    #: block that cleared looked like it had cleared itself.
+    REQUEUED = "requeued"
