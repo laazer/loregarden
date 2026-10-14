@@ -86,6 +86,7 @@ is the contract and is embedded into every run's prompt.
 # Dev (never run servers ad-hoc; use these)
 task setup                     # install server + client deps (after a lockfile change)
 task dev                       # server + client
+LOREGARDEN_DEV_LAN_ACK=1 task dev:lan   # same, on 0.0.0.0 for a phone/laptop; prints the URL. No auth: trusted networks only
 task server                    # backend only
 task client                    # frontend only
 
