@@ -37,7 +37,10 @@ from loregarden.services.orchestration_profile import resolve_orchestration_prof
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.process_identity import liveness
 from loregarden.services.run_capacity import run_capacity
-from loregarden.services.run_concurrency import orchestration_lease_expired
+from loregarden.services.run_concurrency import (
+    ACTIVE_ORCHESTRATION_STATUSES,
+    orchestration_lease_expired,
+)
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
@@ -223,6 +226,13 @@ def fail_interrupted_runs(
     return failed
 
 
+STRANDED_NO_REPAIR_REASON = (
+    "'{stage_key}' was left running with no run behind it, so nothing judged the work; "
+    "the reconcile pass re-runs it automatically while its transient-retry budget "
+    "lasts, and leaves it for a person after that."
+)
+
+
 def settle_stranded_stages(
     session: Session,
     *,
@@ -250,9 +260,19 @@ def settle_stranded_stages(
             [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
         )
     )
+    # A live orchestration owns its stage even between runs: `complete_run`
+    # commits a run's terminal status before it advances the ticket, and the next
+    # stage reads RUNNING before its run exists. Selecting on runs alone, the
+    # periodic pass blocked healthy stages in that window — five in a row on
+    # lg-workflow-integrity-802 while its drive went on. An orchestration that has
+    # really died loses its lease and is settled by the step before this one.
+    driven_ticket_ids = select(OrchestrationRun.ticket_id).where(
+        col(OrchestrationRun.status).in_(ACTIVE_ORCHESTRATION_STATUSES)
+    )
     query = select(Ticket).where(
         Ticket.workflow_stage_status == StageStatus.RUNNING,
         col(Ticket.id).not_in(live_ticket_ids),
+        col(Ticket.id).not_in(driven_ticket_ids),
     )
     if ticket_id:
         query = query.where(Ticket.id == ticket_id)
@@ -293,8 +313,9 @@ def settle_stranded_stages(
             ),
         )
         # The run behind this stage is already gone, so nothing can spend a
-        # repair turn on it; the settlement records that alongside the kind, so
-        # a stranded stage does not read as one somebody dealt with (802).
+        # repair turn on it. Nothing judged the work either, so the reconcile
+        # pass re-runs it (`parked_stage_resume.resume_stranded_stages`); the
+        # settlement says so, rather than that it waits for a person (802).
         settle_block(
             session,
             ticket,
@@ -302,6 +323,8 @@ def settle_stranded_stages(
             stages=stages,
             stage_key=stage_key,
             message=message,
+            repairable=False,
+            no_repair_reason=STRANDED_NO_REPAIR_REASON.format(stage_key=stage_key),
         )
         session.add(ticket)
         session.add(instance)

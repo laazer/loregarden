@@ -46,6 +46,10 @@ from loregarden.services.block_settlement import sweep_unclassified_blocks
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.network_wait_resume import resume_network_waits
+from loregarden.services.parked_stage_resume import (
+    resume_stranded_stages,
+    resume_usage_limit_waits,
+)
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     settle_expired_agent_runs,
@@ -127,6 +131,12 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
     SweepStep("resume_network_waits", resume_network_waits),
+    # Same selection rule, for the two other causes that clear by themselves: a
+    # usage limit whose reset time has passed, and a stranded stage nothing ever
+    # judged. After the settlers, so a stage stranded in this very pass is
+    # resumed in it; the stranded one is charged to the transient-retry budget.
+    SweepStep("resume_usage_limit_waits", resume_usage_limit_waits),
+    SweepStep("resume_stranded_stages", resume_stranded_stages),
     # Report-only, like the monitor scan: it previews each live tree's refresh
     # from the base and files (or closes) an inbox card. Nothing else watches
     # the base move, so without it a conflict surfaced only when a stage or a
