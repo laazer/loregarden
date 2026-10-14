@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import json
 import pathlib
 
 import pytest
@@ -31,9 +32,11 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import settle_block, sweep_unclassified_blocks
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.repair_brief import repair_brief_for
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
@@ -184,6 +187,48 @@ def test_a_clean_exit_with_no_stage_report_is_settled_without_advancing_the_stag
     # repair turn re-runs it and must emit its own report like anyone else.
     assert ticket.workflow_stage_status is not StageStatus.DONE
     assert ticket.workflow_stage_key == PARALLEL_STAGE
+
+
+def test_the_repair_turn_is_told_what_the_failed_run_said_last(db_session: Session, review_ticket):
+    """951 and 954's repair turns were told only "no parseable report", redid the
+    stage the way the failed run had, and ended the same way: waiting on a
+    backgrounded full suite. The run's last words name the cause, so the brief
+    carries them, with the run that said them.
+    """
+    from loregarden.services.orchestration import OrchestrationService
+    from loregarden.services.run_completion import advance_stage_after_run
+
+    ticket, orch_run, _ = review_ticket
+    last_words = "Full server suite is running under a capacity lease; I'll report once it lands."
+    stdout = (
+        '{"type": "assistant", "message": {"content": []}}\n'
+        + json.dumps({"type": "result", "subtype": "success", "result": last_words})
+        + "\n"
+    )
+    run = AgentRun(
+        run_code="run_waiting",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="static_qa",
+        stage_key=PARALLEL_STAGE,
+        status=RunStatus.SUCCEEDED,
+        orchestration_run_id=orch_run.id,
+        stdout=stdout,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    advance_stage_after_run(
+        OrchestrationService(db_session), ticket, run, None, RunStatus.SUCCEEDED, "", stdout=stdout
+    )
+    db_session.commit()
+    db_session.refresh(ticket)
+
+    brief = repair_brief_for(db_session, ticket, stage_key=PARALLEL_STAGE, before=utcnow())
+    assert last_words in brief
+    assert "run_waiting" in brief
+    assert ticket.block_kind is BlockKind.HARNESS
 
 
 def test_the_sweep_says_why_a_block_it_classified_got_no_repair(db_session: Session, review_ticket):
