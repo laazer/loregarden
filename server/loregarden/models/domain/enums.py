@@ -418,6 +418,9 @@ class ArtifactKind(StrEnum):
     BLOCKING_CLEAR = "blocking_clear"
     #: An MCP call completing out of band.
     MCP_COMPLETE = "mcp_complete"
+    #: A ticket's answers for the PR "User-facing surfaces" section: the question,
+    #: action and real data, or why nobody can see the change (`services.ux_answers`).
+    UX_ANSWERS = "ux_answers"
 
 
 class StageBudgetArtifactKind(StrEnum):

@@ -26,6 +26,7 @@ class McpTool(StrEnum):
     BLOCK_TICKET = "loregarden_block_ticket"
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
+    RECORD_UX_ANSWERS = "loregarden_record_ux_answers"
     WRITE_DOCUMENT = "loregarden_write_document"
     LIST_ARTIFACTS = "loregarden_list_artifacts"
     READ_ARTIFACT = "loregarden_read_artifact"
@@ -149,6 +150,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # A stage that must produce evidence needs the tool to record it, or it is
     # blocked with no way to comply.
     McpTool.ATTACH_EVIDENCE,
+    # The PR's user-facing surfaces section is assembled from these answers;
+    # whichever stage settles them (ui-design, or the implementer that built the
+    # surface) needs to be able to record them.
+    McpTool.RECORD_UX_ANSWERS,
     McpTool.REQUEST_APPROVAL,
     # Stage work reads library documentation. Offering the cache means the raw
     # HTML is paid for once per URL rather than once per run, and a stage that
@@ -249,6 +254,7 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.CREATE_MEMORY_RELATION,
         McpTool.UPSERT_BLOG_POST,
         McpTool.ATTACH_ARTIFACT,
+        McpTool.RECORD_UX_ANSWERS,
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
@@ -426,6 +432,7 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.UPDATE_TICKET,
         McpTool.BLOCK_TICKET,
         McpTool.ATTACH_ARTIFACT,
+        McpTool.RECORD_UX_ANSWERS,
         McpTool.ATTACH_EVIDENCE,
         McpTool.APPEND_CHECKPOINT,
         McpTool.APPEND_LEARNING,

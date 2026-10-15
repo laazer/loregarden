@@ -47,13 +47,24 @@ from pathlib import Path
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import EventType, Ticket, Workspace
-from loregarden.services.git_automation import AutomationResult, PublishSubject, publish_branch
+from loregarden.services.git_automation import (
+    AutomationResult,
+    PublishSubject,
+    generated_body,
+    publish_branch,
+)
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import MergeOutcome, adds_nothing, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
+from loregarden.services.tree_ux_section import (
+    TreeUxSection,
+    close_missing_ux_answers,
+    report_missing_ux_answers,
+    tree_ux_section,
+)
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -108,17 +119,16 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         # nothing on it, and its PR would be empty.
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
     chain = tree_chain(config)
-    subject = _subject(ticket, branch)
-    if "push" in enabled_steps(chain):
-        cut = squash_onto(repo_root, base_sha, tip, message=subject.commit_message)
-        if not cut.ok:
-            failed = PublishOutcome(
-                ok=False, branch=branch, tip=tip, detail=_cut_failure(branch, config, cut)
-            )
-            _emit(session, ticket, config.base_branch, failed)
-            return failed
-        subject = replace(subject, head=cut.sha)
-    result = publish_branch(repo_root, subject, chain)
+    prepared = _prepare(
+        session, repo_root, ticket, branch=branch, base_sha=base_sha, tip=tip, config=chain
+    )
+    if prepared.failure:
+        failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=prepared.failure)
+        _emit(session, ticket, config.base_branch, failed)
+        return failed
+    result = publish_branch(repo_root, prepared.subject, chain)
+    if result.ok and result.pr_url:
+        _settle_ux_card(session, ticket, prepared.section, result.pr_url)
     outcome = PublishOutcome(
         ok=result.ok,
         branch=branch,
@@ -135,6 +145,54 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         logger.info("Published %s at %s for %s", branch, tip[:12], ticket.external_id)
     _emit(session, ticket, config.base_branch, outcome)
     return outcome
+
+
+@dataclass(frozen=True)
+class _Prepared:
+    """What to publish, or why it cannot be: the PR's subject and UX section."""
+
+    subject: PublishSubject
+    section: TreeUxSection = TreeUxSection()
+    failure: str = ""
+
+
+def _prepare(
+    session: Session,
+    repo_root: Path,
+    ticket: Ticket,
+    *,
+    branch: str,
+    base_sha: str,
+    tip: str,
+    config: GitAutomationConfig,
+) -> _Prepared:
+    """Cut the commit to publish, and describe it, user-facing surfaces included."""
+    subject = _subject(ticket, branch)
+    if "push" not in enabled_steps(config):
+        return _Prepared(subject)
+    cut = squash_onto(repo_root, base_sha, tip, message=subject.commit_message)
+    if not cut.ok:
+        return _Prepared(subject, failure=_cut_failure(branch, config, cut))
+    try:
+        section = tree_ux_section(
+            session, repo_root, ticket, branch=branch, base_sha=base_sha, head_sha=cut.sha
+        )
+    except RuntimeError as exc:
+        return _Prepared(
+            subject, failure=f"could not tell which user-facing files {branch} changes: {exc}"
+        )
+    body = generated_body(subject.pr_body + section.text)
+    return _Prepared(
+        replace(subject, head=cut.sha, pr_body=body, refresh_body=True), section=section
+    )
+
+
+def _settle_ux_card(session: Session, root: Ticket, section: TreeUxSection, pr_url: str) -> None:
+    """Name the tickets the PR's UX section lacks answers from, or close the card."""
+    if section.missing:
+        report_missing_ux_answers(session, root, section.missing, pr_url)
+    else:
+        close_missing_ux_answers(session, root)
 
 
 def _emit(session: Session, ticket: Ticket, base_branch: str, outcome: PublishOutcome) -> None:

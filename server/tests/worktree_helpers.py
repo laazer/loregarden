@@ -81,6 +81,26 @@ def make_run(session, workspace, ticket, code: str):
     return run
 
 
+def make_tree_ticket(session, workspace, external_id, *, parent=None, kind=None, **fields):
+    """An in-progress ticket with a branch named after it, for publish and landing tests."""
+    from loregarden.models.domain import Ticket, TicketState, WorkItemType
+
+    ticket = Ticket(
+        external_id=external_id,
+        workspace_id=workspace.id,
+        title=f"Ticket {external_id}",
+        branch=f"loregarden/{external_id}",
+        parent_ticket_id=parent.id if parent else None,
+        state=TicketState.IN_PROGRESS,
+        work_item_type=kind or WorkItemType.TASK,
+        **fields,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
 def commit_on(repo: Path, branch: str, filename: str, content: str) -> str:
     """One commit adding `filename` to `branch`, without disturbing the checkout.
 
@@ -89,12 +109,14 @@ def commit_on(repo: Path, branch: str, filename: str, content: str) -> str:
     Returns the new commit.
     """
     if branch == git(repo, "branch", "--show-current").stdout.strip():
+        (repo / filename).parent.mkdir(parents=True, exist_ok=True)
         (repo / filename).write_text(content)
         git(repo, "add", "-A")
         git(repo, "commit", "-q", "-m", f"{filename} on {branch}")
         return git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = repo.parent / f"tmp-{branch.replace('/', '-')}"
     git(repo, "worktree", "add", "-q", str(tree), branch)
+    (tree / filename).parent.mkdir(parents=True, exist_ok=True)
     (tree / filename).write_text(content)
     git(tree, "add", "-A")
     git(tree, "commit", "-q", "-m", f"{filename} on {branch}")

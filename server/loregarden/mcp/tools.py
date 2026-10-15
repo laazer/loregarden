@@ -72,6 +72,7 @@ from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
 from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.mcp.ui_action_tools import TOOL_DEFINITIONS as UI_ACTION_TOOL_DEFINITIONS
+from loregarden.mcp.ux_answers_tools import UX_ANSWERS_TOOL_DEFINITIONS
 from loregarden.models.domain import (
     BlockOrigin,
     ExternalHarness,
@@ -1138,6 +1139,7 @@ TOOL_DEFINITIONS.append(GITHUB_ISSUE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)

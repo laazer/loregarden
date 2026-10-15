@@ -40,6 +40,7 @@ from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
+from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
 from loregarden.services.prior_work import search_prior_work
 
 ToolHandler = Callable[[Session, dict[str, Any]], str]
@@ -78,4 +79,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
     **DOCUMENT_HANDLERS,
+    **UX_ANSWERS_HANDLERS,
 }
