@@ -110,6 +110,23 @@ unrelated ticket's commit.
 - **Long rationale, mockups, token tables** go to `loregarden_attach_artifact`.
 - **Assumptions you had to pick** go to `loregarden_append_checkpoint`.
 
+## Record the answers the PR will carry
+
+A PR that changes `client/src/pages` or `client/src/components` fails its "PR UX section"
+check unless its description answers the question, the action and the real data. The PR that
+ships this ticket is written by loregarden, not a person, and it builds that section from what
+you record here. Once the criteria are settled, record the same three answers with
+`loregarden_record_ux_answers` for this ticket:
+
+- `question`: the one sentence from the operator's side of the screen.
+- `action`: the link, button or filter they use next.
+- `real_data`: what the sandbox showed, with at least one measured number.
+
+When the ticket changes those directories but nobody can see the difference (a refactor, a
+renamed prop), record `no_change_reason` instead, with the reason. Each answer is one line. The
+tool refuses an answer the check would refuse, so a refusal is the check failing early: fix
+the answer, not the tool call. Record again if the answers change; the latest record wins.
+
 ## Restrictions
 
 - Do not write application code. You decide; the implementer implements.

@@ -93,6 +93,44 @@ class PublishSubject:
     #: Each cut is a new commit rather than a descendant of the last, so it is
     #: pushed over the remote branch with a lease on what the remote held.
     head: str = ""
+    #: Rewrite the generated part of an already-open PR's description with
+    #: ``pr_body`` (`refresh_generated_body`). A tree's PR outlives the landing
+    #: that opened it, and a description written once said nothing of the user-
+    #: facing changes later landings brought, so the PR UX check failed on them.
+    refresh_body: bool = False
+
+
+#: Bracket the part of a PR description loregarden writes; what a person adds
+#: outside them survives a refresh. HTML comments, so they render as nothing and
+#: the PR UX check strips them before it reads the section.
+GENERATED_START = "<!-- loregarden:generated:start -->"
+GENERATED_END = "<!-- loregarden:generated:end -->"
+
+
+def generated_body(text: str) -> str:
+    return f"{GENERATED_START}\n{text.strip()}\n{GENERATED_END}"
+
+
+def generated_text(body: str) -> str | None:
+    """The text between the markers in ``body``; None when it has none."""
+    start = body.find(GENERATED_START)
+    end = body.find(GENERATED_END, start + len(GENERATED_START)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return None
+    return body[start + len(GENERATED_START) : end]
+
+
+def splice_generated(existing: str, text: str) -> str | None:
+    """``existing`` with its generated part replaced by ``text``; None when it has none.
+
+    None, not the new text alone: a description with no markers predates them or
+    was rewritten by a person, and replacing it whole would delete their words.
+    """
+    start = existing.find(GENERATED_START)
+    end = existing.find(GENERATED_END, start + len(GENERATED_START)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return None
+    return existing[:start] + generated_body(text) + existing[end + len(GENERATED_END) :]
 
 
 def subject_for_chat_session(
@@ -214,6 +252,8 @@ def _open_pr(repo_root: Path, subject: PublishSubject, base: str) -> tuple[StepR
     # because the PR it would open is already open.
     existing = _existing_pr_url(repo_root, subject.branch)
     if existing:
+        if subject.refresh_body:
+            return _refresh_body(repo_root, existing, subject.pr_body), existing
         return StepResult("open_pr", True, f"already open: {existing}"), existing
 
     result = _gh(
@@ -238,6 +278,30 @@ def _open_pr(repo_root: Path, subject: PublishSubject, base: str) -> tuple[StepR
     if not url.startswith("http"):
         return StepResult("open_pr", False, f"unexpected gh output: {result.stdout!r}"), ""
     return StepResult("open_pr", True, url), url
+
+
+def _refresh_body(repo_root: Path, pr_url: str, body: str) -> StepResult:
+    """Rewrite the generated part of the open PR's description with ``body``'s."""
+    viewed = _gh(["pr", "view", pr_url, "--json", "body", "--jq", ".body"], repo_root)
+    if viewed.returncode != 0:
+        return StepResult("open_pr", False, _fail_text(viewed, "gh pr view failed"))
+    current = viewed.stdout.rstrip("\n")
+    inner = generated_text(body)
+    spliced = splice_generated(current, body if inner is None else inner)
+    if spliced is None:
+        logger.warning(
+            "%s's description has no loregarden markers; left as a person may have written it",
+            pr_url,
+        )
+        return StepResult(
+            "open_pr", True, f"already open: {pr_url} (description predates markers; unchanged)"
+        )
+    if spliced == current:
+        return StepResult("open_pr", True, f"already open: {pr_url}")
+    edited = _gh(["pr", "edit", pr_url, "--body", spliced], repo_root)
+    if edited.returncode != 0:
+        return StepResult("open_pr", False, _fail_text(edited, "gh pr edit failed"))
+    return StepResult("open_pr", True, f"already open: {pr_url} (description refreshed)")
 
 
 def _auto_merge(repo_root: Path, pr_url: str) -> StepResult:

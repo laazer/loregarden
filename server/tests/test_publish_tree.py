@@ -23,7 +23,14 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session, select
-from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
+from tests.worktree_helpers import (
+    at_terminal_stage,
+    blocking_text,
+    commit_on,
+    git,
+    make_repo,
+    make_tree_ticket,
+)
 
 
 @pytest.fixture(name="session")
@@ -51,23 +58,6 @@ def workspace_fixture(session, repo):
     return ws
 
 
-def _ticket(session, workspace, external_id, *, parent=None, kind=WorkItemType.TASK, **fields):
-    ticket = Ticket(
-        external_id=external_id,
-        workspace_id=workspace.id,
-        title=f"Ticket {external_id}",
-        branch=f"loregarden/{external_id}",
-        parent_ticket_id=parent.id if parent else None,
-        state=TicketState.IN_PROGRESS,
-        work_item_type=kind,
-        **fields,
-    )
-    session.add(ticket)
-    session.commit()
-    session.refresh(ticket)
-    return ticket
-
-
 def _sha(cwd, ref="HEAD"):
     return git(cwd, "rev-parse", ref).stdout.strip()
 
@@ -93,8 +83,8 @@ def _published(repo, branch) -> str:
 def _landed_tree(session, workspace, repo, policy=None):
     """A milestone with one child whose work has landed on the integration branch."""
     fields = {"git_automation_json": json.dumps(policy)} if policy else {}
-    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE, **fields)
-    child = _ticket(session, workspace, "c1", parent=ms)
+    ms = make_tree_ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE, **fields)
+    child = make_tree_ticket(session, workspace, "c1", parent=ms)
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
     git(repo, "branch", child.branch, target)
     commit_on(repo, child.branch, "c1.txt", "child work\n")
@@ -131,8 +121,8 @@ def test_publishing_runs_once_per_tip(session, workspace, repo):
 
 
 def test_a_non_root_ticket_publishes_nothing(session, workspace, repo):
-    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
-    child = _ticket(session, workspace, "c1", parent=ms)
+    ms = make_tree_ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
+    child = make_tree_ticket(session, workspace, "c1", parent=ms)
     outcome = publish_tree(session, child, workspace)
     assert outcome.ok and outcome.skipped and outcome.branch == ""
 
@@ -219,7 +209,7 @@ def test_a_milestone_under_an_initiative_publishes_its_own_branch_on_completion(
 
 def test_a_ticket_with_no_tree_publishes_its_own_branch_on_completion(session, workspace, repo):
     """Its target is the base, so nothing lands on an integration branch for it."""
-    ticket = _ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
+    ticket = make_tree_ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
     git(repo, "branch", ticket.branch, "main")
     tip = commit_on(repo, ticket.branch, "solo.txt", "solo work\n")
     at_terminal_stage(session, ticket)
@@ -234,7 +224,7 @@ def test_a_ticket_with_no_tree_publishes_its_own_branch_on_completion(session, w
 
 def test_a_ticket_whose_branch_adds_nothing_publishes_nothing(session, workspace, repo):
     """A ticket that committed nothing has no branch worth a push, and a PR would fail."""
-    ticket = _ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
+    ticket = make_tree_ticket(session, workspace, "solo", git_automation_json=json.dumps(PUSH_ONLY))
     git(repo, "branch", ticket.branch, "main")
     at_terminal_stage(session, ticket)
 
@@ -263,11 +253,11 @@ def _fresh_scheduler():
 
 def _child_at_terminal_stage(session, workspace, repo, policy):
     """A milestone (carrying ``policy``) whose child is about to finish and land."""
-    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
+    ms = make_tree_ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
     ms.git_automation_json = json.dumps(policy)
     session.add(ms)
     session.commit()
-    child = _ticket(session, workspace, "c1", parent=ms)
+    child = make_tree_ticket(session, workspace, "c1", parent=ms)
     target = resolve_target_branch(session, child, workspace, repo_root=repo)
     git(repo, "branch", child.branch, target)
     commit_on(repo, child.branch, "c1.txt", "child work\n")

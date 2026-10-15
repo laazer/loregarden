@@ -186,6 +186,10 @@ def _args_for(
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_land_ticket": {"ticket_id": ticket_id},
+        "loregarden_record_ux_answers": {
+            "ticket_id": ticket_id,
+            "no_change_reason": "smoke: the ticket changes nothing a person can see",
+        },
         "loregarden_pin_stage_agent": {
             "ticket_id": ticket_id,
             "agent_id": "backend_implementer",
@@ -435,6 +439,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_append_checkpoint",
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
+        "loregarden_record_ux_answers",
         "loregarden_write_document",
         "loregarden_list_artifacts",
         "loregarden_attach_evidence",
