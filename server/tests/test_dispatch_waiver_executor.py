@@ -11,6 +11,7 @@ from unittest import mock
 
 import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.agents.executors.dispatch_warnings import maybe_warn_dispatch_waiver
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -119,7 +120,7 @@ def test_a_waived_run_says_so_in_its_own_log(db_session, dispatch):
     db_session.refresh(run)
     streamer = mock.Mock()
 
-    executor._maybe_warn_dispatch_waiver(streamer=streamer, run=run)
+    maybe_warn_dispatch_waiver(streamer=streamer, run=run)
 
     level, message = streamer.append.call_args[0][:2]
     assert level == "WARN"
@@ -132,6 +133,6 @@ def test_an_ordinary_run_gets_no_waiver_warning(db_session, dispatch):
     executor, ticket, workspace, repo, make_run = dispatch
     streamer = mock.Mock()
 
-    executor._maybe_warn_dispatch_waiver(streamer=streamer, run=make_run())
+    maybe_warn_dispatch_waiver(streamer=streamer, run=make_run())
 
     streamer.append.assert_not_called()

@@ -32,7 +32,7 @@ def park_on_dirty_checkout(
     OrchestrationCallbackService(session).attach_artifact(
         ticket,
         kind=ArtifactKind.ERROR,
-        title=f"Shared checkout refused — {run.stage_key or 'stage'}",
+        title=error.artifact_title(stage_key=run.stage_key or ""),
         content=error.artifact_content(stage_key=run.stage_key or ""),
     )
     park_for_environment(session, run=run, ticket=ticket, summary=str(error))

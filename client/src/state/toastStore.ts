@@ -81,6 +81,17 @@ export function pushToast(input: ToastInput): string {
 }
 
 /**
+ * Take back a toast pushed from outside React.
+ *
+ * The sibling of `pushToast`, for a sticky toast (`duration: 0`) that reports
+ * an action still in flight: the caller holds the id and dismisses it when the
+ * action settles, on either branch.
+ */
+export function dismissToast(id: string): void {
+  useToastStore.getState().dismiss(id);
+}
+
+/**
  * Best readable line for whatever a rejected action threw.
  *
  * `fallback` is what the caller wants shown when the throw carries no message

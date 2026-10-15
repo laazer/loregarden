@@ -164,3 +164,43 @@ def test_a_nested_worktree_may_not_migrate_another_worktrees_database(checkouts,
 
     with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
         assert_may_migrate(sibling, [UNSHIPPED], code_root=nested_worktree)
+
+
+# --- test-break: the guard's contract, after S-8 makes it a wrapper ---------
+#
+# `primary_checkout` raises; `git_trees.main_working_tree` returns None. A
+# wrapper that forgets the None is a `Path(None)` TypeError at a caller whose
+# only handler is for `UnshippedMigrationError`, and the guard's whole purpose
+# is that a topology it cannot read refuses rather than guesses.
+
+
+def test_a_directory_with_no_repository_refuses_rather_than_guessing(tmp_path):
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+
+    with pytest.raises(UnshippedMigrationError):
+        primary_checkout(outside)
+
+
+def test_a_directory_that_is_gone_refuses_the_same_way(tmp_path):
+    """The half of "could not look" that escapes as an OSError today, because
+    `run_git` passes `cwd` to `subprocess.run` and git never starts.
+    `git_reading` classifies it; the wrapper has to keep classifying it.
+    """
+    with pytest.raises(UnshippedMigrationError):
+        primary_checkout(tmp_path / "vanished")
+
+
+def test_the_guard_module_still_imports_on_its_own():
+    """S-8's stated escape hatch, as a check rather than a hope: the dedup is
+    only allowed if `db` importing *up* into `services` does not cycle.
+    """
+    import subprocess
+    import sys
+
+    subprocess.run(
+        [sys.executable, "-c", "import loregarden.db.shared_database_guard"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )

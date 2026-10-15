@@ -509,3 +509,219 @@ def test_a_harness_reporting_a_genuine_zero_is_not_recorded_as_unmeasured(db_ses
     db_session.refresh(run)
     assert run.input_tokens == 0
     assert run.output_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-917: the tree the harness is checked out into.
+#
+# 401 of 2437 agent runs have taken this path (203 in October 2026), and until
+# now every one of them was handed the ticket's worktree exactly as the last
+# stage left it — never brought up to the ticket's target branch. The harness
+# then commits on a base that cannot see a prerequisite that landed since the
+# tree was cut, which is the defect; and nothing in the view it reads said so.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="harness_repo")
+def harness_repo_fixture(tmp_path):
+    from tests.worktree_helpers import make_repo
+
+    return make_repo(tmp_path / "harness", name="project")
+
+
+@pytest.fixture(name="harness_workspace")
+def harness_workspace_fixture(db_session: Session, harness_repo):
+    from uuid import uuid4
+
+    from loregarden.models.domain import Workspace
+
+    ws = Workspace(slug=f"harness-{uuid4()}", name="Harness", repo_path=str(harness_repo))
+    db_session.add(ws)
+    db_session.commit()
+    db_session.refresh(ws)
+    return ws
+
+
+@pytest.fixture(name="harness_ticket")
+def harness_ticket_fixture(db_session: Session, harness_workspace):
+    from tests.worktree_helpers import make_agent_stage_ticket
+
+    return make_agent_stage_ticket(
+        db_session, harness_workspace, external_id="lg-harness-917", stage_key="work"
+    )
+
+
+@pytest.fixture(name="harness_worktree")
+def harness_worktree_fixture(db_session: Session, harness_workspace, harness_ticket, harness_repo):
+    from tests.worktree_helpers import cut_ticket_worktree
+
+    return cut_ticket_worktree(db_session, harness_workspace, harness_ticket, harness_repo)
+
+
+def _harness_target(db_session, ticket, workspace, repo) -> str:
+    from pathlib import Path
+
+    from loregarden.services.target_branch import resolve_target_branch
+
+    return resolve_target_branch(db_session, ticket, workspace, repo_root=Path(repo))
+
+
+def _begin(db_session, ticket):
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    return begin_external_stage(db_session, orch_run), orch_run
+
+
+def test_a_checked_out_stage_names_the_branch_its_tree_was_brought_up_to(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """AC14, success. The harness is told which branch the tree it was given
+    carries, so a run's results are comparable against a supervised run's
+    rather than against an unknown base."""
+    from pathlib import Path
+
+    from tests.worktree_helpers import commit_on
+
+    target = _harness_target(db_session, harness_ticket, harness_workspace, harness_repo)
+    commit_on(Path(harness_repo), target, "sibling.txt", "landed after the tree was cut\n")
+
+    view, _orch_run = _begin(db_session, harness_ticket)
+
+    run_view = view.runs[0]
+    assert run_view.repo_path == str(harness_worktree)
+    assert run_view.target_branch == target
+    assert run_view.tree_warning == "", "a refreshed tree has nothing to warn about"
+    assert (harness_worktree / "sibling.txt").exists(), "and the tree really was refreshed"
+
+
+def test_a_stale_tree_tells_the_harness_in_the_prompt_as_well_as_the_view(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """AC14, degraded. An agent that reads only the prompt — which is most of
+    them, since the prompt is what gets pasted — has to learn its base is stale
+    *before* it commits. A field on a view it never reads is the same silence
+    this ticket is about, one layer further out.
+    """
+    from pathlib import Path
+
+    from tests.worktree_helpers import commit_on, git
+
+    target = _harness_target(db_session, harness_ticket, harness_workspace, harness_repo)
+    commit_on(Path(harness_repo), target, "sibling.txt", "landed after the tree was cut\n")
+    (harness_worktree / "in-flight.txt").write_text("a previous stage is mid-edit\n")
+    assert git(harness_worktree, "status", "--porcelain").stdout.strip(), (
+        "fixture: the tree must be dirty for the refresh to be skipped"
+    )
+
+    view, _orch_run = _begin(db_session, harness_ticket)
+
+    run_view = view.runs[0]
+    assert run_view.target_branch == target
+    assert run_view.tree_warning, "a tree that was not refreshed must say so"
+    assert str(harness_worktree) in run_view.tree_warning
+    assert target in run_view.tree_warning
+    assert run_view.tree_warning in run_view.prompt, (
+        "the warning reached the view but not the prompt the agent actually reads"
+    )
+
+
+def test_a_conflicting_refresh_reaches_the_harness_as_a_tool_error(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """AC14, failure. `_checked_out_run_view` has no handler of its own; the
+    MCP boundary turns any tool exception into an `isError` result, so the one
+    thing that has to hold is that the text it carries is the same readable
+    sentence the route returns — not a `RuntimeError` repr, and not git's whole
+    merge output.
+    """
+    from pathlib import Path
+
+    from loregarden.mcp.protocol import handle_request
+    from tests.worktree_helpers import commit_on, git
+
+    target = _harness_target(db_session, harness_ticket, harness_workspace, harness_repo)
+    (harness_worktree / "shared.txt").write_text("the ticket's version\n")
+    git(harness_worktree, "add", "-A")
+    git(harness_worktree, "commit", "-q", "-m", "ticket side")
+    commit_on(Path(harness_repo), target, "shared.txt", "a sibling's version\n")
+    orch_run = start_external_orchestration(
+        db_session, harness_ticket, harness=ExternalHarness.CLAUDE_CODE
+    )
+
+    response = handle_request(
+        db_session,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "loregarden_begin_external_stage",
+                "arguments": {"run_id": orch_run.id},
+            },
+        },
+    )
+
+    result = response["result"]
+    assert result.get("isError") is True, result
+    text = result["content"][0]["text"]
+    first = text.partition(". ")[0]
+    assert harness_ticket.external_id in first, text
+    assert str(harness_worktree) in first, text
+    assert target in first, text
+    assert len(first.replace(str(harness_worktree), "")) <= 160, f"{len(first)}: {first}"
+    for noise in ("CONFLICT", "Automatic merge failed", "<<<<<<<"):
+        assert noise not in first, f"git's merge output reached the harness's first line: {first}"
+
+
+# --- lg-milestone-that-917, test-break: said once, and only when it is true ----
+
+
+def test_a_refreshed_tree_makes_no_claim_about_a_stale_base_in_the_prompt(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """AC14's other direction. The sentence is a warning, so it has to be absent
+    when there is nothing to warn about: an implementation that appends the
+    status to every prompt unconditionally — the cheap way to satisfy the
+    degraded test — teaches every harness run to distrust a base that is in
+    fact current, and the one run whose base really is stale then reads like
+    all the others.
+    """
+    from pathlib import Path
+
+    from tests.worktree_helpers import commit_on
+
+    target = _harness_target(db_session, harness_ticket, harness_workspace, harness_repo)
+    commit_on(Path(harness_repo), target, "sibling.txt", "landed after the tree was cut\n")
+
+    view, _orch_run = _begin(db_session, harness_ticket)
+
+    run_view = view.runs[0]
+    assert run_view.tree_warning == ""
+    for claim in ("was not brought up to", "commits behind", "could not be checked"):
+        assert claim not in run_view.prompt, (
+            f"a current tree's prompt claims a stale base: {claim!r}"
+        )
+
+
+def test_the_stale_base_sentence_appears_once_in_the_prompt_not_per_section(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """AC14. The prompt is the surface an agent actually reads, and it is tens
+    of KB long; a sentence repeated per section is how a real instruction stops
+    being read. Once, in the prompt, carrying the same text as the view.
+    """
+    from pathlib import Path
+
+    from tests.worktree_helpers import commit_on, git
+
+    target = _harness_target(db_session, harness_ticket, harness_workspace, harness_repo)
+    commit_on(Path(harness_repo), target, "sibling.txt", "landed after the tree was cut\n")
+    (harness_worktree / "in-flight.txt").write_text("a previous stage is mid-edit\n")
+    assert git(harness_worktree, "status", "--porcelain").stdout.strip(), "fixture: dirty tree"
+
+    view, _orch_run = _begin(db_session, harness_ticket)
+
+    run_view = view.runs[0]
+    assert run_view.tree_warning
+    assert run_view.prompt.count(run_view.tree_warning) == 1, (
+        f"the warning appears {run_view.prompt.count(run_view.tree_warning)} times in the prompt"
+    )

@@ -219,7 +219,7 @@ def prepare_tree_for_parallel_stage(
         OrchestrationCallbackService(session).attach_artifact(
             ticket,
             kind=ArtifactKind.ERROR,
-            title=f"Shared checkout refused — {stage_key}",
+            title=exc.artifact_title(stage_key=stage_key),
             content=exc.artifact_content(stage_key=stage_key),
         )
         return _block_on_checkout_failure(session, ticket, stage_key, exc)

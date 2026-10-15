@@ -425,7 +425,19 @@ export const api = {
       }),
     }),
   buildTerminalHandoffCommand: (id: string, stageKey: string) =>
-    request<{ run_id: string; adapter: string; command: string }>(
+    request<{
+      run_id: string;
+      adapter: string;
+      command: string;
+      /** The tree the copied command will run in. */
+      repo_path: string;
+      /** The branch that tree was brought up to. */
+      target_branch: string;
+      /** Commits on `target_branch` the tree cannot see; 0 when it is current. */
+      tree_behind: number;
+      /** Non-empty when the tree could not be brought up to date, or not checked. */
+      tree_warning: string;
+    }>(
       `/api/tickets/${id}/terminal_handoff_command`,
       {
         method: "POST",

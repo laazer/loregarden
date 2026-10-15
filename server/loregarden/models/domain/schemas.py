@@ -468,6 +468,16 @@ class ExternalStageRunView(SQLModel):
     skill_name: str = ""
     prompt: str = ""
     repo_path: str = ""
+    #: The branch ``repo_path`` was brought up to before it was handed over, so a
+    #: harness run's results are comparable against a supervised run's rather
+    #: than against an unknown base.
+    target_branch: str = ""
+    #: Non-empty when the tree could not be brought up to ``target_branch`` (an
+    #: operator's uncommitted work, usually) or could not be checked at all. The
+    #: same sentence appears once in ``prompt``: an agent that reads only the
+    #: prompt — which is most of them — has to learn its base is stale before it
+    #: commits.
+    tree_warning: str = ""
     started_at: datetime | None = None
 
 

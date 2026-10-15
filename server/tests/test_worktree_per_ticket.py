@@ -7,6 +7,7 @@ work. These tests pin the reuse, and pin that reuse never resets the ticket's
 branch back to its parent.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -570,3 +571,538 @@ def test_a_conflicting_parallel_refresh_loses_nothing_in_the_worktree(
     assert _sha(root) == own, "and the ticket's own commit is still what HEAD points at"
     assert (root / "shared.txt").read_text() == "the ticket's version\n"
     assert head_branch(root) == dependent.branch
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-917: the third dispatch path — the handoff.
+#
+# `render_stage_prompt` is what `prepare_terminal_handoff` (a human's terminal)
+# and `external_harness._checked_out_run_view` (an MCP harness) hand over, and
+# it kept the `repo_root == workspace_root` guard the two paths above lost. So
+# the one path with nobody watching handed over a tree that was never brought
+# up to its target, and the operator or harness then committed on a base that
+# could not see a prerequisite that had landed since the tree was cut.
+#
+# These assert on the same observable facts as the dispatch tests above — what
+# is reachable from the worktree's HEAD afterwards — not on the prompt.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="agents")
+def agents_fixture(session):
+    """The built-in agent rows `render_stage_prompt` renders a prompt from.
+
+    The dispatch tests above never reach the registry (`_prepare_tree` only
+    prepares a tree), so this file's session is deliberately unseeded. The
+    handoff path resolves `run.agent_id` through it, and an unknown agent would
+    raise before the tree work this ticket is about — a green-looking red.
+    """
+    from loregarden.services.seed import seed_database
+
+    seed_database(session)
+    return session
+
+
+def _handoff(session, workspace, ticket, code: str) -> tuple[str, Path]:
+    """One terminal/harness handoff's tree preparation and prompt render.
+
+    The single call both handoff edges make; everything they add afterwards
+    (a prompt file, a run view) is downstream of the tree it returns.
+    """
+    return CliAgentExecutor(session).render_stage_prompt(
+        make_run(session, workspace, ticket, code), ticket
+    )
+
+
+def test_render_stage_prompt_refreshes_an_existing_worktree_onto_its_target(
+    session, workspace, dependent, repo, agents
+):
+    """AC5. The defect itself, verified the way 779's AC4 is: a commit that
+    landed on the target after the tree was cut must be reachable from the
+    handed-off tree's HEAD, and the tree handed over must still be the
+    ticket's own worktree — refreshed, not thrown away and re-cut.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    assert not (root / "sibling.txt").exists(), (
+        "fixture: the worktree must not already have the work, or this proves nothing"
+    )
+
+    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+
+    assert repo_root == root, "the handed-off tree is the ticket's worktree, not a fresh one"
+    assert _ancestor(root, landed, "HEAD"), "the landed prerequisite is reachable from HEAD"
+    assert (root / "sibling.txt").exists()
+    assert _ancestor(root, own, "HEAD") and (root / "own.txt").exists(), (
+        "and the ticket's own earlier commits survived the refresh"
+    )
+    assert head_branch(root) == dependent.branch
+    assert head_branch(repo) == "main", "the shared checkout is not moved onto the branch"
+
+
+def test_a_dirty_worktree_is_still_handed_off_unrefreshed(
+    session, workspace, dependent, repo, agents, caplog
+):
+    """AC6. One handoff in five meets a dirty tree (7 of 39 measured). Merging
+    over uncommitted work is how it gets lost, so the refresh is skipped — and
+    the handoff is still handed over, because an un-refreshable tree is a
+    degraded handoff, not a blocked one.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    (root / "in-flight.txt").write_text("an operator is still writing this\n")
+    assert git(root, "status", "--porcelain").stdout.strip(), "fixture: the tree must be dirty"
+
+    with caplog.at_level("WARNING"):
+        prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+
+    assert prompt, "the handoff is not blocked by a tree that could not be refreshed"
+    assert repo_root == root
+    assert (root / "in-flight.txt").read_text() == "an operator is still writing this\n", (
+        "the uncommitted work is untouched"
+    )
+    assert _sha(root) == own, "HEAD is unmoved: no merge was attempted"
+    assert not _ancestor(root, landed, "HEAD")
+    assert not (root / "sibling.txt").exists()
+    assert any("uncommitted" in r.getMessage() for r in caplog.records), (
+        "a skipped refresh must not be silent"
+    )
+
+
+def test_a_conflicting_handoff_refresh_raises_a_valueerror(
+    session, workspace, dependent, repo, agents
+):
+    """AC4. `render_stage_prompt` has no run to fail and no stage to block, so
+    it raises — as a `ValueError`, which is what both edges already catch (the
+    route maps it to a 400, the MCP dispatcher to an `isError` result).
+
+    `_refresh_onto`'s own `ValueError` passes through **unwrapped**: it already
+    carries git's merge output, and re-wrapping would print that output twice in
+    the message the route renders into a toast that clamps at four lines.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    (root / "shared.txt").write_text("the ticket's version\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "ticket side")
+    own = _sha(root)
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+
+    with pytest.raises(ValueError) as excinfo:
+        _handoff(session, workspace, dependent, "h1")
+
+    message = str(excinfo.value)
+    assert "could not take" in message, message
+    assert message.count("could not take") == 1, (
+        f"the refresh's own ValueError was re-wrapped, doubling git's output: {message}"
+    )
+    # What the operator finds in the tree afterwards. A half-applied merge is
+    # how the person sent in to resolve it loses the ticket's side.
+    assert git(root, "status", "--porcelain").stdout.strip() == "", (
+        "the merge was aborted, not left conflicted"
+    )
+    assert "<<<<<<<" not in (root / "shared.txt").read_text(), "no conflict markers were left"
+    assert _sha(root) == own, "and HEAD still points at the ticket's own commit"
+
+
+def test_a_target_branch_that_cannot_resolve_raises_a_valueerror_from_the_handoff(
+    session, workspace, dependent, repo, agents
+):
+    """AC3 + AC4. `resolve_execution_root` resolves the target branch itself, so
+    it raises `TargetBranchError` — a `RuntimeError`, `target_branch.py:51` —
+    *before* any `ensure_ticket_branch` call. It therefore has to sit inside the
+    same handler, or a `RuntimeError` escapes the route (a 500) and the harness
+    (an unclassified tool crash) on a condition both already render.
+    """
+    _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    commit_on(Path(repo), target, "clash.txt", "integration side\n")
+    commit_on(Path(repo), "main", "clash.txt", "main side\n")
+
+    with pytest.raises(ValueError) as excinfo:
+        _handoff(session, workspace, dependent, "h1")
+
+    assert "clash.txt" in str(excinfo.value), str(excinfo.value)
+
+
+def test_a_handoff_with_nothing_new_on_the_target_moves_neither_tree(
+    session, workspace, dependent, repo, agents
+):
+    """AC7 on the handoff path. The two mutants that pass every test above:
+    one merges unconditionally and leaves a merge commit per handoff, the other
+    merges the wrong way and publishes the ticket's unfinished work to the
+    integration branch its siblings cut from. Landing is a terminal-stage
+    transition (768); no dispatch, and no handoff, may publish.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    before_head = _sha(root)
+    before_target = _sha(repo, target)
+    assert not _ancestor(repo, before_head, target), (
+        "fixture: the ticket's own commit must not already be on the target"
+    )
+
+    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+
+    assert repo_root == root
+    assert _sha(root) == before_head, "nothing landed, so there was nothing to merge"
+    assert _sha(repo, target) == before_target, "and the target branch is not written to at all"
+    assert not _ancestor(repo, before_head, target), (
+        "the ticket's work reaches its target at landing, not at handoff"
+    )
+    assert git(root, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_a_handoff_puts_a_worktree_left_on_another_branch_back_on_the_ticket_s(
+    session, workspace, dependent, repo, agents
+):
+    """The tree handed to an operator must be on the ticket's branch, which is
+    not where a worktree is guaranteed to be — a crashed stage, a resolver or a
+    person can leave it elsewhere. `prepare_terminal_handoff`'s docstring claims
+    the handed-off tree is "the ticket's worktree, already on its branch"
+    (AC8); until the guard goes, nothing on this path looked.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    own = _sha(root)
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+    assert head_branch(root) != dependent.branch, "fixture: the tree starts off the branch"
+
+    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+
+    assert repo_root == root
+    assert head_branch(root) == dependent.branch
+    assert _ancestor(root, own, "HEAD") and (root / "own.txt").exists(), (
+        "and the ticket's earlier stages are still in it"
+    )
+    assert _ancestor(root, landed, "HEAD")
+
+
+# --- the target is resolved in the shared checkout, on all three paths ---------
+#
+# 779 S3: resolving a target branch WRITES refs (`ensure_integration_branch`,
+# `_refresh_from_tips`), and refs are shared across every worktree of a repo.
+# One resolution in the shared checkout is therefore visible in all of them,
+# and resolving from a worktree instead is bookkeeping done in the wrong tree.
+#
+# These three assert on the argument because the AC names the argument (AC1,
+# AC2) and because the two spellings are behaviourally near-identical — refs
+# being shared is exactly what makes the wrong one survive every other test in
+# this file. The spy calls through, so the path under test is the real one.
+
+
+def _target_branch_spy(calls: list[Path]):
+    from loregarden.services.target_branch import resolve_target_branch as real
+
+    def spy(session, ticket, workspace, *, repo_root):
+        calls.append(Path(repo_root))
+        return real(session, ticket, workspace, repo_root=repo_root)
+
+    return spy
+
+
+def test_the_handoff_resolves_its_target_in_the_shared_checkout(
+    session, workspace, dependent, repo, agents
+):
+    """AC1."""
+    from unittest.mock import patch
+
+    _existing_worktree(session, workspace, dependent)
+    calls: list[Path] = []
+
+    with patch("loregarden.agents.executors.cli.resolve_target_branch", _target_branch_spy(calls)):
+        _handoff(session, workspace, dependent, "h1")
+
+    assert calls == [Path(repo)], (
+        f"the handoff resolved its target branch in {calls}, not the shared checkout"
+    )
+
+
+def test_the_dispatch_path_resolves_its_target_in_the_shared_checkout(
+    session, workspace, dependent, repo
+):
+    """AC2(a). `_ensure_branch_or_fail` passes `repo_root=repo_root` today,
+    which is the worktree on every run that has one."""
+    from unittest.mock import patch
+
+    _existing_worktree(session, workspace, dependent)
+    calls: list[Path] = []
+
+    with patch("loregarden.agents.executors.cli.resolve_target_branch", _target_branch_spy(calls)):
+        _, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None
+    assert calls == [Path(repo)], (
+        f"the dispatch resolved its target branch in {calls}, not the shared checkout"
+    )
+
+
+def test_the_parallel_path_resolves_its_target_in_the_shared_checkout(
+    session, workspace, dependent, repo
+):
+    """AC2(b)."""
+    from unittest.mock import patch
+
+    _existing_worktree(session, workspace, dependent)
+    calls: list[Path] = []
+
+    with patch(
+        "loregarden.services.parallel_stage.resolve_target_branch", _target_branch_spy(calls)
+    ):
+        message = prepare_tree_for_parallel_stage(
+            session, dependent, "work", [make_run(session, workspace, dependent, "p1")]
+        )
+
+    assert message == ""
+    assert calls == [Path(repo)], (
+        f"the parallel path resolved its target branch in {calls}, not the shared checkout"
+    )
+
+
+def test_no_dispatch_path_still_asks_whether_it_is_in_the_shared_checkout(
+    session, workspace, dependent, repo
+):
+    """AC2's verification, as a test rather than a grep a reviewer has to run.
+
+    The condition this ticket deletes was in three places and the two the last
+    ticket fixed were found by hand. A fourth would be found the same way: by a
+    stale handoff nobody noticed. The server's own source is the fixture.
+    """
+    import re
+    from pathlib import Path as _Path
+
+    import loregarden
+
+    root = _Path(loregarden.__file__).parent
+    pattern = re.compile(r"repo_root\s*[=!]=\s*workspace_root")
+    offenders = [
+        f"{path.relative_to(root)}:{n}"
+        for path in sorted(root.rglob("*.py"))
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+
+    assert offenders == [], (
+        "a dispatch path still decides whether to refresh by asking which tree "
+        f"it is in: {offenders}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-917, test-break: the handoff's three error contracts, and
+# the one argument that decides whose work the switch is allowed to carry.
+#
+# The tests above cover a clean tree, a dirty tree *on its branch*, a conflict
+# and an unresolvable target. Three contracts AC1/AC3/AC4 name are still
+# unasserted, and each has a mutant that passes everything above: dropping
+# `ignoring=`, re-wrapping `DirtyPrimaryCheckoutError` into a plain
+# `ValueError`, and letting a `CalledProcessError` out unconverted.
+# ---------------------------------------------------------------------------
+
+
+def _record_changed_path(session, workspace, ticket, path: str) -> None:
+    """Make `path` one of the ticket's own recorded paths.
+
+    `ticket_recorded_paths` reads every run's `changed_paths_json`, which is how
+    a ticket's earlier stage declares the uncommitted files it left behind.
+    """
+    import json
+
+    run = make_run(session, workspace, ticket, f"recorded-{path}")
+    run.changed_paths_json = json.dumps([path])
+    session.add(run)
+    session.commit()
+
+
+def test_a_tree_left_dirty_on_another_branch_refuses_rather_than_carrying_the_work(
+    session, workspace, dependent, repo, agents
+):
+    """AC4 on the one error the handoff must *not* re-wrap.
+
+    A worktree can be left on another branch by a crashed stage or a person,
+    and if it is also dirty, switching it to the ticket's branch would carry
+    whoever's work-in-progress that is onto the ticket's branch (864). So this
+    refuses — and it refuses as a `DirtyPrimaryCheckoutError`, which is a
+    `ValueError` subclass *by design* (`primary_checkout.py:36`) so that the
+    route's existing 400 mapping and the harness's error result both keep
+    working. Re-wrapping it in a plain `ValueError` loses the dirty-path list
+    the inbox card and the park path are built on, and still satisfies every
+    other assertion in this file.
+    """
+    from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
+
+    root = _existing_worktree(session, workspace, dependent)
+    own = _sha(root)
+    (root / "someone-elses-wip.txt").write_text("not this ticket's work\n")
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+
+    with pytest.raises(DirtyPrimaryCheckoutError) as excinfo:
+        _handoff(session, workspace, dependent, "h1")
+
+    assert "someone-elses-wip.txt" in str(excinfo.value), str(excinfo.value)
+    assert excinfo.value.dirty_paths, "the refusal has to name what it refused on"
+    assert head_branch(root) == "scratch/left-behind", "the branch was switched anyway"
+    assert (root / "someone-elses-wip.txt").read_text() == "not this ticket's work\n"
+    assert _sha(root) == own
+
+
+def test_the_ticket_s_own_unfinished_work_does_not_block_its_own_handoff(
+    session, workspace, dependent, repo, agents
+):
+    """AC1's `ignoring=ticket_recorded_paths(...)`, which is the argument that
+    tells the two cases above apart.
+
+    With the guard deleted, every handoff now runs the clean-tree check the
+    dispatch path runs — so a ticket whose earlier stage left its own recorded
+    files uncommitted would refuse its own handoff, on its own work, if
+    `ignoring=` were dropped. Nothing else in this file notices: the argument
+    only matters when the tree is both dirty and on another branch.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+    (root / "stage-one-left-this.txt").write_text("this ticket's own work in progress\n")
+    _record_changed_path(session, workspace, dependent, "stage-one-left-this.txt")
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+
+    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+
+    assert repo_root == root
+    assert head_branch(root) == dependent.branch, "the tree was not put back on its branch"
+    assert (root / "stage-one-left-this.txt").read_text() == (
+        "this ticket's own work in progress\n"
+    ), "the ticket's own uncommitted work was carried across, not lost"
+    # Still dirty, so AC6's skip applies and the refresh is not attempted.
+    assert not _ancestor(root, landed, "HEAD")
+
+
+def test_a_git_command_that_failed_outright_reaches_the_edges_as_a_valueerror(
+    session, workspace, dependent, repo, agents
+):
+    """AC4's third clause. A `subprocess.CalledProcessError` out of the tree
+    preparation — a locked index, a missing object, a `git` that is not on the
+    PATH — is a `subprocess` exception, not a `ValueError`, so it escapes both
+    handoff edges uncaught: a 500 from the route and an unclassified crash at
+    the harness, on a condition they both already render as a refusal.
+
+    Patched at the one call `render_stage_prompt` makes, because the real
+    failures behind it (a `.git/index.lock` another process holds, a corrupt
+    object) are not reproducible in a fixture without faking them anyway. The
+    contract under test is the conversion, not git's reason for failing.
+    """
+    from unittest.mock import patch
+
+    _existing_worktree(session, workspace, dependent)
+    boom = subprocess.CalledProcessError(
+        128, ["git", "checkout", dependent.branch], stderr="fatal: index.lock exists"
+    )
+
+    with patch("loregarden.agents.executors.cli.ensure_ticket_branch", side_effect=boom):
+        with pytest.raises(ValueError) as excinfo:
+            _handoff(session, workspace, dependent, "h1")
+
+    assert not isinstance(excinfo.value, subprocess.SubprocessError)
+    assert "128" in str(excinfo.value), (
+        f"git's own failure has to survive into the message: {excinfo.value}"
+    )
+
+
+def test_two_handoffs_in_a_row_leave_one_merge_and_not_two(
+    session, workspace, dependent, repo, agents
+):
+    """AC7's idempotence, with something to merge rather than nothing.
+
+    The existing idempotence test starts from a target with nothing new on it,
+    where a merge is a no-op in git itself — so an implementation that merges
+    unconditionally, or with `--no-ff`, passes it. An operator copying the
+    command twice (which the client's own double-fire guard exists because they
+    do) must not stack a merge commit per copy on the branch they then push.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
+
+    _handoff(session, workspace, dependent, "h1")
+    after_first = _sha(root)
+    count_first = git(root, "rev-list", "--count", "HEAD").stdout.strip()
+    _handoff(session, workspace, dependent, "h2")
+
+    assert _sha(root) == after_first, "the second handoff moved HEAD with nothing new to take"
+    assert git(root, "rev-list", "--count", "HEAD").stdout.strip() == count_first
+    assert git(root, "status", "--porcelain").stdout.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-916: a refusal names the tree that is actually blocking.
+#
+# 779 stopped skipping `ensure_ticket_branch` for worktree runs, which made
+# this path reachable for the first time: a ticket's own worktree, dirty and on
+# another branch, refused with a title, a type name and an enum value that all
+# say "shared checkout". The operator is sent to clean a tree that is not the
+# one holding their work.
+# ---------------------------------------------------------------------------
+
+
+def _dirty_run(session, workspace, ticket, code: str, *, stage_key: str):
+    """A run carrying a stage key, so the title's `— <stage_key>` is a real one."""
+    run = make_run(session, workspace, ticket, code)
+    run.stage_key = stage_key
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def _worktrees_off(session, ticket):
+    """No worktree, so the run falls back to the shared checkout."""
+    ticket.git_automation_json = json.dumps({"worktree": False})
+    session.add(ticket)
+    session.commit()
+    return ticket
+
+
+def _error_artifacts(session, ticket):
+    from loregarden.models.domain import Artifact, ArtifactKind
+    from sqlmodel import select
+
+    return session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.ERROR)
+    ).all()
+
+
+def test_a_dirty_ticket_worktree_on_another_branch_is_refused_as_itself(
+    session, workspace, dependent, repo
+):
+    """AC3/UX-4/UX-5. The tree holding the uncommitted work is the ticket's own
+    worktree, so that is what the refusal has to name — in the title the
+    operator reads first, and in the `use` value stored beside it.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    git(root, "checkout", "-q", "-b", "scratch/left-behind")
+    (root / "left-in-flight.txt").write_text("an agent was mid-stage here\n")
+    assert head_branch(root) != dependent.branch, "fixture: the tree starts off the branch"
+    assert git(root, "status", "--porcelain").stdout.strip(), "fixture: and it is dirty"
+    run = _dirty_run(session, workspace, dependent, "r2", stage_key="implement")
+
+    _, stopped = CliAgentExecutor(session)._prepare_tree(
+        run,
+        dependent,
+        workspace,
+        workspace_root=Path(workspace.repo_path),
+        skip_git_branch=False,
+        advance_workflow=False,
+    )
+
+    assert stopped is not None, "a refused checkout parks the stage, it does not run it"
+    assert stopped.status == RunStatus.CANCELLED
+    [error] = _error_artifacts(session, dependent)
+    assert error.title == "Ticket worktree refused — implement"
+    content = json.loads(error.content_json)
+    assert content["use"] == "ticket_worktree_branch_checkout"
+    assert content["repo_root"] == str(root), "and it names the tree that is actually dirty"
+    assert "left-in-flight.txt" in content["dirty_paths"]
