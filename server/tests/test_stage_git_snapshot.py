@@ -31,6 +31,7 @@ from loregarden.agents.executors import cli as cli_module
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.run_evidence import record_run_evidence
 from loregarden.config import settings
+from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
@@ -130,6 +131,21 @@ def _orchestrate_child_first(client: TestClient, tmp_path: Path) -> tuple[str, s
     return feature["id"], child["id"]
 
 
+def _record_ux_waivers(engine, ticket_ids: tuple[str, ...]) -> None:
+    """What a real design run records. The stubbed agent cannot call the tool, and a
+    design pass without answers is rework, which would end the pipeline at
+    `ui-design` and leave the ceiling divided by too few runs."""
+    with Session(engine) as session:
+        for ticket_id in ticket_ids:
+            UX_ANSWERS_HANDLERS["loregarden_record_ux_answers"](
+                session,
+                {
+                    "ticket_id": ticket_id,
+                    "no_change_reason": "Git-ceiling fixture; the stubbed agents change no surface",
+                },
+            )
+
+
 def _without_cwd(argv: list[str]) -> list[str]:
     """`git -C <dir> diff` counted as `git diff`, so the message names the question."""
     return argv[:1] + argv[3:] if argv[1:2] == ["-C"] else argv
@@ -149,6 +165,7 @@ def test_a_stage_starts_no_more_git_processes_than_its_ceiling(
     setup and the reads around it are not stage work."""
     with mock.patch.object(settings, "repo_root", tmp_path):
         feature_id, child_id = _orchestrate_child_first(client, tmp_path)
+        _record_ux_waivers(isolated_db, (feature_id, child_id))
         git_argvs.clear()
         res = client.post(f"/api/tickets/{feature_id}/orchestrate", json={"max_stages": 1})
         during = list(git_argvs)
