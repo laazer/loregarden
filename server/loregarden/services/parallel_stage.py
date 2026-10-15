@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_settlement import RepairPolicy, settle_block
+from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -212,6 +213,7 @@ def prepare_tree_for_parallel_stage(
             ticket,
             start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
             ignoring=ticket_recorded_paths(session, ticket),
+            seat=MergeTurnSeat(session, workspace, ticket),
         )
     except DirtyPrimaryCheckoutError as exc:
         # Blocked like any checkout failure — the members never started — and

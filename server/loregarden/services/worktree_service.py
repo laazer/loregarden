@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services.branch_takes_target import MergeTurnSeat, take_target
 from loregarden.services.git_branch import (
     chat_session_branch,
     resolve_ticket_branch,
@@ -158,6 +159,7 @@ class WorktreeService:
         ticket: Ticket,
         agent_run_id: str,
         parent_branch: str = "main",
+        seat: MergeTurnSeat | None = None,
     ) -> Worktree | None:
         """The one worktree a ticket's stages share, creating it on first use.
 
@@ -193,6 +195,7 @@ class WorktreeService:
             parent_branch=parent_branch,
             name=f"ticket-{slug}-{str(uuid4())[:8]}",
             refresh=True,
+            seat=seat,
         )
 
     def get_or_create_for_chat_session(
@@ -317,6 +320,7 @@ class WorktreeService:
         ticket_id: str | None = None,
         chat_session_id: str | None = None,
         refresh: bool = False,
+        seat: MergeTurnSeat | None = None,
     ) -> Worktree | None:
         """Check `branch` out in a new directory without ever resetting it.
 
@@ -325,13 +329,22 @@ class WorktreeService:
         tree is cut when the ticket starts, so this is the one point that can
         see a prerequisite that landed after the ticket was scheduled. A merge
         conflict raises :class:`WorktreeRefreshError`; the half-cut tree is
-        removed first so the next attempt starts clean.
+        removed first so the next attempt starts clean. Before the tree is cut,
+        a conflict goes to `branch_takes_target`, which may move the branch
+        onto ``parent_branch`` or, given a ``seat``, run an agent's merge turn.
         """
         try:
             self.worktree_base.mkdir(parents=True, exist_ok=True)
             worktree_path = self.worktree_base / name
 
             existed = self._branch_exists(branch)
+            if existed and refresh:
+                taken = take_target(self.repo_path, branch, parent_branch, seat=seat)
+                if not taken.ok:
+                    raise WorktreeRefreshError(
+                        f"Branch {branch!r} could not take {parent_branch!r} before "
+                        f"starting: {taken.detail}"
+                    )
             if existed:
                 add_args = ["worktree", "add", str(worktree_path), branch]
             else:

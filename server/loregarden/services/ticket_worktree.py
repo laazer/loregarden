@@ -22,6 +22,7 @@ import logging
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, PrimaryCheckoutUse, Ticket, Workspace
+from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.primary_checkout import require_clean_checkout
 from loregarden.services.recorded_paths import ticket_recorded_paths
@@ -111,7 +112,13 @@ def resolve_execution_root(
         )
         target = exc.branch
     service = WorktreeService(session, repo_path=str(workspace_root))
-    worktree = service.get_or_create_for_ticket(ticket, run.id, parent_branch=target)
+    worktree = service.get_or_create_for_ticket(
+        ticket,
+        run.id,
+        parent_branch=target,
+        # A chat turn that tolerates a stale target does not wait on a merge turn.
+        seat=None if stale_target_ok else MergeTurnSeat(session, workspace, ticket),
+    )
     if not worktree:
         logger.warning(
             "Could not create a worktree for ticket %s; running in the shared checkout %s",
