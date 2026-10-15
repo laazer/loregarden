@@ -9,6 +9,9 @@ REPAIR_AGENT_ID = "repair"
 #: Writes a ticket's acceptance criteria; its passing run is where operation
 #: criteria are caught before an implementer is handed them (782).
 SPEC_AGENT_ID = "spec"
+#: Decides a ticket's user-facing surfaces; its passing run must leave the UX
+#: answers the ticket's PR is built from (`services.ux_answers`).
+UI_DESIGN_AGENT_ID = "ui-design-decision"
 
 AGENTS: dict[str, dict] = {
     "planner": {

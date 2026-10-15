@@ -81,6 +81,9 @@ class PublishOutcome:
     #: Nothing to do: not a root, no branch to publish, a tip the base
     #: already contains, or a tip already published.
     skipped: bool = False
+    #: The chain step that failed (`push`, `open_pr`, `auto_merge`), or "" when
+    #: the publish failed before the chain ran. Every step before it succeeded.
+    failed_step: str = ""
 
 
 def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> PublishOutcome:
@@ -136,6 +139,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         pr_url=result.pr_url,
         detail=_detail(result),
         skipped=not result.steps,
+        failed_step=result.failure.step if result.failure else "",
     )
     if result.ok and result.steps:
         ticket.landed_branch = branch

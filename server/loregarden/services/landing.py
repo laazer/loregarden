@@ -65,10 +65,12 @@ from loregarden.services.block_repair import repair_turns_spent
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
-from loregarden.services.publish_tree import publish_tree
 from loregarden.services.repair_brief import arm_repair_turn
 from loregarden.services.target_branch import subtree_root
-from loregarden.services.tree_publish_scheduler import schedule_tree_publish
+from loregarden.services.tree_publish_scheduler import (
+    publish_and_settle,
+    schedule_tree_publish,
+)
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session
@@ -104,7 +106,7 @@ def land_before_done(
         if result.skipped is LandSkip.NO_REPOSITORY:
             return True
         if result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
-            outcome = publish_tree(session, ticket, workspace)
+            outcome = publish_and_settle(session, ticket, workspace)
             if outcome.ok:
                 return True
             _block(session, ticket, instance, stages, stage_key, _publish_message(outcome))

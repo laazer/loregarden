@@ -36,7 +36,6 @@ from loregarden.models.domain import (
 from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.landing import parked_on_failed_landing
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.publish_tree import publish_tree
 from loregarden.services.pull_request_merge import MergeFailed, merge_and_clean_up
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_concurrency import find_active_stage_run
@@ -45,6 +44,7 @@ from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.tree_publish_scheduler import publish_and_settle
 from loregarden.services.workflow_state import parse_stage_map
 
 
@@ -245,7 +245,7 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         svc.orch.finalize_workflow(ticket)
         payload["ticket_state"] = ticket.state.value
     if result.ok and result.skipped in (LandSkip.NO_BRANCH, LandSkip.BASE_TARGET):
-        outcome = publish_tree(session, ticket, workspace)
+        outcome = publish_and_settle(session, ticket, workspace)
         payload["published"] = {
             "ok": outcome.ok,
             "branch": outcome.branch,
