@@ -146,6 +146,31 @@ def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[s
     return "", (), (result.stderr or result.stdout or "git merge-tree failed").strip()
 
 
+def squash_onto(repo_root: Path, base_sha: str, tip_sha: str, *, message: str) -> MergeOutcome:
+    """One commit on ``base_sha`` holding ``tip_sha`` merged into it. No ref moves.
+
+    What a tree publishes (958): the integration branch's net change as a single
+    commit whose only parent is the base tip, signed where the repository signs.
+    The branch's own history — which can carry unsigned commits a ticket branch
+    brought back from before 782 — never reaches the base. The tree is the
+    merge of the two tips, not the branch's own tree, so a branch behind the
+    base does not revert what the base gained since; a conflict is refused, for
+    the integration sweep's merge turn to resolve on the branch first.
+    """
+    tree, conflicts, words = _merge_tree(repo_root, base_sha, tip_sha)
+    if conflicts:
+        return MergeOutcome(ok=False, detail=words, conflicted_files=conflicts)
+    if not tree:
+        return MergeOutcome(ok=False, detail=words)
+    signing = signs_commits(repo_root)
+    sign = ["-S"] if signing else []
+    committed = _git(repo_root, "commit-tree", tree, *sign, "-p", base_sha, "-m", message)
+    if committed.returncode != 0:
+        detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
+        return MergeOutcome(ok=False, detail=detail)
+    return MergeOutcome(ok=True, sha=committed.stdout.strip(), signed=signing)
+
+
 def merge_preview(repo_root: Path, target_sha: str, source_sha: str) -> MergeOutcome:
     """Whether ``source_sha`` would merge into ``target_sha``, writing nothing.
 

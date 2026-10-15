@@ -88,6 +88,11 @@ class PublishSubject:
     commit_message: str
     pr_title: str
     pr_body: str
+    #: A commit to publish *as* ``branch`` instead of the branch's own tip: a
+    #: tree publishes one signed commit cut from the base (`squash_onto`, 958).
+    #: Each cut is a new commit rather than a descendant of the last, so it is
+    #: pushed over the remote branch with a lease on what the remote held.
+    head: str = ""
 
 
 def subject_for_chat_session(
@@ -143,11 +148,31 @@ def _commit(repo_root: Path, subject: PublishSubject) -> StepResult:
     return StepResult("commit", True, message)
 
 
-def _push(repo_root: Path, branch: str) -> StepResult:
+def _push(repo_root: Path, branch: str, head: str = "") -> StepResult:
+    if head:
+        return _push_head(repo_root, branch, head)
     push = _git(["push", "-u", "origin", branch], repo_root)
     if push.returncode != 0:
         return StepResult("push", False, _fail_text(push, "git push failed"))
     return StepResult("push", True, f"pushed {branch}")
+
+
+def _push_head(repo_root: Path, branch: str, head: str) -> StepResult:
+    """Push ``head`` as ``branch``, replacing what the remote held and nothing newer.
+
+    The lease is the value just read from the remote, not a remote-tracking ref
+    that may be stale: a push someone made to the PR branch since is refused,
+    never overwritten. An absent branch leases on absence.
+    """
+    ref = f"refs/heads/{branch}"
+    listed = _git(["ls-remote", "origin", ref], repo_root)
+    if listed.returncode != 0:
+        return StepResult("push", False, _fail_text(listed, "git ls-remote failed"))
+    held = listed.stdout.split()[0] if listed.stdout.split() else ""
+    push = _git(["push", f"--force-with-lease={ref}:{held}", "origin", f"{head}:{ref}"], repo_root)
+    if push.returncode != 0:
+        return StepResult("push", False, _fail_text(push, "git push failed"))
+    return StepResult("push", True, f"pushed {head[:12]} as {branch}")
 
 
 def _gh(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -303,7 +328,7 @@ def publish_branch(
         if step == "commit":
             continue
         if step == "push":
-            result.steps.append(_push(repo_root, subject.branch))
+            result.steps.append(_push(repo_root, subject.branch, subject.head))
         elif step == "open_pr":
             pr_step, pr_url = _open_pr(repo_root, subject, config.base_branch)
             result.steps.append(pr_step)
