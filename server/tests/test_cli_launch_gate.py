@@ -205,7 +205,9 @@ def test_print_mode_frees_the_slot_once_the_process_emits(db_session: Session, t
     thread.start()
     acquired, sibling_thread, slots = None, None, []
     try:
-        deadline = time.time() + 10
+        # A wait, not a budget: it ends at the first line. 10s was not enough for a
+        # tmux spawn plus interpreter start at load ~60 (lg-build-verification-1066).
+        deadline = time.time() + 60
         while not streamer.lines and time.time() < deadline:
             time.sleep(0.05)
         assert streamer.lines, "child never streamed"
