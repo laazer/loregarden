@@ -6,6 +6,11 @@ streaming output survives past it, up to an absolute hard cap
 no longer killed mid-progress. A silent process is still killed at the idle
 budget, exactly as the old fixed wall-clock deadline was — no regression for a
 genuine hang.
+
+Every budget here leaves seconds of slack between output and the idle deadline.
+At `timeout=1` the chatty test failed the pre-push suite with IDLE at a load
+average of ~30: the 10 ms writer was descheduled for over a second, which is
+scheduling jitter on a loaded box, not silence (lg-build-verification-1066).
 """
 
 import subprocess
@@ -13,9 +18,11 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 from uuid import uuid4
 
 import pytest
+from loregarden.agents.executors import print_mode
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
 from loregarden.models.domain import RunStatus
@@ -81,19 +88,20 @@ def _run(db_session: Session, script: str, timeout: int):
 
 
 def test_streaming_run_survives_past_the_idle_budget(db_session: Session):
-    """Eight lines, one every 0.2s (~1.6s total): each resets the 1s idle budget,
-    and the total stays under the 4s hard cap, so the run completes instead of
-    being killed at 1s the way the old fixed deadline would have."""
+    """Twenty lines, one every 0.2s (~4s total): each resets the 3s idle budget,
+    and the total stays under the 12s hard cap, so the run completes instead of
+    being killed at 3s the way the old fixed deadline would have. A stall short
+    of 2.8s between two lines cannot trip the idle budget."""
     script = (
-        "import time\nfor i in range(8):\n    print('tick', i, flush=True)\n    time.sleep(0.2)\n"
+        "import time\nfor i in range(20):\n    print('tick', i, flush=True)\n    time.sleep(0.2)\n"
     )
     start = time.time()
-    stdout, _stderr, status = _run(db_session, script, timeout=1)
+    stdout, _stderr, status = _run(db_session, script, timeout=3)
     elapsed = time.time() - start
 
     assert status == RunStatus.SUCCEEDED
-    assert "tick 7" in stdout
-    assert elapsed > 1.0  # ran well past the idle budget without being killed
+    assert "tick 19" in stdout
+    assert elapsed > 3.0  # ran past the idle budget without being killed
 
 
 def test_silent_run_is_killed_at_the_idle_budget(db_session: Session):
@@ -117,15 +125,22 @@ def test_silent_run_is_killed_at_the_idle_budget(db_session: Session):
 
 def test_chatty_runaway_is_bounded_by_the_hard_cap(db_session: Session):
     """A process that never stops printing never trips the idle budget, so only
-    the absolute hard cap (timeout * 4 = 4s) stops it — and its partial output is
-    preserved on the raised exception for the caller to keep."""
+    the absolute hard cap stops it — and its partial output is preserved on the
+    raised exception for the caller to keep.
+
+    A 4s idle budget, so only a stall of 4s trips it, and a 1.5x cap (6s) so the
+    test does not wait out the production multiplier's 16s.
+    """
     script = (
         "import sys, time\n"
         "while True:\n"
         "    sys.stdout.write('x\\n'); sys.stdout.flush(); time.sleep(0.01)\n"
     )
-    with pytest.raises(subprocess.TimeoutExpired) as excinfo:
-        _run(db_session, script, timeout=1)
+    with (
+        mock.patch.object(print_mode, "TIMEOUT_HARD_CAP_MULTIPLIER", 1.5),
+        pytest.raises(subprocess.TimeoutExpired) as excinfo,
+    ):
+        _run(db_session, script, timeout=4)
 
     assert excinfo.value.kind is RunTimeoutKind.HARD_CAP
     assert isinstance(excinfo.value.output, str)
