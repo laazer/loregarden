@@ -110,9 +110,52 @@ jobs:
       - name: Test
         run: npm test
 
+  gates:
+    name: Workspace gates (PR diff)
+    # Pre-commit runs these, but only where lefthook is installed: #595 was
+    # committed somewhere it was not and grew enums.py past the 1500-line cap on
+    # main, which every later branch then inherited (956). Graded on the PR's
+    # own diff from its merge base, so content it did not touch never fails it.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install server dependencies (the Python gates run in its environment)
+        working-directory: server
+        run: uv sync --extra dev
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies (the TypeScript gates parse with them)
+        working-directory: client
+        run: npm ci
+
+      # Exit 69 (a gate could not run) fails the job too: an ungraded diff is
+      # not a passing one.
+      - name: Run the workspace gates on the PR's diff
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: bash .lefthook/scripts/workspace-gates.sh --repo . --scope branch --base "$BASE"
+
   ci:
     name: CI
-    needs: [server, client]
+    needs: [server, client, gates]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
@@ -121,3 +164,9 @@ jobs:
           if [ "${{ needs.server.result }}" != "success" ] || [ "${{ needs.client.result }}" != "success" ]; then
             exit 1
           fi
+          # Skipped only on a push, where there is no PR diff to grade.
+          case "${{ needs.gates.result }}" in
+            success) ;;
+            skipped) [ "${{ github.event_name }}" != "pull_request" ] || exit 1 ;;
+            *) exit 1 ;;
+          esac
