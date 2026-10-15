@@ -158,8 +158,11 @@ def test_a_run_that_blows_its_hard_cap_leaves_no_orphan_agent(
     marker = tmp_path / "agent-timeout.pid"
     script = _PID_AND_SPIN.format(marker=str(marker))
 
+    # 5s, not 1s: the budget must outlast the agent's start-up, or the run is killed
+    # before the agent exists and there is no orphan to test for. At load ~55 on 10
+    # cores, a 1s budget did exactly that (lg-build-verification-1066).
     with pytest.raises(Exception):  # noqa: B017 -- RunTimeout; the point is the orphan
-        _print_run(run_key, script, timeout=1)
+        _print_run(run_key, script, timeout=5)
 
     agent_pid = _await_pid_file(marker)
     try:

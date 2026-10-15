@@ -97,7 +97,9 @@ def test_a_ledger_failure_is_retried_and_the_command_runs_once_it_clears(
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
-        timeout=60,
+        # A hang backstop, not the property: ~5s alone at load 55, over 60s inside a
+        # pre-push suite on the same box (lg-build-verification-1066).
+        timeout=300,
     )
 
     assert result.returncode == 3

@@ -510,7 +510,12 @@ def test_a_tmux_pid_is_handed_back_only_once_the_pane_leads_its_group(
     with mock.patch("loregarden.agents.executors.agent_spawn.os.getpgid", side_effect=reading):
         spawned = _spawn(run_key, AgentTransport.TMUX, "import time; time.sleep(5)")
 
-    assert calls == [spawned.pid] * 4, "the spawn returned before the pane led its group"
+    # At least the three stale reads were polled through. Not exactly four: under
+    # load the real pane has not called setsid() by the fourth read either, and
+    # polling on is the behaviour under test (failed a pre-push at load ~60 with
+    # five reads, lg-build-verification-1066).
+    assert len(calls) >= 4, "the spawn returned before the pane led its group"
+    assert set(calls) == {spawned.pid}
     assert os.getpgid(spawned.pid) == spawned.pid
 
 
