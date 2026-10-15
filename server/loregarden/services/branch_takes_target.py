@@ -65,7 +65,12 @@ def take_target(
     branch_sha = rev(repo_root, f"refs/heads/{branch}")
     target_sha = rev(repo_root, target)
     if not branch_sha or not target_sha:
-        return TakeTarget(False, f"cannot read {branch!r} and {target!r}")
+        # Not a conflict, so not this module's to resolve: a repository whose base
+        # branch does not exist yet, or a branch not cut yet. Stepping aside keeps
+        # the caller's own handling, which already copes with a missing start point
+        # (cut from HEAD, or fall back to the shared checkout) and reports the rest.
+        # Refusing here blocked a parallel stage that had always run (CI, 2026-10-15).
+        return TakeTarget(True, f"nothing to take: cannot read {branch!r} and {target!r}")
     preview = merge_preview(repo_root, branch_sha, target_sha)
     if preview.ok:
         return TakeTarget(True)

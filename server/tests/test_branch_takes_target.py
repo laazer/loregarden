@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Workspace
 from loregarden.services import integration_merge_agent
-from loregarden.services.branch_takes_target import MergeTurnSeat
+from loregarden.services.branch_takes_target import MergeTurnSeat, take_target
 from loregarden.services.git_branch import ensure_ticket_branch, resolve_ticket_branch
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.worktree_service import WorktreeRefreshError, WorktreeService
@@ -204,6 +204,20 @@ def test_a_turn_that_resolves_nothing_leaves_the_branch_and_names_why(
     assert _clean(repo)
     [run] = _merge_runs(session, ticket)
     assert run.status == RunStatus.FAILED
+
+
+def test_a_target_that_does_not_exist_is_left_to_the_caller(session, workspace, ticket, repo):
+    """A repository whose base is not `main` (CI's `git init` gives `master`):
+    no conflict, so nothing to move or merge, and no refusal of its own."""
+    branch = resolve_ticket_branch(ticket)
+    _cut(repo, branch)
+    tip = commit_on(repo, branch, "own.txt", "the ticket's work\n")
+
+    taken = take_target(repo, branch, "no-such-base")
+
+    assert taken.ok and not taken.moved_from
+    assert _sha(repo, branch) == tip
+    assert _merge_runs(session, ticket) == []
 
 
 def test_without_a_seat_a_conflict_still_blocks_and_runs_no_turn(
