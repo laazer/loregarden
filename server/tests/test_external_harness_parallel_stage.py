@@ -271,3 +271,54 @@ def test_the_checked_out_view_says_what_the_stage_is(db_session: Session, ticket
 
     assert view.stage_shape.startswith(f"{PLAN_STAGE}: parallel")
     assert "not a human gate" in view.stage_shape
+
+
+# --- lg-milestone-that-917, test-break ----------------------------------------
+
+
+def test_every_member_of_a_parallel_stage_is_told_about_the_tree_they_share(
+    db_session: Session, ticket: Ticket, tmp_path
+):
+    """AC14 fills `target_branch` and `tree_warning` in `_checked_out_run_view`,
+    which runs **once per member**. A parallel stage hands out three prompts
+    against one tree, so an implementation that computes the status in
+    `begin_external_stage` and attaches it to the first view — or a test that
+    only ever reads `runs[0]`, as the sequential tests do — leaves two of the
+    three lanes committing on a base they were never told was stale.
+
+    401 of 2437 runs have taken the external path, and the live workflow's plan
+    stage is exactly this shape: three lanes, one tree.
+    """
+    from pathlib import Path
+
+    orch_run, first = _checkout(db_session, ticket)
+    shared = Path(first.runs[0].repo_path)
+    assert len(first.runs) == len(PLAN_LANES)
+    # Land something on the branch the tree was cut from, after it was cut, and
+    # leave the tree dirty so the refresh is skipped rather than catching up.
+    repo = Path(ticket_repo_path(db_session, ticket))
+    run_git(
+        ["commit", "--allow-empty", "-m", "a sibling landed"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (shared / "in-flight.txt").write_text("a lane is mid-edit\n", encoding="utf-8")
+
+    again = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert len(again.runs) == len(PLAN_LANES)
+    assert {view.target_branch for view in again.runs} == {again.runs[0].target_branch}
+    assert again.runs[0].target_branch, "no lane was told which branch its tree should carry"
+    for view in again.runs:
+        assert view.tree_warning, f"lane {view.skill_name} was not told its base is stale"
+        assert view.tree_warning in view.prompt, (
+            f"lane {view.skill_name} reads a prompt that does not say its base is stale"
+        )
+
+
+def ticket_repo_path(db_session: Session, ticket: Ticket) -> str:
+    """The workspace checkout the ticket's tree was cut from."""
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    assert workspace is not None
+    return workspace.repo_path

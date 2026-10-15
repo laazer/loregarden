@@ -202,3 +202,101 @@ def seed_stage_report_contract(repo_root) -> None:
         "Report the stage with a status line and a summary.\n",
         encoding="utf-8",
     )
+
+
+def make_agent_stage_ticket(
+    session,
+    workspace,
+    *,
+    external_id: str,
+    stage_key: str = "work",
+    agent_id: str = "backend_implementer",
+):
+    """A ticket parked, PENDING, on one single-agent stage of a two-stage workflow.
+
+    The shape both handoff boundaries need: a stage that resolves a CLI agent,
+    so `start_stage_execution` opens a run and `render_stage_prompt` has
+    something to render. `at_terminal_stage` is its sibling for the landing
+    tests; this one leaves the ticket *before* the work rather than after it.
+    """
+    import json
+    from uuid import uuid4
+
+    from loregarden.models.domain import (
+        StageStatus,
+        Ticket,
+        TicketState,
+        WorkflowInstance,
+        WorkflowStageDef,
+        WorkflowTemplate,
+        WorkItemType,
+    )
+    from loregarden.services.workflow_state import initial_stages_json
+
+    stages = [
+        WorkflowStageDef(
+            key=stage_key, name="Work", order=1, stage_type="agent", agent_id=agent_id
+        ),
+        WorkflowStageDef(key="done", name="Done", order=2, terminal=True, stage_type="agent"),
+    ]
+    template = WorkflowTemplate(
+        slug=f"handoff-tpl-{uuid4()}",
+        name="Handoff template",
+        stages_json=json.dumps([s.model_dump(mode="json") for s in stages]),
+        transitions_json=json.dumps([{"from": stage_key, "to": "done", "when": "pass"}]),
+    )
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+
+    ticket = Ticket(
+        external_id=external_id,
+        workspace_id=workspace.id,
+        title="Hand this stage over",
+        branch=f"loregarden/{external_id}",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key=stage_key,
+        workflow_stage_status=StageStatus.PENDING,
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    session.add(
+        WorkflowInstance(
+            ticket_id=ticket.id,
+            template_id=template.id,
+            current_stage_key=stage_key,
+            stages_json=initial_stages_json(stages),
+        )
+    )
+    session.commit()
+    return ticket
+
+
+def cut_ticket_worktree(session, workspace, ticket, repo):
+    """The ticket's worktree as an earlier stage would leave it: cut, on the
+    ticket's branch, holding one commit of its own.
+
+    Every handoff test starts from a tree that already exists, so that the
+    refresh-on-*creation* path (`worktree_service._add_worktree`) cannot be what
+    makes a "the tree was refreshed" assertion pass.
+    """
+    from pathlib import Path
+
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    root, stopped = CliAgentExecutor(session)._prepare_tree(
+        make_run(session, workspace, ticket, f"earlier-{ticket.external_id}"),
+        ticket,
+        workspace,
+        workspace_root=Path(repo),
+        skip_git_branch=False,
+        advance_workflow=False,
+    )
+    assert stopped is None, stopped.stderr if stopped else None
+    assert root != Path(repo), "fixture: the ticket must have its own worktree"
+    (root / "own.txt").write_text("the ticket's own earlier stage\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "stage one")
+    return root

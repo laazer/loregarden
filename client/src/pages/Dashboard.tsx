@@ -45,8 +45,8 @@ import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
-import { pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
-import { buildStageTerminalHandoffCommand } from "../lib/terminalCommands";
+import { pushToast, toastWarning } from "../state/toastStore";
+import { copyStageTerminalHandoffCommand } from "../lib/terminalCommands";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -366,21 +366,11 @@ export function Dashboard() {
     },
   });
 
-  const copyTerminalCommand = async (command: string) => {
-    if (!command.trim()) return;
-    try {
-      await navigator.clipboard.writeText(command);
-    } catch {
-      const textarea = document.createElement("textarea");
-      textarea.value = command;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-    }
-  };
+  // AC19. The stage whose terminal handoff is being prepared, or null. The call
+  // merges the worktree onto its target branch, so it is seconds long, and each
+  // click opens an `AgentRun` — a second one would have the first killed by
+  // `fail_interrupted_runs`.
+  const [copyTerminalStageKey, setCopyTerminalStageKey] = useState<string | null>(null);
 
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [ticketModelModalOpen, setTicketModelModalOpen] = useState(false);
@@ -892,13 +882,14 @@ export function Dashboard() {
                             isRunning={isRunningThis}
                             workflowBusy={workflowBusy || routeWorkflow.isPending || patchStageWorkflow.isPending}
                             onRun={requestStageRun}
-                            onCopyTerminal={() =>
-                              void buildStageTerminalHandoffCommand(sel, s)
-                                .then(copyTerminalCommand)
-                                .catch((err) =>
-                                  toastActionFailed("Copy terminal command", err),
-                                )
-                            }
+                            copyTerminalPending={copyTerminalStageKey !== null}
+                            onCopyTerminal={() => {
+                              if (copyTerminalStageKey) return;
+                              setCopyTerminalStageKey(s.key);
+                              void copyStageTerminalHandoffCommand(sel, s).finally(() =>
+                                setCopyTerminalStageKey(null),
+                              );
+                            }}
                             onSetCursor={(stageKey) =>
                               patchStageWorkflow.mutate({
                                 workflow_stage_key: stageKey,

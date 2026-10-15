@@ -24,6 +24,7 @@ from pathlib import Path
 
 from loregarden.db.migration_registry import ids_declared_in_source
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.git_trees import main_working_tree
 
 #: The ref whose ledger decides what has shipped.
 SHIPPED_REF = "origin/main"
@@ -47,11 +48,21 @@ def _git_stdout(cwd: Path, *args: str) -> str:
 
 
 def primary_checkout(code_root: Path) -> Path:
-    """The checkout whose `.git` directory `code_root` shares."""
-    common = Path(_git_stdout(code_root, "rev-parse", "--git-common-dir").strip())
-    if not common.is_absolute():
-        common = code_root / common
-    return common.resolve().parent
+    """The checkout whose `.git` directory `code_root` shares.
+
+    One answer, one place: `git_trees.main_working_tree` is the same question,
+    and a second derivation of it is what let `ensure_ticket_branch` drift
+    (lg-milestone-that-916). This keeps the guard's contract — a Path or a
+    raise, never None — because a topology that cannot be read must refuse
+    rather than guess what has shipped.
+    """
+    primary = main_working_tree(code_root)
+    if primary is None:
+        raise UnshippedMigrationError(
+            f"cannot tell which checkout {code_root} shares a repository with, so "
+            "migrating the database it opens cannot be shown to be safe."
+        )
+    return primary
 
 
 def _frozen_ledger_ids(code_root: Path, ref: str) -> frozenset[str]:

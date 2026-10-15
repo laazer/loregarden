@@ -20,6 +20,7 @@ Two rules separate this path from the built-in driver:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from loregarden.agents.mcp_context import resolve_mcp_url
@@ -43,6 +44,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.handoff_tree_status import (
+    describe_handoff_failure,
+    describe_handoff_tree,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -64,10 +69,13 @@ from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
 from loregarden.services.stage_shape import describe_stage_shape
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
+from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 #: Marks an agent run that a harness outside this process executed. Mirrors
 #: ``TERMINAL_HANDOFF_COMMAND_PREFIX``: there is no argv to record, so the
@@ -164,7 +172,25 @@ def _checked_out_run_view(
     session.add(run)
     session.commit()
 
-    prompt, repo_root = run_svc.executor.render_stage_prompt(run, ticket)
+    try:
+        prompt, repo_root = run_svc.executor.render_stage_prompt(run, ticket)
+    except ValueError as exc:
+        # The MCP boundary turns this into an `isError` tool result, so the text
+        # it carries is all the harness gets: the same readable first sentence
+        # the terminal-handoff route returns, with git's output behind it.
+        raise ValueError(describe_handoff_failure(session, ticket, exc)) from exc
+
+    workspace = _workspace_for(session, ticket)
+    target_branch = resolve_target_branch(
+        session, ticket, workspace, repo_root=resolve_workspace_root(workspace)
+    )
+    status = describe_handoff_tree(
+        repo_root, target_branch=target_branch, ticket_external_id=ticket.external_id
+    )
+    if status.warning:
+        logger.warning("External handoff for %s: %s", ticket.external_id, status.warning)
+        prompt = f"{prompt}\n\n## The tree you were given\n\n{status.warning}\n"
+
     run.command = f"{EXTERNAL_HARNESS_COMMAND_PREFIX} {orch_run.external_harness.value}"
     session.add(run)
     session.commit()
@@ -176,6 +202,8 @@ def _checked_out_run_view(
         skill_name=run.skill_name,
         prompt=prompt,
         repo_path=str(repo_root),
+        target_branch=target_branch,
+        tree_warning=status.warning,
         started_at=_as_utc(run.started_at),
     )
 

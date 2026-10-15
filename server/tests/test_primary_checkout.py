@@ -283,3 +283,128 @@ def test_a_refused_dispatch_parks_files_the_paths_and_starts_no_agent(db_session
     ).all()
     assert json.loads(error.content_json)["dirty_paths"] == ["operator.txt"]
     assert db_session.exec(select(Approval).where(Approval.ticket_id == ticket.id)).first()
+
+
+# --- lg-milestone-that-916: the title names the tree that is actually dirty ---
+#
+# `park_on_dirty_checkout` and `prepare_tree_for_parallel_stage` each built the
+# title with their own f-string, both hardcoded to "Shared checkout refused".
+# Once a ticket's own worktree can be the tree being refused (779), that title
+# sends the operator to clean a checkout that is not the one holding the work —
+# and two hardcoded copies is how the two surfaces drift apart next.
+
+
+_TICKET_WORKTREE = "ticket_worktree_branch_checkout"
+
+
+def test_the_title_names_the_ticket_s_own_worktree_when_that_is_what_was_refused():
+    """UX-4/S-7. The distinguishing noun front-loaded, because `.tl-output-title`
+    renders one ellipsised line with no tooltip.
+    """
+    error = DirtyPrimaryCheckoutError(
+        repo_root=Path("/tmp/tree"),
+        use=PrimaryCheckoutUse(_TICKET_WORKTREE),
+        cause=DirtyCheckoutCause.DIRTY,
+        dirty_paths=("wip.txt",),
+    )
+
+    assert error.artifact_title(stage_key="implement") == "Ticket worktree refused — implement"
+
+
+@pytest.mark.parametrize(
+    "use",
+    # By value, not by member: the new member does not exist on pre-change code
+    # and a decorator that names it turns this module's whole collection into an
+    # error, which hides every other test in here rather than failing one.
+    [use for use in PrimaryCheckoutUse if use.value != _TICKET_WORKTREE],
+    ids=lambda use: use.value,
+)
+def test_every_other_use_keeps_the_shared_checkout_title(use: PrimaryCheckoutUse):
+    """UX-4. One new title, and no existing one moved — the appended member is
+    the only thing that reads differently afterwards.
+    """
+    error = DirtyPrimaryCheckoutError(
+        repo_root=Path("/tmp/tree"),
+        use=use,
+        cause=DirtyCheckoutCause.DIRTY,
+        dirty_paths=("wip.txt",),
+    )
+
+    assert error.artifact_title(stage_key="implement") == "Shared checkout refused — implement"
+
+
+@pytest.mark.parametrize(
+    ("use_value", "expected"),
+    [
+        (PrimaryCheckoutUse.TICKET_FALLBACK.value, "Shared checkout refused — stage"),
+        (_TICKET_WORKTREE, "Ticket worktree refused — stage"),
+    ],
+    ids=["shared", "ticket_worktree"],
+)
+def test_a_run_with_no_stage_key_still_gets_a_title(use_value: str, expected: str):
+    """`park_on_dirty_checkout` passes `run.stage_key or ""`; the fallback moves
+    into the helper so both call sites get it without repeating it.
+    """
+    error = DirtyPrimaryCheckoutError(
+        repo_root=Path("/tmp/tree"),
+        use=PrimaryCheckoutUse(use_value),
+        cause=DirtyCheckoutCause.UNREADABLE,
+    )
+
+    assert error.artifact_title(stage_key="") == expected
+
+
+# --- test-break: the vocabulary itself --------------------------------------
+
+
+def test_exactly_one_use_was_added_and_it_was_appended():
+    """UX-5/S-6. "Exactly one member, appended last" is the whole compatibility
+    argument for touching this enum: nothing persists a `PrimaryCheckoutUse`
+    and no client reads one, but every other member's value is already in
+    operator-facing prose and in stored artifact bodies. A rename or a reorder
+    is a silent rewrite of what those rows say.
+    """
+    assert [use.value for use in PrimaryCheckoutUse] == [
+        "ticket_fallback",
+        "chat_fallback",
+        "ticket_branch_checkout",
+        "merge_worktree",
+        "hook_install",
+        _TICKET_WORKTREE,
+    ]
+
+
+def test_the_holder_vocabulary_is_the_three_states_it_has_to_be():
+    """S-4. Three states, because the message has three shapes and "could not
+    tell" is not the same claim as "it is the main tree". Two booleans for
+    three states is the second place the guard and the message can disagree,
+    which is the defect this ticket is fixing.
+    """
+    from loregarden.models.domain import BranchHolder
+
+    assert [holder.value for holder in BranchHolder] == [
+        "main_working_tree",
+        "linked_worktree",
+        "unidentified",
+    ]
+
+
+def test_the_refusal_title_is_built_in_one_place_only():
+    """S-7. Two hardcoded f-strings is how the Timeline and the parallel-stage
+    path drifted into saying the same wrong thing twice; a helper nobody calls
+    is the same defect with an extra function. Checked as a fact about the
+    tree, because a reviewer reading one call site cannot see the other.
+    """
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1] / "loregarden"
+    found = subprocess.run(
+        ["grep", "-rln", "--include=*.py", "checkout refused", str(root)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert found.returncode in (0, 1), found.stderr
+    files = {Path(line).name for line in found.stdout.split() if line}
+
+    assert files == {"primary_checkout.py"}, files

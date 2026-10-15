@@ -70,6 +70,28 @@ class DirtyPrimaryCheckoutError(ValueError):
             "let a worktree be cut, before trying again."
         )
 
+    def artifact_title(self, *, stage_key: str) -> str:
+        """The ERROR artifact title, derived from `use` in one place.
+
+        `park_on_dirty_checkout` and `prepare_tree_for_parallel_stage` each
+        built this with their own hardcoded f-string, both saying "Shared
+        checkout refused". Once the ticket's own worktree can be the tree being
+        refused (lg-milestone-that-916), that sends the operator to clean a
+        checkout that is not holding their work — and two copies is how the two
+        surfaces say the same wrong thing twice.
+
+        `<Thing> <verb> — <stage_key>`, the convention the Timeline's other
+        titles follow, with the distinguishing noun first: `.tl-output-title`
+        renders one ellipsised line with no tooltip, so a distinction placed
+        after the stage key is invisible on a narrow pane (UX-4).
+        """
+        thing = (
+            "Ticket worktree"
+            if self.use is PrimaryCheckoutUse.TICKET_WORKTREE_BRANCH_CHECKOUT
+            else "Shared checkout"
+        )
+        return f"{thing} refused — {stage_key or 'stage'}"
+
     def artifact_content(self, *, stage_key: str) -> dict:
         """An ERROR artifact body in the shape the Timeline tab renders."""
         return {

@@ -39,6 +39,7 @@ from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
 )
+from loregarden.services.hold_line import truncate_for_storage
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
     PreparedAction,
@@ -213,7 +214,7 @@ class OrchestrationCallbackService:
         badge on the home board after its lane was already empty.
         """
         run.status = status
-        run.error_message = message[:2000]
+        run.error_message = truncate_for_storage(message)
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()

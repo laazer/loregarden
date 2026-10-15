@@ -8,8 +8,14 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
-from loregarden.models.domain import BaxterChatSession, PrimaryCheckoutUse, Ticket
+from loregarden.models.domain import (
+    BaxterChatSession,
+    BranchHolder,
+    PrimaryCheckoutUse,
+    Ticket,
+)
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.git_trees import is_main_working_tree, main_working_tree
 from loregarden.services.primary_checkout import require_clean_tree
 from loregarden.services.worktree_snapshot import read_tree
 
@@ -68,18 +74,48 @@ def _worktree_lock_path(detail: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _checkout_failure_message(
-    branch: str,
-    exc: subprocess.CalledProcessError,
-    *,
-    repair_note: str = "",
-) -> str:
-    detail = _process_text(exc)
-    locked_at = _worktree_lock_path(detail)
-    if locked_at:
-        prefix = repair_note.strip() + "\n\n" if repair_note.strip() else ""
+def _classify_holder(locked_at: str, main_tree: Path | None) -> BranchHolder:
+    """Which kind of tree `locked_at` is, decided once from one derived fact.
+
+    An unresolvable `locked_at` classifies as `MAIN_WORKING_TREE` rather than
+    `UNIDENTIFIED`: nothing is removed either way, but `UNIDENTIFIED`'s wording
+    claims git could not identify the main working tree, which is only true
+    when `main_working_tree` itself could not answer.
+    """
+    if main_tree is None:
+        return BranchHolder.UNIDENTIFIED
+    if is_main_working_tree(locked_at, main_tree=main_tree):
+        return BranchHolder.MAIN_WORKING_TREE
+    return BranchHolder.LINKED_WORKTREE
+
+
+def _free_the_branch_with(locked_at: str, *, start_point: str) -> str:
+    """The remedy for a tree that must not be removed, and why it is that one."""
+    if start_point:
         return (
-            f"{prefix}"
+            f"Free the branch with:\n  git -C {locked_at} switch {start_point}\nthen retry the run."
+        )
+    return (
+        f"Free the branch with:\n"
+        f"  git -C {locked_at} switch --detach\n"
+        f"then retry the run. Detaching frees the branch without choosing another "
+        f"one for you."
+    )
+
+
+def _held_branch_message(
+    branch: str, locked_at: str, *, holder: BranchHolder, start_point: str
+) -> str:
+    """What the operator reads when something else is holding `branch`.
+
+    Three shapes, one per `BranchHolder`, and each ends in a command that can
+    succeed against the tree named on its first line (UX-1, UX-2). The string
+    `worktree remove --force` appears in the linked-worktree shape only: aimed
+    at a main working tree git exits 128 however the operator runs it, so
+    printing it there hands over a remedy that cannot work (AC2).
+    """
+    if holder is BranchHolder.LINKED_WORKTREE:
+        return (
             f"Branch {branch!r} is already checked out in another worktree at "
             f"{locked_at}. Git refuses a second checkout (exit 128).\n\n"
             f"Free it with:\n"
@@ -87,31 +123,53 @@ def _checkout_failure_message(
             f"then retry the run. Stale Claude/Cursor scratchpad worktrees are a "
             f"common cause."
         )
+    if holder is BranchHolder.MAIN_WORKING_TREE:
+        return (
+            f"Branch {branch!r} is checked out in this repository's main working tree "
+            f"at {locked_at}. Git refuses a second checkout (exit 128), and that tree "
+            f"must not be removed.\n\n"
+            f"{_free_the_branch_with(locked_at, start_point=start_point)}"
+        )
+    return (
+        f"Branch {branch!r} is checked out at {locked_at}, and git could not identify "
+        f"this repository's main working tree, so removing {locked_at} cannot be shown "
+        f"to be safe.\n\n"
+        f"Free the branch with:\n"
+        f"  git -C {locked_at} switch --detach\n"
+        f"then retry the run. Detaching frees the branch whether or not that tree is "
+        f"the main one."
+    )
+
+
+def _checkout_failure_message(
+    branch: str,
+    exc: subprocess.CalledProcessError,
+    *,
+    repair_note: str = "",
+    holder: BranchHolder = BranchHolder.LINKED_WORKTREE,
+    start_point: str = "",
+) -> str:
+    detail = _process_text(exc)
+    locked_at = _worktree_lock_path(detail)
+    if locked_at:
+        prefix = repair_note.strip() + "\n\n" if repair_note.strip() else ""
+        body = _held_branch_message(branch, locked_at, holder=holder, start_point=start_point)
+        return f"{prefix}{body}"
     return detail or f"git checkout -B {branch!r} failed ({exc})"
 
 
-def _is_primary_checkout(repo_root: Path, worktree_path: str) -> bool:
-    try:
-        return Path(worktree_path).resolve() == repo_root.resolve()
-    except OSError:
-        # Fail closed: an unresolvable path may well BE the primary checkout, and
-        # answering False here is what authorizes `worktree remove --force`.
-        logger.warning(
-            "Could not resolve worktree path %r against %s; treating it as the primary checkout",
-            worktree_path,
-            repo_root,
-            exc_info=True,
-        )
-        return True
-
-
-def _try_free_worktree_lock(repo_root: Path, branch: str, locked_at: str) -> tuple[bool, str]:
-    """Try to remove a non-primary worktree holding `branch`.
+def _try_free_worktree_lock(
+    repo_root: Path, branch: str, locked_at: str, *, holder: BranchHolder
+) -> tuple[bool, str]:
+    """Try to remove a linked worktree holding `branch`.
 
     Returns ``(repaired, note)``. ``repaired`` is True only when the lock was
-    cleared and checkout should be retried.
+    cleared and checkout should be retried. Only a `LINKED_WORKTREE` is removed:
+    the decision is about the tree holding the branch, never about which tree
+    the dispatch was standing in, which is what `repo_root` answers now that it
+    is routinely the ticket's own worktree (lg-milestone-that-916).
     """
-    if _is_primary_checkout(repo_root, locked_at):
+    if holder is not BranchHolder.LINKED_WORKTREE:
         logger.warning(
             "Refusing to remove primary checkout %s while switching to %s",
             locked_at,
@@ -230,9 +288,17 @@ def ensure_ticket_branch(
     which is where the callers still cut from until the target branch reaches
     them (lg-milestone-that-769). An existing branch is never moved.
 
-    If another (non-primary) worktree holds the branch — common with stale Claude
+    If another linked worktree holds the branch — common with stale Claude
     scratchpads — remove that worktree once and retry. Gate autofix never sees
     this failure because it happens before any agent starts.
+
+    Which tree is this repository's *main* working tree is derived once per
+    call, from git, and held for the rest of it: both the removal guard and the
+    `PrimaryCheckoutUse` the refusal names read that one value, and derived
+    separately they can disagree invisibly (lg-milestone-that-916). That is one
+    `rev-parse` per dispatch, and `ensure_ticket_branch` fires once per stage
+    agent. `repo_root` is no longer a stand-in for it: since 779 it is
+    routinely the ticket's own worktree.
 
     Refuses (`DirtyPrimaryCheckoutError`) to *switch* a checkout holding
     uncommitted work other than `ignoring` — the ticket's own recorded paths: the
@@ -245,9 +311,18 @@ def ensure_ticket_branch(
 
     if not (repo_root / ".git").exists():
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
+    main_tree = main_working_tree(repo_root)
     tree = read_tree(repo_root)
     if tree.branch != branch:
-        require_clean_tree(tree, use=PrimaryCheckoutUse.TICKET_BRANCH_CHECKOUT, ignoring=ignoring)
+        # An unknown topology (`main_tree is None`) keeps the value that
+        # shipped: the refusal names the shared checkout only where the tree
+        # handed over is, or might be, the shared checkout (S-6).
+        use = (
+            PrimaryCheckoutUse.TICKET_BRANCH_CHECKOUT
+            if is_main_working_tree(repo_root, main_tree=main_tree)
+            else PrimaryCheckoutUse.TICKET_WORKTREE_BRANCH_CHECKOUT
+        )
+        require_clean_tree(tree, use=use, ignoring=ignoring)
 
     try:
         _checkout_branch(repo_root, branch, start_point=start_point)
@@ -256,11 +331,18 @@ def ensure_ticket_branch(
         locked_at = _worktree_lock_path(_process_text(first_exc))
         if not locked_at:
             raise ValueError(_checkout_failure_message(branch, first_exc)) from first_exc
+        holder = _classify_holder(locked_at, main_tree)
 
-        repaired, repair_note = _try_free_worktree_lock(repo_root, branch, locked_at)
+        repaired, repair_note = _try_free_worktree_lock(repo_root, branch, locked_at, holder=holder)
         if not repaired:
             raise ValueError(
-                _checkout_failure_message(branch, first_exc, repair_note=repair_note)
+                _checkout_failure_message(
+                    branch,
+                    first_exc,
+                    repair_note=repair_note,
+                    holder=holder,
+                    start_point=start_point,
+                )
             ) from first_exc
 
         try:
@@ -271,6 +353,8 @@ def ensure_ticket_branch(
                     branch,
                     second_exc,
                     repair_note=f"{repair_note} Retry still failed.",
+                    holder=holder,
+                    start_point=start_point,
                 )
             ) from second_exc
         return branch

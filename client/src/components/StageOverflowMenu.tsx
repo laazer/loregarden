@@ -8,6 +8,7 @@ interface StageOverflowMenuProps {
   runCheck: { allowed: boolean; reason: string };
   isRunning: boolean;
   workflowBusy: boolean;
+  copyTerminalPending: boolean;
   onRun: (stageKey: string) => void;
   onCopyTerminal: () => void;
   onSetCursor: (stageKey: string) => void;
@@ -30,6 +31,7 @@ export function StageOverflowMenu({
   runCheck,
   isRunning,
   workflowBusy,
+  copyTerminalPending,
   onRun,
   onCopyTerminal,
   onSetCursor,
@@ -44,6 +46,7 @@ export function StageOverflowMenu({
     isRunning,
     workflowBusy,
     canCopyTerminal: true,
+    copyTerminalPending,
   });
 
   let lastSection: string | undefined;

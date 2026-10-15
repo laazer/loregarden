@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 from loregarden.agents.cli_adapters import CliInvocation
-from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.agents.executors.dispatch_warnings import maybe_warn_adapter_override
 from loregarden.models.domain import AgentRun, Workspace, WorkspaceRuntimeSettings
 from loregarden.services.cli_settings import adapter_override_warning, adapter_pin_source
 
@@ -78,11 +78,11 @@ def test_pin_source_walks_env_then_ticket_then_workspace():
         assert adapter_pin_source(workspace=ws, ticket_adapter="claude") == "env"
 
 
-def test_executor_writes_the_warning_into_the_run_log(db_session):
+def test_executor_writes_the_warning_into_the_run_log():
     streamer = mock.Mock()
     run = AgentRun(run_code="r-1", ticket_id="t", workspace_id="w", agent_id="learning")
 
-    CliAgentExecutor(db_session)._maybe_warn_adapter_override(
+    maybe_warn_adapter_override(
         streamer=streamer,
         run=run,
         agent={"adapter": "claude", "default_model": "opus"},

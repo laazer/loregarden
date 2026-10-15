@@ -107,3 +107,48 @@ describe("buildStageMenuActions", () => {
     expect(actions.some((action) => action.kind === "set-cursor")).toBe(false);
   });
 });
+
+// AC19. Each "Copy terminal command" click calls `start_stage_execution`, so a
+// second click opens a second `AgentRun` and `fail_interrupted_runs` kills the
+// first. The server call now takes as long as a merge of up to 134 commits, so
+// the window for that second click is seconds wide rather than milliseconds.
+// This is a correctness guard, not polish.
+describe("buildStageMenuActions — a handoff already in flight", () => {
+  const args = (overrides: Record<string, unknown> = {}) => ({
+    ticket: ticket(),
+    stage: ticket().stages[0],
+    runCheck: { allowed: true, reason: "Run Implementation" },
+    isRunning: false,
+    workflowBusy: false,
+    canCopyTerminal: true,
+    copyTerminalPending: false,
+    ...overrides,
+  });
+
+  const copyTerminal = (built: ReturnType<typeof buildStageMenuActions>) =>
+    built.find((action) => action.kind === "copy-terminal");
+
+  it("offers the item normally when nothing is in flight", () => {
+    const action = copyTerminal(buildStageMenuActions(args()));
+
+    expect(action).toBeDefined();
+    expect(action!.disabled).toBeFalsy();
+  });
+
+  it("disables the item and says why while a handoff is being prepared", () => {
+    const action = copyTerminal(buildStageMenuActions(args({ copyTerminalPending: true })));
+
+    expect(action).toBeDefined();
+    expect(action!.disabled).toBe(true);
+    expect(action!.title).toBe("Already preparing a terminal command for this ticket");
+  });
+
+  it("leaves the run action's own disabled state alone", () => {
+    // The pending handoff belongs to one stage's copy item. Reusing the
+    // workflow-wide `workflowBusy` flag instead would disable the item on
+    // every stage of every ticket, and disable Run here too.
+    const built = buildStageMenuActions(args({ copyTerminalPending: true }));
+
+    expect(built.find((action) => action.kind === "run")!.disabled).toBe(false);
+  });
+});

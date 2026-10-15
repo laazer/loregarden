@@ -1,4 +1,12 @@
-import { useCallback, createContext, useContext, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import "./OverflowMenu.css";
@@ -25,6 +33,21 @@ export function OverflowMenu({
   const closePanel = useCallback(() => setOpen(false), []);
   useDismissOnOutside(open, rootRef, closePanel);
 
+  // Return focus to the trigger whenever the panel closes — selecting an item,
+  // Escape, or a click outside. The menu's slow item hands the stage to a
+  // terminal, and without this a keyboard operator is dropped on `<body>` for
+  // the seconds that takes, with no way back to the control they just used.
+  // Gated on having been open, so this never pulls focus as a ticket's twelve
+  // stage rows mount.
+  const hasOpened = useRef(false);
+  useEffect(() => {
+    if (open) {
+      hasOpened.current = true;
+    } else if (hasOpened.current) {
+      triggerRef.current?.focus();
+    }
+  }, [open]);
+
   return (
     <div className="overflow-menu" ref={rootRef}>
       <button
@@ -40,7 +63,7 @@ export function OverflowMenu({
         ⋯
       </button>
       {open ? (
-        <MenuCloseContext.Provider value={() => setOpen(false)}>
+        <MenuCloseContext.Provider value={closePanel}>
           <div
             ref={panelRef}
             className={`overflow-menu-panel overflow-menu-panel--${align} overflow-menu-panel--anchored`}

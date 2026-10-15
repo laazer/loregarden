@@ -23,6 +23,25 @@ class PrimaryCheckoutUse(StrEnum):
     MERGE_WORKTREE = "merge_worktree"
     #: Writing another workspace's hook block into its lefthook config.
     HOOK_INSTALL = "hook_install"
+    #: Switching the ticket's own worktree, not the shared checkout, to its branch.
+    TICKET_WORKTREE_BRANCH_CHECKOUT = "ticket_worktree_branch_checkout"
+
+
+class BranchHolder(StrEnum):
+    """Which tree is holding the branch a checkout was refused, once classified.
+
+    Three states because the refusal has three shapes, and "git could not say"
+    is not the same claim as "it is the main working tree". Classified once per
+    `locked_at` and passed to both the removal guard and the message, so the
+    two cannot name different trees (lg-milestone-that-916).
+    """
+
+    #: The holder is this repository's main working tree — never force-removed.
+    MAIN_WORKING_TREE = "main_working_tree"
+    #: The holder is some other linked worktree — the stale-scratchpad case.
+    LINKED_WORKTREE = "linked_worktree"
+    #: git could not say which tree is the main one, so nothing is removed.
+    UNIDENTIFIED = "unidentified"
 
 
 class DirtyCheckoutCause(StrEnum):
@@ -32,4 +51,4 @@ class DirtyCheckoutCause(StrEnum):
     UNREADABLE = "unreadable"
 
 
-__all__ = ["DirtyCheckoutCause", "PrimaryCheckoutUse"]
+__all__ = ["BranchHolder", "DirtyCheckoutCause", "PrimaryCheckoutUse"]

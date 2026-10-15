@@ -27,6 +27,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.hold_line import CUT_MARKER, ERROR_MESSAGE_LIMIT
 from loregarden.services.integration_review import backfill_integration_reviews
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -37,6 +38,11 @@ from loregarden.services.oversized_ticket_split import (
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
+from tests.hold_line_helpers import (
+    assert_plain_single_line,
+    assert_reconciles,
+    parse_hold_line,
+)
 from tests.repo_templates import from_template
 from tests.worktree_helpers import seed_stage_report_contract
 
@@ -1749,8 +1755,8 @@ def test_a_sibling_prerequisite_that_is_merely_not_done_does_not_hold_its_depend
 
 
 def test_why_names_the_landing_tool_for_an_unlanded_prerequisite() -> None:
-    from loregarden.services.builtin_orchestrator import _why
     from loregarden.services.dependency_readiness import UnmetPrerequisite, UnmetReason
+    from loregarden.services.hold_line import _why
 
     prerequisite = Ticket(
         external_id="lg-milestone-that-715",
@@ -1770,8 +1776,8 @@ def test_why_names_the_landing_tool_for_an_unlanded_prerequisite() -> None:
 def test_why_is_unchanged_for_a_prerequisite_that_has_simply_not_run() -> None:
     """A NOT_DONE prerequisite needs no operator action — ordering will run it —
     so the bare state is still the whole answer."""
-    from loregarden.services.builtin_orchestrator import _why
     from loregarden.services.dependency_readiness import UnmetPrerequisite, UnmetReason
+    from loregarden.services.hold_line import _why
 
     prerequisite = Ticket(
         external_id="lg-milestone-that-716",
@@ -1857,9 +1863,18 @@ def test_the_waiting_line_names_the_first_five_and_counts_the_rest(
 def test_the_count_and_the_first_child_survive_the_two_thousand_character_cut(
     db_session: Session, tmp_path
 ) -> None:
-    """The reason the count leads. `_finish_orchestration_run` stores
-    `message[:2000]`, so anything after the first ~45 characters is at the
-    mercy of how long the children's titles happen to be.
+    """R5-AC5 (919). The reason the count leads — with the inherited assertion
+    corrected rather than deleted.
+
+    This test used to assert `len(message) == 2000`, which pinned the defect
+    919 exists to fix: it made "the message reaches the cut" look like a
+    guarantee. 779 AC7 guarantees three things — the count leads, at most five
+    child names, then `+<n> more` — and reaching the cut is not one of them.
+    The line is now composed against `ERROR_MESSAGE_LIMIT`, so at 500-character
+    titles the budget binds before `WAITING_NAMES` does and fewer than five
+    children are named. That is the cap behaving as a ceiling, not a
+    regression; the short-title test above is where "five names, then +2 more"
+    is proven, and it is untouched.
     """
     parent, titles = _parent_with_held_children(
         db_session, tmp_path, "auto-mode-waiting-long", 7, title_pad=500
@@ -1868,11 +1883,211 @@ def test_the_count_and_the_first_child_survive_the_two_thousand_character_cut(
     orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
 
     message = orch_run.error_message or ""
-    assert len(message) == 2000, (
-        f"this fixture must actually reach the cut, or it proves nothing: {len(message)}"
+    assert len(message) < 2000, (
+        f"composed against the cut, not by it — and never reaching it: {len(message)}"
     )
+    assert CUT_MARKER not in message, f"the budget, not the truncation, bounds it: {message[-80:]}"
     assert message.startswith("Child ticket waiting on a prerequisite (7): "), message
-    assert titles[0] in message, f"the first child's clause must survive the cut: {message[:200]}"
+    assert titles[0] in message, f"the first child must be named whole: {message[:200]}"
+    assert_plain_single_line(message)
+
+    parsed = parse_hold_line(message)
+    assert parsed.total == 7
+    named = list(parsed.children)
+    assert named, "at least the first child is named whole"
+    assert [child.title for child in named] == titles[: len(named)], (
+        f"the children named are the first ones, in order: {[c.title[:20] for c in named]}"
+    )
+    assert parsed.elided_children == 7 - len(named)
+    assert message.endswith(f"; +{7 - len(named)} more"), message[-40:]
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-919: real volume. The live maximum is ONE dependent with 18
+# done-but-unlanded prerequisites, measured read-only against the database
+# 2026-10-13: fan-in per ticket peaks at 18 on exactly one ticket, then 13, 12,
+# 11 (x2), 9 (x3); max external_id 29 characters, max workspace slug 10, max
+# title 127.
+#
+# At that shape the pre-919 line measured 2000 characters: 13 prerequisites
+# carried a readable remedy, the 14th ended `land it: loregarden_land_ticket
+# lg-milestone-` and four were dropped with no indication at all.
+#
+# R6-AC2 / 779 AC10: the prerequisites must be `done` with REAL unlanded
+# branches. A cross-workspace, state-only hold renders NOT_DONE clauses, which
+# are ~130 characters shorter each and would not exercise the budget at all.
+# ---------------------------------------------------------------------------
+
+#: Live maxima the fixture pads to, rather than depending on the live database.
+_LIVE_ID_WIDTH = 29
+_LIVE_SLUG = "pq-live-ws"  # 10 characters
+_LIVE_TITLE_WIDTH = 127
+_LIVE_FAN_IN = 18
+
+
+def _pad(stem: str, width: int, filler: str = "z") -> str:
+    assert len(stem) <= width, stem
+    return stem + filler * (width - len(stem))
+
+
+def _unlanded_branches_with_commits(
+    repo: Path, tmp_path: Path, branches: list[str], start: str
+) -> dict[str, str]:
+    """`branches` each cut from `start` with one commit, landed nowhere.
+
+    The same recipe as `_unlanded_branch_with_a_commit`, through one throwaway
+    worktree instead of eighteen: at this volume the add/remove pair is the
+    whole cost of the test.
+    """
+    tree = tmp_path / "unlanded-branches"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "--detach", str(tree), start], cwd=repo, check=True
+    )
+    tips: dict[str, str] = {}
+    for index, branch in enumerate(branches):
+        subprocess.run(["git", "checkout", "-q", "-b", branch, start], cwd=tree, check=True)
+        (tree / "work.txt").write_text(f"work nobody landed {index}\n")
+        subprocess.run(["git", "add", "-A"], cwd=tree, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", f"unlanded {index}"], cwd=tree, check=True)
+        tips[branch] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tree, check=True, capture_output=True, text=True
+        ).stdout.strip()
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo, check=True)
+    return tips
+
+
+def _parent_with_one_child_held_by_unlanded_siblings(
+    db_session: Session, tmp_path: Path, *, count: int
+):
+    """One dependent child at live widths, held by `count` `done` siblings whose
+    branches carry a commit the dependent's resolved target cannot see."""
+    from loregarden.services.target_branch import resolve_target_branch
+
+    ws = _make_workspace(db_session, tmp_path, _LIVE_SLUG)
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="pq-live-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session,
+        ws,
+        external_id=_pad("lg-milestone-that-919-dep", _LIVE_ID_WIDTH),
+        title=_pad("Dependent child at the live title maximum", _LIVE_TITLE_WIDTH, "."),
+        parent_ticket_id=parent.id,
+    )
+    repo = Path(ws.repo_path)
+    target = resolve_target_branch(db_session, child, ws, repo_root=repo)
+
+    dependencies = TicketDependencyService(db_session)
+    prerequisite_ids = []
+    for n in range(1, count + 1):
+        external_id = _pad(f"lg-milestone-that-919-p{n:02d}", _LIVE_ID_WIDTH)
+        prerequisite = _make_ticket(
+            db_session,
+            ws,
+            external_id=external_id,
+            title=_pad(f"Finished sibling {n:02d}", _LIVE_TITLE_WIDTH, "."),
+            parent_ticket_id=parent.id,
+        )
+        prerequisite.state = TicketState.DONE
+        prerequisite.branch = f"loregarden/{external_id}"
+        db_session.add(prerequisite)
+        dependencies.add_dependency(child.id, prerequisite.id)
+        prerequisite_ids.append(external_id)
+    db_session.commit()
+
+    tips = _unlanded_branches_with_commits(
+        repo, tmp_path, [f"loregarden/{pid}" for pid in prerequisite_ids], target
+    )
+
+    # 779 AC10: without these the fixture asserts nothing, because
+    # `work_is_reachable` answers None for a prerequisite with no real branch
+    # and None is not unmet.
+    for branch, tip in tips.items():
+        assert tip, branch
+        assert not _is_ancestor(repo, tip, target), f"{branch} must not be on {target}"
+        assert not _is_ancestor(repo, tip, "main"), f"{branch} must not be on main"
+
+    return parent, child, prerequisite_ids, target
+
+
+def test_eighteen_unlanded_prerequisites_name_at_least_ten_whole_remedies(
+    db_session: Session, tmp_path
+) -> None:
+    """R6-AC1/R6-AC2/R6-AC3/R6-AC4, R5-AC1/R5-AC2.
+
+    The live worst case, driven through the real `BuiltinOrchestrator.execute`.
+    The line must fit the column *and* stay useful: a line that fits by naming
+    two prerequisites satisfies the length bound and fails this test.
+    """
+    parent, child, prerequisite_ids, target = _parent_with_one_child_held_by_unlanded_siblings(
+        db_session, tmp_path, count=_LIVE_FAN_IN
+    )
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(child)
+
+    message = orch_run.error_message or ""
+    # R5-AC1: bounded by the budget, and never by the cut.
+    assert len(message) < ERROR_MESSAGE_LIMIT, f"{len(message)}: {message[-120:]}"
+    assert CUT_MARKER not in message, message[-120:]
+    assert_plain_single_line(message)
+    # The held child never started against a base missing the work.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child.id)).all() == []
+
+    parsed = parse_hold_line(message)
+    assert parsed.total == 1, parsed
+    assert parsed.elided_children == 0, "one held child is not elided"
+    (held,) = parsed.children
+    assert held.external_id == child.external_id
+
+    # R6-AC2: at least ten complete, copyable remedies, each naming a whole id.
+    named = held.prerequisites
+    assert len(named) >= 10, (
+        f"the live worst case must name at least ten prerequisites, named {len(named)}"
+    )
+    assert len({p.external_id for p in named}) == len(named), "no prerequisite named twice"
+    for prerequisite in named:
+        assert prerequisite.external_id in prerequisite_ids, prerequisite
+        assert prerequisite.slug == _LIVE_SLUG, prerequisite
+        # R6-AC4, non-vacuity: a state-only hold would render the bare state.
+        assert f", not landed on {target}; " in prerequisite.why, prerequisite
+        assert prerequisite.why.endswith(
+            f"land it: loregarden_land_ticket {prerequisite.external_id}"
+        ), prerequisite
+    assert message.count("loregarden_land_ticket") == len(named), (
+        "every named prerequisite carries exactly one remedy"
+    )
+
+    # R6-AC3 / R5-AC4: the elision is present, exact, and points at the
+    # unelided view (R7-AC1's frozen `blocked_by_summaries`).
+    elided = _LIVE_FAN_IN - len(named)
+    assert elided >= 1, "18 live-width clauses cannot all fit; the elision must fire"
+    assert (
+        f", +{elided} more prerequisites \u2014 loregarden_get_ticket {child.external_id})"
+    ) in message, message[-200:]
+    assert_reconciles(parsed, total=1, prerequisite_counts=[_LIVE_FAN_IN])
+
+
+def test_two_runs_over_the_same_held_subtree_produce_the_same_line(
+    db_session: Session, tmp_path
+) -> None:
+    """R4-AC3, the orchestrator's half: two full `execute` runs over the same
+    fixture produce byte-identical messages. Nothing about the line may depend
+    on the order `unmet_prerequisites_for_start` happened to return entries in
+    (measured on the real fixture: p03, p17, ..., p18, p16)."""
+    parent, _ = _parent_with_held_children(db_session, tmp_path, "auto-mode-waiting-twice", 5)
+
+    first = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    first_message = first.error_message or ""
+    second = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+
+    assert first_message
+    assert first_message == (second.error_message or "")
+    assert_plain_single_line(first_message)
 
 
 # ---------------------------------------------------------------------------

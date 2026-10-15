@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from loregarden.agents.cli_adapters import render_terminal_handoff_command
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
@@ -14,8 +13,6 @@ from loregarden.models.domain import (
     BlockedOn,
     BtwExchange,
     BtwQuestionCreate,
-    ExternalHarnessPromptRequest,
-    ExternalHarnessPromptView,
     FinalizeHierarchyRequest,
     FinalizeHierarchyResponse,
     OrchestrationRun,
@@ -61,7 +58,6 @@ from loregarden.services.cli_settings import (
     set_ticket_orchestration_runtime,
 )
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
-from loregarden.services.external_harness import build_external_harness_prompt
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
 from loregarden.services.log_storage import read_log_lines
@@ -73,7 +69,9 @@ from loregarden.services.run_cancellation import request_cancel, request_orchest
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
-from loregarden.services.stage_retry_budget import StageRetryBudgetExceeded
+from loregarden.services.stage_retry_budget import (
+    StageRetryBudgetExceeded,
+)
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_activity import (
     activity_for,
@@ -1320,70 +1318,6 @@ def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Tick
 
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
-
-
-@router.post("/{ticket_id}/terminal_handoff_command")
-def build_terminal_handoff_command(
-    ticket_id: str,
-    body: StartRunRequest,
-    session: Session = Depends(get_session),
-) -> dict:
-    """Prepare a stage run for a human to execute in their own terminal.
-
-    Creates the same AgentRun/workflow-running state as POST /start, but returns a
-    ready-to-paste CLI command instead of spawning the agent as a child of this process —
-    so the run survives an app server restart.
-    """
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    # Deliberately not admission-gated: this returns a command for a human to
-    # paste, which may happen minutes or hours later. Capacity now says nothing
-    # about capacity then, and holding a slot in the meantime would strand it.
-    run_svc = RunService(session)
-    try:
-        run = run_svc.start_stage_execution(
-            ticket,
-            stage_key=body.stage_key,
-            auto_approve=body.auto_approve,
-            timeout_seconds=body.timeout_seconds,
-            force=body.force,
-        )
-    except StageRetryBudgetExceeded as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if not run:
-        raise HTTPException(400, "This stage does not run a CLI agent")
-    try:
-        invocation, cleanup_path = run_svc.executor.prepare_terminal_handoff(run, ticket)
-        command = render_terminal_handoff_command(
-            invocation, cleanup_path=cleanup_path, run_id=run.id
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"run_id": run.id, "adapter": invocation.adapter, "command": command}
-
-
-@router.post("/{ticket_id}/external_harness_prompt", response_model=ExternalHarnessPromptView)
-def build_external_harness_prompt_endpoint(
-    ticket_id: str,
-    body: ExternalHarnessPromptRequest,
-    session: Session = Depends(get_session),
-) -> ExternalHarnessPromptView:
-    """Render the prompt an operator pastes into their own Claude Code / Codex session.
-
-    Read-only: no run is opened here. The pasted prompt opens one when the harness
-    actually starts, so a prompt copied and never used costs nothing and the
-    recorded start time is the real one.
-    """
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    try:
-        return build_external_harness_prompt(session, ticket, harness=body.harness)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/{ticket_id}/advance", response_model=TicketDetail)

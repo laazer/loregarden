@@ -31,6 +31,7 @@ from loregarden.services.dependency_readiness import (
 )
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
+from loregarden.services.hold_line import HeldChild, render_hold_line
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -72,13 +73,6 @@ from loregarden.services.workflow_state import (
     set_stage_status,
 )
 from sqlmodel import Session, select
-
-#: How many held children the parent's waiting line names before it switches to
-#: a count. Measured on the live database 2026-10-10: one parent has 93 children
-#: and 2 runs have already hit the 2000-character cut `_finish_orchestration_run`
-#: applies, which discards the tail — so the names, not the count, are what
-#: gives way (779).
-_WAITING_NAMES = 5
 
 #: Per-stage floors, calibrated 2026-09-11 against the 95th percentile of every
 #: SUCCEEDED run's wall clock, per stage, with the sample size beside each. The
@@ -937,14 +931,10 @@ def _orchestrate_incomplete_children(
         # subtree keeps moving, and the parent stays incomplete because the work
         # is still owed. Distinct from parked, which is owed by a person — this
         # is owed by another ticket, and naming it is the whole value.
-        # The count leads because `_finish_orchestration_run` stores
-        # `error_message[:2000]`, and one live parent has 93 children: a line
-        # that leads with names loses both the count and the first child to
-        # that cut. Five names, then the remainder as a number (779).
-        named = "; ".join(waiting[:_WAITING_NAMES])
-        if len(waiting) > _WAITING_NAMES:
-            named += f"; +{len(waiting) - _WAITING_NAMES} more"
-        return f"Child ticket waiting on a prerequisite ({len(waiting)}): {named}"
+        # Composing the line is `services.hold_line`'s job, not this driver's:
+        # it owns the width the message is stored in, so the line is bounded by
+        # its budget rather than by the cut at the storage site (919).
+        return render_hold_line(builtin.session, waiting)
     if parked:
         # Every runnable sibling has now had its turn — this is reported after
         # the loop, not on encountering the first parked child, because the
@@ -956,7 +946,7 @@ def _orchestrate_incomplete_children(
 
 def _partition_children(
     session: Session, workspace: Workspace | None, children: list[Ticket]
-) -> tuple[list[Ticket], list[str], list[str]]:
+) -> tuple[list[Ticket], list[str], list[HeldChild]]:
     """Split ordered children into those that may run now, and two kinds of hold.
 
     Deciding *whether* a child may run is a different job from running it, and
@@ -994,7 +984,7 @@ def _partition_children(
     sibling_ids = {child.id for child in children}
     runnable: list[Ticket] = []
     parked: list[str] = []
-    waiting: list[str] = []
+    waiting: list[HeldChild] = []
     for child in children:
         if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
             continue
@@ -1007,7 +997,7 @@ def _partition_children(
             if not (entry.ticket.id in sibling_ids and entry.reason is UnmetReason.NOT_DONE)
         ]
         if unmet:
-            waiting.append(f"{child.title} (waits for {_name_prerequisites(session, unmet)})")
+            waiting.append(HeldChild(ticket=child, unmet=unmet))
             continue
         runnable.append(child)
     return runnable, parked, waiting
@@ -1023,42 +1013,6 @@ def _unmet_for(
         UnmetPrerequisite(prereq, UnmetReason.NOT_DONE)
         for prereq in TicketDependencyService(session).unmet_prerequisites(child.id)
     ]
-
-
-def _name_prerequisites(session: Session, unmet: list[UnmetPrerequisite]) -> str:
-    """Name each blocking prerequisite with its workspace and why it blocks.
-
-    The workspace is not decoration. A prerequisite in another workspace is
-    invisible from the board the reader is looking at, so "waits for
-    lor-extract-lore-35" sends them looking in the wrong place; "lore-eden:
-    lor-extract-lore-35" does not. Neither is the reason: "done, not landed on
-    integration/x" and "in_progress" are different things to go and fix (770).
-    """
-    slugs = {
-        row.id: row.slug
-        for row in session.exec(
-            select(Workspace).where(
-                Workspace.id.in_({entry.ticket.workspace_id for entry in unmet})
-            )
-        ).all()
-    }
-    return ", ".join(
-        f"{slugs.get(entry.ticket.workspace_id, '?')}:{entry.ticket.external_id} [{_why(entry)}]"
-        for entry in unmet
-    )
-
-
-def _why(entry: UnmetPrerequisite) -> str:
-    if entry.reason is UnmetReason.NOT_LANDED:
-        # The remedy rides along because this hold does not clear itself:
-        # landing runs only on a terminal-stage transition, so a prerequisite
-        # already `done` never re-lands on its own (779). Named on the
-        # prerequisite — landing the held child delivers nothing.
-        return (
-            f"{entry.ticket.state.value}, not landed on {entry.target}; "
-            f"land it: loregarden_land_ticket {entry.ticket.external_id}"
-        )
-    return entry.ticket.state.value
 
 
 def _run_and_collect_parallel_results(

@@ -38,6 +38,7 @@ export function buildStageMenuActions({
   isRunning,
   workflowBusy,
   canCopyTerminal,
+  copyTerminalPending = false,
 }: {
   ticket: TicketDetail;
   stage: WorkflowStageView;
@@ -45,6 +46,13 @@ export function buildStageMenuActions({
   isRunning: boolean;
   workflowBusy: boolean;
   canCopyTerminal: boolean;
+  /**
+   * A terminal handoff is already being prepared for this ticket. Each click
+   * calls `start_stage_execution`, so a second one opens a second `AgentRun`
+   * and `fail_interrupted_runs` kills the first — and the call now takes as
+   * long as the merge it performs, so that window is seconds wide.
+   */
+  copyTerminalPending?: boolean;
 }): StageMenuAction[] {
   const actions: StageMenuAction[] = [];
   const runDisabled = !runCheck.allowed || workflowBusy || isRunning;
@@ -64,7 +72,10 @@ export function buildStageMenuActions({
       kind: "copy-terminal",
       section: "run",
       label: "Copy terminal command",
-      title: `Copy CLI command to run ${stage.name}`,
+      disabled: copyTerminalPending,
+      title: copyTerminalPending
+        ? "Already preparing a terminal command for this ticket"
+        : `Copy CLI command to run ${stage.name}`,
     });
   }
 

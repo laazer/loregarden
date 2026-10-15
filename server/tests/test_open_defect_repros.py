@@ -46,7 +46,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -257,3 +259,81 @@ _LOCKED_COMPLETION = (
 )
 def test_a_locked_database_in_run_completion_is_not_a_work_block() -> None:
     assert classify_block_message(_LOCKED_COMPLETION) is BlockKind.HARNESS
+
+
+class _CutUnderTest(NamedTuple):
+    cut: Callable[[str], str]
+    limit: int
+    marker: str
+    messages: list[tuple[str, str]]
+
+
+@pytest.fixture
+def unclosed_bracket_cut() -> _CutUnderTest:
+    """`truncate_for_storage` and the two inputs measured on 2026-10-13.
+
+    The import belongs here rather than at module scope so this repro does not
+    take the module's other six down with it.
+
+    Putting it in a *fixture* is not on its own enough, though. Measured on
+    this pytest (9.1.1): `_pytest.skipping` evaluates the xfail marker for the
+    **setup** report too, so a fixture error is absorbed as an XFAIL exactly
+    like a call-phase one, and this module's docstring is wrong to say
+    otherwise. `raises=AssertionError` on the marker is what closes it —
+    anything that is not this repro's own assertion, such as the ImportError
+    raised while `services/hold_line.py` does not exist yet, reports FAILED.
+    """
+    from loregarden.services.hold_line import (
+        CUT_MARKER,
+        ERROR_MESSAGE_LIMIT,
+        truncate_for_storage,
+    )
+
+    return _CutUnderTest(
+        truncate_for_storage,
+        ERROR_MESSAGE_LIMIT,
+        CUT_MARKER,
+        [
+            ("traceback", "Traceback: payload={'a': [1, 2" + ", more" * 400),
+            ("hold line", "Child ticket waiting [unclosed " + "word " * 600),
+        ],
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "unfiled — open: surfaced by lg-milestone-that-919's test-break stage, measured "
+        "against a reference implementation of its R2 algorithm. `loregarden_create_ticket` "
+        "is refused to orchestrated pipeline agents (a9-create-ticket-mcp-tool), so the "
+        "finding lives here and in that stage's artifact until a person files it. R2 step 3 "
+        "requires the cut index to satisfy `message[:i].count('[') == message[:i].count(']')`. "
+        "An unclosed `[` inside the keep window makes every later index fail that test, so the "
+        "cut falls back to the separator before the bracket opened and 2430 characters become "
+        "31. A stray `]` is harmless; the asymmetry is in the equality. It is not an unmet "
+        "919 criterion — R2-AC2 and R2-AC3 both hold — but `truncate_for_storage` is reached "
+        "by every terminal orchestration message (919 risk K8), and tracebacks and gate "
+        "output carry brackets."
+    ),
+)
+def test_a_long_message_with_an_unclosed_bracket_keeps_most_of_itself(
+    unclosed_bracket_cut: _CutUnderTest,
+) -> None:
+    """The correct behaviour: the bracket rule is a preference, so an input it
+    cannot satisfy loses a clause, not the message. The invariants 919's R2
+    established are asserted alongside it, so a fix cannot buy the length back
+    by dropping the bound or the marker.
+    """
+    under_test = unclosed_bracket_cut
+
+    for label, message in under_test.messages:
+        assert len(message) > under_test.limit, label
+        result = under_test.cut(message)
+
+        assert len(result) <= under_test.limit, label
+        assert result.endswith(under_test.marker), label
+        assert message.startswith(result[: -len(under_test.marker)]), label
+        assert len(result) > under_test.limit // 2, (
+            f"{label}: the cut kept {len(result)} of {under_test.limit} characters"
+        )

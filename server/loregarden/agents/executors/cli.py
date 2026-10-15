@@ -12,6 +12,9 @@ from loregarden.agents.cli_adapters import (
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
+from loregarden.agents.executors.dispatch_warnings import (
+    warn_before_run,
+)
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
@@ -57,14 +60,8 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
-    WorkspaceRuntimeSettings,
-    adapter_model_pins_apply,
-    adapter_override_warning,
-    adapter_pin_source,
     get_ticket_orchestration_runtime,
     resolve_effective_adapter,
-    resolve_model_for_adapter,
-    weak_mcp_model_warning,
 )
 from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
@@ -267,7 +264,7 @@ class CliAgentExecutor:
                 partial_output="--stream-partial-output" in invocation.argv,
             )
             streamer.start(run.command)
-            self._warn_before_run(
+            warn_before_run(
                 streamer=streamer,
                 run=run,
                 agent=agent,
@@ -432,11 +429,25 @@ class CliAgentExecutor:
             raise ValueError(f"Workspace repo path does not exist: {workspace_root}")
 
         # The handed-off tree is the same one the supervised run would use: the
-        # ticket's worktree, already on its branch. Checking the branch out in
-        # the shared tree instead is what left it half-applied when the handoff
-        # was abandoned.
-        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
-        if repo_root == workspace_root:
+        # ticket's worktree, on its branch, brought up to its target. Checking
+        # the branch out in the shared tree instead is what left it half-applied
+        # when the handoff was abandoned, and skipping the refresh for a
+        # worktree is what handed the operator a base that could not see a
+        # prerequisite landed since the tree was cut.
+        #
+        # `resolve_execution_root` resolves the target branch itself, to cut a
+        # worktree, so it raises before any `ensure_ticket_branch` call and sits
+        # inside the same handler. The target is resolved against the shared
+        # checkout on purpose: resolution writes refs, and refs are shared by
+        # every worktree of a repository (lg-milestone-that-779 S3).
+        #
+        # A git tree is an input this requires, not one it prefers: there is no
+        # branch to be on and no target to be brought up to without one, so a
+        # non-git execution root surfaces as `ensure_ticket_branch`'s own
+        # `ValueError` and reaches the operator as the 400 any other unpreparable
+        # tree does.
+        try:
+            repo_root = resolve_execution_root(self.session, run, ticket, workspace)
             ensure_ticket_branch(
                 repo_root,
                 ticket,
@@ -445,6 +456,15 @@ class CliAgentExecutor:
                 ),
                 ignoring=ticket_recorded_paths(self.session, ticket),
             )
+        except (TargetBranchError, subprocess.CalledProcessError) as exc:
+            # This path has no run to fail and no stage to block, so it raises —
+            # as a `ValueError`, which both handoff edges already render (the
+            # route maps it to a 400, the MCP dispatcher to an `isError`).
+            # `_refresh_onto`'s own `ValueError` and `DirtyPrimaryCheckoutError`
+            # (a `ValueError` subclass by design) pass through unwrapped: the
+            # first already carries git's merge output, and re-wrapping the
+            # second would lose the dirty-path list the park path is built on.
+            raise ValueError(f"Could not prepare the tree for {ticket.external_id}: {exc}") from exc
 
         stage_def = self._resolve_stage_def(ticket, run)
         prompt = self._build_prompt(
@@ -460,7 +480,7 @@ class CliAgentExecutor:
 
     def prepare_terminal_handoff(
         self, run: AgentRun, ticket: Ticket
-    ) -> tuple[CliInvocation, Path | None]:
+    ) -> tuple[CliInvocation, Path | None, Path]:
         """Build a self-contained CLI invocation for this stage without spawning it.
 
         Used to hand a stage off to a human's own terminal instead of the app's subprocess
@@ -468,7 +488,10 @@ class CliAgentExecutor:
         written to a real file on disk (not inlined into the returned command) since a full
         stage prompt can run tens of KB — pasting that much text directly into a terminal can
         overwhelm some terminals' paste handling. Returns the prompt file's containing
-        directory as a cleanup path when one was written, else None.
+        directory as a cleanup path when one was written (else None), and the tree the
+        command will run in — the ticket's worktree, on its branch, brought up to its
+        target. The caller cannot re-derive that tree without answering a question that
+        has one correct answer twice, and it is what it reports on to the operator.
         """
         agent = get_agent(run.agent_id)
         if not agent:
@@ -505,131 +528,7 @@ class CliAgentExecutor:
         run.command = f"[terminal-handoff] {' '.join(invocation.argv)}"
         self.session.add(run)
         self.session.commit()
-        return invocation, cleanup_path
-
-    def _warn_before_run(
-        self,
-        *,
-        streamer: RunLogStreamer,
-        run: AgentRun,
-        agent: dict,
-        workspace: Workspace,
-        ticket_runtime: WorkspaceRuntimeSettings,
-        stage_def: WorkflowStageDef | None,
-        invocation: CliInvocation,
-    ) -> None:
-        """Every warning a run's log should open with, before the agent speaks."""
-        self._maybe_warn_dispatch_waiver(streamer=streamer, run=run)
-        self._maybe_warn_adapter_override(
-            streamer=streamer,
-            run=run,
-            agent=agent,
-            workspace=workspace,
-            ticket_runtime=ticket_runtime,
-            stage_def=stage_def,
-            invocation=invocation,
-        )
-        self._maybe_warn_weak_mcp_model(
-            streamer=streamer,
-            run=run,
-            agent=agent,
-            workspace=workspace,
-            ticket_runtime=ticket_runtime,
-            stage_def=stage_def,
-            selected_adapter=invocation.adapter,
-        )
-
-    def _maybe_warn_adapter_override(
-        self,
-        *,
-        streamer: RunLogStreamer,
-        run: AgentRun,
-        agent: dict,
-        workspace: Workspace,
-        ticket_runtime: WorkspaceRuntimeSettings,
-        stage_def: WorkflowStageDef | None,
-        invocation: CliInvocation,
-    ) -> None:
-        """Say, in the run's own log, that the agent is not running as declared.
-
-        A workspace or ticket provider pin replaces the agent's adapter and drops
-        its model pin with it; without this line the run log opens like any
-        other and the operator hunts for why "the model I set" never applied.
-        """
-        message = adapter_override_warning(
-            agent_id=run.agent_id,
-            agent_adapter=agent.get("adapter", "local"),
-            selected_adapter=invocation.adapter,
-            pin_source=adapter_pin_source(
-                workspace=workspace, ticket_adapter=ticket_runtime.cli_adapter
-            ),
-            dropped_model=(stage_def.model if stage_def else "") or agent.get("default_model", ""),
-            model=invocation.model,
-        )
-        if not message:
-            return
-        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, message)
-        streamer.append("WARN", message, force=True)
-
-    def _maybe_warn_weak_mcp_model(
-        self,
-        *,
-        streamer: RunLogStreamer,
-        run: AgentRun,
-        agent: dict,
-        workspace: Workspace,
-        ticket_runtime: WorkspaceRuntimeSettings,
-        stage_def: WorkflowStageDef | None,
-        selected_adapter: str,
-    ) -> None:
-        if selected_adapter != "claude":
-            return
-        pins_apply = adapter_model_pins_apply(
-            agent_adapter=agent.get("adapter", "local"),
-            selected_adapter="claude",
-        )
-        resolved_model = resolve_model_for_adapter(
-            "claude",
-            workspace,
-            ticket_model=ticket_runtime.claude_model,
-            stage_model=(stage_def.model if stage_def and pins_apply else ""),
-            agent_model=agent.get("default_model", "") if pins_apply else "",
-        )
-        model_warning = weak_mcp_model_warning(resolved_model, "claude")
-        if not model_warning:
-            return
-        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
-        streamer.append("WARN", model_warning, force=True)
-
-    def _maybe_warn_dispatch_waiver(self, *, streamer, run: AgentRun) -> None:
-        """Say, in the run's own log, that a person waived a failing check.
-
-        The alternative is a run that starts in a checkout already known to be
-        broken and whose log opens exactly like a healthy one — so whoever reads
-        the failure later hunts the agent's output for a cause that is sitting in
-        an approval row. `_record_and_check_boundary` keeps the failing check ids
-        on the run; this is the part a human actually sees.
-
-        Both the checks and the waiver are read back off the run rather than
-        threaded in, so this reports what was persisted, not what was intended.
-        """
-        if not run.dispatch_waiver_approval_id:
-            return
-        try:
-            waived_checks = json.loads(run.start_preflight_failures_json or "[]")
-        except json.JSONDecodeError:
-            # silent-ok: the column is ours and written by json.dumps, so this is
-            # unreachable short of hand-editing; degrade to naming the waiver
-            # rather than losing the warning that a check was waived at all.
-            waived_checks = []
-        detail = ", ".join(waived_checks) or "a failing pre-dispatch check"
-        message = (
-            f"Dispatched with {detail} waived by approval "
-            f"{run.dispatch_waiver_approval_id}. The environment was NOT fixed — "
-            "a failure here may be that, not the work."
-        )
-        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, message)
-        streamer.append("WARN", message, force=True)
+        return invocation, cleanup_path, repo_root
 
     def _touch_ticket_agent(self, ticket: Ticket, agent_name: str, status: RunStatus) -> None:
         ticket.last_updated_by = agent_name
@@ -776,7 +675,7 @@ class CliAgentExecutor:
         `services.stage_parking`). It skips the *parking*, never the checking:
         the checks still run and their failures are still recorded on the run,
         because "a human waived it" and "the environment was fine" must not read
-        the same afterwards. `_maybe_warn_dispatch_waiver` puts it in the log.
+        the same afterwards. `maybe_warn_dispatch_waiver` puts it in the log.
         """
         stamp_run_boundary(self.session, run, boundary_of_tree(before))
         waived = bool(run.dispatch_waiver_approval_id)

@@ -26,6 +26,7 @@ from loregarden.services.seed import seed_database
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, select
+from tests.worktree_helpers import make_repo
 
 _INHERITED_HEADING = "## Inherited context (already decided — do not re-derive)"
 _CHECKPOINT = "Assumed the runner streams stdout line-by-line."
@@ -158,9 +159,12 @@ def test_render_stage_prompt_labels_its_assembly_as_render(isolated_db, tmp_path
     them, and every recorded row then names the wrong path. A swap flips both
     sites, so pinning either one catches it.
 
-    `render_stage_prompt` resolves an execution root and can check a branch out
-    in it; that is stubbed, because this test is about which constant reaches
-    `_build_prompt` and nothing else.
+    `resolve_execution_root` is stubbed, because this test is about which
+    constant reaches `_build_prompt` and nothing else — but it is stubbed with a
+    *real* repository. `render_stage_prompt` brings whatever tree it is handed
+    onto the ticket's branch and its target (lg-milestone-that-917), so a git
+    tree is an input it requires, not one it merely prefers; a bare directory
+    there is a tree no handoff could ever have produced.
     """
     captured: list[MemoryBriefingAssembly] = []
 
@@ -170,10 +174,12 @@ def test_render_stage_prompt_labels_its_assembly_as_render(isolated_db, tmp_path
         captured.append(assembly_source)
         return ""
 
-    execution_root = tmp_path / "tree"
-    execution_root.mkdir()
+    execution_root = make_repo(tmp_path, "tree")
     with Session(isolated_db, expire_on_commit=False) as session:
-        ticket, _workspace, run, _memory = _fixture(session, tmp_path, seed_checkpoint=False)
+        ticket, workspace, run, _memory = _fixture(session, tmp_path, seed_checkpoint=False)
+        workspace.repo_path = str(execution_root)
+        session.add(workspace)
+        session.commit()
         with (
             patch(
                 "loregarden.agents.executors.cli.resolve_execution_root",
