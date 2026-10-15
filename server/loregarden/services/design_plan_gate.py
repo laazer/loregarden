@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+from loregarden.agents.registry import UI_DESIGN_AGENT_ID
 from loregarden.models.domain import (
     OrchestrationRun,
     OrchestratorDecision,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 #: The agents whose stage output is a design plan. Agent ids are registry
 #: rows, not an enum we own, so the closed set lives here in one place.
-DESIGN_PLAN_AGENTS = frozenset({"planner", "ui-design-decision"})  # py-org: allow-string
+DESIGN_PLAN_AGENTS = frozenset({"planner", UI_DESIGN_AGENT_ID})  # py-org: allow-string
 
 
 def is_design_plan_stage(stage: WorkflowStageDef) -> bool:

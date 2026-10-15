@@ -62,6 +62,7 @@ from loregarden.services.terminal_stage_sweep import (
     finish_tickets_whose_landing_cleared,
 )
 from loregarden.services.ticket_rollup import reconcile_all_parents
+from loregarden.services.tree_publish_scheduler import close_published_cards
 from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
 
@@ -142,6 +143,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # the base move, so without it a conflict surfaced only when a stage or a
     # chat turn next tripped on it.
     SweepStep("check_integration_branches", check_integration_branches),
+    # A publish card closed only when a later publish succeeded, so one whose PR
+    # a person merged by hand stayed open in a tree with nothing left to land.
+    SweepStep("close_published_cards", close_published_cards),
 )
 
 

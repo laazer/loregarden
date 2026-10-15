@@ -17,6 +17,7 @@ from loregarden.db.migrations_design_plan_gate import (
     DESIGN_PLAN_STAGES,
     m_design_plan_gates,
 )
+from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -42,6 +43,8 @@ from loregarden.services.workflow_state import initial_stages_json
 from sqlalchemy import text
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
+
+record_ux_answers = UX_ANSWERS_HANDLERS["loregarden_record_ux_answers"]
 
 DESIGN = WorkflowStageDef.model_validate(
     {
@@ -301,6 +304,15 @@ def test_the_post_run_gate_follows_the_flag(db_session, gated, flag):
     db_session.add(run)
     db_session.commit()
     db_session.refresh(run)
+    # A design pass carries the UX answers its PR needs; one without them is
+    # rework, not a pass to sign off (`ux_answers.missing_ux_answers`).
+    record_ux_answers(
+        db_session,
+        {
+            "ticket_id": ticket.external_id,
+            "no_change_reason": "Design-plan gate fixture; no surface is changed here",
+        },
+    )
 
     OrchestrationService(db_session).complete_run(
         run, status=RunStatus.SUCCEEDED, stdout=_PASS_REPORT
