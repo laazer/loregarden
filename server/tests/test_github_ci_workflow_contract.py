@@ -360,8 +360,9 @@ def test_ac5_durable_check_is_job_level_name_ci_not_workflow_title():
 # --- AC6 ------------------------------------------------------------------
 
 
-def test_ac6_aggregator_needs_server_and_client():
-    """AC6 — the CI aggregator needs: [server, client]."""
+def test_ac6_aggregator_needs_server_client_and_gates():
+    """AC6 — the CI aggregator needs: [server, client, gates]. `gates` grades a
+    PR's diff with the workspace gates (lg-workflow-integrity-956)."""
     jobs = _jobs(_load_ci())
     aggregators = _ci_aggregator_jobs(jobs)
     assert aggregators, "missing aggregator job named CI"
@@ -372,9 +373,11 @@ def test_ac6_aggregator_needs_server_and_client():
     else:
         assert isinstance(needs, list), f"aggregator needs must be a list; got {needs!r}"
         needs_list = list(needs)
-    assert needs_list == ["server", "client"], (
-        f"aggregator needs must be exactly [server, client]; got {needs_list!r}"
+    assert needs_list == ["server", "client", "gates"], (
+        f"aggregator needs must be exactly [server, client, gates]; got {needs_list!r}"
     )
+    blob = yaml.safe_dump(job)
+    assert "needs.gates.result" in blob, "the aggregator must inspect needs.gates.result"
 
 
 # --- AC7 / R2 -------------------------------------------------------------
