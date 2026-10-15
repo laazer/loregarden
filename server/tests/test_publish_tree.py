@@ -20,7 +20,7 @@ from loregarden.services import git_automation, tree_publish_scheduler
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.publish_tree import publish_tree, unsigned_commits
+from loregarden.services.publish_tree import publish_tree
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session, select
 from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
@@ -77,6 +77,19 @@ def _remote_sha(repo, branch):
     return out[0] if out else ""
 
 
+def _published(repo, branch) -> str:
+    """The commit the remote holds as ``branch``, asserted to be one commit cut
+    from the base tip whose tree is the base and the branch merged (958)."""
+    head = _remote_sha(repo, branch)
+    assert head, f"{branch} was not published"
+    git(repo, "fetch", "-q", "origin", f"refs/heads/{branch}")
+    parents = git(repo, "rev-list", "--parents", "-n1", head).stdout.split()[1:]
+    assert parents == [_sha(repo, "main")], "one commit, on the base tip"
+    merged = git(repo, "merge-tree", "--write-tree", "main", branch).stdout.split()[0]
+    assert _sha(repo, f"{head}^{{tree}}") == merged, "the base and the branch, merged"
+    return head
+
+
 def _landed_tree(session, workspace, repo, policy=None):
     """A milestone with one child whose work has landed on the integration branch."""
     fields = {"git_automation_json": json.dumps(policy)} if policy else {}
@@ -99,7 +112,7 @@ def test_the_root_pushes_its_integration_branch_and_records_the_tip(session, wor
     outcome = publish_tree(session, ms, workspace)
 
     assert outcome.ok and not outcome.skipped
-    assert _remote_sha(repo, target) == tip
+    assert _published(repo, target) != tip, "the cut is published, not the branch's history"
     assert outcome.pr_url == "", "open_pr is off: the PR stays a person's decision"
     session.refresh(ms)
     assert (ms.landed_branch, ms.landed_sha) == (target, tip)
@@ -132,7 +145,7 @@ def test_a_root_finishing_its_workflow_publishes_and_marks_done(session, workspa
 
     session.refresh(ms)
     assert ms.state == TicketState.DONE
-    assert _remote_sha(repo, target) == _sha(repo, target)
+    _published(repo, target)
 
 
 def test_a_push_failure_blocks_the_root_with_the_reason(session, workspace, repo):
@@ -200,7 +213,7 @@ def test_a_milestone_under_an_initiative_publishes_its_own_branch_on_completion(
 
     session.refresh(ms)
     assert ms.state == TicketState.DONE
-    assert _remote_sha(repo, target) == _sha(repo, target)
+    _published(repo, target)
     assert (ms.landed_branch, ms.landed_sha) == (target, _sha(repo, target))
 
 
@@ -215,7 +228,7 @@ def test_a_ticket_with_no_tree_publishes_its_own_branch_on_completion(session, w
 
     session.refresh(ticket)
     assert ticket.state == TicketState.DONE
-    assert _remote_sha(repo, ticket.branch) == tip
+    _published(repo, ticket.branch)
     assert (ticket.landed_branch, ticket.landed_sha) == (ticket.branch, tip)
 
 
@@ -286,7 +299,7 @@ def test_a_child_landing_publishes_the_tree_before_the_root_finishes(session, wo
     assert child.state == TicketState.DONE
     assert ms.state != TicketState.DONE, "the root is still open; only its branch went out"
     tip = _sha(repo, target)
-    assert _remote_sha(repo, target) == tip
+    _published(repo, target)
     assert (ms.landed_branch, ms.landed_sha) == (target, tip)
 
 
@@ -317,49 +330,105 @@ def test_tree_switches_open_and_auto_merge_the_trees_pr_and_leave_chat_push_only
     assert enabled_steps(resolve_git_automation(workspace, ms)) == ["commit", "push"]
 
 
-def _forge_signed_commit(repo, parent, message):
-    """A commit carrying a `gpgsig` header. Nothing verifies it; the check reads the header."""
-    tree = git(repo, "rev-parse", f"{parent}^{{tree}}").stdout.strip()
-    body = (
-        f"tree {tree}\nparent {parent}\n"
-        "author T <t@example.com> 1700000000 +0000\n"
-        "committer T <t@example.com> 1700000000 +0000\n"
-        "gpgsig -----BEGIN SSH SIGNATURE-----\n U1NIU0lH\n -----END SSH SIGNATURE-----\n"
-        f"\n{message}\n"
+# --- what is published: one signed commit cut from the base (958) ---------------------
+#
+# 2026-10-14: 917's ticket branch, cut before 491's branch moved to main, landed
+# and brought back seven unsigned commits from September. Publishing pushed the
+# branch's history, refused it for those commits, and held every later landing
+# in the tree back with them.
+
+
+def _has_signature(repo, sha) -> bool:
+    return any(
+        line.startswith("gpgsig")
+        for line in git(repo, "cat-file", "commit", sha).stdout.split("\n\n", 1)[0].splitlines()
     )
-    return subprocess.run(
-        ["git", "hash-object", "-t", "commit", "-w", "--stdin"],
-        cwd=repo,
-        input=body,
+
+
+@pytest.fixture
+def signing(repo, tmp_path):
+    """Sign with a real SSH key, as the live repository does (`gpg.format ssh`)."""
+    key = tmp_path / "signing_key"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
         check=True,
         capture_output=True,
-        text=True,
-    ).stdout.strip()
+    )
+    git(repo, "config", "gpg.format", "ssh")
+    git(repo, "config", "user.signingkey", str(key))
+    git(repo, "config", "commit.gpgsign", "true")
+    return key
 
 
-def test_unsigned_commits_are_found_by_their_header(repo):
-    unsigned = commit_on(repo, "main", "a.txt", "a\n")
-    signed = _forge_signed_commit(repo, unsigned, "signed")
-    git(repo, "branch", "work", signed)
-    git(repo, "branch", "base", f"{unsigned}^")
-
-    assert unsigned_commits(repo, "base", "work") == [unsigned]
-
-
-def test_a_branch_with_unsigned_commits_is_not_pushed_where_commits_are_signed(
-    session, workspace, repo
-):
+def test_unsigned_history_is_published_as_one_signed_commit(session, workspace, repo, signing):
+    git(repo, "config", "commit.gpgsign", "false")
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    landed = git(repo, "rev-list", f"main..{target}").stdout.split()
+    assert landed and not any(_has_signature(repo, sha) for sha in landed), "unsigned history"
     git(repo, "config", "commit.gpgsign", "true")
 
     outcome = publish_tree(session, ms, workspace)
 
+    assert outcome.ok, outcome.detail
+    head = _published(repo, target)
+    assert _has_signature(repo, head)
+    assert git(repo, "rev-list", head, "^main").stdout.split() == [head], (
+        "none of the branch's own commits reach the remote"
+    )
+
+
+def test_a_branch_behind_the_base_does_not_revert_what_the_base_gained(session, workspace, repo):
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    commit_on(repo, "main", "later.txt", "on main after the branch was cut\n")
+
+    assert publish_tree(session, ms, workspace).ok
+
+    head = _published(repo, target)
+    files = git(repo, "ls-tree", "--name-only", head).stdout.split()
+    assert {"later.txt", "c1.txt"} <= set(files)
+
+
+def test_a_branch_that_conflicts_with_the_base_is_not_published(session, workspace, repo):
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    commit_on(repo, "main", "c1.txt", "main's own c1\n")
+
+    outcome = publish_tree(session, ms, workspace)
+
     assert not outcome.ok
-    assert "carry no signature" in outcome.detail
-    unsigned = unsigned_commits(repo, "main", target)
-    assert unsigned, "the fixture's landing commits are unsigned"
-    assert all(sha[:12] in outcome.detail for sha in unsigned)
-    assert _remote_sha(repo, target) == "", "a PR that can never merge is not opened"
+    assert "conflicts with main in c1.txt" in outcome.detail
+    assert _remote_sha(repo, target) == ""
+
+
+def test_a_new_landing_republishes_over_the_last_cut(session, workspace, repo):
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    assert publish_tree(session, ms, workspace).ok
+    first = _published(repo, target)
+    commit_on(repo, target, "more.txt", "a second landing\n")
+
+    assert publish_tree(session, ms, workspace).ok
+
+    second = _published(repo, target)
+    assert second != first
+    assert "more.txt" in git(repo, "ls-tree", "--name-only", second).stdout.split()
+
+
+def test_a_push_that_races_the_publish_is_not_overwritten(session, workspace, repo):
+    """The publish replaces what the remote held when it looked, and nothing newer."""
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    real = git_automation._git
+
+    def racing(args, cwd):
+        result = real(args, cwd)
+        if args[:2] == ["ls-remote", "origin"]:
+            # Someone pushes to the PR branch between the lease's read and the push.
+            git(repo, "push", "-q", "origin", f"main:refs/heads/{target}")
+        return result
+
+    with mock.patch.object(git_automation, "_git", side_effect=racing):
+        outcome = publish_tree(session, ms, workspace)
+
+    assert not outcome.ok and "push failed" in outcome.detail
+    assert _remote_sha(repo, target) == _sha(repo, "main"), "the racing push is kept"
 
 
 def test_a_failed_publish_after_a_landing_files_a_card_and_a_later_one_closes_it(
@@ -380,7 +449,7 @@ def test_a_failed_publish_after_a_landing_files_a_card_and_a_later_one_closes_it
     tree_publish_scheduler.schedule_tree_publish(ms.id, workspace.id)
 
     assert _publish_cards(session, ms) == []
-    assert _remote_sha(repo, target) == _sha(repo, target)
+    _published(repo, target)
 
 
 def test_a_landing_during_a_publish_publishes_again_after_it(session, workspace, repo):

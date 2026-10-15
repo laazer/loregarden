@@ -11,10 +11,14 @@ alive as long as its milestone, weeks against a base taking ~96 commits a week,
 and every integration conflict filed was on such a branch (491: 29 commits
 unpublished since 09-21).
 
-A branch carrying an unsigned commit is not pushed in a repository that signs:
-its PR could never merge under a signed-commits rule (PR #400, superseded by
-#402 for exactly that), so the failure is reported here, naming the commits,
-instead of as a PR that waits forever.
+What is pushed is not the branch's history but one commit cut from the base
+tip, carrying the branch merged into it, signed where the repository signs
+(`git_merge_noco.squash_onto`). The PR is the tree's net change, and the
+branch's own commits never reach the base. That history can carry unsigned
+commits: a ticket branch cut before 782 brought seven back into 491's branch
+on 2026-10-14, a PR with them can never merge under a signed-commits rule
+(PR #400, superseded by #402 for exactly that), and refusing the push, as this
+module did until then, held the tree's every later landing back with them.
 
 A top-level ticket with no tree is its own root. Nothing lands on an
 integration branch for it, because its target is the base, so what it
@@ -38,7 +42,7 @@ integration branch first, so they are what gets pushed (`root_integration_sync`)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.core.event_bus import event_bus
@@ -46,8 +50,7 @@ from loregarden.models.domain import EventType, Ticket, Workspace
 from loregarden.services.git_automation import AutomationResult, PublishSubject, publish_branch
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import adds_nothing, rev, signs_commits
-from loregarden.services.git_subprocess import run_git
+from loregarden.services.git_merge_noco import MergeOutcome, adds_nothing, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
@@ -91,10 +94,9 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
 
     config = resolve_git_automation(workspace, ticket)
+    base_sha = rev(repo_root, f"refs/heads/{config.base_branch}")
     try:
-        already_there = adds_nothing(
-            repo_root, rev(repo_root, f"refs/heads/{config.base_branch}"), tip
-        )
+        already_there = adds_nothing(repo_root, base_sha, tip)
     except RuntimeError as exc:
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
         _emit(session, ticket, config.base_branch, failed)
@@ -106,13 +108,17 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         # nothing on it, and its PR would be empty.
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
     chain = tree_chain(config)
-    if "push" in enabled_steps(chain) and signs_commits(repo_root):
-        refusal = _signature_refusal(repo_root, config.base_branch, branch, tip)
-        if refusal:
-            refused = PublishOutcome(ok=False, branch=branch, tip=tip, detail=refusal)
-            _emit(session, ticket, config.base_branch, refused)
-            return refused
-    result = publish_branch(repo_root, _subject(ticket, branch), chain)
+    subject = _subject(ticket, branch)
+    if "push" in enabled_steps(chain):
+        cut = squash_onto(repo_root, base_sha, tip, message=subject.commit_message)
+        if not cut.ok:
+            failed = PublishOutcome(
+                ok=False, branch=branch, tip=tip, detail=_cut_failure(branch, config, cut)
+            )
+            _emit(session, ticket, config.base_branch, failed)
+            return failed
+        subject = replace(subject, head=cut.sha)
+    result = publish_branch(repo_root, subject, chain)
     outcome = PublishOutcome(
         ok=result.ok,
         branch=branch,
@@ -173,51 +179,16 @@ def tree_chain(config: GitAutomationConfig) -> GitAutomationConfig:
     )
 
 
-def _signature_refusal(repo_root: Path, base: str, branch: str, tip: str) -> str:
-    """Why ``branch`` must not be pushed for a PR; "" when every commit is signed."""
-    try:
-        unsigned = unsigned_commits(repo_root, base, tip)
-    except RuntimeError as exc:
-        return f"could not check {branch}'s commit signatures: {exc}"
-    if not unsigned:
-        return ""
-    return (
-        f"{len(unsigned)} commit(s) on {branch} carry no signature, and this repository "
-        "signs its commits, so a pull request with them cannot merge: "
-        f"{', '.join(sha[:12] for sha in unsigned[:10])}. Rebuild the branch as signed "
-        "commits before it is published."
-    )
-
-
-def unsigned_commits(repo_root: Path, base: str, tip: str) -> list[str]:
-    """Commits in ``base..tip`` with no signature header, oldest first.
-
-    Read from the raw header: `%G?` verifies, and answers N for every commit on
-    a host without `gpg.ssh.allowedSignersFile`, signed or not.
-    """
-    listed = run_git(
-        ["log", "--reverse", "--format=raw", f"refs/heads/{base}..{tip}"],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if listed.returncode != 0:
-        raise RuntimeError(
-            f"git log failed for {base}..{tip[:12]}: {(listed.stderr or listed.stdout).strip()}"
+def _cut_failure(branch: str, config: GitAutomationConfig, cut: MergeOutcome) -> str:
+    """Why the commit to publish could not be cut, and what clears it."""
+    base = config.base_branch
+    if cut.conflicted:
+        return (
+            f"{branch} conflicts with {base} in {', '.join(cut.conflicted_files)}, so no "
+            f"commit could be cut from {base} to publish it. It publishes once the branch "
+            f"takes {base}: the integration sweep gives the conflict a merge turn."
         )
-    unsigned: list[str] = []
-    current, signed = "", False
-    for line in listed.stdout.splitlines():
-        if line.startswith("commit "):
-            if current and not signed:
-                unsigned.append(current)
-            current, signed = line.split()[1], False
-        elif line.startswith("gpgsig"):
-            signed = True
-    if current and not signed:
-        unsigned.append(current)
-    return unsigned
+    return f"could not cut the commit that publishes {branch} onto {base}: {cut.detail}"
 
 
 def _subject(ticket: Ticket, branch: str) -> PublishSubject:
