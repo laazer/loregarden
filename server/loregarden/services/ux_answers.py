@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 
+from loregarden.agents.registry import UI_DESIGN_AGENT_ID
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlmodel import Session, col, select
@@ -100,6 +101,29 @@ class UxAnswers(BaseModel):
             f"- **Action:** {self.action}",
             f"- **Real data:** {self.real_data}",
         ]
+
+
+def missing_ux_answers(session: Session, ticket: Ticket, *, agent_id: str) -> str:
+    """Why a passing run of ``agent_id`` cannot pass ``ticket`` yet, or "".
+
+    The design stage is the one that decides the answers, and it runs only on a
+    ticket whose plan names UI paths. A pass that recorded none left the PR to
+    find out in CI; it is sent back to the stage instead, with this as the reason.
+    """
+    if agent_id != UI_DESIGN_AGENT_ID:
+        return ""
+    try:
+        if latest_ux_answers(session, ticket) is not None:
+            return ""
+        problem = f"No UX answers are recorded for {ticket.external_id}"
+    except ValueError as exc:
+        problem = str(exc)
+    return (
+        f"{problem}, and this stage cannot pass without them: the ticket's PR builds its "
+        "'User-facing surfaces' section from them. Call `loregarden_record_ux_answers` with "
+        "question, action and real_data, or with no_change_reason when nobody can see the "
+        "change, then report pass again."
+    )
 
 
 def latest_ux_answers(session: Session, ticket: Ticket) -> UxAnswers | None:

@@ -127,6 +127,9 @@ renamed prop), record `no_change_reason` instead, with the reason. Each answer i
 tool refuses an answer the check would refuse, so a refusal is the check failing early: fix
 the answer, not the tool call. Record again if the answers change; the latest record wins.
 
+This stage does not pass without a record. A pass with none is sent back to you as rework,
+naming what is missing; after the rework loop cap, a person is asked instead.
+
 ## Restrictions
 
 - Do not write application code. You decide; the implementer implements.
