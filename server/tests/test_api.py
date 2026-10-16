@@ -1,4 +1,8 @@
 from fastapi.testclient import TestClient
+from loregarden.models.domain import Ticket
+from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
+from sqlmodel import Session
 
 
 def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
@@ -165,6 +169,43 @@ def test_start_run_failure_blocks_ticket(client: TestClient, monkeypatch):
     assert body["state"] == "blocked"
     assert body["workflow_stage_status"] == "blocked"
     assert "forced to fail" in body["blocking_issues"].lower()
+
+
+def test_ticket_detail_resolves_a_long_block_to_its_full_text(
+    client: TestClient, db_session: Session
+):
+    """A long block leaves only a pointer inline ("see the Timeline tab"); the
+    Timeline is where that pointer sends the operator, so the detail has to
+    carry the text it points at."""
+    ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
+    ticket = db_session.get(Ticket, ticket_id)
+    long_message = "Test-break could not write a failing test: " + "x" * 600
+    ticket.blocking_issues = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key="test-break", message=long_message
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    body = _ticket_detail(client, ticket_id)
+
+    assert BLOCKING_POINTER_PHRASE in body["blocking_issues"]
+    assert body["block_message"] == long_message
+
+
+def test_ticket_detail_block_message_is_the_inline_block_when_short(
+    client: TestClient, db_session: Session
+):
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    ticket = db_session.get(Ticket, ticket_id)
+    ticket.blocking_issues = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key="plan", message="Waiting on API key"
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    body = _ticket_detail(client, ticket_id)
+
+    assert body["block_message"] == body["blocking_issues"] == "Waiting on API key"
 
 
 def test_runs_api_after_start(client: TestClient):
