@@ -52,28 +52,35 @@ from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
 from tests.worktree_helpers import git, make_repo
 
-#: AC1. Measured on this path: 20.9 per stage before the snapshot, 9.0 after,
-#: 15.0 after lg-milestone-that-779 unskipped the worktree refresh.
+#: AC1. Measured on this path: 20.9 per stage before the snapshot
+#: (lg-build-verification-847), 9.0 after it, 15.0 after lg-milestone-that-779
+#: unskipped the worktree refresh, and 11.0 after lg-milestone-that-918 stopped
+#: the refresh asking twice and asking at all when nothing landed (99 git
+#: processes over 9 stage runs).
 #:
-#: The 779 rise is not the duplication 847 removed coming back. It is six new
+#: The 779 rise was not the duplication 847 removed coming back. It was six new
 #: *distinct* questions, each asked once per dispatch, because a ticket's
 #: worktree is now put on its branch and refreshed onto its target at every
 #: stage rather than only when it is cut: `rev-parse --verify` (does the branch
 #: exist), `checkout` (put the tree on it), `status --porcelain` (the clean gate
 #: `_refresh_onto` applies before merging), `merge --no-edit` (the refresh),
 #: `for-each-ref` (resolving the target branch) and one `status --porcelain=v2`
-#: around them. The alternative is the defect 779 fixes: a worktree cut three
-#: stages ago, dispatched against a base that cannot see a prerequisite that
-#: landed since.
+#: around them.
 #:
-#: Deliberately raised rather than waived, and kept one call above the measured
-#: figure so it is still a ceiling. A cheaper shape exists — ask
-#: `merge-base --is-ancestor` once and skip checkout/status/merge when the
-#: target is already reachable — but it would have to duplicate the
-#: put-the-tree-back-on-its-branch fix-up that lives inside
-#: `ensure_ticket_branch` (lg-milestone-that-772), so it belongs in its own
-#: ticket under lg-milestone-that-493 and not in a bug fix.
-GIT_CALLS_PER_STAGE = 16
+#: 918 removed five of them. The duplicate `for-each-ref` went because the
+#: dispatch resolves its target branch once and shares the answer between the
+#: worktree cut and the refresh, rather than resolving — and merging shared refs
+#: — twice for the same ticket. The other four went because `ensure_ticket_branch`
+#: now asks `merge-base --is-ancestor` first: a tree already on its branch whose
+#: HEAD already contains the target has nothing to check out, nothing to stat and
+#: nothing to merge, so one question replaces `rev-parse --verify` + `checkout` +
+#: `status --porcelain` + `merge --no-edit`. What is left per dispatch is the
+#: `status --porcelain=v2` snapshot, the one ancestry question, and the single
+#: resolution.
+#:
+#: Kept one call above the measured figure so it is still a ceiling, never a
+#: waiver.
+GIT_CALLS_PER_STAGE = 12
 
 _CORE_BARE = ["git", "config", "--local", "--get", "core.bare"]
 _GIT_DIR = ["git", "rev-parse", "--git-dir"]

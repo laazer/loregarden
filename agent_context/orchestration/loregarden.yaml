@@ -94,6 +94,10 @@ git:
   # lg-milestone-that-795 owns hosting / GitHub App install). Until it is
   # hosted, nothing waits on bors: a tree's PR (`tree_open_pr` /
   # `tree_auto_merge` below, 958) merges on the ruleset's required checks.
+  #
+  # The chat-turn keys are a separate pair, and they stay off: keep `open_pr` /
+  # `auto_merge` absent until sibling lg-milestone-that-791 enables them behind
+  # a live gate precondition (schema defaults are already False).
   commit: true
   push: true
   # For `publish_tree` only (958): a tree's PR opens with its first landing and

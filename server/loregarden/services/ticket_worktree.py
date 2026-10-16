@@ -19,6 +19,7 @@ the import graph acyclic.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, PrimaryCheckoutUse, Ticket, Workspace
@@ -56,6 +57,7 @@ def resolve_execution_root(
     workspace: Workspace,
     *,
     stale_target_ok: bool = False,
+    resolve_target: Callable[[], str] | None = None,
 ) -> Path:
     """The directory this run should execute in, creating a worktree if needed.
 
@@ -75,7 +77,25 @@ def resolve_execution_root(
     inbox by then (`resolve_target_branch` files the card before raising).
     Before this, one conflicting commit on `main` made the triage chat answer
     "unavailable" for every ticket in the tree.
+
+    ``resolve_target`` is for the single-agent dispatch path, which resolves the
+    same target a second line later to refresh the tree onto it. Resolving is a
+    *write* against refs every worktree of the repository shares
+    (`ensure_integration_branch`, `_refresh_from_tips`, and behind them a
+    blocking merge turn with an inbox card), so a caller that has already
+    answered the question hands the answer over rather than paying for it twice
+    (lg-milestone-that-918). It is not a second way of *deciding* the answer:
+    omitted, this module resolves for itself exactly as it always has. Passing
+    it together with ``stale_target_ok`` is refused — they encode two different
+    policies for the same question, and honouring one silently would give a
+    caller an answer it did not ask for.
     """
+    if stale_target_ok and resolve_target is not None:
+        raise ValueError(
+            "resolve_execution_root takes stale_target_ok or resolve_target, not both: "
+            "a told target carries its caller's conflict policy, and stale_target_ok "
+            "is a different one for the same question"
+        )
     workspace_root = resolve_workspace_root(workspace)
     if run.worktree_id:
         root = resolve_run_root(session, run, workspace_root)
@@ -93,12 +113,16 @@ def resolve_execution_root(
     # a sibling's landed work lives on the integration branch and never on
     # main until the tree completes (lg-milestone-that-769).
     try:
-        target = resolve_target_branch(
-            session,
-            ticket,
-            workspace,
-            repo_root=workspace_root,
-            merge_conflicts=not stale_target_ok,
+        target = (
+            resolve_target()
+            if resolve_target is not None
+            else resolve_target_branch(
+                session,
+                ticket,
+                workspace,
+                repo_root=workspace_root,
+                merge_conflicts=not stale_target_ok,
+            )
         )
     except IntegrationConflictError as exc:
         if not stale_target_ok:
