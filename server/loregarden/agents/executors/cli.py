@@ -2,6 +2,7 @@ import json
 import logging
 import subprocess
 import tempfile
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
@@ -551,6 +552,49 @@ class CliAgentExecutor:
 
         return list(get_template_stages(template))
 
+    def _target_branch_once(
+        self, ticket: Ticket, workspace: Workspace, *, workspace_root: Path
+    ) -> Callable[[], str]:
+        """A resolver for this ticket's target branch that resolves it at most once.
+
+        Both consumers of the answer inside one dispatch — the worktree cut in
+        `resolve_execution_root` and the `start_point` the refresh is brought up
+        to — share this one call. Before, each resolved for itself: two readings
+        and two merge attempts against the same refs for the same ticket on the
+        most-travelled path in the app (lg-milestone-that-918).
+
+        It is lazy on purpose, not hoisted. `resolve_target_branch` is a *write*
+        (`ensure_integration_branch`, `_refresh_from_tips`, and behind them a
+        blocking merge turn that files an inbox card), and three dispatch paths
+        need the answer zero times — among them the dirty-park path, where the
+        run never starts. Nothing resolves until a consumer asks.
+
+        ``workspace_root`` is what the target branch is resolved against, never
+        the execution root: resolution writes refs, refs are shared across every
+        worktree of a repository, and the integration-branch bookkeeping belongs
+        in the shared checkout (lg-milestone-that-779 S3).
+
+        The memo's lifetime is one dispatch, which is why it is built here and
+        not held on `self`: the cached *name* would not go stale, but the write
+        behind it is what carries the base branch onto the target, so a memo
+        that outlived its dispatch would leave the tree on a base it cannot see.
+
+        A failure is not cached. It propagates and a later call retries, because
+        a cached failure is a stale answer with no way to clear it.
+        """
+        resolved: list[str] = []
+
+        def once() -> str:
+            if not resolved:
+                # The module-global name, looked up at call time: the tests that
+                # pin where resolution happens patch this module's binding.
+                resolved.append(
+                    resolve_target_branch(self.session, ticket, workspace, repo_root=workspace_root)
+                )
+            return resolved[0]
+
+        return once
+
     def _ensure_branch_or_fail(
         self,
         run: AgentRun,
@@ -558,8 +602,7 @@ class CliAgentExecutor:
         workspace: Workspace,
         *,
         repo_root: Path,
-        workspace_root: Path,
-        skip: bool,
+        start_point: str,
         advance_workflow: bool,
     ) -> AgentRun | None:
         """Put the execution tree on the ticket's branch. Returns the failed run
@@ -572,20 +615,16 @@ class CliAgentExecutor:
         existing one brought up to — the ticket's target branch, so a sibling's
         landed work reaches it (lg-milestone-that-769).
 
-        ``workspace_root`` is what the target branch is resolved against, never
-        ``repo_root``: resolution writes refs (`ensure_integration_branch`,
-        `_refresh_from_tips`), refs are shared across worktrees, and the
-        integration-branch bookkeeping belongs in the shared checkout.
+        One tree and one job: `start_point` is the already-resolved target
+        (`_target_branch_once` in `_prepare_tree` owns that question, and the
+        decision to skip the refresh at all is the caller's), so this knows
+        about exactly one root.
         """
-        if skip:
-            return None
         try:
             ensure_ticket_branch(
                 repo_root,
                 ticket,
-                start_point=resolve_target_branch(
-                    self.session, ticket, workspace, repo_root=workspace_root
-                ),
+                start_point=start_point,
                 ignoring=ticket_recorded_paths(self.session, ticket),
                 seat=MergeTurnSeat(self.session, workspace, ticket),
             )
@@ -626,16 +665,22 @@ class CliAgentExecutor:
         because `services.parallel_stage` already did it once for the stage
         (lg-milestone-that-779).
         """
+        once = self._target_branch_once(ticket, workspace, workspace_root=workspace_root)
         try:
-            repo_root = resolve_execution_root(self.session, run, ticket, workspace)
-            failed = self._ensure_branch_or_fail(
-                run,
-                ticket,
-                workspace,
-                repo_root=repo_root,
-                workspace_root=workspace_root,
-                skip=skip_git_branch,
-                advance_workflow=advance_workflow,
+            repo_root = resolve_execution_root(
+                self.session, run, ticket, workspace, resolve_target=once
+            )
+            failed = (
+                None
+                if skip_git_branch
+                else self._ensure_branch_or_fail(
+                    run,
+                    ticket,
+                    workspace,
+                    repo_root=repo_root,
+                    start_point=once(),
+                    advance_workflow=advance_workflow,
+                )
             )
         except DirtyPrimaryCheckoutError as exc:
             return workspace_root, park_on_dirty_checkout(
