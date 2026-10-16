@@ -60,6 +60,9 @@ CODE_CRITERIA = [
     "Opening a PR for a ticket pushes commits from that ticket's worktree, not the shared "
     "checkout",  # lg-worktree-isolation-51
     "AC-A1: MergeOutcome.signed exists, typed bool | None, defaulting to None.",  # 782's code half
+    "AC31 — SCOPE FENCE. No criterion here requires changing shared state (no force-push, no "
+    "ref republish, no PR opened by hand, no landed_sha edited through the tools) — it stays a "
+    "pure code ticket.",  # lg-external-harness-1026, held at spec 2026-10-16
 ]
 
 
@@ -69,6 +72,22 @@ def test_782s_operation_criteria_are_caught():
 
 def test_code_criteria_that_mention_the_same_nouns_are_not():
     assert operation_criteria(CODE_CRITERIA) == []
+
+
+@pytest.mark.parametrize(
+    ("criterion", "asks"),
+    [
+        ("Never force-push the integration branch; land through the merge chain.", False),
+        ("The tool refuses without force-pushing anything.", False),
+        ("The pre-push hook rejects force-pushes to main.", False),
+        # A negation in an earlier clause does not hide an ask in a later one.
+        ("Do not edit the template; force-push the rebuilt branch afterwards.", True),
+        # Nor does a negation too far back in the same clause.
+        ("Nothing about the old branch matters here, so force-push the new one.", True),
+    ],
+)
+def test_a_negated_mention_rules_the_operation_out(criterion, asks):
+    assert bool(operation_criteria([criterion])) is asks
 
 
 SPEC = "spec"

@@ -66,9 +66,41 @@ OPERATION_DECISION_OPTIONS = (SPLIT_OPTION, KEEP_OPTION)
 _KEPT_TITLE = "Operation criteria kept"
 
 
+#: A negation or a prohibition shortly before a match, within its clause: the
+#: criterion rules the operation out rather than asking for it. A regex cannot
+#: see every way prose mentions an operation it does not ask for; the decision
+#: card's "keep" answer covers what this misses.
+_NEGATION = re.compile(
+    r"(?:\b(?:no|not|never|without|nor|bans?|forbids?|refuses?|rejects?|disallows?)\b|n't\b)"
+    r"[^.;:()]{0,20}$",
+    re.IGNORECASE,
+)
+_CLAUSE_START = re.compile(r".*[.;:(]", re.DOTALL)
+
+
+def _asks_for(criterion: str, match: re.Match[str]) -> bool:
+    """Whether this mention asks for the operation rather than ruling it out.
+
+    lg-external-harness-1026's scope fence read "(no force-push, no ref
+    republish, no PR opened by hand …) — it stays a pure code ticket", and was
+    held at the spec stage as an operation (2026-10-16).
+    """
+    before = criterion[: match.start()]
+    before = before[_CLAUSE_START.match(before).end() :] if _CLAUSE_START.match(before) else before
+    return not _NEGATION.search(before)
+
+
+def _names_an_operation(criterion: str) -> bool:
+    return any(
+        _asks_for(criterion, match)
+        for pattern in OPERATION_PATTERNS
+        for match in pattern.finditer(criterion)
+    )
+
+
 def operation_criteria(criteria: list[str]) -> list[str]:
-    """The criteria that name an operation on shared state, in their order."""
-    return [c for c in criteria if any(p.search(c) for p in OPERATION_PATTERNS)]
+    """The criteria that ask for an operation on shared state, in their order."""
+    return [c for c in criteria if _names_an_operation(c)]
 
 
 def _kept(session: Session, ticket: Ticket) -> set[str]:
