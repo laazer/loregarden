@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import (
     AgentRun,
     ExternalHarness,
@@ -26,6 +27,8 @@ from loregarden.models.domain import (
     Ticket,
     WorkItemType,
 )
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_lease import (
     AGENT_RUN_LEASE,
     agent_run_lease_expired,
@@ -35,6 +38,7 @@ from loregarden.services.run_lease import (
 )
 from loregarden.services.run_service import settle_expired_agent_runs
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.workflow_state import parse_stage_map
 
 EXPIRED = AGENT_RUN_LEASE + timedelta(minutes=5)
 
@@ -203,6 +207,29 @@ def test_the_sweep_fails_a_dead_run_and_spares_a_live_one(db_session, ticket):
     db_session.expire_all()
     assert db_session.get(AgentRun, dead.id).status is RunStatus.FAILED
     assert db_session.get(AgentRun, alive.id).status is RunStatus.RUNNING
+
+
+def test_an_expired_merge_turn_settles_without_touching_the_workflow(db_session, ticket, caplog):
+    """A merge turn is filed on the ticket whose branch it merges, under a stage key
+    no workflow has. Settling it by its lease raised "Unknown stage key:
+    integration-merge" twice and left it to the reaper (954, 2026-10-16)."""
+    orch = OrchestrationService(db_session)
+    instance, stages = orch._resolve_stages(ticket)
+    assert instance and stages, "fixture: the ticket must have a workflow"
+    before = parse_stage_map(instance, stages)
+    run = _run(db_session, ticket, code="run_merge", age=EXPIRED, last_seen=EXPIRED)
+    run.agent_id, run.stage_key = REPAIR_AGENT_ID, INTEGRATION_MERGE_STAGE
+    db_session.add(run)
+    db_session.commit()
+
+    settled = settle_expired_agent_runs(db_session)
+
+    assert [r.id for r in settled] == [run.id]
+    db_session.expire_all()
+    assert db_session.get(AgentRun, run.id).status is RunStatus.FAILED
+    instance, stages = orch._resolve_stages(db_session.get(Ticket, ticket.id))
+    assert parse_stage_map(instance, stages) == before, "the workflow is not the run's"
+    assert not [r for r in caplog.records if r.levelname == "ERROR"], caplog.text
 
 
 # ---- renewal ------------------------------------------------------------

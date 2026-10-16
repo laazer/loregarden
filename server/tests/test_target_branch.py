@@ -1,6 +1,7 @@
 """Where a ticket's work lands: the integration branch per subtree (767)."""
 
 import subprocess
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -528,6 +529,36 @@ def test_a_conflict_is_merged_by_the_agent_and_the_ticket_starts(
         "Kept both sides.",
     )
     assert len(_git(["worktree", "list"], cwd=repo).splitlines()) == 1, "the merge tree is removed"
+
+
+def test_the_merge_turn_renews_its_lease_while_it_works(
+    db_session: Session, workspace: Workspace, repo: Path, conflicted
+):
+    """A merge turn outlives the 10-minute agent-run lease; unrenewed, the sweep
+    reaped one mid-turn as abandoned (954, 2026-10-16)."""
+    milestone, child, _ = conflicted
+    renewed: list[str] = []
+
+    def renewing(*args, **kwargs):
+        [run] = _merge_runs(db_session, milestone)
+        renewed.append(run.id)
+        # The renewer is a thread: waited for, not read once, so a slow first beat
+        # under load is not mistaken for no renewer.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            db_session.expire_all()
+            if db_session.get(AgentRun, run.id).last_seen_at is not None:
+                break
+            time.sleep(0.05)
+        assert db_session.get(AgentRun, run.id).last_seen_at is not None, (
+            "the lease was not renewed while the turn ran"
+        )
+        return _resolving()(*args, **kwargs)
+
+    with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=renewing):
+        assert resolve_target_branch(db_session, child, workspace, repo_root=repo) == MERGED
+
+    assert len(renewed) == 1
 
 
 def test_a_turn_that_leaves_the_merge_unfinished_moves_nothing_and_asks_a_person(

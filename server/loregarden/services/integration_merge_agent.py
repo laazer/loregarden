@@ -69,6 +69,7 @@ from loregarden.services.integration_merge_budget import (
 )
 from loregarden.services.organization_gate_service import OrganizationScope, check_repo
 from loregarden.services.run_concurrency import new_run_code
+from loregarden.services.run_lease import lease_renewal
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -173,20 +174,24 @@ def merge_base_by_agent(
             run.run_code,
         )
         try:
-            resolution, reply = _merge_in_worktree(
-                workspace,
-                root,
-                run,
-                repo_root=repo_root,
-                branch=branch,
-                base=base,
-                tips=(branch_sha, base_sha),
-                files=files,
-                # A retry on the same tip is told why the last one was refused,
-                # so it is not the same turn again.
-                refused=refused[-1].stderr if refused else "",
-                about=about,
-            )
+            # Renewed like every supervised run: a merge turn outlives the 10-minute
+            # lease, and an unrenewed one was reaped mid-turn as abandoned (954,
+            # 2026-10-16).
+            with lease_renewal(run.id):
+                resolution, reply = _merge_in_worktree(
+                    workspace,
+                    root,
+                    run,
+                    repo_root=repo_root,
+                    branch=branch,
+                    base=base,
+                    tips=(branch_sha, base_sha),
+                    files=files,
+                    # A retry on the same tip is told why the last one was refused,
+                    # so it is not the same turn again.
+                    refused=refused[-1].stderr if refused else "",
+                    about=about,
+                )
         except Exception as exc:
             # Loregarden's own failure, not the agent's: settle the run so it
             # neither stays RUNNING nor spends an attempt, then let it surface.

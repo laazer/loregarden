@@ -42,7 +42,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services import doctor
+from loregarden.services import doctor, reconcile_timer
 from loregarden.services.doctor import preflight_run
 from loregarden.services.gate_producer import snapshot_worktree
 from loregarden.services.git_commit_push_service import commit_paths
@@ -85,6 +85,12 @@ def git_argvs_fixture() -> Iterator[list[list[str]]]:
 
     `run_git` always passes a list starting with the literal "git", so that is
     what is matched; a string command (shell=True) never reads as git.
+
+    The app's reconcile timer is held off meanwhile: the counter sees every
+    thread, and a sweep that fired inside the window counted its own
+    `for-each-ref` against the stage. Whether it fired depended on how long the
+    window lasted, so it failed a pre-push suite under load at 145 over a
+    ceiling of 144 and passed alone (2026-10-16).
     """
     argvs: list[list[str]] = []
     original = subprocess.Popen.__init__
@@ -95,7 +101,10 @@ def git_argvs_fixture() -> Iterator[list[list[str]]]:
             argvs.append(argv)
         original(self, args, *rest, **kwargs)
 
-    with mock.patch.object(subprocess.Popen, "__init__", counting):
+    with (
+        mock.patch.object(subprocess.Popen, "__init__", counting),
+        mock.patch.object(reconcile_timer, "_sweep", return_value=[]),
+    ):
         yield argvs
 
 

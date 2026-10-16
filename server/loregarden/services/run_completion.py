@@ -62,6 +62,7 @@ from loregarden.services.exit_action_ledger import (
 )
 from loregarden.services.exit_actions import attest_assigned_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval
+from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.network_wait import (
     is_network_unreachable,
     network_wait_message,
@@ -899,6 +900,25 @@ def _parked_for_network(
     return True
 
 
+def _outside_the_workflow(ticket: Ticket, run: AgentRun, stages: list[WorkflowStageDef]) -> bool:
+    """Whether ``run`` names no stage of the ticket's workflow, so there is none to move.
+
+    An integration merge turn is the expected one: it is filed on the ticket whose
+    branch it merges, and settling it by its lease raised "Unknown stage key" (954,
+    2026-10-16). Anything else is said out loud.
+    """
+    if run.stage_key in {stage.key for stage in stages}:
+        return False
+    if run.stage_key != INTEGRATION_MERGE_STAGE:
+        logger.warning(
+            "Run %s names stage %r, which %s's workflow does not have; nothing to advance",
+            run.run_code,
+            run.stage_key,
+            ticket.external_id,
+        )
+    return True
+
+
 def advance_stage_after_run(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -910,7 +930,7 @@ def advance_stage_after_run(
     stdout: str = "",
 ) -> None:
     instance, stages = orch._resolve_stages(ticket)
-    if not instance or not stages:
+    if not instance or not stages or _outside_the_workflow(ticket, run, stages):
         return
 
     # Only when the agent produced no outcome of its own: a run that emitted a
