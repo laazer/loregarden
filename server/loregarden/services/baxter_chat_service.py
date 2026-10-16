@@ -445,12 +445,24 @@ def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> No
     has seen — and when it does, this refuses too, naming where the work is.
     Silently detaching the row instead would leave a checkout on disk that
     nothing owns and no sweeper reaps.
+
+    Two holds, two messages. The refusal reaches the operator verbatim as the
+    409 detail in an error toast, and a removal that was *attempted* and failed
+    must not borrow the wording written for work the server chose to keep:
+    there may be no uncommitted work at all behind a permission error or a busy
+    file, and "commit or discard it" cannot clear either. Both keep the row, so
+    the operator can retry the delete on the same thread.
     """
     held = release_chat_worktree(session, chat_session)
+    if held is not None and held.removal_failed:
+        raise ChatSessionHasUnpublishedWork(
+            f"Could not remove this chat's checkout at {held.worktree.worktree_path}. "
+            "Chat kept on purpose. Clear the path, then delete again."
+        )
     if held is not None:
         raise ChatSessionHasUnpublishedWork(
-            f"This chat still has unpublished work on `{held.branch}` at "
-            f"{held.worktree_path}. Commit or discard it, then delete the chat."
+            f"This chat still has unpublished work on `{held.worktree.branch}` at "
+            f"{held.worktree.worktree_path}. Commit or discard it, then delete the chat."
         )
 
     for message in session.exec(
