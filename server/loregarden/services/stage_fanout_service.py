@@ -487,9 +487,19 @@ def _discard_attempts(
         if attempt.id == keep_attempt_id:
             continue
         worktree = session.get(Worktree, attempt.worktree_id) if attempt.worktree_id else None
+        removal_failed = False
         if worktree:
-            service.cleanup_worktree(worktree)
-        if attempt.branch:
+            removal_failed = not service.cleanup_worktree(worktree)
+            if removal_failed:
+                logger.warning(
+                    "Fan-out attempt %s: worktree %s at %s failed to remove; "
+                    "keeping branch %s instead of force-deleting its only ref",
+                    attempt.id,
+                    worktree.id,
+                    worktree.worktree_path,
+                    attempt.branch,
+                )
+        if attempt.branch and not removal_failed:
             deleted = run_git(
                 ["branch", "-D", attempt.branch],
                 cwd=repo_root,

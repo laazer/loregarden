@@ -221,6 +221,100 @@ def test_discarding_twice_is_harmless(session, ticket, repo):
     assert len(again) == 2
 
 
+def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, repo, caplog):
+    """A losing attempt whose worktree removal fails must keep its branch: the
+    checkout's commits are reachable from nothing else, so force-deleting the
+    branch (`branch -D`) would strand them.
+
+    The oracle is the *absence of the `branch -D` call*, not the surviving
+    branch. A failed `cleanup_worktree` leaves the checkout registered with git,
+    and git refuses to delete a branch checked out in a registered worktree — so
+    "the branch is still there" is satisfied by git's own refusal and passes
+    with the guard removed. Only the uninvoked `branch -D` distinguishes the
+    guard running from git saving us.
+
+    A sibling attempt whose removal succeeds must still be discarded normally —
+    the loop must not stop at the first failure.
+    """
+    import logging
+
+    from loregarden.services import stage_fanout_service
+    from loregarden.services.git_subprocess import run_git as real_run_git
+    from loregarden.services.worktree_service import WorktreeService
+
+    group, _ = _launch(session, ticket, count=2)
+    failing_attempt_id = group["attempts"][0]["id"]
+    ok_attempt_id = group["attempts"][1]["id"]
+    failing_branch = group["attempts"][0]["branch"]
+    ok_branch = group["attempts"][1]["branch"]
+
+    # Read the failing attempt's worktree row BEFORE the call: the sibling's row
+    # is deleted by a successful cleanup, and these identifiers are what the
+    # warning must name.
+    failing_worktree_id = group["attempts"][0]["worktree_id"]
+    failing_worktree_path = session.get(Worktree, failing_worktree_id).worktree_path
+
+    real_cleanup = WorktreeService.cleanup_worktree
+
+    def flaky_cleanup(self, worktree):
+        if worktree.branch == failing_branch:
+            return False
+        return real_cleanup(self, worktree)
+
+    git_calls: list[list[str]] = []
+
+    def spying_run_git(args, **kwargs):
+        git_calls.append(list(args))
+        return real_run_git(args, **kwargs)
+
+    with caplog.at_level(logging.WARNING):
+        with (
+            patch.object(WorktreeService, "cleanup_worktree", flaky_cleanup),
+            patch.object(stage_fanout_service, "run_git", spying_run_git),
+        ):
+            settled = decline_fanout(session, group["id"])
+
+    # (a) Causality: the guard stopped the force-delete from ever being issued
+    # for the attempt whose removal failed, while the sibling's really ran.
+    assert ["branch", "-D", failing_branch] not in git_calls, (
+        "branch -D was issued for an attempt whose worktree removal failed"
+    )
+    assert ["branch", "-D", ok_branch] in git_calls, (
+        "the sibling attempt's branch must still be force-deleted"
+    )
+
+    # (b) The failure is observable, and names the attempt, the worktree row and
+    # its path — not just the branch, which the delete-failure warning also
+    # names.
+    identifying = [
+        r
+        for r in caplog.records
+        if r.levelno >= logging.WARNING
+        and str(failing_attempt_id) in r.getMessage()
+        and str(failing_worktree_id) in r.getMessage()
+        and failing_worktree_path in r.getMessage()
+    ]
+    assert len(identifying) == 1, (
+        "expected exactly one warning naming the attempt, worktree row and path; got "
+        f"{[r.getMessage() for r in identifying]}"
+    )
+
+    # (c) No delete-failure warning for the failing branch: such a record only
+    # exists when the delete was attempted.
+    assert not [
+        r
+        for r in caplog.records
+        if "Could not delete discarded fan-out branch" in r.getMessage()
+        and failing_branch in r.getMessage()
+    ], "the force-delete was attempted and refused, rather than skipped"
+
+    # (d) End state, and the loop did not stop at the first failure.
+    branches = git(repo, "branch", "--list").stdout
+    assert failing_branch in branches, "branch force-deleted despite a failed removal"
+    assert ok_branch not in branches, "the sibling discard must still happen"
+    assert set(settled["discarded_attempts"]) == {failing_attempt_id, ok_attempt_id}
+
+
 def test_promoting_lands_the_winner_and_removes_every_loser(session, ticket, workspace, repo):
     group, _ = _launch(session, ticket, count=3)
     winner = group["attempts"][1]
