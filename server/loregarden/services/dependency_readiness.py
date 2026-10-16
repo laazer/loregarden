@@ -25,18 +25,22 @@ the next child consults this. A named start is never held.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, TicketState, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.git_merge_noco import superseding_commit
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 
 class UnmetReason(str, Enum):
@@ -83,7 +87,13 @@ def _is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
 def work_is_reachable(
     repo_root: Path, prerequisite: Ticket, *, target: str, base: str
 ) -> bool | None:
-    """Whether the prerequisite's branch tip is on ``target`` or ``base``.
+    """Whether the prerequisite's work is on ``target`` or ``base``.
+
+    Reachable by ancestry, or held by a commit there that already carries
+    everything the branch adds: a squash merge shares no commit with the branch
+    it merged. 951 landed on integration/lg-external-harness-463, which went to
+    main as #620's squash; the integration branch was then moved onto main, and
+    954 waited on 951 as "not landed" with its work on main (2026-10-16).
 
     None when the prerequisite has no branch in this repository — there is
     nothing to be reachable, and the caller falls back to state.
@@ -92,9 +102,22 @@ def work_is_reachable(
     if not branch_tip:
         return None
     for ref in (target, base):
-        if _is_ancestor(repo_root, branch_tip, _rev(repo_root, f"refs/heads/{ref}")):
+        ref_sha = _rev(repo_root, f"refs/heads/{ref}")
+        if _is_ancestor(repo_root, branch_tip, ref_sha):
+            return True
+        if ref_sha and _holds(repo_root, branch_tip, ref_sha, ref=ref):
             return True
     return False
+
+
+def _holds(repo_root: Path, branch_tip: str, ref_sha: str, *, ref: str) -> bool:
+    """Whether ``ref`` already holds everything ``branch_tip`` adds."""
+    try:
+        return bool(superseding_commit(repo_root, branch_tip, ref_sha))
+    except RuntimeError as exc:
+        # Not proved landed, so the dependent keeps waiting, and says why here.
+        logger.warning("Could not tell whether %s holds %s: %s", ref, branch_tip[:12], exc)
+        return False
 
 
 def unmet_prerequisites_for_start(

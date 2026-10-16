@@ -132,6 +132,37 @@ def test_a_prerequisite_whose_work_reached_main_by_hand_is_satisfied(session, wo
     assert _reasons(session, b, workspace) == {}
 
 
+def _landed_then_moved_to_main(session, workspace, repo, *, squashed: bool):
+    """951's shape: landed on the tree's branch, which then moved onto main."""
+    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
+    a = _ticket(session, workspace, "a", parent=ms, state=TicketState.DONE)
+    b = _ticket(session, workspace, "b", parent=ms)
+    _depends(session, b, a)
+    target = resolve_target_branch(session, a, workspace, repo_root=repo)
+    git(repo, "branch", a.branch, target)
+    commit_on(repo, a.branch, "a.txt", "a's work\n")
+    assert land_ticket(session, a, workspace).ok
+    if squashed:
+        commit_on(repo, "main", "a.txt", "a's work\n")  # the tree's PR, squash-merged
+    git(repo, "branch", "-f", target, "main")
+    return b
+
+
+def test_work_that_reached_main_by_squash_is_landed(session, workspace, repo):
+    """951 -> 954, 2026-10-16: 951's branch shares no commit with main after #620's
+    squash, and the integration branch had moved onto main, so 954 waited on
+    work main already held."""
+    b = _landed_then_moved_to_main(session, workspace, repo, squashed=True)
+
+    assert _reasons(session, b, workspace) == {}
+
+
+def test_work_neither_branch_holds_is_still_not_landed(session, workspace, repo):
+    b = _landed_then_moved_to_main(session, workspace, repo, squashed=False)
+
+    assert _reasons(session, b, workspace) == {"a": UnmetReason.NOT_LANDED}
+
+
 def test_wont_do_and_planning_only_and_other_workspace_are_judged_by_state(
     session, workspace, repo
 ):
