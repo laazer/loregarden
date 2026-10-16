@@ -25,6 +25,7 @@ line naming which one.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -162,28 +163,6 @@ class KeepReason(StrEnum):
     NOTHING_COMMITTED = "no commits beyond its base"
 
 
-class RemovalFailure(StrEnum):
-    """Why a checkout every premise cleared is nonetheless still on disk.
-
-    Separate from :class:`KeepReason`, which is a closed vocabulary of
-    *premises*: nothing here is a premise that failed, and `_kept_summary`
-    groups by premise. It exists so that "the removal was attempted and did not
-    work" cannot be answered with the same value as "the removal happened".
-    `WorktreeService.cleanup_worktree` returns False for a path outside the
-    worktree base and for any exception out of `worktree remove`/`rmtree`, and
-    a caller told None in that case would drop the row that owns a checkout
-    still sitting on disk.
-    """
-
-    CLEANUP_FAILED = "its checkout could not be removed"
-
-
-#: What `retire_worktree` answers when the checkout is still there: the premise
-#: that refused, or the removal having failed. `None` means, and only means,
-#: that the checkout is gone.
-RetirementRefusal = KeepReason | RemovalFailure
-
-
 def _keep_reason(worktree: Worktree) -> KeepReason | None:
     """The premise that fails for removing this checkout, or None when all hold.
 
@@ -224,20 +203,72 @@ def _reason_detail(reason: KeepReason, worktree: Worktree) -> str:
     return reason.value
 
 
-def retire_worktree(
-    session: Session, service: WorktreeService, worktree: Worktree
-) -> RetirementRefusal | None:
+#: What `retire_worktree` reports when every premise held and the removal still
+#: did not happen. The cause is not carried: `cleanup_worktree` answers with a
+#: bare bool and keeps the reason in its own `logger.error`, so a detail
+#: invented here would be fiction. One constant rather than a string at each
+#: use, because both branches and every caller's wording read the same clause.
+REMOVAL_FAILED = "removing its checkout failed"
+
+
+@dataclass(frozen=True)
+class Retirement:
+    """Whether a checkout is gone, and if not, which of the two reasons it is.
+
+    Three answers, and the collapse this exists to prevent is between the last
+    two: a premise *chose* to keep the tree, or the removal was attempted and
+    failed. Both leave a directory on disk and neither has a `KeepReason` for
+    the second, so a `KeepReason | None` return said "removed" about a checkout
+    a permission error had just refused to unlink — `release_ticket_worktree`
+    answered True, `delete_chat_session` dropped the row that owned the
+    directory, and the chat sweep deleted the branch out from under it
+    (lg-external-harness-954). `removed` is this function's own decision and is
+    never inferred from the other two fields, nor copied from the seam's bool.
+    """
+
+    removed: bool
+    #: Why we chose not to remove it — `_keep_reason`'s vocabulary, unchanged.
+    keep_reason: KeepReason | None = None
+    #: Empty unless a removal was attempted and failed.
+    failure: str = ""
+
+    @property
+    def kept_because(self) -> str:
+        """Words for a caller to print, or empty when the checkout went.
+
+        A failure outranks a premise. No branch here sets both, but the order is
+        the one a caller constructing a `Retirement` by hand would get wrong,
+        and reporting a premise that chose nothing about a removal that failed
+        is the whole defect restated one layer up.
+        """
+        return self.failure or (self.keep_reason.value if self.keep_reason else "")
+
+
+@dataclass(frozen=True)
+class ChatWorktreeHold:
+    """A chat thread's checkout that stayed on disk, and whether anything tried.
+
+    `delete_chat_session` refuses the delete either way — the row is the only
+    thing that owns the directory and no sweeper reaps a chat checkout — but the
+    two holds need different words. "Commit or discard it" cannot clear a
+    permission error, so the fact travels here and the sentence stays with the
+    caller that raises.
+    """
+
+    worktree: Worktree
+    removal_failed: bool = False
+
+
+def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> Retirement:
     """Remove a worktree's checkout, unless doing so would lose something.
 
-    Returns the premise that refused — or `RemovalFailure.CLEANUP_FAILED` when
-    every premise held and the removal itself did not work — and None once the
-    checkout is gone, which is the one thing None means. A failed removal
-    answering None would tell three callers a checkout is gone while it is
-    still on disk: the sweep would delete the published remote ref it had just
-    kept, and `delete_chat_session` would drop the row that owns the
-    directory.
-
-    The answer is carried rather than collapsed into a bool because
+    Returns a `Retirement`: whether the checkout is gone, and when it is not,
+    whether a premise refused or the removal itself failed. `removed` is the one
+    thing that says the checkout went; a failed removal reported as a removal
+    would tell three callers a checkout is gone while it is still on disk — the
+    sweep would delete the published remote ref it had just kept, and
+    `delete_chat_session` would drop the row that owns the directory. The
+    reason is carried rather than collapsed into a bool because
     `chat_branch_sweep` reports to an operator *which* premise fired, and a
     sweep that says "uncommitted work" about a stranded commit sends them
     looking for edits that are not there.
@@ -260,7 +291,7 @@ def retire_worktree(
             reason.value,
             _reason_detail(reason, worktree),
         )
-        return reason
+        return Retirement(removed=False, keep_reason=reason)
     if not service.cleanup_worktree(worktree):
         logger.warning(
             "Worktree %s at %s satisfied every premise but its removal failed; "
@@ -268,8 +299,8 @@ def retire_worktree(
             worktree.id,
             worktree.worktree_path,
         )
-        return RemovalFailure.CLEANUP_FAILED
-    return None
+        return Retirement(removed=False, failure=REMOVAL_FAILED)
+    return Retirement(removed=True)
 
 
 def _kept_summary(kept: dict[KeepReason, list[Worktree]]) -> str:
@@ -312,15 +343,18 @@ def release_ticket_worktree(session: Session, ticket: Ticket) -> bool:
     worktree = service.active_worktree_for_ticket(ticket.id)
     if not worktree:
         return False
-    return retire_worktree(session, service, worktree) is None
+    return retire_worktree(session, service, worktree).removed
 
 
-def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> Worktree | None:
+def release_chat_worktree(
+    session: Session, chat_session: BaxterChatSession
+) -> ChatWorktreeHold | None:
     """Remove the worktree a chat thread was using.
 
-    Returns None when nothing is left holding the thread, and otherwise the
-    worktree it *could not* release — a failure that carries its subject, so a
-    caller can say which branch and which directory rather than "no".
+    Returns None when nothing is left holding the thread, and otherwise a
+    `ChatWorktreeHold` — a failure that carries its subject, so a caller can
+    say which branch and which directory rather than "no", and carries whether
+    a removal was *attempted*, so it can say why rather than guessing.
 
     The conversational counterpart of :func:`release_ticket_worktree`, and
     subject to the same refusals: `retire_worktree` keeps a tree with
@@ -348,8 +382,34 @@ def release_chat_worktree(session: Session, chat_session: BaxterChatSession) -> 
             chat_session.id,
             worktree.worktree_path,
         )
-        return worktree
-    return None if retire_worktree(session, service, worktree) is None else worktree
+        # Nothing was attempted — there was no service to attempt it with — so
+        # this is a hold, not a failed removal, and the caller keeps the wording
+        # written for a tree the server chose to leave alone.
+        return ChatWorktreeHold(worktree=worktree)
+
+    outcome = retire_worktree(session, service, worktree)
+    if outcome.removed:
+        return None
+    return ChatWorktreeHold(worktree=worktree, removal_failed=outcome.failure != "")
+
+
+def _report_failed_cleanup(worktree: Worktree) -> None:
+    """Say that a row startup meant to settle did not settle.
+
+    `reconcile_worktrees` calls `cleanup_worktree` directly rather than through
+    `retire_worktree`, because it reads `_keep_reason` itself so `_kept_summary`
+    can group every refusal into one block. That shortcut also skipped
+    `retire_worktree`'s report of a failed removal, so a tree still on disk —
+    or a row still ACTIVE — was dropped out of an `elif` with no log and no
+    `kept` entry, three lines from the branch that does report one. One record
+    per tree, not per run: a boot settles every active row in one pass, so a
+    blanket line would name the trees that went as well.
+    """
+    logger.warning(
+        "Worktree %s at %s could not be cleaned up at startup; the row stays active",
+        worktree.id,
+        worktree.worktree_path,
+    )
 
 
 def reconcile_worktrees(session: Session) -> int:
@@ -372,8 +432,10 @@ def reconcile_worktrees(session: Session) -> int:
         path = Path(worktree.worktree_path) if worktree.worktree_path else None
         if path is None or not path.is_dir():
             logger.info("Worktree %s is recorded active but gone from disk", worktree.id)
-            service.cleanup_worktree(worktree)
-            settled += 1
+            if service.cleanup_worktree(worktree):
+                settled += 1
+            else:
+                _report_failed_cleanup(worktree)
             continue
 
         ticket = session.get(Ticket, worktree.ticket_id) if worktree.ticket_id else None
@@ -384,6 +446,8 @@ def reconcile_worktrees(session: Session) -> int:
             kept.setdefault(reason, []).append(worktree)
         elif service.cleanup_worktree(worktree):
             settled += 1
+        else:
+            _report_failed_cleanup(worktree)
 
     if kept:
         logger.warning(_kept_summary(kept))

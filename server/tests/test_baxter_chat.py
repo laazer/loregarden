@@ -1007,3 +1007,96 @@ def test_advisory_prompt_forbids_inventing_a_lookup(db_session: Session):
     # Advisory is read-only, not toolless: codex/cursor still get Loregarden MCP,
     # so the prompt must not tell them they have no lookup.
     assert "stay available on this read-only turn" in prompt
+
+
+# --------------------------------------------------------------------------
+# Deleting a thread whose checkout will not go — lg-external-harness-954
+#
+# The only surface a person sees change on this ticket. The 409 detail is
+# rendered verbatim by the global MutationCache handler as an error toast
+# titled "Delete session failed", so the question these pin is the operator's:
+# "why will this chat not delete, and what do I do to make it deletable?"
+# --------------------------------------------------------------------------
+
+
+def _acting_thread_tree(client: TestClient, db: Session, *, commit: bool) -> tuple[str, Path]:
+    """A thread with a real checkout of its own, committed or not."""
+    from loregarden.models.domain import BaxterChatSession
+    from loregarden.services.chat_worktree import resolve_chat_execution_root
+    from tests.worktree_helpers import git
+
+    session_id = _new_session(client)
+    chat = db.get(BaxterChatSession, session_id)
+    assert chat is not None
+    workspace = db.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    run = AgentRun(
+        run_code="chat-954",
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key="home-chat",
+        status=RunStatus.SUCCEEDED,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    root = resolve_chat_execution_root(db, run, chat, workspace)
+    (root / "turn.txt").write_text("what the turn wrote\n")
+    if commit:
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "committed by the turn")
+    return session_id, root
+
+
+def test_a_checkout_that_will_not_go_is_a_409_that_does_not_blame_the_operator(
+    client: TestClient, db_session: Session
+):
+    """AC8/AC10/AC18 — the words and the status the operator actually meets.
+
+    409 and not 500: the thread becomes deletable the moment the path is
+    removable, so this is state, not a server fault. And the detail must not
+    carry the uncommitted-work advice — there is nothing here to commit, and
+    committing would not make the directory removable.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services.worktree_service import WorktreeService
+
+    session_id, root = _acting_thread_tree(client, db_session, commit=True)
+
+    with patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+        res = client.delete(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}")
+
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert str(root) in detail
+    assert "unpublished work" not in detail
+    assert "Commit or discard" not in detail
+    # AC9 — the action is retrying this same delete, so the row has to still be
+    # there to retry it on. The client only invalidates the archive onSuccess,
+    # so the thread stays listed and the operator can delete it again.
+    assert (
+        client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").status_code
+        == 200
+    )
+    assert session_id in [
+        row["id"] for row in client.get("/api/workspaces/loregarden/baxter-chat/sessions").json()
+    ]
+    assert root.is_dir()
+
+
+def test_a_thread_holding_uncommitted_work_is_the_same_409_with_the_other_reason(
+    client: TestClient, db_session: Session
+):
+    """AC8/AC10 — one status, one handler, two reasons. Pinned together because
+    the thing that went wrong before was the two collapsing into one answer, and
+    a test for either alone cannot see that."""
+    session_id, root = _acting_thread_tree(client, db_session, commit=False)
+
+    res = client.delete(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}")
+
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert "unpublished work" in detail
+    assert str(root) in detail
+    assert "Could not remove" not in detail

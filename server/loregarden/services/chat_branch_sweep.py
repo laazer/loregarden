@@ -151,13 +151,17 @@ def sweep_chat_branches(session: Session, workspace: Workspace) -> ChatBranchSwe
         # answers with the premise that fired — or with the removal itself
         # having failed. Which one it was is what the operator acts on, so it is
         # reported rather than guessed at: a tree kept for a stranded commit
-        # holds no uncommitted work to go looking for. Either answer stops the
-        # sweep here, because deleting the published remote ref of a branch
-        # whose checkout is still on disk is the loss this sweep exists to
-        # avoid.
-        kept_for = retire_worktree(session, service, worktree)
-        if kept_for is not None:
-            result.kept.append((branch, f"its worktree is kept: {kept_for.value}"))
+        # holds no uncommitted work to go looking for.
+        #
+        # The branch deletions below are guarded on `removed`, not on "no
+        # premise refused". A removal that was attempted and failed has no
+        # premise either, and dropping the ref for it would leave a checkout of
+        # a branch that exists nowhere — the one thing on disk still holding
+        # those commits, no longer tracked by anything. That loss is the one
+        # this sweep exists to avoid, so either answer stops it here.
+        outcome = retire_worktree(session, service, worktree)
+        if not outcome.removed:
+            result.kept.append((branch, f"its worktree is kept: {outcome.kept_because}"))
             continue
 
         remote = _remote_for_branch(repo_root, branch)

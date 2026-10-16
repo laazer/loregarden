@@ -14,12 +14,15 @@ told where the work is.
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 from pathlib import Path
 from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
     AgentRun,
+    BaxterChatMessage,
     BaxterChatSession,
     RunStatus,
     Workspace,
@@ -44,6 +47,11 @@ from loregarden.services.git_automation import (
 from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.triage_service import TRIAGE_CLI_PROFILE
+from loregarden.services.worktree_lifecycle import (
+    ChatWorktreeHold,
+    KeepReason,
+    release_chat_worktree,
+)
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, head_branch, make_repo, make_ticket
@@ -437,32 +445,6 @@ def test_deleting_a_thread_whose_head_strands_a_commit_refuses_too(
     assert git(root, "rev-parse", "HEAD").stdout.strip() == stranded
 
 
-def test_deleting_a_thread_whose_worktree_would_not_go_refuses_too(
-    session, workspace, chat_session
-):
-    """A removal that failed is not a removal, all the way out to the caller.
-
-    Every premise holds, so the destructive step runs and `cleanup_worktree`
-    answers False — which it does for a path outside the worktree base, or any
-    exception out of `worktree remove`/`rmtree`. Dropping the row here is the
-    outcome this function's docstring forbids: a checkout on disk that nothing
-    owns and no sweeper reaps.
-    """
-    run = _run(session, workspace)
-    root = resolve_chat_execution_root(session, run, chat_session, workspace)
-    (root / "published.txt").write_text("committed on the branch\n")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "committed by the turn")
-
-    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
-        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
-            delete_chat_session(session, chat_session)
-
-    assert str(root) in str(caught.value)
-    assert session.get(BaxterChatSession, chat_session.id) is not None
-    assert root.is_dir()
-
-
 def test_deleting_a_thread_that_never_acted_is_unchanged(session, workspace, chat_session):
     delete_chat_session(session, chat_session)
 
@@ -519,4 +501,335 @@ def test_an_unresolvable_workspace_reports_the_tree_it_leaves_behind(
     held = worktree_lifecycle.release_chat_worktree(session, chat_session)
 
     assert held is not None
-    assert held.worktree_path == str(root)
+    assert held.worktree.worktree_path == str(root)
+    # Nothing was attempted here — there was no service to attempt it with — so
+    # this is a hold, not a failed removal, and the operator gets today's
+    # wording rather than advice about clearing a path.
+    assert held.removal_failed is False
+
+
+# --------------------------------------------------------------------------
+# A checkout the thread owns and the server cannot remove — lg-external-harness-954
+#
+# Three of the four ways `release_chat_worktree` declines are deliberate: no
+# service to act through, or one of `retire_worktree`'s premises refusing. The
+# fourth is not a decision at all — `git worktree remove` and the `shutil.rmtree`
+# fallback both raised, and the directory is still there. The thread's row is the
+# only thing that owns that directory and no sweeper reaps a chat checkout, so
+# the row has to survive either way; what must differ is what the operator is
+# told, because "commit or discard your work" cannot clear a permission error.
+# --------------------------------------------------------------------------
+
+
+def _committed_thread_tree(session, workspace, chat_session) -> Path:
+    """A thread whose work is committed on its branch — every premise satisfied,
+    so the only thing left to refuse the removal is the removal itself."""
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed by the turn\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    return root
+
+
+def test_a_checkout_that_will_not_go_is_held_and_says_the_removal_failed(
+    session, workspace, chat_session
+):
+    """AC17 — the hold carries the reason, because a bare worktree cannot.
+
+    Returning the `Worktree` alone satisfies "the row survives" and loses the
+    only fact the caller needs to pick its words: whether anything was tried.
+    """
+    root = _committed_thread_tree(session, workspace, chat_session)
+
+    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+        held = release_chat_worktree(session, chat_session)
+
+    assert held is not None
+    assert held.worktree.worktree_path == str(root)
+    assert held.removal_failed is True
+    assert root.is_dir()
+
+
+def test_a_premise_that_refuses_is_held_without_claiming_a_removal_failed(
+    session, workspace, chat_session
+):
+    """AC17 — the other hold, and the one that keeps today's wording. Nothing was
+    attempted: the tree holds work, so the removal was never reached."""
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work nobody has seen\n")
+
+    held = release_chat_worktree(session, chat_session)
+
+    assert held is not None
+    assert held.worktree.worktree_path == str(root)
+    assert held.removal_failed is False
+
+
+def test_a_thread_whose_checkout_went_is_released_outright(session, workspace, chat_session):
+    """AC17 — the success case still answers None, so `delete_chat_session`
+    proceeds. Pinned beside the holds because "no hold" is the one answer that
+    drops the row, and a wrong field read reaches it from the failure above."""
+    _committed_thread_tree(session, workspace, chat_session)
+
+    assert release_chat_worktree(session, chat_session) is None
+
+
+def test_a_thread_with_no_active_worktree_is_released_outright(session, chat_session):
+    """AC17 — nothing to hold. Distinct from the failure above only in the
+    database, which is why it is asserted rather than assumed."""
+    assert release_chat_worktree(session, chat_session) is None
+
+
+def test_a_failed_removal_refuses_the_delete_without_blaming_the_operators_work(
+    session, workspace, chat_session
+):
+    """AC8/AC18 — the words a person actually meets, and the two they must not.
+
+    This reaches the operator verbatim as a 409 detail in an error toast. The
+    premise wording says the thread "still has unpublished work" and to "commit
+    or discard it": for a busy file or a permission error there may be no
+    uncommitted work at all, and that instruction cannot clear the condition. So
+    the failed-removal detail names the three things the operator can act on —
+    the removal failed, the path, and that the row was kept on purpose — then the
+    one action that clears it.
+
+    The string is exact because its length is load-bearing: `.toast__message`
+    clamps at 5.8em / 69.6px, four visible lines at 12px/1.45, with no ellipsis
+    and no scrollbar (ToastHost.css). AC18's wording renders 4.02 lines against
+    that clamp with the real 86-char chat path, measured in headless Chromium
+    with IBM Plex Sans loaded; the wording it replaces rendered 5.98 and lost its
+    instruction mid-phrase at "Clear the". Lengthening this message silently cuts
+    its tail, so any change re-runs AC22's measurement rather than counting
+    characters. The log pointer is gone for the same reason: it was the least
+    actionable clause and the most expensive, and `cleanup_worktree` keeps the
+    cause in its own `logger.error` either way.
+    """
+    root = _committed_thread_tree(session, workspace, chat_session)
+    session.add(BaxterChatMessage(session_id=chat_session.id, role="user", content="do a thing"))
+    session.commit()
+
+    with (
+        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        pytest.raises(ChatSessionHasUnpublishedWork) as caught,
+    ):
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    assert detail == (
+        f"Could not remove this chat's checkout at {root}. Chat kept on purpose. "
+        "Clear the path, then delete again."
+    )
+    assert "unpublished work" not in detail
+    assert "Commit or discard" not in detail
+    # The point of refusing: the row that owns this directory, and the thread
+    # the operator retries the delete on, both survive — as does the directory,
+    # which is the thing the refusal exists to keep owned.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert (
+        session.exec(
+            select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
+        ).all()
+        != []
+    )
+    assert root.is_dir()
+    assert (root / "published.txt").exists()
+
+
+def test_a_premise_hold_still_names_the_work_and_what_to_do_with_it(
+    session, workspace, chat_session
+):
+    """AC18 — the wording the failure case must not borrow, kept where it is true.
+
+    Pinned from this side too: a single message covering both cases would pass
+    the refusal tests above and still hand a permission error the advice written
+    for uncommitted work.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work nobody has seen\n")
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    assert "unpublished work" in detail
+    assert "Commit or discard" in detail
+    assert str(root) in detail
+    assert KeepReason.UNCOMMITTED.value not in detail
+
+
+# --------------------------------------------------------------------------
+# The hold itself, and the two holds nothing above routes through the delete
+# — lg-external-harness-954
+# --------------------------------------------------------------------------
+
+
+def test_a_hold_cannot_be_rewritten_after_the_fact(session, workspace, chat_session):
+    """AC17 — frozen, for the same reason `Retirement` is.
+
+    This answer decides whether a row that owns a directory on disk gets
+    dropped. A mutable one is a `hold.removal_failed = False` away from an
+    intermediate layer turning a permission error back into the advice written
+    for uncommitted work, and nothing else in this module would notice.
+    """
+    hold = ChatWorktreeHold(
+        worktree=Worktree(
+            workspace_id=workspace.id,
+            chat_session_id=chat_session.id,
+            worktree_path="/nowhere",
+            branch="loregarden/chat",
+            state=WorktreeState.ACTIVE,
+        ),
+        removal_failed=True,
+    )
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        hold.removal_failed = False  # type: ignore[misc]
+
+
+def test_an_unresolvable_workspace_still_says_which_tree_it_left(
+    session, workspace, chat_session, monkeypatch, caplog
+):
+    """AC17 — the hold that attempted nothing keeps the warning it already has.
+
+    The hold's `removal_failed=False` tells `delete_chat_session` which words to
+    use; it tells nobody that a checkout was abandoned. Only this record does,
+    and it is the one place a workspace that cannot be resolved is reported at
+    all — the caller raises about the thread, not about the configuration.
+    Migrating the return type is where a log line gets dropped, because no
+    assertion above this one reads it.
+    """
+    from loregarden.services import worktree_lifecycle
+
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    monkeypatch.setattr(worktree_lifecycle, "_service_for", lambda *_args: None)
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        held = release_chat_worktree(session, chat_session)
+
+    assert held is not None
+    assert held.removal_failed is False
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
+        and record.name == "loregarden.services.worktree_lifecycle"
+    ]
+    assert len(warnings) == 1
+    assert str(root) in warnings[0].getMessage()
+
+
+def test_an_unresolvable_workspace_refuses_the_delete_in_todays_words(
+    session, workspace, chat_session, monkeypatch
+):
+    """AC18 — the third hold through the delete, and it is not a failed removal.
+
+    Nothing was attempted, so "clear the path, then delete the chat again" would
+    be advice about a condition the operator cannot see and did not cause: the
+    workspace row is unresolvable, and clearing the directory would strand the
+    branch instead. The two-message branch has to key on `removal_failed`, not
+    on "the hold came back", which is the shape that passes both failure tests
+    above by routing every hold to the new wording.
+    """
+    from loregarden.services import worktree_lifecycle
+
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed by the turn\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    monkeypatch.setattr(worktree_lifecycle, "_service_for", lambda *_args: None)
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    assert "unpublished work" in detail
+    assert str(root) in detail
+    assert "Could not remove" not in detail
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+
+
+# --------------------------------------------------------------------------
+# Adversarial: what the refused delete leaves for the retry
+# — lg-external-harness-954, test-break
+#
+# The tests above pin the words and that the chat row survives. Neither asks
+# what owns the directory afterwards, or whether the retry the message tells the
+# operator to perform actually completes — and the retry is the only thing that
+# ever clears this state: `reconcile_worktrees` skips a worktree with no ticket,
+# and `chat_branch_sweep` runs at startup only.
+# --------------------------------------------------------------------------
+
+
+def test_the_refused_delete_leaves_the_worktree_row_owning_its_directory(
+    session, workspace, chat_session
+):
+    """AC3/AC17 — the row stays ACTIVE and still points at the thread.
+
+    The refusal exists so the directory keeps an owner. The chat row surviving
+    is half of that; the other half is the `worktrees` row, which is what names
+    the path, the branch and the thread. Stamped CLEANUP, or detached from the
+    session, it is a directory no query reaches — the orphan this ticket's whole
+    argument is about — and every assertion in the test above still passes.
+    """
+    root = _committed_thread_tree(session, workspace, chat_session)
+
+    with (
+        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        pytest.raises(ChatSessionHasUnpublishedWork),
+    ):
+        delete_chat_session(session, chat_session)
+
+    row = session.exec(select(Worktree).where(Worktree.chat_session_id == chat_session.id)).one()
+    assert row.state == WorktreeState.ACTIVE
+    assert row.worktree_path == str(root)
+    assert row.branch == chat_session_branch(chat_session)
+    assert row.cleaned_at is None
+
+
+def test_the_retry_the_message_asks_for_completes_once_the_path_is_removable(
+    session, workspace, chat_session
+):
+    """AC9/AC18 — "Clear the path, then delete again" has to be true.
+
+    The instruction is the message's only action, and nothing but the operator
+    performs it. So the failed attempt must leave the thread deletable: no row
+    half-stamped, no message rows dropped before the raise, no second-delete
+    path that now raises for a different reason. This is the one assertion in
+    the module that exercises the failure and the recovery in one order, which
+    is the only way a leftover from the first attempt is observable at all.
+    """
+    root = _committed_thread_tree(session, workspace, chat_session)
+    session.add(BaxterChatMessage(session_id=chat_session.id, role="user", content="do a thing"))
+    session.commit()
+
+    with (
+        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        pytest.raises(ChatSessionHasUnpublishedWork),
+    ):
+        delete_chat_session(session, chat_session)
+
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+
+    # The operator clears what was holding it and deletes again. Same call, same
+    # row, no refusal this time: the thread, its messages and the checkout all go.
+    delete_chat_session(session, chat_session)
+
+    assert session.get(BaxterChatSession, chat_session.id) is None
+    assert (
+        session.exec(
+            select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
+        ).all()
+        == []
+    )
+    assert not root.exists()
+    assert (
+        session.exec(select(Worktree).where(Worktree.chat_session_id == chat_session.id)).all()
+        == []
+    )

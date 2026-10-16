@@ -28,7 +28,7 @@ from loregarden.services.chat_branch_sweep import sweep_all_chat_branches, sweep
 from loregarden.services.chat_worktree import resolve_chat_execution_root
 from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
-from loregarden.services.worktree_lifecycle import KeepReason, RemovalFailure
+from loregarden.services.worktree_lifecycle import KeepReason
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
@@ -345,27 +345,112 @@ def test_a_stranded_commit_is_not_reported_as_uncommitted_work(
     assert git(root, "rev-parse", "HEAD").stdout.strip() == stranded
 
 
-def test_a_worktree_that_would_not_be_removed_keeps_its_published_ref(
+def test_a_checkout_the_server_could_not_remove_keeps_its_branch(
     session, workspace, repo, remote, pruning
 ):
-    """The removal failed, so nothing downstream of it may run.
+    """AC4 — the branch outlives a checkout that would not go.
 
-    Landed, clean, and every premise satisfied — then `cleanup_worktree`
-    answers False, as it does for a path outside the worktree base or an
-    exception out of `worktree remove`. The checkout is still on disk holding
-    that branch, so deleting the published remote ref would strand it: the
-    local `branch -D` cannot succeed either, and the operator would be left
-    with a directory on a branch no remote has.
+    This is the sweep's most dangerous shape, because every refusal above has
+    already passed: the work landed, the tree is clean, no premise fired. Only
+    the removal failed. Deleting the ref here would leave a checkout of a branch
+    that exists nowhere — not locally, not on the remote — so the one thing on
+    disk holding those commits would be the thing the sweep just stopped
+    tracking. It is also the shape with no `KeepReason` to report, which is how
+    a failed removal came to read as a completed one.
     """
-    _, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
+    chat, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
 
     with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
         result = sweep_chat_branches(session, workspace)
 
     assert result.removed == []
     assert [name for name, _ in result.kept] == [branch]
-    assert RemovalFailure.CLEANUP_FAILED.value in result.kept[0][1]
-    assert KeepReason.UNCOMMITTED.value not in result.kept[0][1]
-    assert branch in _remote_branches(remote)
+    reason = result.kept[0][1]
+    # The reason names what happened, not a premise that never fired: a sweep
+    # log saying "uncommitted changes" about a permission error sends the
+    # operator looking for edits that are not there.
+    assert "removing its checkout failed" in reason
+    assert not any(member.value in reason for member in KeepReason)
+    # Local and remote both survive, and so does the checkout and the row.
     assert branch in git(repo, "branch", "--format=%(refname:short)").stdout
+    assert branch in _remote_branches(remote)
     assert root.is_dir()
+    assert (
+        session.exec(select(Worktree).where(Worktree.chat_session_id == chat.id)).one().state
+        == WorktreeState.ACTIVE
+    )
+
+
+# --------------------------------------------------------------------------
+# Adversarial: a failed removal beside a real one, in one sweep
+# — lg-external-harness-954, test-break
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("stuck_first", [True, False])
+def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
+    session, workspace, repo, remote, pruning, stuck_first
+):
+    """AC4 at the volume the sweep runs at, with a per-tree failure.
+
+    The single-thread failure test above stubs `cleanup_worktree` to False for
+    the whole sweep, so every answer in that run is the same answer: a sweep
+    that bailed on the first tree it could not retire, or that decided one
+    tree's fate from another's outcome, passes it unchanged. Here one thread's
+    removal fails and the other's really succeeds, so each branch's fate has to
+    come from its own `Retirement`.
+
+    Both orders are run, and that is the point rather than thoroughness for its
+    own sake: with the stuck tree last, a `break` in place of the `continue` is
+    invisible — verified by mutation, where it survived this module's whole
+    pre-existing suite *and* the first draft of this test. The sweep walks rows
+    in whatever order the table hands back, so a failure that silently ends the
+    pass would leak every branch behind it on a real boot and leak none in a
+    test that happened to create the stuck thread second.
+
+    Both threads satisfy every premise and both have landed, which is what makes
+    this the dangerous shape: the only thing separating them is the bool from
+    the seam, and dropping a ref on the wrong side of it leaves a checkout of a
+    branch that exists nowhere.
+    """
+    first, second = ("Will not go", "Went fine") if stuck_first else ("Went fine", "Will not go")
+    threads = {}
+    for title, code in ((first, "r1"), (second, "r2")):
+        chat, _, branch, root = _thread_that_wrote(
+            session, workspace, repo, landed=True, title=title, code=code
+        )
+        threads[title] = (chat, branch, root)
+
+    stuck_chat, stuck_branch, stuck_root = threads["Will not go"]
+    _, clean_branch, clean_root = threads["Went fine"]
+    stuck_row = session.exec(
+        select(Worktree).where(Worktree.chat_session_id == stuck_chat.id)
+    ).one()
+    real_cleanup = WorktreeService.cleanup_worktree
+
+    def refuse_only_the_stuck_one(self, worktree):
+        if worktree.id == stuck_row.id:
+            return False
+        return real_cleanup(self, worktree)
+
+    with mock.patch.object(
+        WorktreeService,
+        "cleanup_worktree",
+        autospec=True,
+        side_effect=refuse_only_the_stuck_one,
+    ):
+        result = sweep_chat_branches(session, workspace)
+
+    assert result.removed == [clean_branch]
+    assert [name for name, _ in result.kept] == [stuck_branch]
+    assert "removing its checkout failed" in result.kept[0][1]
+    assert not any(member.value in result.kept[0][1] for member in KeepReason)
+
+    local = git(repo, "branch", "--format=%(refname:short)").stdout
+    assert stuck_branch in local
+    assert clean_branch not in local
+    assert stuck_branch in _remote_branches(remote)
+    assert clean_branch not in _remote_branches(remote)
+    assert stuck_root.is_dir()
+    assert not clean_root.exists()
+    assert stuck_row.state == WorktreeState.ACTIVE
