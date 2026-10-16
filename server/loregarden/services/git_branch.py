@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     PrimaryCheckoutUse,
     Ticket,
 )
+from loregarden.services.branch_takes_target import MergeTurnSeat, bring_tree_along, take_target
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.git_trees import is_main_working_tree, main_working_tree
 from loregarden.services.primary_checkout import require_clean_tree
@@ -218,7 +219,9 @@ def _branch_exists(repo_root: Path, branch: str) -> bool:
     return result.returncode == 0
 
 
-def _checkout_branch(repo_root: Path, branch: str, *, start_point: str) -> None:
+def _checkout_branch(
+    repo_root: Path, branch: str, *, start_point: str, seat: MergeTurnSeat | None = None
+) -> None:
     """Check ``branch`` out, creating it from ``start_point`` only if it is missing.
 
     This was ``checkout -B``, which *resets* an existing branch to HEAD. On any
@@ -229,7 +232,8 @@ def _checkout_branch(repo_root: Path, branch: str, *, start_point: str) -> None:
     An existing branch is then brought up to ``start_point`` when one is given
     and the tree is clean, so a prerequisite that landed since the branch was
     cut reaches the ticket (lg-milestone-that-769). A dirty tree is left alone
-    — merging over uncommitted work is how it gets lost — and said so.
+    — merging over uncommitted work is how it gets lost — and said so. A
+    conflict goes to `branch_takes_target` before it blocks the ticket.
     """
     if not _branch_exists(repo_root, branch):
         if start_point and not _branch_exists(repo_root, start_point):
@@ -250,18 +254,11 @@ def _checkout_branch(repo_root: Path, branch: str, *, start_point: str) -> None:
         return
     run_git(["checkout", branch], cwd=repo_root, capture_output=True, text=True, check=True)
     if start_point:
-        _refresh_onto(repo_root, branch, start_point)
+        _refresh_onto(repo_root, branch, start_point, seat=seat)
 
 
-def _refresh_onto(repo_root: Path, branch: str, start_point: str) -> None:
-    dirty = run_git(
-        ["status", "--porcelain"], cwd=repo_root, capture_output=True, text=True, check=True
-    )
-    if dirty.stdout.strip():
-        logger.warning(
-            "Not refreshing %s from %s: %s has uncommitted changes", branch, start_point, repo_root
-        )
-        return
+def _merge_in(repo_root: Path, start_point: str) -> str:
+    """Merge ``start_point`` into the checked-out branch; "" on success, else git's words."""
     merged = run_git(
         ["merge", "--no-edit", start_point],
         cwd=repo_root,
@@ -270,23 +267,55 @@ def _refresh_onto(repo_root: Path, branch: str, start_point: str) -> None:
         check=False,
     )
     if merged.returncode == 0:
-        return
-    detail = (merged.stdout or merged.stderr or "git merge failed").strip()
-    # silent-ok: cleanup on an already-failing path; the ValueError below carries
-    # the merge's own output, and a failed abort leaves conflict markers the
-    # next `status --porcelain` refuses to merge over.
+        return ""
+    # silent-ok: cleanup on an already-failing path; the caller raises with the
+    # merge's own output, and a failed abort leaves conflict markers the next
+    # `status --porcelain` refuses to merge over.
     run_git(["merge", "--abort"], cwd=repo_root, capture_output=True, text=True, check=False)
+    return (merged.stdout or merged.stderr or "git merge failed").strip()
+
+
+def _refresh_onto(
+    repo_root: Path, branch: str, start_point: str, *, seat: MergeTurnSeat | None = None
+) -> None:
+    dirty = run_git(
+        ["status", "--porcelain"], cwd=repo_root, capture_output=True, text=True, check=True
+    )
+    if dirty.stdout.strip():
+        logger.warning(
+            "Not refreshing %s from %s: %s has uncommitted changes", branch, start_point, repo_root
+        )
+        return
+    detail = _merge_in(repo_root, start_point)
+    if not detail:
+        return
+    taken = take_target(repo_root, branch, start_point, seat=seat)
+    if taken.ok:
+        bring_tree_along(repo_root, taken)
+        detail = _merge_in(repo_root, start_point)
+        if not detail:
+            return
+    else:
+        detail = f"{detail}\n{taken.detail}"
     raise ValueError(f"Branch {branch!r} could not take {start_point!r} before starting: {detail}")
 
 
 def ensure_ticket_branch(
-    repo_root: Path, ticket: Ticket, *, start_point: str = "", ignoring: Iterable[str] = ()
+    repo_root: Path,
+    ticket: Ticket,
+    *,
+    start_point: str = "",
+    ignoring: Iterable[str] = (),
+    seat: MergeTurnSeat | None = None,
 ) -> str:
     """Checkout or create the branch a ticket should run on.
 
     ``start_point`` is where a *missing* branch is cut from; empty means HEAD,
     which is where the callers still cut from until the target branch reaches
-    them (lg-milestone-that-769). An existing branch is never moved.
+    them (lg-milestone-that-769). An existing branch is never reset: it takes
+    ``start_point`` by merge, and is moved onto it only when ``start_point``
+    already holds everything it adds (`branch_takes_target`). ``seat`` lets a
+    conflict get an agent's merge turn; without one, a conflict still raises.
 
     If another linked worktree holds the branch — common with stale Claude
     scratchpads — remove that worktree once and retry. Gate autofix never sees
@@ -325,7 +354,7 @@ def ensure_ticket_branch(
         require_clean_tree(tree, use=use, ignoring=ignoring)
 
     try:
-        _checkout_branch(repo_root, branch, start_point=start_point)
+        _checkout_branch(repo_root, branch, start_point=start_point, seat=seat)
         return branch
     except subprocess.CalledProcessError as first_exc:
         locked_at = _worktree_lock_path(_process_text(first_exc))
@@ -346,7 +375,7 @@ def ensure_ticket_branch(
             ) from first_exc
 
         try:
-            _checkout_branch(repo_root, branch, start_point=start_point)
+            _checkout_branch(repo_root, branch, start_point=start_point, seat=seat)
         except subprocess.CalledProcessError as second_exc:
             raise ValueError(
                 _checkout_failure_message(

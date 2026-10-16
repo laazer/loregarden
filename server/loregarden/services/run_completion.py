@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, SPEC_AGENT_ID
@@ -102,6 +103,7 @@ from loregarden.services.usage_limits import (
     format_usage_limit_hint,
     usage_limit_blocking_issue,
 )
+from loregarden.services.ux_answers import missing_ux_answers
 from loregarden.services.workflow_routing import apply_stage_route, reject_fallback_key
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
@@ -713,6 +715,52 @@ def _held_for_operation_criteria(
     return True
 
 
+def _pass_held(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stderr: str,
+) -> bool:
+    """Whether a clean exit's pass was settled as something other than a pass."""
+    return _sent_back_for_ux_answers(
+        orch, ticket, run, report, instance, stages, stderr
+    ) or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
+
+
+def _sent_back_for_ux_answers(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stderr: str,
+) -> bool:
+    """A passing design stage that recorded no UX answers is rework, not a pass.
+
+    Sent back to the same stage and agent with the reason, under the rework
+    loop cap like any other rework: after that, a person is asked.
+    """
+    if report is None or report.status != "pass":
+        return False
+    missing = missing_ux_answers(orch.session, ticket, agent_id=run.agent_id)
+    if not missing:
+        return False
+    clear_transient_retries(orch.session, ticket.id, run.stage_key)
+    rework = replace(
+        report,
+        status="needs_rework",
+        reroute_to_stage=run.stage_key,
+        reroute_to_agent=run.agent_id,
+        reroute_context=missing,
+    )
+    _reroute_or_block_for_rework(orch, ticket, run, rework, instance, stages, stderr)
+    return True
+
+
 def _rearmed_for_transient_retry(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -910,8 +958,8 @@ def advance_stage_after_run(
         # fail-closed block. One that exited part-way through its turn does come
         # through here: there is no prose verdict on it to fail closed over.
         pass
-    elif status == RunStatus.SUCCEEDED and _held_for_operation_criteria(
-        orch, ticket, run, report, instance, stages
+    elif status == RunStatus.SUCCEEDED and _pass_held(
+        orch, ticket, run, report, instance, stages, stderr
     ):
         pass
     elif status == RunStatus.SUCCEEDED:
