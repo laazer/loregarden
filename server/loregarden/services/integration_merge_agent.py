@@ -141,8 +141,12 @@ def merge_base_by_agent(
     branch: str,
     base: str,
     files: tuple[str, ...],
+    about: str = "",
 ) -> MergeResolution:
     """Have the repair agent merge ``base`` into ``branch``. Blocks while it runs.
+
+    ``about`` tells the agent what ``branch`` is and what each side holds; the
+    default describes ``root``'s integration branch.
 
     ``ok`` means the caller's refresh can be retried: the branch was merged
     here, or by a concurrent caller while this one waited for the lock.
@@ -162,7 +166,7 @@ def merge_base_by_agent(
         refused = refused_turns(session, root, branch_sha=branch_sha)
         run = _start_run(session, workspace, root, branch=branch, branch_sha=branch_sha)
         logger.warning(
-            "Integration branch %s cannot take %s (conflicts in %s); running merge turn %s",
+            "Branch %s cannot take %s (conflicts in %s); running merge turn %s",
             branch,
             base,
             ", ".join(files),
@@ -181,6 +185,7 @@ def merge_base_by_agent(
                 # A retry on the same tip is told why the last one was refused,
                 # so it is not the same turn again.
                 refused=refused[-1].stderr if refused else "",
+                about=about,
             )
         except Exception as exc:
             # Loregarden's own failure, not the agent's: settle the run so it
@@ -258,6 +263,7 @@ def _merge_in_worktree(
     tips: tuple[str, str],
     files: tuple[str, ...],
     refused: str,
+    about: str,
 ) -> tuple[MergeResolution, str]:
     branch_sha, base_sha = tips
     holder = Path(tempfile.mkdtemp(prefix="loregarden-integration-merge-"))
@@ -282,6 +288,7 @@ def _merge_in_worktree(
                 tips=tips,
                 files=files,
                 refused=refused,
+                about=about,
             )
         verdict = _settle(repo_root, tree, branch=branch, base=base, tips=tips, files=files)
         if not verdict.ok:
@@ -330,6 +337,7 @@ def _attempt(
     tips: tuple[str, str],
     files: tuple[str, ...],
     refused: str,
+    about: str,
 ) -> AgentTurn:
     """Run the agent. Its failure is not final on its own: a turn that staged the
     resolution and then timed out still did the work, and the tree, not the
@@ -346,6 +354,7 @@ def _attempt(
                 tips=tips,
                 files=files,
                 refused=refused,
+                about=about,
             )
         )
     except TimeoutError as exc:
@@ -454,6 +463,7 @@ def _run_agent(
     tips: tuple[str, str],
     files: tuple[str, ...],
     refused: str,
+    about: str,
 ) -> str:
     stub = stub_response(INTEGRATION_MERGE_CLI_PROFILE)
     if stub is not None:
@@ -461,7 +471,9 @@ def _run_agent(
     return run_cli_agent_turn(
         INTEGRATION_MERGE_CLI_PROFILE,
         workspace=workspace,
-        prompt=merge_brief(root, branch=branch, base=base, tips=tips, files=files, refused=refused),
+        prompt=merge_brief(
+            root, branch=branch, base=base, tips=tips, files=files, refused=refused, about=about
+        ),
         run_id=run.id,
         workspace_slug=workspace.slug or "",
         workspace_root=tree,
@@ -476,8 +488,14 @@ def merge_brief(
     tips: tuple[str, str],
     files: tuple[str, ...],
     refused: str = "",
+    about: str = "",
 ) -> str:
     branch_sha, base_sha = tips
+    about = about or (
+        f"`{branch}` is the integration branch of {root.external_id} ({root.title}): every "
+        f"ticket in that tree lands on it, and none can start while it cannot take `{base}`. "
+        f"`{base}` holds work that already shipped; `{branch}` holds this tree's landed tickets."
+    )
     listed = "\n".join(f"- {path}" for path in files) or "- (git named no paths; run `git status`)"
     previous = (
         "## The last attempt on this tip was refused\n"
@@ -488,16 +506,14 @@ def merge_brief(
     )
     return (
         f"# Merge `{base}` into `{branch}`\n\n"
-        f"`{branch}` is the integration branch of {root.external_id} ({root.title}): every "
-        f"ticket in that tree lands on it, and none can start while it cannot take `{base}`.\n\n"
+        f"{about}\n\n"
         f"This working tree is detached at `{branch}` ({branch_sha[:12]}) and mid-merge with "
         f"`{base}` ({base_sha[:12]}). git stopped on conflicts in:\n{listed}\n\n"
         f"{previous}"
         "## Do\n"
         f"1. For each file, read what each side meant: `git log --oneline HEAD...MERGE_HEAD -- <file>` "
         "and the commits it lists.\n"
-        f"2. Resolve every conflict so both intents survive. `{base}` holds work that already "
-        f"shipped; `{branch}` holds this tree's landed tickets. Do not drop either side to make "
+        "2. Resolve every conflict so both intents survive. Do not drop either side to make "
         "the conflict go away.\n"
         "3. Run the tests that cover the files you resolved, and fix what the merge broke.\n"
         "4. `git add` the resolved files, and anything you changed to fix a test. Leave no "

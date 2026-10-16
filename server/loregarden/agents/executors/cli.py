@@ -59,6 +59,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     resolve_effective_adapter,
@@ -455,6 +456,7 @@ class CliAgentExecutor:
                     self.session, ticket, workspace, repo_root=workspace_root
                 ),
                 ignoring=ticket_recorded_paths(self.session, ticket),
+                seat=MergeTurnSeat(self.session, workspace, ticket),
             )
         except (TargetBranchError, subprocess.CalledProcessError) as exc:
             # This path has no run to fail and no stage to block, so it raises —
@@ -585,6 +587,7 @@ class CliAgentExecutor:
                     self.session, ticket, workspace, repo_root=workspace_root
                 ),
                 ignoring=ticket_recorded_paths(self.session, ticket),
+                seat=MergeTurnSeat(self.session, workspace, ticket),
             )
         except DirtyPrimaryCheckoutError:
             raise  # parked by `_prepare_tree`, not failed as a checkout error
