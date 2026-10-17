@@ -29,7 +29,7 @@ from loregarden.services.chat_worktree import resolve_chat_execution_root
 from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.worktree_lifecycle import KeepReason
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -360,7 +360,9 @@ def test_a_checkout_the_server_could_not_remove_keeps_its_branch(
     """
     chat, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
 
-    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+    with mock.patch.object(
+        WorktreeService, "remove_checkout", return_value=CleanupRefusal.REMOVE_RAISED
+    ):
         result = sweep_chat_branches(session, workspace)
 
     assert result.removed == []
@@ -393,7 +395,7 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
 ):
     """AC4 at the volume the sweep runs at, with a per-tree failure.
 
-    The single-thread failure test above stubs `cleanup_worktree` to False for
+    The single-thread failure test above stubs `remove_checkout` to one refusal for
     the whole sweep, so every answer in that run is the same answer: a sweep
     that bailed on the first tree it could not retire, or that decided one
     tree's fate from another's outcome, passes it unchanged. Here one thread's
@@ -426,16 +428,19 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
     stuck_row = session.exec(
         select(Worktree).where(Worktree.chat_session_id == stuck_chat.id)
     ).one()
-    real_cleanup = WorktreeService.cleanup_worktree
+    real_cleanup = WorktreeService.remove_checkout
 
     def refuse_only_the_stuck_one(self, worktree):
+        # Never `False`: the seam answers `CleanupRefusal | None` now, and
+        # `False` is falsy exactly where `None` means "settled", so a stub that
+        # kept returning it would read as a successful removal.
         if worktree.id == stuck_row.id:
-            return False
+            return CleanupRefusal.REMOVE_RAISED
         return real_cleanup(self, worktree)
 
     with mock.patch.object(
         WorktreeService,
-        "cleanup_worktree",
+        "remove_checkout",
         autospec=True,
         side_effect=refuse_only_the_stuck_one,
     ):

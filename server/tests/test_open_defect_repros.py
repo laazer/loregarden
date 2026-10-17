@@ -337,3 +337,126 @@ def test_a_long_message_with_an_unclosed_bracket_keeps_most_of_itself(
         assert len(result) > under_test.limit // 2, (
             f"{label}: the cut kept {len(result)} of {under_test.limit} characters"
         )
+
+
+class _BaseRowUnderTest(NamedTuple):
+    """A worktrees base holding another workspace's checkout, and a row that
+    records the base itself as its own checkout."""
+
+    remove: Callable[[], object]
+    base: Path
+    other_workspaces_checkout: Path
+
+
+@pytest.fixture
+def row_recording_the_worktrees_base(isolated_db, tmp_path: Path) -> _BaseRowUnderTest:
+    """A fixture, so a broken setup ERRORs instead of looking like an open defect.
+
+    `make_repo` + a real `Worktree` row, because the containment guard reads
+    `self.worktree_base`, which `WorktreeService.__init__` derives from the
+    resolved `repo_path` — a hand-built service would be testing the fixture.
+    """
+    from loregarden.models.domain import (
+        AgentRun,
+        RunStatus,
+        Ticket,
+        Workspace,
+        Worktree,
+        WorktreeState,
+    )
+    from loregarden.services.worktree_service import WorktreeService
+    from tests.worktree_helpers import make_repo
+
+    with Session(isolated_db) as session:
+        repo = make_repo(tmp_path)
+        workspace = Workspace(slug="owner", name="owner", repo_path=str(repo))
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
+        ticket = Ticket(
+            external_id="LG-BASE", workspace_id=workspace.id, title="t", branch="loregarden/lg-base"
+        )
+        session.add(ticket)
+        session.commit()
+        session.refresh(ticket)
+        run = AgentRun(
+            run_code="rc-base",
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            agent_id="backend_implementer",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        service = WorktreeService(session, repo_path=str(repo))
+        service.worktree_base.mkdir(parents=True, exist_ok=True)
+        # Two workspaces whose `repo_path` share a parent share one base — on
+        # this machine loregarden's and blobert's both resolve to
+        # `/Users/jacobbrandt/workspace/.worktrees` (lg-external-harness-1165
+        # AC12 measured it), so this neighbour is not a contrived one.
+        neighbour = service.worktree_base / "another-workspaces-checkout"
+        neighbour.mkdir()
+        (neighbour / "work.txt").write_text("another ticket's uncommitted work\n")
+
+        row = Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            ticket_id=ticket.id,
+            worktree_path=str(service.worktree_base),
+            branch=ticket.branch,
+            state=WorktreeState.ACTIVE,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+
+        # The seam is renamed `cleanup_worktree` -> `remove_checkout` by
+        # lg-external-harness-1165. This repro is about the removal's target,
+        # not the seam's name, so it outlives the rename either way.
+        method = getattr(service, "remove_checkout", None) or service.cleanup_worktree
+        yield _BaseRowUnderTest(
+            remove=lambda: method(row),
+            base=service.worktree_base,
+            other_workspaces_checkout=neighbour,
+        )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "unfiled — open: surfaced by lg-external-harness-1165's test-break stage. "
+        "`loregarden_create_ticket` is refused to orchestrated pipeline agents "
+        "(a9-create-ticket-mcp-tool), so the finding lives here and in that stage's artifact "
+        "until a person files it. The containment guard asks whether the recorded path is under "
+        "`self.worktree_base`, and the base trivially satisfies that about itself, so a row "
+        "whose `worktree_path` IS the base makes the service `shutil.rmtree` the entire base "
+        "— every workspace's checkouts that share it — and answer 'settled'. Observed live "
+        "on 2026-10-16 against a prototype of 1165's seam: the neighbouring checkout was "
+        "gone and the answer was `None`. Not an unmet 1165 criterion: its AC1 distinguishes "
+        "outside-the-base from the-removal-raised, and the base is not outside itself."
+    ),
+)
+def test_a_row_recording_the_worktrees_base_does_not_remove_every_workspaces_checkout(
+    row_recording_the_worktrees_base: _BaseRowUnderTest,
+) -> None:
+    """The correct behaviour: the base is the container, never a checkout.
+
+    Asserted on the neighbour rather than on the return value, because the
+    damage is what makes this a defect — a wrong answer about one row is a log
+    line, and removing another ticket's uncommitted work is not recoverable.
+    """
+    under_test = row_recording_the_worktrees_base
+
+    under_test.remove()
+
+    assert under_test.other_workspaces_checkout.is_dir(), (
+        "the base was removed as though it were a checkout, taking every other "
+        "workspace's worktree with it"
+    )
+    assert (under_test.other_workspaces_checkout / "work.txt").read_text() == (
+        "another ticket's uncommitted work\n"
+    )
+    assert under_test.base.is_dir()

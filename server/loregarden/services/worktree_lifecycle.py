@@ -39,7 +39,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -203,12 +203,27 @@ def _reason_detail(reason: KeepReason, worktree: Worktree) -> str:
     return reason.value
 
 
-#: What `retire_worktree` reports when every premise held and the removal still
-#: did not happen. The cause is not carried: `cleanup_worktree` answers with a
-#: bare bool and keeps the reason in its own `logger.error`, so a detail
-#: invented here would be fiction. One constant rather than a string at each
-#: use, because both branches and every caller's wording read the same clause.
+#: What `retire_worktree` reports when every premise held and the removal was
+#: attempted and raised — a permission error, a busy file, an NFS stall. Often
+#: transient, so the clause invites the retry that usually clears it. The value
+#: is byte-identical to what lg-external-harness-954 measured against the
+#: four-line toast clamp, and stays so.
 REMOVAL_FAILED = "removing its checkout failed"
+
+#: Its never-retryable counterpart: the recorded path is not under the
+#: service's base, so nothing was attempted and no boot will settle it. A
+#: separate clause rather than a reworded first one, because "removing its
+#: checkout failed" invites a retry that cannot work here.
+REMOVAL_REFUSED_OUTSIDE_BASE = "its checkout is outside the worktrees folder"
+
+#: The one place the two vocabularies are paired, read only by
+#: `retire_worktree`. A mapping rather than a branch per member so a member
+#: added later has no clause and fails loudly instead of inheriting a sentence
+#: written for the other cause.
+_FAILURE_CLAUSE: dict[CleanupRefusal, str] = {
+    CleanupRefusal.REMOVE_RAISED: REMOVAL_FAILED,
+    CleanupRefusal.OUTSIDE_BASE: REMOVAL_REFUSED_OUTSIDE_BASE,
+}
 
 
 @dataclass(frozen=True)
@@ -231,6 +246,13 @@ class Retirement:
     keep_reason: KeepReason | None = None
     #: Empty unless a removal was attempted and failed.
     failure: str = ""
+    #: The seam's own member, so `delete_chat_session` can pick a sentence
+    #: without parsing `failure`'s prose: the boot log and the delete toast need
+    #: different words for the same cause, so the prose cannot be the
+    #: discriminator. Additive and defaulted — no existing caller sets it, and
+    #: no `__post_init__` pairs it with `failure`, because a caller legitimately
+    #: constructs `failure` alone.
+    refusal: CleanupRefusal | None = None
 
     @property
     def kept_because(self) -> str:
@@ -256,7 +278,11 @@ class ChatWorktreeHold:
     """
 
     worktree: Worktree
-    removal_failed: bool = False
+    #: Which refusal the seam answered, or `None` when nothing was attempted —
+    #: a premise chose to keep the tree, or the workspace could not be resolved.
+    #: The member, not a bool: "clear the path, then delete again" is the wrong
+    #: instruction for a checkout outside the worktrees folder.
+    refusal: CleanupRefusal | None = None
 
 
 def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> Retirement:
@@ -292,14 +318,16 @@ def retire_worktree(session: Session, service: WorktreeService, worktree: Worktr
             _reason_detail(reason, worktree),
         )
         return Retirement(removed=False, keep_reason=reason)
-    if not service.cleanup_worktree(worktree):
+    refusal = service.remove_checkout(worktree)
+    if refusal is not None:
         logger.warning(
-            "Worktree %s at %s satisfied every premise but its removal failed; "
+            "Worktree %s at %s satisfied every premise but its removal failed (%s); "
             "the checkout is still on disk and still owned",
             worktree.id,
             worktree.worktree_path,
+            refusal.value,
         )
-        return Retirement(removed=False, failure=REMOVAL_FAILED)
+        return Retirement(removed=False, failure=_FAILURE_CLAUSE[refusal], refusal=refusal)
     return Retirement(removed=True)
 
 
@@ -390,13 +418,15 @@ def release_chat_worktree(
     outcome = retire_worktree(session, service, worktree)
     if outcome.removed:
         return None
-    return ChatWorktreeHold(worktree=worktree, removal_failed=outcome.failure != "")
+    return ChatWorktreeHold(worktree=worktree, refusal=outcome.refusal)
 
 
-def _report_failed_cleanup(worktree: Worktree) -> None:
-    """Say that a row startup meant to settle did not settle.
+def _report_failed_cleanup(
+    worktree: Worktree, refusal: CleanupRefusal, worktree_base: Path
+) -> None:
+    """Say that a row startup meant to settle did not settle, and which kind.
 
-    `reconcile_worktrees` calls `cleanup_worktree` directly rather than through
+    `reconcile_worktrees` calls `remove_checkout` directly rather than through
     `retire_worktree`, because it reads `_keep_reason` itself so `_kept_summary`
     can group every refusal into one block. That shortcut also skipped
     `retire_worktree`'s report of a failed removal, so a tree still on disk —
@@ -404,7 +434,25 @@ def _report_failed_cleanup(worktree: Worktree) -> None:
     `kept` entry, three lines from the branch that does report one. One record
     per tree, not per run: a boot settles every active row in one pass, so a
     blanket line would name the trees that went as well.
+
+    The single chooser between the two records, which is the whole point of
+    widening the signature. A retryable failure keeps the warning verbatim: the
+    next boot may well clear it. A permanent one is its own record at `error`,
+    naming the base the recorded path falls outside of and saying outright that
+    no boot will settle it — because this one repeats on every boot, and a
+    reader who met the retryable sentence twice would read "transient
+    recurrence" about a fault only an operator can clear.
     """
+    if refusal is CleanupRefusal.OUTSIDE_BASE:
+        logger.error(
+            "Worktree %s records a checkout at %s, which is outside this workspace's "
+            "worktrees folder %s; nothing was attempted and no boot will settle this "
+            "row — fix the recorded path or the workspace's repo_path",
+            worktree.id,
+            worktree.worktree_path,
+            worktree_base,
+        )
+        return
     logger.warning(
         "Worktree %s at %s could not be cleaned up at startup; the row stays active",
         worktree.id,
@@ -432,10 +480,11 @@ def reconcile_worktrees(session: Session) -> int:
         path = Path(worktree.worktree_path) if worktree.worktree_path else None
         if path is None or not path.is_dir():
             logger.info("Worktree %s is recorded active but gone from disk", worktree.id)
-            if service.cleanup_worktree(worktree):
+            refusal = service.remove_checkout(worktree)
+            if refusal is None:
                 settled += 1
             else:
-                _report_failed_cleanup(worktree)
+                _report_failed_cleanup(worktree, refusal, service.worktree_base)
             continue
 
         ticket = session.get(Ticket, worktree.ticket_id) if worktree.ticket_id else None
@@ -444,10 +493,12 @@ def reconcile_worktrees(session: Session) -> int:
         reason = _keep_reason(worktree)
         if reason is not None:
             kept.setdefault(reason, []).append(worktree)
-        elif service.cleanup_worktree(worktree):
+            continue
+        refusal = service.remove_checkout(worktree)
+        if refusal is None:
             settled += 1
         else:
-            _report_failed_cleanup(worktree)
+            _report_failed_cleanup(worktree, refusal, service.worktree_base)
 
     if kept:
         logger.warning(_kept_summary(kept))

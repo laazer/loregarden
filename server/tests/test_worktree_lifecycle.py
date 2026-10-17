@@ -34,7 +34,7 @@ from loregarden.services.worktree_lifecycle import (
     release_ticket_worktree,
     retire_worktree,
 )
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -728,7 +728,7 @@ def test_a_checkout_detached_at_an_ancestor_is_still_retired(session, workspace)
 def test_every_keep_reason_refuses_the_removal_and_says_so(session, workspace, reason, caplog):
     """The vocabulary, not a list of branches — including members not yet written.
 
-    `retire_worktree`'s fallthrough is `cleanup_worktree`, so a `KeepReason`
+    `retire_worktree`'s fallthrough is `remove_checkout`, so a `KeepReason`
     `_keep_reason` can return and `retire_worktree` has no branch for deletes
     the checkout it was meant to protect. Per-member `if`s pass every behavioural
     test in this module and still hold that hazard open for the next member;
@@ -756,7 +756,7 @@ def test_every_keep_reason_refuses_the_removal_and_says_so(session, workspace, r
     assert outcome.removed is False
     assert outcome.failure == ""
     assert outcome.kept_because == reason.value
-    service.cleanup_worktree.assert_not_called()
+    service.remove_checkout.assert_not_called()
     assert path.is_dir()
     refusals = [record for record in caplog.records if record.levelno == logging.WARNING]
     assert len(refusals) == 1
@@ -772,13 +772,18 @@ def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace):
     path = _tree_for(session, workspace, ticket)
     row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
     service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
+    # `None` is the settled answer now. A `MagicMock`'s default return is a
+    # truthy `Mock`, which under the new seam is an unknown refusal, so leaving
+    # it unset would make this test assert the opposite of what it is named for.
+    service.remove_checkout.return_value = None
 
     with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
         outcome = retire_worktree(session, service, row)
 
     assert outcome.removed is True
     assert outcome.keep_reason is None
-    service.cleanup_worktree.assert_called_once_with(row)
+    assert outcome.refusal is None
+    service.remove_checkout.assert_called_once_with(row)
     # The stub did not actually remove it; the call is the assertion.
     assert path.is_dir()
 
@@ -786,9 +791,10 @@ def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace):
 # --------------------------------------------------------------------------
 # A removal that was attempted and failed — lg-external-harness-954
 #
-# `cleanup_worktree` returns False for a path outside the service's base
-# directory and for any exception out of `git worktree remove` plus the
-# `shutil.rmtree` fallback: a permission error, a file another process holds
+# `remove_checkout` returns a `CleanupRefusal` member for a path outside the
+# service's base directory (OUTSIDE_BASE) and for any exception out of `git
+# worktree remove` plus the `shutil.rmtree` fallback (REMOVE_RAISED): a
+# permission error, a file another process holds
 # open. The three premises above all held, so there is no `KeepReason` to
 # report, and the checkout is still on disk. Those two facts together are the
 # answer every caller needs, and the enum could only carry one of them: before
@@ -799,20 +805,35 @@ def test_a_checkout_no_premise_claims_is_handed_to_cleanup(session, workspace):
 # into one answer (CLAUDE.md, *No silent failures*).
 #
 # The lever throughout is a `MagicMock(spec=WorktreeService)` whose
-# `cleanup_worktree` returns False with `_keep_reason` patched to None, because
-# that is the one state in which the distinction exists at all — and the one a
-# wrong field read passes.
+# `remove_checkout` returns a `CleanupRefusal` member with `_keep_reason`
+# patched to None, because that is the one state in which the distinction
+# exists at all — and the one a wrong field read passes. Never `False`:
+# `CleanupRefusal | None` is falsy on success, so a stub still answering
+# `False` would read as a settled row (lg-external-harness-1165 AC21).
 # --------------------------------------------------------------------------
 
-#: The clause `retire_worktree` reports a failed removal with. The cause itself
-#: is not carried: `cleanup_worktree` answers with a bare bool and keeps the
-#: reason in its own `logger.error`, so inventing a detail here would be fiction.
+#: The clause `retire_worktree` reports a retryable failed removal with, pinned
+#: here byte-for-byte because lg-external-harness-954 measured the toast that
+#: carries it and lg-external-harness-1165 AC2/AC10 keep that measurement valid.
 REMOVAL_FAILED = "removing its checkout failed"
 
+#: Its never-retryable counterpart (lg-external-harness-1165 AC2). A different
+#: clause for a different cause: "removing its checkout failed" invites a retry,
+#: and no retry can move a checkout the service will not touch.
+REMOVAL_REFUSED_OUTSIDE_BASE = "its checkout is outside the worktrees folder"
 
-def _failing_service() -> mock.MagicMock:
+#: Which clause each member is reported with. Mirrors the mapping
+#: `retire_worktree` reads, so a member added without a clause fails the
+#: parametrized test below rather than silently reporting the wrong sentence.
+FAILURE_CLAUSE = {
+    "REMOVE_RAISED": REMOVAL_FAILED,
+    "OUTSIDE_BASE": REMOVAL_REFUSED_OUTSIDE_BASE,
+}
+
+
+def _failing_service(refusal: CleanupRefusal = CleanupRefusal.REMOVE_RAISED) -> mock.MagicMock:
     service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
-    service.cleanup_worktree.return_value = False
+    service.remove_checkout.return_value = refusal
     return service
 
 
@@ -831,7 +852,7 @@ def test_a_removal_that_was_tried_and_failed_is_not_reported_as_a_removal(sessio
     with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
         outcome = retire_worktree(session, service, row)
 
-    service.cleanup_worktree.assert_called_once_with(row)
+    service.remove_checkout.assert_called_once_with(row)
     assert outcome.removed is False
     assert outcome.keep_reason is None
     assert outcome.failure == REMOVAL_FAILED
@@ -847,7 +868,7 @@ def test_a_successful_removal_has_nothing_to_say_about_why_it_kept_the_tree(sess
     _tree_for(session, workspace, ticket)
     row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
     service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
-    service.cleanup_worktree.return_value = True
+    service.remove_checkout.return_value = None
 
     with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
         outcome = retire_worktree(session, service, row)
@@ -862,7 +883,7 @@ def test_the_failure_is_reported_once_from_this_module_and_names_the_tree(
 ):
     """AC5/AC16 — observable from here, and exactly once.
 
-    `cleanup_worktree`'s own `logger.error` names the cause but not the
+    `remove_checkout`'s own `logger.error` names the cause but not the
     decision, and a caller reading only this module's records would otherwise
     see a silent success. One record, not two: the warning already exists on
     this branch, and the live mistake is adding a second one beside it or in a
@@ -892,12 +913,16 @@ def test_the_failure_is_reported_once_from_this_module_and_names_the_tree(
 def test_the_services_answer_is_never_passed_through_as_the_removal_flag(session, workspace):
     """AC14 — `removed` is this function's own decision, not the seam's answer.
 
-    A `MagicMock(spec=...)` with no `return_value` set answers with a `Mock`:
-    truthy, but not `True`. So `removed is True` catches `removed=<the service's
-    answer>` passed straight through, which is the shape that makes the field
-    mean "whatever cleanup_worktree said" rather than "the checkout is gone" —
-    and 951's own tests pass exactly this mock, so a passthrough would leak a
-    `Mock` into a caller's bool.
+    Under the bool seam the lever was a `MagicMock` whose unset return is a
+    truthy `Mock`. The seam now answers `CleanupRefusal | None`, so the
+    passthrough this guards against inverted with it: `removed` must be the
+    answer to "is the checkout gone", derived from `refusal is None`, and never
+    the seam's own value handed on. The fallthrough hazard — a member added
+    later with no branch for it — is covered instead by
+    `test_each_refusal_member_is_reported_with_its_own_clause`, which
+    parametrizes over the live enum and so grows with it. It is not probed with
+    a sentinel here: the reporting branch legitimately reads the member, so a
+    sentinel would only prove that a non-member is not a member.
 
     What this cannot catch, verified by mutation rather than assumed:
     `removed=bool(...)` survives it, because `bool` of a truthy `Mock` *is*
@@ -911,12 +936,90 @@ def test_the_services_answer_is_never_passed_through_as_the_removal_flag(session
     _tree_for(session, workspace, ticket)
     row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
     service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
+    service.remove_checkout.return_value = None
+
+    with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
+        settled = retire_worktree(session, service, row)
+
+    assert settled.removed is True
+    assert settled.failure == ""
+    assert settled.refusal is None
+
+    # And the other direction, with a real member: `removed` is False, and it
+    # is this function's own decision rather than the member handed on.
+    service.remove_checkout.return_value = CleanupRefusal.REMOVE_RAISED
+    with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
+        refused = retire_worktree(session, service, row)
+
+    assert refused.removed is False
+    assert refused.refusal is CleanupRefusal.REMOVE_RAISED
+
+
+@pytest.mark.parametrize("refusal", list(CleanupRefusal), ids=lambda r: r.name)
+def test_each_refusal_member_is_reported_with_its_own_clause(session, workspace, refusal):
+    """AC1/AC2 — the two causes do not share a sentence, and the member travels.
+
+    The vocabulary, not a list of branches: parametrizing over `CleanupRefusal`
+    means the member added after these two cannot quietly inherit whichever
+    clause the mapping happens to default to. `failure` carries words for a
+    caller to print and `refusal` carries the member itself, because AC3's boot
+    log and AC9's toast need *different* sentences for the same cause — so the
+    prose cannot be the discriminator (lg-external-harness-1165 AC16).
+    """
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
+    service = _failing_service(refusal)
 
     with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
         outcome = retire_worktree(session, service, row)
 
-    assert outcome.removed is True
-    assert outcome.failure == ""
+    service.remove_checkout.assert_called_once_with(row)
+    assert outcome.removed is False
+    assert outcome.keep_reason is None
+    assert outcome.refusal is refusal
+    assert outcome.failure == FAILURE_CLAUSE[refusal.name]
+    assert outcome.kept_because == FAILURE_CLAUSE[refusal.name]
+    assert path.is_dir()
+
+
+def test_the_two_failure_clauses_are_distinct_module_constants():
+    """AC2/AC10 — two clauses, two constants, and `REMOVAL_FAILED` unmoved.
+
+    `REMOVAL_FAILED`'s value is byte-identical to what lg-external-harness-954
+    measured against the 4-line toast clamp, so the retryable path keeps that
+    evidence. The never-retryable clause is a second constant rather than a
+    reworded first one, because collapsing them is the defect restated.
+    """
+    assert worktree_lifecycle.REMOVAL_FAILED == "removing its checkout failed"
+    assert (
+        worktree_lifecycle.REMOVAL_REFUSED_OUTSIDE_BASE
+        == "its checkout is outside the worktrees folder"
+    )
+    assert len(set(FAILURE_CLAUSE.values())) == len(FAILURE_CLAUSE)
+    assert set(FAILURE_CLAUSE) == {member.name for member in CleanupRefusal}
+
+
+def test_the_retirement_gained_one_defaulted_field_and_kept_the_other_three():
+    """AC2 — `refusal` is additive and defaulted, so nothing existing re-writes.
+
+    The four existing names, types and defaults are what every current caller
+    and every current test of `Retirement` reads; the new field exists only so
+    `delete_chat_session` can pick a sentence without parsing operator prose. A
+    `Retirement` built the way it was built before this ticket must still be
+    constructible, and must answer `None` for the field it never heard of.
+    """
+    fields = {f.name: f for f in dataclasses.fields(Retirement)}
+    assert list(fields) == ["removed", "keep_reason", "failure", "refusal"]
+    assert fields["keep_reason"].default is None
+    assert fields["failure"].default == ""
+    assert fields["refusal"].default is None
+    assert Retirement(removed=True).refusal is None
+    assert Retirement(removed=False, failure=REMOVAL_FAILED).refusal is None
+    # No validator: `test_a_failure_outranks_a_premise_...` below legitimately
+    # builds a `failure` with no member, and a `__post_init__` pairing the two
+    # would reject it (AC2).
+    assert "__post_init__" not in vars(Retirement)
 
 
 def test_the_failure_clause_is_one_module_constant(session, workspace):
@@ -974,7 +1077,9 @@ def test_a_finished_ticket_whose_checkout_will_not_go_is_not_reported_released(
 
     with (
         mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None),
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService, "remove_checkout", return_value=CleanupRefusal.REMOVE_RAISED
+        ),
         caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
     ):
         assert release_ticket_worktree(session, ticket) is False
@@ -987,7 +1092,7 @@ def test_a_finished_ticket_whose_checkout_will_not_go_is_not_reported_released(
 def test_startup_does_not_count_a_vanished_rows_failed_cleanup_as_settled(
     session, workspace, caplog
 ):
-    """AC19 — reconcile's first direct `cleanup_worktree` call stops being discarded.
+    """AC19 — reconcile's first direct `remove_checkout` call stops being discarded.
 
     The directory is gone, so there is no work to lose and the row is stale
     bookkeeping — but if stamping it CLEANUP fails, the row is still ACTIVE and
@@ -1006,7 +1111,9 @@ def test_startup_does_not_count_a_vanished_rows_failed_cleanup_as_settled(
     row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
 
     with (
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService, "remove_checkout", return_value=CleanupRefusal.REMOVE_RAISED
+        ),
         caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
     ):
         assert reconcile_worktrees(session) == 0
@@ -1024,9 +1131,9 @@ def test_startup_does_not_count_a_vanished_rows_failed_cleanup_as_settled(
 
 
 def test_startup_says_so_when_a_finished_trees_removal_fails(session, workspace, caplog):
-    """AC19 — reconcile's second direct `cleanup_worktree` call gains its `else`.
+    """AC19 — reconcile's second direct `remove_checkout` call gains its `else`.
 
-    `elif service.cleanup_worktree(worktree): settled += 1` already declines to
+    `elif service.remove_checkout(worktree) is None: settled += 1` already declines to
     count this, so the count was never wrong here — but a False fell out of the
     `elif` with no log and no `kept` entry, which is the one shape *No silent
     failures* names outright: a tree still on disk, reported nowhere, three
@@ -1042,7 +1149,9 @@ def test_startup_says_so_when_a_finished_trees_removal_fails(session, workspace,
 
     with (
         mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None),
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService, "remove_checkout", return_value=CleanupRefusal.REMOVE_RAISED
+        ),
         caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
     ):
         assert reconcile_worktrees(session) == 0
@@ -1058,6 +1167,200 @@ def test_startup_says_so_when_a_finished_trees_removal_fails(session, workspace,
     assert row.id in message
     assert str(path) in message
     assert path.is_dir()
+
+
+# --------------------------------------------------------------------------
+# The boot log reads differently per cause — lg-external-harness-1165 AC3/AC13
+#
+# `reconcile_worktrees` re-examines every ACTIVE row on every boot. A row whose
+# recorded path is outside its service's base is refused before anything is
+# attempted, so it is refused again on the next boot, and the next: a warning
+# identical to the one a busy file produced once says "transient" about a fault
+# only an operator editing the row or the workspace's `repo_path` can clear.
+#
+# AC20 — every count below is scoped to the `loregarden.services.
+# worktree_lifecycle` logger. The `loregarden.services.worktree_service`
+# traceback that AC18 keeps on the REMOVE_RAISED path is a different logger and
+# a different record, and does not violate "one record per row per pass". Do
+# not relax these assertions by widening the filter.
+# --------------------------------------------------------------------------
+
+
+def _out_of_base_row(session, workspace, ticket, tmp_path) -> Worktree:
+    """An ACTIVE row whose recorded path is outside the base and not on disk.
+
+    The deterministic OUTSIDE_BASE recipe, and it needs no relocation of a real
+    directory and no `chmod`: `_keep_reason` returns None for a path that is
+    absent from disk (worktree_lifecycle.py), so the row reaches the seam with
+    no premise refusal, and `remove_checkout` refuses it on the base check
+    before it ever looks at the filesystem.
+    """
+    run = AgentRun(
+        run_code=f"run-outside-{ticket.external_id}",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        status=RunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    row = Worktree(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        ticket_id=ticket.id,
+        worktree_path=str(tmp_path / "somewhere-else" / "tree"),
+        branch=ticket.branch,
+        state=WorktreeState.ACTIVE,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _lifecycle_records(caplog) -> list[logging.LogRecord]:
+    # AC20 — this module's logger only. Widening this filter would let the
+    # service's REMOVE_RAISED traceback count as a second report.
+    return [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
+        and record.name == "loregarden.services.worktree_lifecycle"
+    ]
+
+
+def test_startup_reports_a_permanent_refusal_at_error_naming_the_base_it_is_outside(
+    session, workspace, tmp_path, caplog
+):
+    """AC3/AC13/AC17 — the never-retryable report, with no stub at the seam.
+
+    The real `WorktreeService` answers OUTSIDE_BASE here: nothing was
+    attempted, so there is no transient condition to wait out. The record names
+    the row, the recorded path and the base it falls outside of, which is what
+    a reader needs to fix the row or the workspace's `repo_path` — a boot count
+    tells them nothing, because this one repeats forever.
+    """
+    ticket = _ticket(session, workspace)
+    row = _out_of_base_row(session, workspace, ticket, tmp_path)
+    service = worktree_lifecycle.WorktreeService(
+        session, repo_path=session.get(Workspace, workspace.id).repo_path
+    )
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        assert reconcile_worktrees(session) == 0
+
+    records = _lifecycle_records(caplog)
+    assert len(records) == 1, [r.getMessage() for r in records]
+    assert records[0].levelno == logging.ERROR
+    message = records[0].getMessage()
+    assert row.id in message
+    assert row.worktree_path in message
+    assert str(service.worktree_base) in message
+    # AC13 — it must not borrow the retryable sentence, which invites the retry
+    # that can never work.
+    assert "could not be cleaned up at startup" not in message
+    # AC17 — the row is not counted settled and is left ACTIVE for the operator.
+    session.refresh(row)
+    assert row.state == WorktreeState.ACTIVE
+
+
+def test_startup_tells_the_two_causes_apart_in_one_pass(session, workspace, tmp_path, caplog):
+    """AC3/AC13/AC20 — different records, different levels, one per row.
+
+    Two rows, one pass, one cause each. Separate tests cannot show that a log
+    reader can tell them apart, because each would pass against an
+    implementation that writes the same sentence at the same level for both.
+    The retryable row keeps today's warning verbatim; the permanent one is its
+    own record at `error`.
+    """
+    stuck = _ticket(session, workspace, external_id="LG-STUCK")
+    stuck_path = _tree_for(session, workspace, stuck)
+    _commit_in(stuck_path)
+    stuck.state = TicketState.DONE
+    session.add(stuck)
+    session.commit()
+    stuck_row = session.exec(select(Worktree).where(Worktree.ticket_id == stuck.id)).one()
+
+    outside = _ticket(session, workspace, external_id="LG-OUTSIDE")
+    outside_row = _out_of_base_row(session, workspace, outside, tmp_path)
+
+    real_remove = WorktreeService.remove_checkout
+
+    def raise_only_for_the_stuck_one(self, worktree):
+        if worktree.id == stuck_row.id:
+            return CleanupRefusal.REMOVE_RAISED
+        return real_remove(self, worktree)
+
+    with (
+        mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None),
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            autospec=True,
+            side_effect=raise_only_for_the_stuck_one,
+        ),
+        caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"),
+    ):
+        assert reconcile_worktrees(session) == 0
+
+    records = _lifecycle_records(caplog)
+    # Exactly one record per row per pass (AC13), this module's logger only
+    # (AC20) — not one per row per cause, and not a blanket line for the pass.
+    assert len(records) == 2, [r.getMessage() for r in records]
+    by_row = {}
+    for record in records:
+        message = record.getMessage()
+        if stuck_row.id in message:
+            by_row["retryable"] = record
+        elif outside_row.id in message:
+            by_row["permanent"] = record
+    assert set(by_row) == {"retryable", "permanent"}, [r.getMessage() for r in records]
+
+    retryable, permanent = by_row["retryable"], by_row["permanent"]
+    # Two levels, so a reader scanning levels gets the distinction without
+    # reading the sentence...
+    assert retryable.levelno == logging.WARNING
+    assert permanent.levelno == logging.ERROR
+    # ...and two sentences, so one reading the text gets it too.
+    assert retryable.getMessage() != permanent.getMessage()
+    # Each names its own path and nothing of the other row's (AC13).
+    assert str(stuck_path) in retryable.getMessage()
+    assert outside_row.worktree_path in permanent.getMessage()
+    assert outside_row.worktree_path not in retryable.getMessage()
+    assert str(stuck_path) not in permanent.getMessage()
+    # The retryable sentence is today's, unchanged (AC13).
+    assert "could not be cleaned up at startup" in retryable.getMessage()
+
+
+def test_startup_still_settles_a_row_it_can_settle_beside_one_it_never_will(
+    session, workspace, tmp_path, caplog
+):
+    """AC17 — `settled` counts `None` and nothing else, per row.
+
+    The permanent refusal above repeats every boot. The row beside it must
+    still go, and must still be counted: a pass that returned early, or that
+    counted the refusal, would make the boot count stop meaning "rows that
+    moved" — which is the leaked-row failure reported as its own fix.
+    """
+    gone = _ticket(session, workspace, external_id="LG-GONE")
+    gone_path = _tree_for(session, workspace, gone)
+    _commit_in(gone_path)
+    gone.state = TicketState.DONE
+    session.add(gone)
+    session.commit()
+
+    outside = _ticket(session, workspace, external_id="LG-OUTSIDE")
+    outside_row = _out_of_base_row(session, workspace, outside, tmp_path)
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.worktree_lifecycle"):
+        assert reconcile_worktrees(session) == 1
+
+    assert not gone_path.exists()
+    session.refresh(outside_row)
+    assert outside_row.state == WorktreeState.ACTIVE
+    records = _lifecycle_records(caplog)
+    assert len(records) == 1
+    assert outside_row.id in records[0].getMessage()
 
 
 def test_no_caller_outside_the_module_reads_the_retirement_reason_fields():
@@ -1091,10 +1394,10 @@ def test_no_caller_outside_the_module_reads_the_retirement_reason_fields():
 # --------------------------------------------------------------------------
 # The same failure without the mock, and the batch — lg-external-harness-954
 #
-# Every regression above forces `cleanup_worktree` to answer False, which is
+# Every regression above forces `remove_checkout` to answer a member, which is
 # the method AC20 prescribes and the only way to reach the distinction on a
 # path a premise cannot refuse. It also means nothing above proves the real
-# `cleanup_worktree` ever answers False, or that `retire_worktree` reads the
+# `remove_checkout` ever refuses, or that `retire_worktree` reads the
 # real one the same way it reads the stub: a stub returning False and a
 # function that raises inside and returns False look identical from here only
 # if the seam is really the bool. These exercise the genuine failure, and the
@@ -1107,7 +1410,7 @@ def test_no_caller_outside_the_module_reads_the_retirement_reason_fields():
     reason="root ignores the read-only parent, so the removal would succeed",
 )
 def test_a_checkout_the_filesystem_will_not_give_up_is_not_reported_released(session, workspace):
-    """AC1/AC2 with no stub at the seam — the real `cleanup_worktree` failing.
+    """AC1/AC2 with no stub at the seam — the real `remove_checkout` refusing.
 
     `git worktree remove` cannot unlink the directory out of a read-only parent
     and neither can the `shutil.rmtree` fallback, so the real function takes its
@@ -1144,7 +1447,7 @@ def test_reconcile_counts_the_trees_that_went_and_names_only_the_one_that_did_no
     are per-tree answers, not per-run ones. With one failure beside one real
     removal, a `settled += 1` that ignores the bool reports 2, a blanket `else`
     warns about the tree that went as well, and both read as the other
-    tree's story. The successful removal here is the real `cleanup_worktree`,
+    tree's story. The successful removal here is the real `remove_checkout`,
     so the pass is not uniformly stubbed.
     """
     gone = _ticket(session, workspace, external_id="LG-GONE")
@@ -1159,17 +1462,19 @@ def test_reconcile_counts_the_trees_that_went_and_names_only_the_one_that_did_no
     session.commit()
     stuck_row = session.exec(select(Worktree).where(Worktree.ticket_id == stuck.id)).one()
 
-    real_cleanup = WorktreeService.cleanup_worktree
+    real_cleanup = WorktreeService.remove_checkout
 
     def refuse_only_the_stuck_one(self, worktree):
+        # The member, never `False`: `None` is the settled answer now, and
+        # `False` is falsy in exactly the place `None` is.
         if worktree.id == stuck_row.id:
-            return False
+            return CleanupRefusal.REMOVE_RAISED
         return real_cleanup(self, worktree)
 
     with (
         mock.patch.object(
             WorktreeService,
-            "cleanup_worktree",
+            "remove_checkout",
             autospec=True,
             side_effect=refuse_only_the_stuck_one,
         ),
@@ -1243,7 +1548,10 @@ def test_a_removal_that_failed_once_is_attempted_again_rather_than_remembered(se
     with (
         mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None),
         mock.patch.object(
-            WorktreeService, "cleanup_worktree", autospec=True, return_value=False
+            WorktreeService,
+            "remove_checkout",
+            autospec=True,
+            return_value=CleanupRefusal.REMOVE_RAISED,
         ) as refused,
     ):
         assert release_ticket_worktree(session, ticket) is False

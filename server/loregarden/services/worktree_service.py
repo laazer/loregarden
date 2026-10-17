@@ -1,8 +1,10 @@
 """Git worktree service for parallel agent execution isolation."""
 
 import logging
+import shutil
 import subprocess
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
@@ -36,6 +38,33 @@ class WorktreeRefreshError(RuntimeError):
     branch cannot take its prerequisites' landed work is exactly the ticket
     that must not start (lg-milestone-that-769).
     """
+
+
+class CleanupRefusal(Enum):
+    """Why a checkout the service was asked to remove is still on disk.
+
+    Two conditions an operator has to answer differently, and
+    ``cleanup_worktree`` collapsed both into one ``False``: a recorded path
+    outside the service's base, which nothing will ever make removable, and an
+    exception out of ``git worktree remove`` plus the ``shutil.rmtree``
+    fallback, which the next attempt often clears.
+
+    A plain ``Enum`` and deliberately NOT a ``StrEnum``, which is the one place
+    this diverges from :class:`~loregarden.services.worktree_lifecycle.KeepReason`
+    next door. ``KeepReason``'s values ARE the wording its callers print. These
+    are machine slugs that reach no operator, because the boot log and the
+    chat-delete toast need DIFFERENT sentences for the SAME cause — so one
+    string per member cannot be the copy for both, and every caller picks its
+    own words from the member.
+    """
+
+    #: The recorded path is not under ``worktree_base``. Nothing was attempted,
+    #: and no retry will change the answer: the row's path or the workspace's
+    #: ``repo_path`` is wrong.
+    OUTSIDE_BASE = "outside_base"
+    #: The removal was attempted and raised — a permission error, a file another
+    #: process holds open, an NFS stall. Often transient, so retrying is real.
+    REMOVE_RAISED = "remove_raised"
 
 
 class ConflictDetectionError(RuntimeError):
@@ -649,25 +678,55 @@ class WorktreeService:
             )
             return False
 
-    def cleanup_worktree(self, worktree: Worktree) -> bool:
-        """
-        Remove worktree and clean up filesystem.
+    def remove_checkout(self, worktree: Worktree) -> CleanupRefusal | None:
+        """Unlink a worktree's checkout and stamp the row CLEANUP.
 
-        Args:
-            worktree: Worktree record
+        Returns ``None`` when the row is settled — which includes "nothing was
+        on disk to unlink", the case `reconcile_worktrees` depends on — and
+        otherwise the :class:`CleanupRefusal` member naming which of the two
+        conditions held. The answer is typed rather than a bool because the two
+        call for opposite operator responses: OUTSIDE_BASE never clears, and
+        telling someone to clear a path is not the remedy for it, while
+        REMOVE_RAISED usually clears on the next attempt.
 
-        Returns:
-            True if successful, False on error
+        OUTSIDE_BASE is decided on BOTH the recorded spelling and the resolved
+        path, because each arm admits what the other refuses and only the pair
+        is an invariant. ``is_relative_to`` compares path *parts*, so neither
+        arm accepts the sibling whose name merely extends the base's
+        (``.worktrees-salvage``) — which the ``str(path).startswith(str(base))``
+        guard this replaced did accept. The resolved arm is needed because
+        ``PurePath.is_relative_to`` does not normalise ``..``, so a lexical
+        check alone admits a path that climbs back out. The lexical arm is
+        needed because resolution follows symlinks: a path spelled outside the
+        base that links *into* it resolves inside, and ``git worktree remove
+        --force`` on that link deletes the real checkout at the other end —
+        another row's uncommitted work — after which the dangling link reports
+        ``exists() is False`` and the row would be stamped "settled". Requiring
+        both arms is what makes "nothing outside the base is ever removed"
+        true rather than merely usually true. ``create_worktree`` persists
+        ``str(self.worktree_base / name)``, the base's own spelling, so every
+        legitimately created row satisfies the lexical arm, and each arm
+        compares like against like, so a resolved/unresolved mismatch (macOS
+        ``/var`` vs ``/private/var``) cannot arise.
+
+        Nothing is logged for OUTSIDE_BASE: the returned member IS the
+        surfacing, and every caller reports it with the row id and the base
+        directory a reader needs. The raising path keeps its ``exc_info``
+        record, because which exception from which call is the one thing the
+        member cannot carry.
         """
+        worktree_path = Path(worktree.worktree_path)
+
+        # Containment, decided on the recorded spelling AND on where the
+        # removal would actually land. Neither arm alone is sufficient: see
+        # the docstring above for the shape each one is the only guard against.
+        if not (
+            worktree_path.is_relative_to(self.worktree_base)
+            and worktree_path.resolve().is_relative_to(self.worktree_base.resolve())
+        ):
+            return CleanupRefusal.OUTSIDE_BASE
+
         try:
-            worktree_path = Path(worktree.worktree_path)
-
-            # Verify path is within worktree base directory
-            if not str(worktree_path).startswith(str(self.worktree_base)):
-                logger.error(f"Worktree path outside base: {worktree_path}")
-                return False
-
-            # Remove git worktree
             if worktree_path.exists():
                 logger.info(f"Removing worktree: {worktree_path}")
                 # silent-ok: removal is verified below — if the path still
@@ -682,8 +741,6 @@ class WorktreeService:
 
                 # Remove directory if still exists
                 if worktree_path.exists():
-                    import shutil
-
                     shutil.rmtree(worktree_path)
 
             # Update record
@@ -693,11 +750,11 @@ class WorktreeService:
             self.session.commit()
 
             logger.info(f"Cleaned up worktree {worktree.id}")
-            return True
+            return None
 
         except Exception as e:
             logger.error(f"Error cleaning up worktree: {e}", exc_info=True)
-            return False
+            return CleanupRefusal.REMOVE_RAISED
 
     def get_worktree(self, worktree_id: str) -> Worktree | None:
         """Fetch worktree by ID."""
