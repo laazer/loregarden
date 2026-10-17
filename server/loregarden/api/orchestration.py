@@ -41,6 +41,7 @@ from loregarden.services.orchestration_profile import (
     PRESERVED_GATE_KEYS,
     GatesConfig,
     GitAutomationConfig,
+    ProfileUnreadableError,
     default_gate_commands,
     list_profiles,
     resolve_orchestration_profile,
@@ -109,7 +110,18 @@ def get_workspace_profile(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    return _profile_view(resolve_orchestration_profile(ws), ws)
+    # The Gates editor is the surface that *writes* these files, so a
+    # half-written one is its own output coming back. Unguarded this was a 500,
+    # and the panel rendered a plausible, complete-looking gate list over a file
+    # nobody could read (lg-milestone-that-1215 S8). The view is inside the
+    # guard as well as the resolve: `_profile_view` reads `default.yaml` through
+    # `default_gate_commands()`, so this endpoint can fail on a file that is not
+    # the workspace's own. Only `ProfileUnreadableError` — anything broader
+    # would start telling the operator to fix a profile that is fine.
+    try:
+        return _profile_view(resolve_orchestration_profile(ws), ws)
+    except ProfileUnreadableError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/workspaces/{slug}/profiles", response_model=list[OrchestrationProfileView])
@@ -119,7 +131,14 @@ def list_workspace_profiles(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    return [_profile_view(p, ws) for p in list_profiles(ws)]
+    # `list_profiles` globs the whole directory and propagates rather than
+    # skipping the file it cannot read (R4): a silently shortened list is a
+    # complete-looking editor missing the one file the operator is about to
+    # overwrite.
+    try:
+        return [_profile_view(p, ws) for p in list_profiles(ws)]
+    except ProfileUnreadableError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.put("/workspaces/{slug}/profile/gates", response_model=OrchestrationProfileView)
@@ -182,7 +201,10 @@ def get_workspace_git_automation(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    profile = resolve_orchestration_profile(ws)
+    try:
+        profile = resolve_orchestration_profile(ws)
+    except ProfileUnreadableError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
 
 

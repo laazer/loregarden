@@ -44,13 +44,21 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.handoff_settle import (
+    settle_failed_handoff,
+    settle_failed_handoff_run,
+)
 from loregarden.services.handoff_tree_status import (
+    HandoffTreePreparationError,
     describe_handoff_failure,
     describe_handoff_tree,
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.orchestration_profile import (
+    ProfileUnreadableError,
+    resolve_orchestration_profile,
+)
 from loregarden.services.parallel_stage import (
     latest_member_run,
     member_passed,
@@ -67,9 +75,12 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
+from loregarden.services.stage_retry_budget import (
+    refund_stage_dispatch_charged_since,
+    stage_dispatch_marker_ids,
+)
 from loregarden.services.stage_shape import describe_stage_shape
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
-from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -165,7 +176,19 @@ def _stage_name(session: Session, ticket: Ticket, stage_key: str) -> str:
 def _checked_out_run_view(
     session: Session, orch_run: OrchestrationRun, run: AgentRun, ticket: Ticket
 ) -> ExternalStageRunView:
-    """Stamp a started run as this harness's, and render its prompt."""
+    """Stamp a started run as this harness's, and render its prompt.
+
+    Raises ``ValueError`` carrying the sentence the harness reads, which is all
+    it gets — the MCP boundary turns this into an ``isError`` tool result and
+    there is no run view behind it. For a *tree-preparation* failure that is
+    ``describe_handoff_failure``'s sentence; for anything else it is the
+    failure's own diagnosis, because the tree sentence replaced rather than
+    padded it (lg-milestone-that-975). Settling the run this stamped is the
+    **caller's**, because the three call sites want three different answers: a
+    fresh single-agent checkout settles the one run it stamped, a fan-out
+    settles every member, and a resumed run is not settled at all
+    (lg-milestone-that-974 R7).
+    """
     run_svc = RunService(session)
     run.orchestration_run_id = orch_run.id
     run.external_harness = orch_run.external_harness
@@ -173,20 +196,32 @@ def _checked_out_run_view(
     session.commit()
 
     try:
-        prompt, repo_root = run_svc.executor.render_stage_prompt(run, ticket)
-    except ValueError as exc:
-        # The MCP boundary turns this into an `isError` tool result, so the text
-        # it carries is all the harness gets: the same readable first sentence
-        # the terminal-handoff route returns, with git's output behind it.
+        prompt, tree = run_svc.executor.render_stage_prompt(run, ticket)
+    # Subclass first: `HandoffTreePreparationError` is a `ValueError`, so a
+    # broader arm above it swallows every tree failure. Both arms re-raise a
+    # *plain* `ValueError` because the three call sites below catch `ValueError`
+    # and settle the run they stamped on it — nothing else ever settles an
+    # external run.
+    except HandoffTreePreparationError as exc:
+        # The tree really is what failed, so the tree sentence is the answer,
+        # with git's own output behind it.
         raise ValueError(describe_handoff_failure(session, ticket, exc)) from exc
+    # `ValueError` is named literally, and the guard is no broader than these
+    # two. `ProfileUnreadableError` stays named now that the renderer wraps it:
+    # it is a `RuntimeError`, and the name is the enumeration contract from
+    # `orchestration_profile.py:44-51` rather than a reachability claim
+    # (lg-milestone-that-1215 S7).
+    except (ProfileUnreadableError, ValueError) as exc:
+        # Unclassified, so it keeps its own diagnosis as the lead sentence: the
+        # text is all the harness gets, and a sentence about a tree the failure
+        # is not about replaces the diagnosis instead of prefacing it.
+        raise ValueError(str(exc)) from exc
 
-    workspace = _workspace_for(session, ticket)
-    target_branch = resolve_target_branch(
-        session, ticket, workspace, repo_root=resolve_workspace_root(workspace)
-    )
-    status = describe_handoff_tree(
-        repo_root, target_branch=target_branch, ticket_external_id=ticket.external_id
-    )
+    # Both facts about the tree come from the tree the render prepared. The
+    # boundary used to resolve the target a second time, one line below the
+    # handler above and catching nothing, so a conflict there escaped as a bare
+    # `RuntimeError` with none of this sentence (lg-milestone-that-974).
+    status = describe_handoff_tree(tree, ticket_external_id=ticket.external_id)
     if status.warning:
         logger.warning("External handoff for %s: %s", ticket.external_id, status.warning)
         prompt = f"{prompt}\n\n## The tree you were given\n\n{status.warning}\n"
@@ -201,8 +236,8 @@ def _checked_out_run_view(
         agent_id=run.agent_id,
         skill_name=run.skill_name,
         prompt=prompt,
-        repo_path=str(repo_root),
-        target_branch=target_branch,
+        repo_path=str(tree.repo_root),
+        target_branch=tree.target_branch,
         tree_warning=status.warning,
         started_at=_as_utc(run.started_at),
     )
@@ -304,7 +339,19 @@ def _begin_parallel_stage(
         record_relens_decisions(session, ticket, stage_def, stage_key, decisions)
     skipped = skipped_members(stage_def, decisions)
 
+    # Read before the loop opens anything, so the one marker this pass goes on to
+    # charge is the one id missing from the snapshot. Read it after the first
+    # `start_run` and the set difference is empty on every path, which makes the
+    # refund below a silent no-op (lg-milestone-that-1213 AC9).
+    markers_before = stage_dispatch_marker_ids(session, ticket.id, stage_key)
+
     runs: list[AgentRun] = []
+    # The subset of `runs` this handoff stamped RUNNING itself. An adopted member
+    # (a RUNNING `latest` re-served below) is work the harness is already
+    # holding, and settling it is exactly what `_resumable_stage_run` exists to
+    # prevent — so a render failure may only reap what this pass opened
+    # (lg-milestone-that-974 AC13/AC14).
+    stamped: list[AgentRun] = []
     for spec in stage_def.parallel_agents:
         if (spec.agent_id, member_skill_name(stage_def, spec)) in skipped:
             continue
@@ -316,15 +363,15 @@ def _begin_parallel_stage(
         if latest is not None and latest.status == RunStatus.RUNNING:
             runs.append(latest)
             continue
-        runs.append(
-            orch.start_run(
-                ticket,
-                stage_key=stage_key,
-                orchestration_run_id=orch_run.id,
-                agent_id=spec.agent_id,
-                skill_name=member_skill_name(stage_def, spec),
-            )
+        opened = orch.start_run(
+            ticket,
+            stage_key=stage_key,
+            orchestration_run_id=orch_run.id,
+            agent_id=spec.agent_id,
+            skill_name=member_skill_name(stage_def, spec),
         )
+        runs.append(opened)
+        stamped.append(opened)
     session.refresh(ticket)
 
     orch_run.current_stage_key = stage_key
@@ -347,7 +394,7 @@ def _begin_parallel_stage(
 
     # One tree for every member, resolved before any of them starts — they run
     # concurrently and would otherwise race to create the ticket's worktree.
-    tree_error = prepare_tree_for_parallel_stage(session, ticket, stage_key, runs)
+    tree_error = prepare_tree_for_parallel_stage(session, ticket, stage_key, runs, stamped=stamped)
     if tree_error:
         session.refresh(ticket)
         return ExternalStageView(
@@ -357,11 +404,74 @@ def _begin_parallel_stage(
             message=tree_error,
         )
 
+    try:
+        views = [_checked_out_run_view(session, orch_run, run, ticket) for run in runs]
+    except ValueError as exc:
+        # The fan-out stamps one run per member, each committed as it goes, so a
+        # failure on member k leaves 1..k-1 RUNNING with nothing behind them and
+        # nothing that ever settles an external run. It settles all of them, and
+        # reports through the same `message` shape this path already uses for a
+        # tree it could not prepare — a harness meets one convention here, not
+        # two (lg-milestone-that-974 R7/AC13).
+        #
+        # `stamped`, not `runs`: a resuming fan-out's `runs` also holds members
+        # adopted from a prior pass, and those stay RUNNING (AC14). When every
+        # member was adopted, nothing is settled and the stage stays RUNNING,
+        # which is correct — the harness still holds that work.
+        detail = str(exc)
+        return _settle_fanned_out_members(
+            session, ticket, stamped, stage_key, detail=detail, markers_before=markers_before
+        )
+
     return ExternalStageView(
         stage_key=stage_key,
         stage_name=_stage_name(session, ticket, stage_key),
         parallel=True,
-        runs=[_checked_out_run_view(session, orch_run, run, ticket) for run in runs],
+        runs=views,
+    )
+
+
+def _settle_fanned_out_members(
+    session: Session,
+    ticket: Ticket,
+    runs: list[AgentRun],
+    stage_key: str,
+    *,
+    detail: str,
+    markers_before: frozenset[str],
+) -> ExternalStageView:
+    """Fail every member this fan-out left running, and report the failure once.
+
+    ``runs`` must be only the members **this** pass stamped RUNNING, never a
+    resuming fan-out's full list: an adopted member is work the harness is still
+    holding, and failing it destroys that work unrecoverably, since nothing else
+    ever settles an external run.
+
+    The dispatch refund is per **pass**, which is why this settles with
+    ``settle_failed_handoff_run`` (the per-run primitive) rather than with the
+    refunding composition. What charges an external fan-out is
+    ``evaluate_standalone_stage_dispatch`` inside ``orch.start_run``, with
+    members 2..N grouped out by ``dispatch_pass_open`` — so the pass is charged
+    one marker for N members, or none at all when that grouping is already open
+    or the dispatch is reroute-exempt. Handing back one marker per member
+    deleted N-1 *earlier* passes' charges and reset the stage retry breaker
+    (lg-milestone-that-1213). One refund, keyed to the marker ids read before
+    this pass opened anything, returns exactly what it charged.
+    """
+    run_svc = RunService(session)
+    for member in runs:
+        session.refresh(member)
+        if member.status == RunStatus.RUNNING:
+            settle_failed_handoff_run(session, run_svc, member, ticket, detail=detail)
+    refund_stage_dispatch_charged_since(
+        session, ticket.id, stage_key, markers_before=markers_before
+    )
+    session.refresh(ticket)
+    return ExternalStageView(
+        stage_key=stage_key,
+        stage_name=_stage_name(session, ticket, stage_key),
+        parallel=True,
+        message=detail,
     )
 
 
@@ -477,10 +587,22 @@ def _begin_external_stage(
     orch_run.current_stage_key = run.stage_key
     session.add(orch_run)
     session.commit()
+    try:
+        view = _checked_out_run_view(session, orch_run, run, ticket)
+    except ValueError as exc:
+        # This handoff stamped the run RUNNING and committed it one call ago,
+        # and `start_stage_execution` charged the stage's dispatch budget one
+        # before that. Nothing else ever settles an external run, so a failed
+        # checkout that left it would strand the stage live with no agent behind
+        # it (lg-milestone-that-974 AC12). The resumed arm above deliberately
+        # does **not** do this: it did not stamp the run it was handed.
+        settle_failed_handoff(session, run_svc, run, ticket, detail=str(exc))
+        raise
+
     return ExternalStageView(
         stage_key=run.stage_key,
         stage_name=_stage_name(session, ticket, run.stage_key),
-        runs=[_checked_out_run_view(session, orch_run, run, ticket)],
+        runs=[view],
     )
 
 

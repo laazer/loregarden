@@ -183,6 +183,53 @@ describe("GateStudioPanel", () => {
     expect(await screen.findByText(/don't have permission to read the gate settings for blobert/)).toBeInTheDocument();
   });
 
+  // lg-milestone-that-1215 AC13. This panel is the surface that *writes* these
+  // profile files, so a half-written or hand-edited one is its own output coming
+  // back. Until now only a 403 was handled: every other failure fell through to
+  // `collectWorkspaceControls(workspace, null)`, which renders a plausible,
+  // complete-looking gate list for a file nobody could read. The question the
+  // operator arrives with is "why are my gates not what I set?", and an empty
+  // list is the one answer that stops them finding out.
+  const UNREADABLE_PROFILE_PATH = "/repo/loregarden/agent_context/orchestration/default.yaml";
+  const unreadableProfileError = () =>
+    new ApiError(
+      400,
+      `${UNREADABLE_PROFILE_PATH} could not be read as an orchestration profile: while parsing a flow sequence, expected ',' or ']'`,
+    );
+
+  it("says the gate file is broken, and names the file, when the profile will not load", async () => {
+    api.orchestrationProfile.mockRejectedValue(unreadableProfileError());
+    renderAt("/studio/gates/blobert");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Gate settings for blobert could not be read");
+    expect(alert.textContent).toContain(UNREADABLE_PROFILE_PATH);
+    expect(alert).toHaveTextContent("Fix that file and reload.");
+  });
+
+  it("renders no gate list at all when the profile will not load", async () => {
+    api.orchestrationProfile.mockRejectedValue(unreadableProfileError());
+    const { container } = renderAt("/studio/gates/blobert/blobert-tdd");
+
+    await screen.findByRole("alert");
+    expect(container.querySelector(".gate-studio-controls")).toBeNull();
+    // The error state and the legitimate empty state must not read alike: the
+    // empty copy here would say this workflow has no controls of a kind, which
+    // is a different and perfectly fine answer.
+    expect(screen.queryByText(/No agent this workflow runs has handoff checks/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the 403 copy, and keeps it ahead of the general failure branch", async () => {
+    api.orchestrationProfile.mockRejectedValue(new ApiError(403, UNREADABLE_PROFILE_PATH));
+    renderAt("/studio/gates/blobert");
+
+    expect(await screen.findByText(/don't have permission to read the gate settings for blobert/)).toBeInTheDocument();
+    // A general `isError` branch placed *before* the 403 one would swallow it,
+    // and the operator would be told to go and fix a file they are not allowed
+    // to read.
+    expect(screen.queryByText(/could not be read:/)).not.toBeInTheDocument();
+  });
+
   it("says what failed when the workflows cannot load, and retries", async () => {
     api.studioWorkflows.mockRejectedValueOnce(new Error("boom"));
     renderAt("/studio/gates/blobert");

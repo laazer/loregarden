@@ -40,6 +40,7 @@ artifact title:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.orchestration_profile import (
+    ProfileUnreadableError,
     RetryBudgetConfig,
     resolve_orchestration_profile,
 )
@@ -76,6 +78,8 @@ _DISPATCH_KIND = StageBudgetArtifactKind.DISPATCH
 _DISPATCH_OVERRIDE_KIND = StageBudgetArtifactKind.DISPATCH_OVERRIDE
 _DISPATCH_REROUTE_KIND = StageBudgetArtifactKind.DISPATCH_REROUTE
 _RETRY_BLOCK_KIND = StageBudgetArtifactKind.RETRY_BLOCK
+
+logger = logging.getLogger(__name__)
 
 
 class DispatchOrigin(BaseModel):
@@ -318,6 +322,86 @@ def refund_stage_dispatch_charged_before(
     ]
     if not rows:
         return 0
+    newest = max(rows, key=lambda row: (row.created_at, row.id))
+    session.delete(newest)
+    session.commit()
+    return 1
+
+
+def stage_dispatch_marker_ids(session: Session, ticket_id: str, stage_key: str) -> frozenset[str]:
+    """The ids of the dispatch markers on ``(ticket_id, stage_key)`` right now.
+
+    Read-only, and the input half of `refund_stage_dispatch_charged_since`. A
+    caller that is inside its own dispatch pass synchronously reads this
+    *before* the pass charges anything; the marker the pass went on to write is
+    then the one id that is not in the snapshot. That is an exact attribution,
+    where every other refund in this module can only infer one from time,
+    because the rows carry no run id.
+
+    Scoped to exactly this (ticket, stage) and exactly the dispatch kind. A
+    wider read makes the later set difference empty and the refund a silent
+    no-op; a narrower one puts an earlier pass's charge into the difference,
+    which is the over-refund the identity rule exists to stop.
+    """
+    return frozenset(
+        row.id
+        for row in _markers(
+            session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key)
+        )
+    )
+
+
+def refund_stage_dispatch_charged_since(
+    session: Session,
+    ticket_id: str,
+    stage_key: str,
+    *,
+    markers_before: frozenset[str],
+) -> int:
+    """Hand back the dispatch marker this pass wrote, identified by id.
+
+    `markers_before` is `stage_dispatch_marker_ids` read before the pass opened
+    anything. The marker to hand back is the newest row whose id is not in it,
+    so a pass charged nothing (both of the ways that happens — `dispatch_pass_open`
+    returning `counts=False`, and a reroute-exempt dispatch, which writes an
+    exemption row and no dispatch row) sees an empty difference and refunds
+    nothing, with no case analysis in the caller.
+
+    Identity rather than a time cutoff or a time window, which is what the
+    single-run refunds (`refund_stage_dispatch_charged_before`) must use because
+    they run after their pass and cannot have read the counter before it. Those
+    two answers differ whenever a historical row's `created_at` is later than
+    this pass's — a clock step, an NTP correction, a repaired row — and
+    `Artifact.id` is a random uuid4, so a `created_at` tie is otherwise decided
+    by a random value.
+
+    More than one new marker means the one-charge-per-pass rule broke upstream:
+    `dispatch_pass_open` is what makes an N-member parallel pass cost one
+    attempt. Exactly one row is dropped and the surplus is logged at WARNING.
+    Refunding both would be the over-refund this function exists to replace, and
+    under-refunding is the safe direction for a breaker; the log record is what
+    keeps the broken invariant from being absorbed in silence.
+
+    Returns how many markers were dropped (0 or 1), so a caller can report it.
+    """
+    rows = [
+        row
+        for row in _markers(
+            session, ticket_id, _DISPATCH_KIND, stage_dispatch_artifact_title(stage_key)
+        )
+        if row.id not in markers_before
+    ]
+    if not rows:
+        return 0
+    if len(rows) > 1:
+        logger.warning(
+            "Stage %s on ticket %s charged %d dispatch markers for one pass; handing back "
+            "one. A pass costs one attempt (dispatch_pass_open), so this is a broken "
+            "upstream invariant and the stage keeps the surplus charge.",
+            stage_key,
+            ticket_id,
+            len(rows),
+        )
     newest = max(rows, key=lambda row: (row.created_at, row.id))
     session.delete(newest)
     session.commit()
@@ -572,11 +656,41 @@ def resolve_stage_retry_budget(session: Session, ticket: Ticket) -> RetryBudgetC
     The same `profile.retry_budget` the orchestrator loop passes to
     `enforce_stage_retry_budget`, resolved here so the standalone paths honour
     one configured number rather than a literal of their own.
+
+    An unreadable profile falls back to the built-in budgets rather than
+    refusing the dispatch. This is the **first** profile read on
+    `POST /tickets/{id}/terminal_handoff_command` and on
+    `loregarden_begin_external_stage`, so before it was guarded a corrupt file
+    raised here — ahead of any run being stamped — and the operator got a
+    refusal about the retry budget for a file that will not parse, while the
+    defect one layer down (`describe_handoff_failure` propagating into a 500)
+    was unreachable. Nothing about an unreadable profile is a reason to stop
+    enforcing a runaway backstop, so the stand-in is the default config and
+    not a disabled one.
+
+    It logs rather than raising, and it logs rather than reaching the operator:
+    the request it sits on already ends in a visible 400 naming the same file,
+    and `pushToast` dedupes by text rather than by cause, so a second refusal
+    here would be a second toast for one click
+    (lg-milestone-that-1215 R5, AC11). A legitimate suppression under
+    CLAUDE.md's *No silent failures* — expected input, a real alternate path,
+    and the failure is surfaced twice over.
     """
     workspace = session.get(Workspace, ticket.workspace_id)
     if not workspace:
         return RetryBudgetConfig()
-    return resolve_orchestration_profile(workspace).retry_budget
+    try:
+        return resolve_orchestration_profile(workspace).retry_budget
+    except ProfileUnreadableError as exc:
+        logger.warning(
+            "Could not read %s's retry budget from its workspace's orchestration profile "
+            "%s: %s. Using the built-in default budgets for this dispatch instead of ones "
+            "read from the profile.",
+            ticket.external_id,
+            exc.path,
+            exc,
+        )
+        return RetryBudgetConfig()
 
 
 def _is_live_dispatch_evidence(session: Session, run: AgentRun) -> bool:

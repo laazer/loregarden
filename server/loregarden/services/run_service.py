@@ -179,6 +179,18 @@ def fail_interrupted_runs(
     discriminator (see ``triage_service.triage_run_status``); they are reconciled by
     ``triage_run_service.fail_interrupted_triage_turns`` instead.
     """
+    # NOT the per-dispatch settle. `handoff_settle.settle_failed_handoff` closes
+    # out ONE run a handoff opened: it fails the run, hands that dispatch charge
+    # back, puts that stage back to PENDING, and records a decision saying so.
+    # This is the boot/orphan sweep, and it does only the first of those four on
+    # purpose. It claims every in-flight run it can see on a ticket, so refunding
+    # charges or forcing stages to PENDING here would hand retry budget back
+    # across every live stage on a restart, and would record a decision per run
+    # for something nobody decided. The orphan shape that *does* record a
+    # decision is `settle_orphaned_agent_runs`, below in this module — 976's own
+    # description attributed it to this function, which is the mistake a reader
+    # holding an editor turns into a budget reset.
+    #
     # INVARIANT, load-bearing and easy to break by a locally-correct edit: the
     # ticket-scoped branch below must always select a SUPERSET of what
     # `external_harness._resumable_stage_run` could adopt. That lookup declines on
