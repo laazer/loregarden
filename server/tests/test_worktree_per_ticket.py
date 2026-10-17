@@ -1106,3 +1106,380 @@ def test_a_dirty_ticket_worktree_on_another_branch_is_refused_as_itself(
     assert content["use"] == "ticket_worktree_branch_checkout"
     assert content["repo_root"] == str(root), "and it names the tree that is actually dirty"
     assert "left-in-flight.txt" in content["dirty_paths"]
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-918: one target-branch resolution per dispatch, and lazy.
+#
+# 779 put the refresh on every dispatch and paid for the answer twice. A
+# sequential dispatch arrives at `_prepare_tree` with no worktree assigned, so
+# `resolve_execution_root` resolves the target (to cut the tree from it) and
+# `_ensure_branch_or_fail` resolves the same target again (to refresh onto it).
+# Resolving is a *write* against refs every worktree of the repository shares —
+# `ensure_integration_branch`, `_refresh_from_tips`, and behind them a blocking
+# merge turn with an inbox card — so the second reading is not free and not
+# harmless.
+#
+# The counter below is installed on BOTH import bindings on purpose. Every
+# consumer binds the name at import (`cli.py`, `ticket_worktree.py`,
+# `parallel_stage.py`), so a spy on `services.target_branch` itself counts
+# zero. That is how `test_the_dispatch_path_resolves_its_target_in_the_shared_checkout`
+# above asserts a one-element call list while two resolutions actually happen:
+# it sees one of the two bindings.
+#
+# And the one resolution has to stay *lazy*. Three dispatch paths resolve zero
+# or one times today (see the table in the ticket), one of them the dirty-park
+# path where the run never starts at all. Hoisting the resolution to the top of
+# `_prepare_tree` would make those paths write shared refs where today they
+# write nothing, which is a behaviour change wearing a refactor's clothes.
+# ---------------------------------------------------------------------------
+
+
+def _resolution_spies():
+    """`(calls, (cli_patch, worktree_patch))` — call-through spies on both bindings.
+
+    `calls` holds the `repo_root` of every resolution either binding made, so
+    `len(calls)` is the total per dispatch and each entry says which tree it
+    was resolved against.
+
+    `**extra` is here only for the `ticket_worktree` binding, which passes
+    `merge_conflicts=`. The `cli` binding must be called with exactly
+    `(session, ticket, workspace, *, repo_root)`: `_target_branch_spy` above is
+    frozen to that shape, AC7 forbids editing it, and a memo that passed
+    `merge_conflicts=` through would raise `TypeError` inside it.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services.target_branch import resolve_target_branch as real
+
+    calls: list[Path] = []
+
+    def spy(session, ticket, workspace, *, repo_root, **extra):
+        calls.append(Path(repo_root))
+        return real(session, ticket, workspace, repo_root=repo_root, **extra)
+
+    return calls, (
+        patch("loregarden.agents.executors.cli.resolve_target_branch", spy),
+        patch("loregarden.services.ticket_worktree.resolve_target_branch", spy),
+    )
+
+
+def test_one_dispatch_resolves_its_target_branch_once(session, workspace, dependent, repo):
+    """AC1. Counted across both import bindings, so the count cannot hide in
+    the binding the spy is not on.
+
+    Non-vacuous: against the code as it stands *before* lg-milestone-that-918
+    this same test reports **2** — `resolve_execution_root` resolves through
+    `ticket_worktree`'s binding and `_ensure_branch_or_fail` resolves again
+    through `cli`'s. A spy on `services.target_branch.resolve_target_branch`
+    instead of these two would report **0** and pass against anything.
+    """
+    _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    assert target != "main", (
+        "fixture: the target must differ from the base branch, or a resolution "
+        "issues no git at all and costs nothing to repeat (R8)"
+    )
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        _, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None, stopped.stderr if stopped else None
+    assert calls == [Path(repo)], (
+        f"one dispatch resolved its target branch {len(calls)} times, in {calls}: "
+        "the worktree cut and the branch refresh must share the one answer, "
+        "and resolve it in the shared checkout"
+    )
+
+
+def test_a_dirty_shared_checkout_parks_without_resolving_a_target(
+    session, workspace, dependent, repo
+):
+    """AC2(a)/AC8. Worktrees off and the checkout holding someone else's work:
+    the run never starts, so nothing may be written to shared refs on its
+    behalf. Zero resolutions today, and zero after.
+
+    A mutant that hoists the resolution to the top of `_prepare_tree` fails
+    here: it would file an inbox card and refresh an integration branch for a
+    run that is parked before it executes a line. It also pins that a refused
+    checkout *parks* — cancelled, not failed with a checkout message.
+    """
+    _worktrees_off(session, dependent)
+    (Path(repo) / "someone-elses.txt").write_text("an operator was mid-edit here\n")
+    assert git(repo, "status", "--porcelain").stdout.strip(), "fixture: the checkout is dirty"
+    run = _dirty_run(session, workspace, dependent, "r2", stage_key="implement")
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        _, stopped = CliAgentExecutor(session)._prepare_tree(
+            run,
+            dependent,
+            workspace,
+            workspace_root=Path(workspace.repo_path),
+            skip_git_branch=False,
+            advance_workflow=False,
+        )
+
+    assert stopped is not None, "a refused checkout parks the stage"
+    assert stopped.status == RunStatus.CANCELLED, (
+        "a dirty checkout is a fact about the machine, not a checkout failure"
+    )
+    assert not (stopped.stderr or "").startswith("Failed to checkout branch: ")
+    assert calls == [], f"a run that never starts resolved {len(calls)} target branches: {calls}"
+
+
+def test_a_member_that_already_has_its_tree_resolves_no_target(session, workspace, dependent, repo):
+    """AC2(b). The parallel driver assigns the worktree and passes
+    `skip_git_branch=True` because `prepare_tree_for_parallel_stage` already
+    refreshed the one tree for the whole stage. Both of `_prepare_tree`'s
+    consumers return early, so nothing resolves — and a hoist would make every
+    member of a fan-out resolve and merge against shared refs concurrently.
+    """
+    from loregarden.models.domain import AgentRun
+    from sqlmodel import select
+
+    _existing_worktree(session, workspace, dependent)
+    first = session.exec(select(AgentRun).where(AgentRun.run_code == "r1")).one()
+    assert first.worktree_id, "fixture: the first dispatch must have cut a worktree"
+    member = make_run(session, workspace, dependent, "p1")
+    member.worktree_id = first.worktree_id
+    session.add(member)
+    session.commit()
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        root, stopped = CliAgentExecutor(session)._prepare_tree(
+            member,
+            dependent,
+            workspace,
+            workspace_root=Path(workspace.repo_path),
+            skip_git_branch=True,
+            advance_workflow=False,
+        )
+
+    assert stopped is None
+    assert root != Path(repo), "the member runs in the tree it was handed"
+    assert calls == [], f"a member handed its tree resolved {len(calls)} target branches: {calls}"
+
+
+def test_a_skipped_branch_step_still_resolves_once_to_cut_from_the_target(
+    session, workspace, dependent, repo
+):
+    """AC2(c). `skip_git_branch` skips the *refresh*, never the cut:
+    `test_the_one_remaining_skip_still_skips` above depends on
+    `resolve_execution_root` still resolving, because a worktree cut from the
+    base instead of the target cannot see a sibling's landed work.
+
+    So this path resolves exactly once, today and after. A mutant that guards
+    the memo with `not skip_git_branch` reports zero here.
+    """
+    _existing_worktree(session, workspace, dependent)
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        _, stopped = _dispatch(session, workspace, dependent, "r2", skip_git_branch=True)
+
+    assert stopped is None
+    assert calls == [Path(repo)], (
+        f"the skipped-refresh path resolved {len(calls)} target branches: {calls}"
+    )
+
+
+def test_a_target_that_cannot_be_resolved_fails_the_dispatch_with_the_same_words(
+    session, workspace, dependent, repo
+):
+    """AC8. The memo is evaluated by `_prepare_tree` to build `start_point`, so
+    a `TargetBranchError` now surfaces from `_prepare_tree`'s own handler
+    rather than from inside `_ensure_branch_or_fail`. Both spellings complete
+    the run FAILED with `Failed to checkout branch: <exc>`, and that is what
+    the operator reads either way.
+    """
+    _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    commit_on(Path(repo), target, "clash.txt", "integration side\n")
+    commit_on(Path(repo), "main", "clash.txt", "main side\n")
+
+    _, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is not None, "an unresolvable target must not escape the executor"
+    assert stopped.status == RunStatus.FAILED
+    assert (stopped.stderr or "").startswith("Failed to checkout branch: "), stopped.stderr
+    assert "clash.txt" in (stopped.stderr or ""), stopped.stderr
+
+
+def test_ensure_branch_or_fail_is_handed_one_tree_and_a_resolved_start_point(session):
+    """AC3. `_ensure_branch_or_fail` has one job — put `repo_root` on the
+    ticket's branch — so it takes neither the second root it used to resolve
+    against nor the `skip` flag whose evaluation would force the resolution to
+    happen eagerly. `_prepare_tree`'s own signature is unchanged, because three
+    test call sites pass it by keyword.
+    """
+    import inspect
+
+    func = CliAgentExecutor._ensure_branch_or_fail
+    assert list(inspect.signature(func).parameters) == [
+        "self",
+        "run",
+        "ticket",
+        "workspace",
+        "repo_root",
+        "start_point",
+        "advance_workflow",
+    ]
+    body = inspect.getsource(func).replace(func.__doc__ or "\0", "")
+    assert "resolve_target_branch" not in body, "it is handed the answer, it does not resolve one"
+    assert "workspace_root" not in body, "and it knows about exactly one tree"
+    assert list(inspect.signature(CliAgentExecutor._prepare_tree).parameters) == [
+        "self",
+        "run",
+        "ticket",
+        "workspace",
+        "workspace_root",
+        "skip_git_branch",
+        "advance_workflow",
+    ], "tests/worktree_helpers.py and this module call `_prepare_tree` by keyword"
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-918, test-break: two mutants the tests above let through.
+#
+# (1) A memo cached on the executor instead of per dispatch. Every test above
+#     dispatches once per `CliAgentExecutor`, so `self._target = ...` counts one
+#     resolution in all of them and passes. Assumption A2 of REQ-1 says the memo
+#     must be created inside `_prepare_tree` for exactly this reason, and the
+#     defect it hides is not the cached *name* — that string does not change —
+#     but the resolution's write: `_refresh_from_tips` is what carries the base
+#     branch onto the integration branch, so a skipped second resolution makes
+#     everything that landed on `main` since the first one invisible.
+#
+# (2) The fast path implemented but never reached from a dispatch. REQ-5's A5
+#     assumes it is, and AC6's whole re-measurement rests on that assumption;
+#     R6 says a figure that does not move is evidence of this. Nothing above
+#     asks the dispatch path itself whether the saving happened, so a fast path
+#     gated on something a dispatch never satisfies passes AC4 and AC5 — which
+#     both call `ensure_ticket_branch` directly — and silently buys nothing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="dispatch_git")
+def dispatch_git_fixture():
+    """Every git argv a dispatch starts, counted at `subprocess.Popen`.
+
+    At `Popen` and not at `run_git` because the dispatch path crosses
+    `ticket_worktree`, `target_branch`, `git_branch`, `git_merge_noco` and
+    `worktree_snapshot`, and each of them binds `run_git` by name.
+
+    `reconcile_timer._sweep` is held off for the reason `test_stage_git_snapshot.py`
+    holds it off: a sweep firing inside the window counts its own `for-each-ref`
+    against the dispatch (R7).
+    """
+    from unittest import mock
+
+    from loregarden.services import reconcile_timer
+
+    argvs: list[list[str]] = []
+    original = subprocess.Popen.__init__
+
+    def counting(self, args, *rest, **kwargs):
+        argv = [str(part) for part in list(args)]
+        if argv[:1] == ["git"]:
+            argvs.append(argv)
+        original(self, args, *rest, **kwargs)
+
+    with (
+        mock.patch.object(subprocess.Popen, "__init__", counting),
+        mock.patch.object(reconcile_timer, "_sweep", return_value=[]),
+    ):
+        yield argvs
+
+
+def _dispatch_asking(argvs: list[list[str]], *tokens: str) -> list[list[str]]:
+    return [argv for argv in argvs if all(token in argv for token in tokens)]
+
+
+def test_a_second_dispatch_through_one_executor_resolves_its_own_target(
+    session, workspace, dependent, repo
+):
+    """AC1/AC2, REQ-1 A2. The memo's lifetime is one dispatch.
+
+    Both dispatches go through the *same* `CliAgentExecutor`, which is the only
+    thing the tests above never do. A memo cached on `self` reports zero
+    resolutions for the second dispatch, and the base branch's new commit never
+    reaches the integration branch — so the ticket's tree builds on a `main`
+    that is a dispatch out of date, with nothing logged and nothing failed.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    executor = CliAgentExecutor(session)
+
+    first, stopped = executor._prepare_tree(
+        make_run(session, workspace, dependent, "r2"),
+        dependent,
+        workspace,
+        workspace_root=Path(workspace.repo_path),
+        skip_git_branch=False,
+        advance_workflow=False,
+    )
+    assert stopped is None and first == root
+
+    landed = commit_on(Path(repo), "main", "from-main.txt", "landed on the base branch\n")
+    assert not _ancestor(root, landed, "HEAD"), (
+        "fixture: the base commit must not already be in the tree, or this proves nothing"
+    )
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        second, stopped = executor._prepare_tree(
+            make_run(session, workspace, dependent, "r3"),
+            dependent,
+            workspace,
+            workspace_root=Path(workspace.repo_path),
+            skip_git_branch=False,
+            advance_workflow=False,
+        )
+
+    assert stopped is None, stopped.stderr if stopped else None
+    assert second == root
+    assert calls == [Path(repo)], (
+        f"the second dispatch through one executor resolved {len(calls)} target "
+        f"branches, in {calls}: the memo is per dispatch, not per executor"
+    )
+    assert _ancestor(root, landed, "HEAD"), (
+        "resolving is the write that carries the base branch onto the target; a "
+        "memo that outlives its dispatch skips it and the tree never sees main"
+    )
+
+
+def test_a_dispatch_with_nothing_landed_does_no_checkout_and_no_merge(
+    session, workspace, dependent, repo, dispatch_git
+):
+    """AC4/AC6, REQ-5 A5. The saving has to happen on the measured path.
+
+    AC4 and AC5 call `ensure_ticket_branch` directly, so a fast path whose gate
+    a real dispatch never satisfies passes both of them and buys nothing — and
+    `GIT_CALLS_PER_STAGE` would then re-measure at roughly 15, which R6 says is
+    evidence about REQ-4 rather than a number to accept. This asks the dispatch
+    itself: a tree already on its branch with nothing landed since must be left
+    alone, with one `merge-base --is-ancestor` in place of the checkout, the
+    stat and the merge.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    before = _sha(root)
+    dispatch_git.clear()  # the first dispatch's own branch work must not be counted
+
+    second, stopped = _dispatch(session, workspace, dependent, "r2")
+
+    assert stopped is None and second == root
+    assert _sha(root) == before
+    assert _dispatch_asking(dispatch_git, "checkout") == [], (
+        "a tree already on its branch is not checked out again"
+    )
+    assert _dispatch_asking(dispatch_git, "merge", "--no-edit") == [], (
+        "and nothing landed, so nothing is merged"
+    )
+    assert _dispatch_asking(dispatch_git, "status", "--porcelain") == [], (
+        "nor stat-ed to find out whether it could be"
+    )
+    assert _dispatch_asking(dispatch_git, "merge-base", "--is-ancestor") != [], (
+        "the one question that establishes it must actually be asked"
+    )

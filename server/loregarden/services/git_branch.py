@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.branch_takes_target import MergeTurnSeat, bring_tree_along, take_target
+from loregarden.services.git_merge_noco import is_ancestor
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.git_trees import is_main_working_tree, main_working_tree
 from loregarden.services.primary_checkout import require_clean_tree
@@ -321,6 +322,11 @@ def ensure_ticket_branch(
     scratchpads — remove that worktree once and retry. Gate autofix never sees
     this failure because it happens before any agent starts.
 
+    Returns early, having asked git exactly one question, when the tree is
+    already on the branch and ``start_point`` is already an ancestor of its
+    HEAD: nothing landed on the target since, so the checkout cannot move the
+    tree and the merge is a no-op (lg-milestone-that-918).
+
     Which tree is this repository's *main* working tree is derived once per
     call, from git, and held for the rest of it: both the removal guard and the
     `PrimaryCheckoutUse` the refusal names read that one value, and derived
@@ -340,8 +346,33 @@ def ensure_ticket_branch(
 
     if not (repo_root / ".git").exists():
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
-    main_tree = main_working_tree(repo_root)
     tree = read_tree(repo_root)
+    if tree.branch == branch and is_ancestor(repo_root, start_point, tree.head_sha):
+        # Nothing landed on the target since this tree last saw it, so the
+        # checkout cannot move it and the merge is a no-op ("Already up to
+        # date"). One `merge-base --is-ancestor` establishes that in place of
+        # `rev-parse --verify` + `checkout` + `status --porcelain` + `merge`.
+        #
+        # Both halves of the gate are load-bearing. `tree.branch == branch` is
+        # what preserves lg-milestone-that-772's no-loss guarantee: a tree left
+        # on another branch — or detached, where `read_tree` reports `""` — is
+        # owed the fix-up below, and the fix-up is the only thing that puts it
+        # back. The ancestry test is the "nothing landed since" condition; drop
+        # it and a refresh that was genuinely owed is skipped. `start_point=""`
+        # is not "already reachable", and `is_ancestor` answers False for an
+        # empty argument, so no extra branch is needed for it.
+        #
+        # `_refresh_onto`'s "has uncommitted changes" warning is deliberately
+        # not emitted here: there was nothing to refresh, so a dirty tree is
+        # told nothing rather than told a refresh was skipped.
+        return branch
+
+    # Derived once per call and held — never lazily, never twice. Both consumers
+    # (the fix-up below and `_classify_holder` in the handler) are unreachable
+    # from the fast path above, which is the only reason it sits here rather
+    # than before `read_tree`; two derivations that disagree is the defect
+    # lg-milestone-that-916 exists for.
+    main_tree = main_working_tree(repo_root)
     if tree.branch != branch:
         # An unknown topology (`main_tree is None`) keeps the value that
         # shipped: the refusal names the shared checkout only where the tree
