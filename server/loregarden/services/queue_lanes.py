@@ -164,7 +164,7 @@ class QueueLaneService:
 
     # ---- writing -------------------------------------------------------
 
-    def _already_queued(
+    def already_queued(
         self, *, ticket_id: str, entry_kind: QueueEntryKind, stage_key: str
     ) -> QueuedRun | None:
         """A queued entry for this exact request, if one is already waiting.
@@ -226,7 +226,7 @@ class QueueLaneService:
                 f"{self.max_concurrent}. Pick a lane from 1 to {self.max_concurrent}."
             )
 
-        existing = self._already_queued(
+        existing = self.already_queued(
             ticket_id=ticket.id, entry_kind=entry_kind, stage_key=stage_key
         )
         if existing is not None:
@@ -320,7 +320,7 @@ class QueueLaneService:
         entry.position = position
         self.session.add(entry)
         self.session.commit()
-        self._renumber(entry.slot_number)
+        self.renumber(entry.slot_number)
         self.session.refresh(entry)
         return entry.position
 
@@ -373,7 +373,7 @@ class QueueLaneService:
             logger.warning("Dropping lane entry %s: ticket %s is gone", head.id, head.ticket_id)
             self.session.delete(head)
             self.session.commit()
-            self._renumber(slot_number)
+            self.renumber(slot_number)
             release_slot(self.session, slot)
             return self.start_lane_head(slot_number)
 
@@ -407,7 +407,7 @@ class QueueLaneService:
         self.session.add(slot)
         self.session.add(head)
         self.session.commit()
-        self._renumber(slot_number)
+        self.renumber(slot_number)
 
         logger.info(
             "Lane %d started %s for ticket %s",
@@ -711,7 +711,7 @@ class QueueLaneService:
         self.session.commit()
 
         for slot_number in {entry.slot_number for entry in stranded}:
-            self._renumber(slot_number)
+            self.renumber(slot_number)
 
     def _cancel_terminal_ticket_entries(self) -> list[int]:
         """Drop waiting entries whose ticket is already done or won't-do.
@@ -751,7 +751,7 @@ class QueueLaneService:
         self.session.commit()
 
         for slot_number in lanes:
-            self._renumber(slot_number)
+            self.renumber(slot_number)
         return sorted(lanes)
 
     def _entry_work_is_over(self, entry: QueuedRun) -> bool:
@@ -1015,7 +1015,7 @@ class QueueLaneService:
         slot_number = entry.slot_number
         self.session.delete(entry)
         self.session.commit()
-        self._renumber(slot_number)
+        self.renumber(slot_number)
         emit_execution_update()
         return True
 
@@ -1036,8 +1036,8 @@ class QueueLaneService:
         self.session.commit()
 
         if from_lane != slot_number:
-            self._renumber(from_lane)
-        self._renumber(slot_number, insert_at=(entry.id, position))
+            self.renumber(from_lane)
+        self.renumber(slot_number, insert_at=(entry.id, position))
 
         # A lane that was idle should pick this up rather than sit on it.
         target = self._slot(slot_number)
@@ -1092,7 +1092,7 @@ class QueueLaneService:
             select(AgentSlot).where(AgentSlot.slot_number == slot_number)
         ).first()
 
-    def _renumber(self, slot_number: int, insert_at: tuple[str, int] | None = None) -> None:
+    def renumber(self, slot_number: int, insert_at: tuple[str, int] | None = None) -> None:
         """Close gaps in a lane so positions read 1..N with no holes."""
         waiting = self.waiting_in_lane(slot_number)
         if insert_at:
