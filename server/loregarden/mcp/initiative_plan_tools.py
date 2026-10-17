@@ -113,7 +113,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "capability) on or off, or set how many of its tickets may run at once (1-12). On, "
             "it queues ready tickets in its subtree every minute — critical path first, up to "
             "max_parallel — and never tickets that need a person. It stops itself when three "
-            "tickets it started end blocked. Turning it on queues the first batch immediately."
+            "tickets it started end blocked. Turning it on queues the first batch immediately. "
+            "Off means finish what is running, then stop: tickets it queued that have not "
+            "started are held in their lanes, and turning it back on puts them back."
         ),
         "inputSchema": {
             "type": "object",

@@ -65,6 +65,7 @@ from loregarden.models.domain import (
     comparable_utc,
     utcnow,
 )
+from loregarden.services.autopilot_hold import hold_queued_work, release_held_work
 from loregarden.services.autopilot_sign_off import (
     autopilot_may_sign_off,
     record_autopilot_sign_off,
@@ -208,6 +209,8 @@ def _pause(session: Session, plan: InitiativePlan, reason: str) -> None:
     _record(session, plan.initiative_id, AutopilotAction.PAUSED, detail=reason)
     session.commit()
     logger.warning("Autopilot paused for initiative %s: %s", plan.initiative_id, reason)
+    # Stopping itself is turning off: what it queued and has not started waits.
+    hold_queued_work(session, plan)
 
 
 def _dispatch(
@@ -384,8 +387,12 @@ def set_autopilot(
     plan = session.get(InitiativePlan, initiative_id) or InitiativePlan(initiative_id=initiative_id)
     if update.max_parallel is not None:
         plan.max_parallel = update.max_parallel
-    if update.enabled is not None and update.enabled != plan.autopilot:
-        plan.autopilot = update.enabled
+    switched = update.enabled is not None and update.enabled != plan.autopilot
+    # When it was last turned on: every hold its turn-off made since then is
+    # one this turn-on releases.
+    previous_since = plan.autopilot_since
+    if switched:
+        plan.autopilot = bool(update.enabled)
         if update.enabled:
             plan.autopilot_since = utcnow()
             plan.paused_reason = ""
@@ -398,6 +405,12 @@ def set_autopilot(
     plan.updated_at = utcnow()
     session.add(plan)
     session.commit()
+    if switched and plan.autopilot:
+        release_held_work(session, initiative_id, previous_since)
+    elif switched:
+        # Off is "finish what is running, then stop", so what it queued and
+        # has not started is held rather than left for its lane to start.
+        hold_queued_work(session, plan)
     session.refresh(plan)
     return plan
 
