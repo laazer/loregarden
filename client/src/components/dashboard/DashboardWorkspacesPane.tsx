@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api, type WorkflowTemplateSummary, type WorkspaceSummary } from "../../api/client";
 import { useAgentAction } from "../../lib/agentActions/useAgentAction";
-import { workspacesPath } from "../../lib/appNavigation";
+import { workspaceDashboardPath, workspacesPath } from "../../lib/appNavigation";
 import { PaneHideButton } from "./PaneHideButton";
 import { Select } from "../ui/Select";
 
@@ -128,6 +128,11 @@ export function DashboardWorkspacesPane({
         {archivedCount > 0 && (
           <Link className="workspace-meta" style={{ display: "block", padding: "8px 10px" }} to={workspacesPath("workspaces")}>
             {archivedCount} archived — manage on the Workspaces page
+          </Link>
+        )}
+        {selected !== "all" && (
+          <Link className="workspace-meta workspace-dashboard-link" to={workspaceDashboardPath(selected)}>
+            Open the {workspaces.find((w) => w.slug === selected)?.name ?? selected} dashboard
           </Link>
         )}
         {selected !== "all" && workflowTemplates && (
