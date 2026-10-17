@@ -1,0 +1,968 @@
+{
+ "events_truncated": false,
+ "kinds": [],
+ "more_tickets": 355,
+ "since": "2026-09-28T00:00:00Z",
+ "tickets": [
+  {
+   "external_id": "lg-m42-419",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "97bf37d3-31ce-5d60-830c-bd165c9aeeaa",
+   "title": "Stop the rework ledger's loop cap"
+  },
+  {
+   "external_id": "lg-m27-80",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "82a91017-1238-5e30-8545-dd1142d33676",
+   "title": "Split memory recall ranking"
+  },
+  {
+   "external_id": "lg-m38-91",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
+   "title": "Add GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m21-452",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "ec0fc316-8c0d-50a8-bb35-038633054c5a",
+   "title": "Add GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m20-289",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "445f09f9-c6ba-5b02-9f7f-921b622d3016",
+   "title": "Retry worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m20-559",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "dcdb7f3e-0316-518e-a26f-809dd0a7d36f",
+   "title": "Surface the run log's live tail"
+  },
+  {
+   "external_id": "lg-m4-381",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "5edc3157-6521-5925-9508-16761e358c5c",
+   "title": "Fix docker capacity leases"
+  },
+  {
+   "external_id": "lg-m19-450",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "d0c4d496-96c4-578d-b505-cdf24f159c3f",
+   "title": "Make GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m15-716",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "a2cd92cf-78c7-5bc5-bbde-4f38dd7feb7e",
+   "title": "Stop GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m43-204",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "e8534274-fd9f-5840-afe7-389433eb7b37",
+   "title": "Retry the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m16-16",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "in_progress",
+   "ticket_id": "e9a3ee2c-f9d8-52b3-a282-75b1a85ab3ea",
+   "title": "M16 \u2014 Add the run log's live tail"
+  },
+  {
+   "external_id": "lg-m30-623",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "d1ecc9fe-28e7-57d3-94e5-09d904c675d2",
+   "title": "Show initiative progress rollup"
+  },
+  {
+   "external_id": "lg-m52-591",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "87ffc4bf-886a-5d79-b101-fdb405ddb95d",
+   "title": "Route initiative progress rollup"
+  },
+  {
+   "external_id": "lg-m41-256",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "in_progress",
+   "ticket_id": "0677cec6-42a7-5133-ae12-2d4538470964",
+   "title": "Make worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m29-676",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "0fc0da09-b4eb-50b6-8b4a-f8864e1a52b7",
+   "title": "Show docker capacity leases"
+  },
+  {
+   "external_id": "lg-m26-349",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "b9538950-51dd-5c25-a638-ed908d71e154",
+   "title": "Split branch cleanup after a squash merge"
+  },
+  {
+   "external_id": "lg-m31-300",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "in_progress",
+   "ticket_id": "e7412179-0701-5733-9a10-93f028f40210",
+   "title": "Route memory recall ranking"
+  },
+  {
+   "external_id": "lg-m34-519",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "f2dc486d-153f-5e56-8da9-cfc8d4941ef2",
+   "title": "Surface stage timeout budgets"
+  },
+  {
+   "external_id": "lg-m9-494",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "557adfa8-5e7f-5f7c-a327-43b614c7fc50",
+   "title": "Surface the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m16-339",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "98e5dfc0-008b-550c-8202-f346ed81fdb5",
+   "title": "Stop the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m35-142",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "f3c526a3-b984-56bf-a2e0-7762fd4c3a0a",
+   "title": "Retry worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m40-525",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "bfc11847-0319-56b1-9582-dddee411d70d",
+   "title": "Stop stage timeout budgets"
+  },
+  {
+   "external_id": "lg-m11-388",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "8aef7d68-9bf5-56ed-baf6-aa6a45d488d8",
+   "title": "Cache GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m23-292",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "08a87595-062f-5f75-ab5f-b2ab665eafa3",
+   "title": "Retry branch cleanup after a squash merge"
+  },
+  {
+   "external_id": "lg-m35-790",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "0dc18319-d3ca-5fb9-af4d-782fca0616d2",
+   "title": "Cache GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m32-247",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "a0674e76-b880-5348-818b-6ca575e0649e",
+   "title": "Cache GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m51-428",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "1bb99c6f-f58f-50a4-b9af-8c8b0fe19e73",
+   "title": "Route the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m29-136",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "385db7b7-0c7e-5197-98ba-55ca986a3fbc",
+   "title": "Cache stage timeout budgets"
+  },
+  {
+   "external_id": "lg-m20-127",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "c7ad1f85-4736-54f4-b100-46050029cc26",
+   "title": "Stop the queue board's stalled lane"
+  },
+  {
+   "external_id": "lg-m5-5",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "ac1f6162-d94a-59e7-ba2f-c46ee9391ed2",
+   "title": "M05 \u2014 Add worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m40-93",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "6d06eb9b-255c-5a70-8213-20456a7516d1",
+   "title": "Fix the run log's live tail"
+  },
+  {
+   "external_id": "lg-m16-447",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "19960321-9399-5ddc-a27a-5bd5ec694200",
+   "title": "Fix docker capacity leases"
+  },
+  {
+   "external_id": "lg-m5-436",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "77abb6a9-5513-560b-a239-84d5f36ea6eb",
+   "title": "Retry worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m47-208",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
+   "title": "Route GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m19-720",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "62e1dc33-6e3b-5181-bbf7-c69dd4ba090b",
+   "title": "Split branch cleanup after a squash merge"
+  },
+  {
+   "external_id": "lg-m33-572",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "13871413-8ece-50b1-a36a-6c9807627022",
+   "title": "Show initiative progress rollup"
+  },
+  {
+   "external_id": "lg-m17-70",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "821b09db-9ae2-5c63-8c2f-6ca417a8bf6c",
+   "title": "Fix GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m12-389",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "0ece7a46-e0d4-5922-88bf-c28f76e2e597",
+   "title": "Cache initiative progress rollup"
+  },
+  {
+   "external_id": "lg-m10-10",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "48e77f84-88c8-5340-aa20-368b257c9756",
+   "title": "M10 \u2014 Split worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m7-546",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "0260942e-04f7-5720-94c8-75d2e48f9cc9",
+   "title": "Add branch cleanup after a squash merge"
+  },
+  {
+   "external_id": "lg-m34-357",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "a3a5be00-f038-50b0-bbfa-47a3678a6674",
+   "title": "Retry worktree isolation for chat turns"
+  },
+  {
+   "external_id": "lg-m54-323",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "5620d165-36bc-50e1-b85f-bd9dd18514f2",
+   "title": "Fix GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m21-128",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "8dccf859-e143-566e-b2df-d2ee69247521",
+   "title": "Add the run log's live tail"
+  },
+  {
+   "external_id": "lg-m18-665",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "a564c606-17e9-53d4-b651-01da91b2e794",
+   "title": "Fix the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m13-228",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "af84fa89-2505-50dc-a8d9-2bd3b1414e5d",
+   "title": "Cache GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m36-359",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "20398900-9872-539b-8494-f69a01e7bcab",
+   "title": "Stop GitHub issue two-way sync"
+  },
+  {
+   "external_id": "lg-m19-774",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "3dc86f53-1905-5cf2-8a33-221fe451288a",
+   "title": "Split the approval inbox for parked stages"
+  },
+  {
+   "external_id": "lg-m12-335",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "f0868f78-c822-5837-ad72-c3e924c4943a",
+   "title": "Split gate outcomes on stage transitions"
+  },
+  {
+   "external_id": "lg-m49-49",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "c91272f3-e826-53f2-aee4-24169ac6400d",
+   "title": "M49 \u2014 Route the run log's live tail"
+  },
+  {
+   "external_id": "lg-m27-134",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "ab5c8230-0839-5cfc-9d7a-de9c9f8d1767",
+   "title": "Split branch cleanup after a squash merge"
+  }
+ ],
+ "totals": {
+  "approval_requested": 147,
+  "created": 361,
+  "gate_failed": 6,
+  "landed": 50,
+  "landing_failed": 10,
+  "moved": 168,
+  "run_failed": 54
+ },
+ "workspace_slug": "loregarden"
+}

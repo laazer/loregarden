@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from loregarden.models.domain import Workspace
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.workspace_activity import workspace_activity
 from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape
-from sqlmodel import Session
+from loregarden.testing.prod_shape_activity import ACTIVITY_CALIBRATION
+from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
+from sqlmodel import Session, select
 
 
 @pytest.fixture(name="prod_shape")
@@ -74,3 +79,18 @@ def test_one_initiative_claims_a_cross_workspace_theme(prod_shape, client):
     assert initiative["state"] == "in_progress"
     # Most milestones stay unclaimed: that is still the shape that dominates.
     assert len(client.get("/api/initiatives/attachable-milestones").json()) >= 65
+
+
+def test_activity_digest_matches_the_live_two_weeks(isolated_db):
+    """Live, 2026-10-17: 405 loregarden tickets had something happen in 14 days.
+
+    Over the scenario alone: the `client` fixture's bootstrap seed writes
+    events of its own, which are not production's shape.
+    """
+    with Session(isolated_db) as session:
+        build_prod_shape(session)
+        for slug, shape in ACTIVITY_CALIBRATION.items():
+            workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).one()
+            digest = workspace_activity(session, workspace, utcnow() - ACTIVITY_WINDOW)
+            assert digest.totals == shape.kinds
+            assert len(digest.tickets) + digest.more_tickets == shape.tickets

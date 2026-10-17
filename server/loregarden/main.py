@@ -56,6 +56,7 @@ from loregarden.api import (
     views,
     workflow_monitor,
     workflows,
+    workspace_dashboard,
     workspace_integration,
     workspaces,
 )
@@ -296,6 +297,7 @@ app.include_router(ticket_handoff.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
+app.include_router(workspace_dashboard.router, prefix="/api")
 app.include_router(calendar_events.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(branch_triage.router, prefix="/api")

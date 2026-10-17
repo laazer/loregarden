@@ -81,7 +81,7 @@ class GhCheck(BaseModel):
     target_url: str = Field("", alias="targetUrl")
 
 
-class _GhPullRequest(BaseModel):
+class GhPullRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     number: int
@@ -171,7 +171,7 @@ def check_outcome(check: GhCheck) -> PullRequestCheckOutcome:
     return PullRequestCheckOutcome.FAILING
 
 
-def _to_status(raw: _GhPullRequest) -> PullRequestStatus:
+def pull_request_status(raw: GhPullRequest) -> PullRequestStatus:
     return PullRequestStatus(
         number=raw.number,
         url=raw.url,
@@ -290,10 +290,10 @@ def _view(session: Session, ticket: Ticket, repo_root: Path, branch: str) -> Tic
             return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=branch)
         return _failed(session, ticket, branch, detail or f"gh pr view exited {proc.returncode}")
     try:
-        raw = _GhPullRequest.model_validate(json.loads(proc.stdout or "{}"))
+        raw = GhPullRequest.model_validate(json.loads(proc.stdout or "{}"))
     except (ValueError, ValidationError) as exc:
         return _failed(session, ticket, branch, f"unexpected gh output: {exc}")
-    status = _to_status(raw)
+    status = pull_request_status(raw)
     if raw.state == "OPEN" and raw.merge_state == "BLOCKED":  # py-org: allow-string
         status.unsigned_commits = _unsigned_commits(repo_root, raw.number)
     return TicketPullRequest(lookup=PullRequestLookup.FOUND, branch=branch, pull_request=status)
