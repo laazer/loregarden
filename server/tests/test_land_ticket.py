@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import logging
 import shutil
 import subprocess
 from unittest import mock
@@ -28,6 +30,9 @@ from tests.worktree_helpers import (
     git,
     make_repo,
 )
+
+#: lg-milestone-that-928's fallback is logged by the helper that could not answer.
+NOCO_LOGGER = "loregarden.services.git_merge_noco"
 
 
 @pytest.fixture(name="session")
@@ -458,6 +463,39 @@ def test_unrelated_work_in_the_worktree_survives_the_refresh(
     assert (tree / "sibling.txt").read_text() == "another ticket\n"
 
 
+def test_staged_work_in_the_worktree_survives_the_refresh(
+    session, workspace, repo, milestone, tmp_path
+):
+    """A staged addition is the operator's, and the repair may not discard it.
+
+    `read-tree -m -u HEAD` is a *one-tree* read-tree, whose documented meaning
+    is "reset the index to this tree". A staged addition is in neither the
+    index's tree nor `HEAD`, so it is dropped from the index *and* the working
+    tree at rc=0 — no refusal, nothing on the `LandResult`, nothing blocked
+    (lg-milestone-that-920). The two-tree form applies the ref move instead.
+
+    `_advance_the_target` is what makes the refresh write a commit, which is
+    the only leg that reaches the repair at all; without it this exercises
+    `already_contained` and passes on the broken code too.
+    """
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-23")
+    _advance_the_target(repo, target)
+    tree = _worktree_on(repo, ticket.branch, tmp_path / "wt-23")
+    (tree / "staged.txt").write_text("staged\n")
+    git(tree, "add", "staged.txt")
+
+    _finish(session, ticket)
+
+    assert ticket.state == TicketState.DONE
+    assert (tree / "staged.txt").exists(), "the staged addition was discarded from the worktree"
+    assert (tree / "staged.txt").read_text() == "staged\n"
+    assert "A  staged.txt" in git(tree, "status", "--porcelain").stdout, (
+        "it is still staged, not merely left on disk"
+    )
+    # The refresh really ran, so the test cannot pass by the repair never happening.
+    assert (tree / "sibling.txt").read_text() == "another ticket\n"
+
+
 def test_a_worktree_is_untouched_when_the_refresh_wrote_nothing(
     session, workspace, repo, milestone, tmp_path
 ):
@@ -555,3 +593,369 @@ def test_a_worktree_that_vanishes_mid_refresh_blocks_rather_than_raising(
     assert "No such file or directory" in text, "the OS's own words"
     assert ticket.next_agent != REPAIR_AGENT_ID, "there is no conflict to resolve"
     assert _sha(repo, target) == target_before, "the land merge never ran"
+
+
+# --- landed_sha has one meaning (lg-milestone-that-928) ----------------------
+#
+# **D**: `landed_sha` is the FIRST commit on `landed_branch` that contains the
+# ticket's work — the merge commit when a merge brought the branch in, the
+# branch tip when `landed_branch` fast-forwarded to it. One meaning, the same
+# whether the landing ran in the workflow or was made by hand in git, because
+# D is a property of the git graph and not of which code path observed it.
+#
+# 782 recorded `26be6aea` (the landing merge commit) and then `41f216f9` (the
+# branch tip) for one landing. #578 stopped the overwrite; it did not stop the
+# first write from being wrong, because `_landing_on_record` only suppresses
+# the re-write when `landed_sha` is already set. The by-hand leg — a person
+# made the landing merge, so the row was never written — still records the
+# source tip that `merge_tips` hands back for an already-contained branch.
+
+
+@pytest.fixture(name="other_milestone")
+def other_milestone_fixture(session, workspace):
+    """A second subtree, so the two legs below land on two separate targets."""
+    ms = Ticket(
+        external_id="lg-ms-928",
+        workspace_id=workspace.id,
+        title="Other milestone",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    session.add(ms)
+    session.commit()
+    session.refresh(ms)
+    return ms
+
+
+@dataclasses.dataclass(frozen=True)
+class _Landing:
+    """What one leg recorded, and the two commits it could have recorded."""
+
+    leg: str
+    target: str
+    #: The commit that actually brought the branch onto the target.
+    merge: str
+    #: The ticket branch's tip — the wrong answer, and the one 782 ended with.
+    tip: str
+    #: `ticket.landed_sha` after the landing.
+    recorded: str
+    #: `LandResult.landed_sha` from the same landing.
+    returned: str
+
+
+def _merge_by_hand(repo, target, source):
+    """A real `git merge --no-ff` of `source` into `target`, in a throwaway worktree.
+
+    What a person does when they resolve a landing conflict themselves: the
+    landing merge is in git before any loregarden code sees it, and the ticket
+    row still says nothing about it.
+    """
+    tree = repo.parent / f"byhand-{target.replace('/', '-')}"
+    git(repo, "worktree", "add", "-q", str(tree), target)
+    try:
+        git(tree, "merge", "--no-ff", "-q", "-m", f"Merge {source} into {target}", source)
+        return _sha(tree, "HEAD")
+    finally:
+        git(repo, "worktree", "remove", "--force", str(tree))
+
+
+def _landed_by_hand(session, workspace, repo, milestone, external_id):
+    """A ticket whose landing merge exists in git, with `landed_sha` still empty.
+
+    Returns the ticket, its target, its branch tip and the landing merge. The
+    target is moved on past the merge afterwards, so a helper that answered
+    with the target's tip instead of the merge commit cannot pass by accident.
+
+    Nothing here calls `land_ticket`: this is fixture, so a failure in it is an
+    ERROR and cannot be mistaken for the defect under test.
+    """
+    ticket, target, tip = _ticket_with_work(session, workspace, repo, milestone, external_id)
+    merge = _merge_by_hand(repo, target, ticket.branch)
+    commit_on(repo, target, f"{external_id}-sibling.txt", "another ticket\n")
+    assert ticket.landed_sha == "", "the by-hand leg is the one where the row was never written"
+    assert tip in _parents(repo, merge), "the fixture's merge did not bring the branch in"
+    assert _sha(repo, target) != merge, "the target was not moved on past the merge"
+    return ticket, target, tip, merge
+
+
+@pytest.fixture(name="landed_both_ways")
+def landed_both_ways_fixture(session, workspace, repo, milestone, other_milestone):
+    """The same ticket-shaped work landed twice: once by the workflow, once by hand.
+
+    Two tickets over two targets, not one ticket twice: the first landing
+    changes the git graph the second would be observed against. What is
+    compared is therefore the *shape* of what each leg recorded — each must be
+    the first commit on its own target containing its own branch — which is
+    the invariant AC-3 is about.
+    """
+    workflow_ticket, workflow_target, workflow_tip = _ticket_with_work(
+        session, workspace, repo, milestone, "lg-l-928-workflow"
+    )
+    workflow_result = land_ticket(session, workflow_ticket, workspace)
+    workflow_merge = _sha(repo, workflow_target)
+    session.refresh(workflow_ticket)
+    assert workflow_result.ok, f"the workflow leg did not land: {workflow_result.detail}"
+    assert workflow_tip in _parents(repo, workflow_merge), "the workflow leg made no merge commit"
+
+    byhand_ticket, byhand_target, byhand_tip, byhand_merge = _landed_by_hand(
+        session, workspace, repo, other_milestone, "lg-l-928-byhand"
+    )
+    byhand_result = land_ticket(session, byhand_ticket, workspace)
+    session.refresh(byhand_ticket)
+    assert byhand_result.ok, f"the by-hand leg did not land: {byhand_result.detail}"
+    assert byhand_result.skipped is LandSkip.ALREADY_LANDED, "the by-hand merge was re-merged"
+
+    return (
+        _Landing(
+            leg="workflow",
+            target=workflow_target,
+            merge=workflow_merge,
+            tip=workflow_tip,
+            recorded=workflow_ticket.landed_sha,
+            returned=workflow_result.landed_sha,
+        ),
+        _Landing(
+            leg="by hand",
+            target=byhand_target,
+            merge=byhand_merge,
+            tip=byhand_tip,
+            recorded=byhand_ticket.landed_sha,
+            returned=byhand_result.landed_sha,
+        ),
+    )
+
+
+def test_both_legs_record_the_commit_that_landed_the_branch(landed_both_ways):
+    """R6.1. The cross-leg invariant, in one assertion.
+
+    A pair of per-leg tests, each asserting its own leg's expected value, would
+    *both* pass under the bug — which is how it survived #578. What has to be
+    pinned is that the two legs agree, and that they agree on the merge commit
+    rather than on the branch tip (both legs being wrong the same way would
+    satisfy equality alone).
+    """
+    legs = landed_both_ways
+    recorded = {leg.leg: leg.recorded for leg in legs}
+    merges = {leg.leg: leg.merge for leg in legs}
+    tips = {leg.leg: leg.tip for leg in legs}
+
+    assert recorded == merges and all(recorded[name] != tips[name] for name in recorded), (
+        "one landing, one meaning: each leg must record the first commit on its "
+        "target that contains its branch, which is the merge commit — never the "
+        "branch tip.\n"
+        + "\n".join(
+            f"  {leg.leg} leg on {leg.target}: recorded {leg.recorded or '<empty>'}, "
+            f"merge commit {leg.merge}, branch tip {leg.tip}"
+            for leg in legs
+        )
+    )
+
+
+def test_the_by_hand_leg_records_the_landing_merge_not_the_branch_tip(
+    session, workspace, repo, milestone
+):
+    """R4.1. The red-to-green case: `landed_sha` empty, the merge already in git.
+
+    `merge_tips` reports `already_contained` with the *source* tip, and
+    `_landing_on_record` cannot suppress a write that has nothing to compare
+    against, so this leg wrote the branch tip. The row, and the value handed
+    back to the caller, must both be the commit that landed it.
+    """
+    ticket, target, tip, merge = _landed_by_hand(
+        session, workspace, repo, milestone, "lg-l-928-row"
+    )
+    target_tip = _sha(repo, target)
+
+    result = land_ticket(session, ticket, workspace)
+
+    assert result.ok and result.skipped is LandSkip.ALREADY_LANDED
+    session.refresh(ticket)
+    assert ticket.landed_branch == target
+    assert ticket.landed_sha == merge, (
+        f"the row must hold the landing merge {merge}, not the branch tip {tip} "
+        f"and not the target's tip {target_tip}: got {ticket.landed_sha or '<empty>'}"
+    )
+    assert result.landed_sha == merge, (
+        f"the returned value must be the row's: row {ticket.landed_sha}, "
+        f"returned {result.landed_sha or '<empty>'}, branch tip {tip}"
+    )
+
+
+def test_relanding_returns_the_commit_the_row_already_holds(session, workspace, repo, milestone):
+    """R4.2. The MCP payload, the `TICKET_LANDED` event and the row name one commit.
+
+    On the already-recorded leg the guard from #578 correctly leaves the row
+    alone, and then `LandResult` carried `outcome.sha` — the branch tip — so
+    one landing was described three different ways depending on who was asked.
+    """
+    ticket, target, tip = _ticket_with_work(session, workspace, repo, milestone, "lg-l-928-again")
+    first = land_ticket(session, ticket, workspace)
+    merge = _sha(repo, target)
+    assert first.ok and first.landed_sha == merge, "the first landing must merge"
+
+    second = land_ticket(session, ticket, workspace)
+
+    session.refresh(ticket)
+    assert second.ok and second.skipped is LandSkip.ALREADY_LANDED
+    assert ticket.landed_sha == merge, "#578's guard: the row is left alone"
+    assert second.landed_sha == merge, (
+        f"the payload must agree with the row: row {ticket.landed_sha}, "
+        f"returned {second.landed_sha}, branch tip {tip}"
+    )
+
+
+def test_a_landing_commit_that_cannot_be_resolved_falls_back_loudly(
+    session, workspace, repo, milestone, caplog
+):
+    """R4.6. The fallback is reachable only through a logged failure.
+
+    When git cannot answer which commit first contained the branch, recording
+    the source tip is the best left — but "it failed" must not be
+    indistinguishable from "it landed at the tip". The only route to the
+    fallback is a '' from `first_containing`, which always logs; the call site
+    adds no second, quieter one.
+    """
+    from loregarden.services import git_merge_noco as module
+
+    ticket, target, tip, merge = _landed_by_hand(
+        session, workspace, repo, milestone, "lg-l-928-blind"
+    )
+    real = module.run_git
+
+    def no_ancestry_path(args, **kwargs):
+        if args and args[0] == "rev-list" and "--ancestry-path" in list(args):
+            return subprocess.CompletedProcess(
+                list(args), 128, stdout="", stderr="fatal: rev-list is on fire"
+            )
+        return real(args, **kwargs)
+
+    caplog.clear()
+    with (
+        caplog.at_level(logging.WARNING, logger=NOCO_LOGGER),
+        mock.patch.object(module, "run_git", side_effect=no_ancestry_path),
+    ):
+        result = land_ticket(session, ticket, workspace)
+
+    session.refresh(ticket)
+    assert result.ok and result.skipped is LandSkip.ALREADY_LANDED
+    assert ticket.landed_sha == tip, (
+        f"with no answer from git the source tip {tip} is what is left; the real "
+        f"landing commit was {merge}, which nothing here could see: got "
+        f"{ticket.landed_sha or '<empty>'}"
+    )
+    assert result.landed_sha == ticket.landed_sha, "the payload still agrees with the row"
+    logged = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == NOCO_LOGGER and record.levelno >= logging.WARNING
+    ]
+    assert logged, (
+        "a landing recorded at the branch tip because git could not be asked must "
+        "say so; silently it reads exactly like a fast-forward landing"
+    )
+
+
+# --- adversarial: the legs R4 does not reach (test-break, 928) --------------
+
+
+def _noco_warnings(caplog):
+    """Every WARNING-or-worse line `git_merge_noco` logged, by message."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == NOCO_LOGGER and record.levelno >= logging.WARNING
+    ]
+
+
+def test_a_target_already_at_the_branch_tip_records_the_tip_and_says_nothing(
+    session, workspace, repo, milestone, caplog
+):
+    """The second legitimate empty range, reached through `land_ticket` itself.
+
+    `merge_tips` short-circuits on `source_sha == target_sha` as well as on
+    ancestry, so the already-contained leg is taken for a target that *is* the
+    branch tip. Under D the tip is the right answer here — it is the first
+    commit on the target containing the work — and the test-break interest is
+    that it must arrive as an answer: recorded, returned, and with nothing
+    logged at WARNING. An implementation that distinguished "empty rev-list"
+    from "could not answer" only by the presence of a merge commit would
+    record the right sha here and shout about it, which makes R4.6's warning
+    worthless as a signal.
+    """
+    ticket, target, tip = _ticket_with_work(session, workspace, repo, milestone, "lg-l-928-ff")
+    git(repo, "update-ref", f"refs/heads/{target}", tip)
+    assert _sha(repo, target) == tip, "the fixture did not fast-forward the target"
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=NOCO_LOGGER):
+        result = land_ticket(session, ticket, workspace)
+
+    session.refresh(ticket)
+    assert result.ok and result.skipped is LandSkip.ALREADY_LANDED
+    assert ticket.landed_sha == tip, (
+        f"a target that is the branch tip first contained the work at {tip}: got "
+        f"{ticket.landed_sha or '<empty>'}"
+    )
+    assert result.landed_sha == ticket.landed_sha, "the payload still agrees with the row"
+    assert _noco_warnings(caplog) == [], (
+        "a fast-forwarded landing is an answer, not a fallback; warning here makes "
+        f"the R4.6 warning meaningless: {_noco_warnings(caplog)}"
+    )
+
+
+def test_a_by_hand_landing_git_can_answer_logs_nothing(session, workspace, repo, milestone, caplog):
+    """R4.6's control: the warning only means something if the success leg is quiet.
+
+    `test_a_landing_commit_that_cannot_be_resolved_falls_back_loudly` asserts a
+    WARNING when git could not answer. On its own that assertion is satisfied
+    by an implementation that warns on *every* already-contained landing, at
+    which point "it failed" and "it landed" are once again spelled the same.
+    """
+    ticket, _target, _tip, merge = _landed_by_hand(
+        session, workspace, repo, milestone, "lg-l-928-quiet"
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=NOCO_LOGGER):
+        result = land_ticket(session, ticket, workspace)
+
+    session.refresh(ticket)
+    assert result.ok and ticket.landed_sha == merge
+    assert _noco_warnings(caplog) == [], (
+        "git answered, so nothing failed; a warning on the success leg is the same "
+        f"alarm as the failure leg: {_noco_warnings(caplog)}"
+    )
+
+
+def test_a_by_hand_landing_recorded_once_does_not_move_when_landed_again(
+    session, workspace, repo, milestone
+):
+    """Determinism across repeats: the by-hand leg's own 782 scenario.
+
+    782 is a sha that changed on a *second* landing. The first write is what
+    R4.1 fixes; this pins that the fixed write then survives the guard from
+    #578, which is the half that was already shipped. Landing a third time
+    changes nothing either — the row is the same commit on every call, and so
+    is the value handed back.
+    """
+    ticket, _target, tip, merge = _landed_by_hand(
+        session, workspace, repo, milestone, "lg-l-928-stable"
+    )
+
+    first = land_ticket(session, ticket, workspace)
+    session.refresh(ticket)
+    after_first = ticket.landed_sha
+    second = land_ticket(session, ticket, workspace)
+    session.refresh(ticket)
+    third = land_ticket(session, ticket, workspace)
+    session.refresh(ticket)
+
+    assert after_first == merge, f"the first landing wrote {after_first or '<empty>'}, not {merge}"
+    assert ticket.landed_sha == merge, (
+        f"a re-landing moved the row to {ticket.landed_sha}; 782 is exactly this, "
+        f"with the branch tip {tip}"
+    )
+    assert {first.landed_sha, second.landed_sha, third.landed_sha} == {merge}, (
+        "one landing, one commit, however often it is asked: "
+        f"{first.landed_sha!r}, {second.landed_sha!r}, {third.landed_sha!r}; "
+        f"merge {merge}, branch tip {tip}"
+    )

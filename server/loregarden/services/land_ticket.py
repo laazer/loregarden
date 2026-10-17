@@ -29,12 +29,14 @@ from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
     describe_signing,
+    first_containing,
     is_ancestor,
     merge_preview,
     merge_without_checkout,
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.land_verification import land_verifier
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
@@ -77,10 +79,16 @@ class LandResult:
 def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandResult:
     """Merge the ticket's branch into its target and record where it landed.
 
-    Idempotent: a branch already contained in the target records its tip and
-    merges nothing. A conflict is returned, never raised — the caller decides
-    between the resolver and a block — and every other failure carries git's
-    text so the ticket can be blocked with it.
+    Idempotent: a branch the target already contains merges nothing, and
+    records the first commit on the target that contained it. A conflict is
+    returned, never raised — the caller decides between the resolver and a
+    block — and every other failure carries git's text so the ticket can be
+    blocked with it.
+
+    A land whose verification refuses is one of those failures: the merge
+    commit is written and the target's ref never moves, so nothing here records
+    anything and `landing` blocks the terminal stage with the verification's own
+    words (lg-milestone-that-1238).
     """
     repo_root = resolve_workspace_root(workspace)
     branch = resolve_ticket_branch(ticket)
@@ -104,7 +112,14 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         return failed
 
     subject = f"Land {ticket.external_id or ticket.id[:8]}: {ticket.title}".strip()
-    outcome = merge_without_checkout(repo_root, target=target, source=branch, subject=subject)
+    # The whole of the guard's wiring. Every line of its logic is in
+    # `land_verification`; `merge_tips` calls it between the `commit-tree` and
+    # the `update-ref`, so a refusal means this function never reaches
+    # `_record` and `landed_sha` has nothing to be stamped from.
+    verification = land_verifier(session, ticket, workspace)
+    outcome = merge_without_checkout(
+        repo_root, target=target, source=branch, subject=subject, verify=verification
+    )
     if not outcome.ok:
         return LandResult(
             ok=False,
@@ -114,18 +129,18 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
             conflicted_files=outcome.conflicted_files,
         )
 
-    if not (
-        outcome.already_contained and _landing_on_record(repo_root, ticket, target, outcome.sha)
-    ):
-        _record(session, ticket, outcome.sha, target)
     if outcome.already_contained:
+        landed = _already_landed_at(repo_root, ticket, target, outcome.sha)
+        if (ticket.landed_sha, ticket.landed_branch) != (landed, target):
+            _record(session, ticket, landed, target)
         return LandResult(
             ok=True,
             branch=branch,
             target=target,
-            landed_sha=outcome.sha,
+            landed_sha=landed,
             skipped=LandSkip.ALREADY_LANDED,
         )
+    _record(session, ticket, outcome.sha, target)
     logger.info(
         "Landed %s (%s) on %s as %s (%s)",
         ticket.external_id,
@@ -134,7 +149,16 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         outcome.sha[:12],
         describe_signing(outcome.signed),
     )
-    return LandResult(ok=True, branch=branch, target=target, landed_sha=outcome.sha)
+    return LandResult(
+        ok=True,
+        branch=branch,
+        target=target,
+        landed_sha=outcome.sha,
+        # A workspace that configured no commands lands as it always did, and
+        # the result says nobody checked it rather than letting that read as a
+        # pass (AC20).
+        detail=verification.note if verification else "",
+    )
 
 
 def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace) -> bool:
@@ -156,6 +180,28 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     if not source_sha or not target_sha:
         return False
     return merge_preview(repo_root, target_sha, source_sha).ok
+
+
+def _already_landed_at(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> str:
+    """Which commit an already-contained branch landed at (928).
+
+    `landed_sha` is the *first* commit on `landed_branch` that contains the
+    ticket's work, and that is a property of the git graph rather than of
+    which code path observed it. So the answer is read from git, not from the
+    tip `merge_tips` hands back for a branch it merged nothing for — that tip
+    is the branch's own, and recording it is how 782 ended up naming two
+    commits for one landing.
+
+    A landing already on record is kept as it is (#578): re-reading it would
+    be a second answer to a question already answered, and the guard is what
+    stops a re-landing moving the sha. Otherwise git is asked, and its "could
+    not say" falls back to the branch tip — the only thing left — having
+    logged at warning inside `first_containing`, so a blind record never
+    reads like a fast-forward landing.
+    """
+    if _landing_on_record(repo_root, ticket, target, branch_sha):
+        return ticket.landed_sha
+    return first_containing(repo_root, branch_sha, f"refs/heads/{target}") or branch_sha
 
 
 def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> bool:

@@ -73,13 +73,21 @@ function requeueText(event: TicketHistoryEvent): string {
  * The longer text behind a decision line. A requeue's reason is the detail
  * (its line says who); a repair carries the block it was sent to or, once it
  * passed, the repair agent's account of what it fixed.
+ *
+ * `detail` is read LAST. Of 647 live decision payloads none carry it, 15 carry
+ * `block_message` (the longest 3883 characters) and 3 carry `repair_summary`,
+ * so reading it earlier would silently demote the block on every one of those
+ * 15 rows. A settled handoff carries the whole failure text there, which is how
+ * git's merge output reaches the line's disclosure without reaching its text.
  */
 function decisionDetail(event: TicketHistoryEvent): string | undefined {
   const decision = str(event.payload.decision);
   const detail =
     decision === "requeued"
       ? str(event.payload.reason)
-      : str(event.payload.repair_summary) || str(event.payload.block_message);
+      : str(event.payload.repair_summary) ||
+        str(event.payload.block_message) ||
+        str(event.payload.detail);
   return detail || undefined;
 }
 

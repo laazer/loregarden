@@ -23,8 +23,44 @@ from loregarden.models.domain import (
     OrchestrationDriver,
     Workspace,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
+
+
+class ProfileUnreadableError(RuntimeError):
+    """The bytes at ``path`` are not an orchestration profile.
+
+    Every reader of a workspace's profile funnels through
+    ``load_profile_from_path``, and a half-written file reached each of them as
+    whichever exception the library it tripped happened to raise: a truncated
+    document as ``ruamel``'s ``ParserError``, a tab-indented one as its
+    ``ScannerError``, a schema-invalid one as pydantic's ``ValidationError``, a
+    non-UTF-8 one as ``UnicodeDecodeError``. Only two of those are a
+    ``ValueError``, so the guards downstream — all spelled ``except
+    ValueError`` — covered two shapes of the same failure and let the rest out
+    as a 500 (lg-milestone-that-1215).
+
+    ``RuntimeError``, matching ``TargetBranchError`` (target_branch.py:61),
+    deliberately **not** ``ValueError``. A ``ValueError`` base would have made
+    the migration free and the guarantee worthless: every ``except
+    ValueError`` in the tree would catch this silently, and the day
+    lg-milestone-that-975 narrows ``describe_handoff_failure``'s ``ValueError``
+    arm the 500 comes back. As a ``RuntimeError`` the sites that handle an
+    unreadable profile are exactly the sites that named it, and ``grep -rn
+    ProfileUnreadableError`` enumerates them.
+
+    ``path`` is **absolute**, not ``_repo_relative``'s repo-relative form: the
+    operator reading the 400 detail or the failed run's ``stderr`` is standing
+    in a worktree, and ``agent_context/orchestration/default.yaml`` is not a
+    path they can open from there. Callers name the file from the attribute
+    rather than by parsing the sentence.
+    """
+
+    def __init__(self, path: Path | str, reason: str) -> None:
+        self.path = Path(path).resolve()
+        self.reason = reason
+        super().__init__(f"{self.path} could not be read as an orchestration profile: {reason}")
 
 
 class OrchestratorConfig(BaseModel):
@@ -101,6 +137,24 @@ class GitAutomationConfig(BaseModel):
     max_conflict_resolve_attempts: int = 2
     #: Branch PRs target, and the branch a worktree is cut from.
     base_branch: str = "main"
+    #: Commands that must pass against the merge a land would publish, before
+    #: its ref moves (lg-milestone-that-1238). Run in a detached worktree cut at
+    #: the candidate merge commit, in order, under a capacity lease; the first
+    #: one that fails or cannot run refuses the land and blocks the ticket.
+    #:
+    #: Empty is off, and it is the default, because the commands are a property
+    #: of the workspace — this control plane is workspace-agnostic, and nothing
+    #: here is pytest. There is deliberately NO boolean beside this: a switch
+    #: that can be turned off is a per-workspace way to let a red tree land,
+    #: which is the silent pass the guard exists to stop. An unconfigured
+    #: workspace lands exactly as it did before BUT the result says that nothing
+    #: checked it, because "nothing ran" and "it passed" are different facts.
+    land_verify_commands: list[str] = Field(default_factory=list)
+    #: The host capacity those commands hold while they run. `heavy`, not the
+    #: gates' `service`: a land verification is a test suite on the
+    #: orchestration thread, and it queues behind the other suites on this
+    #: machine rather than piling onto them. `none` runs them unreserved.
+    land_verify_capacity_footprint: DockerFootprint = DockerFootprint.HEAVY
     #: Delete a chat thread's branch — its worktree, its local ref, and the
     #: remote ref it was pushed to — once its content is in `base_branch`.
     #:
@@ -281,13 +335,35 @@ def load_profile_from_path(path: Path) -> OrchestrationProfile:
     mtime. Each caller gets its own copy, so one mutating it cannot reach another.
     """
     stat = path.stat()
-    profile = _parse_profile(path, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    # Around the parse only. `path.stat()`'s `OSError` stays an `OSError`:
+    # "there is no profile here" and "the profile here will not parse" are two
+    # different answers, `resolve_orchestration_profile` already asks the first
+    # one with `is_file()`, and collapsing them would send an operator to fix a
+    # file that does not exist. `TypeError` is in the tuple for the same reason
+    # inverted — a `TypeError` from inside a validator we wrote is a bug in our
+    # code, and relabelling it "the profile could not be read" would hand the
+    # operator a configuration problem they do not have.
+    try:
+        profile = _parse_profile(path, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    except (YAMLError, UnicodeDecodeError, ValidationError) as exc:
+        raise ProfileUnreadableError(path, str(exc)) from exc
     return profile.model_copy(deep=True)
 
 
 @functools.lru_cache(maxsize=64)
 def _parse_profile(path: Path, _inode: int, _mtime_ns: int, _size: int) -> OrchestrationProfile:
     raw = _load_yaml(path)
+    # In front of the indexing rather than catching the `TypeError` it raises:
+    # a sequence refuses `"slug" not in raw` and a scalar refuses the
+    # assignment, and catching `TypeError` here would also swallow one raised
+    # inside `OrchestrationProfile`'s own validators. Duck-typed because the
+    # `py-organization` gate refuses `isinstance`, and it has to hold for every
+    # kind of document a stray line can be — a date, an int, a bool are all
+    # scalars and none of them is a `str`. The word matters: "not a mapping" is
+    # a riddle to an operator looking at a file with lines in it.
+    if not hasattr(raw, "keys"):
+        kind = "sequence" if hasattr(raw, "append") else "scalar"
+        raise ProfileUnreadableError(path, f"the document is a {kind}, not a mapping")
     if "slug" not in raw:
         raw["slug"] = path.stem
     # Stamped from where it was actually read: a file cannot claim another.
@@ -421,12 +497,51 @@ def update_gates_config(
     return load_profile_from_path(path)
 
 
-def update_git_config(workspace: Workspace, git: GitAutomationConfig) -> OrchestrationProfile:
+#: Keys a git editor that does not send them must not overwrite. Every one is a
+#: `GitAutomationConfig` field that `GitAutomationView` — the body the queue's
+#: automation panel PUTs — does not carry, so `model_validate` fills it with a
+#: default and the save writes that default over whatever the YAML held.
+#:
+#: `land_verify_commands` is why this list exists. The panel sends its whole
+#: view on every toggle, so one click on "push" wrote `land_verify_commands: []`
+#: over a configured list and left the land guard reporting that no
+#: verification was configured — indistinguishable from never having configured
+#: one, which is exactly the silent pass the guard exists to stop
+#: (lg-milestone-that-1238). The other four were the same defect already in the
+#: tree, waiting for someone to notice a reset toggle.
+PRESERVED_GIT_KEYS = frozenset(
+    {
+        "land_verify_commands",
+        "land_verify_capacity_footprint",
+        "tree_open_pr",
+        "tree_auto_merge",
+        "prune_landed_chat_branches",
+    }
+)
+
+
+def update_git_config(
+    workspace: Workspace,
+    git: GitAutomationConfig,
+    *,
+    preserve: frozenset[str] = PRESERVED_GIT_KEYS,
+) -> OrchestrationProfile:
     """Persist `git` into the workspace's orchestration profile YAML, leaving
-    every other field in that file untouched."""
+    every other field in that file untouched.
+
+    Keys in `preserve` keep whatever the file already holds, so a caller that
+    edits only the toggles its own view carries doesn't silently reset the
+    fields it never showed. A caller that genuinely owns the whole block passes
+    `preserve=frozenset()`.
+    """
     path = _profile_path_for_write(workspace)
     raw = _load_yaml(path) if path.is_file() else {}
     raw.setdefault("slug", workspace.orchestration_profile_slug or workspace.slug)
-    _merge_block(raw, "git", git.model_dump(mode="json"))
+    existing_git = raw.get("git") or {}
+    new_git = git.model_dump(mode="json")
+    for key in preserve:
+        if key in existing_git:
+            new_git[key] = existing_git[key]
+    _merge_block(raw, "git", new_git)
     _write_yaml_atomic(path, raw)
     return load_profile_from_path(path)

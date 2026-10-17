@@ -64,6 +64,7 @@ from loregarden.services.artifact_service import block_ticket_for_unresolved_blo
 from loregarden.services.block_repair import repair_turns_spent
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.land_ticket import LandResult, LandSkip, land_ticket
+from loregarden.services.land_verification import LAND_BLOCK_LEAD
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.repair_brief import arm_repair_turn
 from loregarden.services.target_branch import subtree_root
@@ -254,16 +255,25 @@ def _block(
 
 
 def _block_message(result: LandResult, workspace: Workspace, ticket: Ticket) -> str:
+    """What the attention row and the reader show for a landing that did not happen.
+
+    The lead comes from `land_verification` rather than being spelled here: it
+    is spent out of the same `BLOCKING_ISSUE_INLINE_LIMIT` and the same
+    `TEASER_CHARS` as whatever follows it, and a refused verification sizes its
+    own words against it. Two copies of the lead would be two answers to "how
+    much of the budget is already gone?".
+    """
+    lead = LAND_BLOCK_LEAD.format(branch=result.branch, target=result.target)
     if result.conflicted:
         files = ", ".join(result.conflicted_files)
         note = ""
         if resolve_git_automation(workspace, ticket).auto_resolve_conflicts:
             note = " (auto_resolve_conflicts is set; its resolution attempts are spent)"
         return (
-            f"Could not land {result.branch} on {result.target}: merge conflicts in "
-            f"{files}. Resolve them on the ticket branch and requeue.{note}"
+            f"{lead}merge conflicts in {files}. "
+            f"Resolve them on the ticket branch and requeue.{note}"
         )
-    return f"Could not land {result.branch} on {result.target}: {result.detail}"
+    return f"{lead}{result.detail}"
 
 
 def _publish_message(outcome) -> str:

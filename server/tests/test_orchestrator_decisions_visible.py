@@ -160,6 +160,10 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # Normal: a block cleared by a requeue, shown with its reason and actor
         # rather than as a block that cleared itself (lg-milestone-that-916).
         "requeued",
+        # Reads as trouble in the client's `tone()`, like the other settles: a
+        # handoff stamped a run RUNNING, failed to prepare the tree, and the
+        # stage went back to PENDING with no agent ever behind it (976).
+        "settled_failed_handoff",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 
@@ -170,3 +174,47 @@ def test_the_event_is_in_the_history_filter():
     from loregarden.core.event_bus import TRANSITION_EVENTS
 
     assert EventType.ORCHESTRATOR_DECISION in TRANSITION_EVENTS
+
+
+def test_every_decision_kind_says_what_it_means_where_it_is_declared():
+    """AC4 of lg-milestone-that-976, generalised to the whole closed set.
+
+    The set above pins the *values*; nothing pinned the one thing that makes a
+    value readable. Every member of `OrchestratorDecision` carries a `#:`
+    comment saying the shape it names and the run that cost it, and that
+    convention is the only documentation the kind has: the client renders the
+    kind as words only when a decision arrived with no reason, and a reader
+    asking "what is `settled_failed_handoff`?" has the enum and nothing else.
+
+    Asserted over the set rather than over the one new member on purpose. A
+    test naming 976's member would go green the moment it was written and stop
+    saying anything; this one holds for the next kind too, which is where the
+    convention is actually at risk.
+    """
+    import inspect
+    import re
+
+    from loregarden.models.domain import orchestrator_decisions
+
+    lines = inspect.getsource(orchestrator_decisions).splitlines()
+    assignment = re.compile(r"^\s{4}([A-Z][A-Z0-9_]*)\s*=")
+
+    def documented(index: int) -> bool:
+        """Is the contiguous comment block directly above this member a `#:` one?"""
+        cursor = index - 1
+        while cursor >= 0 and lines[cursor].strip().startswith("#"):
+            if lines[cursor].strip().startswith("#:"):
+                return True
+            cursor -= 1
+        return False
+
+    undocumented = [
+        match.group(1)
+        for index, line in enumerate(lines)
+        if (match := assignment.match(line)) and not documented(index)
+    ]
+    assert undocumented == [], (
+        f"decision kinds declared with no `#:` comment ({undocumented}): the comment is "
+        "the only account of what the kind names, and the client shows the kind itself "
+        "only when the decision arrived without a reason"
+    )
