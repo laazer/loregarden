@@ -322,6 +322,9 @@ class TicketDetail(TicketSummary):
     last_updated_by: str
     next_status: str
     blocking_issues: str
+    #: The block in full. `blocking_issues` holds only a pointer when the message
+    #: was too long to keep inline; this resolves it to the error artifact's text.
+    block_message: str = ""
     state_locked: bool = False
     workflow_template_slug: str = ""
     workflow_template_name: str = ""

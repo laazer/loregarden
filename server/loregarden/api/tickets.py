@@ -51,6 +51,7 @@ from loregarden.models.domain import (
 from loregarden.services import btw_service
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
+from loregarden.services.block_classification import block_message_for
 from loregarden.services.blocked_on import blocked_on_clause, blocked_on_map, waiting_on_map
 from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
@@ -906,6 +907,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         last_updated_by=ticket.last_updated_by,
         next_status=ticket.next_status,
         blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
+        block_message=normalize_timeout_stderr(block_message_for(session, ticket)),
         state_locked=ticket.state_locked,
         workflow_template_slug=template.slug if template else "",
         workflow_template_name=template.name if template else "",

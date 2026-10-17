@@ -409,7 +409,10 @@ function Attention({
   // "Blocked" is the ticket's word for itself, never inferred from an artifact:
   // a failed run the orchestrator is about to retry is not a block.
   const blocked = ticket.state === "blocked" || Boolean(ticket.blocking_issues?.trim());
-  const blockMessage = blocked ? ticket.blocking_issues?.trim() || errorArt?.message || "" : errorArt?.message || "";
+  // `blocking_issues` is only a pointer ("see the Timeline tab") when the message
+  // was long; `block_message` is the text it points at.
+  const blockText = (ticket.block_message || ticket.blocking_issues)?.trim();
+  const blockMessage = blocked ? blockText || errorArt?.message || "" : errorArt?.message || "";
   // The error artifact records a run_code; the log fetch needs the run's id.
   const errorRunId = errorArt ? runs.find((run) => run.run_code === errorArt.run_code)?.id : undefined;
 

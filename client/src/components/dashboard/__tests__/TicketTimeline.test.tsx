@@ -230,6 +230,20 @@ it("leads with the block and opens the failing run's log, resolving its run code
   expect(onOpenRunLog).toHaveBeenCalledWith("g1");
 });
 
+it("shows a long block's full text, not the pointer back to this tab", async () => {
+  renderTimeline({
+    detail: ticket({
+      state: "blocked",
+      blocking_issues: "Stage 'test-break' hit a blocking issue — see the Timeline tab for details.",
+      block_message: "No failing test could be written: the module under test does not exist.",
+    } as Partial<TicketDetail>),
+  });
+
+  const block = await screen.findByRole("region", { name: "Blocking issue" });
+  expect(block).toHaveTextContent("the module under test does not exist");
+  expect(block).not.toHaveTextContent("see the Timeline tab");
+});
+
 it("never calls a ticket blocked on the strength of an error artifact alone", async () => {
   renderTimeline({
     detail: ticket({

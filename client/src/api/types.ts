@@ -182,6 +182,8 @@ export interface TicketDetail extends TicketSummary {
   current_stage_agent: string;
   next_status: string;
   blocking_issues: string;
+  /** The block in full; `blocking_issues` may be only a pointer to it. */
+  block_message?: string;
   state_locked: boolean;
   workflow_template_slug: string;
   workflow_template_name: string;

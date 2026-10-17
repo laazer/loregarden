@@ -536,10 +536,10 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
 
   return (
     <>
-      {asDisplayString(ticket.blocking_issues) && (
+      {asDisplayString(ticket.block_message || ticket.blocking_issues) && (
         <div className="state-card">
           <div className="state-label">Blocking Issues</div>
-          <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{asDisplayString(ticket.blocking_issues)}</p>
+          <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{asDisplayString(ticket.block_message || ticket.blocking_issues)}</p>
         </div>
       )}
 
