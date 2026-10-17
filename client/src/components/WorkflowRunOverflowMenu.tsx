@@ -6,6 +6,7 @@ import {
   copyExternalHarnessPrompt,
 } from "../lib/externalHarnessPrompt";
 import { isAgentWorkflowTicket } from "../lib/terminalCommands";
+import { toastActionFailed } from "../state/toastStore";
 import { OverflowMenu, OverflowMenuItem, OverflowMenuSection } from "./OverflowMenu";
 
 interface WorkflowRunOverflowMenuProps {
@@ -37,7 +38,15 @@ export function WorkflowRunOverflowMenu({
           <OverflowMenuItem
             disabled={!orchestrateCommand.trim()}
             title="Copy terminal command to orchestrate this ticket"
-            onSelect={() => void copyText(orchestrateCommand)}
+            onSelect={() => {
+              // `copyText` rejects when the clipboard refuses, and a bare
+              // `void` here floated that rejection — a failure the operator
+              // never saw, in the one place whose whole purpose is to put a
+              // command on their clipboard.
+              void copyText(orchestrateCommand).catch((error: unknown) =>
+                toastActionFailed("Copy orchestrate command", error),
+              );
+            }}
           >
             Copy orchestrate command
           </OverflowMenuItem>

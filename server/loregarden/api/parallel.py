@@ -15,7 +15,11 @@ from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.parallel_run_service import ParallelRunService
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.queue_status import build_queue_status
-from loregarden.services.worktree_service import WorktreeService, repo_path_for_worktree
+from loregarden.services.worktree_service import (
+    CleanupRefusal,
+    WorktreeService,
+    repo_path_for_worktree,
+)
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
     emit_conflict_detected,
@@ -26,6 +30,24 @@ from loregarden.websocket_events import (
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+#: What the manual-cleanup route tells its caller when the removal is refused.
+#: Two details rather than one "Cleanup failed", because the two causes need
+#: opposite responses and this route is the one surface an operator can poke
+#: the seam from directly. It has no caller in `client/**`, so no rendered
+#: surface changes with the wording.
+CLEANUP_REFUSAL_DETAIL = {
+    CleanupRefusal.OUTSIDE_BASE: (
+        "Cleanup refused: the recorded checkout path is outside this workspace's "
+        "worktrees folder, so nothing was attempted and no retry will settle it. "
+        "Fix the recorded path or the workspace's repo_path."
+    ),
+    CleanupRefusal.REMOVE_RAISED: (
+        "Cleanup failed: removing the checkout raised. The checkout is still on "
+        "disk and still owned; the server log carries the exception. Retrying "
+        "often clears it."
+    ),
+}
 
 router = APIRouter(prefix="/api/parallel", tags=["parallel"])
 
@@ -432,18 +454,17 @@ def cleanup_worktree(
         worktree_service = WorktreeService(
             session, repo_path=repo_path_for_worktree(session, worktree)
         )
-        success = worktree_service.cleanup_worktree(worktree)
+        refusal = worktree_service.remove_checkout(worktree)
 
-        if success:
+        if refusal is None:
             return {
                 "status": "cleaned",
                 "message": f"Worktree {worktree_id} cleaned up",
             }
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Cleanup failed",
-            )
+        raise HTTPException(
+            status_code=400,
+            detail=CLEANUP_REFUSAL_DETAIL[refusal],
+        )
 
     except HTTPException:
         raise

@@ -221,13 +221,18 @@ def test_discarding_twice_is_harmless(session, ticket, repo):
     assert len(again) == 2
 
 
-def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, repo, caplog):
+@pytest.mark.parametrize(
+    "refusal_name", ["OUTSIDE_BASE", "REMOVE_RAISED"], ids=["outside_base", "remove_raised"]
+)
+def test_a_losing_branch_survives_a_failed_worktree_removal(
+    session, ticket, repo, caplog, refusal_name
+):
     """A losing attempt whose worktree removal fails must keep its branch: the
     checkout's commits are reachable from nothing else, so force-deleting the
     branch (`branch -D`) would strand them.
 
     The oracle is the *absence of the `branch -D` call*, not the surviving
-    branch. A failed `cleanup_worktree` leaves the checkout registered with git,
+    branch. A refused `remove_checkout` leaves the checkout registered with git,
     and git refuses to delete a branch checked out in a registered worktree — so
     "the branch is still there" is satisfied by git's own refusal and passes
     with the guard removed. Only the uninvoked `branch -D` distinguishes the
@@ -235,12 +240,19 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
 
     A sibling attempt whose removal succeeds must still be discarded normally —
     the loop must not stop at the first failure.
+
+    AC21 — run for BOTH `CleanupRefusal` members. `_discard_attempts` reads
+    `refusal is not None`, not which member it is: an out-of-base path leaves
+    the checkout just as owned as a permission error does, so the guard
+    lg-external-harness-1166 added must hold for either cause. Parametrized
+    rather than asserted once, because a branch per member here would be the
+    place the never-retryable cause quietly regained the force-delete.
     """
     import logging
 
     from loregarden.services import stage_fanout_service
     from loregarden.services.git_subprocess import run_git as real_run_git
-    from loregarden.services.worktree_service import WorktreeService
+    from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 
     group, _ = _launch(session, ticket, count=2)
     failing_attempt_id = group["attempts"][0]["id"]
@@ -254,11 +266,14 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
     failing_worktree_id = group["attempts"][0]["worktree_id"]
     failing_worktree_path = session.get(Worktree, failing_worktree_id).worktree_path
 
-    real_cleanup = WorktreeService.cleanup_worktree
+    refusal = getattr(CleanupRefusal, refusal_name)
+    real_cleanup = WorktreeService.remove_checkout
 
     def flaky_cleanup(self, worktree):
+        # The member, never `False`: `CleanupRefusal | None` is falsy on
+        # success, so a stub still answering `False` would read as settled.
         if worktree.branch == failing_branch:
-            return False
+            return refusal
         return real_cleanup(self, worktree)
 
     git_calls: list[list[str]] = []
@@ -269,7 +284,7 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
 
     with caplog.at_level(logging.WARNING):
         with (
-            patch.object(WorktreeService, "cleanup_worktree", flaky_cleanup),
+            patch.object(WorktreeService, "remove_checkout", flaky_cleanup),
             patch.object(stage_fanout_service, "run_git", spying_run_git),
         ):
             settled = decline_fanout(session, group["id"])
