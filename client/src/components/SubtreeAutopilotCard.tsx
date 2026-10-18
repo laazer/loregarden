@@ -179,7 +179,7 @@ export function SubtreeAutopilotCard({
             variant="secondary"
             compact
             disabled={busy || !autopilot.enabled}
-            title={autopilot.enabled ? "Stop starting new work; what is running carries on" : "Already off"}
+            title={autopilot.enabled ? "Finish what is running, then stop: queued tickets that have not started wait until it is turned back on" : "Already off"}
             onClick={() => {
               setDraft(null);
               change.mutate({ enabled: false });

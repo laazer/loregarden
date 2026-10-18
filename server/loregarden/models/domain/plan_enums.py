@@ -127,6 +127,10 @@ class AutopilotAction(StrEnum):
     PAUSED = "paused"
     #: Approved a legacy stage sign-off on a ticket it started.
     SIGNED_OFF = "signed_off"
+    #: Turned off: held a ticket it queued that had not started yet.
+    HELD = "held"
+    #: Turned back on: put a ticket it held back in its lane.
+    RELEASED = "released"
 
 
 class SuggestionKind(StrEnum):
