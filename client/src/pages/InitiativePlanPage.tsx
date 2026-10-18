@@ -8,6 +8,7 @@ import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../
 import { AutopilotPanel } from "../components/initiatives/plan/AutopilotPanel";
 import { InitiativeAgentPanel } from "../components/initiatives/plan/InitiativeAgentPanel";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
+import { InitiativeRunningTickets } from "../components/initiatives/plan/InitiativeRunningTickets";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
@@ -197,6 +198,8 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                 </>
               ) : null}
             </div>
+
+            <InitiativeRunningTickets plan={data} />
 
             <ScheduleSummary
               plan={data}
