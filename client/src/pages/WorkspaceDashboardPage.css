@@ -1,0 +1,833 @@
+/* One workspace's dashboard (`WorkspaceDashboardPage`). Prefix: wsd-.
+   Speaks Home's vocabulary (display-face titles, mono numbers and ids, quiet
+   rows) so the two read as one app. The one loud element is the review order. */
+
+.screen-view--workspace-dashboard {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wsd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 36px 40px;
+}
+
+/* The body scrolls; its children must keep their height rather than shrink
+   to fit it (a card with overflow: hidden shrank to its header). */
+.wsd-body > * {
+  flex-shrink: 0;
+}
+
+/* --- header ---------------------------------------------------------------- */
+
+.wsd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+
+.wsd-header-text {
+  min-width: 0;
+}
+
+.wsd-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+.wsd-standing {
+  margin: 8px 0 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--tx);
+}
+
+.wsd-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+}
+
+.wsd-repo a {
+  color: var(--ac2);
+  text-decoration: none;
+}
+
+.wsd-repo a:hover,
+.wsd-repo a:focus-visible {
+  text-decoration: underline;
+}
+
+.wsd-path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txl);
+  overflow-wrap: anywhere;
+}
+
+.wsd-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wsd-error-inline {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--rdl);
+}
+
+/* --- stats ----------------------------------------------------------------- */
+
+.wsd-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.wsd-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  min-width: 0;
+}
+
+.wsd-stat dt {
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.wsd-stat dd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.wsd-stat-value {
+  font-family: var(--mono);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.wsd-stat-note {
+  font-size: 11.5px;
+  color: var(--txm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Waiting on a person: the two numbers that should pull the eye. */
+.wsd-stat[data-tone="attention"] {
+  border-color: color-mix(in srgb, var(--amb) 40%, transparent);
+  background: color-mix(in srgb, var(--amb) 8%, var(--bg1));
+}
+
+.wsd-stat[data-tone="attention"] .wsd-stat-value {
+  color: var(--aml);
+}
+
+.wsd-stat[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 8%, var(--bg1));
+}
+
+.wsd-stat[data-tone="danger"] .wsd-stat-value {
+  color: var(--rdl);
+}
+
+/* --- layout ---------------------------------------------------------------- */
+
+.wsd-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.wsd-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .wsd-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wsd-stats {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+
+/* --- section cards (Home's card) ------------------------------------------- */
+
+.wsd-section {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: var(--bg1);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wsd-section > :not(.wsd-section-header) {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+.wsd-section > :last-child {
+  margin-bottom: 14px;
+}
+
+.wsd-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.wsd-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.wsd-section-count {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--ac) 30%, transparent);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac) 10%, transparent);
+}
+
+.wsd-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wsd-section-empty,
+.wsd-note,
+.wsd-headline {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--txm);
+}
+
+.wsd-headline {
+  color: var(--tx);
+}
+
+.wsd-section-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.wsd-section-error p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.wsd-group + .wsd-group {
+  margin-top: 14px;
+}
+
+.wsd-group-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--txl);
+}
+
+/* --- rows ------------------------------------------------------------------ */
+
+.wsd-rows,
+.wsd-timeline {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wsd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--bd);
+  min-width: 0;
+}
+
+.wsd-row:first-child {
+  border-top: 0;
+}
+
+.wsd-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wsd-row-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.wsd-row-link {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--tx);
+  text-decoration: none;
+}
+
+a.wsd-row-link:hover .wsd-row-title,
+a.wsd-row-link:focus-visible .wsd-row-title {
+  color: var(--ac2);
+}
+
+.wsd-row-title {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tx);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wsd-row-aside {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  max-width: 50%;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.wsd-row-where {
+  color: var(--txl);
+}
+
+.wsd-row-note {
+  display: flex;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+.wsd-id {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ac2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.wsd-id:hover,
+a.wsd-id:focus-visible {
+  text-decoration: underline;
+}
+
+.wsd-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.wsd-muted {
+  color: var(--txm);
+}
+
+.wsd-danger {
+  color: var(--rdl);
+}
+
+/* --- mini ticket cards ----------------------------------------------------
+   A ticket shown by what the work is. The left edge carries its state, so a
+   group of cards reads at a glance without a legend. */
+
+.wsd-cards-wrap {
+  margin-top: 6px;
+}
+
+.wsd-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wsd-cards > li {
+  display: flex;
+  min-width: 0;
+}
+
+.wsd-card {
+  --wsd-card-edge: var(--bd2);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 11px 9px 13px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg2);
+  box-shadow: inset 3px 0 0 var(--wsd-card-edge);
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.wsd-card:hover,
+.wsd-card:focus-visible {
+  border-color: var(--bd2);
+  background: var(--bg3);
+}
+
+.wsd-card[data-state="in_progress"] {
+  --wsd-card-edge: var(--blue);
+}
+
+.wsd-card[data-state="blocked"] {
+  --wsd-card-edge: var(--red);
+}
+
+.wsd-card[data-state="parked"] {
+  --wsd-card-edge: var(--amb);
+}
+
+.wsd-card[data-state="done"] {
+  --wsd-card-edge: var(--grn);
+}
+
+.wsd-card-title {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--tx);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wsd-card-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.wsd-card-state {
+  flex: none;
+  color: var(--txm);
+}
+
+.wsd-card-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inside another row (a PR's tickets): one line, no footer. */
+.wsd-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.wsd-card--compact {
+  flex: 0 1 auto;
+  max-width: 260px;
+  padding: 4px 10px 4px 12px;
+  border-radius: 8px;
+}
+
+.wsd-card--compact .wsd-card-title {
+  display: block;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wsd-more {
+  margin-top: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--ac2);
+  background: transparent;
+}
+
+.wsd-more:hover,
+.wsd-more:focus-visible {
+  text-decoration: underline;
+}
+
+/* --- chips and tags -------------------------------------------------------- */
+
+.wsd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.wsd-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--txm);
+  background: transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.wsd-chip[aria-pressed="true"] {
+  border-color: var(--ac);
+  color: var(--tx);
+  background: color-mix(in srgb, var(--ac) 18%, transparent);
+}
+
+.wsd-chip--failure {
+  color: var(--rdl);
+}
+
+.wsd-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--txm);
+  background: var(--bg3);
+}
+
+.wsd-tag--ready_to_merge,
+.wsd-tag--activity-running,
+.wsd-tag--instance-ready {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 18%, transparent);
+}
+
+.wsd-tag--to_review,
+.wsd-tag--activity-queued,
+.wsd-tag--instance-starting {
+  color: var(--bll);
+  background: color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+.wsd-tag--needs_work,
+.wsd-tag--activity-awaiting,
+.wsd-tag--block-agent,
+.wsd-tag--block-parked,
+.wsd-tag--instance-stalled {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 18%, transparent);
+}
+
+.wsd-tag--conflicting,
+.wsd-tag--block-person {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+}
+
+.wsd-ci--failing {
+  color: var(--rdl);
+}
+
+.wsd-ci--passing {
+  color: var(--grl);
+}
+
+.wsd-ci--none,
+.wsd-stale {
+  color: var(--aml);
+}
+
+.wsd-add {
+  color: var(--grl);
+}
+
+.wsd-del {
+  color: var(--rdl);
+}
+
+/* --- milestone progress ---------------------------------------------------- */
+
+.wsd-progress {
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg3);
+}
+
+.wsd-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--ac);
+  transform-origin: left center;
+}
+
+.wsd-progress[data-blocked] .wsd-progress-fill {
+  background: color-mix(in srgb, var(--ac) 60%, var(--red));
+}
+
+/* --- activity timeline ----------------------------------------------------- */
+
+.wsd-event {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--bd);
+}
+
+.wsd-event:first-child {
+  border-top: 0;
+}
+
+.wsd-event-when {
+  padding-top: 1px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wsd-event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wsd-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.wsd-outcome {
+  white-space: nowrap;
+}
+
+.wsd-outcome--failure {
+  color: var(--rdl);
+}
+
+/* --- tables ---------------------------------------------------------------- */
+
+.wsd-table-wrap {
+  overflow-x: auto;
+}
+
+.wsd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.wsd-table th {
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--bd);
+  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--txl);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wsd-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: top;
+}
+
+.wsd-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* In a table the full title shows: the column is wide enough, and a clipped
+   PR title is the one thing the reader came to read. */
+.wsd-table .wsd-row-title {
+  display: inline;
+}
+
+.wsd-table td.wsd-mono,
+.wsd-table td[data-label="Status"],
+.wsd-table td[data-label="Checks"] {
+  white-space: nowrap;
+}
+
+.wsd-table .wsd-num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The review order is the page's answer, so its numbers carry the weight. */
+.wsd-table .wsd-rank {
+  width: 1%;
+  padding-right: 4px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wsd-table td.wsd-rank {
+  font-family: var(--dp);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.wsd-table tr[data-tier="conflicting"] td.wsd-rank,
+.wsd-table tr[data-tier="draft"] td.wsd-rank {
+  color: var(--txl);
+}
+
+/* A list again at phone width: each row a card, each cell labelled. */
+@media (max-width: 640px) {
+  .wsd-body {
+    padding: 18px 16px 28px;
+  }
+
+  .wsd-title {
+    font-size: 26px;
+  }
+
+  .wsd-row,
+  .wsd-row-line {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wsd-row-aside {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .wsd-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .wsd-table,
+  .wsd-table tbody,
+  .wsd-table tr,
+  .wsd-table td {
+    display: block;
+  }
+
+  .wsd-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .wsd-table td {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .wsd-table td::before {
+    content: attr(data-label);
+    flex: 0 0 96px;
+    font-family: var(--ui);
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--txl);
+  }
+
+  .wsd-table .wsd-num,
+  .wsd-table .wsd-rank {
+    text-align: left;
+  }
+}
+
+/* Entry points elsewhere: the Console picker and the workspace cards. */
+.workspace-dashboard-link,
+.instances-setup-dashboard {
+  display: block;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}

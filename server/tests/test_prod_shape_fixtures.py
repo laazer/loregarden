@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import AgentRun, Artifact
+from loregarden.models.domain.enums import utcnow
 from loregarden.services import initiative_suggestions
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.testing.prod_shape import (
@@ -35,6 +36,7 @@ from loregarden.testing.prod_shape import (
     ci_history_ticket,
     prod_shape_id,
 )
+from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
 from sqlmodel import Session
 
 FIXTURES = (
@@ -44,7 +46,7 @@ RECORD = os.environ.get("LOREGARDEN_RECORD_FIXTURES") == "1"
 
 #: Written at record time and therefore different on every run; pinned so the
 #: comparison is about shape and content, not the clock.
-_VOLATILE = {"checked_at", "created_at", "updated_at"}
+_VOLATILE = {"checked_at", "created_at", "updated_at", "last_event_at", "since"}
 _PINNED = "2026-09-28T00:00:00Z"
 
 #: Ids the scenario does not fix (`make_workspace` mints a fresh one per build),
@@ -66,6 +68,12 @@ ENDPOINTS = {
     "ticket-history-ledger.json": ("/api/tickets/{worked_ticket}/ledger", {}),
     # The ticket whose CI auto-fix loop ran to its retry limit.
     "ticket-ci-status.json": ("/api/ci/status/{ci_ticket}", {}),
+    # The dashboard's "since you were away", over the live two-week volume.
+    "workspace-activity-loregarden.json": (
+        "/api/workspaces/loregarden/activity",
+        {"since": "{since}"},
+    ),
+    "workspace-activity-blobert.json": ("/api/workspaces/blobert/activity", {"since": "{since}"}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
@@ -129,7 +137,11 @@ def test_fixture_matches_the_api(api, isolated_db, name):
             )
         response = api.get(
             path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket, ci_ticket=ci_ticket),
-            params=params,
+            # "Since" is relative to the build, as the scenario's events are.
+            params={
+                key: value.format(since=(utcnow() - ACTIVITY_WINDOW).isoformat())
+                for key, value in params.items()
+            },
         )
     assert response.status_code == 200, response.text
     payload = _pin_ids(response.json())

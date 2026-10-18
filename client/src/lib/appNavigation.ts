@@ -334,6 +334,26 @@ export function workspacesTabFromPath(pathname: string): WorkspacesTab {
   return WORKSPACES_TAB_PATH_RE.test(pathname) ? "instances" : "workspaces";
 }
 
+const WORKSPACE_DASHBOARD_PATH_RE = /^\/workspaces\/([^/]+)\/?$/;
+
+/** One workspace's dashboard: where it stands, and what needs a person. */
+export function workspaceDashboardPath(slug: string): string {
+  return `/workspaces/${encodeURIComponent(slug)}`;
+}
+
+/**
+ * The workspace a dashboard path names, or null for any other Workspaces URL.
+ * `/workspaces/instances` is the Instances tab, so a workspace slugged
+ * "instances" has no dashboard URL; tabs win because they shipped first.
+ */
+export function workspaceSlugFromPath(pathname: string): string | null {
+  const match = pathname.match(WORKSPACE_DASHBOARD_PATH_RE);
+  if (!match || WORKSPACES_TABS.some((tab) => workspacesPath(tab) === `/workspaces/${match[1]}`)) {
+    return null;
+  }
+  return decodeSegment(match[1]);
+}
+
 export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";

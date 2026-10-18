@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { localInstancesApi } from "../../api/localInstancesApi";
@@ -8,6 +9,7 @@ import type { WorkspaceSummary } from "../../api/types";
 import { INITIALIZABLE_REPOSITORY_STATES, type RepositoryState } from "../../api/workspaceRepositoryTypes";
 import { INTEGRATION_KEY, WORKSPACE_TEMPLATES_KEY } from "../../hooks/useLocalInstances";
 import { NotThisTarget } from "../../lib/agentActions/registry";
+import { workspaceDashboardPath } from "../../lib/appNavigation";
 import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { pushToast, toastActionFailed } from "../../state/toastStore";
 import { WorkspaceGatePresetsPanel } from "../workspaces/WorkspaceGatePresetsPanel";
@@ -152,6 +154,9 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
           </span>
         </summary>
         <div className="instances-setup-body">
+          <Link to={workspaceDashboardPath(workspace.slug)} className="instances-setup-dashboard">
+            Open {workspace.name}&rsquo;s dashboard: PRs, blocked tickets, recent activity
+          </Link>
           {repoProblem && (
             <div className="instances-setup-actions" role="status">
               <span className="instances-meta instances-warning">{repoProblem.explain}</span>
