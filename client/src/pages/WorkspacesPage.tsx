@@ -5,7 +5,14 @@ import { InstancesTab } from "../components/workspaces/InstancesTab";
 import { WorkspacesTab } from "../components/workspaces/WorkspacesTab";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { INSTANCES_KEY, INTEGRATION_KEY } from "../hooks/useLocalInstances";
-import { WORKSPACES_TABS, workspacesPath, workspacesTabFromPath, type WorkspacesTab as Tab } from "../lib/appNavigation";
+import {
+  WORKSPACES_TABS,
+  workspaceSlugFromPath,
+  workspacesPath,
+  workspacesTabFromPath,
+  type WorkspacesTab as Tab,
+} from "../lib/appNavigation";
+import { WorkspaceDashboardPage } from "./WorkspaceDashboardPage";
 import "../components/LocalInstancesModal.css";
 import "./WorkspacesPage.css";
 
@@ -22,11 +29,18 @@ const REFRESHED = [["workspaces"], INSTANCES_KEY, INTEGRATION_KEY];
  *
  * Two tabs, in the URL: the workspace list (add, set up, archive) and the
  * running instances (watch, stop, launch). The topbar modal is the quick view
- * of the second.
+ * of the second. `/workspaces/<slug>` is one workspace's dashboard.
  */
 export function WorkspacesPage() {
   const location = useLocation();
-  const tab = workspacesTabFromPath(location.pathname);
+  const dashboardSlug = workspaceSlugFromPath(location.pathname);
+  if (dashboardSlug !== null) return <WorkspaceDashboardPage key={dashboardSlug} workspaceSlug={dashboardSlug} />;
+  return <WorkspacesTabs pathname={location.pathname} />;
+}
+
+/** The two tabs: the workspace list and the running instances. */
+function WorkspacesTabs({ pathname }: { pathname: string }) {
+  const tab = workspacesTabFromPath(pathname);
   const queryClient = useQueryClient();
   const fetching = useIsFetching({ predicate: (q) => REFRESHED.some((key) => q.queryKey[0] === key[0]) }) > 0;
 

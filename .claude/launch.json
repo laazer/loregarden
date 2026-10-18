@@ -20,6 +20,12 @@
       "port": 5174
     },
     {
+      "name": "sandbox-keep",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22.21.0 && ./scripts/sandbox.sh --keep"],
+      "port": 5174
+    },
+    {
       "name": "sandbox-seeded",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22.21.0 && ./scripts/sandbox.sh --seeded"],

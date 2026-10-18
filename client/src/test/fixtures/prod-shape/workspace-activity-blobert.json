@@ -1,0 +1,298 @@
+{
+ "events_truncated": false,
+ "kinds": [],
+ "more_tickets": 0,
+ "since": "2026-09-28T00:00:00Z",
+ "tickets": [
+  {
+   "external_id": "blob-m10-31",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "06f4679f-0527-57ec-9a00-4ffb21c91930",
+   "title": "Show gate outcomes on stage transitions"
+  },
+  {
+   "external_id": "blob-m4-102",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "cd78bc74-c267-56c3-bacd-8041cbbf15ce",
+   "title": "Show branch cleanup after a squash merge"
+  },
+  {
+   "external_id": "blob-m8-73",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "script_review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "4968cab2-9d56-5d50-a48f-631ecb8934d1",
+   "title": "Retry docker capacity leases"
+  },
+  {
+   "external_id": "blob-m11-43",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "script_review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "b02569b7-f6d3-5541-a76a-73e6358214f5",
+   "title": "Cache worktree isolation for chat turns"
+  },
+  {
+   "external_id": "blob-m9-52",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "created"
+    },
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "spec",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "6aed74af-24d2-584b-866e-020e1b03db1f",
+   "title": "Stop stage timeout budgets"
+  },
+  {
+   "external_id": "blob-m2-100",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "done",
+     "kind": "moved"
+    },
+    {
+     "count": 1,
+     "detail": "plan",
+     "kind": "approval_requested"
+    },
+    {
+     "count": 1,
+     "detail": "spec",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "ef6c60b0-d483-5361-875e-b584847debdc",
+   "title": "Surface gate outcomes on stage transitions"
+  },
+  {
+   "external_id": "blob-m7-83",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    },
+    {
+     "count": 1,
+     "detail": "plan",
+     "kind": "approval_requested"
+    },
+    {
+     "count": 1,
+     "detail": "script_review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "7fd9def0-336b-5299-9c9e-127a4e37a477",
+   "title": "Stop worktree isolation for chat turns"
+  },
+  {
+   "external_id": "blob-m3-35",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "in_progress",
+     "kind": "moved"
+    },
+    {
+     "count": 2,
+     "detail": "review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "186e4304-1551-5b64-bca6-bd6cf2bf8aee",
+   "title": "Make the queue board's stalled lane"
+  },
+  {
+   "external_id": "blob-m10-10",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "blocked",
+     "kind": "moved"
+    },
+    {
+     "count": 1,
+     "detail": "script_review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "2de340cb-70e3-5f5d-aefd-2adc4cd121ec",
+   "title": "M10 \u2014 Split github issue two-way sync"
+  },
+  {
+   "external_id": "blob-m1-88",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "main",
+     "kind": "landing_failed"
+    },
+    {
+     "count": 1,
+     "detail": "plan",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "5c924eaa-21e5-5b6e-ac56-1165b659e7c0",
+   "title": "Fix docker capacity leases"
+  },
+  {
+   "external_id": "blob-m7-105",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "main",
+     "kind": "landing_failed"
+    },
+    {
+     "count": 1,
+     "detail": "review",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "done",
+   "ticket_id": "ab3772ff-40bd-5e1b-bac3-0eb09bd813b0",
+   "title": "Surface stage timeout budgets"
+  },
+  {
+   "external_id": "blob-m2-67",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "implement",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "e1010840-a0ff-585b-8c93-3b68431ed8b6",
+   "title": "Cache memory recall ranking"
+  },
+  {
+   "external_id": "blob-m6-49",
+   "highlights": [
+    {
+     "count": 1,
+     "detail": "",
+     "kind": "run_failed"
+    },
+    {
+     "count": 1,
+     "detail": "spec",
+     "kind": "approval_requested"
+    }
+   ],
+   "last_event_at": "2026-09-28T00:00:00Z",
+   "state": "backlog",
+   "ticket_id": "96de7831-0577-5325-aa29-596a2ed50cce",
+   "title": "Stop gate outcomes on stage transitions"
+  }
+ ],
+ "totals": {
+  "approval_requested": 16,
+  "created": 5,
+  "landing_failed": 2,
+  "moved": 4,
+  "run_failed": 7
+ },
+ "workspace_slug": "blobert"
+}
