@@ -110,9 +110,13 @@ def _reap_orphan(pid: int) -> None:
 # --- AC17/AC5: the loop's own kill must still reach the agent ------------------
 
 
+# The pid goes in through a rename, so the marker is either absent or whole.
+# `open(marker, 'w')` creates it empty and fills it a moment later, and a cancel
+# landing between the two left a test reading `int('')` (PR 642's CI).
 _PID_AND_SPIN = (
     "import os, sys, time\n"
-    "open({marker!r}, 'w').write(str(os.getpid()))\n"
+    "with open({marker!r} + '.tmp', 'w') as f: f.write(str(os.getpid()))\n"
+    "os.replace({marker!r} + '.tmp', {marker!r})\n"
     "sys.stdout.write('working\\n'); sys.stdout.flush()\n"
     "time.sleep(600)\n"
 )
@@ -133,12 +137,13 @@ def test_a_cancelled_run_leaves_no_orphan_agent(
     marker = tmp_path / "agent.pid"
     script = _PID_AND_SPIN.format(marker=str(marker))
 
-    with mock.patch.object(print_mode, "cancel_requested", return_value=True):
+    # Cancel once the agent exists. Cancelling at the first look almost always
+    # landed before the agent had started, so this skipped on every local run and
+    # the orphan check it is here for never ran.
+    with mock.patch.object(print_mode, "cancel_requested", lambda _run_id: marker.exists()):
         _stdout, _stderr, status = _print_run(run_key, script, timeout=60)
 
     assert status is RunStatus.CANCELLED
-    if not marker.exists():
-        pytest.skip("the agent was cancelled before it recorded its pid")
     agent_pid = int(marker.read_text().strip())
     try:
         assert _gone_within(agent_pid), (
