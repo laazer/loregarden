@@ -128,6 +128,26 @@ def repair_pinned(ticket: Ticket, stage_key: str) -> bool:
     )
 
 
+def conflict_refusal(stage_key: str) -> str:
+    """Why a checkout conflict gets no repair turn, in the words the history shows."""
+    return (
+        f"'{stage_key}' could not start: the ticket's branch conflicts with the work it "
+        "must take first. A repair turn would re-run the stage into the same checkout, so "
+        "none was spent; the merge turn resolves it on a later dispatch while its attempts "
+        "last, and a person after that."
+    )
+
+
+def _not_repairable(stage_key: str, kind: BlockKind) -> str:
+    """Why a kind no agent turn clears gets none, naming what clears it instead."""
+    if kind is BlockKind.CONFLICT:
+        return conflict_refusal(stage_key)
+    return (
+        f"A {kind.value} block on '{stage_key}' is not one an agent can clear; it waits "
+        "for a person."
+    )
+
+
 def repair_brief(stage_key: str, kind: BlockKind, message: str) -> str:
     return (
         f"The '{stage_key}' stage blocked and the orchestrator classified the block as "
@@ -177,11 +197,7 @@ def offer_repair(
             "a person reads it from here.",
         )
     if kind not in REPAIRABLE_KINDS:
-        return RepairOffer(
-            False,
-            f"A {kind.value} block on '{stage_key}' is not one an agent can clear; it waits "
-            "for a person.",
-        )
+        return RepairOffer(False, _not_repairable(stage_key, kind))
     if (ticket.next_agent or "") == REPAIR_AGENT_ID:
         # The pin from the last offer was never consumed — the dispatch resolved
         # to someone else. Re-arming would repeat that until the budget ran out.
