@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from loregarden.config import settings
+from loregarden.core.terminal_text import strip_ansi
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.gate_runner import (
     build_gate_context,
@@ -13,7 +14,6 @@ from loregarden.services.gate_runner import (
     gates_can_run,
     run_gate_autofix,
     run_transition_gates,
-    strip_ansi,
     transition_name,
 )
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile

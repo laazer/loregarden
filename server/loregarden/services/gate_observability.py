@@ -14,6 +14,7 @@ driving the workflow.
 from __future__ import annotations
 
 from loregarden.core.event_bus import event_bus
+from loregarden.core.terminal_text import strip_ansi
 from loregarden.models.domain import (
     ArtifactKind,
     EventType,
@@ -26,7 +27,7 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.gate_producer import gate_producer_payload
-from loregarden.services.gate_runner import GateRunResult, run_transition_gates, strip_ansi
+from loregarden.services.gate_runner import GateRunResult, run_transition_gates
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from sqlmodel import Session
 

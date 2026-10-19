@@ -249,3 +249,58 @@ def test_the_artifact_write_is_bounded_by_the_live_tail_not_the_run(db_session):
     assert biggest < 5000, (
         f"artifact write grew to {biggest} chars over 400 lines — it is still tracking run length"
     )
+
+
+# --- what a tool's coloured output looks like in the history -----------------
+
+COLOURED = "\x1b[38;2;0;0;0m╭\x1b[38;2;5;5;5m─\x1b[m \x1b[1mpre-commit\x1b[m"
+
+
+def test_a_coloured_line_is_stored_without_its_escape_codes(db_session):
+    streamer = _streamer(db_session)
+    streamer.append("TOOL", COLOURED, force=True)
+
+    row = db_session.exec(select(RunLogLine).where(RunLogLine.run_id == streamer.run_id)).one()
+    assert row.text == "╭─ pre-commit"
+
+
+def test_a_line_stored_with_escape_codes_reads_without_them(db_session):
+    """Rows written before the strip still carry the codes; the history reads
+    them through `read_log_lines`, which is where they come out."""
+    streamer = _streamer(db_session)
+    streamer.append("TOOL", "placeholder", force=True)
+    row = db_session.exec(select(RunLogLine).where(RunLogLine.run_id == streamer.run_id)).one()
+    row.text = COLOURED
+    db_session.add(row)
+    db_session.commit()
+
+    lines = read_log_lines(db_session, streamer.run_id, {"storage": LOG_STORAGE_ROWS})
+    assert [line["text"] for line in lines] == ["╭─ pre-commit"]
+
+
+def test_the_live_line_is_shown_without_escape_codes(db_session):
+    streamer = _streamer(db_session)
+    streamer.set_live(COLOURED)
+
+    artifact = db_session.exec(
+        select(Artifact).where(Artifact.run_id == streamer.run_id, Artifact.kind == "log")
+    ).first()
+    assert json.loads(artifact.content_json)["live"] == "╭─ pre-commit"
+
+
+def test_a_long_stream_is_not_cut_through_an_escape_code(db_session):
+    """The buffer flushes in fixed chunks. A cut inside a code stored `ESC[3`
+    at one line's end and `8;2;5;5;5m─` at the next one's start, and that
+    second half is plain text nothing can recognise any more."""
+    streamer = _streamer(db_session)
+    head = "a" * (RunLogStreamer.CHUNK_FLUSH_CHARS - 3)
+    streamer._ingest_delta_text(head + "\x1b[38;2;5;5;5m─ done")
+    streamer._flush_stream_buffer(force=True)
+
+    rows = db_session.exec(
+        select(RunLogLine).where(RunLogLine.run_id == streamer.run_id).order_by(RunLogLine.seq)
+    ).all()
+    text = "".join(row.text for row in rows)
+    assert "\x1b" not in text
+    assert "8;2;" not in text
+    assert text.endswith("─ done")

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Literal, get_args
 
+from loregarden.core.terminal_text import safe_cut, strip_ansi
 from loregarden.db.session import engine
 from loregarden.dot_line import (
     CMD,
@@ -447,7 +448,9 @@ class RunLogStreamer:
                 self._line_written = [""] * len(self._lines)
 
     def _append_chunks(self, tag: str, text: str, *, force: bool = False) -> None:
-        text = text.strip()
+        # Tools colour their output for a terminal; stored and shown here, the
+        # escape codes are noise (`[38;2;5;5;5m─`), and nothing reads the colour.
+        text = strip_ansi(text).strip()
         if not text:
             return
         offset = 0
@@ -499,8 +502,9 @@ class RunLogStreamer:
         if not text:
             return
         if keep_remainder and len(text) > self.CHUNK_FLUSH_CHARS:
-            chunk = text[: self.CHUNK_FLUSH_CHARS]
-            self._stream_buffer = text[self.CHUNK_FLUSH_CHARS :]
+            cut = safe_cut(text, self.CHUNK_FLUSH_CHARS)
+            chunk = text[:cut]
+            self._stream_buffer = text[cut:]
             self._append_chunks(self._stream_tag, chunk, force=force)
             return
         self._append_chunks(self._stream_tag, text, force=force)
@@ -697,6 +701,7 @@ class RunLogStreamer:
             self.set_live(f"{payload.get('type', 'event')}…")
 
     def set_live(self, text: str) -> None:
+        text = strip_ansi(text)
         if len(text) > self.MAX_LIVE_CHARS:
             text = text[-self.MAX_LIVE_CHARS :]
         if text == self._live:
