@@ -97,7 +97,9 @@ def resolve_compatibility_posture(
                 )
             current = parent
 
-    if workspace is None and ticket is not None:
+    # An initiative has no workspace; `session.get` with a None key warns, and
+    # SQLAlchemy has said it will raise.
+    if workspace is None and ticket is not None and ticket.workspace_id:
         workspace = session.get(Workspace, ticket.workspace_id)
 
     if workspace is not None:

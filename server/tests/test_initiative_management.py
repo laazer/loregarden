@@ -4,6 +4,7 @@ detach, and the parent rollup that follows a changed child set."""
 from __future__ import annotations
 
 import json
+import warnings
 from typing import Any
 
 import pytest
@@ -57,6 +58,22 @@ def test_rest_create_initiative_without_workspace_slug(client):
     assert body["work_item_type"] == "initiative"
     assert body["workspace_slug"] == ""
     assert body["external_id"].startswith("init-")
+
+
+def test_reading_an_initiative_raises_no_null_key_warning(client):
+    """An initiative has no workspace. Two readers on the ticket detail path
+    called `session.get(Workspace, None)` for it, which SQLAlchemy warns about
+    on every read (and says it will raise for): the live log carried a pair of
+    them per page load of an initiative."""
+    created = client.post("/api/tickets", json={"title": "Q4", "work_item_type": "initiative"})
+    ticket_id = created.json()["id"]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert client.get(f"/api/tickets/{ticket_id}").status_code == 200
+        assert client.get(f"/api/tickets/{ticket_id}/artifacts").status_code == 200
+
+    assert not [w for w in caught if "NULL primary key" in str(w.message)]
 
 
 def test_rest_create_milestone_still_requires_workspace(client):

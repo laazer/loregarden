@@ -351,7 +351,6 @@ def _current_error(
 
 
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
-    from loregarden.models.domain import Workspace
     from loregarden.services.artifact_service import (
         _diff_artifact_is_valid,
         _test_artifact_is_valid,
@@ -420,7 +419,7 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     if log_artifacts and _apply_log_artifacts(session, ticket_id, log_artifacts, grouped):
         return grouped
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for(session, ticket.workspace_id)
     if workspace:
         if not grouped["diff"] or not _diff_artifact_is_valid(grouped["diff"] or {}):
             grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)

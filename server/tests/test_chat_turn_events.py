@@ -1,10 +1,15 @@
 """The channel a chat panel watches while a turn is thinking."""
 
 import json
+import logging
+from unittest.mock import patch
 
+import pytest
+from loregarden.api import chat_turn_events
 from loregarden.models.domain import ChatTurnThinking
 from loregarden.services.chat_thinking import ChatTurnThinkingSink, finish_chat_turn_thinking
 from sqlmodel import Session
+from tests.test_queue_events import _ClosingSocket
 
 
 def test_reading_a_turn_with_no_reasoning_is_an_empty_frame(client):
@@ -83,3 +88,22 @@ def test_the_socket_is_told_when_the_turn_settles(client, db_session: Session):
         finish_chat_turn_thinking(db_session, "t4")
 
         assert socket.receive_json()["type"] == "chat_thinking_done"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("left", [True, False])
+async def test_a_send_that_loses_the_race_with_a_closing_tab_is_not_logged_as_a_failure(
+    left, caplog
+):
+    """The queue socket's case (`socket_close`), on the chat turn's socket."""
+    socket = _ClosingSocket(left=left)
+
+    with (
+        patch("loregarden.api.chat_turn_events.websocket_token_ok", return_value=True),
+        patch("loregarden.api.chat_turn_events._initial_frame", return_value={}),
+        caplog.at_level(logging.WARNING, logger="loregarden.api.chat_turn_events"),
+    ):
+        await chat_turn_events.chat_turn_socket(socket, "turn-1")
+
+    failures = [r for r in caplog.records if r.getMessage().startswith("Chat turn socket failed")]
+    assert len(failures) == (0 if left else 1)

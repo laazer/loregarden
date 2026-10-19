@@ -16,6 +16,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from loregarden.api.socket_close import peer_left
 from loregarden.core.auth import websocket_token_ok
 from loregarden.db.session import engine, get_session
 from loregarden.services.chat_thinking import chat_turn_topic, read_chat_turn_thinking
@@ -100,6 +101,10 @@ async def chat_turn_socket(websocket: WebSocket, turn_id: str) -> None:
         # and the turn itself runs on regardless of who is watching.
         pass
     except Exception:  # noqa: BLE001 - one bad socket must not take the loop down
+        if await peer_left(disconnected):
+            # silent-ok: the viewer closed the tab mid-send (`socket_close`); the
+            # receive side confirmed it, and the turn runs on regardless.
+            return
         logger.warning("Chat turn socket failed for %s", turn_id, exc_info=True)
     finally:
         disconnected.cancel()

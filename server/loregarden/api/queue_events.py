@@ -17,6 +17,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from loregarden.api.socket_close import peer_left
 from loregarden.core.auth import websocket_token_ok
 from loregarden.db.session import engine
 from loregarden.services.event_hub import event_hub
@@ -185,6 +186,10 @@ async def queue_socket(websocket: WebSocket) -> None:
         # the queue keeps running whether or not a browser is watching it.
         pass
     except Exception:  # noqa: BLE001 - one bad socket must not take the loop down
+        if await peer_left(disconnected):
+            # silent-ok: the viewer closed the tab mid-send (`socket_close`); the
+            # receive side confirmed it, and the finally block unsubscribes.
+            return
         logger.warning("Queue socket failed", exc_info=True)
     finally:
         disconnected.cancel()
