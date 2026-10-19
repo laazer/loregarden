@@ -1,6 +1,7 @@
 """REST API for orchestration callbacks — used by MCP server and external drivers."""
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from loregarden.core.terminal_text import strip_ansi
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AttachArtifactRequest,
@@ -32,7 +33,6 @@ from loregarden.services.gate_runner import (
     gates_can_run,
     resolved_transition_script,
     sample_gate_context,
-    strip_ansi,
     transition_name,
 )
 from loregarden.services.orchestration import OrchestrationService

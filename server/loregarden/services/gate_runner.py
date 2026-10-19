@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import shlex
 import subprocess
 import sys
@@ -12,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.config import settings
+from loregarden.core.terminal_text import strip_ansi
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import scrubbed_git_env
@@ -32,14 +32,6 @@ GATE_TIMEOUT_SECONDS = 300
 #: found something — see `_run_command`. Kept in sync by
 #: `tests/test_gate_python_guard.py`, which asserts the two constants agree.
 GATE_EX_UNAVAILABLE = 69
-
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-
-
-def strip_ansi(text: str) -> str:
-    """Drop ANSI colour/cursor escape codes so lint/formatter output is readable
-    when surfaced in the workflow pane or fed back to an agent as context."""
-    return _ANSI_RE.sub("", text)
 
 
 @dataclass(frozen=True)
