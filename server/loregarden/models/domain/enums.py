@@ -952,6 +952,10 @@ class RepairRoute(str, Enum):
     #: *not* a route — that one exists to stop exactly this retry — and neither
     #: is a stage whose agent declared a blocker and exited cleanly.
     STAGE_RETRY = "stage_retry"
+    #: A `conflict` block whose branch may still get a merge turn: the attempt
+    #: budget on its current tip is not spent, so the next dispatch's checkout
+    #: runs one rather than refusing at once (`ticket_merge_turn`).
+    MERGE_TURN = "merge_turn"
 
 
 class ViewKind(str, Enum):
