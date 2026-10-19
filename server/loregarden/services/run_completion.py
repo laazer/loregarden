@@ -50,7 +50,7 @@ from loregarden.services.autopilot_sign_off import (
     record_autopilot_sign_off,
 )
 from loregarden.services.block_classification import classify_block_message
-from loregarden.services.block_repair import record_repair_outcome
+from loregarden.services.block_repair import conflict_refusal, record_repair_outcome
 from loregarden.services.block_settlement import BlockSettlement, settle_block
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
@@ -335,6 +335,9 @@ def _classify_raw_failure(
         stages,
         message=failure,
         repairable=probable is BlockKind.WORK,
+        no_repair_reason=(
+            conflict_refusal(run.stage_key) if probable is BlockKind.CONFLICT else ""
+        ),
     )
 
 
