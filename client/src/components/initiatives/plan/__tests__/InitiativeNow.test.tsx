@@ -4,7 +4,8 @@ import type { InitiativePlan, PlanNode } from "../../../../api/initiativeApi";
 import type { ActiveRun, QueueLane } from "../../../../lib/queueSocket";
 import { navigateToTicket } from "../../../../lib/useAppNavigation";
 import { useQueueStatus, type QueueStatusValue } from "../../../../state/QueueStatusContext";
-import { InitiativeRunningTickets } from "../InitiativeRunningTickets";
+import { InitiativeNow } from "../InitiativeNow";
+import { useInitiativeNow } from "../useInitiativeNow";
 
 jest.mock("../../../../state/QueueStatusContext", () => ({
   useQueueStatus: jest.fn(),
@@ -16,8 +17,13 @@ jest.mock("../../../../lib/useAppNavigation", () => ({
 
 const mockUseQueueStatus = useQueueStatus as jest.MockedFunction<typeof useQueueStatus>;
 
-const node = (id: string, external = false): PlanNode =>
-  ({ id, external_id: `lg-${id}`, title: id, milestone_id: external ? null : "m1", external }) as PlanNode;
+const node = (id: string, external = false, status: PlanNode["status"] = "ready"): PlanNode =>
+  ({ id, external_id: `lg-${id}`, title: id, milestone_id: external ? null : "m1", external, status }) as PlanNode;
+
+/** The column as the autopilot section mounts it. */
+function Now({ plan: p }: { plan: InitiativePlan }) {
+  return <InitiativeNow now={useInitiativeNow(p)} />;
+}
 
 const plan = {
   id: "init-1",
@@ -60,10 +66,9 @@ test("shows a slot card for each lane running one of the initiative's tickets, a
     { slot_number: 2, running: run("elsewhere"), waiting: [] },
     { slot_number: 3, running: null, waiting: [] },
   ]);
-  render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
-  const section = screen.getByRole("region", { name: /Running now/ });
-  expect(within(section).getAllByRole("listitem")).toHaveLength(1);
+  expect(screen.getAllByTestId(/^initiative-running-/)).toHaveLength(1);
   expect(screen.getByTestId("initiative-running-t1")).toHaveTextContent("Slot 1");
   expect(screen.getByTestId("initiative-running-t1")).toHaveTextContent("Title t1");
   expect(screen.queryByTestId("initiative-running-elsewhere")).not.toBeInTheDocument();
@@ -71,7 +76,7 @@ test("shows a slot card for each lane running one of the initiative's tickets, a
 
 test("shows no lane backlog and no way to add to the queue", () => {
   withLanes([{ slot_number: 1, running: run("t1"), waiting: [waitingEntry] }]);
-  render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
   expect(screen.queryByText("Queued behind it")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "LG-t1 actions" }));
@@ -81,7 +86,7 @@ test("shows no lane backlog and no way to add to the queue", () => {
 
 test("goes to the running ticket from its card", () => {
   withLanes([{ slot_number: 1, running: run("t1"), waiting: [] }]);
-  render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
   fireEvent.click(screen.getByRole("button", { name: "LG-t1 actions" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Go to ticket" }));
@@ -101,7 +106,7 @@ test("counts a ticket under the initiative that the graph does not list, by its 
       waiting: [],
     },
   ]);
-  render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
   expect(screen.getByTestId("initiative-running-deep-child")).toBeInTheDocument();
 });
@@ -114,21 +119,37 @@ test("counts a lane held above the initiative whose live descendant is its work"
       waiting: [],
     },
   ]);
-  render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
   expect(screen.getByTestId("initiative-running-outside-parent")).toBeInTheDocument();
 });
 
 test("does not count a prerequisite outside the initiative", () => {
   withLanes([{ slot_number: 1, running: run("prereq"), waiting: [] }]);
-  const { container } = render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
-  expect(container).toBeEmptyDOMElement();
+  expect(screen.queryByTestId("initiative-running-prereq")).not.toBeInTheDocument();
+  expect(screen.getByText("Nothing of this initiative is running or queued.")).toBeInTheDocument();
 });
 
-test("renders nothing when none of its tickets is running", () => {
+test("says so when none of its tickets holds a lane", () => {
   withLanes([{ slot_number: 1, running: null, waiting: [waitingEntry] }]);
-  const { container } = render(<InitiativeRunningTickets plan={plan} />);
+  render(<Now plan={plan} />);
 
-  expect(container).toBeEmptyDOMElement();
+  expect(screen.getByText("Nothing of this initiative is running or queued.")).toBeInTheDocument();
+});
+
+test("lists a ticket that holds a lane without a slot, and not one a slot already shows", () => {
+  // The autopilot counted the first as "1 in flight" while Running now showed nothing.
+  const held = {
+    ...plan,
+    nodes: [node("queued", false, "running"), node("t1", false, "running"), node("prereq", true, "running")],
+  } as InitiativePlan;
+  withLanes([{ slot_number: 1, running: run("t1"), waiting: [] }]);
+  render(<Now plan={held} />);
+
+  const waiting = screen.getByRole("list", { name: "Holding a lane without a slot" });
+  expect(within(waiting).getAllByRole("listitem")).toHaveLength(1);
+  expect(within(waiting).getByRole("button", { name: /lg-queued/ })).toBeInTheDocument();
+  expect(screen.getByTestId("initiative-running-t1")).toBeInTheDocument();
 });
