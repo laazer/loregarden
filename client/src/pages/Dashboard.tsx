@@ -44,6 +44,7 @@ import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateSta
 import { DEFAULT_ARTIFACT_TAB, navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
+import { useExpandSearchMatches } from "../hooks/useExpandSearchMatches";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
 import { pushToast, toastWarning } from "../state/toastStore";
@@ -170,6 +171,7 @@ export function Dashboard() {
     [ticketTree.data, archivedSlugs],
   );
   const flatTickets = useMemo(() => flattenTree(visibleTree), [visibleTree]);
+  useExpandSearchMatches(search, ticketTree.data, expandPath);
 
   useEffect(() => {
     if (workspace !== "all" && archivedSlugs.has(workspace)) setWorkspace("all");
