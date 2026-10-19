@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { copyText } from '../lib/clipboard';
 import { describeError, pushToast } from '../state/toastStore';
+import { Button } from './ui/Button';
+import './CopyValueButton.css';
 
 const COPIED_MS = 1500;
 
@@ -9,10 +11,28 @@ export interface CopyValueButtonProps {
   /** What is being copied, for the accessible name: "ticket number" → "Copy ticket number". */
   what: string;
   className?: string;
+  /**
+   * The button's face instead of the copy icon, usually the value itself, so
+   * the id a person reads is the thing they click. A tick follows it once copied.
+   */
+  children?: ReactNode;
 }
 
-/** A small icon button that copies `value` and says so for a moment. */
-export function CopyValueButton({ value, what, className = '' }: CopyValueButtonProps) {
+const COPY_ICON = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </svg>
+);
+
+const COPIED_ICON = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
+
+/** A small button that copies `value` and says so for a moment. */
+export function CopyValueButton({ value, what, className = '', children }: CopyValueButtonProps) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
 
@@ -39,24 +59,24 @@ export function CopyValueButton({ value, what, className = '' }: CopyValueButton
 
   const label = copied ? `Copied ${what}` : `Copy ${what}`;
   return (
-    <button
-      type="button"
-      className={`copy-value-btn${copied ? ' is-copied' : ''}${className ? ` ${className}` : ''}`}
+    <Button
+      variant="plain"
+      className={`copy-value-btn${children ? ' copy-value-btn--text' : ''}${copied ? ' is-copied' : ''}${className ? ` ${className}` : ''}`}
       aria-label={label}
       title={label}
       disabled={!value}
       onClick={(event) => void handleCopy(event)}
     >
-      {copied ? (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
+      {children ? (
+        <>
+          <span className="copy-value-text">{children}</span>
+          {copied ? COPIED_ICON : null}
+        </>
+      ) : copied ? (
+        COPIED_ICON
       ) : (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <rect x="9" y="9" width="12" height="12" rx="2" />
-          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-        </svg>
+        COPY_ICON
       )}
-    </button>
+    </Button>
   );
 }
