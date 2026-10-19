@@ -82,10 +82,15 @@
   vertical-align: top;
 }
 
+/* A table cell, so it stays one: `display: flex` on a <td> takes it out of the
+   row, and its height and bottom border stopped matching the cells beside it. */
 .instances-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.instances-actions > * + * {
+  margin-left: 6px;
 }
 
 .instances-meta {
@@ -280,6 +285,12 @@
   padding: 12px 16px;
   cursor: pointer;
   list-style: none;
+}
+
+/* The card's way to the workspace dashboard, beside the setup chips. */
+.instances-setup-open {
+  flex: none;
+  text-decoration: none;
 }
 
 .instances-setup > details > summary::-webkit-details-marker {

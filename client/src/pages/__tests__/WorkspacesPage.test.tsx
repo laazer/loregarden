@@ -387,6 +387,17 @@ describe("workspace setup", () => {
     useToastStore.setState({ toasts: [] });
   });
 
+  it("opens a workspace's dashboard straight from its card, without opening setup", async () => {
+    renderPage();
+    const link = await screen.findByRole("link", { name: "Open Shop dashboard" });
+    const card = link.closest("details") as HTMLDetailsElement;
+    expect(card.open).toBe(false);
+
+    fireEvent.click(link);
+
+    expect(screen.getByRole("status", { name: "location" })).toHaveTextContent(/^\/workspaces\/shop$/);
+  });
+
   it("offers what can be installed and says why the rest cannot", async () => {
     renderPage();
     const panel = await setupPanel();

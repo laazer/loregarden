@@ -152,11 +152,19 @@ export function WorkspaceSetupCard({ workspace, summary, archiving, onArchive }:
               {workspace.file_error ? "templates broken" : `${launchable} ${launchable === 1 ? "template" : "templates"}`}
             </Chip>
           </span>
+          {/* A link inside <summary> follows the link without toggling the card
+              (HTML's summary activation skips interactive descendants). The
+              card's own toggle still opens setup; this is the way to the
+              workspace itself, visible without opening anything. */}
+          <Link
+            to={workspaceDashboardPath(workspace.slug)}
+            className="btn-secondary btn-compact instances-setup-open"
+            aria-label={`Open ${workspace.name} dashboard`}
+          >
+            Open dashboard
+          </Link>
         </summary>
         <div className="instances-setup-body">
-          <Link to={workspaceDashboardPath(workspace.slug)} className="instances-setup-dashboard">
-            Open {workspace.name}&rsquo;s dashboard: PRs, blocked tickets, recent activity
-          </Link>
           {repoProblem && (
             <div className="instances-setup-actions" role="status">
               <span className="instances-meta instances-warning">{repoProblem.explain}</span>
