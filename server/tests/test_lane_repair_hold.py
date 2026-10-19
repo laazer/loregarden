@@ -19,11 +19,15 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     RepairRoute,
+    RunStatus,
     StageStatus,
     Ticket,
     TicketState,
     Workspace,
 )
+from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.queue_repair import (
@@ -33,6 +37,15 @@ from loregarden.services.queue_repair import (
 )
 from loregarden.services.run_interruption import INTERRUPTED_RUN_MESSAGE
 from sqlmodel import Session, select
+from tests.test_block_repair import (  # noqa: F401 - fixtures are used by name
+    REVIEWER,
+    WORKER,
+    _report,
+    _script,
+    ticket_fixture,
+)
+
+PASS_REPORT = (RunStatus.SUCCEEDED, _report("pass"), "")
 
 
 @pytest.fixture(name="session")
@@ -354,3 +367,94 @@ def test_a_hold_gives_up_its_lane_when_the_ticket_restarts_elsewhere(lanes, sess
     assert _slot(session, 1).is_available is True
     # No second dispatch: the ticket is already running.
     assert lanes.dispatcher.launched == [ticket.id]
+
+
+def test_a_held_ticket_a_person_already_unblocked_is_dispatched_as_it_is(lanes, session, workspace):
+    """Nothing to un-block, so nothing is touched: the stage a person left is
+    not rewound, and a ticket with no workflow is not refused for lacking one."""
+    ticket = _ticket(session, workspace.id, "LG-1")
+    _block(session, ticket)
+    entry = _finish_blocked(lanes, session, ticket)
+    ticket.state = TicketState.IN_PROGRESS
+    ticket.blocking_issues = ""
+    session.add(ticket)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    session.refresh(entry)
+    assert entry.status == QueuePosition.ACTIVE
+    assert lanes.dispatcher.launched == [ticket.id, ticket.id]
+
+
+# ---- a hold's re-dispatch runs the stage, through the real orchestrator ----
+
+
+class _ClaimingDispatcher:
+    """What the real lane dispatcher does before handing off to its thread:
+    claim the ticket's orchestration run. The test then executes it, as that
+    background thread would, so the claim is adopted the real way."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def dispatch_orchestration(self, ticket, *, auto_repair=True, **_kwargs):
+        return OrchestrationCallbackService(self.session).claim_orchestration_run(
+            ticket, auto_repair=auto_repair
+        )
+
+    def dispatch_stage(self, ticket, entry):
+        raise AssertionError("these lanes only run orchestrations")
+
+
+def test_a_held_stage_retry_re_runs_the_stage_it_blocked_on(db_session, ticket, monkeypatch):
+    """A failed stage run with budget left holds its lane, and the hold's
+    re-dispatch has to run that stage again. It used to start an orchestration
+    on the still-BLOCKED ticket, which stops before its first stage, so the hold
+    spent every attempt running nothing and then settled the block."""
+    dispatched = _script(
+        monkeypatch, {WORKER: [(RunStatus.FAILED, "", "Error: something broke"), PASS_REPORT]}
+    )
+    lanes = QueueLaneService(
+        db_session, max_concurrent=3, dispatcher=_ClaimingDispatcher(db_session)
+    )
+    profile = OrchestrationProfile(slug="hold-test")
+
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, auto_repair=False)
+    BuiltinOrchestrator(db_session).execute(ticket, profile, max_stages=10, auto_repair=False)
+    entry = db_session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).one()
+    assert entry.status == QueuePosition.REPAIRING
+    assert entry.repair_route is RepairRoute.STAGE_RETRY
+
+    lanes.reconcile_lanes()
+    BuiltinOrchestrator(db_session).execute(ticket, profile, max_stages=10, auto_repair=False)
+
+    db_session.refresh(ticket)
+    assert dispatched == [WORKER, WORKER, REVIEWER]
+    assert ticket.state is not TicketState.BLOCKED
+
+
+def test_a_held_block_with_no_workflow_to_re_run_settles_and_says_why(
+    db_session, ticket, monkeypatch
+):
+    _script(monkeypatch, {WORKER: (RunStatus.FAILED, "", "Error: something broke")})
+    lanes = QueueLaneService(
+        db_session, max_concurrent=3, dispatcher=_ClaimingDispatcher(db_session)
+    )
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, auto_repair=False)
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="hold-test"), max_stages=10, auto_repair=False
+    )
+    entry = db_session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).one()
+    assert entry.status == QueuePosition.REPAIRING
+    ticket.workflow_disabled = True
+    db_session.add(ticket)
+    db_session.commit()
+
+    lanes.reconcile_lanes()
+
+    db_session.refresh(entry)
+    assert entry.status != QueuePosition.REPAIRING
+    assert entry.repair_attempts == 0
+    # Settled out loud, naming the ticket, rather than spending attempts on nothing.
+    assert ticket.external_id in entry.failure_reason

@@ -125,6 +125,22 @@ def test_turning_off_again_holds_work_it_queued_before_the_last_cycle(
     assert [_status(db_session, e) for e in waiting] == [QueuePosition.PAUSED] * 2
 
 
+def test_turning_off_holds_a_blocked_ticket_it_retried(db_session, workspaces, lanes, root):
+    here, _ = workspaces
+    first, retried = _item(db_session, here, root, "a"), _item(db_session, here, root, "b")
+    _switch(db_session, root, True)
+    _queue(db_session, lanes, root, first)
+    entry = _queue(db_session, lanes, root, retried, by_autopilot=False)
+    db_session.add(
+        AutopilotEvent(initiative_id=root.id, action=AutopilotAction.RETRIED, ticket_id=retried.id)
+    )
+    db_session.commit()
+
+    _switch(db_session, root, False)
+
+    assert _status(db_session, entry) == QueuePosition.PAUSED
+
+
 def test_a_held_entry_is_not_started_when_its_lane_frees(db_session, lanes, root, busy_lane):
     _, waiting = busy_lane
     _switch(db_session, root, False)

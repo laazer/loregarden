@@ -131,6 +131,8 @@ class AutopilotAction(StrEnum):
     HELD = "held"
     #: Turned back on: put a ticket it held back in its lane.
     RELEASED = "released"
+    #: Unblocked a ticket whose block a re-run can still clear, and queued it.
+    RETRIED = "retried"
 
 
 class SuggestionKind(StrEnum):
