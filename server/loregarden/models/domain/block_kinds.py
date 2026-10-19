@@ -38,6 +38,11 @@ class BlockKind(StrEnum):
     #: blocked because a child is. Never a stage report's word: an agent that
     #: names it names no ticket, and the badge would point nowhere.
     TICKETS = "tickets"
+    #: The ticket's branch cannot take its target: work that landed before it
+    #: collides with its own. Not an agent's stage to repair (re-running the
+    #: stage hits the same checkout); the merge turn (`branch_takes_target`) is
+    #: how it clears, and a person resolves it once that turn's attempts are spent.
+    CONFLICT = "conflict"
 
 
 class BlockedOn(StrEnum):

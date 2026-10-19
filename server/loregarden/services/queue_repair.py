@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     AgentRun,
     Approval,
     ApprovalStatus,
+    BlockKind,
     QueuedRun,
     QueuePosition,
     RepairRoute,
@@ -48,6 +49,7 @@ from loregarden.services.stage_retry_budget import (
     resolve_stage_retry_budget,
     stage_retry_budget_state,
 )
+from loregarden.services.ticket_merge_turn import ticket_merge_turn_refusal
 from loregarden.services.ticket_rollup import reconcile_ancestors
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import set_stage_status
@@ -67,6 +69,15 @@ REPAIR_ATTEMPT_CAP = 3
 REPAIR_WALL_CLOCK = timedelta(minutes=15)
 
 
+def _settled_by_a_person(session: Session, ticket: Ticket) -> bool:
+    """Whether a person has decided this ticket's course, so no repair may override it."""
+    if ticket.state in (TicketState.DONE, TicketState.WONT_DO, TicketState.PARKED):
+        return True
+    # An operator who set the state by hand has decided; repairing past that
+    # would overwrite the decision with a retry.
+    return ticket.state_locked or awaiting_a_person(session, ticket)
+
+
 def resolve_repair_route(session: Session, ticket: Ticket) -> RepairRoute | None:
     """The mechanism that would make this ticket's next dispatch different, or
     None because its block is final.
@@ -74,14 +85,13 @@ def resolve_repair_route(session: Session, ticket: Ticket) -> RepairRoute | None
     Order matters only in what it reports: a ticket can satisfy more than one,
     and the first is the most specific answer about why the last run stopped.
     """
-    if ticket.state in (TicketState.DONE, TicketState.WONT_DO, TicketState.PARKED):
+    if _settled_by_a_person(session, ticket):
         return None
-    # An operator who set the state by hand has decided; repairing past that
-    # would overwrite the decision with a retry.
-    if ticket.state_locked:
-        return None
-    if awaiting_a_person(session, ticket):
-        return None
+    # A conflict clears only by merging, and a dispatch merges only while a turn
+    # may run on the branch's tip. Without one, every re-dispatch refuses at the
+    # same checkout, so none of the routes below would make it differ.
+    if ticket.block_kind is BlockKind.CONFLICT:
+        return None if ticket_merge_turn_refusal(session, ticket) else RepairRoute.MERGE_TURN
 
     if blocked_by_interruption(ticket):
         return RepairRoute.INTERRUPTION

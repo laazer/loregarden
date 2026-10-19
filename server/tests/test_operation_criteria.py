@@ -262,6 +262,23 @@ def test_keeping_them_moves_on_and_is_not_asked_again(db_session, ticket):
     assert _question(db_session, ticket) is None
 
 
+@pytest.mark.parametrize("choice", [SPLIT_OPTION, KEEP_OPTION])
+def test_answering_leaves_the_ticket_state_unpinned(db_session, ticket, choice):
+    """The person chose how to settle the criteria, not the ticket's state.
+
+    The answer used to move the ticket through the manual-edit path, which pins
+    `state_locked`; every reader then took the state for an operator's decision.
+    lg-external-harness-1026 was answered this way and could never again be
+    repaired by a lane or retried by the autopilot.
+    """
+    _spec_passes(db_session, ticket)
+
+    _answer(db_session, _question(db_session, ticket), choice)
+
+    db_session.refresh(ticket)
+    assert ticket.state_locked is False
+
+
 def test_a_spec_with_only_code_criteria_advances_as_before(db_session, ticket):
     ticket.acceptance_criteria_json = serialize_criteria([CODE_AC])
     db_session.add(ticket)
