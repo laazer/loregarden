@@ -55,6 +55,7 @@ from loregarden.services.queue_repair import (
     REPAIR_ATTEMPT_CAP,
     begin_repair,
     end_repair,
+    prepare_rerun,
     repair_exhausted,
     resolve_repair_route,
 )
@@ -926,6 +927,13 @@ class QueueLaneService:
         )
         if elsewhere:
             self._settle_repair(entry, f"the ticket was restarted in lane(s) {elsewhere}")
+            return True
+
+        # A dispatch into a still-BLOCKED ticket runs nothing: the orchestration
+        # stops before its first stage, and the hold would spend every attempt so.
+        refused = prepare_rerun(self.session, ticket)
+        if refused:
+            self._settle_repair(entry, refused)
             return True
 
         # Counted before the dispatch, not after: a refused dispatch is an

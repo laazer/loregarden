@@ -49,12 +49,12 @@ def _held_since(session: Session, plan_id: str, since: datetime | None) -> set[s
 
 
 def _last_dispatches(session: Session, plan_id: str) -> dict[str, datetime]:
-    """Ticket id -> when it last dispatched it."""
+    """Ticket id -> when it last queued it, as a fresh pick or a retry."""
     rows = session.exec(
         select(AutopilotEvent.ticket_id, func.max(AutopilotEvent.created_at))
         .where(
             AutopilotEvent.initiative_id == plan_id,
-            AutopilotEvent.action == AutopilotAction.DISPATCHED,
+            col(AutopilotEvent.action).in_((AutopilotAction.DISPATCHED, AutopilotAction.RETRIED)),
         )
         .group_by(AutopilotEvent.ticket_id)
     ).all()

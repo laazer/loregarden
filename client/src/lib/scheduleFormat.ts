@@ -105,6 +105,7 @@ export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   signed_off: "Approved a stage",
   held: "Held until turned on",
   released: "Put back in its lane",
+  retried: "Retried a blocked ticket",
 };
 
 /** "Oct 2, 14:05" — when an autopilot event happened. */

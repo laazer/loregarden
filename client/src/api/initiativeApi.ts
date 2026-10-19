@@ -160,7 +160,8 @@ export type AutopilotAction =
   | "paused"
   | "signed_off"
   | "held"
-  | "released";
+  | "released"
+  | "retried";
 
 export interface AutopilotView {
   enabled: boolean;

@@ -17,9 +17,10 @@ Each tick, per plan with autopilot on:
 1. Build the plan graph (`initiative_graph`).
 2. Pick `READY` tickets in schedule order, at most `max_parallel` in flight
    across the initiative. Lanes do not limit it: each ticket gets its own
-   worktree, and the machine's capacity queue meters the load. `NEEDS_PERSON` and
-   `BLOCKED` tickets are never picked; neither is a prerequisite outside the
-   initiative, which belongs to someone else's plan.
+   worktree, and the machine's capacity queue meters the load. `NEEDS_PERSON`
+   tickets are never picked, nor a prerequisite outside the initiative, which
+   belongs to someone else's plan. A `BLOCKED` one is picked only when a re-run
+   can still clear its block, once per switch-on (`autopilot_retry`).
 3. Re-check each pick against git (`unmet_prerequisites_for_start`): a
    prerequisite can be `done` with its work never landed, and the queue does
    not check prerequisites at all — a queued ticket starts when its slot frees.
@@ -33,7 +34,8 @@ Each tick, per plan with autopilot on:
 
 **Circuit breaker.** When `BREAKER_LIMIT` tickets it started since it was last
 turned on are blocked, it turns itself off and says why: something is wrong
-with the work or the harness, and starting more only makes more of it.
+with the work or the harness, and starting more only makes more of it. A block
+it has yet to retry does not count; one it retried that blocked again does.
 
 Everything it does is an `AutopilotEvent`, shown on the page and returned to the
 planner, so "why did this start?" always has an answer.
@@ -66,6 +68,7 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.autopilot_hold import hold_queued_work, release_held_work
+from loregarden.services.autopilot_retry import retried_since, retry_reason
 from loregarden.services.autopilot_sign_off import (
     autopilot_may_sign_off,
     record_autopilot_sign_off,
@@ -81,6 +84,7 @@ from loregarden.services.initiative_graph import (
 from loregarden.services.initiative_service import load_plan_root
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
+from loregarden.services.queue_repair import prepare_rerun
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from sqlmodel import Session, col, select
@@ -94,8 +98,11 @@ BREAKER_LIMIT = 3
 RECENT_EVENTS = 8
 
 
-def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
-    """The ready tickets it would start now, in order."""
+def select_next(
+    ctx: PlanContext, max_parallel: int, retryable: frozenset[str] = frozenset()
+) -> list[PlanNode]:
+    """The tickets it would start now, in order: ready ones, and the blocked ones
+    in `retryable` (see `autopilot_retry`) once nothing they depend on is open."""
     graph = ctx.graph
     # A parent's plan never starts the parent itself: a childless one would be
     # its own only node, and running it is the Run button's job.
@@ -103,7 +110,12 @@ def select_next(ctx: PlanContext, max_parallel: int) -> list[PlanNode]:
     in_flight = [n for n in own if n.holds_lane]
     budget = max_parallel - len(in_flight)
     candidates = sorted(
-        (n for n in own if n.status == NodeStatus.READY),
+        (
+            n
+            for n in own
+            if n.status == NodeStatus.READY
+            or (n.status == NodeStatus.BLOCKED and n.id in retryable and not n.waiting_on)
+        ),
         # The critical path first — only work there brings the end date in —
         # then earlier phases, then whatever the schedule starts soonest.
         key=lambda n: (
@@ -183,22 +195,27 @@ def _ancestor_running(session: Session, ticket: Ticket) -> Ticket | None:
 
 
 def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticket]:
-    """Tickets it started since it was turned on that are now blocked."""
+    """Tickets it started since it was turned on that are now blocked, less the
+    ones it has yet to retry: a block a re-run may clear is not yet evidence
+    that something is wrong. One it retried that blocked again is."""
     since = plan.autopilot_since
     query = select(AutopilotEvent.ticket_id).where(
         AutopilotEvent.initiative_id == plan.initiative_id,
-        AutopilotEvent.action == AutopilotAction.DISPATCHED,
+        col(AutopilotEvent.action).in_((AutopilotAction.DISPATCHED, AutopilotAction.RETRIED)),
     )
     if since is not None:
         query = query.where(AutopilotEvent.created_at >= since)
     ids = {tid for tid in session.exec(query).all() if tid}
     if not ids:
         return []
-    return list(
-        session.exec(
+    retried = retried_since(session, plan.initiative_id, since)
+    return [
+        ticket
+        for ticket in session.exec(
             select(Ticket).where(col(Ticket.id).in_(ids), Ticket.state == TicketState.BLOCKED)
         ).all()
-    )
+        if ticket.id in retried or retry_reason(session, ticket) is None
+    ]
 
 
 def _pause(session: Session, plan: InitiativePlan, reason: str) -> None:
@@ -214,9 +231,19 @@ def _pause(session: Session, plan: InitiativePlan, reason: str) -> None:
 
 
 def _dispatch(
-    session: Session, plan: InitiativePlan, node: PlanNode, lanes: QueueLaneService
+    session: Session,
+    plan: InitiativePlan,
+    node: PlanNode,
+    lanes: QueueLaneService,
+    *,
+    retry: str | None = None,
 ) -> bool:
-    """Queue one pick, or record why not. True when it was queued."""
+    """Queue one pick, or record why not. True when it was queued.
+
+    `retry` is why a blocked pick may clear on a re-run; it is un-blocked first
+    (`prepare_rerun`), since an orchestration started on a blocked ticket runs
+    nothing. An interrupted stage is left as it is: the orchestrator resumes it.
+    """
     ticket = node.ticket
     if settings.sandbox:
         # A sandbox runs on a copy of the database, but a queued run works in
@@ -257,6 +284,10 @@ def _dispatch(
         _record_once(session, plan.initiative_id, ticket.id, detail)
         return False
     try:
+        if retry is not None:
+            refused = prepare_rerun(session, ticket)
+            if refused:
+                raise ValueError(refused)
         slot = least_busy_lane(lanes)
         result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=slot, auto_approve=True)
     except ValueError as exc:
@@ -269,12 +300,13 @@ def _dispatch(
             detail=str(exc),
         )
         return False
+    queued = f"lane {node.lane} → agent slot {slot} ({result.get('status', 'queued')})"
     _record(
         session,
         plan.initiative_id,
-        AutopilotAction.DISPATCHED,
+        AutopilotAction.DISPATCHED if retry is None else AutopilotAction.RETRIED,
         ticket_id=ticket.id,
-        detail=f"lane {node.lane} → agent slot {slot} ({result.get('status', 'queued')})",
+        detail=queued if retry is None else f"blocked, but {retry}; {queued}",
     )
     return True
 
@@ -352,13 +384,27 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
     resuming = _sign_off_parked_gates(session, plan)
     ctx = build_plan(session, load_plan_root(session, initiative_id), now=now or utcnow())
     lanes = QueueLaneService(session)
+    retry = _retryable(session, plan, ctx)
     dispatched = 0
-    for node in select_next(ctx, plan.max_parallel):
+    for node in select_next(ctx, plan.max_parallel, frozenset(retry)):
         if node.ticket.id in resuming:
             continue
-        dispatched += int(_dispatch(session, plan, node, lanes))
+        dispatched += int(_dispatch(session, plan, node, lanes, retry=retry.get(node.id)))
         session.commit()
     return dispatched
+
+
+def _retryable(session: Session, plan: InitiativePlan, ctx: PlanContext) -> dict[str, str]:
+    """Blocked tickets of its own it may retry this tick, with why."""
+    retried = retried_since(session, plan.initiative_id, plan.autopilot_since)
+    reasons: dict[str, str] = {}
+    for node in ctx.graph.nodes.values():
+        if node.external or node.status != NodeStatus.BLOCKED or node.id in retried:
+            continue
+        reason = retry_reason(session, node.ticket)
+        if reason is not None:
+            reasons[node.id] = reason
+    return reasons
 
 
 class AutopilotRefusedError(ValueError):

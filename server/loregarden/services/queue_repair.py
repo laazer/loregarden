@@ -48,6 +48,9 @@ from loregarden.services.stage_retry_budget import (
     resolve_stage_retry_budget,
     stage_retry_budget_state,
 )
+from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, col, select
 
 #: How many re-dispatches one lane entry may spend on repairs. Deliberately
@@ -77,7 +80,7 @@ def resolve_repair_route(session: Session, ticket: Ticket) -> RepairRoute | None
     # would overwrite the decision with a retry.
     if ticket.state_locked:
         return None
-    if _awaiting_a_person(session, ticket):
+    if awaiting_a_person(session, ticket):
         return None
 
     if blocked_by_interruption(ticket):
@@ -120,7 +123,7 @@ def _stage_run_failed(session: Session, ticket: Ticket, stage_key: str) -> bool:
     return run is not None and run.status is RunStatus.FAILED
 
 
-def _awaiting_a_person(session: Session, ticket: Ticket) -> bool:
+def awaiting_a_person(session: Session, ticket: Ticket) -> bool:
     """Whether anything on this ticket is sitting in the approval inbox.
 
     `block_ticket` files a `record_human_action` approval for a block that names
@@ -184,3 +187,44 @@ def end_repair(entry: QueuedRun) -> None:
     has spent its lane on blocking.
     """
     entry.repairing_since = None
+
+
+def unblock_for_rerun(session: Session, ticket: Ticket) -> None:
+    """Put the blocked stage back to PENDING, which reconciles the ticket out of BLOCKED.
+
+    An orchestration started on a blocked ticket stops before its first stage
+    (`_should_stop_orchestration`), and one whose current stage is still BLOCKED
+    does not run it, so re-dispatching it as it is starts nothing. A manual stage
+    edit or `requeue_stage` would do this too, but both give the stage a fresh
+    budget and `requeue_stage` a fresh repair turn, which is a person's call:
+    a re-run made here is charged to what the stage has already spent.
+
+    Raises ValueError when the ticket has no workflow to set a stage on.
+    """
+    stage_key = ticket.workflow_stage_key
+    _, stages = resolve_ticket_stages(session, ticket)
+    instance = workflow_instance_for(session, ticket.id)
+    if instance is None or not stages:
+        raise ValueError(f"{ticket.external_id} has no workflow to re-run '{stage_key}' in")
+    set_stage_status(ticket, instance, stages, stage_key, StageStatus.PENDING)
+    session.add(instance)
+    session.add(ticket)
+    session.commit()
+    # A parent the rollup blocked only because this ticket was blocked reads
+    # blocked until something pushes the rollup, and nothing else here does.
+    reconcile_ancestors(session, ticket)
+
+
+def prepare_rerun(session: Session, ticket: Ticket) -> str:
+    """Make a held ticket's next dispatch run its blocked stage; why it cannot, or "".
+
+    An interrupted stage is left alone: the orchestrator recovers that one
+    itself (`_recover_interrupted_stage`), and its block does not stop the run.
+    """
+    if ticket.state != TicketState.BLOCKED or blocked_by_interruption(ticket):
+        return ""
+    try:
+        unblock_for_rerun(session, ticket)
+    except ValueError as exc:
+        return f"the block cannot be re-run: {exc}"
+    return ""
