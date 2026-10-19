@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
-from loregarden.models.domain import Workspace
+from fastapi.testclient import TestClient
+from loregarden.db.session import get_session
+from loregarden.main import app
+from loregarden.models.domain import BlockKind, Ticket, Workspace
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.workspace_activity import workspace_activity
 from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape
 from loregarden.testing.prod_shape_activity import ACTIVITY_CALIBRATION
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
+from loregarden.testing.prod_shape_tree import TREE_CALIBRATION
 from sqlmodel import Session, select
 
 
@@ -94,3 +100,49 @@ def test_activity_digest_matches_the_live_two_weeks(isolated_db):
             digest = workspace_activity(session, workspace, utcnow() - ACTIVITY_WINDOW)
             assert digest.totals == shape.kinds
             assert len(digest.tickets) + digest.more_tickets == shape.tickets
+
+
+def test_the_tree_nests_parks_and_holds_like_production(isolated_db):
+    """Live, 2026-10-19: four levels below the roots, 15 stages awaiting a person,
+    and blocked work waiting on people, agents and other tickets.
+
+    Over the scenario alone, as the recorded tree is: the seed adds tickets of its own.
+    """
+    with Session(isolated_db) as session:
+        summary = build_prod_shape(session)
+        stored = len(session.exec(select(Ticket)).all())
+    # Member links are copies of a ticket listed under the initiative tracking it.
+    nodes = [(n, d) for n, d in _walk(_tree(isolated_db), depth=1) if not n["member_link"]]
+    blocked_on = Counter(node["blocked_on"] for node, _depth in nodes)
+    awaiting = sum(node["workflow_stage_status"] == "awaiting" for node, _depth in nodes)
+
+    assert len(nodes) == stored
+    assert max(depth for _node, depth in nodes) >= 4
+    scale = summary.tickets / TREE_CALIBRATION.tickets  # as build_prod_shape scales
+    assert awaiting == summary.tree.awaiting == round(TREE_CALIBRATION.awaiting * scale)
+    assert {"person", "agent", "tickets"} <= set(blocked_on)
+    share = TREE_CALIBRATION.prerequisite_held / TREE_CALIBRATION.backlog
+    held = blocked_on["tickets"] - summary.tree.blocked_kinds[BlockKind.TICKETS]
+    assert held == summary.tree.prerequisite_held
+    backlog = sum(node["state"] == "backlog" for node, _depth in nodes)
+    assert abs(held / backlog - share) < 0.05
+
+
+def _walk(nodes, depth):
+    for node in nodes:
+        yield node, depth
+        yield from _walk(node["children"], depth + 1)
+
+
+def _tree(isolated_db):
+    def session_override():
+        with Session(isolated_db) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = session_override
+    try:
+        response = TestClient(app).get("/api/tickets/tree")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    return response.json()

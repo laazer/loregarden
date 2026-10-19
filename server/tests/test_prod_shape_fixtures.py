@@ -74,6 +74,8 @@ ENDPOINTS = {
         {"since": "{since}"},
     ),
     "workspace-activity-blobert.json": ("/api/workspaces/blobert/activity", {"since": "{since}"}),
+    # Every ticket as one forest: what the Work items table builds its rows from.
+    "ticket-tree.json": ("/api/tickets/tree", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
