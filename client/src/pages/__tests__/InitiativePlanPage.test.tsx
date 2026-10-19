@@ -410,24 +410,27 @@ test("the autopilot panel says what waits on a person, what starts next, and wha
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 3 }));
 });
 
-test("while off, the picked cap is sent with Turn on; while on, Turn on is disabled", async () => {
+test("one switch: while off, the picked cap is sent with Turn on; while on, it reads Turn off", async () => {
   const on = plan({ autopilot: { ...plan().autopilot, max_parallel: 1, enabled: true } });
   mockApi.setAutopilot.mockResolvedValueOnce(on).mockResolvedValueOnce(plan());
   const user = userEvent.setup();
   renderPage();
 
   const panel = await screen.findByRole("region", { name: "Autopilot" });
+  expect(within(panel).getByText("Off")).toBeInTheDocument();
   const select = within(panel).getByRole("combobox", { name: /Most tickets/ });
-  expect(within(panel).getByRole("button", { name: "Turn off" })).toBeDisabled();
+  expect(within(panel).queryByRole("button", { name: "Turn off" })).not.toBeInTheDocument();
   await user.selectOptions(select, "1");
   expect(mockApi.setAutopilot).not.toHaveBeenCalled();
 
   await user.click(within(panel).getByRole("button", { name: "Turn on" }));
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenCalledWith("init1", { enabled: true, max_parallel: 1 }));
-  await waitFor(() => expect(within(panel).getByRole("button", { name: "Turn on" })).toBeDisabled());
+  const off = await within(panel).findByRole("button", { name: "Turn off" });
+  expect(within(panel).queryByRole("button", { name: "Turn on" })).not.toBeInTheDocument();
+  expect(within(panel).getByText("On")).toBeInTheDocument();
   expect(select).toHaveValue("1");
 
-  await user.click(within(panel).getByRole("button", { name: "Turn off" }));
+  await user.click(off);
   await waitFor(() => expect(mockApi.setAutopilot).toHaveBeenLastCalledWith("init1", { enabled: false }));
 });
 
