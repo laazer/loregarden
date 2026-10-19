@@ -50,12 +50,24 @@ export function normalizeUtilityDockEdge(value: unknown): UtilityDockEdge {
   return value === "right" ? "right" : "bottom";
 }
 
+/** How the Console's Work items pane draws a ticket: a one-line row or a card. */
+export type TicketDensity = "compact" | "cards";
+
+export function normalizeTicketDensity(value: unknown): TicketDensity {
+  return value === "cards" ? "cards" : "compact";
+}
+
 interface UiState {
   stateFilters: TicketState[];
   /** What a stuck ticket waits for: a person, other tickets, or an agent. */
   blockedOnFilters: BlockedOn[];
   typeFilters: WorkItemType[];
   search: string;
+  /**
+   * One line per ticket by default: with over a thousand work items, a
+   * three-line card left room for about four tickets in the pane.
+   */
+  ticketDensity: TicketDensity;
   expandedTicketIds: string[];
   workspace: string;
   inboxOpen: boolean;
@@ -154,6 +166,7 @@ interface UiState {
   toggleTypeFilter: (type: WorkItemType) => void;
   clearTypeFilters: () => void;
   setSearch: (s: string) => void;
+  setTicketDensity: (density: TicketDensity) => void;
   toggleExpanded: (id: string) => void;
   expandAll: (ids: string[]) => void;
   collapseAll: () => void;
@@ -192,6 +205,7 @@ interface UiState {
 type PersistedUiState = Pick<
   UiState,
   | "expandedTicketIds"
+  | "ticketDensity"
   | "workspace"
   | "typeFilters"
   | "stateFilters"
@@ -218,6 +232,7 @@ export const useUiStore = create<UiState>()(
       blockedOnFilters: [],
       typeFilters: [],
       search: "",
+      ticketDensity: "compact",
       expandedTicketIds: [],
       workspace: "all",
       inboxOpen: false,
@@ -281,6 +296,7 @@ export const useUiStore = create<UiState>()(
       },
       clearTypeFilters: () => set({ typeFilters: [] }),
       setSearch: (search) => set({ search }),
+      setTicketDensity: (ticketDensity) => set({ ticketDensity }),
       toggleExpanded: (id) => {
         const cur = new Set(get().expandedTicketIds);
         if (cur.has(id)) cur.delete(id);
@@ -371,9 +387,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 13,
+      version: 14,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 14) {
+          state.ticketDensity = normalizeTicketDensity(state.ticketDensity);
+        }
         if (version < 13) {
           // A workspace's chat scope key is its slug, so the value carries over.
           state.chatScope = typeof state.chatWorkspaceSlug === "string" ? state.chatWorkspaceSlug : "";
@@ -441,6 +460,7 @@ export const useUiStore = create<UiState>()(
       },
       partialize: (s) => ({
         expandedTicketIds: s.expandedTicketIds,
+        ticketDensity: s.ticketDensity,
         workspace: s.workspace,
         typeFilters: s.typeFilters,
         stateFilters: s.stateFilters,

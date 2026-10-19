@@ -10,6 +10,7 @@ import { Select } from "./ui/Select";
 
 const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   dashboard: "Agent SDLC · Console",
+  "work-items": "Agent SDLC · Work items",
   chat: "Agent SDLC · Chat",
   home: "Agent SDLC · Home",
 };
