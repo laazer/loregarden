@@ -825,8 +825,7 @@ a.wsd-id:focus-visible {
 }
 
 /* Entry points elsewhere: the Console picker and the workspace cards. */
-.workspace-dashboard-link,
-.instances-setup-dashboard {
+.workspace-dashboard-link {
   display: block;
   padding: 8px 10px;
   font-size: 12.5px;
