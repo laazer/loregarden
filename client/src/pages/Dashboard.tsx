@@ -5,6 +5,7 @@ import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type Wor
 import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
+import { CopyValueButton } from "../components/CopyValueButton";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
@@ -761,9 +762,9 @@ export function Dashboard() {
             </svg>
             <span className="pane-title workflow-pane-label">Workflow</span>
             {sel && (
-              <span className="count-pill" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <CopyValueButton value={sel.external_id} what={`ticket id ${sel.external_id}`} className="workflow-pane-id">
                 {sel.external_id}
-              </span>
+              </CopyValueButton>
             )}
             <div style={{ flex: 1 }} />
             {selectedId && <DashboardTicketDetailsButton ticketId={selectedId} />}
