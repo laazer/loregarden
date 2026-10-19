@@ -8,6 +8,7 @@ import warnings
 from typing import Any
 
 import pytest
+from loregarden.mcp.ticket_edit_tools import blocked_by_summaries
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool, normalize_tool_arguments
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.ticket_service import TicketService
@@ -187,3 +188,15 @@ def test_mcp_schemas_advertise_initiative():
         schema = by_name[name]
         assert "initiative" in schema["properties"]["work_item_type"]["enum"]
         assert "workspace_slug" not in schema.get("required", [])
+
+
+def test_an_initiatives_blockers_are_read_without_a_null_key_warning(db_session):
+    """`loregarden_get_ticket` on an initiative reaches `blocked_by_summaries`,
+    the third reader that looked up a workspace the ticket does not have."""
+    initiative = _initiative(db_session)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert blocked_by_summaries(db_session, initiative) == []
+
+    assert not [w for w in caught if "NULL primary key" in str(w.message)]
