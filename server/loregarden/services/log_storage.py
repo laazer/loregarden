@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from loregarden.core.terminal_text import strip_ansi
 from loregarden.models.domain import RunLogLine
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -57,7 +58,7 @@ def read_log_lines(session: Session, run_id: str, body: dict[str, Any]) -> list[
     """
     parsed = LogArtifactBody.model_validate(body)
     if parsed.storage != LOG_STORAGE_ROWS:
-        return [line.model_dump() for line in parsed.lines]
+        return [_readable(line.model_dump()) for line in parsed.lines]
     if not run_id:
         return []
     rows = session.exec(
@@ -66,4 +67,13 @@ def read_log_lines(session: Session, run_id: str, body: dict[str, Any]) -> list[
         .order_by(RunLogLine.seq.desc())
         .limit(MAX_READ_LINES)
     ).all()
-    return [{"time": r.time, "tag": r.tag, "text": r.text} for r in reversed(rows)]
+    return [_readable({"time": r.time, "tag": r.tag, "text": r.text}) for r in reversed(rows)]
+
+
+def _readable(line: dict[str, str]) -> dict[str, str]:
+    """A stored line without the terminal escape codes it may carry.
+
+    New lines are stripped as they are written (`run_log_stream`); this covers
+    the ones written before that, so the history reads the same either way.
+    """
+    return {**line, "text": strip_ansi(line["text"])}
