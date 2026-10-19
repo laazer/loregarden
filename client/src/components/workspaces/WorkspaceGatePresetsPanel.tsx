@@ -4,13 +4,71 @@ import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { GateTestCommandResult } from "../../api/gateTypes";
-import { presetCommands, saveGateSelection } from "../../lib/gateSelection";
+import {
+  classifyGateCommands,
+  guardrailScript,
+  presetCommands,
+  runningPresets,
+  saveGateSelection,
+  type RunningGates,
+} from "../../lib/gateSelection";
 import { studioResourcePath } from "../../lib/appNavigation";
 import { describeError, pushToast, toastActionFailed } from "../../state/toastStore";
 import { GatePresetPicker } from "./GatePresetPicker";
 
 /** Outcomes a transition would block on. */
 const BLOCKING = new Set(["failed", "unavailable"]);
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+function runningSummary(running: RunningGates, name: string): string {
+  const total = running.presets.length + running.guardrails.length + running.custom.length;
+  if (total === 0) return "No checks run on stage transitions yet. Tick toolchain checks below to add some.";
+  const parts = [
+    running.guardrails.length ? plural(running.guardrails.length, "loregarden guardrail", "loregarden guardrails") : "",
+    running.custom.length ? `${running.custom.length} of ${name}'s own` : "",
+    running.presets.length ? `${running.presets.length} ticked below` : "",
+  ].filter(Boolean);
+  return `${plural(total, "check runs", "checks run")} on every stage transition: ${parts.join(", ")}.`;
+}
+
+/**
+ * What runs today that the picker does not offer. Without it a workspace whose
+ * gates are all its own (lore-eden: 11) or spelled differently from a preset
+ * (loregarden's `bash -c "cd server && uv run ruff check ."`) read as having
+ * none, because the picker can only tick commands it offers.
+ */
+function RunningGatesList({ running, name }: { running: RunningGates; name: string }) {
+  return (
+    <div className="gate-running">
+      <p className="instances-meta">{runningSummary(running, name)}</p>
+      {running.guardrails.length > 0 && (
+        <>
+          <h4 className="gate-running-title">loregarden guardrails</h4>
+          <ul className="gate-running-list">
+            {running.guardrails.map((command) => (
+              <li key={command}>
+                <code>{guardrailScript(command)}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {running.custom.length > 0 && (
+        <>
+          <h4 className="gate-running-title">{name}&rsquo;s own checks, edited in Studio</h4>
+          <ul className="gate-running-list">
+            {running.custom.map((command) => (
+              <li key={command}>
+                <code>{command.replaceAll("{workspace_root}/", "").replaceAll("{workspace_root}", ".")}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
 
 interface WorkspaceGatePresetsPanelProps {
   slug: string;
@@ -42,10 +100,13 @@ export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPa
   });
 
   const offered = useMemo(() => presetCommands(presets.data), [presets.data]);
-  const configured = useMemo(
-    () => new Set((profile.data?.gates_commands ?? []).filter((command) => offered.has(command))),
-    [profile.data, offered],
+  // Preset → the configured command that already does it, under any spelling.
+  const runningAs = useMemo(() => runningPresets(presets.data), [presets.data]);
+  const running = useMemo(
+    () => classifyGateCommands(profile.data?.gates_commands ?? [], new Set([...offered, ...runningAs.values()])),
+    [profile.data, offered, runningAs],
   );
+  const configured = useMemo(() => new Set(runningAs.keys()), [runningAs]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(configured);
   const [failures, setFailures] = useState<GateTestCommandResult[]>([]);
   useEffect(() => {
@@ -54,7 +115,10 @@ export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPa
   }, [configured]);
 
   const add = [...selected].filter((command) => !configured.has(command));
-  const remove = [...configured].filter((command) => !selected.has(command));
+  // Unticking removes what actually runs, which may be spelled unlike the preset.
+  const remove = [...configured]
+    .filter((command) => !selected.has(command))
+    .map((command) => runningAs.get(command) ?? command);
 
   const save = useMutation({
     meta: { suppressErrorToast: true },
@@ -71,6 +135,8 @@ export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPa
       setFailures(blocking);
       if (!saved) return;
       void queryClient.invalidateQueries({ queryKey: ["orchestration-profile", slug] });
+      // `running_as` is worked out from the profile, so it changed too.
+      void queryClient.invalidateQueries({ queryKey: ["gate-presets", "workspace", slug] });
       pushToast({ tone: "success", title: `Saved ${name}'s toolchain gates` });
     },
     onError: (error) => toastActionFailed(`Save ${name}'s toolchain gates`, error),
@@ -98,8 +164,10 @@ export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPa
         <div className="local-instances-skeleton" aria-label="Loading toolchain gates" />
       ) : (
         <>
+          <RunningGatesList running={running} name={name} />
           <GatePresetPicker
             presets={presets.data}
+            runningAs={runningAs}
             selected={selected}
             disabled={save.isPending}
             idPrefix={`gates-${slug}`}

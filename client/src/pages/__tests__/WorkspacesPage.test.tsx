@@ -69,6 +69,22 @@ const PRESETS: GatePresets = {
   ],
 };
 
+/**
+ * The presets as the server reports them for a profile running `commands`: a
+ * preset runs when configured verbatim, or as the equivalent the server matched
+ * it to (`services/gate_equivalence.py`), given here as preset → command.
+ */
+const presetsRunning = (commands: string[], equivalents: Record<string, string> = {}): GatePresets => ({
+  ...PRESETS,
+  toolchains: PRESETS.toolchains.map((toolchain) => ({
+    ...toolchain,
+    commands: toolchain.commands.map((preset) => ({
+      ...preset,
+      running_as: commands.includes(preset.command) ? preset.command : (equivalents[preset.command] ?? null),
+    })),
+  })),
+});
+
 const profile = (commands: string[] = [GUARDRAIL]): OrchestrationProfileView => ({
   slug: "shop",
   name: "shop",
@@ -523,6 +539,7 @@ describe("toolchain gates on the card", () => {
 
   it("ticks what is configured and saves an addition only after it passes on the current code", async () => {
     mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, RUFF]));
+    mockClient.gatePresetsForWorkspace.mockResolvedValue(presetsRunning([GUARDRAIL, RUFF]));
     mockClient.testWorkspaceGates.mockResolvedValue(report("passed"));
     renderPage();
     const panel = await gatesPanel();
@@ -539,6 +556,53 @@ describe("toolchain gates on the card", () => {
       }),
     );
     expect(mockClient.testWorkspaceGates).toHaveBeenCalledWith("shop", { commands: [PYTEST] });
+  });
+
+  it("lists what runs that no preset offers, instead of reading as no gates", async () => {
+    // Runs ruff as the preset does, spelled differently: it must show, not vanish.
+    const CUSTOM = 'bash -c "cd server && uv run ruff check ."';
+    const OWN = "bash {workspace_root}/gates/scripts/gate-python.sh gates/py_check.py";
+    mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, CUSTOM, OWN]));
+    renderPage();
+    const panel = await gatesPanel();
+
+    expect(
+      await within(panel).findByText("3 checks run on every stage transition: 1 loregarden guardrail, 2 of Shop's own."),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText("ts_ux_states_check.cjs")).toBeInTheDocument();
+    expect(within(panel).getByText(CUSTOM)).toBeInTheDocument();
+    expect(within(panel).getByText("bash gates/scripts/gate-python.sh gates/py_check.py")).toBeInTheDocument();
+    expect(within(panel).getByRole("checkbox", { name: /Ruff lint/ })).not.toBeChecked();
+  });
+
+  it("ticks a preset the workspace runs under another spelling, and unticking removes that command", async () => {
+    const RUFF_BY_HAND = 'bash -c "cd server && uv run ruff check ."';
+    mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, RUFF_BY_HAND]));
+    mockClient.gatePresetsForWorkspace.mockResolvedValue(
+      presetsRunning([GUARDRAIL, RUFF_BY_HAND], { [RUFF]: RUFF_BY_HAND }),
+    );
+    renderPage();
+    const panel = await gatesPanel();
+
+    const ruff = await within(panel).findByRole("checkbox", { name: /Ruff lint/ });
+    expect(ruff).toBeChecked();
+    expect(within(panel).getByText(/Already runs as/)).toHaveTextContent(RUFF_BY_HAND);
+    expect(
+      within(panel).getByText("2 checks run on every stage transition: 1 loregarden guardrail, 1 ticked below."),
+    ).toBeInTheDocument();
+    // Ticked already, so it cannot be added a second time; nothing to save.
+    expect(within(panel).getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.click(ruff);
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockClient.updateWorkspaceGates).toHaveBeenCalledWith("shop", {
+        enabled: true,
+        commands: [GUARDRAIL],
+        transition_script: "ci/gates.py",
+      }),
+    );
+    expect(mockClient.testWorkspaceGates).not.toHaveBeenCalled();
   });
 
   it("holds a failing addition back and shows why, until saved anyway", async () => {
@@ -558,6 +622,7 @@ describe("toolchain gates on the card", () => {
 
   it("removes an unticked preset without running anything, and leaves the guardrails", async () => {
     mockClient.orchestrationProfile.mockResolvedValue(profile([GUARDRAIL, RUFF]));
+    mockClient.gatePresetsForWorkspace.mockResolvedValue(presetsRunning([GUARDRAIL, RUFF]));
     renderPage();
     const panel = await gatesPanel();
     fireEvent.click(await within(panel).findByRole("checkbox", { name: /Ruff lint/ }));

@@ -9,6 +9,12 @@ export interface PresetCommand {
   kind: GateKind;
   /** Ticked to start with, for a detected toolchain; tests never are. */
   default_on: boolean;
+  /**
+   * The workspace's configured command that already does this, which may be
+   * spelled differently (`services/gate_equivalence.py`); null when it does
+   * not run. Absent for a path that is not a workspace yet.
+   */
+  running_as?: string | null;
 }
 
 export interface ToolchainPreset {

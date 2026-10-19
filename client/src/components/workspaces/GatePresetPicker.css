@@ -58,3 +58,47 @@
   font-size: 11px;
   white-space: pre-wrap;
 }
+
+/* A ticked preset the workspace runs under another spelling. */
+.gate-preset-running-as {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.gate-preset-running-as code {
+  font-family: var(--mono);
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+/* What already runs on transitions, above the presets (WorkspaceGatePresetsPanel). */
+.gate-running {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gate-running-title {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--txl);
+}
+
+.gate-running-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gate-running-list code {
+  color: var(--txm);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

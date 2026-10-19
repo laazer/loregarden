@@ -12,7 +12,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loregarden.db.session import get_session
+from loregarden.services.gate_equivalence import running_equivalents
 from loregarden.services.gate_presets import GateKind, ToolchainKey, ToolchainPreset, gate_presets
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.organization_gate_service import UnknownWorkspaceError, workspace_for_slug
 from loregarden.services.workspace_paths import resolve_repo_path, resolve_workspace_root
 from pydantic import BaseModel
@@ -26,6 +28,10 @@ class PresetCommandView(BaseModel):
     label: str
     kind: GateKind
     default_on: bool
+    #: The workspace's configured command that already does this, which may be
+    #: spelled differently (`gate_equivalence`); None when it does not run.
+    #: Always None for a path that is not a workspace yet.
+    running_as: str | None = None
 
 
 class ToolchainPresetView(BaseModel):
@@ -42,7 +48,10 @@ class GatePresetsView(BaseModel):
     toolchains: list[ToolchainPresetView]
 
 
-def _view(root: Path, presets: list[ToolchainPreset]) -> GatePresetsView:
+def _view(
+    root: Path, presets: list[ToolchainPreset], running: dict[str, str] | None = None
+) -> GatePresetsView:
+    running = running or {}
     return GatePresetsView(
         repo_root=str(root),
         toolchains=[
@@ -53,7 +62,11 @@ def _view(root: Path, presets: list[ToolchainPreset]) -> GatePresetsView:
                 detected=p.detected,
                 commands=[
                     PresetCommandView(
-                        command=c.command, label=c.label, kind=c.kind, default_on=c.default_on
+                        command=c.command,
+                        label=c.label,
+                        kind=c.kind,
+                        default_on=c.default_on,
+                        running_as=running.get(c.command),
                     )
                     for c in p.commands
                 ],
@@ -78,4 +91,10 @@ def presets_for_workspace(slug: str, session: Session = Depends(get_session)) ->
     except UnknownWorkspaceError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     root = resolve_workspace_root(workspace)
-    return _view(root, gate_presets(root))
+    presets = gate_presets(root)
+    running = running_equivalents(
+        (c.command for p in presets for c in p.commands),
+        resolve_orchestration_profile(workspace).gates.commands,
+        root,
+    )
+    return _view(root, presets, running)

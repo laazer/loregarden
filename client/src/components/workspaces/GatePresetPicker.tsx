@@ -15,6 +15,8 @@ interface GatePresetPickerProps {
   disabled: boolean;
   /** Prefix for element ids, unique per picker on the page. */
   idPrefix: string;
+  /** Preset → the configured command that already does it; shown when spelled differently. */
+  runningAs?: ReadonlyMap<string, string>;
 }
 
 function Toolchain({
@@ -23,12 +25,14 @@ function Toolchain({
   onToggle,
   disabled,
   id,
+  runningAs,
 }: {
   toolchain: ToolchainPreset;
   selected: ReadonlySet<string>;
   onToggle: (command: string, on: boolean) => void;
   disabled: boolean;
   id: string;
+  runningAs?: ReadonlyMap<string, string>;
 }) {
   return (
     <fieldset className="gate-preset-toolchain" disabled={disabled}>
@@ -51,6 +55,11 @@ function Toolchain({
             <label htmlFor={inputId}>
               {preset.label} <span className="instances-chip instances-chip--muted">{KIND_LABEL[preset.kind]}</span>
               <code className="gate-preset-command">{preset.command}</code>
+              {runningAs?.get(preset.command) && runningAs.get(preset.command) !== preset.command ? (
+                <span className="gate-preset-running-as">
+                  Already runs as <code>{runningAs.get(preset.command)}</code>
+                </span>
+              ) : null}
             </label>
           </div>
         );
@@ -69,7 +78,7 @@ function Toolchain({
  * detected, which is the brand-new-repository case, so the stack can be picked
  * before any code exists.
  */
-export function GatePresetPicker({ presets, selected, onToggle, disabled, idPrefix }: GatePresetPickerProps) {
+export function GatePresetPicker({ presets, selected, onToggle, disabled, idPrefix, runningAs }: GatePresetPickerProps) {
   const detected = presets.toolchains.filter((t) => t.detected);
   const others = presets.toolchains.filter((t) => !t.detected);
   const render = (toolchain: ToolchainPreset, index: number, group: string) => (
@@ -80,6 +89,7 @@ export function GatePresetPicker({ presets, selected, onToggle, disabled, idPref
       onToggle={onToggle}
       disabled={disabled}
       id={`${idPrefix}-${group}-${index}`}
+      runningAs={runningAs}
     />
   );
 

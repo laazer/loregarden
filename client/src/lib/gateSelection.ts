@@ -17,6 +17,20 @@ export function presetCommands(presets: GatePresets | undefined): Set<string> {
 }
 
 /**
+ * Each preset the workspace already runs, mapped to the configured command
+ * that runs it: the preset itself, or an equivalent spelled another way.
+ */
+export function runningPresets(presets: GatePresets | undefined): Map<string, string> {
+  const running = new Map<string, string>();
+  for (const toolchain of presets?.toolchains ?? []) {
+    for (const preset of toolchain.commands) {
+      if (preset.running_as) running.set(preset.command, preset.running_as);
+    }
+  }
+  return running;
+}
+
+/**
  * `existing` with `add` appended and `remove` dropped, order kept and nothing doubled.
  * Commands neither list names — loregarden's guardrails, anything written in Studio — stay.
  */
@@ -49,4 +63,39 @@ export async function saveGateSelection(
     commands: mergeGateCommands(profile.gates_commands, add, remove),
     transition_script: profile.gates_transition_script,
   });
+}
+
+/** loregarden's own gate scripts, run in every workspace through the shared dispatcher. */
+const GUARDRAIL_SCRIPTS = "{loregarden_root}/.lefthook/scripts/";
+
+/** A workspace's configured gate commands, by where each came from. */
+export interface RunningGates {
+  /** Commands a preset offers or does under another spelling; the picker shows these as ticked. */
+  presets: string[];
+  /** loregarden's guardrail scripts. */
+  guardrails: string[];
+  /** Everything else: written in Studio or by hand, under any spelling. */
+  custom: string[];
+}
+
+/**
+ * Sort `commands` by origin, so a panel offering presets can still say what
+ * else runs. `presetLike` holds the preset commands and the configured
+ * commands the server found equivalent to one (`running_as`); a command it
+ * could not match is listed as custom, never silently dropped.
+ */
+export function classifyGateCommands(commands: readonly string[], presetLike: ReadonlySet<string>): RunningGates {
+  const running: RunningGates = { presets: [], guardrails: [], custom: [] };
+  for (const command of commands) {
+    if (presetLike.has(command)) running.presets.push(command);
+    else if (command.includes(GUARDRAIL_SCRIPTS)) running.guardrails.push(command);
+    else running.custom.push(command);
+  }
+  return running;
+}
+
+/** The script a guardrail command runs, e.g. `workspace-gates.sh`, for a short label. */
+export function guardrailScript(command: string): string {
+  const after = command.slice(command.indexOf(GUARDRAIL_SCRIPTS) + GUARDRAIL_SCRIPTS.length);
+  return after.split(/\s/)[0] || command;
 }
