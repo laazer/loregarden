@@ -15,6 +15,7 @@ from datetime import date
 from loregarden.models.domain import InvariantReentry, Ticket
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.invariants import Invariant, Violation
+from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
     finish_cleared_landings,
@@ -129,6 +130,46 @@ PUBLISH_CARDS_CLOSE = Invariant(
 )
 
 
+def _twinned(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=item.ticket.id,
+            ticket_id=item.ticket.id,
+            entered_at=None,
+            detail=f"{item.branch} holds {item.twin.on_branch[:12]}, a copy of "
+            f"{item.twin.on_target[:12]} on {item.target} with none of its history",
+        )
+        for item in twinned_branches(session)
+    ]
+
+
+def _record_twins(session: Session, violations: Sequence[Violation]) -> int:
+    # Re-detect rather than trust the list: recording moves a ref, and the read
+    # that justified it must be this pass's.
+    wanted = {v.subject_id for v in violations}
+    return record_twins(
+        session, [item for item in twinned_branches(session) if item.ticket.id in wanted]
+    )
+
+
+TICKET_BRANCHES_HOLD_HISTORY = Invariant(
+    name="ticket_branches_hold_their_targets_history",
+    ticket="lg-external-harness-1318",
+    statement=(
+        "no open ticket's branch holds a squash of its integration branch in place of "
+        "the branch's history"
+    ),
+    detect=_twinned,
+    repair=_record_twins,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 20),
+    prevented_by=(
+        "server/tests/test_publish_tree.py"
+        "::test_the_root_pushes_its_integration_branch_and_records_the_tip"
+    ),
+)
+
+
 def _temp_workspaces(session: Session) -> list[Violation]:
     return [
         Violation(
@@ -165,5 +206,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,
+    TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
 )

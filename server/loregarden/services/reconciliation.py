@@ -49,6 +49,7 @@ from loregarden.services.invariant_registry import (
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     PUBLISH_CARDS_CLOSE,
+    TICKET_BRANCHES_HOLD_HISTORY,
 )
 from loregarden.services.invariants import Invariant, run_invariant
 from loregarden.services.network_wait_resume import resume_network_waits
@@ -157,6 +158,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
     _invariant(PUBLISH_CARDS_CLOSE),
+    # A branch that merged a squash of its integration branch conflicts on every
+    # later checkout merge (lg-external-harness-1318). The next checkout repairs
+    # it too; this catches the idle ones and reports one entering after #654.
+    _invariant(TICKET_BRANCHES_HOLD_HISTORY),
     # A probe once wrote three workspaces on temp-directory repos into the live
     # database (lg-milestone-that-1319); every sweep over workspaces met them.
     _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),

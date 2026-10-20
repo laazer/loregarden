@@ -26,7 +26,8 @@ export function CopilotDock() {
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useLayoutDockEdge();
   const setDockPanelsVisible = useUiStore((s) => s.setDockPanelsVisible);
-  const { session, ticketId, pendingApprovals, branch, archive } = useActiveChatSession();
+  const { session, ticketId, pendingApprovals, branch, archive, assistantLabel, promptKind, composerBlocked } =
+    useActiveChatSession();
   const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
@@ -79,11 +80,11 @@ export function CopilotDock() {
   // The rail holds one thing at a time, and the archive is the thing that was
   // asked for: openers are always a click away again once a thread is picked.
   const showHistory = Boolean(archive) && historyOpen;
-  const openers = session ? promptsFor(session.kind, branch) : [];
+  const openers = session && !composerBlocked ? promptsFor(promptKind, branch) : [];
   const showOpeners = !showHistory && session?.messages.length === 0 && openers.length > 0;
 
   const sendQuick = (content: string) => {
-    if (!session || session.isBusy || session.loadError) return;
+    if (!session || session.isBusy || session.loadError || composerBlocked) return;
     void session.send(content, { autoApprove: false }).catch(() => {
       // silent-ok: send is a mutation carrying meta.errorTitle, so the global
       // MutationCache toast reports the failure and session.error renders it.
@@ -105,11 +106,11 @@ export function CopilotDock() {
             <div className="copilot-dock-chat-main">
               <StudioChatMessages
                 messages={session.messages}
-                emptyMessage="No messages yet."
+                emptyMessage={composerBlocked ?? "No messages yet."}
                 isThinking={session.isBusy && pendingApprovals.length === 0}
                 activeTurnId={session.activeTurnId}
-                assistantLabel="Baxter"
-                // The action bar already shows Baxter beside the composer; a
+                assistantLabel={assistantLabel}
+                // The action bar already shows the agent beside the composer; a
                 // head on every reply only spent the thread's width.
                 showAssistantAvatar={false}
                 className="copilot-dock-messages"

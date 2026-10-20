@@ -2620,6 +2620,42 @@ label:is(
   color: var(--rdl);
 }
 
+/* The agent switch: one pill split into segments, the bound agent lit. */
+.app-action-bar-agents {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.app-action-bar-agent {
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--txl);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.app-action-bar-agent:hover:not(:disabled) {
+  color: var(--txm);
+}
+
+.app-action-bar-agent.is-on {
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac2) 14%, transparent);
+}
+
+.app-action-bar-agent:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .app-action-bar-auto,
 .app-action-bar-logs,
 .app-action-bar-chat-model,

@@ -1,9 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
-import { useActiveChatSession, type ScreenPrompts } from "../hooks/useActiveChatSession";
+import {
+  useActiveChatSession,
+  type ChatAgents,
+  type ScreenPrompts,
+} from "../hooks/useActiveChatSession";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
@@ -15,7 +19,7 @@ import {
   followUpPrompts,
 } from "../lib/dockChatPrompts";
 import { useAgentPresence } from "../state/QueueStatusContext";
-import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
+import { useUiStore, useUtilityDockEdge, type UtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
 import { describeError } from "../state/toastStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
@@ -50,6 +54,10 @@ export function AppActionBar() {
     model,
     composedOnScreen,
     screenPrompts,
+    agents,
+    assistantLabel,
+    promptKind,
+    composerBlocked,
   } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
@@ -57,7 +65,7 @@ export function AppActionBar() {
   const setChatOpen = useUiStore((s) => s.setCopilotOpen);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
-  const utilityDockEdge = useUiStore((s) => s.utilityDockEdge);
+  const utilityDockEdge = useUtilityDockEdge();
   const setUtilityDockEdge = useUiStore((s) => s.setUtilityDockEdge);
   const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
@@ -141,7 +149,7 @@ export function AppActionBar() {
     (ticket?.activity === "running" || ticket?.activity === "awaiting" || session.isBusy);
 
   const expanded = chatOpen && Boolean(session);
-  const sendable = Boolean(session) && !session?.loadError;
+  const sendable = Boolean(session) && !session?.loadError && !composerBlocked;
   // Every surface exposes stop now, so the only question left is whether this
   // one is busy — and aside mode, which routes a busy composer to a read-only
   // question instead of a turn to stop.
@@ -292,12 +300,12 @@ export function AppActionBar() {
 
   return (
     <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="app-action-bar-baxter"
         aria-expanded={expanded}
-        aria-label={expanded ? "Collapse Baxter" : "Expand Baxter"}
-        title="Baxter"
+        aria-label={expanded ? `Collapse ${assistantLabel}` : `Expand ${assistantLabel}`}
+        title={assistantLabel}
         disabled={!session}
         onClick={() => setChatOpen(!chatOpen)}
       >
@@ -307,9 +315,11 @@ export function AppActionBar() {
           variant="head"
           state={session?.isBusy ? "responding" : "idle"}
           size={26}
-          label="Baxter"
+          label={assistantLabel}
         />
-      </button>
+      </Button>
+
+      {agents ? <ActionBarAgentSwitch agents={agents} disabled={Boolean(session?.isBusy)} /> : null}
 
       <div className="app-action-bar-notes">
         <ComposerNotes commands={commands} />
@@ -339,8 +349,10 @@ export function AppActionBar() {
           placeholder={
             asideMode
               ? "btw — ask about the run without interrupting it"
+              : composerBlocked
+                ? composerBlocked
               : session
-                ? (COMPOSER_PLACEHOLDER[session.kind] ??
+                ? (COMPOSER_PLACEHOLDER[promptKind] ??
                   "Ask anything, or tell an agent what to do — without leaving this screen")
                 : NO_SESSION_PLACEHOLDER
           }
@@ -371,7 +383,7 @@ export function AppActionBar() {
           only opening it. */}
       {session ? (
         <ActionBarQuickPrompts
-          prompts={followUpPrompts(session.kind, branch, session.messages)}
+          prompts={followUpPrompts(promptKind, branch, session.messages)}
           disabled={!sendable || session.isBusy}
           onPick={(prompt) => submit(prompt)}
         />
@@ -439,10 +451,10 @@ export function AppActionBar() {
       {modelControl}
       {archive ? (
         <>
-          <button
-            type="button"
+          <Button
+            variant="plain"
             className="app-action-bar-chat-new"
-            title="Start a new conversation with Baxter"
+            title={`Start a new conversation with ${assistantLabel}`}
             onClick={() => {
               archive.startNewChat();
               setHistoryOpen(false);
@@ -455,7 +467,7 @@ export function AppActionBar() {
               <path d="M12 5v14M5 12h14" />
             </svg>
             New chat
-          </button>
+          </Button>
           <button
             type="button"
             className={`app-action-bar-chat-history${historyOpen ? " is-on" : ""}`}
@@ -536,6 +548,54 @@ export function AppActionBar() {
   );
 }
 
+/**
+ * Which agent the bar is talking to, where a screen offers more than one.
+ *
+ * A radio group rather than a menu: there are two or three agents, each is one
+ * click, and the choice is visible without opening anything. Arrow keys move
+ * between them as a radio group's do. Held while a turn runs, so a reply never
+ * lands in a thread the operator has switched away from.
+ */
+function ActionBarAgentSwitch({ agents, disabled }: { agents: ChatAgents; disabled: boolean }) {
+  const ids = agents.options.map((option) => option.id);
+  const onKeyDown = (event: KeyboardEvent) => {
+    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1
+      : 0;
+    if (!step || disabled) return;
+    event.preventDefault();
+    const next = ids[(ids.indexOf(agents.active) + step + ids.length) % ids.length];
+    agents.select(next);
+    document.getElementById(`app-action-bar-agent-${next}`)?.focus();
+  };
+  return (
+    <div className="app-action-bar-agents" role="radiogroup" aria-label="Agent" onKeyDown={onKeyDown}>
+      {agents.options.map((option) => {
+        const active = option.id === agents.active;
+        return (
+          <Button
+            key={option.id}
+            id={`app-action-bar-agent-${option.id}`}
+            variant="plain"
+            role="radio"
+            aria-checked={active}
+            // Named for the agent; the title is its description. Without this
+            // the accessibility tree names the radio by its tooltip.
+            aria-label={option.label}
+            tabIndex={active ? 0 : -1}
+            className={`app-action-bar-agent${active ? " is-on" : ""}`}
+            title={disabled && !active ? "Wait for this turn to finish to switch agents" : option.description}
+            disabled={disabled && !active}
+            onClick={() => agents.select(option.id)}
+          >
+            {option.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The bar's one-click replies, capped to what fits beside the composer. */
 function ActionBarQuickPrompts({
   prompts,
@@ -567,8 +627,7 @@ function ActionBarQuickPrompts({
 }
 
 /**
- * Suggestions for the thread a page composes for: Home's Baxter thread, or the
- * planner or Baxter in an initiative's agent panel.
+ * Suggestions for the thread a page composes for: Home's Baxter thread.
  *
  * The page owns the composer, so the bar offers only the one-click replies.
  * Where another page draws the reply, a pick sends and lands there: from Home,
