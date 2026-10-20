@@ -261,6 +261,76 @@ def superseding_commit(repo_root: Path, branch_sha: str, base_sha: str) -> str:
     return ""
 
 
+@dataclass(frozen=True)
+class SquashTwin:
+    """A commit on a branch and one on its target holding the same tree,
+    neither an ancestor of the other side."""
+
+    on_branch: str
+    on_target: str
+
+
+def squash_twin(repo_root: Path, branch_sha: str, target_sha: str) -> SquashTwin | None:
+    """The newest branch commit the target lacks whose exact tree is also a
+    target commit the branch lacks, or None when there is none.
+
+    That pair is two copies of one snapshot with no shared history: what a
+    branch holds after merging a squash of its target (`publish_tree` used to
+    push one under the target's own name) instead of the target itself. Git
+    cannot see they match, so every later merge of the target compares from
+    an older base and conflicts in files both sides already agree on.
+    """
+    on_target = _trees(repo_root, target_sha, branch_sha)
+    if not on_target:
+        return None
+    newest_by_tree: dict[str, str] = {}
+    for sha, tree in on_target:
+        newest_by_tree.setdefault(tree, sha)
+    for sha, tree in _trees(repo_root, branch_sha, target_sha):
+        twin = newest_by_tree.get(tree)
+        if twin:
+            return SquashTwin(on_branch=sha, on_target=twin)
+    return None
+
+
+def _trees(repo_root: Path, tip: str, exclude: str) -> list[tuple[str, str]]:
+    """(commit, tree) for each commit on ``tip`` and not on ``exclude``, newest first."""
+    listed = _git(repo_root, "log", "--format=%H %T", tip, f"^{exclude}")
+    if listed.returncode != 0:
+        raise RuntimeError(f"git log failed: {(listed.stderr or listed.stdout).strip()}")
+    pairs: list[tuple[str, str]] = []
+    for line in listed.stdout.splitlines():
+        sha, _, tree = line.partition(" ")
+        pairs.append((sha, tree))
+    return pairs
+
+
+def record_merged(
+    repo_root: Path, *, branch: str, branch_sha: str, merged_sha: str, subject: str
+) -> MergeOutcome:
+    """Record ``merged_sha`` as merged into ``branch`` without changing a file.
+
+    A merge commit whose tree is ``branch_sha``'s own (`git merge -s ours`),
+    written with no checkout and moved by compare-and-swap. Only for a commit
+    the branch already holds the content of; it is history, not a merge.
+    """
+    signing = signs_commits(repo_root)
+    sign = ["-S"] if signing else []
+    tree = _tree_of(repo_root, branch_sha)
+    committed = _git(
+        repo_root, "commit-tree", tree, *sign, "-p", branch_sha, "-p", merged_sha, "-m", subject
+    )
+    if committed.returncode != 0:
+        detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
+        return MergeOutcome(ok=False, detail=detail)
+    merge_sha = committed.stdout.strip()
+    moved = _git(repo_root, "update-ref", f"refs/heads/{branch}", merge_sha, branch_sha)
+    if moved.returncode != 0:
+        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
+        return MergeOutcome(ok=False, detail=detail)
+    return MergeOutcome(ok=True, sha=merge_sha, signed=signing)
+
+
 def _tree_of(repo_root: Path, commit: str) -> str:
     result = _git(repo_root, "rev-parse", f"{commit}^{{tree}}")
     if result.returncode != 0:
