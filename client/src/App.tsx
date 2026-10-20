@@ -17,6 +17,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
 import { InitiativePlanRoute } from "./pages/InitiativePlanPage";
+import { WorkItemsPage } from "./pages/WorkItemsPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
 import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
 import { QueuePage } from "./pages/QueuePage";
@@ -100,6 +101,7 @@ export function AppShell() {
             <Route path="/" element={<HomePage />} />
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
+            <Route path="/work-items" element={<WorkItemsPage />} />
             <Route path="/initiatives" element={<InitiativesPage />} />
             <Route path="/initiatives/suggest" element={<InitiativeSuggestionsPage />} />
             <Route path="/initiatives/:initiativeId" element={<InitiativePlanRoute />} />

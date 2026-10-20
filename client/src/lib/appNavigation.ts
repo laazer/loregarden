@@ -5,6 +5,7 @@ export type AppPage =
   | "home"
   | "chat"
   | "dashboard"
+  | "work-items"
   | "initiatives"
   | "studio"
   | "editor"
@@ -66,6 +67,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
   chat: "/chat",
   dashboard: "/console",
+  "work-items": "/work-items",
   initiatives: "/initiatives",
   studio: "/studio/agents",
   editor: "/editor",
@@ -358,6 +360,7 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/console" || pathname.startsWith("/console/")) return "dashboard";
+  if (pathname === "/work-items" || pathname.startsWith("/work-items/")) return "work-items";
   if (pathname === "/initiatives" || pathname.startsWith("/initiatives/")) return "initiatives";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";

@@ -1,0 +1,274 @@
+.wi-page {
+  container-type: inline-size;
+}
+
+.wi-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 14px 22px 10px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.wi-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wi-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.wi-view:hover,
+.wi-view:focus-visible {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.wi-view--active {
+  color: var(--ac2);
+  border-color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 8%, transparent);
+}
+
+.wi-search {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.wi-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.wi-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 22px 24px;
+}
+
+.wi-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 560px;
+  padding: 28px 0;
+  color: var(--txm);
+  font-size: 13px;
+}
+
+.wi-state p {
+  margin: 0;
+}
+
+.wi-more {
+  padding: 14px 0;
+}
+
+.wi-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+
+.wi-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bd2);
+  text-align: left;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: var(--txl);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wi-table th.wi-col-why {
+  padding: 6px 8px;
+}
+
+.wi-sort {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.wi-sort:hover,
+.wi-sort:focus-visible {
+  color: var(--tx);
+}
+
+.wi-sort-mark {
+  width: 1ch;
+}
+
+.wi-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--bd) 70%, transparent);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wi-table tbody tr:hover td {
+  background: var(--bg1);
+}
+
+.wi-col-priority {
+  width: 40px;
+}
+
+.wi-col-id {
+  width: 180px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.wi-col-state {
+  width: 150px;
+}
+
+.wi-col-stage {
+  width: 160px;
+  font-size: 11.5px;
+}
+
+.wi-col-workspace {
+  width: 110px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.wi-col-parent {
+  width: 18%;
+}
+
+.wi-col-why {
+  width: 170px;
+  color: var(--txm);
+}
+
+.wi-title {
+  color: var(--tx);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.wi-parent {
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.wi-title:hover,
+.wi-title:focus-visible,
+.wi-parent:hover,
+.wi-parent:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.wi-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.wi-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Workspace and parent are the first to go: both are one click away on the
+   ticket, and the title needs the room more. */
+@container (max-width: 1180px) {
+  .wi-table .wi-col-workspace,
+  .wi-table .wi-col-parent {
+    display: none;
+  }
+}
+
+/* Below the width a seven-column row can hold, drop to one block per ticket:
+   title first, then id, state and stage. */
+@container (max-width: 760px) {
+  .wi-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .wi-table,
+  .wi-table tbody,
+  .wi-table tr,
+  .wi-table td {
+    display: block;
+    width: auto;
+  }
+
+  .wi-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .wi-table td {
+    border: 0;
+    padding: 0;
+  }
+
+  .wi-table td.wi-col-title {
+    order: -1;
+    flex: 1 0 100%;
+    white-space: normal;
+  }
+
+  .wi-table td.wi-col-priority {
+    display: none;
+  }
+
+  .wi-table td.wi-col-parent,
+  .wi-table td.wi-col-why {
+    flex: 1 0 100%;
+  }
+
+  .wi-toolbar,
+  .wi-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
