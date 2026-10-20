@@ -145,7 +145,7 @@ def _without_a_turn(
         )
     if twin is None:
         return _Settled()
-    healed = _record_twin(repo_root, branch, branch_sha, twin)
+    healed = record_twin(repo_root, branch, branch_sha, twin)
     if not healed.ok:
         return _Settled(healed)
     preview = merge_preview(repo_root, healed.moved_to, target_sha)
@@ -198,7 +198,7 @@ def _move(repo_root: Path, branch: str, old: str, new: str, *, holds: str) -> Ta
     return TakeTarget(True, moved_from=old, moved_to=new)
 
 
-def _record_twin(repo_root: Path, branch: str, branch_sha: str, twin: SquashTwin) -> TakeTarget:
+def record_twin(repo_root: Path, branch: str, branch_sha: str, twin: SquashTwin) -> TakeTarget:
     """Give ``branch`` the history its squash of the target left out.
 
     ``twin.on_branch`` is a snapshot the target also holds, as
