@@ -24,6 +24,7 @@ from loregarden.services.artifact_service import (
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_gh, run_git
+from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -340,7 +341,7 @@ def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        head = str(row.get("headRefName") or "")
+        head = branch_for_pr_head(str(row.get("headRefName") or ""))
         if not head:
             continue
         current = best.get(head)

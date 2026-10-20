@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.ticket_pull_request import ticket_pull_request
 from sqlmodel import Session
 
@@ -109,11 +110,24 @@ def _gh(returncode: int, stdout: str = "", stderr: str = ""):
     return mock.patch("loregarden.services.ticket_pull_request.run_gh", return_value=proc)
 
 
+def _gh_by_head(prs: dict[str, dict]):
+    """``gh pr view <head>`` answering the PR at ``head``, and "none" anywhere else."""
+
+    def view(args, **_kwargs):
+        head = args[2]
+        if head in prs:
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(prs[head]), stderr="")
+        none = f'no pull requests found for branch "{head}"'
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr=none)
+
+    return mock.patch("loregarden.services.ticket_pull_request.run_gh", side_effect=view)
+
+
 def test_a_pr_opened_outside_loregarden_is_found(session, workspace, ticket):
-    with _gh(0, json.dumps(GH_PR)) as run_gh:
+    with _gh_by_head({BRANCH: GH_PR}) as run_gh:
         result = ticket_pull_request(session, ticket, workspace)
 
-    assert run_gh.call_args.args[0][:3] == ["pr", "view", BRANCH]
+    assert [call.args[0][2] for call in run_gh.call_args_list] == [publish_ref_for(BRANCH), BRANCH]
     assert result.lookup is PullRequestLookup.FOUND
     pr = result.pull_request
     assert pr is not None
@@ -131,6 +145,16 @@ def test_a_pr_opened_outside_loregarden_is_found(session, workspace, ticket):
         ("legacy/ci", PullRequestCheckOutcome.PENDING),
     ]
     assert pr.checks[4].url == "https://ci/3"
+
+
+def test_the_publish_pr_is_found_before_one_on_the_branch_itself(session, workspace, ticket):
+    """`publish_tree` opens a root's PR on ``publish/<branch>``; a PR on the bare
+    name is older (opened by hand, or before publishing moved) and is not shown."""
+    published = {**GH_PR, "number": 777, "headRefName": publish_ref_for(BRANCH)}
+    with _gh_by_head({publish_ref_for(BRANCH): published, BRANCH: GH_PR}):
+        pr = ticket_pull_request(session, ticket, workspace).pull_request
+
+    assert pr is not None and pr.number == 777
 
 
 def test_merged_and_conflicting_are_read_from_github(session, workspace, ticket):

@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.publish_ref import comparison_ref
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
@@ -71,9 +72,11 @@ def _base_ref(path: Path, parent_branch: str) -> str | None:
 
     The remote-tracking ref is preferred: it is what a later PR would be opened
     against, so it is the ref that decides whether a commit is worth preserving.
-    The local branch is the fallback for a repository with no remote.
+    An integration branch is the exception: the remote never holds its history,
+    so its local ref is the branch (`publish_ref.comparison_ref`). The local
+    branch is also the fallback for a repository with no remote.
     """
-    for ref in (f"origin/{parent_branch}", parent_branch):
+    for ref in dict.fromkeys((comparison_ref(parent_branch), parent_branch)):
         probe = run_git(
             ["rev-parse", "--verify", "--quiet", ref],
             cwd=str(path),

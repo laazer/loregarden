@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from loregarden.models.domain import ConflictReport, Worktree
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.publish_ref import comparison_ref
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ class ConflictDetectorService:
 
             # Try dry-run merge to detect conflicts
             result = run_git(
-                ["merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
+                ["merge", "--no-commit", "--no-ff", comparison_ref(target_branch)],
                 cwd=str(worktree_path),
                 capture_output=True,
                 text=True,
@@ -445,4 +446,4 @@ class ConflictDetectorService:
             .where(ConflictReport.worktree_id == worktree_id)
             .order_by(ConflictReport.created_at.desc())
         )
-        return self.session.exec(stmt).all()
+        return list(self.session.exec(stmt).all())

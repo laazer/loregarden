@@ -20,6 +20,7 @@ from pathlib import Path
 
 from loregarden.models.domain import CIStatus, PullRequestCheckOutcome
 from loregarden.services.git_subprocess import run_gh
+from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -46,6 +47,11 @@ class OpenPullRequest(BaseModel):
     head: str = Field(alias="headRefName")
     head_sha: str = Field(alias="headRefOid")
     checks: list[GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
+
+    @property
+    def branch(self) -> str:
+        """The local branch this PR publishes; ``head`` is its name on the remote."""
+        return branch_for_pr_head(self.head)
 
 
 _PULL_REQUESTS = TypeAdapter(list[OpenPullRequest])

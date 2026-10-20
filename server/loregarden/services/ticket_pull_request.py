@@ -29,6 +29,7 @@ from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.target_branch import (
     TargetBranchError,
     integration_branch_for,
@@ -249,7 +250,9 @@ def _candidate_branches(session: Session, ticket: Ticket, repo_root: Path) -> li
 
     A tree's root publishes its integration branch (`publish_tree`), so that
     is where its PR lives; its own branch is asked as well, for a root whose
-    tree never formed. Any other ticket's PR is on its own branch.
+    tree never formed. Any other ticket's PR is on its own branch. A root's PR
+    is on ``publish/<branch>`` (`publish_ref`); the bare name is asked after
+    it, for a PR opened before publishing moved there.
     """
     own = resolve_ticket_branch(ticket)
     try:
@@ -259,7 +262,8 @@ def _candidate_branches(session: Session, ticket: Ticket, repo_root: Path) -> li
     if not is_root:
         return [own]
     integration = integration_branch_for(ticket)
-    return [integration, own] if rev(repo_root, f"refs/heads/{integration}") else [own]
+    published = [integration, own] if rev(repo_root, f"refs/heads/{integration}") else [own]
+    return [name for branch in published for name in (publish_ref_for(branch), branch)]
 
 
 def _lookup(session: Session, ticket: Ticket, workspace: Workspace) -> TicketPullRequest:

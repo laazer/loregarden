@@ -51,11 +51,10 @@ from loregarden.services.integration_conflict_card import (
 )
 from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
-
-INTEGRATION_PREFIX = "integration/"
 
 
 class TargetBranchError(RuntimeError):

@@ -20,6 +20,10 @@ on 2026-10-14, a PR with them can never merge under a signed-commits rule
 (PR #400, superseded by #402 for exactly that), and refusing the push, as this
 module did until then, held the tree's every later landing back with them.
 
+The commit is pushed as ``publish/<branch>``, never as the branch: a squash
+under the branch's own name was merged into a ticket branch as if it were the
+branch, and broke every later merge of the real one (`publish_ref`).
+
 A top-level ticket with no tree is its own root. Nothing lands on an
 integration branch for it, because its target is the base, so what it
 publishes is its own branch. Before this, it found no integration branch,
@@ -57,6 +61,7 @@ from loregarden.services.git_automation_config import enabled_steps, resolve_git
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import MergeOutcome, adds_nothing, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
 from loregarden.services.tree_ux_section import (
@@ -187,7 +192,14 @@ def _prepare(
         )
     body = generated_body(subject.pr_body + section.text)
     return _Prepared(
-        replace(subject, head=cut.sha, pr_body=body, refresh_body=True), section=section
+        replace(
+            subject,
+            branch=publish_ref_for(branch),
+            head=cut.sha,
+            pr_body=body,
+            refresh_body=True,
+        ),
+        section=section,
     )
 
 
