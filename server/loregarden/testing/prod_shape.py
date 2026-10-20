@@ -53,6 +53,7 @@ from loregarden.testing.factories import (
     make_workspace,
 )
 from loregarden.testing.prod_shape_activity import add_activity
+from loregarden.testing.prod_shape_tree import TREE_CALIBRATION, TreeSummary, add_tree_shape
 
 
 class WorkspaceShape(BaseModel):
@@ -211,6 +212,7 @@ class ProdShapeSummary(BaseModel):
     worked_artifacts: int
     ci_attempts: int
     activity_events: int
+    tree: TreeSummary
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -395,6 +397,13 @@ def build_prod_shape(
     )
     ci_attempts = _add_ci_history(session, all_tickets)
     activity_events = add_activity(session, random.Random(_RNG_SEED + 2), prod_shape_id)
+    tree = add_tree_shape(
+        session,
+        all_tickets,
+        random.Random(_RNG_SEED + 3),
+        prod_shape_id,
+        scale=(len(all_tickets) + milestones) / TREE_CALIBRATION.tickets,
+    )
     memory = {}
     if graph_path is not None:
         for slug, count in CALIBRATION.memory.items():
@@ -415,6 +424,7 @@ def build_prod_shape(
         worked_artifacts=worked_artifacts,
         ci_attempts=ci_attempts,
         activity_events=activity_events,
+        tree=tree,
     )
 
 

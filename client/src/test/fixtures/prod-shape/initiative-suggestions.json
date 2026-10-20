@@ -6,7 +6,7 @@
   "capacity": 4998,
   "committed": 1,
   "days": 14,
-  "planned": 392
+  "planned": 458
  },
  "suggestions": [
   {
@@ -398,7 +398,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 8,
+     "cost": 7,
      "external_id": "lg-m19-19",
      "from_milestone": "",
      "id": "695a2949-b24e-50e3-91bc-bee5b9da7aa9",
@@ -603,11 +603,10 @@
     "lg-m10-10",
     "lg-m12-12",
     "lg-m13-13",
-    "lg-m14-14",
-    "lg-m15-15",
     "lg-m16-16",
     "lg-m17-17",
     "lg-m18-18",
+    "lg-m19-19",
     "lg-m21-21",
     "lg-m25-25",
     "lg-m26-26",
@@ -624,11 +623,9 @@
     "lg-m37-37",
     "lg-m38-38",
     "lg-m39-39",
-    "lg-m41-41",
     "lg-m42-42",
     "lg-m43-43",
     "lg-m45-45",
-    "lg-m46-46",
     "lg-m47-47",
     "lg-m48-48",
     "lg-m49-49",
@@ -638,9 +635,6 @@
     "lg-m6-6",
     "lg-m7-7",
     "lg-m9-9",
-    "lmkr-m1-1",
-    "lmkr-m2-2",
-    "lmkr-m5-5",
     "lmkr-m6-6",
     "lor-m1-1",
     "lor-m2-2",
@@ -699,7 +693,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m26-133",
      "from_milestone": "lg-m26-26",
      "id": "22c9e0fd-e1bd-5e29-ae0f-1e161f5f3467",
@@ -729,7 +723,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m37-252",
      "from_milestone": "lg-m37-37",
      "id": "535be1c9-772a-5f76-8856-429d8d68b957",
@@ -789,7 +783,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m19-72",
      "from_milestone": "lg-m19-19",
      "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
@@ -899,7 +893,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m13-120",
      "from_milestone": "lg-m13-13",
      "id": "b95cbf2d-798f-557f-8e0e-3067196d455e",
@@ -1089,7 +1083,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m1-216",
      "from_milestone": "lg-m1-1",
      "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
@@ -1279,7 +1273,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m41-310",
      "from_milestone": "lg-m41-41",
      "id": "73b736a3-c79a-542e-939a-cee93f7883bb",
@@ -1289,7 +1283,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m53-322",
      "from_milestone": "lg-m53-53",
      "id": "68a2bc3b-0196-5ec8-b919-b5c5f0b84a27",
@@ -1299,7 +1293,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m54-323",
      "from_milestone": "lg-m54-54",
      "id": "5620d165-36bc-50e1-b85f-bd9dd18514f2",
@@ -1329,7 +1323,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m6-329",
      "from_milestone": "lg-m6-6",
      "id": "c243c97d-c591-5c31-a7e8-1259ed90ad79",
@@ -1359,7 +1353,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m32-355",
      "from_milestone": "lg-m32-32",
      "id": "4379de29-5bf5-5b64-a4a0-9f356469f74c",
@@ -1409,7 +1403,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m13-390",
      "from_milestone": "lg-m13-13",
      "id": "2e2d9a8b-a24d-5b98-a0d1-77766de9339d",
@@ -1419,7 +1413,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m16-393",
      "from_milestone": "lg-m16-16",
      "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
@@ -1439,7 +1433,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m32-409",
      "from_milestone": "lg-m32-32",
      "id": "ce509ca2-d091-54d4-bb83-8f68d2e130e9",
@@ -1489,7 +1483,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m54-431",
      "from_milestone": "lg-m54-54",
      "id": "f320fed8-46eb-577b-9d87-4112beb9bba8",
@@ -1499,7 +1493,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 4,
      "external_id": "lg-m4-435",
      "from_milestone": "lg-m4-4",
      "id": "56f42550-e8a0-578e-8015-c94ee61c3b4a",
@@ -1509,7 +1503,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m6-437",
      "from_milestone": "lg-m6-6",
      "id": "a91ba0f9-ff26-5e06-8cc7-afc24b62069c",
@@ -1549,7 +1543,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m31-462",
      "from_milestone": "lg-m31-31",
      "id": "5c73ee92-d1de-5ca6-bddc-e6e683f5c5b0",
@@ -1620,16 +1614,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m13-498",
-     "from_milestone": "lg-m13-13",
-     "id": "efe28b5f-42cc-56bf-967b-89e28d5c9049",
-     "state": "backlog",
-     "title": "Retry initiative progress rollup",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m16-501",
      "from_milestone": "lg-m16-16",
      "id": "38b24f6b-0fcb-5b0a-9c5e-64cbac4d5787",
@@ -1640,51 +1624,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m32-517",
-     "from_milestone": "lg-m32-32",
-     "id": "338b117d-ff85-51f6-88ac-77a989abe204",
-     "state": "backlog",
-     "title": "Show memory recall ranking",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m54-539",
      "from_milestone": "lg-m54-54",
      "id": "8241c4f2-5a74-582f-ad4e-bcb17a9ee05b",
      "state": "backlog",
      "title": "Add branch cleanup after a squash merge",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m6-545",
-     "from_milestone": "lg-m6-6",
-     "id": "8d8064c2-e6a7-5c26-98c8-d98d442132db",
-     "state": "backlog",
-     "title": "Split GitHub issue two-way sync",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-546",
-     "from_milestone": "lg-m7-7",
-     "id": "0260942e-04f7-5720-94c8-75d2e48f9cc9",
-     "state": "backlog",
-     "title": "Add branch cleanup after a squash merge",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m13-552",
-     "from_milestone": "lg-m13-13",
-     "id": "211558e7-1042-5cdc-8e59-31184fee0aa4",
-     "state": "backlog",
-     "title": "Route docker capacity leases",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -1799,7 +1743,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m11-32",
      "from_milestone": "blob-m11-11",
      "id": "ce777962-3850-5af2-9dfe-3ae82a09f4cf",
@@ -1809,7 +1753,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m1-33",
      "from_milestone": "blob-m1-1",
      "id": "af3a4115-c17c-5afb-a072-9e97e47acac5",
@@ -1839,33 +1783,13 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 5,
      "external_id": "blob-m5-48",
      "from_milestone": "blob-m5-5",
      "id": "0622e03f-6b9f-5226-8719-cbb8fd83b7fb",
      "state": "backlog",
      "title": "Show branch cleanup after a squash merge",
      "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m5-70",
-     "from_milestone": "blob-m5-5",
-     "id": "a7113c7f-ceed-58ae-a83a-599a4213c82d",
-     "state": "backlog",
-     "title": "Make the run log's live tail",
-     "work_item_type": "bug",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m5-81",
-     "from_milestone": "blob-m5-5",
-     "id": "d449d906-4482-5a78-8cf3-19d4fa9d0e26",
-     "state": "backlog",
-     "title": "Make the approval inbox for parked stages",
-     "work_item_type": "bug",
      "workspace_slug": "blobert"
     },
     {
@@ -1909,7 +1833,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lor-m4-27",
      "from_milestone": "lor-m4-4",
      "id": "adde4547-7cf1-592f-9543-81f64abaf23a",
@@ -1929,33 +1853,13 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
-     "external_id": "lor-m4-39",
-     "from_milestone": "lor-m4-4",
-     "id": "f820e500-5ab1-5aa1-960f-c59a678204ea",
-     "state": "backlog",
-     "title": "Stop memory recall ranking",
-     "work_item_type": "bug",
-     "workspace_slug": "lore-eden"
-    },
-    {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lmkr-m6-17",
      "from_milestone": "lmkr-m6-6",
      "id": "d6c31971-b38c-5216-b899-7b67ef2442fc",
      "state": "backlog",
      "title": "Make worktree isolation for chat turns",
      "work_item_type": "feature",
-     "workspace_slug": "loremaker"
-    },
-    {
-     "cost": 1,
-     "external_id": "lmkr-m6-23",
-     "from_milestone": "lmkr-m6-6",
-     "id": "84513763-a81b-504c-8403-8fd03d675b29",
-     "state": "backlog",
-     "title": "Fix worktree isolation for chat turns",
-     "work_item_type": "bug",
      "workspace_slug": "loremaker"
     },
     {
@@ -2019,7 +1923,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m23-76",
      "from_milestone": "lg-m23-23",
      "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
@@ -2049,7 +1953,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m30-83",
      "from_milestone": "lg-m30-30",
      "id": "66cc36d5-9da8-50ec-8bfa-439b61cac757",
@@ -2069,7 +1973,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m36-89",
      "from_milestone": "lg-m36-36",
      "id": "d906d518-ad44-504b-9586-03cf907c1e89",
@@ -2089,7 +1993,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m42-95",
      "from_milestone": "lg-m42-42",
      "id": "da6f586a-470c-5ab7-9213-7d407ac949ef",
@@ -2279,7 +2183,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m33-140",
      "from_milestone": "lg-m33-33",
      "id": "e2bc1413-76cd-5a61-95fd-9a90d7262bad",
@@ -2299,7 +2203,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m38-145",
      "from_milestone": "lg-m38-38",
      "id": "a742392a-b8c3-57fb-91b4-35cd18bf022f",
@@ -2309,7 +2213,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m39-146",
      "from_milestone": "lg-m39-39",
      "id": "00f32c53-826d-52c0-9dbb-c1834bd4e89f",
@@ -2339,7 +2243,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m45-152",
      "from_milestone": "lg-m45-45",
      "id": "38dfadce-d478-5e18-bcb2-aebd84d1d762",
@@ -2479,7 +2383,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m36-197",
      "from_milestone": "lg-m36-36",
      "id": "9e613bdd-34bf-5f19-8bc7-949c74fbb3fe",
@@ -2499,7 +2403,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m38-199",
      "from_milestone": "lg-m38-38",
      "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
@@ -2529,7 +2433,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m43-204",
      "from_milestone": "lg-m43-43",
      "id": "e8534274-fd9f-5840-afe7-389433eb7b37",
@@ -2539,7 +2443,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m46-207",
      "from_milestone": "lg-m46-46",
      "id": "7b908e33-7697-58f7-ab59-5eca50f59535",
@@ -2569,7 +2473,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m52-213",
      "from_milestone": "lg-m52-52",
      "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
@@ -2589,7 +2493,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m9-224",
      "from_milestone": "lg-m9-9",
      "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
@@ -2599,7 +2503,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m10-225",
      "from_milestone": "lg-m10-10",
      "id": "f6b4ff12-716c-5f65-a1d7-1e69131d97d7",
@@ -2609,7 +2513,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m12-227",
      "from_milestone": "lg-m12-12",
      "id": "36f0959a-c048-597b-a27d-e4bd2fe4cf9b",
@@ -2619,7 +2523,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m14-229",
      "from_milestone": "lg-m14-14",
      "id": "ae1f1a42-df88-5f01-a226-0772db21ee99",
@@ -2639,7 +2543,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m18-233",
      "from_milestone": "lg-m18-18",
      "id": "d4a689ca-261e-51d2-8988-4b81b0f500cd",
@@ -2649,7 +2553,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m21-236",
      "from_milestone": "lg-m21-21",
      "id": "c2722b47-afbc-532b-8179-fdf56c217e73",
@@ -2689,7 +2593,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m28-243",
      "from_milestone": "lg-m28-28",
      "id": "77a61691-950a-5df9-9562-adf97ad8aafc",
@@ -2699,7 +2603,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m30-245",
      "from_milestone": "lg-m30-30",
      "id": "d3c3da97-ac81-5633-8ba4-dc0534ff7b50",
@@ -2849,7 +2753,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m14-283",
      "from_milestone": "lg-m14-14",
      "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
@@ -2869,7 +2773,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m17-286",
      "from_milestone": "lg-m17-17",
      "id": "bd4aa3ed-4e05-55f2-9230-89295751e403",
@@ -2969,7 +2873,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m37-306",
      "from_milestone": "lg-m37-37",
      "id": "4f670e38-044a-5539-bf23-3ab04fc434bc",
@@ -2989,7 +2893,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m39-308",
      "from_milestone": "lg-m39-39",
      "id": "c00ff4b7-e4ea-55ce-9d7c-480c2261c885",
@@ -3029,7 +2933,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m48-317",
      "from_milestone": "lg-m48-48",
      "id": "051e93c0-03fa-5dd0-a080-c0d0198b9dba",
@@ -3039,7 +2943,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m49-318",
      "from_milestone": "lg-m49-49",
      "id": "d1e3d81b-c57c-56e7-a4c6-aa8dad475c6e",
@@ -3049,7 +2953,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m52-321",
      "from_milestone": "lg-m52-52",
      "id": "f36056eb-a737-5dbd-9ac3-a93a93e3c2ed",
@@ -3069,7 +2973,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m9-332",
      "from_milestone": "lg-m9-9",
      "id": "9e0b0381-304f-5f22-89c5-81fb1a03c679",
@@ -3149,7 +3053,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m28-351",
      "from_milestone": "lg-m28-28",
      "id": "652798ef-dd30-5380-8fcc-5c5be4d60f9c",
@@ -3199,7 +3103,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m39-362",
      "from_milestone": "lg-m39-39",
      "id": "4ea80cbb-3544-5683-bbce-bc2df14d2cd4",
@@ -3229,7 +3133,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m45-368",
      "from_milestone": "lg-m45-45",
      "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
@@ -3249,7 +3153,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m47-370",
      "from_milestone": "lg-m47-47",
      "id": "e54db182-f530-5446-9bc0-c0afcd37c9aa",
@@ -3259,7 +3163,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m48-371",
      "from_milestone": "lg-m48-48",
      "id": "51706a49-855e-58d5-be6b-19a16ce419f9",
@@ -3279,7 +3183,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m3-380",
      "from_milestone": "lg-m3-3",
      "id": "510574ad-b6bb-5c8e-893e-0bf0402121a8",
@@ -3299,7 +3203,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m10-387",
      "from_milestone": "lg-m10-10",
      "id": "36617d98-c36a-5f1c-8c87-908dc732b4a0",
@@ -3329,7 +3233,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m17-394",
      "from_milestone": "lg-m17-17",
      "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
@@ -3389,7 +3293,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m27-404",
      "from_milestone": "lg-m27-27",
      "id": "1b79180b-de24-51e8-bce8-f4c827c52877",
@@ -3409,7 +3313,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m33-410",
      "from_milestone": "lg-m33-33",
      "id": "a3a8349a-10fa-5f97-93cc-fd53bd9073b9",
@@ -3429,7 +3333,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m37-414",
      "from_milestone": "lg-m37-37",
      "id": "7a639e89-3942-5c77-8ff2-c7bbf5f98736",
@@ -3489,7 +3393,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lg-m48-425",
      "from_milestone": "lg-m48-48",
      "id": "9d96a4f7-1661-5eb1-bbc9-6852e2550d4d",
@@ -3499,7 +3403,7 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lg-m52-429",
      "from_milestone": "lg-m52-52",
      "id": "4875f9b6-60cd-51af-8459-5c231979a398",
@@ -3580,31 +3484,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m36-467",
-     "from_milestone": "lg-m36-36",
-     "id": "2b98bf48-8051-5569-8145-a1464c93d4bd",
-     "state": "backlog",
-     "title": "Split the run log's live tail",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m37-468",
      "from_milestone": "lg-m37-37",
      "id": "44d213cc-c313-573c-a5eb-11a53016b789",
      "state": "backlog",
      "title": "Make docker capacity leases",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m38-469",
-     "from_milestone": "lg-m38-38",
-     "id": "01be8cc2-d0cc-5aad-a7bc-bb11797f563c",
-     "state": "backlog",
-     "title": "Fix gate outcomes on stage transitions",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -3660,26 +3544,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m17-502",
-     "from_milestone": "lg-m17-17",
-     "id": "ad6de2e6-4d5e-5470-9e5d-537166bc72cb",
-     "state": "backlog",
-     "title": "Retry GitHub issue two-way sync",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m21-506",
-     "from_milestone": "lg-m21-21",
-     "id": "f7d8a11c-2d51-553f-9699-cbfb188fc663",
-     "state": "backlog",
-     "title": "Stop the approval inbox for parked stages",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m26-511",
      "from_milestone": "lg-m26-26",
      "id": "61b38b8e-508b-58f0-82a6-c473b8023c13",
@@ -3700,16 +3564,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m30-515",
-     "from_milestone": "lg-m30-30",
-     "id": "f6ed75f1-8a37-536c-a052-984cacd1ef62",
-     "state": "backlog",
-     "title": "Surface stage timeout budgets",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m33-518",
      "from_milestone": "lg-m33-33",
      "id": "967bbdd9-1736-5df7-b787-565b14dea6f0",
@@ -3720,41 +3574,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m37-522",
-     "from_milestone": "lg-m37-37",
-     "id": "011ee84a-81f5-5745-8568-c1cc65256925",
-     "state": "backlog",
-     "title": "Split worktree isolation for chat turns",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m39-524",
-     "from_milestone": "lg-m39-39",
-     "id": "2d7ff6be-bdb8-588e-b117-50b5bd08482f",
-     "state": "backlog",
-     "title": "Retry the rework ledger's loop cap",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m42-527",
      "from_milestone": "lg-m42-42",
      "id": "fc54de04-3449-5b1f-9c72-b56d9475723d",
      "state": "backlog",
      "title": "Retry the approval inbox for parked stages",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m43-528",
-     "from_milestone": "lg-m43-43",
-     "id": "31d9e246-6e2c-5fa2-b153-165667860f10",
-     "state": "backlog",
-     "title": "Route docker capacity leases",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -3790,31 +3614,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m3-542",
-     "from_milestone": "lg-m3-3",
-     "id": "41430d98-0044-51fe-ae7c-1093ae2f2624",
-     "state": "backlog",
-     "title": "Fix the queue board's stalled lane",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m9-548",
      "from_milestone": "lg-m9-9",
      "id": "3a896e3b-9b14-5c72-83b7-d5b5a4ce527e",
      "state": "backlog",
      "title": "Show the queue board's stalled lane",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m14-553",
-     "from_milestone": "lg-m14-14",
-     "id": "98c8f231-0705-5338-913b-45a0029d68da",
-     "state": "backlog",
-     "title": "Cache GitHub issue two-way sync",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -3850,61 +3654,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m28-567",
-     "from_milestone": "lg-m28-28",
-     "id": "50c79c6f-b9d3-5cd3-8f3d-ce52cab2af38",
-     "state": "backlog",
-     "title": "Cache worktree isolation for chat turns",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m39-578",
-     "from_milestone": "lg-m39-39",
-     "id": "e8c6186a-5b52-5af5-83ca-d75dc5f4b72c",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m45-584",
-     "from_milestone": "lg-m45-45",
-     "id": "eacd10e9-dc80-56c4-80c5-a62327c53d16",
-     "state": "backlog",
-     "title": "Make memory recall ranking",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m48-587",
-     "from_milestone": "lg-m48-48",
-     "id": "32583776-8d8e-506b-82bb-043543fc8c70",
-     "state": "backlog",
-     "title": "Make the approval inbox for parked stages",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m49-588",
      "from_milestone": "lg-m49-49",
      "id": "a9ca5ce5-6951-5d3d-a858-d46b2435a836",
      "state": "backlog",
      "title": "Retry stage timeout budgets",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m52-591",
-     "from_milestone": "lg-m52-52",
-     "id": "87ffc4bf-886a-5d79-b101-fdb405ddb95d",
-     "state": "backlog",
-     "title": "Route initiative progress rollup",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -4029,7 +3783,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m4-25",
      "from_milestone": "blob-m4-4",
      "id": "7400d506-c63c-5b8b-8f88-874b3eca4900",
@@ -4089,7 +3843,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 4,
      "external_id": "blob-m4-36",
      "from_milestone": "blob-m4-4",
      "id": "8b7b30ef-3b0c-5b49-a0d6-dc842382691b",
@@ -4119,7 +3873,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m10-42",
      "from_milestone": "blob-m10-10",
      "id": "35264dee-5df1-5fb1-be63-aa5c4ab00ba8",
@@ -4159,7 +3913,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m9-52",
      "from_milestone": "blob-m9-9",
      "id": "6aed74af-24d2-584b-866e-020e1b03db1f",
@@ -4189,7 +3943,7 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "blob-m6-60",
      "from_milestone": "blob-m6-6",
      "id": "24af0807-5be5-5782-b193-08a12ce13667",
@@ -4220,16 +3974,6 @@
     },
     {
      "cost": 1,
-     "external_id": "blob-m4-69",
-     "from_milestone": "blob-m4-4",
-     "id": "f1894a65-ffac-532e-be5a-1c4f9b228690",
-     "state": "backlog",
-     "title": "Fix the queue board's stalled lane",
-     "work_item_type": "bug",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
      "external_id": "blob-m6-71",
      "from_milestone": "blob-m6-6",
      "id": "5a23fb79-7f5b-5e56-aa2c-23bcc32ef2f2",
@@ -4245,16 +3989,6 @@
      "id": "4968cab2-9d56-5d50-a48f-631ecb8934d1",
      "state": "backlog",
      "title": "Retry docker capacity leases",
-     "work_item_type": "bug",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m4-80",
-     "from_milestone": "blob-m4-4",
-     "id": "1413a28f-81b6-5905-a091-a8c567baba36",
-     "state": "backlog",
-     "title": "Cache the run log's live tail",
      "work_item_type": "bug",
      "workspace_slug": "blobert"
     },
@@ -4279,7 +4013,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lor-m1-8",
      "from_milestone": "lor-m1-1",
      "id": "7853d041-e6f0-54f4-bd45-3b9500415386",
@@ -4379,7 +4113,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lor-m1-24",
      "from_milestone": "lor-m1-1",
      "id": "e5721480-cdec-58bd-a255-1a949e309d10",
@@ -4399,7 +4133,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 3,
      "external_id": "lor-m3-26",
      "from_milestone": "lor-m3-3",
      "id": "b64fc1b8-f535-5927-b35e-a8772b7987c9",
@@ -4429,7 +4163,7 @@
      "workspace_slug": "lore-eden"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lor-m1-32",
      "from_milestone": "lor-m1-1",
      "id": "02b420e4-e20f-5cbb-b6d4-4e6e4181b00e",
@@ -4445,16 +4179,6 @@
      "id": "dcd6832e-920e-5399-8e06-e93906014dd2",
      "state": "backlog",
      "title": "Add worktree isolation for chat turns",
-     "work_item_type": "bug",
-     "workspace_slug": "lore-eden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lor-m3-34",
-     "from_milestone": "lor-m3-3",
-     "id": "6e5dd9e6-9dbe-5fd8-bf34-7f109c257704",
-     "state": "backlog",
-     "title": "Route the queue board's stalled lane",
      "work_item_type": "bug",
      "workspace_slug": "lore-eden"
     },
@@ -4489,7 +4213,7 @@
      "workspace_slug": "loremaker"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lmkr-m5-10",
      "from_milestone": "lmkr-m5-5",
      "id": "cc276768-cec4-5f95-a209-69e6367b7a57",
@@ -4499,7 +4223,7 @@
      "workspace_slug": "loremaker"
     },
     {
-     "cost": 1,
+     "cost": 2,
      "external_id": "lmkr-m1-12",
      "from_milestone": "lmkr-m1-1",
      "id": "805d1906-4b53-55c3-8866-9b53d7f22efe",
@@ -4557,16 +4281,6 @@
      "title": "Show branch cleanup after a squash merge",
      "work_item_type": "bug",
      "workspace_slug": "loremaker"
-    },
-    {
-     "cost": 1,
-     "external_id": "lmkr-m1-24",
-     "from_milestone": "lmkr-m1-1",
-     "id": "d11e1343-9b95-5451-8094-58769c1b0777",
-     "state": "backlog",
-     "title": "Surface docker capacity leases",
-     "work_item_type": "bug",
-     "workspace_slug": "loremaker"
     }
    ],
    "key": "sprint",
@@ -4588,7 +4302,7 @@
    "workspace_slug": "loregarden"
   },
   {
-   "cost": 9,
+   "cost": 12,
    "external_id": "lg-m15-15",
    "from_milestone": "",
    "id": "91787e0b-a7b9-5d5a-a82c-e0a0b9aec022",
