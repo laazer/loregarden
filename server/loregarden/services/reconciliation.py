@@ -47,6 +47,7 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
+    LIVE_WORKSPACES_HAVE_REAL_REPOS,
     PUBLISH_CARDS_CLOSE,
 )
 from loregarden.services.invariants import Invariant, run_invariant
@@ -156,6 +157,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
     _invariant(PUBLISH_CARDS_CLOSE),
+    # A probe once wrote three workspaces on temp-directory repos into the live
+    # database (lg-milestone-that-1319); every sweep over workspaces met them.
+    _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),
 )
 
 

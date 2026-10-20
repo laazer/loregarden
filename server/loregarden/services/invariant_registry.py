@@ -15,6 +15,7 @@ from datetime import date
 from loregarden.models.domain import InvariantReentry, Ticket
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.invariants import Invariant, Violation
+from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
     finish_cleared_landings,
     tickets_whose_landing_cleared,
@@ -127,9 +128,42 @@ PUBLISH_CARDS_CLOSE = Invariant(
     expected_because="a published PR is merged on GitHub by a person, not by the control plane",
 )
 
+
+def _temp_workspaces(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=workspace.id,
+            ticket_id=None,
+            entered_at=workspace.created_at,
+            detail=f"workspace {workspace.slug} is on {workspace.repo_path}, a temp directory",
+        )
+        for workspace in temp_workspaces(session)
+    ]
+
+
+def _archive_temp_workspaces(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    return archive_workspaces(session, [ws for ws in temp_workspaces(session) if ws.id in wanted])
+
+
+LIVE_WORKSPACES_HAVE_REAL_REPOS = Invariant(
+    name="live_workspaces_have_real_repositories",
+    ticket="lg-milestone-that-1319",
+    statement="no unarchived workspace in the live database is on a temp-directory repo",
+    detect=_temp_workspaces,
+    repair=_archive_temp_workspaces,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 20),
+    prevented_by=(
+        "server/tests/test_workspace_repo_guard.py"
+        "::test_every_writer_of_a_temp_repo_to_the_live_database_is_refused"
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,
+    LIVE_WORKSPACES_HAVE_REAL_REPOS,
 )

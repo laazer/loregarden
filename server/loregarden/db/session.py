@@ -11,6 +11,9 @@ from loregarden.db.migrations import apply_migrations
 # that refuse a pin to a template version with no terminal stage. Kept here so
 # every process that opens a session — app, tests, CLI — has the guard armed.
 from loregarden.db.workflow_pin_guard import WorkflowPinWithoutTerminalStageError  # noqa: F401
+
+# Same, for the Workspace mapper: a temp-directory repo is refused in the live database.
+from loregarden.db.workspace_repo_guard import TempRepoInLiveDatabaseError  # noqa: F401
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
