@@ -73,7 +73,7 @@ def poll_workspace(session: Session, workspace: Workspace) -> WorkspacePoll:
         logger.warning("CI poll for %s: listing pull requests works again", workspace.slug)
     service = CIService(session)
     for pr in pulls:
-        ticket = service.ticket_for_branch(workspace, pr.head)
+        ticket = service.ticket_for_branch(workspace, pr.branch)
         if ticket is None:
             continue
         try:

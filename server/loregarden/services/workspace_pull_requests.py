@@ -38,6 +38,7 @@ from loregarden.models.domain import (
 from loregarden.services.ci_checks import GitHubReadError, rollup
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_gh
+from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import (
     GhPullRequest,
     PullRequestStatus,
@@ -182,7 +183,9 @@ class _TicketIndex:
         )
 
     def linked(self, pr: _GhListedPullRequest) -> list[LinkedTicket]:
-        found: dict[str, Ticket] = {t.id: t for t in self._by_branch.get(pr.head, [])}
+        found: dict[str, Ticket] = {
+            t.id: t for t in self._by_branch.get(branch_for_pr_head(pr.head), [])
+        }
         if self._mention is not None:
             for match in self._mention.finditer(f"{pr.head}\n{pr.title}\n{pr.body}"):
                 ticket = self._by_external[match.group(1)]

@@ -45,7 +45,7 @@ from loregarden.services.integration_conflict_card import (
 from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.integration_merge_budget import merge_turn_refusal
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.target_branch import INTEGRATION_PREFIX
+from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 

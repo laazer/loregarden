@@ -210,11 +210,11 @@ class CIService:
         """Record what GitHub reports for ``pr`` and act on it. See the module docstring."""
         repo_root = resolve_workspace_root(workspace)
         result = self._record(ticket, workspace, pr, repo_root)
-        self.settle_attempts(ticket, result, repo_root=repo_root, branch=pr.head)
+        self.settle_attempts(ticket, result, repo_root=repo_root, branch=pr.branch)
         if result.status is not CIStatus.FAILING:
             return result, None
         outcome = self.trigger_auto_fix(
-            ticket, result, branch=pr.head, repo_root=repo_root, manual=False
+            ticket, result, branch=pr.branch, repo_root=repo_root, manual=False
         )
         return result, outcome
 
