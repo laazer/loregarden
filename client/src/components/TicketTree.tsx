@@ -9,11 +9,15 @@ import { blockedOnStateLabel } from "../utils/blockKinds";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
+import { ticketTooltip } from "../lib/workItemsTable";
+import { TicketTreeCompactRowBody } from "./TicketTreeCompactRow";
 import {
   TicketCardBody,
   childProgressSegments,
 } from "./chat/primitives/TicketCardMeta";
 import "./chat/primitives/PrimitiveCard.css";
+
+export type TicketTreePresentation = "default" | "v6" | "compact";
 
 function TreeRowTrail({
   node,
@@ -89,7 +93,7 @@ function TreeRow({
   onAddChild?: (node: TicketTreeNode) => void;
   renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
-  presentation?: "default" | "v6";
+  presentation?: TicketTreePresentation;
   depth?: number;
 }) {
   const hasChildren = node.children.length > 0;
@@ -102,6 +106,7 @@ function TreeRow({
   const stateColor = TICKET_STATE_COLORS[node.state];
   const wfColor = stageStatusColor(node.workflow_stage_status);
   const isV6 = presentation === "v6";
+  const isCompact = presentation === "compact";
 
   const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
   const childProgress = hasChildren ? childProgressSegments(node.children) : null;
@@ -118,14 +123,16 @@ function TreeRow({
           "tree-row",
           "list-btn",
           isV6 ? "tree-row--v6" : null,
+          isCompact ? "tree-row--compact" : null,
           isMember ? "tree-row--member" : null,
           isSelected ? "active" : null,
         ]
           .filter(Boolean)
           .join(" ")}
         style={{
-          borderLeft: isV6 ? undefined : `2px solid ${stateColor}`,
+          borderLeft: isV6 || isCompact ? undefined : `2px solid ${stateColor}`,
         }}
+        title={isCompact ? ticketTooltip(node) : undefined}
         onClick={handleRowClick}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -137,7 +144,24 @@ function TreeRow({
         aria-expanded={hasChildren ? expanded : undefined}
         tabIndex={0}
       >
-        {isV6 ? (
+        {isCompact ? (
+          <TicketTreeCompactRowBody
+            node={node}
+            expanded={expanded}
+            onToggle={onToggle}
+            trail={
+              showTrail ? (
+                <TreeRowTrail
+                  node={node}
+                  workflowRunning={workflowRunning}
+                  showAddChild={showAddChild}
+                  onAddChild={onAddChild}
+                  renderRowAction={renderRowAction}
+                />
+              ) : null
+            }
+          />
+        ) : isV6 ? (
           <>
             <div className="tree-row-v6-body">
               <TicketCardBody
@@ -261,7 +285,7 @@ function TreeRow({
         )}
       </div>
       {hasChildren && expanded && (
-        <div className="tree-children" role="group">
+        <div className={isCompact ? "tree-children tree-children--compact" : "tree-children"} role="group">
           <TicketTree
             nodes={node.children}
             selectedId={selectedId}
@@ -289,7 +313,7 @@ interface TicketTreeProps {
   onAddChild?: (node: TicketTreeNode) => void;
   renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
-  presentation?: "default" | "v6";
+  presentation?: TicketTreePresentation;
   depth?: number;
 }
 
@@ -330,7 +354,10 @@ export function TicketTree({
   depth = 0,
 }: TicketTreeProps) {
   return (
-    <div className="ticket-tree" role={depth === 0 ? "tree" : undefined}>
+    <div
+      className={presentation === "compact" ? "ticket-tree ticket-tree--compact" : "ticket-tree"}
+      role={depth === 0 ? "tree" : undefined}
+    >
       {nodes.map((node) => (
         <TreeRow
           key={node.member_link ? `member:${node.id}` : node.id}
