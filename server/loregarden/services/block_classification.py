@@ -120,10 +120,24 @@ def looks_like_human_work(message: str) -> bool:
     return any(pattern.search(text) for pattern in HUMAN_WORK_PATTERNS)
 
 
+def is_checkout_conflict(message: str) -> bool:
+    """Whether a block is a ticket branch that could not take its target over conflicts.
+
+    The checkout's own words (`worktree_service`, `git_branch`): "could not take
+    X before starting", with the conflicted files. Deliberately not the merge
+    turn's messages, which name conflicts too: the turn's attempt budget counts
+    its failures by kind, and must keep reading them as it does.
+    """
+    lowered = (message or "").lower()
+    return "could not take" in lowered and "before starting" in lowered and "conflict" in lowered
+
+
 def classify_block_message(message: str) -> BlockKind:
     """The kind a block message alone supports — used when no agent declared one."""
     text = message or ""
     lowered = text.lower()
+    if is_checkout_conflict(text):
+        return BlockKind.CONFLICT
     if any(sig.lower() in lowered for sig in _HARNESS_SIGNATURES):
         return BlockKind.HARNESS
     if looks_like_human_work(text):
@@ -414,5 +428,12 @@ def _settle_operation_criteria(
         choice=choice,
         decision=OrchestratorDecision.ADVANCED_AFTER_DECISION,
     )
-    orch.update_ticket_manual(ticket, UpdateTicketRequest(state=TicketState.IN_PROGRESS))
+    # `auto_state`: the person chose how to settle the criteria, not the ticket's
+    # state. Naming a state through the manual path pins it (`state_locked`), and
+    # a pinned state reads to the rollup, the lane's repair hold and the
+    # autopilot as an operator's decision that nothing may override, so a ticket
+    # answered this way could never be repaired or retried again.
+    orch.update_ticket_manual(
+        ticket, UpdateTicketRequest(state=TicketState.IN_PROGRESS, auto_state=True)
+    )
     orch.route_workflow_stage(ticket, from_stage_key=approval.stage_key, outcome="pass")

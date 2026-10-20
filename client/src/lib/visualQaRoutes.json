@@ -1,6 +1,7 @@
 [
   { "name": "home", "path": "/" },
   { "name": "console", "path": "/console" },
+  { "name": "work-items", "path": "/work-items" },
   { "name": "monitor", "path": "/tickets/{ticket}/monitor" },
   { "name": "timeline", "path": "/tickets/{ticket}/timeline" },
   { "name": "outputs", "path": "/tickets/{ticket}/outputs" },

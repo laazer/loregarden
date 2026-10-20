@@ -39,6 +39,12 @@ export function stageProgressSegments(
 }
 
 /** Child segments for a parent card — one dash per child, labelled done/total. */
+/**
+ * Past this many children the 3px gaps alone outgrow a sidebar card (60 of
+ * them are 177px of gap), so the track tightens to hairline gaps.
+ */
+const DENSE_SEGMENTS = 24;
+
 export function childProgressSegments(
   children: { state: TicketState }[] | undefined,
 ): { segments: ProgressSegment[]; done: number; total: number } {
@@ -157,7 +163,13 @@ export function TicketCardBody({
           className="lg-primitive-ticket-segs"
           aria-label={progressLabel ? `Progress ${progressLabel}` : "Workflow progress"}
         >
-          <div className="lg-primitive-ticket-segs-track">
+          <div
+            className={
+              segments.length > DENSE_SEGMENTS
+                ? "lg-primitive-ticket-segs-track lg-primitive-ticket-segs-track--dense"
+                : "lg-primitive-ticket-segs-track"
+            }
+          >
             {segments.map((seg, index) => (
               <span
                 key={index}

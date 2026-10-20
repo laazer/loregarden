@@ -153,7 +153,7 @@ export interface ExternalHarnessPrompt {
 }
 
 /** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
-export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets";
+export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
 
 export interface TicketDetail extends TicketSummary {
   /**

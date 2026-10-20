@@ -81,7 +81,7 @@ export function TrackedTickets({ initiativeId, onChanged }: { initiativeId: stri
   const inputId = `plan-member-search-${initiativeId}`;
 
   return (
-    <section className="plan-autopilot" aria-labelledby="plan-members-title" aria-busy={view.isPending}>
+    <section className="plan-members" aria-labelledby="plan-members-title" aria-busy={view.isPending}>
       <div>
         <h2 id="plan-members-title" className="plan-section-title">
           Tracked tickets{members.length > 0 ? ` (${members.length})` : ""}

@@ -48,6 +48,7 @@ _ROUTE_REASON = {
     RepairRoute.INTERRUPTION: "its last run was interrupted",
     RepairRoute.SCOPE_REROUTE: "a scope reroute is waiting to run",
     RepairRoute.STAGE_RETRY: "its stage run failed with retry budget left",
+    RepairRoute.MERGE_TURN: "its branch conflict can still get a merge turn",
 }
 
 

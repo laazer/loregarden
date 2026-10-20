@@ -29,6 +29,7 @@ import { CreateWorkItemFlow, type CreateWorkItemRequest } from "../components/da
 import { DashboardWorkspacesPane } from "../components/dashboard/DashboardWorkspacesPane";
 import { ImportTicketsFlow } from "../components/dashboard/ImportTicketsFlow";
 import { PaneHideButton } from "../components/dashboard/PaneHideButton";
+import { TicketPaneViewControls } from "../components/dashboard/TicketPaneViewControls";
 import { WorkflowRunControls } from "../components/dashboard/WorkflowRunControls";
 import { WorkflowTicketSettings } from "../components/dashboard/WorkflowTicketSettings";
 import { archivedWorkspaceSlugs, withoutArchivedWorkspaces } from "../lib/archivedWorkspaces";
@@ -113,6 +114,7 @@ export function Dashboard() {
     blockedOnFilters,
     typeFilters,
     search,
+    ticketDensity,
     expandedTicketIds,
     workspace,
     toggleStateFilter,
@@ -679,7 +681,7 @@ export function Dashboard() {
                       <span className="pane-title">Work items</span>
                       <span className="count-pill">{flatTickets.length}</span>
                     </div>
-                    <span className="tickets-pane-sort">by priority</span>
+                    <TicketPaneViewControls />
                   </div>
                   <div className="tickets-pane-actions">
                     <div className="tickets-pane-primary-actions">
@@ -733,7 +735,7 @@ export function Dashboard() {
                     onClearBlockedOn={clearBlockedOnFilters}
                   />
                 </div>
-                <div className="scroll-list lg-primitive-ticket-list--v6">
+                <div className={ticketDensity === "cards" ? "scroll-list lg-primitive-ticket-list--v6" : "scroll-list"}>
                   {visibleTree.length ? (
                     <TicketTree
                       nodes={visibleTree}
@@ -742,7 +744,7 @@ export function Dashboard() {
                       onSelect={selectTicket}
                       onToggle={toggleExpanded}
                       onAddChild={openCreateSubTicket}
-                      presentation="v6"
+                      presentation={ticketDensity === "cards" ? "v6" : "compact"}
                     />
                   ) : (
                     <div className="empty-tree">No work items match filters</div>

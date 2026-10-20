@@ -77,6 +77,7 @@ class UiPage(StrEnum):
     HOME = "home"
     CHAT = "chat"
     DASHBOARD = "dashboard"
+    WORK_ITEMS = "work-items"
     INITIATIVES = "initiatives"
     STUDIO = "studio"
     EDITOR = "editor"

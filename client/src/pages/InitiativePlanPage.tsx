@@ -5,10 +5,9 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
-import { AutopilotPanel } from "../components/initiatives/plan/AutopilotPanel";
+import { InitiativeAutopilot } from "../components/initiatives/plan/InitiativeAutopilot";
 import { InitiativeAgentPanel } from "../components/initiatives/plan/InitiativeAgentPanel";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
-import { InitiativeRunningTickets } from "../components/initiatives/plan/InitiativeRunningTickets";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
@@ -199,7 +198,12 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
               ) : null}
             </div>
 
-            <InitiativeRunningTickets plan={data} />
+            <InitiativeAutopilot
+              plan={data}
+              busy={busy}
+              onAutopilot={(change) => autopilot.mutate(change)}
+              onNeedsPerson={(ids, value) => needsPerson.mutate({ ids, value })}
+            />
 
             <ScheduleSummary
               plan={data}
@@ -254,13 +258,6 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                       void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
                       void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
                     }}
-                  />
-
-                  <AutopilotPanel
-                    plan={data}
-                    busy={busy}
-                    onAutopilot={(change) => autopilot.mutate(change)}
-                    onNeedsPerson={(ids, value) => needsPerson.mutate({ ids, value })}
                   />
 
                   {data.notes ? (

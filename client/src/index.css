@@ -2866,11 +2866,13 @@ label:is(
   flex-direction: column;
 }
 
-.tickets-pane-header {
+/* Doubled class: the generic .pane-header rule below re-centers its items, which
+   shrank the filter bar to its content and let it spill past both pane edges. */
+.pane-header.tickets-pane-header {
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  padding: 12px 44px 10px 16px;
+  padding: 12px 16px 10px;
 }
 
 .pane-hide-btn--corner {
@@ -2880,12 +2882,16 @@ label:is(
   z-index: 2;
 }
 
+/* Only the title row sits beside the corner close button; the filters below
+   take the pane's full width. */
 .tickets-pane-title-row {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  padding-right: 28px;
 }
 
 .tickets-pane-heading {
@@ -2893,12 +2899,6 @@ label:is(
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.tickets-pane-sort {
-  font-size: 11px;
-  color: var(--txl);
-  flex: none;
 }
 
 .tickets-pane-actions {
@@ -3087,9 +3087,11 @@ label:is(
   padding-left: 8px;
 }
 
+/* No width: a block's auto width already fills what its margin leaves.
+   `width: 100%` plus the indent pushed each level its margin past the pane's
+   right edge, and deep trees scrolled sideways. */
 .tree-children {
   display: block;
-  width: 100%;
   min-width: 0;
   box-sizing: border-box;
   margin-left: 8px;

@@ -1360,6 +1360,9 @@
   font-weight: 500;
   line-height: 1.35;
   color: var(--tx);
+  /* Titles quote code ("PlayerController3D.absorb_input_action"); without a
+     break point one ran past the card and the whole list scrolled sideways. */
+  overflow-wrap: anywhere;
 }
 
 .lg-primitive-ticket-external-id {
@@ -1440,9 +1443,15 @@
   min-width: 0;
 }
 
+.lg-primitive-ticket-segs-track--dense {
+  gap: 1px;
+  overflow: hidden;
+}
+
 .lg-primitive-ticket-seg {
   height: 3px;
   flex: 1;
+  min-width: 0;
   border-radius: 2px;
   background: var(--bd);
 }

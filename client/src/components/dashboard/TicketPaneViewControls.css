@@ -1,0 +1,45 @@
+.tickets-pane-view {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.tickets-pane-density {
+  display: inline-flex;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.tickets-pane-density-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.tickets-pane-density-btn + .tickets-pane-density-btn {
+  border-left: 1px solid var(--bd);
+}
+
+.tickets-pane-density-btn:hover,
+.tickets-pane-density-btn:focus-visible {
+  color: var(--tx);
+}
+
+.tickets-pane-density-btn.is-active {
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac) 10%, transparent);
+}
+
+.tickets-pane-all-link {
+  font-size: 11px;
+  color: var(--txl);
+  text-decoration: none;
+}
+
+.tickets-pane-all-link:hover,
+.tickets-pane-all-link:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
