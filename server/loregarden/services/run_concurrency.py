@@ -12,6 +12,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import AgentRun, OrchestrationRun, OrchestrationRunStatus, RunStatus
+from loregarden.services import hierarchy_service
 from sqlmodel import Session, col, select
 
 IN_FLIGHT_STATUSES = [RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
@@ -131,6 +132,37 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
 ORCHESTRATION_LEASE = timedelta(minutes=30)
 
 
+def subtree_orchestration_ids(session: Session, run: OrchestrationRun) -> list[str]:
+    """Every orchestration beneath this one, found through its ticket subtree.
+
+    `OrchestrationRun` records no parent run, but the nesting is already in the
+    data: the driver picks its children by `Ticket.parent_ticket_id`
+    (`_orchestrate_incomplete_children`) and recurses, so the ticket tree *is*
+    the orchestration tree. `hierarchy_service.descendants_by_root` walks it one
+    query per level and refuses to revisit a node, so a parent cycle — a data
+    bug — cannot spin the reconcile thread here.
+
+    No status filter. A child orchestration this very sweep marked FAILED on an
+    earlier pass can still have a live, renewing agent run under it (775's
+    shape one level down), and filtering it out would reap the parent for
+    exactly the reason this function exists.
+
+    The subject run's own id is excluded: run 5 of a ticket is not work
+    *beneath* run 4 of it, and counting a ticket's other attempts as nested
+    work would let a re-run vouch for the attempt it replaced.
+    """
+    descendants = hierarchy_service.descendants_by_root(session, [run.ticket_id])[run.ticket_id]
+    if not descendants:
+        return []
+    return list(
+        session.exec(
+            select(OrchestrationRun.id)
+            .where(col(OrchestrationRun.ticket_id).in_([t.id for t in descendants]))
+            .where(OrchestrationRun.id != run.id)
+        ).all()
+    )
+
+
 def orchestration_lease_expired(
     session: Session, run: OrchestrationRun, *, lease: timedelta = ORCHESTRATION_LEASE
 ) -> bool:
@@ -153,22 +185,36 @@ def orchestration_lease_expired(
     written before the lease existed — or a claim whose driver died before it
     did anything — is reclaimable on the first sweep rather than needing a
     backfill.
+
+    "Beneath this orchestration" means its ticket subtree, not just its own
+    `orchestration_run_id`. A parent with child tickets runs no stages of its
+    own: its driver blocks inside each child's `execute()` and renews nothing
+    while it waits, so its work *is* its children's agent runs. Scoped to the
+    run's own id, this predicate read a healthy parent waiting on a healthy
+    child as a dead one and reaped it mid-run, lane and all — orch_2b5b48,
+    2026-09-21, whose nested child's verifier was renewing at the time. The
+    scope is descendant *orchestration* ids and never descendant ticket ids:
+    a ticket-id scope would let a Baxter triage turn on a child ticket (see
+    `TRIAGE_STAGE_KEY`) vouch for a driver that is genuinely gone.
     """
+    orchestration_ids = [run.id, *subtree_orchestration_ids(session, run)]
     live_agent_run = session.exec(
         select(AgentRun.id)
-        .where(AgentRun.orchestration_run_id == run.id)
+        .where(col(AgentRun.orchestration_run_id).in_(orchestration_ids))
         .where(col(AgentRun.status).in_(IN_FLIGHT_STATUSES + [RunStatus.QUEUED]))
     ).first()
     if live_agent_run:
         return False
 
-    stamp = _latest_activity(session, run)
+    stamp = _latest_activity(session, run, orchestration_ids)
     if stamp is None:
         return False
     return datetime.now(timezone.utc) - stamp > lease
 
 
-def _latest_activity(session: Session, run: OrchestrationRun) -> datetime | None:
+def _latest_activity(
+    session: Session, run: OrchestrationRun, orchestration_ids: list[str]
+) -> datetime | None:
     """The most recent moment this orchestration is known to have been alive.
 
     The lease stamp alone answers for the driver's own writes. A child agent
@@ -179,10 +225,17 @@ def _latest_activity(session: Session, run: OrchestrationRun) -> datetime | None
     orchestration mid-stride — which is how orch_749069 died 345ms after its
     last reviewer passed, with every stage green. A just-finished child is
     activity, so it counts as one.
+
+    Reads the same `orchestration_ids` the in-flight veto was scoped by, rather
+    than recomputing them, so the two halves of the predicate cannot drift. The
+    window they cover is the same one level down: a parent dispatches every
+    runnable child inside one call and renews only at the top of its outer
+    loop, so between child A finishing and child B's first run starting there
+    is no in-flight descendant run and no parent renewal either.
     """
     latest_child_finish = session.exec(
         select(AgentRun.finished_at)
-        .where(AgentRun.orchestration_run_id == run.id)
+        .where(col(AgentRun.orchestration_run_id).in_(orchestration_ids))
         .where(col(AgentRun.finished_at).is_not(None))
         .order_by(col(AgentRun.finished_at).desc())
         .limit(1)

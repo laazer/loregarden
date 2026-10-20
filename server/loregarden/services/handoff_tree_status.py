@@ -20,11 +20,13 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
+from loregarden.services.orchestration_profile import (
+    GitAutomationConfig,
+    ProfileUnreadableError,
+)
+from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.ticket_worktree import resolve_ticket_root
-from loregarden.services.workspace_paths import resolve_workspace_root
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -38,15 +40,64 @@ class HandoffTreeStatus(BaseModel):
     warning: str = ""
 
 
-def describe_handoff_tree(
-    repo_root: Path, *, target_branch: str, ticket_external_id: str
-) -> HandoffTreeStatus:
-    """How far ``repo_root`` is from ``target_branch``, and what to tell the operator.
+class PreparedTree(BaseModel):
+    """The tree a handoff prepared, and the branch it was brought up to.
+
+    One noun, because the two values are two readings of **one** resolution.
+    ``resolve_target_branch`` is a write — it creates the integration branch,
+    merges the base into it, can dispatch a blocking merge turn and files an
+    inbox card on conflict — so a boundary that re-derived the branch beside a
+    tree somebody else prepared paid for that write again to answer a question
+    already answered. A tuple would have preserved the ability to take
+    ``repo_root`` from here and ``target_branch`` from somewhere else, which
+    **is** the defect (lg-milestone-that-974).
+
+    Frozen for the same reason: reassigning either field re-creates the mixing.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repo_root: Path
+    target_branch: str
+
+
+class HandoffTreePreparationError(ValueError):
+    """A handoff failed *while preparing the tree*, and only that earns the tree sentence.
+
+    The single legitimate input to ``describe_handoff_failure``. Before
+    lg-milestone-that-975 both handoff boundaries put that sentence in front of
+    every ``ValueError`` the renderer raised, so three refusals that happen
+    before any tree work — an unknown agent, a missing workspace row, a repo
+    path that is gone — arrived as "resolve the conflict with <branch> … the
+    worktree is <path>". Because ``.toast__message`` clamps at four lines and an
+    error toast auto-dismisses after 9s, that sentence is not a preface to the
+    diagnosis, it **is** the diagnosis — so the three were not padded, they were
+    replaced.
+
+    Classification is decided at the raise site, by **position**: everything
+    raised from inside ``render_stage_prompt``'s tree-preparation ``try``
+    becomes this class, and the refusals lexically above it stay plain
+    ``ValueError``s. So the default for an unclassified failure is its own text,
+    which is what stops the next raise site added to the renderer from
+    re-creating the defect.
+
+    The base is ``ValueError`` and that is load-bearing, not incidental. Three
+    call sites catch ``ValueError`` around ``_checked_out_run_view``
+    (``external_harness.py``) and settle the run they stamped on it; nothing
+    else ever settles an external run, so a base those three do not catch
+    strands the stage RUNNING with no agent behind it (lg-milestone-that-974
+    AC12, and the open lg-milestone-that-977).
+    """
+
+
+def describe_handoff_tree(tree: PreparedTree, *, ticket_external_id: str) -> HandoffTreeStatus:
+    """How far the prepared tree is from its target, and what to tell the operator.
 
     ``behind`` is one-directional, like the refresh it reports on: the ticket's
     own commits reach its target at landing (768), never at handoff, so a tree
     *ahead* of its target is current rather than degraded.
     """
+    repo_root, target_branch = tree.repo_root, tree.target_branch
     if not target_branch:
         # Nothing to measure against. `rev-list --count HEAD..` exits 0 with 0,
         # which would report a current tree for a question nobody could answer.
@@ -80,7 +131,9 @@ def describe_handoff_tree(
     return HandoffTreeStatus(behind=behind, dirty_files=dirty, warning=warning)
 
 
-def describe_handoff_failure(session: Session, ticket: Ticket, exc: Exception) -> str:
+def describe_handoff_failure(
+    session: Session, ticket: Ticket, exc: HandoffTreePreparationError
+) -> str:
     """The text an operator or a harness is given when the tree could not be prepared.
 
     Leads with one short sentence carrying the four facts they act on — which
@@ -98,7 +151,43 @@ def describe_handoff_failure(session: Session, ticket: Ticket, exc: Exception) -
     last: the fact the clamp eats is the one recoverable from the ticket, and
     the branch to resolve against survives on screen.
 
-    The tree and the target are resolved best-effort: this runs on a path where
+    The target is **read**, never resolved. This runs *because* a resolution
+    raised, so resolving again re-attempts the merge that just failed, can
+    dispatch a merge-agent turn synchronously inside a 400 response, and
+    re-files the `integration_conflict` card — all to put a branch name in one
+    sentence (lg-milestone-that-974 R6). ``target_branch_name`` touches no refs,
+    which is not the same as "cannot fail", and it fails in **two** unrelated
+    ways, which is why the guard below names two base classes:
+
+    * ``TargetBranchError`` through ``subtree_root`` -> ``_refuse_initiative`` /
+      ``_require_initiative_child`` (target_branch.py:85-128), when the ticket
+      is an initiative or an initiative's non-child.
+    * ``ProfileUnreadableError``, raised by the profile resolver, when the
+      workspace's profile file is not a profile at all — truncated,
+      hand-edited into a syntax error, a document that is not a mapping, or
+      not UTF-8. It subclasses ``RuntimeError``
+      (orchestration_profile.py), so ``except ValueError`` never reached it
+      and four shapes of a half-written profile escaped as a 500
+      (lg-milestone-that-1215).
+    * a plain ``ValueError``, which is still named and still wanted:
+      ``validate_branch_name`` raises one through ``integration_branch_for``,
+      and an unnameable integration branch should fall back to the base rather
+      than 500 the route. The tuple is **additive** for that reason — dropping
+      ``ValueError`` would trade one regression for another.
+
+    ``TargetBranchError`` and ``ProfileUnreadableError`` both subclass
+    ``RuntimeError``, so no one of the three names covers another and dropping
+    any of them re-opens a 500 (lg-milestone-that-1214, -1215).
+
+    The fallback inside the guard is the built-in ``GitAutomationConfig``
+    default and deliberately **not** a second resolve: reading
+    ``resolve_orchestration_profile(workspace).git.base_branch`` there re-calls
+    the function that just raised, which is the defect this guard exists to
+    stop. The model default has no required fields and performs no I/O, so it
+    cannot raise — and because it is a stand-in rather than the workspace's
+    configured base, the WARNING says so.
+
+    The tree and the target are still best-effort — this runs on a path where
     one of them may be exactly what failed, and a message that cannot be built
     is worse than one naming a fallback.
     """
@@ -108,18 +197,26 @@ def describe_handoff_failure(session: Session, ticket: Ticket, exc: Exception) -
     if workspace is not None:
         repo_root = resolve_ticket_root(session, ticket, workspace)
         try:
-            target_branch = resolve_target_branch(
-                session, ticket, workspace, repo_root=resolve_workspace_root(workspace)
-            )
-        except TargetBranchError as resolve_exc:
+            target_branch = target_branch_name(session, ticket, workspace)
+        except (TargetBranchError, ProfileUnreadableError, ValueError) as resolve_exc:
             # The target itself is what failed. Name the branch it would have
-            # landed on rather than dropping the fact from the sentence.
+            # landed on rather than dropping the fact from the sentence — but
+            # name it as the stand-in it is: `main` matches the configured base
+            # today only by accident, so a record saying only that a lookup
+            # failed reads exactly like a resolved answer. The record says what
+            # the branch *is* rather than which arm fired, because both arms
+            # reach the same fallback and the caught exception's own text —
+            # carried verbatim — is the only text naming the real cause.
+            target_branch = GitAutomationConfig().base_branch
             logger.warning(
-                "Could not name the target branch for %s's failed handoff: %s",
+                "Could not read %s's target branch for its failed handoff "
+                "(workspace %r): %s. Naming the built-in default branch %r instead "
+                "of one read from the workspace's orchestration profile.",
                 ticket.external_id,
+                workspace.slug,
                 resolve_exc,
+                target_branch,
             )
-            target_branch = resolve_orchestration_profile(workspace).git.base_branch
     # Every word in the prose is paid for twice: once against AC12's 160-character
     # cap, and once against the clamp, which eats the tail. Measured on this
     # ticket's own identifiers (a 21-character external id, a 33-character

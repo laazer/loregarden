@@ -2,15 +2,15 @@ import json
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.services.studio_agent_config import (
+    parse_markdown_frontmatter,
+    strip_markdown_frontmatter,
+)
 from loregarden.services.studio_generation import (
     parse_agent_generate_payload,
     parse_workflow_generate_payload,
 )
 from loregarden.services.studio_routing import resolve_classify_route
-from loregarden.services.studio_service import (
-    parse_markdown_frontmatter,
-    strip_markdown_frontmatter,
-)
 
 AGENT_GENERATE_STUB = """Draft agent:
 

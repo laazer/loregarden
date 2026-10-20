@@ -1035,6 +1035,30 @@ textarea::placeholder {
   padding-left: 18px;
 }
 
+/* Help text under a field, naming what it cannot do and what to do instead. */
+.studio-field-help {
+  font-size: 11px;
+  color: var(--txl);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+/* An identifier inside the agent-delete refusal notice: a control where the
+   operator can be sent to it, plain text where they cannot. */
+.studio-reference-link {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ac);
+  text-decoration: underline;
+  padding: 0 2px;
+}
+
+.studio-reference-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
 .studio-field-row {
   display: flex;
   gap: 14px;

@@ -672,6 +672,315 @@ def test_a_conflicting_refresh_reaches_the_harness_as_a_tool_error(
         assert noise not in first, f"git's merge output reached the harness's first line: {first}"
 
 
+# --- lg-milestone-that-977: the settle, measured through the MCP boundary -----
+#
+# Every existing settle test injects the failure with `_raising_resolution` and
+# calls `begin_external_stage` directly. The strand this ticket was filed for
+# was measured on the other route: a real conflicting tree, driven through MCP
+# `tools/call`. These two cross that route and read the post-failure state, so
+# a regression there stops being invisible. Nothing on the resolution, refresh
+# or render path is patched — a test that passes with the refresh stubbed does
+# not cover the route the strand was measured on.
+
+
+def _harness_stage_run_ids(db_session: Session, ticket, stage_key: str = "work") -> set[str]:
+    """The ids of every run stamped for this ticket on `stage_key`, ever.
+
+    Deliberate selection, not `[0]` of an unordered query: the stage has more
+    than one `AgentRun` row over these tests' lives — the worktree fixture
+    opens one of its own with no stage key, and the retry test drives three
+    begins — so the run a call stamped is the one that was not there before it.
+
+    Stage-scoped for a second reason the spec asked to be named rather than
+    patched out: `ensure_ticket_branch` gives the conflict a `MergeTurnSeat`,
+    and each failing pass leaves an `integration-merge` run of its own behind
+    ("the merge turn left conflicts unresolved in: shared.txt"). The seat does
+    not rescue the conflict — no merge agent can run here — so the refresh still
+    raises, which is what these tests are about; its runs belong to another
+    stage and are not this handoff's to settle.
+    """
+    return {
+        run.id
+        for run in db_session.exec(
+            select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == stage_key)
+        )
+    }
+
+
+def _conflicting_tree(db_session: Session, workspace, ticket, worktree, repo) -> str:
+    """A genuine git merge conflict between the ticket's branch and its target.
+
+    Built the way `test_a_conflicting_refresh_reaches_the_harness_as_a_tool_error`
+    builds it — `shared.txt` committed on both sides with different content —
+    so the refresh fails inside git rather than inside a patch. Returns the
+    target branch.
+    """
+    from pathlib import Path
+
+    from tests.worktree_helpers import commit_on, git
+
+    target = _harness_target(db_session, ticket, workspace, repo)
+    (worktree / "shared.txt").write_text("the ticket's version\n")
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "-m", "ticket side")
+    commit_on(Path(repo), target, "shared.txt", "a sibling's version\n")
+    return target
+
+
+def _begin_over_mcp(db_session: Session, orch_run) -> dict:
+    """`loregarden_begin_external_stage` through `tools/call`, as a harness calls it."""
+    from loregarden.mcp.protocol import handle_request
+
+    response = handle_request(
+        db_session,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "loregarden_begin_external_stage",
+                "arguments": {"run_id": orch_run.id},
+            },
+        },
+    )
+    return response["result"]
+
+
+def _settles_for(db_session: Session, ticket, run) -> list[dict]:
+    """The `SETTLED_FAILED_HANDOFF` decisions recorded for exactly this run.
+
+    Keyed on `run_code` rather than counted, because these tests drive the
+    boundary more than once: a count would be satisfied by one settle recorded
+    twice, and what has to hold is that *each* run the handoff stamped left a
+    line of its own.
+    """
+    from loregarden.models.domain import OrchestratorDecision
+    from tests.history_helpers import decision_payloads
+
+    return [
+        payload
+        for payload in decision_payloads(db_session, ticket.id)
+        if payload["decision"] == OrchestratorDecision.SETTLED_FAILED_HANDOFF
+        and payload.get("run_code") == run.run_code
+    ]
+
+
+def _resolve_the_conflict(worktree, target: str) -> None:
+    """Merge `target` into the ticket's branch by hand and commit the resolution.
+
+    Of the two routes the spec offered this is the assertable one: the
+    resolution commit makes `target` an ancestor of the branch HEAD, so
+    `ensure_ticket_branch`'s early return fires and the refresh has nothing left
+    to merge. Checked three ways before the caller relies on it — the merge
+    really did conflict, the target really is an ancestor now, and the tree is
+    clean rather than dirty (a dirty tree *skips* the refresh, which would pass
+    the caller's assertion for the wrong reason).
+    """
+    import subprocess
+
+    from tests.worktree_helpers import git
+
+    merge = subprocess.run(
+        ["git", "merge", "--no-edit", target],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert merge.returncode != 0, (
+        f"fixture: the merge this test exists to resolve succeeded on its own: {merge.stdout}"
+    )
+    (worktree / "shared.txt").write_text("resolved: both versions\n")
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "--no-edit")
+    resolved = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", target, "HEAD"],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resolved.returncode == 0, (
+        "fixture: the resolution commit did not make the target an ancestor of the "
+        "branch, so a third begin would fail for the setup's reasons and not the code's"
+    )
+    assert not git(worktree, "status", "--porcelain").stdout.strip(), (
+        "fixture: the worktree is dirty, which skips the refresh rather than exercising it"
+    )
+
+
+def test_a_conflicting_refresh_over_mcp_leaves_nothing_of_the_stage_it_opened(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """The post-failure state, not only the error text.
+
+    The existing conflict test asserts what the harness was *told* and passes
+    while leaving the stage looking live — which is exactly the strand this
+    ticket was filed for. The boundary stamps a run RUNNING and charges the
+    stage's dispatch budget before it tries to prepare the tree, so when the
+    preparation fails all three have to come back: the run FAILED carrying the
+    whole failure text, the stage PENDING rather than RUNNING, and the charge
+    refunded. The decision is the fourth, because a stage that moved for no
+    recorded reason is the operator's problem either way.
+    """
+    from loregarden.services.stage_retry_budget import count_stage_dispatches
+
+    _conflicting_tree(db_session, harness_workspace, harness_ticket, harness_worktree, harness_repo)
+    orch_run = start_external_orchestration(
+        db_session, harness_ticket, harness=ExternalHarness.CLAUDE_CODE
+    )
+    before = _harness_stage_run_ids(db_session, harness_ticket)
+
+    result = _begin_over_mcp(db_session, orch_run)
+
+    assert result.get("isError") is True, result
+    stamped = _harness_stage_run_ids(db_session, harness_ticket) - before
+    assert len(stamped) == 1, (
+        f"the call stamped {len(stamped)} runs on 'work'; this test reads exactly the one it opened"
+    )
+    run = db_session.get(AgentRun, stamped.pop())
+    db_session.refresh(run)
+    assert run.status == RunStatus.FAILED, (
+        f"the run this handoff stamped RUNNING was left {run.status}: nothing else "
+        "ever settles an external-harness run"
+    )
+    stderr = run.stderr or ""
+    assert stderr.partition(". ")[0] == result["content"][0]["text"].partition(". ")[0], (
+        "the operator reading the run and the harness reading the tool error were told two "
+        f"different things failed: {stderr!r} vs {result['content'][0]['text']!r}"
+    )
+    assert "CONFLICT" in stderr, (
+        f"git's own output is what an operator needs to resolve this, and it is not on the "
+        f"run: {stderr!r}"
+    )
+    assert "CONFLICT" not in stderr.partition(". ")[0], (
+        "git's merge output reached the lead sentence; the whole text belongs on stderr "
+        "*behind* the readable lead, not inside it"
+    )
+    assert (
+        OrchestrationService(db_session).stage_status(harness_ticket, "work") == StageStatus.PENDING
+    ), "the stage was left looking live with nothing running it"
+    assert count_stage_dispatches(db_session, harness_ticket.id, "work") == 0, (
+        "the dispatch charged for a run that never attempted the work was not handed back"
+    )
+    settles = _settles_for(db_session, harness_ticket, run)
+    assert len(settles) == 1, (
+        "a dispatch that never attempted the work settled without recording a decision "
+        f"for {run.run_code}"
+    )
+
+
+def test_a_settled_conflict_leaves_the_stage_retryable_rather_than_wedged(
+    db_session: Session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+):
+    """Settled is only half of it; the other half is that begin works again.
+
+    Three phases, one causal chain. The mechanism is the resumed gate —
+    `stage_status(ticket, target_key) == StageStatus.RUNNING` — which the
+    settle makes false by writing PENDING, so a second begin takes the
+    fresh-attempt arm instead of re-serving the run the first one left. A
+    **different run id** is the proof of that; asserting only "it failed again"
+    would pass on either branch, including the wedged one this ticket was filed
+    for. Phase three resolves the conflict for real and shows the stage was
+    never spent: the harness gets a live run on the target it asked for.
+    """
+    from loregarden.services.stage_retry_budget import count_stage_dispatches
+
+    target = _conflicting_tree(
+        db_session, harness_workspace, harness_ticket, harness_worktree, harness_repo
+    )
+
+    # Phase 1 — the first begin fails and settles.
+    first_orch = start_external_orchestration(
+        db_session, harness_ticket, harness=ExternalHarness.CLAUDE_CODE
+    )
+    before_first = _harness_stage_run_ids(db_session, harness_ticket)
+    first_result = _begin_over_mcp(db_session, first_orch)
+    assert first_result.get("isError") is True, first_result
+    first_stamped = _harness_stage_run_ids(db_session, harness_ticket) - before_first
+    assert len(first_stamped) == 1, first_stamped
+    first_run = db_session.get(AgentRun, first_stamped.pop())
+    db_session.refresh(first_run)
+    assert first_run.status == RunStatus.FAILED, first_run.status
+    # Attributed, not assumed. Every handoff `ValueError` reaches the harness as
+    # an `isError` — an unknown agent, an unreadable profile — so `isError` alone
+    # does not say the conflict is what failed, and a fixture that stopped
+    # producing one would leave these three phases passing over nothing
+    # (lg-milestone-that-975 is that failure mode, and it is why the lead sentence
+    # no longer claims a conflict for every `ValueError`).
+    assert "CONFLICT" in (first_run.stderr or ""), (
+        f"the first begin failed for something other than the tree: {first_run.stderr!r}"
+    )
+    assert (
+        OrchestrationService(db_session).stage_status(harness_ticket, "work") == StageStatus.PENDING
+    )
+    assert count_stage_dispatches(db_session, harness_ticket.id, "work") == 0
+    assert len(_settles_for(db_session, harness_ticket, first_run)) == 1
+
+    # Phase 2 — a second begin takes the fresh arm, not `_resumable_stage_run`.
+    before_second = _harness_stage_run_ids(db_session, harness_ticket)
+    second_result = _begin_over_mcp(db_session, first_orch)
+    assert second_result.get("isError") is True, second_result
+    second_stamped = _harness_stage_run_ids(db_session, harness_ticket) - before_second
+    assert len(second_stamped) == 1, (
+        "the second begin re-served the run the first one left instead of opening its own: "
+        f"{second_stamped}"
+    )
+    second_run = db_session.get(AgentRun, second_stamped.pop())
+    db_session.refresh(second_run)
+    assert second_run.id != first_run.id, (
+        "the settled run was re-served, so the stage is wedged: `_resumable_stage_run` can "
+        "only be reached while the stage reads RUNNING, which the settle is supposed to clear"
+    )
+    assert second_run.status == RunStatus.FAILED, second_run.status
+    assert "CONFLICT" in (second_run.stderr or ""), (
+        f"the second begin failed for something other than the tree: {second_run.stderr!r}"
+    )
+    db_session.refresh(first_run)
+    assert first_run.status == RunStatus.FAILED, first_run.status
+    assert (
+        OrchestrationService(db_session).stage_status(harness_ticket, "work") == StageStatus.PENDING
+    ), "a second failed attempt left the stage live"
+    # The spec could only infer this one from the single-settle coverage: that
+    # *consecutive* settles each hand back their own charge, so the stage retry
+    # breaker does not refuse the retry the settle just advertised. Measured
+    # here instead, and it is the second settle's own decision line that says
+    # the second one happened at all.
+    assert count_stage_dispatches(db_session, harness_ticket.id, "work") == 0, (
+        "the second settle kept the charge for work that never started, so the retry "
+        "the first settle advertised is spent against the stage's budget"
+    )
+    assert len(_settles_for(db_session, harness_ticket, second_run)) == 1, (
+        f"the second settle left no line of its own for {second_run.run_code}"
+    )
+
+    # Phase 3 — resolve the conflict for real, then begin again.
+    _resolve_the_conflict(harness_worktree, target)
+
+    before_third = _harness_stage_run_ids(db_session, harness_ticket)
+    third_result = _begin_over_mcp(db_session, first_orch)
+    assert not third_result.get("isError"), third_result
+    view = json.loads(third_result["content"][0]["text"])
+    assert len(view["runs"]) == 1, view
+    assert view["runs"][0]["target_branch"] == target, view
+    third_run = db_session.get(AgentRun, view["runs"][0]["agent_run_id"])
+    db_session.refresh(third_run)
+    assert third_run.status == RunStatus.RUNNING, (
+        f"the harness was handed a run in {third_run.status}: a settled stage that cannot "
+        "be redispatched is wedged by a slower route"
+    )
+    assert third_run.id not in before_third, "the third begin re-served an already-settled run"
+    # One, and it is the live run's: the two settles handed their own charges
+    # back and the retry they advertised was charged like any other dispatch, so
+    # the stage's budget still counts. The positive counterpart to the two
+    # `== 0`s above — without it a settle that left the counter permanently
+    # unable to charge would read as "refunded" at every phase.
+    assert count_stage_dispatches(db_session, harness_ticket.id, "work") == 1, (
+        "the attempt that is actually running was never charged, so two settles left the "
+        "stage a budget nothing can spend"
+    )
+
+
 # --- lg-milestone-that-917, test-break: said once, and only when it is true ----
 
 

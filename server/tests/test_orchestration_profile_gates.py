@@ -8,15 +8,22 @@ test here redirects settings.repo_root to a throwaway tmp_path rather than
 writing into the real agent_context/orchestration/ directory.
 """
 
+import ast
+import inspect
+import textwrap
 from unittest import mock
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
+from loregarden.api import orchestration as orchestration_api
 from loregarden.config import settings
 from loregarden.models.domain import DockerFootprint, Workspace
 from loregarden.services.orchestration_profile import (
     GatesConfig,
+    ProfileUnreadableError,
     _profile_path_for_write,
+    list_profiles,
     load_profile_from_path,
     orchestration_dir,
     resolve_orchestration_profile,
@@ -392,3 +399,259 @@ def test_an_unwritable_profile_is_a_403_naming_the_file(
 
     assert res.status_code == 403
     assert "gates-locked-test.yaml" in res.json()["detail"]
+
+
+# --- the editor says the file is broken, instead of an empty gate list --------
+#
+# lg-milestone-that-1215 AC12. These three GETs are what the Gates editor reads,
+# and the Gates editor is the surface that *writes* these files — so an
+# interrupted write or a hand edit produces exactly the file they are given here.
+# All three resolved the profile unguarded, so every shape of a broken YAML was a
+# 500 with `{"detail": "Internal Server Error"}` and the panel rendered its
+# controls over `null`: a plausible, wrong gate list with no error shown.
+#
+# The 400 carries the error's own text, which is the only string naming the file
+# and the line that will not parse. `load_profile_from_path` resolves it
+# absolute on purpose (C7): the operator is standing in a worktree, and
+# `agent_context/orchestration/default.yaml` is not a path they can open from
+# there.
+
+PROFILE_GET_ENDPOINTS = ("profile", "profiles", "profile/git")
+
+UNREADABLE_PROFILE_SHAPES = {
+    "corrupt-syntax": "slug: default\nname: [unclosed\n",
+    "non-mapping": "- one\n- two\n",
+    "schema-invalid": "slug: default\nname: Default\nmonitor:\n  autofix: [stage_thrash]\n",
+}
+
+
+def _broken_default(tmp_path, shape: str = "corrupt-syntax"):
+    """A `default.yaml` that will not parse, and its absolute path."""
+    path = orchestration_dir() / "default.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(UNREADABLE_PROFILE_SHAPES[shape], encoding="utf-8")
+    return path.resolve()
+
+
+@pytest.mark.parametrize("endpoint", PROFILE_GET_ENDPOINTS)
+@pytest.mark.parametrize("shape", sorted(UNREADABLE_PROFILE_SHAPES))
+def test_a_profile_that_will_not_parse_is_a_400_naming_the_file(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch, endpoint: str, shape: str
+):
+    """AC12. Once per endpoint, once per shape, on a real file on disk.
+
+    Parametrized over the shapes rather than written for the schema-invalid one
+    because that is the only shape these three endpoints ever handled: a
+    `ValidationError` is a `ValueError`, and the other two are not. A fix that
+    classified only the pydantic case would leave two thirds of a half-written
+    file as a 500 here.
+    """
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    db_session.add(Workspace(slug="gates-broken-test", name="Gates Broken", repo_path="."))
+    db_session.commit()
+    path = _broken_default(tmp_path, shape)
+
+    res = client.get(f"/api/orchestration/workspaces/gates-broken-test/{endpoint}")
+
+    assert res.status_code == 400, (
+        f"/{endpoint} on a {shape} profile answered {res.status_code}: {res.text[:200]}"
+    )
+    detail = res.json()["detail"]
+    assert str(path) in detail, f"the editor is not told which file to fix: {detail!r}"
+    assert "could not be read as an orchestration profile" in detail, (
+        f"the detail is not the error's own text: {detail!r}"
+    )
+
+
+def test_the_profile_endpoint_fails_on_the_shared_default_even_when_its_own_file_parses(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    """AC12's last sentence — the vector the obvious guard placement misses.
+
+    `GET /profile` reads two files, not one: the workspace's own profile, and
+    `default.yaml` through `default_gate_commands()`, which is what fills the
+    editor's one-click suggestions. So a workspace with a perfectly good
+    `<slug>.yaml` still 500s when the *shared* default is broken — and measured
+    read-only on the live database (2026-10-17), no workspace sets
+    `orchestration_profile_slug`, so three of six resolve that shared file and
+    one corrupt write takes out half of them at once.
+
+    A guard wrapped around `resolve_orchestration_profile` alone passes every
+    test above and leaves this one a 500.
+    """
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    db_session.add(Workspace(slug="gates-own-file-test", name="Gates Own File", repo_path="."))
+    db_session.commit()
+    own = orchestration_dir() / "gates-own-file-test.yaml"
+    own.parent.mkdir(parents=True, exist_ok=True)
+    own.write_text("slug: gates-own-file-test\nname: Fine\n", encoding="utf-8")
+    assert load_profile_from_path(own).name == "Fine", "fixture: this file must parse"
+    path = _broken_default(tmp_path)
+
+    res = client.get("/api/orchestration/workspaces/gates-own-file-test/profile")
+
+    assert res.status_code == 400, (
+        "the workspace's own profile parsed, so the read that failed is "
+        f"default_gate_commands()'s: {res.status_code} {res.text[:200]}"
+    )
+    assert str(path) in res.json()["detail"]
+
+
+def test_the_profile_list_refuses_rather_than_quietly_dropping_the_broken_file(
+    tmp_path, monkeypatch
+):
+    """R4 / AC12. `list_profiles` propagates; it does not return a short list.
+
+    Skipping the unreadable file is the tempting fix and the wrong one: the
+    editor would show a list that is complete-looking and missing the file the
+    operator is about to overwrite, which is the same empty-state-for-a-failure-
+    state defect this ticket closes on the panel. Asserted on the service rather
+    than through the route so that a route guard cannot be what makes it pass.
+    """
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    good = orchestration_dir() / "a-readable-one.yaml"
+    good.parent.mkdir(parents=True, exist_ok=True)
+    good.write_text("slug: a-readable-one\nname: Readable\n", encoding="utf-8")
+    path = _broken_default(tmp_path)
+
+    with pytest.raises(ProfileUnreadableError) as excinfo:
+        list_profiles(_workspace("gates-list-test"))
+
+    assert excinfo.value.path == path, (
+        f"a different file was blamed than the one that is broken: {excinfo.value.path}"
+    )
+
+
+# --- adversarial: the three guards AC12 adds, and what they must not become ---
+#
+# AC12 says the three GETs "catch `ProfileUnreadableError` and return 400". It
+# says nothing about what else they may catch, and it is the only criterion on
+# this change that adds a guard without a "nothing broader" clause beside it —
+# AC2 has one for the handoff guard and AC9 has one for the external harness.
+# Measured: a prototype in which all three read
+# `except Exception as exc: raise HTTPException(400, str(exc))` passes every
+# test above, including all nine parametrizations of the 400 test.
+#
+# That is the same mistake C1 refuses one layer up, on a surface where it is
+# harder to notice. A `Session` that is gone, an `AttributeError` in
+# `_profile_view`, a `KeyError` in the gate renderer — each would reach the
+# Gates editor as "Gate settings for <slug> could not be read: <some Python
+# message>. Fix that file and reload." (AC13's copy), sending the operator to
+# edit a file that is perfectly fine while the real failure is invisible. A 500
+# is the better answer for all of them: it is honest, and it is in the log.
+
+
+def _handler_except_names(func) -> list[set[str]]:
+    """The names each `except` in ``func`` catches, read off the AST.
+
+    Read structurally rather than by text so that re-ordering the tuple,
+    aliasing a name at import, or splitting the guard into two handlers cannot
+    change the answer.
+    """
+    source = textwrap.dedent(inspect.getsource(func))
+    names = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ExceptHandler):  # py-org: allow-isinstance - AST walk
+            continue
+        if node.type is None:
+            names.append({"BaseException"})
+            continue
+        names.append(
+            {
+                child.id
+                for child in ast.walk(node.type)
+                if isinstance(child, ast.Name)  # py-org: allow-isinstance - AST walk
+            }
+        )
+    return names
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        orchestration_api.get_workspace_profile,
+        orchestration_api.list_workspace_profiles,
+        orchestration_api.get_workspace_git_automation,
+    ],
+    ids=["profile", "profiles", "profile/git"],
+)
+def test_the_gate_studio_guards_name_the_unreadable_profile_and_nothing_broader(handler):
+    """AC12 with the clause AC2 and AC9 both have and AC12 does not.
+
+    Every one of these three endpoints answers 400 "go and fix this file" for a
+    `ProfileUnreadableError`. The reason that is a good answer is that the
+    error means exactly one thing: the bytes on disk are not a profile. An
+    `except Exception` in the same slot makes the 400 mean "something went
+    wrong somewhere under this read", and the panel renders the same sentence
+    for it — so the one surface this ticket builds to tell an operator which
+    file to open starts naming files that are not broken.
+
+    `ProfileUnreadableError` is a `RuntimeError` (C2) precisely so the sites
+    that handle it are the sites that *named* it. A broad catch here gives that
+    away on three of the ten, and `grep -rn ProfileUnreadableError` (AC15)
+    would still list them.
+    """
+    handlers = _handler_except_names(handler)
+    assert handlers, (
+        f"{handler.__name__} has no except handler at all: an unreadable profile is a "
+        "500 with {'detail': 'Internal Server Error'} and the editor renders its "
+        "controls over null"
+    )
+    for caught in handlers:
+        assert "ProfileUnreadableError" in caught, (
+            f"{handler.__name__} catches {sorted(caught)}, which does not name the error "
+            "this ticket created — so the 400 is being produced by something else, and "
+            "the next shape of broken file is a 500 again"
+        )
+        assert not (caught & {"Exception", "BaseException"}), (
+            f"{handler.__name__} catches {sorted(caught)}: every failure under this read "
+            "now tells the operator to go and fix a profile file, including the ones "
+            "where the profile is fine and the bug is ours"
+        )
+
+
+def test_a_broken_profile_belonging_to_nobody_fails_the_list_and_not_the_single_read(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    """The over-broad fix in the other direction: a guard that reads too much.
+
+    `list_profiles` globs the whole orchestration directory, so it is the one
+    endpoint of the three that an unreadable file belonging to *another*
+    workspace can break — and it should break, loudly (R4: no partial list).
+    `GET /profile` and `GET /profile/git` read two named files, this
+    workspace's and `default.yaml`, and a third workspace's broken profile is
+    none of their business.
+
+    A guard implemented by resolving the directory once and sharing the result
+    across the three handlers passes every other test here and turns a file
+    nobody on this page is looking at into a 400 telling this operator to fix
+    it. The 200s below are the half of AC12 that no criterion states: the
+    endpoint says the file is broken *when it is a file that endpoint reads*.
+    """
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    db_session.add(Workspace(slug="gates-neighbour-test", name="Gates Neighbour", repo_path="."))
+    db_session.commit()
+    own = orchestration_dir() / "gates-neighbour-test.yaml"
+    own.parent.mkdir(parents=True, exist_ok=True)
+    own.write_text("slug: gates-neighbour-test\nname: Fine\n", encoding="utf-8")
+    (orchestration_dir() / "default.yaml").write_text(
+        "slug: default\nname: Default\n", encoding="utf-8"
+    )
+    stranger = orchestration_dir() / "some-other-workspace.yaml"
+    stranger.write_text(UNREADABLE_PROFILE_SHAPES["corrupt-syntax"], encoding="utf-8")
+
+    for endpoint in ("profile", "profile/git"):
+        res = client.get(f"/api/orchestration/workspaces/gates-neighbour-test/{endpoint}")
+        assert res.status_code == 200, (
+            f"/{endpoint} reads this workspace's own profile and default.yaml, both of "
+            f"which parse — it answered {res.status_code}: {res.text[:200]}"
+        )
+
+    listed = client.get("/api/orchestration/workspaces/gates-neighbour-test/profiles")
+    assert listed.status_code == 400, (
+        "the profile list reads every file in the directory, so a broken one in it has "
+        f"to refuse rather than come back short: {listed.status_code}"
+    )
+    assert str(stranger.resolve()) in listed.json()["detail"], (
+        f"the list blamed a file other than the broken one: {listed.json()['detail']!r}"
+    )

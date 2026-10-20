@@ -51,6 +51,20 @@ from loregarden.models.domain import (
     DockerWaitBasis,
 )
 from loregarden.services.capacity_children import reserve_child
+
+# `child_environment` and the four variable names it writes moved to
+# `capacity_environment` so `gate_capacity` — and from lg-milestone-that-1238 the
+# land guard behind it — can hand a child its grant without importing the
+# queue-waiting machinery below, which reaches `docker_reaper` and from there the
+# orchestrator. Re-exported here because the environment a held command gets is
+# part of what "run this under a lease" means, and this module is where callers
+# ask for that.
+from loregarden.services.capacity_environment import (  # noqa: F401
+    CALLER_REPO_ROOT_ENV,
+    REPO_ROOT_ENV,
+    WORKERS_ENV,
+    child_environment,
+)
 from loregarden.services.capacity_progress import (
     PROGRESS_ENV,
     ProgressSync,
@@ -86,29 +100,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, or_, select
 
 logger = logging.getLogger(__name__)
-
-#: What the command learns about its grant. Workers is the cpus rounded down,
-#: never below one — what a test runner's `-n` / `--maxWorkers` should be.
-LEASE_ENV = "LOREGARDEN_CAPACITY_LEASE_ID"
-CPUS_ENV = "LOREGARDEN_CAPACITY_CPUS"
-WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
-
-#: Where the caller stood before `scripts/loregarden-cli.sh` moved into
-#: `server/` to start uv. The held command runs there, so a relative path in it
-#: means what the caller meant. The command does not inherit it: a nested
-#: `loregarden` started some other way, from another directory, would otherwise
-#: run its own command where the outer caller stood.
-CALLER_CWD_ENV = "LOREGARDEN_CALLER_CWD"
-
-#: The repo root this process resolves its database through. The CLI defaults it
-#: to the primary checkout, which is right for the ledger and wrong for the held
-#: command: tests run from a worktree would read the primary's `agent_context/`.
-REPO_ROOT_ENV = "LOREGARDEN_REPO_ROOT"
-
-#: The caller's own `LOREGARDEN_REPO_ROOT` as `scripts/loregarden-cli.sh` found
-#: it, "" when it had none. The held command gets that back. Absent when the CLI
-#: was started some other way, and then the environment is left as it is.
-CALLER_REPO_ROOT_ENV = "LOREGARDEN_CALLER_REPO_ROOT"
 
 #: How often a waiting process runs a reap pass of its own. The server's timer
 #: does this every 30s when it is up; this is the floor when it is not.
@@ -162,25 +153,6 @@ class CapacityRequest:
     workspace_id: str | None = None
     #: Nest under this lease: draw on its grant first, never wait in line.
     parent_lease_id: str | None = None
-
-
-def worker_count(cpus: float) -> int:
-    return max(1, int(cpus))
-
-
-def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
-    env = dict(base)
-    env.pop(CALLER_CWD_ENV, None)
-    if CALLER_REPO_ROOT_ENV in env:
-        caller_root = env.pop(CALLER_REPO_ROOT_ENV)
-        if caller_root:
-            env[REPO_ROOT_ENV] = caller_root
-        else:
-            env.pop(REPO_ROOT_ENV, None)
-    env[LEASE_ENV] = reservation.lease_id
-    env[CPUS_ENV] = f"{reservation.cpus:g}"
-    env[WORKERS_ENV] = str(worker_count(reservation.cpus))
-    return env
 
 
 def fit_to_ceiling(session: Session, request: CapacityRequest, report: Report) -> tuple[float, int]:
