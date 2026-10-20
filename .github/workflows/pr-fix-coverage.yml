@@ -1,0 +1,31 @@
+name: PR fix coverage
+
+# Separate from ci.yml so that editing a PR description re-runs this cheap
+# check only, not the full suites.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: pr-fix-coverage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix-coverage:
+    name: PR fix coverage
+    runs-on: ubuntu-latest
+    steps:
+      # The head, because the check reads the invariant registry and the named
+      # prevention test from the checkout the PR would merge.
+      - uses: actions/checkout@v4
+
+      # Title and body arrive through env, never interpolated into the script,
+      # so a PR description cannot inject shell.
+      - name: Fixes say how they cover the whole state
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr_body.md"
+          python3 .github/scripts/pr_fix_coverage_check.py \
+            --title "$PR_TITLE" --body "$RUNNER_TEMP/pr_body.md" --root "$GITHUB_WORKSPACE"

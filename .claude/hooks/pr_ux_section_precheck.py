@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""PreToolUse/Bash: run the "PR UX section" check before `gh pr create` does.
+"""PreToolUse/Bash: run the PR description checks before `gh pr create` does.
+
+Two checks, both CI-only until this runs them: "PR UX section"
+(`pr_ux_section_check.py`) and "PR fix coverage" (`pr_fix_coverage_check.py`).
+The file keeps its first check's name because `pr_duplicate_work_precheck`
+loads it by that name.
 
 The check (`.github/scripts/pr_ux_section_check.py`) runs only in CI, after the
 PR exists, and agents create PRs with `--body`/`--body-file`, which skips the
@@ -28,6 +33,7 @@ from pathlib import Path
 from types import ModuleType
 
 _CHECK = Path(".github") / "scripts" / "pr_ux_section_check.py"
+_FIX_CHECK = Path(".github") / "scripts" / "pr_fix_coverage_check.py"
 _GH_PR = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
 _CD = re.compile(r"(?:^|[;&|\s])cd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n\2[ \t]*(?:\n|$)", re.DOTALL)
@@ -137,16 +143,29 @@ def _changed(workdir: Path, args: list[str]) -> list[str]:
     raise Unreadable(f"base branch {base!r} is not known locally")
 
 
-def _load_check(root: Path) -> ModuleType | None:
-    script = root / _CHECK
+def _load_check(root: Path, relative: Path = _CHECK) -> ModuleType | None:
+    script = root / relative
     if not script.is_file():
         return None
-    spec = importlib.util.spec_from_file_location("pr_ux_section_check", script)
+    spec = importlib.util.spec_from_file_location(relative.stem, script)
     if spec is None or spec.loader is None:
         raise Unreadable(f"could not load {script}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _fix_coverage_problems(root: Path, args: list[str], body: str) -> list[str]:
+    """The fix coverage check's findings, or [] where this checkout has no such check.
+
+    The title comes from `--title`; an edit that sends none can only be checked
+    on a section it already carries, which is also what CI checks it on unless
+    the PR's existing title is a fix.
+    """
+    check = _load_check(root, _FIX_CHECK)
+    if check is None:
+        return []
+    return check.problems(_option(args, "--title", "-t") or "", body, root)
 
 
 def decide(payload: dict) -> tuple[str | None, str] | None:
@@ -165,26 +184,41 @@ def decide(payload: dict) -> tuple[str | None, str] | None:
         body = _body(command, match, args, workdir)
         if body is None:
             return None
-        check = _load_check(Path(_git(workdir, "rev-parse", "--show-toplevel")))
+        root = Path(_git(workdir, "rev-parse", "--show-toplevel"))
+        check = _load_check(root)
         if check is None:  # another repository: it has no such check
             return None
         found = check.problems(body, _changed(workdir, args))
+        fix_found = _fix_coverage_problems(root, args, body)
     except (Unreadable, ValueError) as exc:  # ValueError: shlex on unbalanced quotes
         return None, (
-            f"The PR UX section precheck did not run ({exc}). If this PR touches "
+            f"The PR description precheck did not run ({exc}). If this PR touches "
             "client/src/pages or client/src/components, its description needs a "
             "'## User-facing surfaces' section (Question, Action, Real data with a number; "
-            "see .github/pull_request_template.md) or the 'PR UX section' CI check fails."
+            "see .github/pull_request_template.md) or the 'PR UX section' CI check fails. "
+            "If its title is a fix, it needs a '## Fix coverage' section (Existing, Re-entry, "
+            "Prevention, Learning) or the 'PR fix coverage' CI check fails."
         )
-    if not found:
+    messages = []
+    if found:
+        messages.append(
+            "The 'PR UX section' CI check would fail on this description:\n- "
+            + "\n- ".join(found)
+            + "\n\nAdd a '## User-facing surfaces' section with **Question:**, **Action:** and "
+            "**Real data:** (a measured number from `task sandbox`, or `task sandbox -- --seeded`), "
+            "or **No user-visible change:** <reason>. Template: .github/pull_request_template.md."
+        )
+    if fix_found:
+        messages.append(
+            "The 'PR fix coverage' CI check would fail on this description:\n- "
+            + "\n- ".join(fix_found)
+            + "\n\nAdd a '## Fix coverage' section with **Existing:**, **Re-entry:** (a "
+            "registered invariant in backticks), **Prevention:** (`path::test_name`) and "
+            "**Learning:**, or **Not a state bug:** <reason>. See CLAUDE.md 'Fixing a bad state'."
+        )
+    if not messages:
         return None
-    return "deny", (
-        "The 'PR UX section' CI check would fail on this description:\n- "
-        + "\n- ".join(found)
-        + "\n\nAdd a '## User-facing surfaces' section with **Question:**, **Action:** and "
-        "**Real data:** (a measured number from `task sandbox`, or `task sandbox -- --seeded`), "
-        "or **No user-visible change:** <reason>. Template: .github/pull_request_template.md."
-    )
+    return "deny", "\n\n".join(messages)
 
 
 def main() -> int:
@@ -192,7 +226,7 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError:  # py-silent: allow - _emit() reports this to the user
         _emit(
-            None, "The PR UX section precheck could not read its hook input; CI will still check."
+            None, "The PR description precheck could not read its hook input; CI will still check."
         )
         return 0
     verdict = decide(payload)
