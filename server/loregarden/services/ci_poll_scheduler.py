@@ -22,10 +22,11 @@ from dataclasses import dataclass, field
 from loregarden.config import settings
 from loregarden.db.session import engine
 from loregarden.models.domain import Workspace
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.ci_checks import GitHubReadError, list_open_pull_requests
 from loregarden.services.ci_service import CIService
 from loregarden.services.workspace_paths import resolve_workspace_root
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,7 @@ def poll_workspace(session: Session, workspace: Workspace) -> WorkspacePoll:
 
 def run_ci_poll(session: Session) -> list[WorkspacePoll]:
     """One tick: every active workspace, then the log-retention prune."""
-    workspaces = session.exec(select(Workspace).where(col(Workspace.archived_at).is_(None))).all()
-    polls = [poll_workspace(session, workspace) for workspace in workspaces]
+    polls = [poll_workspace(session, workspace) for workspace in active_workspaces(session)]
     CIService(session).prune_logs()
     return polls
 

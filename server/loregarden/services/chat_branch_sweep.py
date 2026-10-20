@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from loregarden.models.domain import Workspace, Worktree, WorktreeState
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.artifact_service import git_base_ref
 from loregarden.services.branch_triage_service import branch_work_has_landed
 from loregarden.services.git_automation_config import resolve_git_automation
@@ -195,7 +196,7 @@ def sweep_all_chat_branches(session: Session) -> int:
     cannot be read must not stop the others from being swept.
     """
     removed = 0
-    for workspace in session.exec(select(Workspace)).all():
+    for workspace in active_workspaces(session):
         try:
             result = sweep_chat_branches(session, workspace)
         except Exception:
