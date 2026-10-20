@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { BlockedOn, TicketState, WorkItemType } from "../api/client";
+import { BLOCKED_ON_FILTERS, TYPE_FILTERS } from "../lib/ticketFilterOptions";
 import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import { STATE_LABELS } from "./UpdateStateModal";
@@ -13,6 +14,8 @@ type FilterDropdownProps<T extends string> = {
   selected: T[];
   onToggle: (id: T) => void;
   onClear: () => void;
+  /** Pin the menu to the trigger's width; off where triggers size to their label. */
+  matchWidth?: boolean;
 };
 
 function summarizeSelection<T extends string>(
@@ -27,19 +30,20 @@ function summarizeSelection<T extends string>(
   return `${selected.length} selected`;
 }
 
-function FilterDropdown<T extends string>({
+export function FilterDropdown<T extends string>({
   title,
   allLabel,
   options,
   selected,
   onToggle,
   onClear,
+  matchWidth = true,
 }: FilterDropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { matchWidth: true });
+  const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { matchWidth });
   const summary = summarizeSelection(selected, options, allLabel);
   const filtered = selected.length > 0;
 
@@ -109,15 +113,6 @@ function FilterDropdown<T extends string>({
   );
 }
 
-const TYPE_FILTERS: { id: WorkItemType; label: string }[] = [
-  { id: "initiative", label: "Initiatives" },
-  { id: "milestone", label: "Milestones" },
-  { id: "feature", label: "Features" },
-  { id: "capability", label: "Capabilities" },
-  { id: "task", label: "Tasks" },
-  { id: "bug", label: "Bugs" },
-];
-
 const STATE_OPTIONS: TicketState[] = [
   "backlog",
   "in_progress",
@@ -125,13 +120,6 @@ const STATE_OPTIONS: TicketState[] = [
   "parked",
   "done",
   "wont_do",
-];
-
-/** A person first: that is the question the filter exists to answer. */
-const BLOCKED_ON_FILTERS: { id: BlockedOn; label: string }[] = [
-  { id: "person", label: "You" },
-  { id: "tickets", label: "Other tickets" },
-  { id: "agent", label: "An agent" },
 ];
 
 export function TicketPaneFilters({
