@@ -12,6 +12,7 @@ something to parse. The set of gates is globbed, so a new `ts_*_check.cjs` is
 covered without editing this file.
 """
 
+import json
 import os
 import re
 import shutil
@@ -85,6 +86,45 @@ def _run(scripts: Path, gate: str, workspace: Path) -> subprocess.CompletedProce
     )
 
 
+def _stub_package(checkout: Path, name: str, *, engines: str | None, index: str) -> None:
+    package = checkout / "client" / "node_modules" / name
+    package.mkdir(parents=True)
+    manifest = {"name": name, "main": "index.js"}
+    if engines is not None:
+        manifest["engines"] = {"node": engines}
+    (package / "package.json").write_text(json.dumps(manifest))
+    (package / "index.js").write_text(index)
+
+
+def _semver_dir() -> Path:
+    """The semver typescript-estree itself resolves (the hoisted one may differ)."""
+    manifest = _NODE_MODULES / "@typescript-eslint" / "typescript-estree" / "package.json"
+    resolved = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const m=require('module');"
+            "console.log(require('path').dirname("
+            "m.createRequire(process.argv[1]).resolve('semver/package.json')))",
+            str(manifest),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(resolved.stdout.strip())
+
+
+@pytest.fixture
+def scripts_with_unsupported_node(scripts_without_client: Path) -> Path:
+    """Every client package the gates load declares an engines range no Node meets."""
+    checkout = scripts_without_client.parents[1]
+    for name in ("@typescript-eslint/typescript-estree", "postcss"):
+        _stub_package(checkout, name, engines=">=999", index="module.exports = {};\n")
+    (checkout / "client" / "node_modules" / "semver").symlink_to(_semver_dir())
+    return scripts_without_client
+
+
 def test_every_ts_gate_is_covered():
     assert _GATES, f"no ts_*_check.cjs under {_SCRIPTS}"
 
@@ -117,6 +157,59 @@ def test_installed_toolchain_examines_the_change(gate, scripts_without_client, w
     (scripts_without_client.parents[1] / "client" / "node_modules").symlink_to(_NODE_MODULES)
     result = _run(scripts_without_client, gate, _with_client_change(workspace))
     assert result.returncode in (0, 1), result.stdout + result.stderr
+
+
+@pytest.mark.skipif(not _NODE_MODULES.is_dir(), reason="needs client/node_modules")
+@pytest.mark.parametrize("gate", _GATES)
+def test_node_outside_engines_is_unavailable(gate, scripts_with_unsupported_node, workspace):
+    """Under Node 14 typescript-estree does not load, `parseFile` swallowed the
+    throw, and every gate reported "passed" over files it never parsed."""
+    result = _run(scripts_with_unsupported_node, gate, _with_client_change(workspace))
+    assert result.returncode == GATE_EX_UNAVAILABLE, result.stdout + result.stderr
+    node_version = subprocess.run(
+        ["node", "--version"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert f"needs Node >=999; this is Node {node_version}" in result.stderr
+    assert "passed" not in result.stdout
+
+
+@pytest.mark.parametrize("gate", _GATES)
+def test_package_that_fails_to_load_is_unavailable(gate, scripts_without_client, workspace):
+    """Any load error, not only a missing package: a throw would reach `parseFile`."""
+    checkout = scripts_without_client.parents[1]
+    for name in ("@typescript-eslint/typescript-estree", "postcss"):
+        _stub_package(checkout, name, engines=None, index="module.exports = ;\n")
+    result = _run(scripts_without_client, gate, _with_client_change(workspace))
+    assert result.returncode == GATE_EX_UNAVAILABLE, result.stdout + result.stderr
+    assert "failed to load under Node" in result.stderr
+
+
+_OLD_NODES = sorted(Path.home().glob(".nvm/versions/node/v1[0-7].*/bin/node"))
+
+
+@pytest.mark.skipif(
+    not (_OLD_NODES and _NODE_MODULES.is_dir()), reason="needs an nvm Node <18 and node_modules"
+)
+@pytest.mark.parametrize("gate", _GATES)
+def test_a_real_old_node_never_changes_the_verdict(gate, workspace):
+    """The installed toolchain under a real too-old Node, as it happened: each
+    gate either reports itself unavailable or reaches the verdict current Node
+    does (the motion gate's postcss supports Node 14; the parser does not)."""
+    _with_client_change(workspace)
+
+    def run(node: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [node, str(_SCRIPTS / gate), "--repo", str(workspace), "--scope", "worktree"],
+            capture_output=True,
+            text=True,
+            env=_env(),
+            timeout=120,
+        )
+
+    old, current = run(str(_OLD_NODES[0])), run("node")
+    assert current.returncode in (0, 1), current.stdout + current.stderr
+    if old.returncode != GATE_EX_UNAVAILABLE:
+        assert (old.returncode, old.stdout) == (current.returncode, current.stdout)
 
 
 @pytest.mark.parametrize("gate", _GATES)
