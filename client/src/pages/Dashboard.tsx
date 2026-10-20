@@ -29,6 +29,7 @@ import { CreateWorkItemFlow, type CreateWorkItemRequest } from "../components/da
 import { DashboardWorkspacesPane } from "../components/dashboard/DashboardWorkspacesPane";
 import { ImportTicketsFlow } from "../components/dashboard/ImportTicketsFlow";
 import { PaneHideButton } from "../components/dashboard/PaneHideButton";
+import { TicketPaneViewControls } from "../components/dashboard/TicketPaneViewControls";
 import { WorkflowRunControls } from "../components/dashboard/WorkflowRunControls";
 import { WorkflowTicketSettings } from "../components/dashboard/WorkflowTicketSettings";
 import { archivedWorkspaceSlugs, withoutArchivedWorkspaces } from "../lib/archivedWorkspaces";
@@ -44,6 +45,7 @@ import { UpdateStateModal, type StateUpdateDraft } from "../components/UpdateSta
 import { DEFAULT_ARTIFACT_TAB, navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { canonicalArtifactTab, isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
+import { useExpandSearchMatches } from "../hooks/useExpandSearchMatches";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
 import { pushToast, toastWarning } from "../state/toastStore";
@@ -112,6 +114,7 @@ export function Dashboard() {
     blockedOnFilters,
     typeFilters,
     search,
+    ticketDensity,
     expandedTicketIds,
     workspace,
     toggleStateFilter,
@@ -170,6 +173,7 @@ export function Dashboard() {
     [ticketTree.data, archivedSlugs],
   );
   const flatTickets = useMemo(() => flattenTree(visibleTree), [visibleTree]);
+  useExpandSearchMatches(search, ticketTree.data, expandPath);
 
   useEffect(() => {
     if (workspace !== "all" && archivedSlugs.has(workspace)) setWorkspace("all");
@@ -677,7 +681,7 @@ export function Dashboard() {
                       <span className="pane-title">Work items</span>
                       <span className="count-pill">{flatTickets.length}</span>
                     </div>
-                    <span className="tickets-pane-sort">by priority</span>
+                    <TicketPaneViewControls />
                   </div>
                   <div className="tickets-pane-actions">
                     <div className="tickets-pane-primary-actions">
@@ -731,7 +735,7 @@ export function Dashboard() {
                     onClearBlockedOn={clearBlockedOnFilters}
                   />
                 </div>
-                <div className="scroll-list lg-primitive-ticket-list--v6">
+                <div className={ticketDensity === "cards" ? "scroll-list lg-primitive-ticket-list--v6" : "scroll-list"}>
                   {visibleTree.length ? (
                     <TicketTree
                       nodes={visibleTree}
@@ -740,7 +744,7 @@ export function Dashboard() {
                       onSelect={selectTicket}
                       onToggle={toggleExpanded}
                       onAddChild={openCreateSubTicket}
-                      presentation="v6"
+                      presentation={ticketDensity === "cards" ? "v6" : "compact"}
                     />
                   ) : (
                     <div className="empty-tree">No work items match filters</div>

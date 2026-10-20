@@ -85,7 +85,7 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
 
 def blocked_by_summaries(session: Session, ticket: Ticket) -> list[dict[str, str]]:
     """`blocked_by`, each entry saying why: not done, or done but not landed (770)."""
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
     if workspace is None:
         return ticket_summaries(
             session,

@@ -131,7 +131,7 @@ beforeEach(() => {
   );
 });
 
-const parentButton = () => screen.getByRole('button', { name: /parent/i });
+const parentButton = () => screen.getByRole('button', { name: /↑ Parent/ });
 
 it('offers a parent jump when the selected ticket has one', async () => {
   renderDashboard(`/tickets/${CHILD_ID}`);

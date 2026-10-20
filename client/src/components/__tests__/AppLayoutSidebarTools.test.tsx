@@ -81,6 +81,7 @@ const TOOL_LABELS = [
   "Home",
   "Chat",
   "Console",
+  "Work items",
   "Initiatives",
   "Editor",
   "Studios",

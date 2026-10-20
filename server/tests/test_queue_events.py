@@ -1,12 +1,14 @@
 """The websocket that replaced the queue dashboard's polling."""
 
+import asyncio
 import inspect
+import logging
 import threading
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from loregarden.api import parallel, queue_management
+from loregarden.api import parallel, queue_events, queue_management
 from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS, _send_snapshot, _snapshot
 from loregarden.services.event_hub import event_hub
 from loregarden.websocket_events import QUEUE_TOPIC
@@ -303,3 +305,55 @@ def test_the_polled_queue_endpoints_are_not_declared_async():
         queue_management.get_queue_info,
     ):
         assert not inspect.iscoroutinefunction(handler), handler.__qualname__
+
+
+# --- a tab closed mid-send is a disconnect, not a failure ---------------------
+
+
+class _ClosingSocket:
+    """A socket whose viewer left as the server wrote to it.
+
+    uvloop refuses the write with a bare RuntimeError; the receive side then
+    reports the close (or, with `left=False`, never does: a real fault).
+    """
+
+    def __init__(self, *, left: bool):
+        self.left = left
+        self.headers: dict = {}
+        self.query_params: dict = {}
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_json(self, payload: dict) -> None:
+        raise RuntimeError(
+            "unable to perform operation on <TCPTransport closed=True>; the handler is closed"
+        )
+
+    async def receive_text(self) -> str:
+        if self.left:
+            await asyncio.sleep(0.05)
+            raise WebSocketDisconnect(code=1001)
+        await asyncio.Event().wait()
+        return ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("left", [True, False])
+async def test_a_send_that_loses_the_race_with_a_closing_tab_is_not_logged_as_a_failure(
+    left, caplog
+):
+    """Seen in the live log as "Queue socket failed" with a uvloop traceback,
+    for an ordinary closed tab. A send that fails while the viewer is still
+    there is a real fault and is still logged."""
+    socket = _ClosingSocket(left=left)
+
+    with (
+        patch("loregarden.api.queue_events.websocket_token_ok", return_value=True),
+        patch("loregarden.api.queue_events._snapshot", AsyncMock(return_value={})),
+        caplog.at_level(logging.WARNING, logger="loregarden.api.queue_events"),
+    ):
+        await queue_events.queue_socket(socket)
+
+    failures = [r for r in caplog.records if r.getMessage() == "Queue socket failed"]
+    assert len(failures) == (0 if left else 1)

@@ -4,9 +4,11 @@ detach, and the parent rollup that follows a changed child set."""
 from __future__ import annotations
 
 import json
+import warnings
 from typing import Any
 
 import pytest
+from loregarden.mcp.ticket_edit_tools import blocked_by_summaries
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool, normalize_tool_arguments
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.ticket_service import TicketService
@@ -57,6 +59,22 @@ def test_rest_create_initiative_without_workspace_slug(client):
     assert body["work_item_type"] == "initiative"
     assert body["workspace_slug"] == ""
     assert body["external_id"].startswith("init-")
+
+
+def test_reading_an_initiative_raises_no_null_key_warning(client):
+    """An initiative has no workspace. Two readers on the ticket detail path
+    called `session.get(Workspace, None)` for it, which SQLAlchemy warns about
+    on every read (and says it will raise for): the live log carried a pair of
+    them per page load of an initiative."""
+    created = client.post("/api/tickets", json={"title": "Q4", "work_item_type": "initiative"})
+    ticket_id = created.json()["id"]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert client.get(f"/api/tickets/{ticket_id}").status_code == 200
+        assert client.get(f"/api/tickets/{ticket_id}/artifacts").status_code == 200
+
+    assert not [w for w in caught if "NULL primary key" in str(w.message)]
 
 
 def test_rest_create_milestone_still_requires_workspace(client):
@@ -170,3 +188,15 @@ def test_mcp_schemas_advertise_initiative():
         schema = by_name[name]
         assert "initiative" in schema["properties"]["work_item_type"]["enum"]
         assert "workspace_slug" not in schema.get("required", [])
+
+
+def test_an_initiatives_blockers_are_read_without_a_null_key_warning(db_session):
+    """`loregarden_get_ticket` on an initiative reaches `blocked_by_summaries`,
+    the third reader that looked up a workspace the ticket does not have."""
+    initiative = _initiative(db_session)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert blocked_by_summaries(db_session, initiative) == []
+
+    assert not [w for w in caught if "NULL primary key" in str(w.message)]

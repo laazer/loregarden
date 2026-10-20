@@ -74,6 +74,7 @@ const REPAIR_ROUTE_LABELS: Record<string, string> = {
   interruption: "interrupted run",
   scope_reroute: "scope handoff",
   stage_retry: "retry budget left",
+  merge_turn: "merge turn left",
 };
 
 export function repairRouteLabel(route: string | undefined): string {
