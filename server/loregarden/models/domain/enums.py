@@ -421,6 +421,10 @@ class ArtifactKind(StrEnum):
     #: A ticket's answers for the PR "User-facing surfaces" section: the question,
     #: action and real data, or why nobody can see the change (`services.ux_answers`).
     UX_ANSWERS = "ux_answers"
+    #: A bug ticket's answers for the PR "Fix coverage" section: how rows already
+    #: in the bad state are repaired, which invariant catches re-entry, which test
+    #: proves prevention, and the learning (`services.fix_coverage`).
+    FIX_COVERAGE = "fix_coverage"
 
 
 class StageBudgetArtifactKind(StrEnum):
@@ -532,6 +536,9 @@ class MonitorCondition(StrEnum):
     TIMEOUT_FLOOR_STALE = "timeout_floor_stale"
     #: Workspace failed-stage window is mostly harness interruptions. Report-only.
     HARNESS_FAILURE_CLUSTER = "harness_failure_cluster"
+    #: A DEFECT invariant found violated by a row that entered the state after
+    #: its guard landed (`services.invariants`). Report-only; escalates at one.
+    INVARIANT_REENTERED = "invariant_reentered"
 
 
 #: Auto-fix may only repair these (idempotent, zero agent runs). Lives here so

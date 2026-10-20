@@ -28,6 +28,12 @@ repo root); query it with `sqlite3`.
   in `rework_feedback.py`: one row per reroute, so the count *is* the loop
   metric); `kind='blocked_report'`. Gate evaluations land here too, titled by
   outcome (`gate_observability.py`).
+- **`artifacts` with `kind='monitor_finding'` and a title starting
+  `invariant_reentered:`** — a registered invariant's guard failing
+  (`services/invariants.py`); the title names the invariant and `occurrences`
+  counts the passes. The same invariant on several tickets is a writer the guard
+  does not cover. Also look for repairs with no invariant behind them: a
+  `fix(...)` commit whose state has no entry in `invariant_registry.py`.
 - **`auto_fix_attempts`** — `attempt_number` by gate. A gate needing several
   self-heal attempts is a gate whose failure text agents cannot act on.
 - **`approvals`** — where humans intervene, and on what. **Trap:** auto-approved
@@ -56,6 +62,8 @@ a proposal reviewable.
 | Every agent invents one assumption | Upstream stage under-specifies | Upstream skill, ticket template |
 | A stage reroutes in a loop | Routing or gate feedback unreadable | `stages_json`, gate detail text |
 | A mechanical step is still prompted | It should be code | Hand to the `vulcan` skill |
+| An invariant keeps re-entering | Its guard misses a writer | The writer, plus a prevention test that enumerates writers |
+| The same bad state fixed twice | Fixed per instance, no invariant | `invariant_registry.py` (CLAUDE.md "Fixing a bad state") |
 
 Prefer extending what exists. A role body that has grown a second job justifies
 a new agent; one that is merely long does not.
