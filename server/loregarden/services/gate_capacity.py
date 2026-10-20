@@ -29,7 +29,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services.capacity_run import child_environment
+from loregarden.services.capacity_environment import child_environment
 from loregarden.services.docker_leases import release_lease, reserve, wait_for_grant
 from sqlmodel import Session
 

@@ -49,7 +49,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
-from loregarden.services.studio_service import build_studio_prompt_sections
+from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"

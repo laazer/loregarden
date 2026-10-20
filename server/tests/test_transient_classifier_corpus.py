@@ -140,6 +140,39 @@ NOT_TRANSIENT = [
         "A routing defect, and the empty name is part of the evidence.",
         id="unknown-agent",
     ),
+    # lg-milestone-that-975 gave the three non-tree handoff refusals their own
+    # sentences, and `settle_failed_handoff` writes each of them to
+    # `agent_runs.stderr` — so these are real values of the column this corpus
+    # is drawn from, not invented ones. The bare `Unknown agent: ` above stays:
+    # the dispatch path (cli.py:150) still produces it and is not in scope.
+    # Misclassifying any of the three retries a stage that cannot succeed until
+    # a person edits the workflow or the workspace.
+    pytest.param(
+        'lg-milestone-that-975: stage "implement" names agent "backend_implementor", '
+        "not in the agent registry — pick its agent in Workflow Studio.",
+        "A routing defect with the name spelled out. No retry resolves a typo in a stage slot.",
+        id="unknown-agent-named",
+    ),
+    pytest.param(
+        'lg-milestone-that-975: stage "verify" records no agent, so there is nothing '
+        "to run — pick its agent in Workflow Studio.",
+        "The blank-agent case, which is the one this installation has actually "
+        "produced. A stage with no agent has nothing to retry.",
+        id="unknown-agent-blank",
+    ),
+    pytest.param(
+        "lg-milestone-that-975: this ticket's workspace row is missing, so no repo can "
+        "be resolved — re-point the ticket at a workspace "
+        "(workspace_id 123e4567-e89b-12d3-a456-426614174000).",
+        "Data, not weather. The row does not come back between attempts.",
+        id="missing-workspace-row",
+    ),
+    pytest.param(
+        "lg-milestone-that-975: workspace loregarden's repo path does not exist — fix "
+        "it in workspace settings: /Users/x/workspace/moved-away.",
+        "Configuration. A retry looks in the same place.",
+        id="missing-repo-path",
+    ),
     pytest.param(
         "Agent run failed",
         "The bare fallback: no information at all. Treating no evidence as evidence "

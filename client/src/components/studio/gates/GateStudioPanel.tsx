@@ -417,6 +417,26 @@ function GateStudioMain({
       </div>
     );
   }
+  // Every other way the profile read can fail, and the one this panel causes
+  // itself: it is the surface that writes these files, so a half-written or
+  // hand-edited one comes back here as a 400 naming the file (
+  // lg-milestone-that-1215 AC13). Until now only the 403 was handled and
+  // everything else fell through to `collectWorkspaceControls(workspace, null)`,
+  // which renders a plausible, complete-looking gate list for settings nobody
+  // could read — so the operator arriving with "why are my gates not what I
+  // set?" was shown an empty list, the one answer that stops them finding out.
+  // After the 403 branch, not before it: a general branch in front would tell
+  // them to go and fix a file they are not allowed to read.
+  if (profile.isError) {
+    return (
+      <div className="gate-load-error" role="alert">
+        <p>
+          Gate settings for {workspace.slug} could not be read:{" "}
+          {describeError(profile.error, "the request failed")} Fix that file and reload.
+        </p>
+      </div>
+    );
+  }
   if (target.workflowSlug && !workflow) {
     return workflowsLoading ? (
       <p className="studio-preview-hint">Loading workflow {target.workflowSlug}…</p>
