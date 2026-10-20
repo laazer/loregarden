@@ -572,6 +572,42 @@ only visible on another host) are still worth filing. Say so in the body, as
 592 did ("not raced in a live exercise"), so the next reader knows the claim was
 reasoned rather than observed.
 
+## Fixing a bad state
+
+A fix for a bad state (a row, a ticket, a card, a stage that should not be the
+way it is) has four jobs, and a fix that does one of them is a quarter of a fix:
+
+1. **Existing.** Repair the rows already in the state, on the live database (a
+   migration, or a repair at boot), or show with a read-only query and its count
+   that there are none.
+2. **Re-entry.** Register an invariant in `services/invariant_registry.py`: a
+   detector, a repair, and its re-entry policy. The reconcile pass runs it on a
+   timer. `DEFECT` means a writer is supposed to make the state unreachable, so
+   any violation that entered after the guard landed (`since`) is recorded as an
+   `invariant_reentered` finding and escalated to a bug at the first ticket.
+   `EXPECTED` means the world enters it legitimately (a PR merged by hand), so
+   violations are just repaired. A sweep that repairs and returns a count nobody
+   reads cannot tell a guard failing from a guard working; that is what this replaces.
+3. **Prevention.** The guard at every writer, and a test proving it, named as the
+   invariant's `prevented_by`. Prefer a test that enumerates the writers
+   (`test_block_settlement` is the model) over one that exercises one path.
+4. **Learning.** Why the state was reachable, as a rule the next change can use.
+
+What checks it:
+
+| Where | What | Kind |
+|---|---|---|
+| `test_invariants.py` | every invariant scheduled once, named by external id, `DEFECT` ones pointing at a test that exists; repair converges on the prod-shape scenario | script |
+| Bug ticket's spec stage | a pass with no `loregarden_record_fix_coverage` record is sent back; the record writes the learning to memory | script |
+| Tree PR | `publish_tree` writes a `## Fix coverage` block per landed bug from those records | script |
+| `PR fix coverage` check + `PreToolUse` precheck | a `fix:` PR, or any PR carrying the section, states the four answers; the invariant must be registered and the test must exist in the checkout | script |
+| Architecture review | class or instance, every writer guarded, backlog repaired on live, policy honest, learning a rule | LLM |
+| `absorb-adapt` | recurring `invariant_reentered` findings and learnings, clustered into new invariants or gates | LLM |
+
+A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
+`**Not a state bug:** <reason>` instead; a state the code cannot read back says
+`no detector: <reason>` for re-entry. Both are claims a reviewer checks, like `silent-ok:`.
+
 ## Workflow discipline
 
 - **The orchestrator commits the entire working tree.** Anything uncommitted when a stage
@@ -632,7 +668,8 @@ See `AGENTS.md` → *Anti-patterns* for the table with evidence. The short versi
 markdown, no ticket-file hunting, no editing v1 YAML expecting an effect, no ticket IDs in
 filenames, no defensive normalization, no hand-edits during an orchestration.
 
-Three more, from the sections above: **no retrying a failing push in place of diagnosing it**,
-**no asking which gate to skip** (a gate your change trips is part of your change), and **no
-user-facing change that names none of the five states**. The last one is the hardest to
+Four more, from the sections above: **no retrying a failing push in place of diagnosing it**,
+**no asking which gate to skip** (a gate your change trips is part of your change), **no
+fix for a bad state without its invariant**, and **no user-facing change that names none of
+the five states**. The last one is the hardest to
 notice, because it looks finished, passes review, and ships a blank pane.

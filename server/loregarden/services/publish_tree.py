@@ -64,6 +64,7 @@ from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
+from loregarden.services.tree_fix_section import tree_fix_section
 from loregarden.services.tree_ux_section import (
     TreeUxSection,
     close_missing_ux_answers,
@@ -175,7 +176,7 @@ def _prepare(
     tip: str,
     config: GitAutomationConfig,
 ) -> _Prepared:
-    """Cut the commit to publish, and describe it, user-facing surfaces included."""
+    """Cut the commit to publish, and describe it, user-facing surfaces and fix coverage included."""
     subject = _subject(ticket, branch)
     if "push" not in enabled_steps(config):
         return _Prepared(subject)
@@ -190,7 +191,8 @@ def _prepare(
         return _Prepared(
             subject, failure=f"could not tell which user-facing files {branch} changes: {exc}"
         )
-    body = generated_body(subject.pr_body + section.text)
+    fixes = tree_fix_section(session, ticket, branch=branch)
+    body = generated_body(subject.pr_body + section.text + fixes)
     return _Prepared(
         replace(
             subject,

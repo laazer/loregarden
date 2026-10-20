@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, SPEC_AGENT_ID
 from loregarden.config import settings
@@ -61,6 +61,7 @@ from loregarden.services.exit_action_ledger import (
     outstanding_exit_actions,
 )
 from loregarden.services.exit_actions import attest_assigned_actions
+from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.network_wait import (
@@ -729,12 +730,24 @@ def _pass_held(
     stderr: str,
 ) -> bool:
     """Whether a clean exit's pass was settled as something other than a pass."""
-    return _sent_back_for_ux_answers(
-        orch, ticket, run, report, instance, stages, stderr
-    ) or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
+    return (
+        _sent_back_for_missing_record(
+            orch, ticket, run, report, instance, stages, stderr, missing_ux_answers
+        )
+        or _sent_back_for_missing_record(
+            orch, ticket, run, report, instance, stages, stderr, missing_fix_coverage
+        )
+        or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
+    )
 
 
-def _sent_back_for_ux_answers(
+class MissingRecord(Protocol):
+    """Why a passing run of ``agent_id`` still owes ``ticket`` a record, or ""."""
+
+    def __call__(self, session: Session, ticket: Ticket, *, agent_id: str) -> str: ...
+
+
+def _sent_back_for_missing_record(
     orch: OrchestrationService,
     ticket: Ticket,
     run: AgentRun,
@@ -742,15 +755,18 @@ def _sent_back_for_ux_answers(
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
     stderr: str,
+    missing_record: MissingRecord,
 ) -> bool:
-    """A passing design stage that recorded no UX answers is rework, not a pass.
+    """A pass that left no record its stage owes is rework, not a pass.
 
-    Sent back to the same stage and agent with the reason, under the rework
-    loop cap like any other rework: after that, a person is asked.
+    The design stage owes UX answers (`ux_answers`); a bug's spec stage owes
+    its fix coverage (`fix_coverage`). Sent back to the same stage and agent
+    with the reason, under the rework loop cap like any other rework: after
+    that, a person is asked.
     """
     if report is None or report.status != "pass":
         return False
-    missing = missing_ux_answers(orch.session, ticket, agent_id=run.agent_id)
+    missing = missing_record(orch.session, ticket, agent_id=run.agent_id)
     if not missing:
         return False
     clear_transient_retries(orch.session, ticket.id, run.stage_key)
