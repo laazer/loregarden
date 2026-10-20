@@ -782,6 +782,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "type": "integer",
                     "description": "New priority, 1-3 (1 is highest).",
                 },
+                "expected_revision": {
+                    "type": "integer",
+                    "description": (
+                        "The ticket's 'revision' as you last read it, to have this edit "
+                        "refused if somebody else wrote the ticket in the meantime. The "
+                        "refusal is a revision_conflict carrying the current revision, and "
+                        "nothing is written. Omit it for today's behaviour, which is "
+                        "last-write-wins: a successful update returns the new revision, so "
+                        "a run of consecutive edits can carry the previous reply forward."
+                    ),
+                },
                 "acceptance_criteria": {
                     "type": "array",
                     "description": (

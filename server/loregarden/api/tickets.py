@@ -33,13 +33,13 @@ from loregarden.models.domain import (
     TicketImportPreviewRequest,
     TicketImportRequest,
     TicketImportResult,
+    TicketPatchRequest,
     TicketRelationRequest,
     TicketState,
     TicketStatusSummary,
     TicketSummary,
     TicketTreeNode,
     TriageMessageCreate,
-    UpdateTicketRequest,
     WaitingOnRef,
     WorkflowTransitionView,
     WorkItemType,
@@ -86,6 +86,10 @@ from loregarden.services.ticket_dependencies import (
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_relations import TicketRelationService
+from loregarden.services.ticket_revision_guard import (
+    TicketRevisionConflict,
+    guard_ticket_revision,
+)
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.triage_run_service import (
@@ -1076,14 +1080,35 @@ def get_ticket_artifacts(
 @router.patch("/{ticket_id}", response_model=TicketDetail)
 def update_ticket(
     ticket_id: str,
-    body: UpdateTicketRequest,
+    body: TicketPatchRequest,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
+    if body.expected_revision is not None:
+        # The guard lives here, at the caller-driven edge, and not inside
+        # `update_ticket_manual`: that applier has ten non-test callers, two
+        # caller-driven (this one and the MCP update_ticket handler) and eight
+        # system writers. Inside it, the orchestrator's exemption would be "the
+        # optional field was None" on eight call sites that reach it by
+        # accident; out here those writes never reach the guard at all. It runs
+        # before the try block because a conflict is not a `ValueError` and must
+        # not be reachable by the 400 arm below. It runs after the 404 lookup
+        # because a conflict about a ticket that does not exist would send a
+        # caller hunting a concurrent writer instead of a typo.
+        try:
+            guard_ticket_revision(
+                session, ticket_id=ticket.id, expected_revision=body.expected_revision
+            )
+        except TicketRevisionConflict as exc:
+            # A dict detail, so `current_revision` reaches the client as a
+            # number rather than as prose a caller has to regex back out.
+            raise HTTPException(409, detail=exc.payload) from exc
     orch = OrchestrationService(session)
     try:
+        # The body is passed through unchanged: the token is an edge concern and
+        # the applier reads nothing new.
         orch.update_ticket_manual(ticket, body)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -803,6 +803,28 @@ class UpdateTicketRequest(SQLModel):
     git_automation: dict[str, bool | int | str] | None = None
 
 
+class TicketPatchRequest(UpdateTicketRequest):
+    """`UpdateTicketRequest` plus the optimistic-concurrency token, for the PATCH edge.
+
+    The token lives on this edge model rather than on the shared DTO because
+    `UpdateTicketRequest` is constructed by eight internal system writers and is
+    handed to a shared applier that reads nothing new. A field there that the
+    applier never consults would read as supported on every one of those paths
+    while doing nothing — and the guard is deliberately called from the two
+    caller-driven edges, not from the applier, so the orchestrator's exemption
+    is structural rather than a flag that happened to be None. See
+    `services/ticket_revision_guard`.
+
+    `extra="forbid"` is inherited from the parent, so an unknown key is still a
+    422 rather than a silently discarded write.
+    """
+
+    #: The revision the caller's draft was seeded from. Omit it (or send null)
+    #: for today's last-write-wins behaviour; send it to have the edit refused
+    #: with a 409 if the row moved since.
+    expected_revision: int | None = None
+
+
 class TicketCreate(SQLModel):
     #: Omitted for an initiative, which spans workspaces and binds to none.
     workspace_slug: str = ""

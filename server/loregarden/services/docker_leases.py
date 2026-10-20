@@ -319,6 +319,12 @@ def claim_pool_capacity(
     Every dimension is in the WHERE clause, so the database decides. Satisfying
     cpus while over-booking memory is not reachable from here — which it would
     be if the two were checked in Python and written afterwards.
+
+    ``services/ticket_revision_guard.claim_ticket_revision`` is this function's
+    twin on ``tickets.revision``, and follows it deliberately: same single
+    guarded UPDATE, same revision bump in the same statement, same "commits
+    nothing" contract. Change the shape here and that module is the other place
+    to look.
     """
     result = session.exec(
         update(DockerCapacityPool)
