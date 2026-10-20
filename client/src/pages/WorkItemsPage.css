@@ -40,6 +40,38 @@
   background: color-mix(in srgb, var(--ac) 8%, transparent);
 }
 
+.wi-toolbar--filters {
+  padding-top: 8px;
+}
+
+.wi-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The Console's menus share one narrow sidebar row; here each sizes to its
+   label, so "Priority · Any" is not cut to "A…". */
+.wi-filters .ticket-filter-dropdown {
+  flex: none;
+}
+
+.wi-toggle--on {
+  color: var(--ac2);
+  border-color: var(--ac);
+}
+
+.wi-clear {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.wi-clear:hover,
+.wi-clear:focus-visible {
+  color: var(--tx);
+}
+
 .wi-search {
   flex: 1 1 220px;
   max-width: 360px;
@@ -155,6 +187,38 @@
 .wi-col-stage {
   width: 160px;
   font-size: 11.5px;
+}
+
+.wi-run {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--grn);
+  font-variant-numeric: tabular-nums;
+}
+
+.wi-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--grn);
+  flex: none;
+}
+
+/* A live run pulses; a slot held by finished work sits still. */
+.wi-run-dot.is-live {
+  animation: wi-run-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes wi-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .wi-col-workspace {

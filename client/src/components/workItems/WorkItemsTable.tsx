@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 
 import { ticketPath } from "../../lib/appNavigation";
-import { TICKET_STATE_COLORS, stageStatusColor } from "../../lib/ticketStates";
+import { duration } from "../../lib/duration";
+import type { ActiveRun } from "../../lib/queueSocket";
+import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
+import { TICKET_STATE_COLORS, runStatusLabel, stageStatusColor } from "../../lib/ticketStates";
 import {
   needsMeReason,
   stageText,
@@ -31,15 +34,18 @@ const COLUMNS: Column[] = [
 /**
  * One row per ticket; the title opens it in the Console, the parent opens the
  * parent. `showWhy` adds the reason a ticket is the operator's, for the
- * "Needs me" view, where that reason is the point of the list.
+ * "Needs me" view, where that reason is the point of the list. A ticket holding
+ * an execution slot says so in its stage cell, with how long it has run.
  */
 export function WorkItemsTable({
   rows,
+  runs,
   sort,
   onSort,
   showWhy,
 }: {
   rows: WorkItemRow[];
+  runs: ReadonlyMap<string, ActiveRun>;
   sort: WorkItemsSort;
   onSort: (key: WorkItemsSortKey) => void;
   showWhy: boolean;
@@ -76,7 +82,10 @@ export function WorkItemsTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ node, parent }) => (
+        {rows.map(({ node, parent }) => {
+          const run = runs.get(node.id);
+          const live = run ? LIVE_RUN_STATUSES.has(run.status) : false;
+          return (
           <tr key={node.id}>
             <td className="wi-col-priority" title={`Priority ${node.priority}`}>
               <PrioBars priority={node.priority} />
@@ -94,6 +103,12 @@ export function WorkItemsTable({
             </td>
             <td className="wi-col-stage" style={{ color: stageStatusColor(node.workflow_stage_status) }}>
               {stageText(node)}
+              {run ? (
+                <span className="wi-run" title={`Slot ${run.slot_number}`}>
+                  <span className={`wi-run-dot${live ? " is-live" : ""}`} aria-hidden />
+                  {live ? `running ${duration(run.elapsed_seconds)}` : runStatusLabel(run.status)}
+                </span>
+              ) : null}
             </td>
             <td className="wi-col-workspace">{node.workspace_slug ?? ""}</td>
             <td className="wi-col-parent">
@@ -105,7 +120,8 @@ export function WorkItemsTable({
             </td>
             {showWhy ? <td className="wi-col-why">{needsMeReason(node)}</td> : null}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );
