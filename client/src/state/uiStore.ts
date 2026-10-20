@@ -113,6 +113,16 @@ interface UiState {
    */
   dockPanelsVisible: boolean;
   /**
+   * An edge the screen on display prefers for the dock, over the operator's
+   * `utilityDockEdge`, or null for none.
+   *
+   * The initiative plan page sets "right": its agents' conversation is the
+   * page's side panel. Not persisted, and set by that screen alone, so leaving
+   * it gives the operator's own edge back. Choosing an edge clears it, so the
+   * dock-edge control is never overridden on the screen it was pressed on.
+   */
+  screenDockEdge: UtilityDockEdge | null;
+  /**
    * Which branch the branch-triage screen is reviewing. Lifted out of that
    * page so the dock can bind to its conversation — the dock mounts above the
    * routes and cannot see a page's local state.
@@ -192,6 +202,7 @@ interface UiState {
   setCopilotOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   setDockPanelsVisible: (visible: boolean) => void;
+  setScreenDockEdge: (edge: UtilityDockEdge | null) => void;
   toggleCopilot: () => void;
   setCopilotHeight: (height: number) => void;
   setCopilotWidth: (width: number) => void;
@@ -256,6 +267,7 @@ export const useUiStore = create<UiState>()(
       utilityDockEdge: "bottom",
       terminalOpen: false,
       dockPanelsVisible: false,
+      screenDockEdge: null,
       // Not persisted: which branch is under review is a property of this
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
@@ -364,11 +376,12 @@ export const useUiStore = create<UiState>()(
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
       setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
       setDockPanelsVisible: (dockPanelsVisible) => set({ dockPanelsVisible }),
+      setScreenDockEdge: (screenDockEdge) => set({ screenDockEdge }),
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
       setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
       setUtilityDockEdge: (utilityDockEdge) =>
-        set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge) }),
+        set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge), screenDockEdge: null }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
@@ -494,6 +507,15 @@ export const useUiStore = create<UiState>()(
  */
 export function useLayoutDockEdge(): UtilityDockEdge {
   return useUiStore((s) =>
-    s.utilityDockEdge === "right" && s.dockPanelsVisible ? "right" : "bottom",
+    preferredDockEdge(s) === "right" && s.dockPanelsVisible ? "right" : "bottom",
   );
+}
+
+/** The edge the dock goes to when a panel opens: the screen's, else the operator's. */
+export function useUtilityDockEdge(): UtilityDockEdge {
+  return useUiStore(preferredDockEdge);
+}
+
+function preferredDockEdge(s: Pick<UiState, "screenDockEdge" | "utilityDockEdge">): UtilityDockEdge {
+  return s.screenDockEdge ?? s.utilityDockEdge;
 }

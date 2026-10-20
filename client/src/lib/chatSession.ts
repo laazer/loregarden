@@ -5,7 +5,8 @@ export type ChatSessionKind =
   | "ticket-triage"
   | "branch-triage"
   | "ticket-studio"
-  | "baxter-home";
+  | "baxter-home"
+  | "initiative-planner";
 
 /**
  * One conversation, however it is transported.

@@ -10,10 +10,12 @@ export const COMPOSER_PLACEHOLDER: Record<string, string> = {
   "ticket-triage": "Message about this ticket…",
   "branch-triage": "Message about this branch…",
   "baxter-home": "Ask Baxter anything about this workspace…",
+  "initiative-planner": "Ask the planner about dates, pace, or what to start…",
+  "initiative-triage": "Ask Baxter about the work under this initiative…",
 };
 
-/** Openers for the planner on an initiative's plan page. */
-export const INITIATIVE_PLANNING = "initiative-planning";
+/** Openers for the planner on an initiative's plan page: its `ChatSessionKind`. */
+export const INITIATIVE_PLANNING = "initiative-planner";
 /** Openers for Baxter, triaging the work under an initiative. */
 export const INITIATIVE_TRIAGE = "initiative-triage";
 

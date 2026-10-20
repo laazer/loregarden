@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { api, type WorkspaceRuntimeSettings } from "../api/client";
 import type { PlannerSnapshot } from "../api/initiativeApi";
+import type { ChatSession } from "../lib/chatSession";
 import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 import { describeError } from "../state/toastStore";
 
@@ -96,23 +97,37 @@ export function useInitiativePlanner(initiativeId: string) {
       qc.setQueryData<PlannerSnapshot>(key, (current) => (current ? { ...current, runtime } : current)),
   });
 
-  return {
+  const isBusy = busyOnServer || send.isPending;
+  /**
+   * The conversation as the omnibar binds it. The planner runs its tools on the
+   * server and asks nothing of the operator mid-turn, so it can always act and
+   * has no approvals.
+   */
+  const session: ChatSession = {
+    kind: "initiative-planner",
+    id: initiativeId,
     messages: chat.data?.messages ?? [],
+    isBusy,
     activeTurnId:
       chat.data?.active_turn_id && chat.data.active_turn_id !== "pending"
         ? chat.data.active_turn_id
         : null,
-    isBusy: busyOnServer || send.isPending,
-    isLoading: chat.isPending,
-    loadError: chat.isError ? describeError(chat.error, "Could not load the planner conversation") : null,
-    retry: () => void chat.refetch(),
-    sendError: send.isError ? describeError(send.error, "Could not send the message") : null,
-    /** Failures toast through `meta.errorTitle`; `onError` lets the caller restore its draft. */
-    send: (content: string, onError?: () => void) =>
-      send.mutate({ content, mode: "chat" }, { onError }),
-    draft: () => send.mutate({ content: "", mode: "draft" }),
-    stop: () => stop.mutate(),
+    canAct: true,
+    isLoading: Boolean(initiativeId) && chat.isPending,
+    error: send.isError ? describeError(send.error, "Could not send the message") : null,
+    loadError: chat.isError,
+    send: (content: string) => send.mutateAsync({ content, mode: "chat" }),
+    stop: () => stop.mutateAsync(),
     isStopping: stop.isPending,
+  };
+
+  return {
+    session,
+    messages: session.messages,
+    isBusy,
+    loadError: chat.isError ? describeError(chat.error, "Could not load the planner conversation") : null,
+    /** Failures toast through `meta.errorTitle`. */
+    draft: () => send.mutate({ content: "", mode: "draft" }),
     runtime: chat.data?.runtime ?? DEFAULT_RUNTIME,
     /** Rejects on failure (after the toast), so the model dialog stays open. */
     setRuntime: async (runtime: WorkspaceRuntimeSettings) => {
