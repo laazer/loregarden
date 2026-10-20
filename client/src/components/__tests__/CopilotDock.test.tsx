@@ -52,7 +52,12 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     ticketId: "t1",
     pendingApprovals: [],
     archive: null,
+    agents: null,
+    assistantLabel: "Baxter",
+    composerBlocked: null,
     ...overrides,
+    // As the real hook does: the openers follow the bound conversation's kind.
+    promptKind: overrides.promptKind ?? overrides.session?.kind ?? "",
   } as ReturnType<typeof useActiveChatSession>;
 }
 

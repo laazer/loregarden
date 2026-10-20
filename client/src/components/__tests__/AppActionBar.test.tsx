@@ -7,6 +7,7 @@ import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
 import {
   useActiveChatSession,
+  type ChatAgents,
   type ChatModelBinding,
   type ScreenPrompts,
 } from "../../hooks/useActiveChatSession";
@@ -44,7 +45,12 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     archive: null,
     composedOnScreen: false,
     screenPrompts: null,
+    agents: null,
+    assistantLabel: "Baxter",
+    composerBlocked: null,
     ...overrides,
+    // As the real hook does: the openers follow the bound conversation's kind.
+    promptKind: overrides.promptKind ?? overrides.session?.kind ?? "",
   } as ReturnType<typeof useActiveChatSession>;
 }
 
@@ -800,60 +806,112 @@ describe("suggestions on a screen that composes for its own thread", () => {
     expect(screen.getByRole("button", { name: "What should I work on next?" })).toBeDisabled();
   });
 
-  it("offers the planner's questions on an initiative plan page, and stays there", () => {
-    const send = jest.fn();
-    mockResolver.mockReturnValue(
-      bind({
-        composedOnScreen: true,
-        ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, send }),
-      }),
-    );
-
-    renderAt("/initiatives/init-x-1");
-    const [first] = TRY_ASKING[INITIATIVE_PLANNING];
-    fireEvent.click(screen.getByRole("button", { name: first }));
-
-    expect(send).toHaveBeenCalledWith(first);
-    expect(screen.getByTestId("location")).toHaveTextContent("/initiatives/init-x-1");
-    expect(
-      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("offers triage questions instead when the panel shows Baxter", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        composedOnScreen: true,
-        ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_TRIAGE, replyPath: null }),
-      }),
-    );
-
-    renderAt("/initiatives/init-x-1");
-
-    expect(screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] })).toBeEnabled();
-    expect(
-      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
-    ).not.toBeInTheDocument();
-  });
-
   it("disables them when the conversation cannot take a message", () => {
     const send = jest.fn();
     mockResolver.mockReturnValue(
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, unavailable: true, send }),
+        screenPrompts: prompts({ unavailable: true, send }),
       }),
     );
 
-    renderAt("/initiatives/init-x-1");
-    const button = screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] });
+    renderAt("/");
+    const button = screen.getByRole("button", { name: "What should I work on next?" });
     fireEvent.click(button);
 
     expect(button).toBeDisabled();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("the agent switch", () => {
+  function agents(overrides: Partial<ChatAgents> = {}): ChatAgents {
+    return {
+      options: [
+        { id: "planner", label: "Planner", description: "Dates and pace" },
+        { id: "baxter", label: "Baxter", description: "The tickets underneath" },
+      ],
+      active: "planner",
+      select: jest.fn(),
+      ...overrides,
+    };
+  }
+
+  function bindPlanner(overrides: Partial<ReturnType<typeof useActiveChatSession>> = {}) {
+    return bind({
+      session: session({ kind: "initiative-planner", id: "init1" }),
+      label: "Initiative planner",
+      ticketId: null,
+      agents: agents(),
+      assistantLabel: "Planner",
+      promptKind: INITIATIVE_PLANNING,
+      ...overrides,
+    });
+  }
+
+  it("is absent where only one agent answers", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    renderBar();
+
+    expect(screen.queryByRole("radiogroup", { name: "Agent" })).not.toBeInTheDocument();
+  });
+
+  it("composes for the bound agent, with its openers, and names it", () => {
+    const bound = session({ kind: "initiative-planner", id: "init1" });
+    mockResolver.mockReturnValue(bindPlanner({ session: bound }));
+    renderBar();
+
+    expect(screen.getByRole("radio", { name: "Planner" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Baxter" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("button", { name: "Expand Planner" })).toBeInTheDocument();
+    const [opener] = TRY_ASKING[INITIATIVE_PLANNING];
+    fireEvent.click(screen.getByRole("button", { name: opener }));
+    expect(bound.send).toHaveBeenCalledWith(opener, expect.objectContaining({ autoApprove: false }));
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("switches on a click, and by arrow keys as a radio group does", () => {
+    const select = jest.fn();
+    mockResolver.mockReturnValue(bindPlanner({ agents: agents({ select }) }));
+    renderBar();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Baxter" }));
+    expect(select).toHaveBeenLastCalledWith("baxter");
+
+    const planner = screen.getByRole("radio", { name: "Planner" });
+    expect(planner).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("radio", { name: "Baxter" })).toHaveAttribute("tabindex", "-1");
+    fireEvent.keyDown(planner, { key: "ArrowLeft" });
+    expect(select).toHaveBeenLastCalledWith("baxter");
+  });
+
+  it("holds the switch while a turn runs, so the reply lands where it was asked", () => {
+    const select = jest.fn();
+    mockResolver.mockReturnValue(
+      bindPlanner({
+        session: session({ kind: "initiative-planner", id: "init1", isBusy: true }),
+        agents: agents({ select }),
+      }),
+    );
+    renderBar();
+
+    expect(screen.getByRole("radio", { name: "Baxter" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Planner" }), { key: "ArrowRight" });
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("says why the agent cannot take a message rather than offering a dead composer", () => {
+    mockResolver.mockReturnValue(
+      bindPlanner({ composerBlocked: "Attach a milestone to this initiative, then the planner can schedule it" }),
+    );
+    renderBar();
+
+    const input = screen.getByPlaceholderText(/Attach a milestone/);
+    expect(input).toBeDisabled();
+    expect(screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] })).toBeDisabled();
   });
 });
 

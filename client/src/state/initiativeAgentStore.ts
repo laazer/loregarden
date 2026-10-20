@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-/** Who answers in an initiative's agent panel: the planner, or Baxter (triage). */
+/** Who answers in the omnibar on an initiative's plan page: the planner, or Baxter (triage). */
 export type InitiativeAgent = "planner" | "baxter";
 
 interface InitiativeAgentState {
