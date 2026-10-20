@@ -7,6 +7,12 @@ Lookup is ``legacy_external_id`` via ``ticket_ids.resolve`` — never
 
 Called from ``workflow_monitor.sweep`` after ``record_findings`` and before
 ``apply_autofixes``. Filing is not an auto-fix and never opens Approvals.
+
+Invariant re-entries (``services.invariants``) escalate on a different rule:
+at the first ticket, over every finding ever recorded for the invariant. A
+DEFECT invariant claims its state is unreachable, so one violation falsifies
+it; and the reconciler repairs each violation in the pass that finds it, so a
+currency filter would never see two at once.
 """
 
 from __future__ import annotations
@@ -48,6 +54,10 @@ _WORKSPACE_SCOPED_VALUES = frozenset(
 )
 
 
+#: Not escalated by `escalate_recurring_findings`; see the module docstring.
+_INVARIANT_PREFIX = f"{MonitorCondition.INVARIANT_REENTERED.value}:"
+
+
 def escalation_legacy_id(condition: str, stage_key: str) -> str:
     """``monitor-escalation:{condition}:{stage_key or "-"}`` — same encoding as ``_finding_title``."""
     return f"monitor-escalation:{condition}:{stage_key or '-'}"
@@ -72,6 +82,44 @@ def escalate_recurring_findings(session: Session, *, sweep_started_at: datetime)
         ticket_ids = {f.ticket.id for f in findings}
         if len(ticket_ids) < ESCALATION_THRESHOLD:
             continue
+        workspace = session.get(Workspace, workspace_id)
+        if workspace is None:
+            continue
+        _ensure_workspace_template(session, workspace)
+        _upsert_group(session, workspace=workspace, title=title, findings=findings)
+        upserted += 1
+    return upserted
+
+
+def escalate_invariant_reentries(session: Session, *, invariant_name: str) -> int:
+    """Upsert one Bug per workspace for every ticket the invariant re-entered on.
+
+    Returns the number of workspaces whose Bug was created or refreshed.
+    """
+    title = f"{_INVARIANT_PREFIX}{invariant_name}"
+    rows = session.exec(
+        select(Artifact, Ticket)
+        .join(Ticket, col(Artifact.ticket_id) == col(Ticket.id))
+        .where(
+            col(Artifact.kind) == MonitorArtifactKind.FINDING.value,
+            col(Artifact.title) == title,
+        )
+    ).all()
+    groups: dict[str, list[_CurrentFinding]] = defaultdict(list)
+    for artifact, ticket in rows:
+        payload = _parse_payload(artifact.content_json)
+        if payload is None:
+            continue
+        groups[ticket.workspace_id].append(
+            _CurrentFinding(
+                ticket=ticket,
+                title=title,
+                summary=_as_str(payload.get("summary")),
+                evidence=_as_str_dict(payload.get("evidence")),
+            )
+        )
+    upserted = 0
+    for workspace_id, findings in groups.items():
         workspace = session.get(Workspace, workspace_id)
         if workspace is None:
             continue
@@ -117,7 +165,9 @@ def _current_groups(
 
     groups: dict[tuple[str, str], list[_CurrentFinding]] = defaultdict(list)
     for artifact, ticket in rows:
-        if _title_is_workspace_scoped(artifact.title or ""):
+        if _title_is_workspace_scoped(artifact.title or "") or (artifact.title or "").startswith(
+            _INVARIANT_PREFIX
+        ):
             continue
         payload = _parse_payload(artifact.content_json)
         if payload is None:

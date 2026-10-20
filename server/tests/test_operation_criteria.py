@@ -12,6 +12,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from loregarden.mcp.fix_coverage_tools import HANDLERS as FIX_COVERAGE_HANDLERS
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -154,6 +155,15 @@ def ticket_fixture(db_session: Session, tmp_path) -> Ticket:
         )
     )
     db_session.commit()
+    # A bug's spec pass also owes its fix coverage (`fix_coverage`); recorded
+    # here so these tests reach the operation-criteria hold they are about.
+    FIX_COVERAGE_HANDLERS["loregarden_record_fix_coverage"](
+        db_session,
+        {
+            "ticket_id": ticket.external_id,
+            "not_a_state_bug": "The fixture is about operation criteria, not a persisted state",
+        },
+    )
     return ticket
 
 

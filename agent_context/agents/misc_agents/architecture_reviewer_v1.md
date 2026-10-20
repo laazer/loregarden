@@ -48,6 +48,33 @@ scripts that execute inside git hooks.
 Where the finding can be reproduced, file the reproduction with it — see
 *A finding is a claim until it is runnable* in `CLAUDE.md`.
 
+## Bug tickets: is the fix the whole state?
+
+For a `bug` ticket, read its fix coverage (`loregarden_list_artifacts`, kind
+`fix_coverage`) and its acceptance criteria, which carry the same four
+answers. Scripts already prove the invariant is registered and the prevention
+test exists. They cannot prove the answers are true, so that is this review:
+
+- **Class or instance.** Does the detector find the whole failure class, or
+  only the row that was reported? Name another state with the same root cause
+  and check the detector would find it. If it would not, the `reentry`
+  criterion is unmet.
+- **Every writer.** List every writer of the field the state lives in (search
+  for assignments to it, not for the function the fix edited). Each one must
+  go through the guard, or the prevention test must enumerate them all. A
+  writer outside both is an unmet `prevention` criterion.
+- **Backlog.** Does the repair of existing rows run on the live database (a
+  migration, or a repair at boot), and does it converge? A repair that only
+  runs in a test leaves the backlog where it was.
+- **Re-entry policy.** `DEFECT` means a re-entry files a bug; `EXPECTED` means
+  it is repaired silently. An `EXPECTED` invariant whose reason is really a
+  missing guard hides the defect it was registered to catch.
+- **Learning.** Is it a rule another change can apply, or a diary entry about
+  this incident? A diary entry is an unmet `learning` criterion.
+
+Each gap above is a named unmet criterion. A real defect the four answers do
+not cover is new scope: file it, and pass.
+
 ## Stage outcome (required)
 
 End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`

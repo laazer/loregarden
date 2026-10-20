@@ -27,6 +27,7 @@ class McpTool(StrEnum):
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
     RECORD_UX_ANSWERS = "loregarden_record_ux_answers"
+    RECORD_FIX_COVERAGE = "loregarden_record_fix_coverage"
     WRITE_DOCUMENT = "loregarden_write_document"
     LIST_ARTIFACTS = "loregarden_list_artifacts"
     READ_ARTIFACT = "loregarden_read_artifact"
@@ -154,6 +155,8 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # whichever stage settles them (ui-design, or the implementer that built the
     # surface) needs to be able to record them.
     McpTool.RECORD_UX_ANSWERS,
+    # A bug ticket's spec stage cannot pass without its fix coverage record.
+    McpTool.RECORD_FIX_COVERAGE,
     McpTool.REQUEST_APPROVAL,
     # Stage work reads library documentation. Offering the cache means the raw
     # HTML is paid for once per URL rather than once per run, and a stage that
@@ -255,6 +258,7 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.UPSERT_BLOG_POST,
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
+        McpTool.RECORD_FIX_COVERAGE,
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
@@ -433,6 +437,7 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.BLOCK_TICKET,
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
+        McpTool.RECORD_FIX_COVERAGE,
         McpTool.ATTACH_EVIDENCE,
         McpTool.APPEND_CHECKPOINT,
         McpTool.APPEND_LEARNING,

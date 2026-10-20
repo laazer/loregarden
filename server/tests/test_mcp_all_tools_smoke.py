@@ -190,6 +190,10 @@ def _args_for(
             "ticket_id": ticket_id,
             "no_change_reason": "smoke: the ticket changes nothing a person can see",
         },
+        "loregarden_record_fix_coverage": {
+            "ticket_id": ticket_id,
+            "not_a_state_bug": "smoke: the fix leaves nothing persisted behind",
+        },
         "loregarden_pin_stage_agent": {
             "ticket_id": ticket_id,
             "agent_id": "backend_implementer",
@@ -440,6 +444,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
         "loregarden_record_ux_answers",
+        "loregarden_record_fix_coverage",
         "loregarden_write_document",
         "loregarden_list_artifacts",
         "loregarden_attach_evidence",

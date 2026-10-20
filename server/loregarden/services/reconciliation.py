@@ -42,9 +42,14 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from loregarden.services.block_settlement import sweep_unclassified_blocks
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
+from loregarden.services.invariant_registry import (
+    EVERY_BLOCK_IS_SETTLED,
+    LANDING_BLOCKS_CLEAR,
+    PUBLISH_CARDS_CLOSE,
+)
+from loregarden.services.invariants import Invariant, run_invariant
 from loregarden.services.network_wait_resume import resume_network_waits
 from loregarden.services.parked_stage_resume import (
     resume_stranded_stages,
@@ -57,12 +62,8 @@ from loregarden.services.run_service import (
     settle_orphaned_agent_runs,
     settle_stranded_stages,
 )
-from loregarden.services.terminal_stage_sweep import (
-    finish_parked_terminal_tickets,
-    finish_tickets_whose_landing_cleared,
-)
+from loregarden.services.terminal_stage_sweep import finish_parked_terminal_tickets
 from loregarden.services.ticket_rollup import reconcile_all_parents
-from loregarden.services.tree_publish_scheduler import close_published_cards
 from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
 
@@ -75,6 +76,15 @@ class SweepStep:
 
     name: str
     run: Callable[[Session], object]
+
+
+def _invariant(invariant: Invariant) -> SweepStep:
+    """A registered invariant as a step, under the invariant's own name."""
+
+    def run(session: Session) -> object:
+        return run_invariant(session, invariant)
+
+    return SweepStep(invariant.name, run)
 
 
 def _settle_leases(session: Session) -> object:
@@ -112,7 +122,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # terminal stage the step above leaves alone. It acts only when a read-only
     # merge preview says the landing would now succeed, so a conflict that is
     # still there is never retried (928).
-    SweepStep("finish_tickets_whose_landing_cleared", finish_tickets_whose_landing_cleared),
+    _invariant(LANDING_BLOCKS_CLEAR),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
     # Periodic by the same rule as the steps above: it consults liveness
     # predicates — a pid, the run behind the lease, and docker itself — rather
@@ -127,7 +137,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After the settlers, because they are what writes most of the harness
     # blocks this classifies: a lease expiry settled two steps up gets its
     # kind here, in the same pass, without the settler having to know (749).
-    SweepStep("classify_unclassified_blocks", sweep_unclassified_blocks),
+    _invariant(EVERY_BLOCK_IS_SETTLED),
     # Periodic by the same rule: it acts only on tickets still blocked on the
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
@@ -145,7 +155,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("check_integration_branches", check_integration_branches),
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
-    SweepStep("close_published_cards", close_published_cards),
+    _invariant(PUBLISH_CARDS_CLOSE),
 )
 
 

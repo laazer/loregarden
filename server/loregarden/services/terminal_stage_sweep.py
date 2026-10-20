@@ -184,6 +184,16 @@ def finish_tickets_whose_landing_cleared(
     done. A landing that would still conflict is not selected again, so this
     retries nothing that has not changed.
     """
+    return finish_cleared_landings(
+        session, tickets_whose_landing_cleared(session, ticket_id=ticket_id)
+    )
+
+
+def tickets_whose_landing_cleared(
+    session: Session, *, ticket_id: str | None = None
+) -> list[Ticket]:
+    """Tickets blocked by their landing, with nothing live behind them, whose
+    landing git now says would succeed. Read-only."""
     live_run_tickets = select(AgentRun.ticket_id).where(
         col(AgentRun.status).in_(_LIVE_RUN_STATUSES)
     )
@@ -201,17 +211,24 @@ def finish_tickets_whose_landing_cleared(
     if ticket_id:
         query = query.where(Ticket.id == ticket_id)
 
-    orch = OrchestrationService(session)
-    finished: list[Ticket] = []
+    cleared: list[Ticket] = []
     for ticket in session.exec(query).all():
         workspace = session.get(Workspace, ticket.workspace_id)
         if (
-            workspace is None
-            or not parked_on_failed_landing(session, ticket)
-            or _has_children(session, ticket)
-            or not landing_would_succeed(session, ticket, workspace)
+            workspace is not None
+            and parked_on_failed_landing(session, ticket)
+            and not _has_children(session, ticket)
+            and landing_would_succeed(session, ticket, workspace)
         ):
-            continue
+            cleared.append(ticket)
+    return cleared
+
+
+def finish_cleared_landings(session: Session, tickets: list[Ticket]) -> list[Ticket]:
+    """Hand each of ``tickets`` to `finalize_workflow`. Returns the ones finished."""
+    orch = OrchestrationService(session)
+    finished: list[Ticket] = []
+    for ticket in tickets:
         stage_key = ticket.workflow_stage_key
         try:
             orch.finalize_workflow(ticket)
