@@ -48,7 +48,6 @@ from __future__ import annotations
 import ast
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
@@ -64,11 +63,10 @@ from gate_python_guard import require_supported_python  # noqa: E402 - path set 
 require_supported_python(Path(__file__).name)
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
-    DEFAULT_BASE_REF,
-    STAGED,
+    GateInvocation,
     UnexaminableError,
     UnexaminableFileError,
-    git_repo_root,
+    parse_gate_argv,
     parse_python_source,
     read_source_text,
     resolve_gate_scope,
@@ -585,45 +583,6 @@ def violations_in(path: Path, *, repo: Path | None) -> list[tuple[int, str]]:
     return sorted(found)
 
 
-@dataclass(frozen=True)
-class Invocation:
-    """How this run was asked to scope itself.
-
-    Two callers: lefthook passes staged file paths and nothing else; an
-    orchestration gate passes ``--repo``/``--scope`` and no file list, because it
-    is judging whatever an agent just did to a workspace it does not enumerate.
-    """
-
-    files: list[Path]
-    repo: Path | None
-    diff_scope: str
-    base_ref: str
-    label: str
-
-
-def parse_argv(argv: list[str]) -> Invocation:
-    files: list[Path] = []
-    repo_arg: str | None = None
-    diff_scope = STAGED
-    base_ref = DEFAULT_BASE_REF
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        if arg == "--repo" and index + 1 < len(argv):
-            repo_arg, index = argv[index + 1], index + 2
-        elif arg == "--scope" and index + 1 < len(argv):
-            diff_scope, index = argv[index + 1], index + 2
-        elif arg == "--base" and index + 1 < len(argv):
-            base_ref, index = argv[index + 1], index + 2
-        else:
-            if arg.endswith(".py"):
-                files.append(Path(arg))
-            index += 1
-    repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
-    label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
-    return Invocation(files, repo, diff_scope, base_ref, label)
-
-
 def _graded_files(repo: Path | None, candidates: Sequence[Path], discovered: bool) -> list[Path]:
     """The Python files in scope that this gate has an opinion about.
 
@@ -635,7 +594,7 @@ def _graded_files(repo: Path | None, candidates: Sequence[Path], discovered: boo
 
 
 def main(argv: list[str]) -> int:
-    invocation = parse_argv(argv)
+    invocation = parse_gate_argv(argv)
     try:
         return _check(invocation)
     except UnexaminableError as exc:
@@ -645,7 +604,7 @@ def main(argv: list[str]) -> int:
         return 1
 
 
-def _check(invocation: Invocation) -> int:
+def _check(invocation: GateInvocation) -> int:
     run = resolve_gate_scope(
         label=invocation.label,
         repo=invocation.repo,

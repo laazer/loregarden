@@ -1180,7 +1180,7 @@ def test_an_explicitly_listed_file_outside_the_repository_is_still_graded(
 ) -> None:
     """The decision this ticket has to make, pinned rather than left to the suite.
 
-    `Invocation.repo` is never absent: `parse_argv` falls back to
+    `GateInvocation.repo` is never absent: `parse_gate_argv` falls back to
     `git_repo_root()`, so a gate handed `/tmp/x.py` and no `--repo` resolves
     `repo` to whatever checkout the process happens to sit in, and the file it
     was *told* to grade is outside it. An unconditional "refuse anything that

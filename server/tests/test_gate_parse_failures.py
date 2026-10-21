@@ -38,13 +38,11 @@ PY_GATES = [
     pytest.param(GIT_SUBPROCESS_GATE, id="py-git-subprocess"),
 ]
 
-#: The same gates by module, for driving `main` in-process under a patched
-#: parser, with the argv prefix each `main` expects: the organization gate is
-#: handed `sys.argv` whole, the other two `sys.argv[1:]`.
+#: The same gates by module, for driving `main` in-process under a patched parser.
 PY_GATE_MODULES = [
-    pytest.param("py_organization_check", ["py_organization_check.py"], id="py-org"),
-    pytest.param("py_silent_except_check", [], id="py-silent-except"),
-    pytest.param("py_git_subprocess_check", [], id="py-git-subprocess"),
+    pytest.param("py_organization_check", id="py-org"),
+    pytest.param("py_silent_except_check", id="py-silent-except"),
+    pytest.param("py_git_subprocess_check", id="py-git-subprocess"),
 ]
 
 RELPATH = "src/pkg/new_mod.py"
@@ -80,11 +78,10 @@ def test_a_nul_byte_names_the_file_rather_than_crashing_the_gate(
     assert "passed" not in _out(result), _out(result)
 
 
-@pytest.mark.parametrize(("module_name", "argv0"), PY_GATE_MODULES)
+@pytest.mark.parametrize("module_name", PY_GATE_MODULES)
 def test_a_value_error_from_the_parser_is_unexaminable_in_every_gate(
     repo: Path,
     module_name: str,
-    argv0: list[str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`ast.parse` raising `ValueError` reaches each gate's `main` as a refusal.
@@ -105,7 +102,7 @@ def test_a_value_error_from_the_parser_is_unexaminable_in_every_gate(
             raise ValueError("source code string cannot contain null bytes")
         return real_parse(source, *args, **kwargs)
 
-    argv = [*argv0, "--repo", str(repo), "--scope", "worktree", "--base", "main"]
+    argv = ["--repo", str(repo), "--scope", "worktree", "--base", "main"]
     with mock.patch("ast.parse", side_effect=refuse_marked):
         code = gate.main(argv)
 

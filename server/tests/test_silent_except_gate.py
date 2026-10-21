@@ -421,14 +421,14 @@ def _commit_base(repo: Path) -> Path:
 
 
 def test_bare_file_list_is_precommit_mode():
-    inv = checker.parse_argv(["src/pkg/mod.py"])
+    inv = checker.parse_gate_argv(["src/pkg/mod.py"])
     assert inv.diff_scope == "staged"
     assert inv.label == "pre-commit"
     assert [p.name for p in inv.files] == ["mod.py"]
 
 
 def test_repo_and_scope_flags_are_gate_mode():
-    inv = checker.parse_argv(["--repo", "/tmp/ws", "--scope", "worktree"])
+    inv = checker.parse_gate_argv(["--repo", "/tmp/ws", "--scope", "worktree"])
     assert inv.diff_scope == "worktree"
     assert inv.label == "gate"
     assert inv.repo == Path("/tmp/ws").resolve()
@@ -437,7 +437,7 @@ def test_repo_and_scope_flags_are_gate_mode():
 
 def test_unknown_scope_is_carried_through_to_be_refused_not_coerced():
     """See the organization gate's twin: a coerced scope read the empty index."""
-    assert checker.parse_argv(["--scope", "nonsense"]).diff_scope == "nonsense"
+    assert checker.parse_gate_argv(["--scope", "nonsense"]).diff_scope == "nonsense"
 
 
 # --------------------------------------------------------------------------- #
