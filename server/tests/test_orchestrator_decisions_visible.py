@@ -165,6 +165,10 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "held_on_prerequisites",
         "prerequisites_overridden",
         "released_on_prerequisites",
+        # Normal: the orchestrator shrinking the work (client tone()).
+        "split_oversized_ticket",
+        # Failed tone, the default: an oversized ticket running whole.
+        "ran_oversized_unsplit",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 
