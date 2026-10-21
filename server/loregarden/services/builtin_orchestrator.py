@@ -192,16 +192,17 @@ class BuiltinOrchestrator:
             else timeout_seconds
         )
 
-        # Before any stage: an oversized ticket becomes an aggregator over its
-        # parts, which the loop below then runs as children.
-        split_oversized_ticket(self.session, ticket, self.callbacks)
-
         stages_run = 0
         try:
             while True:
                 self._renew_lease(orch_run)
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
+
+                # At every boundary, not only the first: plan and spec write the
+                # criteria that make a ticket oversized. A split makes the ticket
+                # an aggregator, and the child pass below runs its parts.
+                split_oversized_ticket(self.session, ticket, self.callbacks)
 
                 # The ticket's own prerequisites first: a parent waiting on
                 # another ticket holds its whole subtree.
