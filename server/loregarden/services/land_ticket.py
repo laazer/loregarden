@@ -35,11 +35,13 @@ from loregarden.services.git_merge_noco import (
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
     target_branch_name,
 )
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -95,6 +97,11 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
     if not rev(repo_root, f"refs/heads/{branch}"):
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
+    # Before either leg (local merge or the base's publish chain): both carry
+    # commits only, so work left in the tree would be left behind (1237).
+    left_behind = _uncommitted(session, ticket, workspace)
+    if left_behind is not None:
+        return LandResult(ok=False, branch=branch, target=target, detail=left_behind)
     if target == base:
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
 
@@ -160,7 +167,23 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     target_sha = rev(repo_root, f"refs/heads/{target}")
     if not source_sha or not target_sha:
         return False
+    if _uncommitted(session, ticket, workspace) is not None:
+        # `land_ticket` would refuse it, so a sweep retrying on this answer
+        # would re-block the ticket on every pass.
+        return False
     return merge_preview(repo_root, target_sha, source_sha).ok
+
+
+def _uncommitted(session: Session, ticket: Ticket, workspace: Workspace) -> str | None:
+    """Why the ticket's tree holds work a landing would leave behind, or None."""
+    try:
+        paths = uncommitted_at_landing(session, ticket, workspace)
+    except RuntimeError as exc:
+        return f"Not landed: could not tell whether the ticket's tree holds uncommitted work: {exc}"
+    if not paths:
+        return None
+    root = resolve_ticket_root(session, ticket, workspace)
+    return describe_uncommitted(paths, str(root))
 
 
 def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> bool:

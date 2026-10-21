@@ -588,6 +588,9 @@ way it is) has four jobs, and a fix that does one of them is a quarter of a fix:
    `EXPECTED` means the world enters it legitimately (a PR merged by hand), so
    violations are just repaired. A sweep that repairs and returns a count nobody
    reads cannot tell a guard failing from a guard working; that is what this replaces.
+   When only a person can resolve a violation (work to commit or discard), register it
+   report-only (`repair=None` plus `unrepaired_action`): every violation is then reported
+   on every pass, backlog as `invariant_unrepaired`, because nothing else will clear it.
 3. **Prevention.** The guard at every writer, and a test proving it, named as the
    invariant's `prevented_by`. Prefer a test that enumerates the writers
    (`test_block_settlement` is the model) over one that exercises one path.

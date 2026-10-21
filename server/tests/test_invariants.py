@@ -101,6 +101,12 @@ def test_an_expected_invariant_with_no_reason_is_refused():
         _invariant(InvariantReentry.EXPECTED, expected_because="")
 
 
+def test_a_report_only_invariant_must_say_what_a_person_does():
+    probe = _invariant(InvariantReentry.DEFECT)
+    with pytest.raises(ValueError, match="unrepaired_action"):
+        Invariant(**{**probe.__dict__, "repair": None})
+
+
 # ---- backlog versus re-entry ------------------------------------------------
 
 SINCE = date(2026, 9, 1)
@@ -288,5 +294,11 @@ def test_one_pass_leaves_nothing_for_the_next(prod_shape_session: Session, invar
     invariant, file a bug on every pass. Run on production's proportions, not a
     fixture of one row, because that is where an unhandled shape lives."""
     first = run_invariant(prod_shape_session, invariant)
+    if invariant.report_only:
+        # Nothing to converge: a person resolves each one. What must hold is
+        # that every violation was reported, none repaired behind their back.
+        assert first.repaired == 0
+        assert first.reentered + first.unrepaired == first.found, f"{invariant.name}: {first}"
+        return
     assert first.repaired == first.found, f"{invariant.name}: {first}"
     assert list(invariant.detect(prod_shape_session)) == []
